@@ -100,6 +100,61 @@ describe("google login routes", () => {
     expect(setCookie.some((c) => c.startsWith("radioso_google_login_state=fixed-state"))).toBe(true);
   });
 
+  it("keeps a validated same-origin return path through the Google callback", async () => {
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      const body = url.includes("token")
+        ? { access_token: "access-token" }
+        : { sub: "google-sub", email: "person@example.com", email_verified: true, name: "Person" };
+      return { ok: true, status: 200, json: async () => body } as unknown as Response;
+    }) as unknown as typeof fetch;
+    const { app } = createApp({ fetchImpl });
+
+    const start = await request(app)
+      .get("/api/v1/ee/auth/google/start")
+      .query({ return_to: "/oauth/operator-mcp/consent?transaction=tx-1" });
+    const cookies = start.headers["set-cookie"] as unknown as string[];
+    const callback = await request(app)
+      .get("/api/v1/ee/auth/google/callback?code=auth-code&state=fixed-state")
+      .set("Cookie", cookies);
+
+    expect(callback.status).toBe(302);
+    expect(callback.headers.location).toBe("https://app.example.com/oauth/operator-mcp/consent?transaction=tx-1");
+  });
+
+  it("ignores an external return target", async () => {
+    const { app } = createApp();
+    const response = await request(app)
+      .get("/api/v1/ee/auth/google/start")
+      .query({ return_to: "https://attacker.example/steal" });
+
+    const setCookie = response.headers["set-cookie"] as unknown as string[];
+    expect(setCookie.some((cookie) => cookie.includes("attacker.example"))).toBe(false);
+    expect(setCookie.some((cookie) => cookie.startsWith("radioso_google_login_return_to=;"))).toBe(true);
+  });
+
+  it("revalidates a tampered return cookie and keeps the configured fallback", async () => {
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      const body = url.includes("token")
+        ? { access_token: "access-token" }
+        : { sub: "google-sub", email: "person@example.com", email_verified: true, name: "Person" };
+      return { ok: true, status: 200, json: async () => body } as unknown as Response;
+    }) as unknown as typeof fetch;
+    const successRedirect = "https://app.example.com/dashboard";
+    const { app } = createApp({ fetchImpl, successRedirect });
+
+    const response = await request(app)
+      .get("/api/v1/ee/auth/google/callback?code=auth-code&state=fixed-state")
+      .set("Cookie", [
+        "radioso_google_login_state=fixed-state",
+        "radioso_google_login_return_to=%2F%2Fattacker.example%2Fsteal",
+      ]);
+
+    expect(response.status).toBe(302);
+    expect(response.headers.location).toBe(successRedirect);
+  });
+
   it("returns 404 on start when not configured", async () => {
     const { app } = createApp({ config: null });
     const response = await request(app).get("/api/v1/ee/auth/google/start");

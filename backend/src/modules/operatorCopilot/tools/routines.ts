@@ -14,7 +14,7 @@ import {
   entity,
   normalizeEntityName,
   recordProposalCreated,
-  requiredCopilotConversation,
+  copilotProposalOrigin,
   requiredPageAgent,
   type CopilotAgentLookupPort,
   citedEvidenceSchema,
@@ -369,7 +369,7 @@ export const createRoutineProposalCopilotTools = (deps: RoutineProposalCopilotTo
           const proposal = await deps.proposalRepository.createProposal({
             workspaceId: context.workspaceId,
             operatorUserId: context.operatorUserId,
-            conversationId: requiredCopilotConversation(context),
+            origin: copilotProposalOrigin(context),
             targetType: "routine",
             targetRef,
             payload: draft.payload,
@@ -462,7 +462,7 @@ const proposeRoutineChange = async (
   const proposal = await deps.proposalRepository.createProposal({
     workspaceId: context.workspaceId,
     operatorUserId: context.operatorUserId,
-    conversationId: requiredCopilotConversation(context),
+    origin: copilotProposalOrigin(context),
     targetType: "routine",
     targetRef,
     payload: draft.payload,

@@ -1,7 +1,9 @@
 import { z, type ZodType } from "zod";
+import type { OperatorMcpScope } from "@radioso/operator-mcp-contract";
 
 import type { AccountPermission } from "../account/public.js";
 import type { AgentTool, AgentToolContext } from "../../shared/agent-runtime/index.js";
+import type { OperatorMcpInvocationRecord } from "./mcpContracts.js";
 
 /**
  * The single runtime list of page-context entity types a dashboard surface may report to the
@@ -62,6 +64,8 @@ export interface CopilotToolInvocationContext {
   readonly currentAuthorization: CopilotCurrentAuthorizationPort;
   /** Internal copilot thread identity; distinct from pageContext.conversationId. */
   readonly copilotConversationId?: string;
+  /** Durable origin for a direct Operator MCP invocation; mutually exclusive with a copilot thread. */
+  readonly operatorMcpInvocationId?: string;
   readonly pageContext: CopilotPageContext;
 }
 
@@ -174,11 +178,17 @@ export const MAX_COPILOT_PROPOSAL_SUMMARY = 2_000;
 
 export type CopilotProposalStatus = "pending" | "applied" | "dismissed" | "failed" | "stale";
 
+export type CopilotProposalOrigin =
+  | { readonly type: "conversation"; readonly conversationId: string }
+  | { readonly type: "operator_mcp_invocation"; readonly invocationId: string };
+
 export interface CopilotProposal {
   readonly id: string;
   readonly workspaceId: string;
   readonly operatorUserId: string;
-  readonly conversationId: string;
+  readonly origin: CopilotProposalOrigin;
+  readonly conversationId: string | null;
+  readonly operatorMcpInvocationId: string | null;
   readonly messageId: string | null;
   readonly targetType: CopilotProposalTargetType;
   readonly targetRef: unknown;
@@ -192,6 +202,16 @@ export interface CopilotProposal {
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
+
+type CopilotProposalDraftFields = Omit<
+  CopilotProposal,
+  "id" | "origin" | "conversationId" | "operatorMcpInvocationId" | "messageId" | "status" | "appliedRef" | "createdAt" | "updatedAt"
+>;
+
+export type CopilotProposalDraft = CopilotProposalDraftFields & (
+  | { readonly origin: CopilotProposalOrigin; readonly conversationId?: never }
+  | { readonly origin?: never; readonly conversationId: string }
+);
 
 export interface CopilotProposalCard {
   readonly id: string;
@@ -386,6 +406,28 @@ export type CopilotAnyProposalAdapter =
 
 export type CopilotProposalAdapterRegistry = ReadonlyArray<CopilotAnyProposalAdapter>;
 
+export type CopilotMcpInvocationReconciliation<TOutput> =
+  | { readonly status: "recovered"; readonly output: TOutput }
+  | { readonly status: "in_progress" | "retry_prepare" | "conflict" };
+
+/** Narrow persistence boundary used only by descriptor-owned MCP proposal recovery. */
+export interface CopilotMcpProposalRecoveryPort {
+  recoverOperatorMcpProposal(input: {
+    readonly invocationId: string;
+    readonly grantId: string;
+    readonly workspaceId: string;
+    readonly operatorUserId: string;
+    readonly operationId: string;
+    readonly descriptorName: string;
+    readonly inputDigest: string;
+    readonly staleBefore: Date;
+    readonly now: Date;
+  }): Promise<
+    | { readonly status: "recovered"; readonly proposal: CopilotProposal }
+    | { readonly status: "in_progress" | "retry_prepare" | "conflict" }
+  >;
+}
+
 export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
   readonly name: string;
   readonly shape: CopilotToolShape;
@@ -418,6 +460,8 @@ export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
    */
   readonly capabilityProvenance?: CopilotCapabilityProvenance;
   readonly contributingModule: string;
+  /** Reviewed transport disposition attached during production catalog assembly. */
+  readonly mcpDisposition?: CopilotMcpDisposition;
   /** Default dashboard handoff for this tool's collection or owning subject. */
   readonly dashboardSubject: CopilotEntityReference;
   createTool(context: CopilotToolInvocationContext): AgentTool<TInput, TOutput>;
@@ -426,7 +470,30 @@ export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
   describeOutputEntity?(output: TOutput): CopilotEntityReference | null;
   /** Optional last-mile sanitizer for the successful result after its dashboard link is attached. */
   finalizeEnrichedOutput?(output: Record<string, unknown>): Record<string, unknown>;
+  /** Reconstructs a proposal result after the proposal committed but its invocation outcome did not. */
+  reconcileMcpInvocation?(input: {
+    readonly invocation: OperatorMcpInvocationRecord;
+    readonly context: CopilotToolInvocationContext;
+    readonly staleBefore: Date;
+    readonly now: Date;
+  }): Promise<CopilotMcpInvocationReconciliation<TOutput>>;
 }
+
+export type CopilotMcpDisposition =
+  | {
+      readonly status: "eligible";
+      readonly inputStrategy: "explicit";
+      readonly scope: OperatorMcpScope;
+      readonly retry: {
+        readonly effect: "none" | "proposal" | "act";
+        readonly idempotent: boolean;
+        readonly requiresOperationId: boolean;
+      };
+    }
+  | {
+      readonly status: "excluded";
+      readonly reason: string;
+    };
 
 export interface CopilotRayOnlyDisposition {
   readonly reason: string;

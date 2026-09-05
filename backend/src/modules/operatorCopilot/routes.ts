@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { Env } from "../../app/config/env.js";
 import { requireWorkspaceSession } from "../../app/http/middleware/requireWorkspaceSession.js";
 import type { WorkspaceSessionDependencies } from "../../app/http/middleware/requireWorkspaceSession.js";
+import { requireSession } from "../../app/http/middleware/requireSession.js";
 import { requireWorkspacePermission } from "../../app/http/middleware/requirePermission.js";
 import { createRateLimitMiddleware, type RateLimitAbuseControlPort, type RateLimitAuditPort } from "../../app/http/middleware/rateLimit.js";
 import { validateBody } from "../../app/http/middleware/validate.js";
@@ -72,10 +73,52 @@ interface ChatCapabilityProbePort {
 export const createCopilotRoutes = (dependencies: CopilotRouteDependencies): Router => {
   const router = Router();
   const workspaceSession = requireWorkspaceSession(dependencies);
+  const proposalSession = requireSession(dependencies);
   const agentRead = requireWorkspacePermission(dependencies, "workspace.agents.read");
   const sessionOnly = rejectBearer();
   const rateLimitTurn = copilotTurnRateLimiter(dependencies);
   const resolvableToolPermissions = copilotResolvableToolPermissions(dependencies.copilotToolCatalog);
+  const proposalWorkspace: RequestHandler = async (req, res, next) => {
+    try {
+      const { proposalId } = proposalParamsSchema.parse(req.params);
+      const { accountId, userId } = res.locals as { accountId: string; userId: string };
+      const workspaceId = await dependencies.operatorCopilotService.resolveProposalWorkspace({
+        accountId,
+        operatorUserId: userId,
+        proposalId,
+      });
+      if (!workspaceId) throw notFound("Copilot proposal not found");
+      res.locals.workspaceId = workspaceId;
+      next();
+    } catch (error) { next(error); }
+  };
+
+  // A proposal handoff opens outside the workspace dashboard shell. Resolve its workspace from
+  // the authenticated operator and stored proposal before checking workspace permission; browser
+  // state is neither authority nor a reliable locator for a fresh or differently scoped session.
+  router.get("/proposals/:proposalId", proposalSession, proposalWorkspace, agentRead, async (req, res, next) => {
+    try {
+      const { workspaceId, userId } = sessionLocals(res);
+      const { proposalId } = proposalParamsSchema.parse(req.params);
+      const result = await dependencies.operatorCopilotService.getProposal({ workspaceId, operatorUserId: userId, proposalId });
+      if (!result) throw notFound("Copilot proposal not found");
+      res.status(200).json({
+        id: result.proposal.id,
+        workspaceId,
+        targetType: result.proposal.targetType,
+        targetRef: result.proposal.targetRef,
+        target: { type: result.proposal.targetType, ref: result.proposal.targetRef },
+        targetLabel: result.preview.targetLabel,
+        status: result.proposal.status,
+        preview: result.preview,
+        currentVersionMatches: result.currentVersionMatches,
+        reason: result.proposal.reason ?? null,
+        appliedRef: result.proposal.appliedRef,
+        evidence: result.proposal.evidence ? summarizeProposalEvidence(result.proposal.evidence) : undefined,
+        evidenceCases: result.proposal.evidence?.cases ?? null,
+      });
+    } catch (error) { next(error); }
+  });
   router.use(workspaceSession, sessionOnly, agentRead);
 
   router.get("/availability", async (_req, res, next) => {
@@ -89,30 +132,6 @@ export const createCopilotRoutes = (dependencies: CopilotRouteDependencies): Rou
   });
   router.delete("/conversations/:conversationId", async (req, res, next) => {
     try { const { workspaceId, userId } = sessionLocals(res); const { conversationId } = conversationParamsSchema.parse(req.params); const deleted = await dependencies.operatorCopilotService.delete(workspaceId, userId, conversationId); if (!deleted) throw notFound("Copilot conversation not found"); res.status(204).end(); } catch (error) { next(error); }
-  });
-  router.get("/proposals/:proposalId", async (req, res, next) => {
-    try {
-      const { workspaceId, userId } = sessionLocals(res);
-      const { proposalId } = proposalParamsSchema.parse(req.params);
-      const result = await dependencies.operatorCopilotService.getProposal({ workspaceId, operatorUserId: userId, proposalId });
-      if (!result) throw notFound("Copilot proposal not found");
-      res.status(200).json({
-        id: result.proposal.id,
-        targetType: result.proposal.targetType,
-        targetRef: result.proposal.targetRef,
-        target: { type: result.proposal.targetType, ref: result.proposal.targetRef },
-        targetLabel: result.preview.targetLabel,
-        status: result.proposal.status,
-        preview: result.preview,
-        currentVersionMatches: result.currentVersionMatches,
-        reason: result.proposal.reason ?? null,
-        appliedRef: result.proposal.appliedRef,
-        // The same counts the card states, plus the cases behind them, so expanding the card
-        // reads as detail on one claim rather than as a second, differently shaped one.
-        evidence: result.proposal.evidence ? summarizeProposalEvidence(result.proposal.evidence) : undefined,
-        evidenceCases: result.proposal.evidence?.cases ?? null,
-      });
-    } catch (error) { next(error); }
   });
   // No permission middleware here on purpose: what an operator must hold to apply a proposal depends
   // on what that proposal changes, and only the stored row says which domain that is. The service

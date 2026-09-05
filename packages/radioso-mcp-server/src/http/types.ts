@@ -8,6 +8,7 @@ import type { RadiosoMcpConfig } from "../config.js";
 import type { RadiosoMcpServerHandle } from "../server.js";
 import type { RuntimeStoreReadiness } from "../state/runtimeStores.js";
 import type { PreAuthSourceBudget } from "./preAuthSourceBudget.js";
+import type { OperatorHttpDependencies } from "../operator/types.js";
 
 export interface InternalMcpRequestAuthInfo extends McpRequestAuthInfo {
   accessToken: string;
@@ -34,4 +35,5 @@ export interface RemoteHttpDependencies {
   config: RadiosoMcpConfig;
   readiness?: RuntimeStoreReadiness;
   preAuthSourceBudget?: PreAuthSourceBudget;
+  operatorMcp?: OperatorHttpDependencies;
 }

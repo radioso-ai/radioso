@@ -36,6 +36,10 @@ import { createSkillRoutes } from "./skillRoutes.js";
 import { createEvalRoutes } from "../../../modules/eval/composition.js";
 import { createCopilotRoutes } from "../../../modules/operatorCopilot/routes.js";
 import { createApiAccessRoutes } from "./apiAccessRoutes.js";
+import { createOperatorMcpSetupRoutes } from "../../../modules/operatorMcpSetup/routes.js";
+import { createOperatorMcpDashboardRoutes } from "../../../modules/operatorMcpAuthorization/dashboardRoutes.js";
+import { createOperatorMcpDiscoveryRoutes, createOperatorMcpOauthRoutes } from "../../../modules/operatorMcpAuthorization/routes.js";
+import { createOperatorMcpInternalRoutes } from "../../../modules/operatorCopilot/mcpRoutes.js";
 
 export type ApiRouteMount = {
   path: string;
@@ -47,10 +51,15 @@ export type ApiRouteMount = {
  * and every application contribution, then discovers authentication structurally.
  */
 export const createApiRouteMounts = (dependencies: AppDependencies): readonly ApiRouteMount[] => [
+  { path: "/.well-known", createRouter: createOperatorMcpDiscoveryRoutes },
   { path: "/api/v1/auth", createRouter: createAuthRoutes },
   { path: "/api/v1/account", createRouter: createAccountRoutes },
   { path: "/api/v1/account", createRouter: createAccountUserRoutes },
   { path: "/api/v1/account", createRouter: createApiAccessRoutes },
+  { path: "/api/v1", createRouter: createOperatorMcpSetupRoutes },
+  { path: "/api/v1", createRouter: createOperatorMcpDashboardRoutes },
+  { path: "/api/v1/operator-mcp/oauth", createRouter: createOperatorMcpOauthRoutes },
+  { path: "/api/v1/internal/operator-copilot/mcp", createRouter: createOperatorMcpInternalRoutes },
   { path: "/api/v1/workspace", createRouter: createWorkspaceRoutes },
   { path: "/api/v1", createRouter: createOauthConnectionRoutes },
   { path: "/api/v1", createRouter: createCustomerEmailConnectionRoutes },

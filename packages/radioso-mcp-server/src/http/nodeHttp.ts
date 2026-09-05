@@ -51,7 +51,7 @@ export const readJsonBody = async (req: IncomingMessage): Promise<unknown> => {
   return JSON.parse(body.toString("utf8"));
 };
 
-export const toWebRequest = async (req: IncomingMessage, fallbackHost: string): Promise<Request> => {
+export const toWebRequest = async (req: IncomingMessage, fallbackHost: string, options: { maxBytes?: number } = {}): Promise<Request> => {
   const headers = new Headers();
 
   for (const [key, value] of Object.entries(req.headers)) {
@@ -76,7 +76,7 @@ export const toWebRequest = async (req: IncomingMessage, fallbackHost: string): 
     return new Request(url, { headers, method });
   }
 
-  const body = await readRequestBody(req);
+  const body = await readRequestBody(req, options);
   return new Request(url, {
     body: body.length > 0 ? body : undefined,
     duplex: "half",

@@ -15,13 +15,60 @@ import type { AppDependencies } from "./types.js";
 /**
  * Request bodies are captured (rawBody + parsed) only for the content types Radioso parses:
  * JSON for normal APIs, and `application/x-www-form-urlencoded` for Slack interactivity
- * callbacks (which carry a `payload` form field and need rawBody preserved for signature
- * verification). Everything else skips body capture. Exported so the gate is unit-tested
- * directly — narrowing it again would silently break the Slack interactivity endpoint.
+ * callbacks and OAuth token exchanges. Slack needs the original bytes for signature
+ * verification; OAuth relies on the same parser accepting media-type casing consistently.
+ * Everything else skips body capture.
  */
 export const shouldCaptureRequestBody = (contentType: string | undefined): boolean =>
   typeof contentType === "string"
   && (/^application\/json\b/i.test(contentType) || /^application\/x-www-form-urlencoded\b/i.test(contentType));
+
+export const captureRequestBody = async (req: express.Request, _res: express.Response, next: express.NextFunction): Promise<void> => {
+  if (!shouldCaptureRequestBody(req.headers["content-type"])) {
+    next();
+    return;
+  }
+
+  try {
+    const chunks: Buffer[] = [];
+    let size = 0;
+
+    for await (const chunk of req) {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      size += buffer.length;
+      if (size > 1024 * 1024) {
+        next(payloadTooLarge());
+        return;
+      }
+      chunks.push(buffer);
+    }
+
+    const rawBody = Buffer.concat(chunks);
+    (req as typeof req & { rawBody?: Buffer }).rawBody = rawBody;
+
+    if (rawBody.length === 0) {
+      req.body = {};
+      next();
+      return;
+    }
+
+    const contentType = req.headers["content-type"] ?? "";
+    if (typeof contentType === "string" && /^application\/x-www-form-urlencoded\b/i.test(contentType)) {
+      req.body = Object.fromEntries(new URLSearchParams(rawBody.toString("utf8")));
+      next();
+      return;
+    }
+
+    req.body = JSON.parse(rawBody.toString("utf8"));
+    next();
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      next(badRequest("Invalid JSON request body"));
+      return;
+    }
+    next(error);
+  }
+};
 
 export const createApp = (dependencies: AppDependencies) => {
   const app = express();
@@ -37,52 +84,7 @@ export const createApp = (dependencies: AppDependencies) => {
   app.use(createRequestAuditContextMiddleware());
   app.use(createHttpTracingMiddleware());
   app.use(createRequestTelemetryMiddleware(dependencies.telemetryService));
-  app.use(async (req, _res, next) => {
-    if (!shouldCaptureRequestBody(req.headers["content-type"])) {
-      next();
-      return;
-    }
-
-    try {
-      const chunks: Buffer[] = [];
-      let size = 0;
-
-      for await (const chunk of req) {
-        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-        size += buffer.length;
-        if (size > 1024 * 1024) {
-          next(payloadTooLarge());
-          return;
-        }
-        chunks.push(buffer);
-      }
-
-      const rawBody = Buffer.concat(chunks);
-      (req as typeof req & { rawBody?: Buffer }).rawBody = rawBody;
-
-      if (rawBody.length === 0) {
-        req.body = {};
-        next();
-        return;
-      }
-
-      const contentType = req.headers["content-type"] ?? "";
-      if (typeof contentType === "string" && contentType.includes("application/x-www-form-urlencoded")) {
-        req.body = Object.fromEntries(new URLSearchParams(rawBody.toString("utf8")));
-        next();
-        return;
-      }
-
-      req.body = JSON.parse(rawBody.toString("utf8"));
-      next();
-    } catch (error) {
-      if (error instanceof SyntaxError) {
-        next(badRequest("Invalid JSON request body"));
-        return;
-      }
-      next(error);
-    }
-  });
+  app.use(captureRequestBody);
   app.use((_req, res, next) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("X-Frame-Options", "DENY");

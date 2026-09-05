@@ -1,14 +1,16 @@
 # Radioso MCP Server
 
-MCP server package that lets an MCP client talk to one Radioso agent through its turn loop.
+MCP server package for one-agent conversation and a separate OAuth-protected Ray operator surface.
 
 ## What It Does
 
 The package connects to an existing Radioso deployment over its public HTTP API and exposes one MCP surface.
 
-**Agent converse surface.** A client talks to one agent through that agent's turn loop, using an agent-bound MCP channel credential. The agent applies its own persona, directives, and routines. The sole tool is:
+**Agent converse surface (`/mcp`).** A client talks to one agent through that agent's turn loop, using an agent-bound MCP channel credential. The agent applies its own persona, directives, and routines. The sole tool is:
 
 - `ask_agent` for a full agent reply (persona, directives, routines, history)
+
+**Operator surface (`/operator/mcp`).** An OAuth-capable remote client acts as the signed-in person who granted access. Its fresh catalog can expose `workspace_settings`, `retrieval_probe`, and `propose_ingestion_settings` when current scopes and permissions allow them. See [Operator MCP OAuth access](../../docs/operator-mcp.md) for consent, grant management, and compatibility status.
 
 
 The package owns MCP protocol handling, agent-channel credential validation seams, and audit logging. The backend owns session issuance and per-request grant checks; the package calls the backend converse endpoints over HTTP. The package does not import backend domain modules and does not access the database directly.
@@ -24,6 +26,15 @@ The package has no stdio MCP entrypoint.
 ### Required Environment Variables
 
 - `RADIOSO_BASE_URL`
+
+Operator MCP additionally requires these values in both the standalone service and backend:
+
+- `OPERATOR_MCP_ENABLED=true`
+- `OPERATOR_MCP_RESOURCE_URL`, the exact HTTPS resource ending in `/operator/mcp`
+- `OPERATOR_MCP_ISSUER_URL`, the HTTPS Radioso authorization-server origin
+- `OPERATOR_MCP_INTERNAL_SECRET`, the same exact value in both processes, at least 32 characters
+- `OPERATOR_MCP_CREDENTIAL_EPOCH`, an externally managed positive decimal generation
+- `OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS`, a comma-separated workspace UUID allowlist; empty allows no workspaces
 
 ### Common Optional Environment Variables
 
@@ -75,6 +86,25 @@ Agent-bound MCP channel credentials are issued by the signed-in dashboard. Put t
 Cursor can connect to a local config that points at `http://127.0.0.1:8787/mcp` and reads the original agent-converse grant from `RADIOSO_MCP_ACCESS_TOKEN`. Create that grant through the flow described in [`../../docs/mcp-client-setup.md`](../../docs/mcp-client-setup.md).
 
 Claude, Claude Desktop remote connectors, ChatGPT apps, and OpenAI-hosted remote MCP flows require a public HTTPS deployment of this server. They do not connect to `localhost` from your laptop. See [`../../docs/mcp-client-setup.md`](../../docs/mcp-client-setup.md) for the agent-converse credential flow and deployment boundaries.
+
+Operator MCP setup starts under **Settings → API access**. Named client choices remain unavailable until the exact build has complete compatibility evidence; the generic remote HTTP option is labelled unverified. The dashboard supplies the canonical resource URL and browser consent flow.
+
+## Operator OAuth Resource
+
+The primary operator transport is stateless and uses MCP protocol `2026-07-28`. It accepts `server/discover`, `ping`, `tools/list`, and `tools/call` without an initialize exchange. Each POST carries matching `MCP-Protocol-Version` and `Mcp-Method` headers plus protocol version and client capabilities in `params._meta`; `tools/call` also mirrors `params.name` in `Mcp-Name`. Discovery reports the server's tool capability, and tool lists use a zero TTL with grant-private cache scope. A compatibility adapter also accepts the standard `2025-06-18` initialize, initialized-notification, ping, list, and call lifecycle used by current clients. It translates into the same primary handler instead of duplicating authorization or tool policy. The standalone service validates routing headers and the Bearer credential before admitting tool operations, applies independent source and principal limits, and asks the backend for a short-lived signed admission proof. The backend rechecks the credential row, grant version, client snapshot, external credential epoch, membership, user status, scope, and current descriptor permission before listing or invoking.
+
+The backend catalog is never cached by the standalone process. A permission or grant change therefore takes effect on the next request.
+
+Use these checks after changing the backend contract:
+
+```bash
+pnpm run sync:openapi
+pnpm run check:openapi
+pnpm run build
+pnpm test
+```
+
+Startup checks the configured credential epoch and internal-secret fingerprint against persisted deployment state. It does not advance the epoch. Rotate or restore by explicitly persisting a greater external epoch, then deploy the same epoch and secret to every enabled replica.
 
 ## Initialize MCP
 

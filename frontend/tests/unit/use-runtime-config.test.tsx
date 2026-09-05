@@ -46,14 +46,14 @@ describe('useRuntimeConfig', () => {
       .mockResolvedValueOnce({ ok: false, status: 500 })
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ mcpUrl: 'https://mcp.example.com/mcp', publicApiUrl: 'https://api.example.com' }),
+        json: async () => ({ mcpUrl: 'https://mcp.example.com/mcp', operatorMcpUrl: 'https://mcp.example.com/operator/mcp', publicApiUrl: 'https://api.example.com' }),
       })
     vi.stubGlobal('fetch', fetchMock)
 
     await act(async () => {
       root.render(<RuntimeConfigHarness onConfig={publishConfig} />)
     })
-    expect(runtimeConfig).toMatchObject({ mcpUrl: '', publicApiUrl: '', isResolved: false, status: 'failed' })
+    expect(runtimeConfig).toMatchObject({ mcpUrl: '', operatorMcpUrl: '', publicApiUrl: '', isResolved: false, status: 'failed' })
 
     await act(async () => {
       runtimeConfig.retry()
@@ -61,6 +61,7 @@ describe('useRuntimeConfig', () => {
 
     expect(runtimeConfig).toMatchObject({
       mcpUrl: 'https://mcp.example.com/mcp',
+      operatorMcpUrl: 'https://mcp.example.com/operator/mcp',
       publicApiUrl: 'https://api.example.com',
       isResolved: true,
       status: 'resolved',

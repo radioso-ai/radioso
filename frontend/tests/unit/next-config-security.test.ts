@@ -63,6 +63,16 @@ describe('next security headers', () => {
     expect(frameHeaderValues.get('Permissions-Policy')).toContain('camera=()')
   })
 
+  it('hardens the operator MCP consent screen against framing, referrers, and caching', async () => {
+    const routes = await getHeaderRoutes()
+    const consentHeaders = routes.find((route) => route.source === '/oauth/operator-mcp/consent')?.headers ?? []
+    const values = new Map(consentHeaders.map((header) => [header.key, header.value]))
+    expect(values.get('Content-Security-Policy')).toContain("frame-ancestors 'none'")
+    expect(values.get('Referrer-Policy')).toBe('no-referrer')
+    expect(values.get('Cache-Control')).toBe('no-store')
+    expect(values.get('X-Frame-Options')).toBe('DENY')
+  })
+
   it('proxies the legacy widget hostname to the primary EU frontend', async () => {
     const routes = await getRewriteRoutes()
 
@@ -70,6 +80,19 @@ describe('next security headers', () => {
       source: '/:path*',
       has: [{ type: 'host', value: 'platform.radioso.dev' }],
       destination: 'https://app.radioso.ai/:path*',
+    })
+  })
+
+  it('proxies public operator MCP OAuth issuer paths to the backend API', async () => {
+    const routes = await getRewriteRoutes()
+
+    expect(routes).toContainEqual({
+      source: '/.well-known/oauth-authorization-server',
+      destination: '/backend/.well-known/oauth-authorization-server',
+    })
+    expect(routes).toContainEqual({
+      source: '/api/v1/operator-mcp/oauth/:path*',
+      destination: '/backend/api/v1/operator-mcp/oauth/:path*',
     })
   })
 })

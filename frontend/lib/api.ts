@@ -17,6 +17,21 @@ export {
   type ServiceCredentialInput,
 } from './api-api-access'
 
+export { operatorMcpApi } from './api-operator-mcp'
+export type {
+  OperatorMcpArtifactStatus,
+  OperatorMcpAvailability,
+  OperatorMcpClientSetupArtifact,
+  OperatorMcpDecisionResponse,
+  OperatorMcpGrantDetail,
+  OperatorMcpGrantInventoryResponse,
+  OperatorMcpGrantStatus,
+  OperatorMcpGrantSummary,
+  OperatorMcpSetupResponse,
+  OperatorMcpToolScope,
+  OperatorMcpTransactionResponse,
+} from './api-operator-mcp'
+
 export {
   activateWorkspaceSession,
   clearStoredAnonymousSession,

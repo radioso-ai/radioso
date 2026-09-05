@@ -328,6 +328,7 @@ export interface ApplicationRouteMount {
       PUBLIC_CHAT_SESSION_SECRET?: string;
       AUTH_RATE_LIMIT_WINDOW_MS?: number;
       AUTH_RATE_LIMIT_MAX_ATTEMPTS?: number;
+      OPERATOR_MCP_OAUTH_SOURCE_RATE_LIMIT_MAX_ATTEMPTS?: number;
     };
     apiPrincipalRouteInventory: ApiPrincipalRouteInventory;
     abuseControlService: {

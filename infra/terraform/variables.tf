@@ -516,6 +516,66 @@ variable "radioso_mcp_enabled" {
   default     = false
 }
 
+variable "operator_mcp_enabled" {
+  description = "Whether the separately authorized Operator MCP resource is enabled on the standalone MCP service. Named client artifacts remain gated by captured compatibility evidence."
+  type        = bool
+  default     = false
+}
+
+variable "operator_mcp_public_origin" {
+  description = "Canonical HTTPS origin for the standalone MCP service when Operator MCP is enabled; /operator/mcp is appended as the exact OAuth resource."
+  type        = string
+  default     = null
+
+  validation {
+    condition = (
+      var.operator_mcp_public_origin == null ||
+      can(regex("^https://[^/?#]+$", var.operator_mcp_public_origin))
+    )
+    error_message = "operator_mcp_public_origin must be an HTTPS origin without a path, query, fragment, or trailing slash."
+  }
+}
+
+variable "operator_mcp_credential_epoch" {
+  description = "Externally monotonic Operator MCP credential/key generation. Increase this explicitly during rotation or restore; every enabled replica must use the same value."
+  type        = string
+  default     = "1"
+
+  validation {
+    condition     = can(regex("^[1-9][0-9]*$", var.operator_mcp_credential_epoch))
+    error_message = "operator_mcp_credential_epoch must be a canonical positive decimal integer."
+  }
+}
+
+variable "operator_mcp_rollout_workspace_ids" {
+  description = "Workspace UUIDs permitted to use Operator MCP. An empty list keeps the surface unavailable even when the service is enabled."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for workspace_id in var.operator_mcp_rollout_workspace_ids :
+      can(regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$", workspace_id))
+    ])
+    error_message = "operator_mcp_rollout_workspace_ids must contain UUIDs."
+  }
+}
+
+variable "operator_mcp_verification_budget_per_minute" {
+  description = "Maximum verification operations admitted per Operator MCP credential each minute."
+  type        = number
+  default     = 6
+
+  validation {
+    condition = (
+      var.operator_mcp_verification_budget_per_minute >= 1 &&
+      var.operator_mcp_verification_budget_per_minute <= 6 &&
+      floor(var.operator_mcp_verification_budget_per_minute) == var.operator_mcp_verification_budget_per_minute
+    )
+    error_message = "operator_mcp_verification_budget_per_minute must be an integer from 1 through 6."
+  }
+}
+
 variable "frontend_backend_internal_url_override" {
   description = "Optional backend URL used by the frontend server-side proxy. Defaults to the backend service in this stack."
   type        = string

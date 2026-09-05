@@ -21,6 +21,7 @@ const { describeIntegration, integrationDatabaseUrl } = await resolveIntegration
 interface Fixture {
   accountId: string;
   ownerId: string;
+  ownerMembershipId: string;
   memberId: string;
   memberMembershipId: string;
   workspaceId: string;
@@ -34,6 +35,7 @@ interface Fixture {
 describeIntegration("Personal credential lifecycle deletion", () => {
   const database = new Database(integrationDatabaseUrl as string);
   const accountIds: string[] = [];
+  const operatorClientIds: string[] = [];
   const machineAccessRepository = new MachineAccessRepository(database.kysely);
   const lifecycle = new PersonalCredentialLifecycleRepository(database.kysely);
   const membershipRepository = new AccountMembershipRepository(database.kysely);
@@ -92,9 +94,41 @@ describeIntegration("Personal credential lifecycle deletion", () => {
       personalCredentialLifecycle: lifecycle,
     });
     return {
-      accountId, ownerId, memberId, memberMembershipId, workspaceId, secondaryWorkspaceId,
+      accountId, ownerId, ownerMembershipId, memberId, memberMembershipId, workspaceId, secondaryWorkspaceId,
       access, personal, workspace, auth,
     };
+  };
+
+  const issueOperatorGrant = async (input: {
+    accountId: string;
+    workspaceId: string;
+    userId: string;
+    membershipId: string;
+  }): Promise<string> => {
+    const clientId = randomUUID();
+    const snapshotId = randomUUID();
+    const grantId = randomUUID();
+    operatorClientIds.push(clientId);
+    await database.query(
+      `INSERT INTO operator_mcp_clients
+        (id, client_id, registration_method, application_type, display_name, redirect_uris, metadata_digest)
+       VALUES ($1, $2, 'metadata_document', 'native', 'Lifecycle client', '[]'::jsonb, $3)`,
+      [clientId, `https://client.example/${clientId}`, `metadata-${clientId}`],
+    );
+    await database.query(
+      `INSERT INTO operator_mcp_client_metadata_snapshots
+        (id, client_id, client_version, metadata_digest, normalized_metadata, source, validated_at)
+       VALUES ($1, $2, 1, $3, '{}'::jsonb, 'metadata_document', NOW())`,
+      [snapshotId, clientId, `metadata-${clientId}`],
+    );
+    await database.query(
+      `INSERT INTO operator_mcp_grants
+        (id, client_id, client_version, client_metadata_snapshot_id, account_id, workspace_id,
+         user_id, membership_id, resource, tool_scopes, credential_epoch)
+       VALUES ($1, $2, 1, $3, $4, $5, $6, $7, 'https://mcp.example/operator/mcp', ARRAY['operator:read'], 1)`,
+      [grantId, clientId, snapshotId, input.accountId, input.workspaceId, input.userId, input.membershipId],
+    );
+    return grantId;
   };
 
   const issue = (input: Pick<Fixture, "personal" | "accountId" | "workspaceId" | "memberId">) => input.personal.issue({
@@ -110,12 +144,22 @@ describeIntegration("Personal credential lifecycle deletion", () => {
     for (const accountId of accountIds) {
       await database.query("DELETE FROM accounts WHERE id = $1", [accountId]).catch(() => undefined);
     }
+    for (const clientId of operatorClientIds) {
+      await database.query("DELETE FROM operator_mcp_client_metadata_snapshots WHERE client_id = $1", [clientId]).catch(() => undefined);
+      await database.query("DELETE FROM operator_mcp_clients WHERE id = $1", [clientId]).catch(() => undefined);
+    }
     await database.close().catch(() => undefined);
   });
 
   it("serializes personal issue and rotation against actual membership removal, and persists sanitized correlation metadata", async () => {
     const current = await fixture();
     const first = await issue(current);
+    const operatorGrantId = await issueOperatorGrant({
+      accountId: current.accountId,
+      workspaceId: current.workspaceId,
+      userId: current.memberId,
+      membershipId: current.memberMembershipId,
+    });
     const requestId = `lifecycle-${randomUUID()}`;
 
     const [rotation, removal] = await Promise.allSettled([
@@ -140,6 +184,11 @@ describeIntegration("Personal credential lifecycle deletion", () => {
       [current.memberMembershipId],
     );
     expect(active).toEqual([]);
+    const [operatorGrant] = await database.query<{ status: string; revoked_reason: string }>(
+      "SELECT status, revoked_reason FROM operator_mcp_grants WHERE id = $1",
+      [operatorGrantId],
+    );
+    expect(operatorGrant).toMatchObject({ status: "revoked", revoked_reason: "membership_ended" });
     const [parentAudit] = await database.query<{ metadata_json: Record<string, unknown> }>(
       "SELECT metadata_json FROM audit_events WHERE event_type = 'account.membership.remove' AND account_id = $1 ORDER BY created_at DESC LIMIT 1",
       [current.accountId],
@@ -163,6 +212,12 @@ describeIntegration("Personal credential lifecycle deletion", () => {
   it("serializes personal rotation against actual workspace deletion with no surviving credential", async () => {
     const current = await fixture();
     const first = await issue(current);
+    const operatorGrantId = await issueOperatorGrant({
+      accountId: current.accountId,
+      workspaceId: current.workspaceId,
+      userId: current.memberId,
+      membershipId: current.memberMembershipId,
+    });
 
     const [rotation, deletion] = await Promise.allSettled([
       current.personal.rotate({
@@ -179,6 +234,7 @@ describeIntegration("Personal credential lifecycle deletion", () => {
     expect(rotation.status === "fulfilled" || rotation.status === "rejected").toBe(true);
     const remaining = await database.query<{ id: string }>("SELECT id FROM api_credentials WHERE workspace_id = $1", [current.workspaceId]);
     expect(remaining).toEqual([]);
+    await expect(database.query("SELECT id FROM operator_mcp_grants WHERE id = $1", [operatorGrantId])).resolves.toEqual([]);
     const invalidations = await database.query<{ id: string }>(
       "SELECT id FROM audit_events WHERE event_type = 'machine_access.personal_credential.invalidated' AND metadata_json->>'reason' = 'workspace_deleted'",
     );
@@ -187,6 +243,12 @@ describeIntegration("Personal credential lifecycle deletion", () => {
 
   it("serializes personal rotation against actual account deletion with no surviving account", async () => {
     const current = await fixture();
+    const operatorGrantId = await issueOperatorGrant({
+      accountId: current.accountId,
+      workspaceId: current.workspaceId,
+      userId: current.ownerId,
+      membershipId: current.ownerMembershipId,
+    });
     const first = await current.personal.issue({
       accountId: current.accountId,
       workspaceId: current.workspaceId,
@@ -211,6 +273,7 @@ describeIntegration("Personal credential lifecycle deletion", () => {
     expect(rotation.status === "fulfilled" || rotation.status === "rejected").toBe(true);
     const account = await database.query<{ id: string }>("SELECT id FROM accounts WHERE id = $1", [current.accountId]);
     expect(account).toEqual([]);
+    await expect(database.query("SELECT id FROM operator_mcp_grants WHERE id = $1", [operatorGrantId])).resolves.toEqual([]);
     const invalidations = await database.query<{ id: string }>(
       "SELECT id FROM audit_events WHERE event_type = 'machine_access.personal_credential.invalidated' AND metadata_json->>'reason' = 'account_deleted'",
     );

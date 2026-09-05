@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { resolveBootstrapWorkspaceId } from '@/lib/workspace-context'
+import { resolveBootstrapWorkspaceId, shouldLogoutAfterWorkspaceBootstrapError } from '@/lib/workspace-context'
 
 const workspace = (id: string, name: string) => ({
   id,
@@ -32,5 +32,16 @@ describe('resolveBootstrapWorkspaceId', () => {
       workspace('workspace-1', 'Teataja'),
       workspace('workspace-2', 'Ananda'),
     ], null)).toBe('workspace-2')
+  })
+})
+
+describe('shouldLogoutAfterWorkspaceBootstrapError', () => {
+  it('keeps the session when workspace bootstrap fails without proving it is unauthorized', () => {
+    expect(shouldLogoutAfterWorkspaceBootstrapError({ status: 500 })).toBe(false)
+    expect(shouldLogoutAfterWorkspaceBootstrapError(new Error('network unavailable'))).toBe(false)
+  })
+
+  it('logs out when workspace bootstrap receives an unauthorized response', () => {
+    expect(shouldLogoutAfterWorkspaceBootstrapError({ status: 401 })).toBe(true)
   })
 })

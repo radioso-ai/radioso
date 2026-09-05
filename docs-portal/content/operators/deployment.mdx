@@ -1,7 +1,7 @@
 ---
 title: "Deployment"
 description: "Production deployment expectations for Radioso and the standalone docs portal."
-last_updated: 2026-09-01
+last_updated: 2026-09-04
 ---
 
 import { Callout } from 'nextra/components'
@@ -29,6 +29,7 @@ At minimum, a production deployment needs:
 - session and token secrets
 - storage configuration for uploaded files
 - public base URLs for customer-facing flows such as public chat and Enterprise Edition modules
+- Operator MCP resource and issuer URLs when delegated Ray access is enabled
 
 Relevant runtime flags are defined in `.env.example` and enforced by `backend/src/app/config/env.ts`.
 
@@ -51,6 +52,27 @@ Set `REALTIME_INTERNAL_URL` on the frontend to the realtime service's private ba
 The stream uses the signed dashboard session cookie and `x-workspace-id`. It is a browser transport endpoint, so personal/service API credentials, the TypeScript SDK, and MCP do not use it. Frames contain workspace identity and invalidation kinds rather than document or conversation content.
 
 Radioso's MCP server runs as a standalone HTTP process. Configure `RADIOSO_BASE_URL` and the standalone bind settings, then send the original MCP-audience agent credential to its `/mcp` endpoint. Hosted Terraform shares a generated `RADIOSO_MCP_SIGNING_SECRET` with the backend and configures Google's two-hop forwarding suffix so each client keeps a separate pre-authentication budget. Manual deployments leave `RADIOSO_TRUSTED_PROXY_HOPS=0` unless the rightmost proxy chain is controlled by the operator. The process may cache short-lived backend session tokens in memory; Postgres retains the conversation binding for the credential version, so restart and scale-to-zero cache misses resume that conversation. `RADIOSO_MCP_REDIS_URL` is optional for a shared cache, where the signing secret also encrypts cached tokens. See [MCP server](/guides/mcp-server) for the client flow.
+
+## Operator MCP
+
+Operator MCP is the delegated OAuth resource for Ray's workspace tools. It is a separate surface from an authored agent's `/mcp` channel. Set the backend values together, then expose the same canonical resource through the frontend:
+
+```dotenv
+OPERATOR_MCP_ENABLED=true
+OPERATOR_MCP_RESOURCE_URL=https://mcp.example.com/operator/mcp
+OPERATOR_MCP_ISSUER_URL=https://app.example.com
+OPERATOR_MCP_INTERNAL_SECRET=<at-least-32-character-secret>
+OPERATOR_MCP_CREDENTIAL_EPOCH=1
+OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS=00000000-0000-4000-8000-000000000001
+OPERATOR_MCP_VERIFICATION_BUDGET_PER_MINUTE=6
+RADIOSO_OPERATOR_MCP_PUBLIC_URL=https://mcp.example.com/operator/mcp
+```
+
+`OPERATOR_MCP_RESOURCE_URL` must be the exact `/operator/mcp` URL with no query or fragment. `OPERATOR_MCP_ISSUER_URL` is the public Radioso application origin that serves authorization and consent. The frontend value is read at request time and should match the resource the standalone MCP process serves. Terraform derives these values from `operator_mcp_public_origin` and `operator_mcp_credential_epoch` when the feature is enabled.
+
+The credential epoch is a deployment-wide monotonic security value. Start at `1`, and increase it when rotating the Operator MCP internal secret or invalidating all issued Operator MCP credentials. Before rolling replicas, load `DATABASE_URL`, `OPERATOR_MCP_RESOURCE_URL`, the new `OPERATOR_MCP_INTERNAL_SECRET`, and the new `OPERATOR_MCP_CREDENTIAL_EPOCH`; set `OPERATOR_MCP_PREVIOUS_CREDENTIAL_EPOCH` to the current persisted epoch; then run `pnpm --dir backend run operator-mcp:rotate-credential-state` once. Roll the same new epoch and secret to every backend and MCP instance before serving traffic. Instances with an older epoch or a different secret fingerprint fail readiness. Tokens and refresh lineages issued under an older epoch stop working, including after a database restore. Keep the epoch value at or above the last value used by the deployment.
+
+The dashboard exposes `operator:read`, `operator:probe`, and `operator:propose` through the current limited catalog. Configure `OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS` with one or more workspace UUIDs; an empty value exposes Operator MCP to no workspaces. `OPERATOR_MCP_VERIFICATION_BUDGET_PER_MINUTE` accepts 1 through 6 and defaults to 6. The API access card reports disabled, misconfigured, or unavailable states without offering a personal-token workaround.
 
 ## Enterprise Edition deployment
 

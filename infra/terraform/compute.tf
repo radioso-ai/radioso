@@ -484,6 +484,57 @@ resource "google_cloud_run_v2_service" "backend" {
         name  = "RADIOSO_TRUSTED_PROXY_HOPS"
         value = "2"
       }
+      env {
+        name  = "OPERATOR_MCP_ENABLED"
+        value = tostring(var.operator_mcp_enabled)
+      }
+      dynamic "env" {
+        for_each = var.operator_mcp_enabled ? [var.operator_mcp_public_origin] : []
+        content {
+          name  = "OPERATOR_MCP_RESOURCE_URL"
+          value = "${env.value}/operator/mcp"
+        }
+      }
+      dynamic "env" {
+        for_each = var.operator_mcp_enabled ? [local.app_base_url] : []
+        content {
+          name  = "OPERATOR_MCP_ISSUER_URL"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = var.operator_mcp_enabled ? [var.operator_mcp_credential_epoch] : []
+        content {
+          name  = "OPERATOR_MCP_CREDENTIAL_EPOCH"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = var.operator_mcp_enabled ? [var.operator_mcp_rollout_workspace_ids] : []
+        content {
+          name  = "OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS"
+          value = join(",", var.operator_mcp_rollout_workspace_ids)
+        }
+      }
+      dynamic "env" {
+        for_each = var.operator_mcp_enabled ? [var.operator_mcp_verification_budget_per_minute] : []
+        content {
+          name  = "OPERATOR_MCP_VERIFICATION_BUDGET_PER_MINUTE"
+          value = tostring(var.operator_mcp_verification_budget_per_minute)
+        }
+      }
+      dynamic "env" {
+        for_each = var.operator_mcp_enabled ? [true] : []
+        content {
+          name = "OPERATOR_MCP_INTERNAL_SECRET"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.secrets["operator-mcp-internal-secret"].secret_id
+              version = "latest"
+            }
+          }
+        }
+      }
     }
   }
 
@@ -616,8 +667,57 @@ resource "google_cloud_run_v2_service" "mcp" {
         name  = "RADIOSO_TRUSTED_PROXY_HOPS"
         value = "2"
       }
+      env {
+        name  = "OPERATOR_MCP_ENABLED"
+        value = tostring(var.operator_mcp_enabled)
+      }
+      dynamic "env" {
+        for_each = var.operator_mcp_enabled ? [var.operator_mcp_public_origin] : []
+        content {
+          name  = "OPERATOR_MCP_RESOURCE_URL"
+          value = "${env.value}/operator/mcp"
+        }
+      }
+      dynamic "env" {
+        for_each = var.operator_mcp_enabled ? [local.app_base_url] : []
+        content {
+          name  = "OPERATOR_MCP_ISSUER_URL"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = var.operator_mcp_enabled ? [var.operator_mcp_credential_epoch] : []
+        content {
+          name  = "OPERATOR_MCP_CREDENTIAL_EPOCH"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = var.operator_mcp_enabled ? [var.operator_mcp_rollout_workspace_ids] : []
+        content {
+          name  = "OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS"
+          value = join(",", var.operator_mcp_rollout_workspace_ids)
+        }
+      }
+      dynamic "env" {
+        for_each = var.operator_mcp_enabled ? [true] : []
+        content {
+          name = "OPERATOR_MCP_INTERNAL_SECRET"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.secrets["operator-mcp-internal-secret"].secret_id
+              version = "latest"
+            }
+          }
+        }
+      }
     }
   }
+
+  depends_on = [
+    google_secret_manager_secret_version.secrets,
+    google_secret_manager_secret_iam_member.backend_access,
+  ]
 
   lifecycle {
     precondition {
@@ -679,6 +779,13 @@ resource "google_cloud_run_v2_service" "frontend" {
         for_each = var.deploy_services && var.radioso_mcp_enabled ? ["${google_cloud_run_v2_service.mcp[0].uri}/mcp"] : []
         content {
           name  = "RADIOSO_MCP_PUBLIC_URL"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = var.operator_mcp_enabled ? ["${var.operator_mcp_public_origin}/operator/mcp"] : []
+        content {
+          name  = "RADIOSO_OPERATOR_MCP_PUBLIC_URL"
           value = env.value
         }
       }
@@ -1454,4 +1561,18 @@ resource "google_cloud_run_v2_service_iam_member" "crawler_worker_invoker" {
   location = var.region
   role     = "roles/run.invoker"
   member   = "serviceAccount:${data.google_service_account.worker_task_invoker.email}"
+}
+check "operator_mcp_configuration" {
+  assert {
+    condition = (
+      !var.operator_mcp_enabled || (
+        var.radioso_mcp_enabled &&
+        var.operator_mcp_public_origin != null &&
+        !can(regex("^https://example\\.invalid(?::[0-9]+)?$", lower(trimspace(var.operator_mcp_public_origin)))) &&
+        can(regex("^https://[^/?#]+/?$", trimspace(var.app_base_url_override))) &&
+        !can(regex("^https://example\\.invalid(?::[0-9]+)?/?$", lower(trimspace(var.app_base_url_override))))
+      )
+    )
+    error_message = "operator_mcp_enabled requires radioso_mcp_enabled, a real HTTPS operator_mcp_public_origin, and a real HTTPS app_base_url_override; neither origin may use the example.invalid placeholder."
+  }
 }

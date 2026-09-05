@@ -228,6 +228,12 @@ const declarations: readonly PolicyDeclaration[] = [
     ["PATCH", "/api/v1/account/workspaces/:workspaceId/api-access/service-accounts/:serviceAccountId/credentials/:credentialId", "workspace.api_access.service.manage"],
     ["POST", "/api/v1/account/workspaces/:workspaceId/api-access/service-accounts/:serviceAccountId/credentials/:credentialId/rotate", "workspace.api_access.service.manage"],
     ["POST", "/api/v1/account/workspaces/:workspaceId/api-access/service-accounts/:serviceAccountId/credentials/:credentialId/revoke", "workspace.api_access.service.manage"],
+    ["GET", "/api/v1/workspaces/:workspaceId/operator-mcp/setup", "workspace.api_access.personal.manage"],
+    ["GET", "/api/v1/workspaces/:workspaceId/operator-mcp/grants", "workspace.api_access.personal.manage"],
+    ["GET", "/api/v1/workspaces/:workspaceId/operator-mcp/grants/:grantId", "workspace.api_access.personal.manage"],
+    ["POST", "/api/v1/workspaces/:workspaceId/operator-mcp/grants/:grantId/revoke", "workspace.api_access.personal.manage"],
+    ["GET", "/api/v1/operator-mcp/oauth/transactions/:transactionId", "session"],
+    ["POST", "/api/v1/operator-mcp/oauth/transactions/:transactionId/decision", "session"],
   ].map(([method, path, permission]) => sessionOnly(method, path, permission)),
   ...[
     ["GET", "/api/v1/settings/credentials", "workspace.settings.read"],

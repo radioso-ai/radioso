@@ -1,7 +1,7 @@
 ---
 title: "Ray"
 description: "Use Ray in the dashboard to triage what needs attention, investigate agent behavior, edit and publish routines, test routine drafts, and review linked activity and proposals."
-last_updated: 2026-08-31
+last_updated: 2026-09-04
 ---
 
 # Ray
@@ -86,6 +86,20 @@ The panel puts the conversation first:
 
 The full-page **Ray** view shows the same thread with the conversation list and
 context rail alongside it, which gives more room for a longer investigation.
+
+## Connect an external engine to Ray
+
+An MCP-compatible engine can use Ray's operator tools through **Settings → API access → Radioso MCP**. The connection uses the separate `/operator/mcp` resource and OAuth consent, so the external client receives authority for one user, one workspace, one client identity, and one revocable grant. Setup selection is not connection state; the API access card lists a grant only after the client completes consent.
+
+The current MCP catalog has this exact boundary:
+
+- `operator:read` — read workspace and agent state that the user can already access, including workspace settings.
+- `operator:probe` — run bounded diagnostics, including a retrieval probe against an agent's configured source scope and retrieval settings.
+- `operator:propose` — create a reviewable proposal, such as an ingestion-setting change, without applying it.
+
+`operator:act` is not exposed by this catalog. MCP-created proposals use the same pending proposal records and review card as dashboard Ray proposals. Review or apply them from the dashboard proposal handoff, where the current operator permissions are checked again.
+
+Named client setup is marked verified only when its displayed build has a passing exact-build artifact. Other named builds are unavailable in the chooser, and the generic standards-based setup is labeled unverified. The consent screen identifies the actual client and redirect host, warns about accessible workspace data, and lets you choose the workspace, scopes, and `offline_access` independently.
 
 ## Start with what needs attention
 

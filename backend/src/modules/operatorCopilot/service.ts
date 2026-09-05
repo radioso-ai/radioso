@@ -12,6 +12,7 @@ import {
   type CopilotCurrentAuthorizationPort,
   type CopilotAuditPort,
   type CopilotProposal,
+  type CopilotProposalDraft,
   type CopilotProposalAdapter,
   type CopilotProposalCard,
   type CopilotProposalTargetType,
@@ -113,7 +114,8 @@ export interface CopilotRepositoryPort {
   listMessages(input: { conversationId: string }): Promise<ReadonlyArray<CopilotMessage>>;
   acquireTurn(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotConversation | "running" | null>;
   finishTurn(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<void>;
-  createProposal(input: Omit<CopilotProposal, "id" | "messageId" | "status" | "appliedRef" | "createdAt" | "updatedAt">): Promise<CopilotProposal>;
+  createProposal(input: CopilotProposalDraft): Promise<CopilotProposal>;
+  findProposalWorkspace(input: { id: string; accountId: string; operatorUserId: string }): Promise<string | null>;
   findProposal(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null>;
   attachProposalsToMessage(input: { proposalIds: ReadonlyArray<string>; messageId: string; conversationId: string }): Promise<void>;
   updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposalStatus; appliedRef?: unknown | null; reason?: string | null; applyClaimGuard: CopilotProposalApplyClaimGuard }): Promise<CopilotProposal | null>;
@@ -176,6 +178,14 @@ export class OperatorCopilotService {
       .then((currentVersion) => currentVersion === proposal.versionToken)
       .catch(() => false);
     return { proposal, preview, currentVersionMatches };
+  }
+
+  async resolveProposalWorkspace(input: { accountId: string; operatorUserId: string; proposalId: string }): Promise<string | null> {
+    return this.deps.repository.findProposalWorkspace({
+      id: input.proposalId,
+      accountId: input.accountId,
+      operatorUserId: input.operatorUserId,
+    });
   }
 
   async applyProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; surface: CopilotSurface; proposalId: string }): Promise<{ status: Exclude<CopilotProposalStatus, "pending" | "dismissed">; appliedRef?: unknown; reason?: string }> {

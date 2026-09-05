@@ -19,7 +19,9 @@
     "node": ">=24"
   },
   "scripts": {
-    "build": "pnpm --dir ../mcp-source-proof run build && tsc -p tsconfig.build.json",
+    "build": "pnpm --dir ../mcp-source-proof run build && pnpm --dir ../operator-mcp-contract run build && tsc -p tsconfig.build.json",
+    "sync:openapi": "node --import tsx ./scripts/syncOpenApi.mjs",
+    "check:openapi": "node --import tsx ./scripts/syncOpenApi.mjs --check",
     "smoke:all": "pnpm run smoke:http && pnpm run smoke:redis",
     "smoke:http": "node --import tsx ./scripts/smokeHttp.ts",
     "smoke:redis": "node --import tsx ./scripts/smokeRedis.ts",
@@ -28,6 +30,7 @@
   "dependencies": {
     "@cfworker/json-schema": "^4.1.1",
     "@modelcontextprotocol/server": "^2.0.0-alpha.2",
+    "@radioso/operator-mcp-contract": "workspace:*",
     "@radioso/mcp-source-proof": "workspace:*",
     "redis": "^4.7.0",
     "zod": "^4.1.12"

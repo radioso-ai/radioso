@@ -23,6 +23,8 @@ export type JsonPrimitive = boolean | number | string | null;
 
 export type JsonValue = JsonArray | JsonObject | JsonPrimitive;
 
+export type Numeric = ColumnType<string, number | string, number | string>;
+
 export type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
 export interface AbuseControlEntries {
@@ -465,12 +467,13 @@ export interface CopilotMessages {
 export interface CopilotProposals {
   applied_ref: Json | null;
   apply_started_at: Timestamp | null;
-  conversation_id: string;
+  conversation_id: string | null;
   created_at: Generated<Timestamp>;
   evidence: Json | null;
   failure_reason: string | null;
   id: string;
   message_id: string | null;
+  operator_mcp_invocation_id: string | null;
   operator_user_id: string;
   payload: Json;
   status: Generated<string>;
@@ -486,12 +489,14 @@ export interface CopilotReplayEvidence {
   baseline_captured_at: Timestamp;
   case_id: string;
   case_name: string;
-  conversation_id: string;
+  conversation_id: string | null;
   created_at: Generated<Timestamp>;
   directives_excluded: Generated<Json>;
   id: string;
+  operator_mcp_invocation_id: string | null;
   operator_user_id: string;
   overrides: Json;
+  proposal_id: string | null;
   recorded_status: string;
   run_id: string;
   verdict: string;
@@ -812,6 +817,159 @@ export interface Messages {
   source: string | null;
   total_latency_ms: number | null;
   workspace_id: string;
+}
+
+export interface OperatorMcpAccessCredentials {
+  created_at: Generated<Timestamp>;
+  expires_at: Timestamp;
+  grant_id: string;
+  id: string;
+  issued_client_metadata_snapshot_id: string;
+  issued_client_version: Int8;
+  issued_credential_epoch: Numeric;
+  issued_grant_version: Int8;
+  issued_offline_access: boolean;
+  issued_tool_scopes: string[];
+  last_used_at: Timestamp | null;
+  token_digest: string;
+}
+
+export interface OperatorMcpAuthorizationTransactions {
+  account_id: string | null;
+  approved_offline_access: boolean | null;
+  approved_tool_scopes: string[] | null;
+  authorization_code_digest: string | null;
+  client_id: string;
+  client_metadata_digest: string;
+  client_metadata_snapshot_id: string;
+  code_challenge: string;
+  consumed_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  decided_at: Timestamp | null;
+  expires_at: Timestamp;
+  id: string;
+  membership_id: string | null;
+  redirect_uri: string;
+  requested_offline_access: Generated<boolean>;
+  requested_tool_scopes: string[];
+  resource: string;
+  session_id: string | null;
+  state: string;
+  status: Generated<string>;
+  user_id: string | null;
+  workspace_id: string | null;
+}
+
+export interface OperatorMcpClientMetadataSnapshots {
+  client_id: string;
+  client_version: Int8;
+  created_at: Generated<Timestamp>;
+  expires_at: Timestamp | null;
+  id: string;
+  metadata_digest: string;
+  normalized_metadata: Json;
+  source: string;
+  validated_at: Timestamp;
+}
+
+export interface OperatorMcpClients {
+  application_type: string;
+  client_id: string;
+  client_uri: string | null;
+  created_at: Generated<Timestamp>;
+  display_name: string;
+  expires_at: Timestamp | null;
+  id: string;
+  metadata_digest: string;
+  redirect_uris: Json;
+  registration_method: string;
+  revocation_reason: string | null;
+  revoked_at: Timestamp | null;
+  status: Generated<string>;
+  token_endpoint_auth_method: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  version: Generated<Int8>;
+}
+
+export interface OperatorMcpDeploymentCredentialState {
+  credential_epoch: Numeric;
+  key_fingerprint: string;
+  resource: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface OperatorMcpGrants {
+  account_id: string;
+  client_id: string;
+  client_metadata_snapshot_id: string;
+  client_version: Int8;
+  created_at: Generated<Timestamp>;
+  credential_epoch: Numeric;
+  id: string;
+  last_used_at: Timestamp | null;
+  membership_id: string;
+  offline_access: Generated<boolean>;
+  resource: string;
+  revoked_at: Timestamp | null;
+  revoked_reason: string | null;
+  status: Generated<string>;
+  tool_scopes: string[];
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+  version: Generated<Int8>;
+  workspace_id: string;
+}
+
+export interface OperatorMcpInvocations {
+  account_id: string;
+  budget_reserved_at: Timestamp | null;
+  client_id: string;
+  completed_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  credential_id: string;
+  descriptor_name: string | null;
+  grant_id: string;
+  grant_version: Int8;
+  id: string;
+  input_digest: string;
+  method: string;
+  operation_id: string | null;
+  proof_consumed_at: Timestamp | null;
+  proof_nonce_digest: string;
+  result_reference: string | null;
+  retained_until: Timestamp;
+  safe_outcome_code: string | null;
+  shape: string | null;
+  status: Generated<string>;
+  user_id: string;
+  verification_cost: Generated<number>;
+  workspace_id: string;
+}
+
+export interface OperatorMcpRefreshGenerations {
+  consumed_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  generation: Int8;
+  issued_tool_scopes: string[];
+  lineage_id: string;
+  token_digest: string;
+}
+
+export interface OperatorMcpRefreshLineages {
+  absolute_expires_at: Timestamp;
+  client_metadata_snapshot_id: string;
+  client_version: Int8;
+  created_at: Generated<Timestamp>;
+  credential_epoch: Numeric;
+  current_generation: Generated<Int8>;
+  grant_id: string;
+  id: string;
+  idle_expires_at: Timestamp;
+  issued_tool_scopes: string[];
+  offline_access: boolean;
+  revoked_at: Timestamp | null;
+  revoked_reason: string | null;
+  status: Generated<string>;
 }
 
 export interface PasswordResetTokens {
@@ -1136,6 +1294,7 @@ export interface UserFederatedIdentities {
 
 export interface Users {
   created_at: Generated<Timestamp>;
+  disabled_at: Timestamp | null;
   email: string;
   email_verified_at: Timestamp | null;
   id: string;
@@ -1345,6 +1504,15 @@ export interface DB {
   mcp_connections: McpConnections;
   message_facets: MessageFacets;
   messages: Messages;
+  operator_mcp_access_credentials: OperatorMcpAccessCredentials;
+  operator_mcp_authorization_transactions: OperatorMcpAuthorizationTransactions;
+  operator_mcp_client_metadata_snapshots: OperatorMcpClientMetadataSnapshots;
+  operator_mcp_clients: OperatorMcpClients;
+  operator_mcp_deployment_credential_state: OperatorMcpDeploymentCredentialState;
+  operator_mcp_grants: OperatorMcpGrants;
+  operator_mcp_invocations: OperatorMcpInvocations;
+  operator_mcp_refresh_generations: OperatorMcpRefreshGenerations;
+  operator_mcp_refresh_lineages: OperatorMcpRefreshLineages;
   password_reset_tokens: PasswordResetTokens;
   pending_decisions: PendingDecisions;
   retrieval_settings: RetrievalSettings;

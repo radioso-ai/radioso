@@ -1,5 +1,6 @@
 import type { CopilotToolDescriptor } from "../contracts.js";
 import { attachCopilotCapabilityProvenance } from "../capabilityProvenance.js";
+import { attachOperatorMcpDispositions } from "../operatorMcpDisposition.js";
 import { createAgentConfigurationCopilotTools, createAgentSettingProposalCopilotTools } from "./agents.js";
 import type { AgentConfigurationCopilotToolDependencies, AgentSettingProposalCopilotToolDependencies, CopilotAgentConfigurationPort } from "./agents.js";
 import { createAgentProposalCopilotTools, createWebsiteAnalysisProbeCopilotTools } from "./agentProposals.js";
@@ -76,7 +77,7 @@ export type CopilotToolCatalogDependencies = AgentConfigurationCopilotToolDepend
 /** Composition-only barrel; each descriptor remains published from its owner module. */
 export const createCopilotToolDescriptors = (
   deps: CopilotToolCatalogDependencies,
-): ReadonlyArray<CopilotToolDescriptor> => attachCopilotCapabilityProvenance([
+): ReadonlyArray<CopilotToolDescriptor> => attachOperatorMcpDispositions(attachCopilotCapabilityProvenance([
   ...createAgentConfigurationCopilotTools(deps),
   ...createRoutineDefinitionCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createChatCopilotTools(deps),
@@ -107,7 +108,7 @@ export const createCopilotToolDescriptors = (
   ...createIngestionSettingsProposalCopilotTools(deps),
   ...createWorkspaceSettingProposalCopilotTools(deps),
   ...createWebsiteCrawlProposalCopilotTools(deps),
-]);
+]));
 
 export type { CopilotAgentSkillsPort, CopilotSkillCapabilityTargetsPort } from "./agentSkills.js";
 export type { CopilotAudiencePulsePort } from "./audiencePulse.js";

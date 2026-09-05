@@ -179,14 +179,13 @@ export const createGoogleLoginRouter = (options: GoogleLoginRouterOptions): Rout
     // sees where the visitor came from, and so the value survives the round
     // trip without widening what `state` means. The stored form is already
     // resolved and origin-checked.
-    const returnTo = sameOriginTarget(successRedirect, req.query.returnTo);
+    const returnTo = sameOriginTarget(successRedirect, req.query.returnTo ?? req.query.return_to);
     res.append(
       "Set-Cookie",
       returnTo
         ? serializeCookie(RETURN_TO_COOKIE, encodeURIComponent(returnTo), cookieAttributes)
         : clearCookie(RETURN_TO_COOKIE),
     );
-
     const loginHint = typeof req.query.loginHint === "string" ? req.query.loginHint : undefined;
     res.redirect(buildGoogleAuthorizationUrl({ config, state, loginHint }));
   });

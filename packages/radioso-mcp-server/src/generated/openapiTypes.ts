@@ -1,0 +1,24251 @@
+export interface paths {
+    "/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Health check */
+        get: operations["getHealth"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/chat/{token}/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create a public chat session from a launch token */
+        post: operations["createPublicChatSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/registration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get registration availability
+         * @description Reports whether open organization-creating registration is currently available for this deployment.
+         */
+        get: operations["getRegistrationAvailability"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Register a new account */
+        post: operations["registerAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Log in an existing account */
+        post: operations["loginAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/password-reset/request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Request a password reset email */
+        post: operations["requestPasswordReset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/password-reset/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm password reset and establish a new session */
+        post: operations["confirmPasswordReset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/email-verification/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Verify an email address */
+        post: operations["verifyEmail"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/email-verification/resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Request an email verification email */
+        post: operations["resendEmailVerification"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Describe the account context of the current session
+         * @description Recovers the signed-in identity from the session cookie. Sign-in paths that redirect the browser, such as provider OAuth, set the cookie without returning a body; this reports who the session belongs to and which account and workspace it lands on.
+         */
+        get: operations["getCurrentSession"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/invitations/{invitationToken}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get invitation details for an account join flow */
+        get: operations["getAccountInvitation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/invitations/{invitationToken}/accept-as-current-user": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept an invitation as the signed-in user, without a password */
+        post: operations["acceptAccountInvitationAsCurrentUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/invitations/{invitationToken}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept an invitation and establish a session for the joined account */
+        post: operations["acceptAccountInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/usage-trends": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get account usage trends
+         * @description Returns UTC-bucketed usage trends for the current account. Token totals include succeeded usage events only. When an agent filter is supplied, usage events without conversation lineage are excluded because they cannot be attributed to that agent.
+         */
+        get: operations["getAccountUsageTrends"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/usage/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get detailed message AI usage
+         * @description Returns one aggregated row for each end-user message in the active account. Model, embedding, and unknown-historical usage remain separate. The response excludes message content, prompts, completions, provider request IDs, idempotency keys, and error detail.
+         */
+        get: operations["getAccountUsageMessages"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/usage/internal-operations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get detailed internal AI usage
+         * @description Returns individual internal model, embedding, and unknown-historical usage attempts for the active account. The response excludes message content, prompts, completions, provider request IDs, idempotency keys, and error detail.
+         */
+        get: operations["getAccountInternalUsage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List accessible accounts for the current user */
+        get: operations["listAccessibleAccounts"];
+        put?: never;
+        /**
+         * Create an additional organization
+         * @description Creates and switches to an additional organization. This capability is available in Enterprise Edition.
+         */
+        post: operations["createAdditionalOrganization"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List active account users and invitations */
+        get: operations["listAccountUsers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/invitations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create an account invitation */
+        post: operations["createAccountInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/invitations/{invitationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke a pending account invitation */
+        delete: operations["revokeAccountInvitation"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/users/{membershipId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove account user access */
+        delete: operations["removeAccountUser"];
+        options?: never;
+        head?: never;
+        /** Update an account user's role */
+        patch: operations["updateAccountUserRole"];
+        trace?: never;
+    };
+    "/api/v1/account/workspaces/{workspaceId}/grants/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set a workspace role grant */
+        put: operations["setWorkspaceGrant"];
+        post?: never;
+        /** Remove a workspace role grant */
+        delete: operations["removeWorkspaceGrant"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/switch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Switch the current session to another accessible account */
+        post: operations["switchAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/workspaces/{workspaceId}/api-access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read API-access capabilities and limits */
+        get: operations["getApiAccessSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/workspaces/{workspaceId}/api-access/personal-tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List personal-token metadata */
+        get: operations["listPersonalApiTokens"];
+        put?: never;
+        /** Issue a personal API token */
+        post: operations["issuePersonalApiToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/workspaces/{workspaceId}/api-access/personal-tokens/{credentialId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Relabel an owned personal token */
+        patch: operations["relabelPersonalApiToken"];
+        trace?: never;
+    };
+    "/api/v1/account/workspaces/{workspaceId}/api-access/personal-tokens/{credentialId}/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Immediately rotate an owned personal token */
+        post: operations["rotatePersonalApiToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/workspaces/{workspaceId}/api-access/personal-tokens/{credentialId}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke a personal token */
+        post: operations["revokePersonalApiToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/workspaces/{workspaceId}/api-access/service-accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List workspace service accounts */
+        get: operations["listServiceAccounts"];
+        put?: never;
+        /** Create a service account and first credential */
+        post: operations["createServiceAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/workspaces/{workspaceId}/api-access/service-accounts/{serviceAccountId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read a service account */
+        get: operations["getServiceAccount"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Rename or change a service-account role */
+        patch: operations["updateServiceAccount"];
+        trace?: never;
+    };
+    "/api/v1/account/workspaces/{workspaceId}/api-access/service-accounts/{serviceAccountId}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Disable a service account */
+        post: operations["disableServiceAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/workspaces/{workspaceId}/api-access/service-accounts/{serviceAccountId}/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enable a service account */
+        post: operations["enableServiceAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/workspaces/{workspaceId}/api-access/service-accounts/{serviceAccountId}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Archive a service account */
+        post: operations["archiveServiceAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/workspaces/{workspaceId}/api-access/service-accounts/{serviceAccountId}/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List service-account credentials */
+        get: operations["listServiceAccountCredentials"];
+        put?: never;
+        /** Issue another service-account credential */
+        post: operations["issueServiceAccountCredential"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/workspaces/{workspaceId}/api-access/service-accounts/{serviceAccountId}/credentials/{credentialId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Relabel a service-account credential */
+        patch: operations["relabelServiceAccountCredential"];
+        trace?: never;
+    };
+    "/api/v1/account/workspaces/{workspaceId}/api-access/service-accounts/{serviceAccountId}/credentials/{credentialId}/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Immediately rotate a service-account credential */
+        post: operations["rotateServiceAccountCredential"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/workspaces/{workspaceId}/api-access/service-accounts/{serviceAccountId}/credentials/{credentialId}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke a service-account credential */
+        post: operations["revokeServiceAccountCredential"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/operator-mcp/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Operator MCP setup options */
+        get: operations["getOperatorMcpSetup"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/operator-mcp/grants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List visible Operator MCP grants */
+        get: operations["listOperatorMcpGrants"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/operator-mcp/grants/{grantId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read an Operator MCP grant */
+        get: operations["getOperatorMcpGrant"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/operator-mcp/grants/{grantId}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke an Operator MCP grant */
+        post: operations["revokeOperatorMcpGrant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operator-mcp/oauth/transactions/{transactionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read a pending Operator MCP consent transaction */
+        get: operations["getOperatorMcpConsentTransaction"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operator-mcp/oauth/transactions/{transactionId}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve or deny an Operator MCP consent transaction */
+        post: operations["decideOperatorMcpConsentTransaction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List workspaces for the authenticated account */
+        get: operations["listWorkspaces"];
+        put?: never;
+        /** Create a workspace */
+        post: operations["createWorkspace"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspace/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get lightweight workspace dashboard summary */
+        get: operations["getWorkspaceSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspace/resolve/{workspaceKey}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Resolve a workspace public route key for the authenticated user */
+        get: operations["resolveWorkspaceRouteKey"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspace/{workspaceId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a workspace */
+        delete: operations["deleteWorkspace"];
+        options?: never;
+        head?: never;
+        /** Rename a workspace */
+        patch: operations["renameWorkspace"];
+        trace?: never;
+    };
+    "/api/v1/settings/webhook-destinations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List workspace webhook destinations */
+        get: operations["listWebhookDestinations"];
+        put?: never;
+        /** Create a workspace webhook destination */
+        post: operations["createWebhookDestination"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/webhook-destinations/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a workspace webhook destination */
+        get: operations["getWebhookDestination"];
+        /** Update a workspace webhook destination */
+        put: operations["updateWebhookDestination"];
+        post?: never;
+        /** Delete a workspace webhook destination */
+        delete: operations["deleteWebhookDestination"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/webhook-destinations/{id}/rotate-secret": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rotate a workspace webhook destination secret */
+        post: operations["rotateWebhookDestinationSecret"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get shared workspace platform settings */
+        get: operations["getPlatformSettings"];
+        /** Merge-update shared workspace platform settings */
+        put: operations["updatePlatformSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/retrieval-defaults": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get system retrieval defaults for the authenticated workspace */
+        get: operations["getSettingsRetrievalDefaults"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/ingestion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get ingestion settings for the authenticated workspace */
+        get: operations["getIngestionSettings"];
+        /** Update ingestion settings for the authenticated workspace */
+        put: operations["updateIngestionSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/ingestion/embedding-coverage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get canonical embedding coverage for the authenticated workspace */
+        get: operations["getEmbeddingCoverage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/document-types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the workspace document type catalog used by metadata extraction */
+        get: operations["getDocumentTypeCatalog"];
+        /**
+         * Replace the operator-defined document types for the authenticated workspace
+         * @description Conditional write. Send the revision the edit was based on as expectedRevision; a stale revision is rejected with 409 so concurrent editors never overwrite each other. Deleting a field retires its key, and a retired key can only be recreated with its original value type.
+         */
+        put: operations["updateDocumentTypeCatalog"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/ingestion/embedding-model/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel a pending workspace embedding model change */
+        post: operations["cancelPendingEmbeddingModel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/ingestion/reprocess": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Queue eligible workspace documents for reprocessing using current ingestion settings */
+        post: operations["reprocessWorkspaceIngestion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/general": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get general workspace settings */
+        get: operations["getGeneralSettings"];
+        /** Update general workspace settings */
+        put: operations["updateGeneralSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/general/anonymous-chat-token/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reset the anonymous chat public link */
+        post: operations["rotateAnonymousChatToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/general/website-embed-token/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reset the website embed token */
+        post: operations["rotateWebsiteEmbedToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/general/assistant-logo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload the default assistant logo */
+        post: operations["uploadAssistantLogo"];
+        /** Remove the default assistant logo */
+        delete: operations["deleteAssistantLogo"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List configured workspace provider API keys */
+        get: operations["listWorkspaceProviderCredentials"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/credentials/{provider}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set or replace a workspace provider API key */
+        put: operations["setWorkspaceProviderCredential"];
+        post?: never;
+        /** Remove a stored workspace provider API key */
+        delete: operations["removeWorkspaceProviderCredential"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/llm-models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get workspace chat/rewrite/rerank model preferences */
+        get: operations["getWorkspaceLlmModels"];
+        /** Update workspace chat/rewrite/rerank model preferences */
+        put: operations["updateWorkspaceLlmModels"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List workspace agents */
+        get: operations["listAgents"];
+        put?: never;
+        /** Create a workspace agent */
+        post: operations["createAgent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run chat through a REST credential bound to this agent */
+        post: operations["createAgentChannelChatResponse"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a workspace agent */
+        get: operations["getAgent"];
+        /** Update a workspace agent */
+        put: operations["updateAgent"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/channels/lifecycle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get public channel lifecycle for an agent */
+        get: operations["getAgentChannelsLifecycle"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/channel-credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List MCP and REST chat credentials for an agent with cursor pagination */
+        get: operations["listAgentChannelCredentials"];
+        put?: never;
+        /** Issue an MCP or REST chat credential for an agent */
+        post: operations["issueAgentChannelCredential"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/channel-credentials/{credentialId}/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rotate an agent channel credential */
+        post: operations["rotateAgentChannelCredential"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/channel-credentials/{credentialId}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke an agent channel credential */
+        post: operations["revokeAgentChannelCredential"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/directives": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List directives for an agent */
+        get: operations["listAgentDirectives"];
+        put?: never;
+        /** Create an authored directive for an agent */
+        post: operations["createAgentDirective"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/directives/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Draft an authored directive from coaching */
+        post: operations["draftAgentDirective"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/directives/{directiveId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete an authored directive for an agent */
+        delete: operations["deleteAgentDirective"];
+        options?: never;
+        head?: never;
+        /** Update an authored directive for an agent */
+        patch: operations["updateAgentDirective"];
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/routine-skill-catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List routine-authoring skills for an agent */
+        get: operations["listAgentRoutineSkillCatalog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/routines": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List routine definitions for an agent */
+        get: operations["listAgentRoutines"];
+        put?: never;
+        /** Create a draft routine definition for an agent */
+        post: operations["createAgentRoutine"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/routines/{routineId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a routine definition for an agent */
+        get: operations["getAgentRoutine"];
+        put?: never;
+        post?: never;
+        /** Delete a draft routine definition for an agent */
+        delete: operations["deleteAgentRoutine"];
+        options?: never;
+        head?: never;
+        /** Update a draft routine definition for an agent */
+        patch: operations["updateAgentRoutine"];
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/routines/draft-assist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Draft a routine definition from operator procedure prose */
+        post: operations["draftAgentRoutineFromProcedure"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/routines/{routineId}/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Validate a routine definition for an agent */
+        post: operations["validateAgentRoutine"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/routines/{routineId}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Publish a draft routine definition for an agent */
+        post: operations["publishAgentRoutine"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/routines/{routineId}/revise": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create or return a draft revision for a published routine definition */
+        post: operations["reviseAgentRoutine"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/routines/{routineId}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Archive a published routine definition */
+        post: operations["archiveAgentRoutine"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/routines/{routineId}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore an archived routine definition */
+        post: operations["restoreAgentRoutine"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/assistant-logo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload an assistant logo */
+        post: operations["uploadAgentAssistantLogo"];
+        /** Remove an assistant logo */
+        delete: operations["deleteAgentAssistantLogo"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/default": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set the default workspace agent */
+        post: operations["setDefaultAgent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/bundle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export a portable agent bundle
+         * @description Composes the agent's config, routines, context-variable enablements and skills into one portable bundle for import into another workspace.
+         */
+        get: operations["exportAgentBundle"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/bundle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import a portable agent bundle as a new agent
+         * @description Creates a new agent from a previously exported bundle. References that cannot travel between workspaces (credential-bearing skill targets, missing context variables, unresolved document sources) import unbound and are reported in `unresolved` rather than dropped silently.
+         */
+        post: operations["importAgentBundle"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-wizard/analyze-website": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Analyze a website and suggest an agent configuration
+         * @description Fetches and reads a public website, then returns a suggested agent name, instruction, greeting, locale, and chunking strategy. Persists nothing. Fetching an external site and running a model against it costs real time and budget, so the route carries its own durable rate limit.
+         */
+        post: operations["analyzeWebsiteForAgentWizard"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-wizard/analyze-website/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stream website analysis progress
+         * @description The same analysis as the non-streaming route, delivered as server-sent events so a caller can show crawl progress. Emits progress events, then one complete event carrying the suggested configuration, or one error event when the analysis fails after the headers are sent.
+         */
+        post: operations["streamAgentWizardWebsiteAnalysis"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-wizard/create": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create an agent from a website configuration
+         * @description Creates one agent from a reviewed wizard configuration and queues the website for ingestion. Returns the new agent and the crawl job when the deployment runs website crawling.
+         */
+        post: operations["createAgentFromWizard"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/context-variables": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List workspace context variable declarations */
+        get: operations["listContextVariables"];
+        put?: never;
+        /** Create a workspace context variable declaration */
+        post: operations["createContextVariable"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/context-variables/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a workspace context variable declaration */
+        get: operations["getContextVariable"];
+        put?: never;
+        post?: never;
+        /** Delete a workspace context variable declaration */
+        delete: operations["deleteContextVariable"];
+        options?: never;
+        head?: never;
+        /** Update a workspace context variable declaration */
+        patch: operations["updateContextVariable"];
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/context-variables": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List context variable enablements for an agent */
+        get: operations["listAgentContextVariables"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/context-variables/signing-key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Reveal the per-agent signed visitor identity key */
+        get: operations["getAgentContextVariableSigningKey"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/context-variables/{variableId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Upsert a context variable enablement for an agent */
+        put: operations["upsertAgentContextVariable"];
+        post?: never;
+        /** Delete a context variable enablement for an agent */
+        delete: operations["deleteAgentContextVariable"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/context-variables/{id}/values": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read a pushed context variable value */
+        get: operations["getContextVariableValue"];
+        /** Upsert a pushed context variable value */
+        put: operations["upsertContextVariableValue"];
+        post?: never;
+        /** Delete a pushed context variable value */
+        delete: operations["deleteContextVariableValue"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/retrieval/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Search workspace evidence without assistant behavior */
+        post: operations["searchRetrievalEvidence"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List available Radioso skills */
+        get: operations["listSkills"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/skills/{skillName}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get one Radioso skill catalog entry */
+        get: operations["getSkill"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/mcp-connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List an agent's MCP connections */
+        get: operations["listMcpConnections"];
+        put?: never;
+        /** Create an MCP connection */
+        post: operations["createMcpConnection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/mcp-connections/{connectionId}/discover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Discover a connection's tools */
+        post: operations["discoverMcpConnectionTools"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/mcp-connections/{connectionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get an MCP connection */
+        get: operations["getMcpConnection"];
+        put?: never;
+        post?: never;
+        /** Delete an MCP connection */
+        delete: operations["deleteMcpConnection"];
+        options?: never;
+        head?: never;
+        /** Update an MCP connection (rename / rotate token) */
+        patch: operations["updateMcpConnection"];
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/external-skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List an agent's external skill definitions */
+        get: operations["listExternalSkills"];
+        put?: never;
+        /** Define an external skill (bind a discovered tool) */
+        post: operations["createExternalSkill"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/external-skills/{skillId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get an external skill definition */
+        get: operations["getExternalSkill"];
+        put?: never;
+        post?: never;
+        /** Delete an external skill definition */
+        delete: operations["deleteExternalSkill"];
+        options?: never;
+        head?: never;
+        /** Update an external skill definition (enable / update bindings) */
+        patch: operations["updateExternalSkill"];
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/mcp-connections/{connectionId}/oauth/authorize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start the OAuth authorization flow for a connection */
+        post: operations["startMcpConnectionOauth"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/mcp-connections/{connectionId}/oauth/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Complete the OAuth authorization flow */
+        post: operations["completeMcpConnectionOauth"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/oauth-connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List non-secret workspace OAuth connection statuses */
+        get: operations["listWorkspaceOauthConnections"];
+        put?: never;
+        /** Create and start a workspace OAuth connection */
+        post: operations["createWorkspaceOauthConnection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/oauth-connections/{connectionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a non-secret workspace OAuth connection status */
+        get: operations["getWorkspaceOauthConnection"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/oauth-connections/{connectionId}/reauthorize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restart authorization for a workspace OAuth connection */
+        post: operations["reauthorizeWorkspaceOauthConnection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/oauth/callback/{provider}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Complete a provider OAuth callback */
+        get: operations["completeWorkspaceOauthCallback"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/email-skill-activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List sanitized workspace customer email skill activity */
+        get: operations["listWorkspaceEmailSkillActivity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/email-connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List workspace customer email connections */
+        get: operations["listWorkspaceEmailConnections"];
+        put?: never;
+        /** Create a workspace customer email connection */
+        post: operations["createWorkspaceEmailConnection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/email-oauth-connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List OAuth connections eligible to back a customer email connection */
+        get: operations["listWorkspaceEmailOauthConnections"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/email-connections/{connectionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a workspace customer email connection */
+        delete: operations["deleteWorkspaceEmailConnection"];
+        options?: never;
+        head?: never;
+        /** Update or enable/disable a workspace customer email connection */
+        patch: operations["updateWorkspaceEmailConnection"];
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/email-connections/{connectionId}/health-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Check customer email connection health */
+        post: operations["checkWorkspaceEmailConnectionHealth"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/email-skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List agent customer email skills */
+        get: operations["listAgentEmailSkills"];
+        put?: never;
+        /** Create an agent customer email skill */
+        post: operations["createAgentEmailSkill"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/email-skills/{skillId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get an agent customer email skill */
+        get: operations["getAgentEmailSkill"];
+        put?: never;
+        post?: never;
+        /** Delete an agent customer email skill */
+        delete: operations["deleteAgentEmailSkill"];
+        options?: never;
+        head?: never;
+        /** Update an agent customer email skill */
+        patch: operations["updateAgentEmailSkill"];
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/slack/install/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start Slack OAuth installation */
+        post: operations["startWorkspaceSlackInstall"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/slack/install/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Slack installation status */
+        get: operations["getWorkspaceSlackInstallStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/slack/manifest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get self-host Slack app manifest */
+        get: operations["getWorkspaceSlackManifest"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/slack/binding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Slack answering binding */
+        get: operations["getWorkspaceSlackBinding"];
+        /** Set Slack answering binding */
+        put: operations["setWorkspaceSlackBinding"];
+        post?: never;
+        /** Remove a Slack channel answering binding */
+        delete: operations["deleteWorkspaceSlackChannelBinding"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/slack/bindings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Slack answering bindings */
+        get: operations["listWorkspaceSlackBindings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/slack/installation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Disconnect Slack installation */
+        delete: operations["disconnectWorkspaceSlackInstallation"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/webhook-skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List agent webhook skills */
+        get: operations["listAgentWebhookSkills"];
+        put?: never;
+        /** Create an agent webhook skill */
+        post: operations["createAgentWebhookSkill"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/webhook-skills/{skillId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get an agent webhook skill */
+        get: operations["getAgentWebhookSkill"];
+        put?: never;
+        post?: never;
+        /** Delete an agent webhook skill */
+        delete: operations["deleteAgentWebhookSkill"];
+        options?: never;
+        head?: never;
+        /** Update an agent webhook skill */
+        patch: operations["updateAgentWebhookSkill"];
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/slack-skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List agent Slack skills */
+        get: operations["listAgentSlackSkills"];
+        put?: never;
+        /** Create an agent Slack skill */
+        post: operations["createAgentSlackSkill"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/slack-skills/{skillId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get an agent Slack skill */
+        get: operations["getAgentSlackSkill"];
+        put?: never;
+        post?: never;
+        /** Delete an agent Slack skill */
+        delete: operations["deleteAgentSlackSkill"];
+        options?: never;
+        head?: never;
+        /** Update an agent Slack skill */
+        patch: operations["updateAgentSlackSkill"];
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/skill-capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List agent skill capabilities */
+        get: operations["listAgentSkillCapabilities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List agent skills */
+        get: operations["listAgentSkills"];
+        put?: never;
+        /** Create an agent skill */
+        post: operations["createAgentSkill"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/skills/{skillId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete an agent skill */
+        delete: operations["deleteAgentSkill"];
+        options?: never;
+        head?: never;
+        /** Update an agent skill */
+        patch: operations["updateAgentSkill"];
+        trace?: never;
+    };
+    "/api/v1/retrieval/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Generate a retrieval-only grounded answer */
+        post: operations["createRetrievalAnswer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/document/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Search documents for the authenticated workspace */
+        post: operations["searchDocuments"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/document/search/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List document search history for the authenticated workspace */
+        get: operations["listDocumentSearchHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/document/search/history/{searchId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Replay one historical document search */
+        get: operations["getDocumentSearchHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/document/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List documents for the authenticated workspace */
+        get: operations["listDocuments"];
+        put?: never;
+        /** Queue a document for background processing */
+        post: operations["createDocument"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/document/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List document sources for the authenticated workspace */
+        get: operations["listDocumentSources"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/document/sources/{sourceId}/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List documents belonging to a source */
+        get: operations["listDocumentsBySource"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/document/sources/{sourceId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a source and all its documents */
+        delete: operations["deleteDocumentSource"];
+        options?: never;
+        head?: never;
+        /** Update a document source's processing settings */
+        patch: operations["updateDocumentSource"];
+        trace?: never;
+    };
+    "/api/v1/document/sources/{sourceId}/recrawl": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Re-crawl a website source using its stored configuration */
+        post: operations["recrawlDocumentSource"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/document/sources/{sourceId}/pause-crawl": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pause active crawl jobs for a website source */
+        post: operations["pauseDocumentSourceCrawl"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/document/sources/{sourceId}/resume-crawl": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resume paused crawl jobs for a website source */
+        post: operations["resumeDocumentSourceCrawl"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/document/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import a source file for background processing */
+        post: operations["importDocument"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/document/crawl": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Crawl a website through a configured crawler provider */
+        post: operations["crawlWebsiteDocuments"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/document/crawl/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List recent website crawl jobs for the workspace */
+        get: operations["listWebsiteCrawlJobs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/document/crawl/jobs/{jobId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a completed or failed website crawl job */
+        delete: operations["deleteWebsiteCrawlJob"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/document/{documentId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a document */
+        get: operations["getDocument"];
+        /** Update and requeue a document */
+        put: operations["updateDocument"];
+        post?: never;
+        /** Delete a document */
+        delete: operations["deleteDocument"];
+        options?: never;
+        head?: never;
+        /**
+         * Update a document's retrieval eligibility
+         * @description Enable or disable a document for retrieval and/or set an expiry after which it is auto-excluded. Does not re-process the document. Re-enabling a document (retrievalEnabled=true) clears an already-elapsed expiry.
+         */
+        patch: operations["updateDocumentRetrieval"];
+        trace?: never;
+    };
+    "/api/v1/document/sources/{sourceId}/reprocess": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Queue eligible source documents for reprocessing */
+        post: operations["reprocessDocumentSource"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/document/{documentId}/reprocess": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Requeue an existing document for processing */
+        post: operations["reprocessDocument"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assistant/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run human-facing assistant chat */
+        post: operations["createAssistantChatResponse"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/answer-feedback/messages/{assistantMessageId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Record feedback for an assistant answer */
+        put: operations["upsertAnswerFeedback"];
+        post?: never;
+        /** Clear feedback for an assistant answer */
+        delete: operations["clearAnswerFeedback"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/answer-feedback/public/chat/{token}/messages/{assistantMessageId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Record feedback for a public chat assistant answer */
+        put: operations["upsertPublicAnswerFeedback"];
+        post?: never;
+        /** Clear feedback for a public chat assistant answer */
+        delete: operations["clearPublicAnswerFeedback"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List merged chat and document search history */
+        get: operations["listHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/history/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List saved assistant conversations */
+        get: operations["listChatHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/history/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List document search history for the authenticated workspace */
+        get: operations["listHistorySearches"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/history/chat/{conversationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a saved assistant conversation and its debug metadata */
+        get: operations["getHistoryConversation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/history/chat/{conversationId}/tail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Poll new messages for a saved assistant conversation */
+        get: operations["tailHistoryConversation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/history/{conversationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a saved assistant conversation and its debug metadata
+         * @deprecated
+         * @description Deprecated compatibility alias. Prefer `/api/v1/history/chat/{conversationId}`.
+         */
+        get: operations["getLegacyHistoryConversation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/history/search/{searchId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Replay one historical document search */
+        get: operations["getHistorySearch"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/conversations/{conversationId}/takeover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Take human ownership of a conversation */
+        post: operations["takeOverConversation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/conversations/{conversationId}/reply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reply to a conversation as a human operator */
+        post: operations["replyToConversation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/conversations/{conversationId}/transfer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Transfer human ownership of a conversation */
+        post: operations["transferConversationOwnership"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/conversations/{conversationId}/handback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Return a human-owned conversation to AI ownership */
+        post: operations["handBackConversation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/conversations/{conversationId}/fork": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Fork a conversation into a dashboard test session
+         * @description Copies the conversation's user and assistant message thread into a new conversation tagged as an authenticated_chat test session (same agent and workspace), leaving the original untouched.
+         */
+        post: operations["forkConversation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/decisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List pending human approval decisions */
+        get: operations["listPendingDecisions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/decisions/{handle}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resolve a pending human approval decision */
+        post: operations["resolveDecision"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/connectors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List connectors for the authenticated workspace */
+        get: operations["listConnectors"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/connectors/{connectorId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get connector detail */
+        get: operations["getConnectorDetail"];
+        /** Save connector config */
+        put: operations["updateConnectorConfig"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/connectors/{connectorId}/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enable a connector */
+        post: operations["enableConnector"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/connectors/{connectorId}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Disable a connector */
+        post: operations["disableConnector"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/connectors/{connectorId}/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run a manual connector sync */
+        post: operations["syncConnector"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/quality/turns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List low-quality assistant turns
+         * @description Returns assistant turns for the dashboard's quality review surface. Admin/owner only (requires the `workspace.quality.read` permission). Filters apply to operator signal, skill action, skill status, user feedback, latency, agent, channel, and time range. Operator-test conversations and replies authored by a human teammate are excluded.
+         */
+        get: operations["listLowQualityTurns"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/quality/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read assistant answer-quality statistics
+         * @description Returns answer-quality rates for a rolling window, the equal-length window before it, one zero-filled bucket per UTC day, and the all-time active-triage backlog per signal. Admin/owner only (requires the `workspace.quality.read` permission). Every rate ships with the population it is defined over, and reports `null` rather than a rate when that population is empty. The turn population matches `GET /api/v1/quality/turns`: operator-test conversations and replies authored by a human teammate are excluded.
+         */
+        get: operations["getQualityStats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/quality/turns/{assistantMessageId}/triage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set the triage state of an assistant turn
+         * @description Upserts the operator triage state (`open`, `acknowledged`, `resolved`, `dismissed`) for an assistant turn using optimistic concurrency. Terminal states accept an optional structured reason; omit it to close without classification. Admin/owner only (requires the `workspace.quality.manage` permission).
+         */
+        put: operations["setQualityTurnTriage"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/quality/audience-pulse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the saved Audience Pulse report
+         * @description Returns the one saved workspace report without invoking an AI provider. Requires a browser dashboard session; bearer/API authentication is intentionally not accepted.
+         */
+        get: operations["getAudiencePulse"];
+        put?: never;
+        /**
+         * Analyze the last 30 days of visitor questions
+         * @description Explicitly refreshes one bounded saved workspace report. This route has a dedicated durable rate limit and accepts only a browser dashboard session, never bearer/API authentication.
+         */
+        post: operations["refreshAudiencePulse"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/quality/audience-pulse/refresh-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read pending Audience Pulse preparation work
+         * @description Reports whether the durable facet queue still has work for this workspace. Requires a browser dashboard session; bearer/API authentication is intentionally not accepted.
+         */
+        get: operations["getAudiencePulseRefreshStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/quality/audience-pulse/evidence-anchor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Read a bounded authorized source window
+         * @description Reads one workspace-authorized source message and, when it occurs before the next visitor turn, its next assistant reply. Source identifiers are supplied only in the JSON request body. Requires a browser dashboard session and workspace.history.read; bearer/API authentication is intentionally not accepted.
+         */
+        post: operations["getAudiencePulseEvidenceAnchor"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/copilot/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check operator copilot availability
+         * @description Dashboard session only; bearer API tokens are rejected.
+         */
+        get: operations["getCopilotAvailability"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/copilot/conversations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List an operator's copilot conversations */
+        get: operations["listCopilotConversations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/copilot/conversations/{conversationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read a copilot conversation */
+        get: operations["getCopilotConversation"];
+        put?: never;
+        post?: never;
+        /** Delete a copilot conversation */
+        delete: operations["deleteCopilotConversation"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/copilot/turns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start a streaming operator copilot turn
+         * @description Returns the fixed copilot SSE event stream. A turn may persist Ray-owned evaluation records and pending proposals; applying a proposal remains a separately authorized operation. Dashboard session only; bearer API tokens are rejected.
+         */
+        post: operations["createCopilotTurn"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/copilot/proposals/{proposalId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a copilot proposal preview
+         * @description Dashboard session only. The proposal resolves its owning workspace before workspace authorization, so an external handoff does not depend on stored dashboard workspace state.
+         */
+        get: operations["getCopilotProposal"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/copilot/proposals/{proposalId}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply a pending copilot proposal */
+        post: operations["applyCopilotProposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/copilot/proposals/{proposalId}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dismiss a pending copilot proposal */
+        post: operations["dismissCopilotProposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evals/snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Capture an Eval snapshot */
+        post: operations["createEvalSnapshot"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evals/snapshots/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get an Eval snapshot */
+        get: operations["getEvalSnapshot"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evals/cases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Eval cases and latest results */
+        get: operations["listEvalCases"];
+        put?: never;
+        /** Create an Eval case */
+        post: operations["createEvalCase"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evals/cases/by-source-message/{assistantMessageId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the Eval case linked to an assistant message
+         * @description Returns the linked case and its immutable snapshot in one request. The lookup is workspace-scoped and never scans the case list.
+         */
+        get: operations["getEvalCaseBySourceMessage"];
+        /**
+         * Get or create an Eval case from an assistant message
+         * @description Atomically captures the source turn and creates its default Eval case, or returns the existing association. Concurrent retries converge on one case.
+         */
+        put: operations["getOrCreateEvalCaseBySourceMessage"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evals/cases/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get an Eval case and its run history */
+        get: operations["getEvalCase"];
+        put?: never;
+        post?: never;
+        /** Delete an eval case */
+        delete: operations["deleteEvalCase"];
+        options?: never;
+        head?: never;
+        /** Rename an Eval case */
+        patch: operations["renameEvalCase"];
+        trace?: never;
+    };
+    "/api/v1/evals/cases/{id}/assertions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Replace an Eval case's assertions */
+        put: operations["replaceEvalCaseAssertions"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evals/cases/{id}/execution-mode": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set an Eval case's replay execution mode
+         * @description Enabling live external effects requires an authenticated interactive workspace session; API credentials cannot make this change.
+         */
+        put: operations["setEvalCaseExecutionMode"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evals/cases/{id}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run an Eval case
+         * @description Replays are safe by default. A live-effect case requires a fresh allowLiveEffects confirmation from an interactive workspace session; API credentials and Ray-triggered replays remain safe.
+         */
+        post: operations["createEvalCaseRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evals/cases/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run a batch of eval cases
+         * @description Runs the workspace's eval cases, or the selected subset, and returns per-case outcomes plus the suite's aggregate pass rate. Cases run sequentially server-side, so the response arrives once every selected case has finished. Replays are safe by default; live-effect cases require a fresh allowLiveEffects confirmation from an interactive workspace session.
+         */
+        post: operations["runEvalCases"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evals/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run a one-off eval snapshot replay */
+        post: operations["createEvalRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mcp/converse/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Exchange an MCP converse launch token for a signed session */
+        post: operations["createMcpConverseSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mcp/converse/session/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Validate and re-evaluate an MCP converse session */
+        post: operations["validateMcpConverseSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mcp/converse/ask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run one MCP ask_agent turn through the bound agent */
+        post: operations["askMcpConverseAgent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/chat/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List conversations for the current anonymous session
+         * @description Anonymous session continuity is maintained by an HttpOnly cookie set by the server.
+         *
+         *     The cookie name is workspace-specific (`anon_session_<workspaceId>`) and should be preserved by a browser or cookie jar rather than configured as a fixed client credential.
+         */
+        get: operations["listPublicChatHistory"];
+        put?: never;
+        /**
+         * Send a public chat message
+         * @description Anonymous session continuity is maintained by an HttpOnly cookie set by the server.
+         *
+         *     The cookie name is workspace-specific (`anon_session_<workspaceId>`) and should be preserved by a browser or cookie jar rather than configured as a fixed client credential.
+         */
+        post: operations["createPublicChatResponse"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/chat/{token}/history/{conversationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a public conversation for the current anonymous session
+         * @description Anonymous session continuity is maintained by an HttpOnly cookie set by the server.
+         *
+         *     The cookie name is workspace-specific (`anon_session_<workspaceId>`) and should be preserved by a browser or cookie jar rather than configured as a fixed client credential.
+         */
+        get: operations["getPublicChatHistoryConversation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/chat/{token}/tail/{conversationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Poll new public conversation messages for the current anonymous session
+         * @description Anonymous session continuity is maintained by an HttpOnly cookie set by the server.
+         *
+         *     The cookie name is workspace-specific (`anon_session_<workspaceId>`) and should be preserved by a browser or cookie jar rather than configured as a fixed client credential.
+         */
+        get: operations["tailPublicChatHistoryConversation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/chat/{token}/events/{conversationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream public conversation notifications for the current anonymous session
+         * @description Anonymous session continuity is maintained by an HttpOnly cookie set by the server.
+         *
+         *     The cookie name is workspace-specific (`anon_session_<workspaceId>`) and should be preserved by a browser or cookie jar rather than configured as a fixed client credential.
+         */
+        get: operations["streamPublicChatConversationEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream workspace dashboard invalidations
+         * @description Opens the dashboard's workspace-scoped SSE transport after authentication, admission, and broker subscription succeed. Requires the dashboard session cookie, X-Workspace-Id, and an Accept header containing text/event-stream. Bearer API tokens and anonymous public-chat sessions are rejected. This transport is not an API-token SDK or MCP event surface.
+         */
+        get: operations["streamWorkspaceEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+}
+export type webhooks = Record<string, never>;
+export interface components {
+    schemas: {
+        ErrorResponse: {
+            error: {
+                code: string;
+                message: string;
+                details?: unknown;
+            };
+        };
+        FlatErrorResponse: {
+            code: string;
+            message: string;
+        };
+        HealthResponse: {
+            /** @enum {string} */
+            status: "ok";
+        };
+        /** @enum {string} */
+        ChatStatusStage: "interpreting" | "searching" | "composing";
+        ChatStatusEvent: {
+            stage: components["schemas"]["ChatStatusStage"];
+        };
+        RegistrationAvailabilityResponse: {
+            available: boolean;
+        };
+        RegisterResponse: {
+            /** Format: uuid */
+            userId: string;
+            /** Format: uuid */
+            accountId: string;
+            organizationName: string;
+            /** Format: uuid */
+            workspaceId: string;
+            workspaceName: string;
+            workspacePublicRouteKey: string;
+            requiresEmailVerification: boolean;
+        };
+        LoginResponse: {
+            /** Format: uuid */
+            userId: string;
+            /** Format: uuid */
+            accountId: string;
+            organizationName: string;
+            /** Format: uuid */
+            workspaceId: string;
+            workspaceName: string;
+            workspacePublicRouteKey: string;
+        };
+        AcceptedResponse: {
+            /** @enum {boolean} */
+            accepted: true;
+        };
+        PasswordResetConfirmResponse: components["schemas"]["LoginResponse"] & {
+            /** Format: email */
+            email: string;
+        };
+        SessionResponse: components["schemas"]["LoginResponse"] & {
+            /** Format: email */
+            email: string;
+        };
+        EmailVerificationVerifyResponse: {
+            /** @enum {boolean} */
+            verified: true;
+        };
+        Workspace: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            accountId: string;
+            name: string;
+            publicRouteKey: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        WorkspaceRouteResolutionResponse: {
+            workspaceKey: string;
+            /** Format: uuid */
+            workspaceId: string;
+            workspaceName: string;
+            /** Format: uuid */
+            accountId: string;
+            organizationName: string;
+            realtimeEnabled: boolean;
+        };
+        WorkspaceListResponse: {
+            workspaces: components["schemas"]["Workspace"][];
+        };
+        WorkspaceSummaryResponse: {
+            documentCount: number;
+            readyDocumentCount: number;
+            pendingDocumentCount: number;
+            sampleDocumentCount: number;
+            sampleDocumentSlugs: string[];
+            conversationCount: number;
+            hasDocuments: boolean;
+            hasPendingDocuments: boolean;
+            hasReadyDocuments: boolean;
+            hasCompletedChat: boolean;
+            sampleDocumentsImported: boolean;
+            websiteCrawlerEnabled: boolean;
+        };
+        RegisterRequest: {
+            /** Format: email */
+            email: string;
+            password: string;
+            organizationName?: string;
+        };
+        CreateAccountRequest: {
+            organizationName: string;
+        };
+        LoginRequest: {
+            /** Format: email */
+            email: string;
+            password: string;
+            /** Format: uuid */
+            preferredWorkspaceId?: string;
+            /** Format: uuid */
+            preferredAccountId?: string;
+        };
+        PasswordResetRequest: {
+            /** Format: email */
+            email: string;
+        };
+        PasswordResetConfirmRequest: {
+            token: string;
+            password: string;
+            /** Format: uuid */
+            preferredWorkspaceId?: string;
+            /** Format: uuid */
+            preferredAccountId?: string;
+        };
+        EmailVerificationVerifyRequest: {
+            token: string;
+        };
+        EmailVerificationResendRequest: {
+            /** Format: email */
+            email: string;
+        };
+        InvitationAcceptRequest: {
+            /** Format: email */
+            email: string;
+            password: string;
+        };
+        AccountInvitationCreateRequest: {
+            /** Format: email */
+            email: string;
+            /**
+             * @default member
+             * @enum {string}
+             */
+            role: "admin" | "member";
+        };
+        AccountMembershipRoleUpdateRequest: {
+            /** @enum {string} */
+            role: "admin" | "member";
+        };
+        WorkspaceGrantRequest: {
+            /** @enum {string} */
+            role: "admin" | "member";
+        };
+        WorkspaceCreateRequest: {
+            name: string;
+        };
+        WorkspaceRenameRequest: {
+            name: string;
+        };
+        AccountUser: {
+            /** Format: uuid */
+            membershipId: string;
+            /** Format: uuid */
+            userId: string;
+            /** Format: email */
+            email: string;
+            /** @enum {string} */
+            role: "owner" | "admin" | "member";
+            /** @enum {string} */
+            status: "active";
+            /** Format: date-time */
+            createdAt: string;
+        };
+        AccountInvitation: {
+            /** Format: uuid */
+            id: string;
+            /** Format: email */
+            email: string;
+            /** @enum {string} */
+            status: "pending" | "accepted" | "revoked" | "expired";
+            /** @enum {string} */
+            role: "admin" | "member";
+            /** Format: date-time */
+            expiresAt: string;
+            /** Format: date-time */
+            acceptedAt: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        WorkspaceGrant: {
+            /** Format: uuid */
+            workspaceId: string;
+            /** Format: uuid */
+            userId: string;
+            /** @enum {string} */
+            role: "admin" | "member";
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        AccountUsersResponse: {
+            /** Format: uuid */
+            accountId: string;
+            /** Format: uuid */
+            currentUserId: string;
+            users: components["schemas"]["AccountUser"][];
+            invitations: components["schemas"]["AccountInvitation"][];
+            workspaceGrants: components["schemas"]["WorkspaceGrant"][];
+        };
+        AccessibleAccount: {
+            /** Format: uuid */
+            accountId: string;
+            organizationName: string;
+            /** @enum {string} */
+            role: "owner" | "admin" | "member";
+            /** Format: uuid */
+            workspaceId: string;
+            workspaceName: string;
+            workspacePublicRouteKey: string;
+        };
+        AccessibleAccountsResponse: {
+            /** Format: uuid */
+            currentAccountId: string;
+            accounts: components["schemas"]["AccessibleAccount"][];
+        };
+        CreateAccountInvitationResponse: components["schemas"]["AccountInvitation"] & {
+            acceptanceUrl: string;
+            emailDelivered: boolean;
+        };
+        InvitationDetailsResponse: {
+            /** Format: uuid */
+            accountId: string;
+            /** Format: email */
+            email: string;
+            /** @enum {string} */
+            status: "pending" | "accepted" | "revoked" | "expired";
+            /** Format: date-time */
+            expiresAt: string;
+            /** @description True when a login already exists for the invited email, so accepting with a password verifies the existing one instead of setting a new one. */
+            requiresExistingPassword: boolean;
+            /** @description Identity providers the invited login can sign in with, such as "google". A login listed here can accept the invitation through that provider without a password. */
+            federatedProviders: string[];
+        };
+        RetrievalDefaultsResponse: {
+            queryRewriteEnabled: boolean;
+            temporalStructuredLookupEnabled: boolean;
+            temporalBoostUpcomingEnabled: boolean;
+            temporalDeterministicSortEnabled: boolean;
+            semanticRewriteInstructions: string;
+            lexicalRewriteInstructions: string;
+            suggestedQuestionsEnabled: boolean;
+            suggestedQuestionsCount: number;
+            rerankEnabled: boolean;
+            vectorTopK: number;
+            rerankTopK: number;
+            /** @enum {string} */
+            retrievalStrategy?: "fixed" | "reasoning" | "auto";
+            customInstruction: string;
+            /** @description Always empty for system retrieval defaults. */
+            metadataRules: {
+                id: string;
+                field: string;
+                /** @enum {string} */
+                valueType: "string" | "number" | "date" | "boolean";
+                /** @enum {string} */
+                operator: "equals" | "not_equals" | "contains" | "not_contains" | "lt" | "lte" | "gt" | "gte";
+                value: string;
+                /**
+                 * @default and
+                 * @enum {string}
+                 */
+                combinator: "and" | "or";
+                /** @default [] */
+                conditions: {
+                    id: string;
+                    field: string;
+                    /** @enum {string} */
+                    valueType: "string" | "number" | "date" | "boolean";
+                    /** @enum {string} */
+                    operator: "equals" | "not_equals" | "contains" | "not_contains" | "lt" | "lte" | "gt" | "gte";
+                    value: string;
+                }[];
+                /** @enum {string} */
+                effect: "boost" | "filter";
+                enabled: boolean;
+                /** @enum {string} */
+                triggerMode: "always_on" | "match_turn";
+                triggerInstruction?: string;
+            }[];
+            metadataFieldSuggestions: {
+                field: string;
+                /** @enum {string} */
+                inferredType: "string" | "number" | "date" | "boolean";
+            }[];
+        };
+        RetrievalSettingsOverride: {
+            queryRewriteEnabled?: boolean;
+            temporalStructuredLookupEnabled?: boolean;
+            temporalBoostUpcomingEnabled?: boolean;
+            temporalDeterministicSortEnabled?: boolean;
+            semanticRewriteInstructions?: string;
+            lexicalRewriteInstructions?: string;
+            suggestedQuestionsEnabled?: boolean;
+            suggestedQuestionsCount?: number;
+            rerankEnabled?: boolean;
+            vectorTopK?: number;
+            similarityThreshold?: number;
+            rerankTopK?: number;
+            /** @enum {string} */
+            retrievalStrategy?: "fixed" | "reasoning" | "auto";
+            metadataRules?: {
+                id: string;
+                field?: string;
+                /** @enum {string} */
+                valueType?: "string" | "number" | "date" | "boolean";
+                /** @enum {string} */
+                operator?: "equals" | "not_equals" | "contains" | "not_contains" | "lt" | "lte" | "gt" | "gte";
+                value?: string;
+                /** @enum {string} */
+                combinator?: "and" | "or";
+                conditions?: {
+                    id: string;
+                    field: string;
+                    /** @enum {string} */
+                    valueType: "string" | "number" | "date" | "boolean";
+                    /** @enum {string} */
+                    operator: "equals" | "not_equals" | "contains" | "not_contains" | "lt" | "lte" | "gt" | "gte";
+                    value: string;
+                }[];
+                /** @enum {string} */
+                effect: "boost" | "filter";
+                enabled: boolean;
+                /** @enum {string} */
+                triggerMode?: "always_on" | "match_turn";
+                triggerInstruction?: string;
+            }[];
+            customInstruction?: string;
+        };
+        IngestionSettings: {
+            /** Format: uuid */
+            workspaceId: string;
+            /** @enum {string} */
+            chunkingStrategy: "fixed_window" | "structured_semantic" | "recursive_text";
+            /** @description The embedding model currently used for document indexing and retrieval. */
+            embeddingModel: string;
+            /** @enum {string|null} */
+            pendingEmbeddingModel: "text-embedding-3-small" | "text-embedding-3-large" | "text-embedding-ada-002" | "gemini-embedding-001" | null;
+            supportedEmbeddingModels: ("text-embedding-3-small" | "text-embedding-3-large" | "text-embedding-ada-002" | "gemini-embedding-001")[];
+            fixedWindowChunkSize: number;
+            fixedWindowChunkOverlap: number;
+            structuredMinChunkSize: number;
+            structuredMaxChunkSize: number;
+            documentEnrichmentEnabled: boolean;
+            /**
+             * @description Metadata extraction override for documents added by hand, which have no source of their own. 'inherit' follows documentEnrichmentEnabled.
+             * @enum {string}
+             */
+            manualDocumentEnrichmentOverride: "inherit" | "on" | "off";
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        EmbeddingCoverage: {
+            /** @description Chunks in documents retrieval serves: ready, retrieval-enabled and unexpired. */
+            eligibleChunks: number;
+            /** @description Of those, the chunks that have an embedding for the workspace's current model. */
+            coveredChunks: number;
+            missingChunks: number;
+            /** @description False when the workspace has no embedding model set, which is what leaves missing chunks unrepairable. */
+            hasEmbeddingProfile: boolean;
+            /** @description Embedding work still in flight for the current model. Counts only jobs that would close part of the gap, so a queue draining down to zero means indexing is finishing rather than stalling. */
+            queuedJobs: number;
+            /** @description Embedding jobs for the current model that exhausted their attempts. These hold their job key, so the chunks behind them stay missing until the failures are resolved. Jobs left by a superseded model are not counted, because no re-run will ever move them. */
+            failedJobs: number;
+        };
+        UpdateIngestionSettingsRequest: {
+            /** @enum {string} */
+            chunkingStrategy: "fixed_window" | "structured_semantic" | "recursive_text";
+            fixedWindowChunkSize: number;
+            fixedWindowChunkOverlap: number;
+            structuredMinChunkSize: number;
+            structuredMaxChunkSize: number;
+            /** @enum {string} */
+            embeddingModel?: "text-embedding-3-small" | "text-embedding-3-large" | "text-embedding-ada-002" | "gemini-embedding-001";
+            documentEnrichmentEnabled?: boolean;
+            /** @enum {string} */
+            manualDocumentEnrichmentOverride?: "inherit" | "on" | "off";
+        };
+        ReprocessIngestionRequest: {
+            /** @enum {string} */
+            documentEnrichmentOverride?: "on" | "off";
+        };
+        RetrievalMetadataRule: {
+            id: string;
+            field: string;
+            /** @enum {string} */
+            valueType: "string" | "number" | "date" | "boolean";
+            /** @enum {string} */
+            operator: "equals" | "not_equals" | "contains" | "not_contains" | "lt" | "lte" | "gt" | "gte";
+            value: string;
+            /**
+             * @default and
+             * @enum {string}
+             */
+            combinator: "and" | "or";
+            /** @default [] */
+            conditions: {
+                id: string;
+                field: string;
+                /** @enum {string} */
+                valueType: "string" | "number" | "date" | "boolean";
+                /** @enum {string} */
+                operator: "equals" | "not_equals" | "contains" | "not_contains" | "lt" | "lte" | "gt" | "gte";
+                value: string;
+            }[];
+            /** @enum {string} */
+            effect: "boost" | "filter";
+            enabled: boolean;
+            /** @enum {string} */
+            triggerMode: "always_on" | "match_turn";
+            triggerInstruction?: string;
+        };
+        TriggerAnalysisRule: {
+            ruleId: string;
+            matched: boolean;
+            matchStrength: number;
+            reason: string;
+            triggerInstructionPreview: string;
+        };
+        TriggerAnalysis: {
+            /** @enum {string} */
+            status: "skipped_not_configured" | "skipped_unavailable" | "applied" | "fallback";
+            consideredRules: components["schemas"]["TriggerAnalysisRule"][];
+            matchedRuleIds: string[];
+            unmatchedRuleIds: string[];
+            matchCount: number;
+            matcherVersion: string;
+            failureReason?: string;
+        };
+        TriggerBackoff: {
+            applied: boolean;
+            /** @enum {string} */
+            reason?: "empty_filtered_candidates" | "weak_filtered_support";
+            relaxedRuleIds: string[];
+            restoredCandidateCount?: number;
+        };
+        UpdateGeneralSettingsRequest: {
+            anonymousChatEnabled?: boolean;
+            assistantName?: string;
+            greetingInstruction?: string;
+            assistantDefaultLocale?: string | null;
+            proactiveGreetingEnabled?: boolean;
+            websiteEmbedEnabled?: boolean;
+            websiteEmbedAllowedOrigins?: string[];
+            websiteEmbedLauncherLabel?: string;
+            /** @enum {string} */
+            websiteEmbedLauncherPosition?: "bottom-right" | "bottom-left";
+            websiteEmbedTheme?: {
+                brand?: string;
+                brandText?: string;
+                surface?: string;
+                text?: string;
+            };
+            websiteEmbedCopy?: {
+                [key: string]: {
+                    [key: string]: string;
+                };
+            };
+            websiteEmbedExpertOverrides?: {
+                [key: string]: string;
+            };
+        };
+        GeneralSettingsResponse: {
+            anonymousChatEnabled: boolean;
+            anonymousChatUrl: string | null;
+            /** Format: date-time */
+            anonymousChatLastUsedAt: string | null;
+            assistantName: string;
+            greetingInstruction: string;
+            assistantDefaultLocale: string | null;
+            proactiveGreetingEnabled: boolean;
+            assistantBootstrapActive: boolean;
+            assistantLogoUrl: string | null;
+            websiteEmbedEnabled: boolean;
+            websiteEmbedToken: string | null;
+            /** Format: date-time */
+            websiteEmbedLastUsedAt: string | null;
+            websiteEmbedScriptUrl: string | null;
+            websiteEmbedSnippet: string | null;
+            websiteEmbedAllowedOrigins: string[];
+            websiteEmbedLauncherLabel: string;
+            /** @enum {string} */
+            websiteEmbedLauncherPosition: "bottom-right" | "bottom-left";
+            websiteEmbedTheme: {
+                brand: string;
+                brandText: string;
+                surface: string;
+                text: string;
+            };
+            websiteEmbedCopy: {
+                [key: string]: {
+                    [key: string]: string;
+                };
+            };
+            websiteEmbedExpertOverrides: {
+                [key: string]: string;
+            };
+        };
+        AssistantLogoUploadRequest: {
+            /** Format: binary */
+            logo: string;
+        };
+        AssistantSettingsSection: {
+            assistantName: string;
+            greetingInstruction: string;
+            assistantDefaultLocale: string | null;
+            proactiveGreetingEnabled: boolean;
+            /** @description Server-managed bootstrap readiness derived from the current assistant configuration. */
+            readonly assistantBootstrapActive: boolean;
+            suggestedQuestionsEnabled: boolean;
+            customInstruction: string;
+            assistantLogoUrl: string | null;
+        };
+        PlatformChannelsSettingsSection: {
+            anonymousChatEnabled: boolean;
+            anonymousChatUrl: string | null;
+            /** Format: date-time */
+            anonymousChatLastUsedAt: string | null;
+            websiteEmbedEnabled: boolean;
+            websiteEmbedToken: string | null;
+            /** Format: date-time */
+            websiteEmbedLastUsedAt: string | null;
+            websiteEmbedAllowedOrigins: string[];
+            websiteEmbedLauncherLabel: string;
+            /** @enum {string} */
+            websiteEmbedLauncherPosition: "bottom-right" | "bottom-left";
+            websiteEmbedScriptUrl: string | null;
+            websiteEmbedSnippet: string | null;
+            websiteEmbedTheme: {
+                brand: string;
+                brandText: string;
+                surface: string;
+                text: string;
+            };
+            websiteEmbedCopy: {
+                [key: string]: {
+                    [key: string]: string;
+                };
+            };
+            websiteEmbedExpertOverrides: {
+                [key: string]: string;
+            };
+        };
+        PlatformSettingsResponse: {
+            assistant: components["schemas"]["AssistantSettingsSection"];
+            channels: components["schemas"]["PlatformChannelsSettingsSection"];
+        };
+        UpdatePlatformSettingsRequest: {
+            assistant?: {
+                assistantName?: string;
+                greetingInstruction?: string;
+                assistantDefaultLocale?: string | null;
+                proactiveGreetingEnabled?: boolean;
+                suggestedQuestionsEnabled?: boolean;
+                customInstruction?: string;
+            };
+            channels?: {
+                anonymousChatEnabled?: boolean;
+                websiteEmbedEnabled?: boolean;
+                websiteEmbedAllowedOrigins?: string[];
+                websiteEmbedLauncherLabel?: string;
+                /** @enum {string} */
+                websiteEmbedLauncherPosition?: "bottom-right" | "bottom-left";
+                websiteEmbedTheme?: {
+                    brand?: string;
+                    brandText?: string;
+                    surface?: string;
+                    text?: string;
+                };
+                websiteEmbedCopy?: {
+                    [key: string]: {
+                        [key: string]: string;
+                    };
+                };
+                websiteEmbedExpertOverrides?: {
+                    [key: string]: string;
+                };
+            };
+        };
+        WorkspaceProviderCredentialSummary: {
+            /** @enum {string} */
+            provider: "openai" | "openai-compatible" | "gemini" | "claude";
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        WorkspaceProviderCredentialsResponse: {
+            encryptionConfigured: boolean;
+            credentials: components["schemas"]["WorkspaceProviderCredentialSummary"][];
+            envProviderAvailability: {
+                openai: boolean;
+                "openai-compatible": boolean;
+                gemini: boolean;
+                claude: boolean;
+            };
+        };
+        SetWorkspaceProviderCredentialRequest: {
+            apiKey: string;
+        };
+        WebhookDestination: {
+            id: string;
+            name: string;
+            url: string;
+            /** @enum {string|null} */
+            lastDeliveryStatus: "success" | "retry" | "failed" | "skipped" | null;
+            /** Format: date-time */
+            lastDeliveryAt: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        WebhookDestinationListResponse: {
+            destinations: components["schemas"]["WebhookDestination"][];
+        };
+        WebhookDestinationResponse: {
+            destination: components["schemas"]["WebhookDestination"];
+        };
+        WebhookDestinationCreateResponse: {
+            destination: components["schemas"]["WebhookDestination"];
+            secret: string;
+        };
+        WebhookDestinationRequest: {
+            name: string;
+            url: string;
+        };
+        WebhookDestinationParams: {
+            /** Format: uuid */
+            id: string;
+        };
+        WorkspaceLlmCapabilityPreference: {
+            /** @enum {string} */
+            provider: "openai" | "openai-compatible" | "gemini" | "claude";
+            model: string;
+        } | null;
+        WorkspaceLlmModelsResponse: {
+            chat: components["schemas"]["WorkspaceLlmCapabilityPreference"];
+            rewrite: components["schemas"]["WorkspaceLlmCapabilityPreference"];
+            rerank: components["schemas"]["WorkspaceLlmCapabilityPreference"];
+            knownModelsByProvider: {
+                openai: string[];
+                "openai-compatible": string[];
+                gemini: string[];
+                claude: string[];
+            };
+        };
+        UpdateWorkspaceLlmModelsRequest: {
+            chat?: {
+                /** @enum {string} */
+                provider: "openai" | "openai-compatible" | "gemini" | "claude";
+                model: string;
+            } | null;
+            rewrite?: {
+                /** @enum {string} */
+                provider: "openai" | "openai-compatible" | "gemini" | "claude";
+                model: string;
+            } | null;
+            rerank?: {
+                /** @enum {string} */
+                provider: "openai" | "openai-compatible" | "gemini" | "claude";
+                model: string;
+            } | null;
+        };
+        DocumentTypeField: {
+            /** @description Metadata key this field writes. Matches ^[A-Za-z][A-Za-z0-9_]{0,63}$; dots are prohibited because metadata rules read them as path separators. */
+            key: string;
+            label: string;
+            /** @enum {string} */
+            valueType: "string" | "number" | "date" | "boolean";
+            /** @description Natural-language guidance the classification prompt carries for this field. */
+            instruction: string;
+        };
+        DocumentTypeDefinition: {
+            key: string;
+            label: string;
+            description: string;
+            enabled: boolean;
+            /**
+             * @description Built-in entries are system-owned and read-only.
+             * @enum {string}
+             */
+            origin: "built_in" | "operator";
+            /**
+             * @description Which payload extraction returns for this type: temporal facts for the built-in dated types, an ordered fields array for operator types, nothing for classification-only types.
+             * @enum {string}
+             */
+            payload: "facts" | "fields" | "none";
+            /** @description False for the reserved 'generic' fallback, which is always present and always enabled. */
+            disableable: boolean;
+            fields: components["schemas"]["DocumentTypeField"][];
+        };
+        /** @description A deleted field identity. A retired key can only be recreated with its original value type, so a saved retrieval rule is never re-pointed at a differently typed field. */
+        RetiredDocumentTypeField: {
+            key: string;
+            /** @enum {string} */
+            valueType: "string" | "number" | "date" | "boolean";
+        };
+        DocumentTypeCatalog: {
+            /** Format: uuid */
+            workspaceId: string;
+            /** @description Monotonically increasing concurrency token. Echo it as expectedRevision on the next write. */
+            revision: string;
+            /** @description Built-in entries first, then operator-defined types. */
+            types: components["schemas"]["DocumentTypeDefinition"][];
+            retiredFields: components["schemas"]["RetiredDocumentTypeField"][];
+            /** @description Field keys any agent's retrieval metadata rules currently reference. Advisory: deleting one of these fields, or disabling the type that declares it, warns rather than blocks. */
+            referencedFieldKeys: string[];
+        };
+        UpdateDocumentTypeCatalogRequest: {
+            expectedRevision: string;
+            types?: {
+                key: string;
+                label: string;
+                description?: string;
+                enabled?: boolean;
+                fields?: {
+                    key: string;
+                    label: string;
+                    /** @enum {string} */
+                    valueType: "string" | "number" | "date" | "boolean";
+                    instruction?: string;
+                }[];
+            }[];
+            disabledBuiltInTypeKeys?: string[];
+        };
+        Agent: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            workspaceId: string;
+            name: string;
+            internalName: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ConversationAgentSurfaceSettings: {
+            authenticatedChat: {
+                enabled: boolean;
+            };
+            anonymousChat: {
+                enabled: boolean;
+                token: string | null;
+            };
+            websiteEmbed: {
+                enabled: boolean;
+                token: string | null;
+                allowedOrigins: string[];
+                launcherLabel: string;
+                /** @enum {string} */
+                launcherPosition: "bottom-right" | "bottom-left";
+                theme: {
+                    brand: string;
+                    brandText: string;
+                    surface: string;
+                    text: string;
+                };
+                copy: {
+                    [key: string]: {
+                        [key: string]: string;
+                    };
+                };
+                expertOverrides: {
+                    [key: string]: string;
+                };
+            };
+        };
+        AgentSourceScope: {
+            /** @enum {string} */
+            mode: "all";
+        } | {
+            /** @enum {string} */
+            mode: "selected";
+            sourceIds: string[];
+        };
+        AgentContactRequestDelivery: {
+            recipientEmails: string[];
+            webhook: {
+                url: string;
+            } | null;
+        };
+        AgentContactRequestDeliveryRequest: {
+            recipientEmails?: string[];
+            webhook?: null | {
+                url: string;
+            };
+        };
+        ConversationAgent: components["schemas"]["Agent"] & {
+            isDefault: boolean;
+            customInstruction: string;
+            suggestedQuestionsEnabled: boolean;
+            assistantLinkUtmEnabled: boolean;
+            citationDisplayEnabled: boolean;
+            contactRequestsEnabled: boolean;
+            webhookExportsEnabled: boolean;
+            contactRequestDelivery: components["schemas"]["AgentContactRequestDelivery"];
+            theme: {
+                brand: string;
+                brandText: string;
+                surface: string;
+                text: string;
+            };
+            branding: {
+                hidePoweredBy: boolean;
+                privacyPolicyUrl: string | null;
+            };
+            retrievalEnabled: boolean;
+            sourceScope: components["schemas"]["AgentSourceScope"];
+            logo: {
+                bucket: string;
+                objectPath: string;
+                generation?: string | null;
+                mimeType: string;
+                filename: string;
+                sizeBytes: number;
+            } | null;
+            greetingInstruction: string;
+            assistantDefaultLocale: string | null;
+            proactiveGreetingEnabled: boolean;
+            assistantBootstrapActive: boolean;
+            chatModelOverride: {
+                /** @enum {string} */
+                provider: "openai" | "openai-compatible" | "gemini" | "claude";
+                model: string;
+            } | null;
+            skillSettings: {
+                [key: string]: unknown;
+            };
+            surfaceSettings: components["schemas"]["ConversationAgentSurfaceSettings"];
+        };
+        AgentListResponse: {
+            agents: components["schemas"]["ConversationAgent"][];
+        };
+        ConversationAgentRequest: {
+            name?: string;
+            internalName?: string;
+            customInstruction?: string;
+            suggestedQuestionsEnabled?: boolean;
+            assistantLinkUtmEnabled?: boolean;
+            citationDisplayEnabled?: boolean;
+            contactRequestsEnabled?: boolean;
+            webhookExportsEnabled?: boolean;
+            contactRequestDelivery?: components["schemas"]["AgentContactRequestDeliveryRequest"];
+            theme?: {
+                brand?: string;
+                brandText?: string;
+                surface?: string;
+                text?: string;
+            };
+            branding?: {
+                hidePoweredBy?: boolean;
+                privacyPolicyUrl?: string | null;
+            };
+            retrievalEnabled?: boolean;
+            sourceScope?: {
+                /** @enum {string} */
+                mode: "all";
+            } | {
+                /** @enum {string} */
+                mode: "selected";
+                sourceIds: string[];
+            };
+            greetingInstruction?: string;
+            assistantDefaultLocale?: string | null;
+            proactiveGreetingEnabled?: boolean;
+            chatModelOverride?: null | {
+                /** @enum {string} */
+                provider: "openai" | "openai-compatible" | "gemini" | "claude";
+                model: string;
+            };
+            skillSettings?: {
+                [key: string]: unknown;
+            };
+            surfaceSettings?: {
+                authenticatedChat?: {
+                    enabled?: boolean;
+                };
+                anonymousChat?: {
+                    enabled?: boolean;
+                };
+                websiteEmbed?: {
+                    enabled?: boolean;
+                    allowedOrigins?: string[];
+                    launcherLabel?: string;
+                    /** @enum {string} */
+                    launcherPosition?: "bottom-right" | "bottom-left";
+                    theme?: {
+                        brand?: string;
+                        brandText?: string;
+                        surface?: string;
+                        text?: string;
+                    };
+                    copy?: {
+                        [key: string]: {
+                            [key: string]: string;
+                        };
+                    };
+                    expertOverrides?: {
+                        [key: string]: string;
+                    };
+                };
+            };
+        };
+        AgentChannelLifecycle: {
+            /** Format: date-time */
+            lastUsedAt: string | null;
+        };
+        AgentChannelsLifecycleResponse: {
+            anonymousChat: components["schemas"]["AgentChannelLifecycle"];
+            websiteEmbed: components["schemas"]["AgentChannelLifecycle"];
+        };
+        AgentChannelCredentialMetadata: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            audience: "mcp" | "rest";
+            label: string;
+            prefix: string;
+            /** @enum {string} */
+            status: "active" | "expired" | "revoked" | "disabled";
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            expiresAt: string;
+            /** Format: date-time */
+            lastUsedAt: string | null;
+            /** Format: date-time */
+            revokedAt: string | null;
+        };
+        AgentChannelCredentialIssueRequest: {
+            /** @enum {string} */
+            audience: "mcp" | "rest";
+            label: string;
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        AgentChannelCredentialIssueResponse: {
+            credential: components["schemas"]["AgentChannelCredentialMetadata"];
+            secret: string;
+        };
+        AgentChannelCredentialListResponse: {
+            credentials: components["schemas"]["AgentChannelCredentialMetadata"][];
+            nextCursor: string | null;
+        };
+        AgentChannelChatRequest: {
+            /** Format: uuid */
+            conversationId?: string;
+            message?: string;
+            /** @default false */
+            startConversation: boolean;
+            /** @default false */
+            stream: boolean;
+            userExpectedLocale?: string;
+        };
+        AuthoredDirectiveCondition: {
+            /** @enum {string} */
+            kind: "always";
+        } | {
+            /** @enum {string} */
+            kind: "contextual";
+            description: string;
+        };
+        AuthoredDirectiveBinding: {
+            /** @enum {string} */
+            kind: "skill";
+            skillName: string;
+        };
+        AuthoredDirectiveLifecycle: {
+            /** @enum {string} */
+            kind: "repeatable";
+        } | {
+            /** @enum {string} */
+            kind: "once_per_conversation";
+        } | {
+            /** @enum {string} */
+            kind: "cooldown";
+            turns: number;
+        };
+        /**
+         * @description Generator a directive addresses. Omitted or empty means the answer body only.
+         * @enum {string}
+         */
+        GenerationSurface: "answer" | "suggested_questions";
+        AuthoredDirectiveCreateRequest: {
+            name: string;
+            condition: components["schemas"]["AuthoredDirectiveCondition"];
+            action: string;
+            priority?: number | null;
+            requiredCapabilities?: string[];
+            dependsOn?: string[];
+            excludes?: string[];
+            surfaces?: components["schemas"]["GenerationSurface"][];
+            tags?: string[];
+            description?: string | null;
+            binding?: components["schemas"]["AuthoredDirectiveBinding"] | null;
+            lifecycle?: components["schemas"]["AuthoredDirectiveLifecycle"] | null;
+            /** @description Reversible off switch. A disabled directive keeps its authored text but never reaches the matcher. Defaults to true. */
+            enabled?: boolean;
+            metadata?: {
+                [key: string]: unknown;
+            };
+        };
+        AuthoredDirectiveUpdateRequest: {
+            name?: string;
+            condition?: components["schemas"]["AuthoredDirectiveCondition"];
+            action?: string;
+            priority?: number | null;
+            requiredCapabilities?: string[];
+            dependsOn?: string[];
+            excludes?: string[];
+            surfaces?: components["schemas"]["GenerationSurface"][];
+            tags?: string[];
+            description?: string | null;
+            binding?: components["schemas"]["AuthoredDirectiveBinding"] | null;
+            lifecycle?: components["schemas"]["AuthoredDirectiveLifecycle"] | null;
+            /** @description Reversible off switch. A disabled directive keeps its authored text but never reaches the matcher. Defaults to true. */
+            enabled?: boolean;
+            metadata?: {
+                [key: string]: unknown;
+            };
+        };
+        DirectiveDraftRequest: {
+            coachingText: string;
+            turn: {
+                userMessage: string;
+                assistantAnswer: string;
+                activeRoutineId?: string;
+                activeStepId?: string;
+            };
+        };
+        DirectiveDraftDirective: {
+            name: string;
+            condition: components["schemas"]["AuthoredDirectiveCondition"];
+            action: string;
+            tags: string[];
+            surfaces?: components["schemas"]["GenerationSurface"][];
+        };
+        DirectiveDraftResponse: {
+            directive: components["schemas"]["DirectiveDraftDirective"];
+            /** @enum {string} */
+            diagnosis: "directive_recommended" | "knowledge_recommended_deferred";
+            rationale?: string;
+        };
+        AuthoredDirective: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            agentId: string;
+            name: string;
+            condition: components["schemas"]["AuthoredDirectiveCondition"];
+            action: string;
+            priority: number | null;
+            requiredCapabilities: string[];
+            dependsOn: string[];
+            excludes: string[];
+            routes: string[];
+            surfaces: components["schemas"]["GenerationSurface"][];
+            tags: string[];
+            description: string | null;
+            binding: components["schemas"]["AuthoredDirectiveBinding"] | null;
+            lifecycle: components["schemas"]["AuthoredDirectiveLifecycle"] | null;
+            enabled: boolean;
+            metadata: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        BuiltInDirective: {
+            name: string;
+            condition: components["schemas"]["AuthoredDirectiveCondition"];
+            action: string;
+            priority: number | null;
+            description: string | null;
+        };
+        DirectiveCoherenceVerdict: {
+            coherent: boolean;
+            conflicts: {
+                directiveId?: string;
+                directiveName: string;
+                reason: string;
+            }[];
+            rationale: string;
+        };
+        DirectiveListResponse: {
+            directives: components["schemas"]["AuthoredDirective"][];
+            builtIns: components["schemas"]["BuiltInDirective"][];
+        };
+        AuthoredDirectiveSaveResponse: {
+            directive: components["schemas"]["AuthoredDirective"];
+            coherence: components["schemas"]["DirectiveCoherenceVerdict"];
+        };
+        RoutineDefinitionCreateRequest: {
+            name: string;
+            activation: {
+                triggerDescription: string;
+                gateRef?: string | null;
+                priority: number;
+                /**
+                 * @default once_per_conversation
+                 * @enum {string}
+                 */
+                reentryMode: "once_per_conversation" | "always" | "semantic";
+            };
+            /** @default [] */
+            slots: {
+                stableSlotId: string;
+                key: string;
+                /** @enum {string} */
+                type: "text" | "number" | "boolean" | "email" | "date";
+                required: boolean;
+                description?: string | null;
+                ordinal: number;
+                mutable?: boolean;
+            }[];
+            steps: {
+                stableStepId: string;
+                /** @enum {string} */
+                kind: "chat" | "tool" | "action" | "approval";
+                toolRef?: string | null;
+                actionType?: string | null;
+                captureKey?: string | null;
+                ordinal: number;
+                /** @default {} */
+                metadata: {
+                    inputBindings?: {
+                        [key: string]: {
+                            /** @enum {string} */
+                            kind: "literal";
+                            value: string | number | boolean;
+                        } | {
+                            /** @enum {string} */
+                            kind: "variableRef";
+                            ref: string;
+                        } | {
+                            /** @enum {string} */
+                            kind: "contextVariableRef";
+                            contextVariable: string;
+                        };
+                    };
+                    outputAssignments?: {
+                        [key: string]: string;
+                    };
+                    /** @enum {string} */
+                    mode?: "typed" | "untyped";
+                };
+                instruction: string;
+                options?: {
+                    id: string;
+                    label: string;
+                    description?: string | null;
+                }[];
+            }[];
+            /** @default [] */
+            transitions: {
+                fromStep: string;
+                toRef: string;
+                /** @enum {string} */
+                guardKind: "llm" | "default" | "slot_filled" | "outcome" | "counter" | "field";
+                guardText?: string | null;
+                outcomeStatus?: string | null;
+                counterLimit?: number | null;
+                fieldRef?: string | null;
+                /** @enum {string|null} */
+                fieldOp?: "is_true" | "is_false" | "equals" | "not_equals" | "in" | "is_present" | "is_absent" | "gt" | "gte" | "lt" | "lte" | "older_than" | "within" | null;
+                fieldValue?: string | number | boolean | null;
+                fieldValues?: (string | number | boolean)[] | null;
+                /** @enum {string|null} */
+                fieldUnit?: "days" | "weeks" | "months" | "years" | null;
+                ordinal: number;
+            }[];
+            terminals: {
+                stableStepId: string;
+                /** @enum {string} */
+                kind: "complete" | "handoff";
+                instruction?: string | null;
+                ordinal: number;
+            }[];
+            completionExport?: {
+                /** @default false */
+                enabled: boolean;
+                /** @default [] */
+                triggerKinds: ("complete" | "handoff")[];
+                /** @default  */
+                destinationRef: string;
+            };
+        };
+        RoutineDefinitionUpdateRequest: {
+            name: string;
+            activation: {
+                triggerDescription: string;
+                gateRef?: string | null;
+                priority: number;
+                /**
+                 * @default once_per_conversation
+                 * @enum {string}
+                 */
+                reentryMode: "once_per_conversation" | "always" | "semantic";
+            };
+            /** @default [] */
+            slots: {
+                stableSlotId: string;
+                key: string;
+                /** @enum {string} */
+                type: "text" | "number" | "boolean" | "email" | "date";
+                required: boolean;
+                description?: string | null;
+                ordinal: number;
+                mutable?: boolean;
+            }[];
+            steps: {
+                stableStepId: string;
+                /** @enum {string} */
+                kind: "chat" | "tool" | "action" | "approval";
+                toolRef?: string | null;
+                actionType?: string | null;
+                captureKey?: string | null;
+                ordinal: number;
+                /** @default {} */
+                metadata: {
+                    inputBindings?: {
+                        [key: string]: {
+                            /** @enum {string} */
+                            kind: "literal";
+                            value: string | number | boolean;
+                        } | {
+                            /** @enum {string} */
+                            kind: "variableRef";
+                            ref: string;
+                        } | {
+                            /** @enum {string} */
+                            kind: "contextVariableRef";
+                            contextVariable: string;
+                        };
+                    };
+                    outputAssignments?: {
+                        [key: string]: string;
+                    };
+                    /** @enum {string} */
+                    mode?: "typed" | "untyped";
+                };
+                instruction: string;
+                options?: {
+                    id: string;
+                    label: string;
+                    description?: string | null;
+                }[];
+            }[];
+            /** @default [] */
+            transitions: {
+                fromStep: string;
+                toRef: string;
+                /** @enum {string} */
+                guardKind: "llm" | "default" | "slot_filled" | "outcome" | "counter" | "field";
+                guardText?: string | null;
+                outcomeStatus?: string | null;
+                counterLimit?: number | null;
+                fieldRef?: string | null;
+                /** @enum {string|null} */
+                fieldOp?: "is_true" | "is_false" | "equals" | "not_equals" | "in" | "is_present" | "is_absent" | "gt" | "gte" | "lt" | "lte" | "older_than" | "within" | null;
+                fieldValue?: string | number | boolean | null;
+                fieldValues?: (string | number | boolean)[] | null;
+                /** @enum {string|null} */
+                fieldUnit?: "days" | "weeks" | "months" | "years" | null;
+                ordinal: number;
+            }[];
+            terminals: {
+                stableStepId: string;
+                /** @enum {string} */
+                kind: "complete" | "handoff";
+                instruction?: string | null;
+                ordinal: number;
+            }[];
+            completionExport?: {
+                /** @default false */
+                enabled: boolean;
+                /** @default [] */
+                triggerKinds: ("complete" | "handoff")[];
+                /** @default  */
+                destinationRef: string;
+            };
+        };
+        RoutineDraftAssistRequest: {
+            prose: string;
+        };
+        RoutineValidationResult: {
+            ok: boolean;
+            diagnostics: {
+                /** @enum {string} */
+                code: "unreachable_step" | "missing_terminal" | "dangling_action_reference" | "dangling_step_reference" | "unbounded_back_edge" | "missing_action_follow_up" | "declared_unused_slot" | "referenced_undeclared_slot" | "unregistered_action_type" | "unknown_skill" | "action_capability_denied" | "invalid_webhook_destination_ref" | "unknown_webhook_destination" | "attempt_limit_without_fallback" | "outcome_guard_on_non_tool_step" | "structured_guard_missing_parameter" | "field_guard_unknown_reference" | "field_guard_incompatible_type" | "completion_export_missing_destination" | "approval_step_llm_edge" | "approval_step_no_decision_edge" | "approval_step_unknown_option" | "approval_step_unreachable_option" | "unsatisfiable_required_input" | "input_type_mismatch" | "unknown_input_binding" | "unknown_variable_ref" | "unknown_context_variable" | "variable_name_collision" | "node_id_collision";
+                location: string;
+                message: string;
+            }[];
+        };
+        RoutineDefinition: {
+            name: string;
+            activation: {
+                triggerDescription: string;
+                gateRef?: string | null;
+                priority: number;
+                /**
+                 * @default once_per_conversation
+                 * @enum {string}
+                 */
+                reentryMode: "once_per_conversation" | "always" | "semantic";
+            };
+            /** @default [] */
+            slots: {
+                stableSlotId: string;
+                key: string;
+                /** @enum {string} */
+                type: "text" | "number" | "boolean" | "email" | "date";
+                required: boolean;
+                description?: string | null;
+                ordinal: number;
+                mutable?: boolean;
+            }[];
+            steps: {
+                stableStepId: string;
+                /** @enum {string} */
+                kind: "chat" | "tool" | "action" | "approval";
+                toolRef?: string | null;
+                actionType?: string | null;
+                captureKey?: string | null;
+                ordinal: number;
+                /** @default {} */
+                metadata: {
+                    inputBindings?: {
+                        [key: string]: {
+                            /** @enum {string} */
+                            kind: "literal";
+                            value: string | number | boolean;
+                        } | {
+                            /** @enum {string} */
+                            kind: "variableRef";
+                            ref: string;
+                        } | {
+                            /** @enum {string} */
+                            kind: "contextVariableRef";
+                            contextVariable: string;
+                        };
+                    };
+                    outputAssignments?: {
+                        [key: string]: string;
+                    };
+                    /** @enum {string} */
+                    mode?: "typed" | "untyped";
+                };
+                instruction: string;
+                options?: {
+                    id: string;
+                    label: string;
+                    description?: string | null;
+                }[];
+            }[];
+            /** @default [] */
+            transitions: {
+                fromStep: string;
+                toRef: string;
+                /** @enum {string} */
+                guardKind: "llm" | "default" | "slot_filled" | "outcome" | "counter" | "field";
+                guardText?: string | null;
+                outcomeStatus?: string | null;
+                counterLimit?: number | null;
+                fieldRef?: string | null;
+                /** @enum {string|null} */
+                fieldOp?: "is_true" | "is_false" | "equals" | "not_equals" | "in" | "is_present" | "is_absent" | "gt" | "gte" | "lt" | "lte" | "older_than" | "within" | null;
+                fieldValue?: string | number | boolean | null;
+                fieldValues?: (string | number | boolean)[] | null;
+                /** @enum {string|null} */
+                fieldUnit?: "days" | "weeks" | "months" | "years" | null;
+                ordinal: number;
+            }[];
+            terminals: {
+                stableStepId: string;
+                /** @enum {string} */
+                kind: "complete" | "handoff";
+                instruction?: string | null;
+                ordinal: number;
+            }[];
+            completionExport?: {
+                /** @default false */
+                enabled: boolean;
+                /** @default [] */
+                triggerKinds: ("complete" | "handoff")[];
+                /** @default  */
+                destinationRef: string;
+            };
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            agentId: string;
+            /** Format: uuid */
+            lineageId: string;
+            version: number;
+            /** @enum {string} */
+            status: "draft" | "published" | "superseded" | "archived";
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        RoutineDefinitionListResponse: {
+            routines: components["schemas"]["RoutineDefinition"][];
+        };
+        RoutineDefinitionGetResponse: {
+            routine: components["schemas"]["RoutineDefinition"];
+        };
+        RoutineDefinitionSaveResponse: {
+            routine: components["schemas"]["RoutineDefinition"];
+            validation: components["schemas"]["RoutineValidationResult"];
+        };
+        RoutineDirectiveScopeOrphan: {
+            directiveId: string;
+            scopeTag: string;
+            /** @enum {string} */
+            reason: "missing_step";
+        };
+        RoutineDefinitionPublishResponse: {
+            routine: components["schemas"]["RoutineDefinition"];
+            validation: components["schemas"]["RoutineValidationResult"];
+            directiveScopeOrphans: components["schemas"]["RoutineDirectiveScopeOrphan"][];
+        };
+        RoutineDefinitionLifecycleResponse: {
+            routine: components["schemas"]["RoutineDefinition"];
+        };
+        RoutineDefinitionValidateResponse: {
+            validation: components["schemas"]["RoutineValidationResult"];
+        };
+        RoutineDraftAssistResponse: {
+            draft: {
+                name: string;
+                activation: {
+                    triggerDescription: string;
+                    gateRef?: string | null;
+                    priority: number;
+                    /**
+                     * @default once_per_conversation
+                     * @enum {string}
+                     */
+                    reentryMode: "once_per_conversation" | "always" | "semantic";
+                };
+                /** @default [] */
+                slots: {
+                    stableSlotId: string;
+                    key: string;
+                    /** @enum {string} */
+                    type: "text" | "number" | "boolean" | "email" | "date";
+                    required: boolean;
+                    description?: string | null;
+                    ordinal: number;
+                    mutable?: boolean;
+                }[];
+                steps: {
+                    stableStepId: string;
+                    /** @enum {string} */
+                    kind: "chat" | "tool" | "action" | "approval";
+                    toolRef?: string | null;
+                    actionType?: string | null;
+                    captureKey?: string | null;
+                    ordinal: number;
+                    /** @default {} */
+                    metadata: {
+                        inputBindings?: {
+                            [key: string]: {
+                                /** @enum {string} */
+                                kind: "literal";
+                                value: string | number | boolean;
+                            } | {
+                                /** @enum {string} */
+                                kind: "variableRef";
+                                ref: string;
+                            } | {
+                                /** @enum {string} */
+                                kind: "contextVariableRef";
+                                contextVariable: string;
+                            };
+                        };
+                        outputAssignments?: {
+                            [key: string]: string;
+                        };
+                        /** @enum {string} */
+                        mode?: "typed" | "untyped";
+                    };
+                    instruction: string;
+                    options?: {
+                        id: string;
+                        label: string;
+                        description?: string | null;
+                    }[];
+                }[];
+                /** @default [] */
+                transitions: {
+                    fromStep: string;
+                    toRef: string;
+                    /** @enum {string} */
+                    guardKind: "llm" | "default" | "slot_filled" | "outcome" | "counter" | "field";
+                    guardText?: string | null;
+                    outcomeStatus?: string | null;
+                    counterLimit?: number | null;
+                    fieldRef?: string | null;
+                    /** @enum {string|null} */
+                    fieldOp?: "is_true" | "is_false" | "equals" | "not_equals" | "in" | "is_present" | "is_absent" | "gt" | "gte" | "lt" | "lte" | "older_than" | "within" | null;
+                    fieldValue?: string | number | boolean | null;
+                    fieldValues?: (string | number | boolean)[] | null;
+                    /** @enum {string|null} */
+                    fieldUnit?: "days" | "weeks" | "months" | "years" | null;
+                    ordinal: number;
+                }[];
+                terminals: {
+                    stableStepId: string;
+                    /** @enum {string} */
+                    kind: "complete" | "handoff";
+                    instruction?: string | null;
+                    ordinal: number;
+                }[];
+                completionExport?: {
+                    /** @default false */
+                    enabled: boolean;
+                    /** @default [] */
+                    triggerKinds: ("complete" | "handoff")[];
+                    /** @default  */
+                    destinationRef: string;
+                };
+            };
+            validation: components["schemas"]["RoutineValidationResult"];
+        };
+        RoutineDefinitionPublishRejectedResponse: {
+            /** @enum {string} */
+            error: "Routine definition is invalid";
+            validation: components["schemas"]["RoutineValidationResult"];
+        };
+        SkillAuthoringInput: {
+            key: string;
+            /** @enum {string} */
+            type: "text" | "number" | "boolean" | "email" | "date" | "phone" | "enum";
+            required: boolean;
+            description?: string;
+            enumValues?: string[];
+        };
+        SkillAuthoringOutcome: {
+            name: string;
+            displayName: string;
+            description?: string;
+            /** @enum {string} */
+            status: "active" | "paused" | "awaiting_confirmation" | "awaiting_tool" | "completed" | "cancelled" | "expired" | "failed";
+        };
+        SkillAuthoringDescriptor: {
+            skillName: string;
+            displayName: string;
+            /** @enum {string} */
+            category: "retrieval" | "built_in" | "external_mcp" | "customer_email" | "webhook" | "slack" | "notify";
+            description?: string;
+            inputs: components["schemas"]["SkillAuthoringInput"][];
+            outcomes: components["schemas"]["SkillAuthoringOutcome"][];
+            hasDataOutputs: boolean;
+        };
+        RoutineSkillCatalogResponse: {
+            skills: components["schemas"]["SkillAuthoringDescriptor"][];
+        };
+        PublicChatSessionResponse: {
+            /** Format: uuid */
+            agentId?: string;
+            agentName?: string;
+            assistantLinkUtmEnabled: boolean;
+            workspaceName: string;
+            publicChatToken: string;
+            /** Format: uuid */
+            publicSessionId: string;
+            publicSessionToken: string;
+            resumeToken: string;
+            assistantBootstrapActive: boolean;
+            assistantAvatarUrl?: string | null;
+            theme?: {
+                brand: string;
+                brandText: string;
+                surface: string;
+                text: string;
+            };
+            copy?: {
+                [key: string]: {
+                    [key: string]: string;
+                };
+            };
+            branding?: {
+                hidePoweredBy: boolean;
+                privacyPolicyUrl: string | null;
+            };
+            intakeActions?: {
+                skillName: string;
+                intentName: string;
+                display?: {
+                    icon?: string;
+                    title?: string;
+                };
+            }[];
+            /** Format: date-time */
+            expiresAt: string;
+            /** Format: date-time */
+            resumeExpiresAt: string;
+        };
+        PublicChatSessionRequest: {
+            /** @enum {string} */
+            channel: "anonymous_link" | "website_embed";
+            /** Format: uuid */
+            agentId?: string;
+            resumeToken?: string;
+            /** Format: uuid */
+            chatSessionId?: string;
+            /** Format: uuid */
+            anonymousSessionId?: string;
+            pageContext?: {
+                pageUrl?: string | null;
+                pageTitle?: string | null;
+                pageLocale?: string | null;
+                browserLocale?: string | null;
+                content?: string | null;
+            };
+            clientContextCapabilities?: {
+                "page.read"?: {
+                    available: boolean;
+                    /** @enum {string|null} */
+                    mode: "metadata" | "content" | null;
+                    supportedOperations: ("metadata" | "lookup" | "summarize")[];
+                };
+            };
+        };
+        WorkspaceIngestionReprocessResponse: {
+            /** Format: uuid */
+            workspaceId: string;
+            queuedDocumentCount: number;
+            skippedDocumentCount: number;
+            /** @enum {string} */
+            status: "queued" | "noop";
+        };
+        /** @description A workspace-scoped reference that does not travel between workspaces (for example a credential-bearing connection). The bundle carries only the kind so the caller can see what did not come along; `key` links the placeholder back to another entity exported in the same bundle when re-binding on import is possible. */
+        AgentConfigRefPlaceholder: {
+            /** @enum {string} */
+            __ref: "documentSource" | "storageBucket" | "storageObjectPath" | "storageGeneration" | "websiteEmbedAllowedOrigin" | "mcpConnection" | "agentSkillTarget";
+            key?: string;
+        };
+        /** @description Stands in for a credential the export withholds. Only its absence travels, never the value. */
+        AgentConfigSecretPlaceholder: {
+            /** @enum {string} */
+            __redacted: "secret";
+        };
+        /** @description An authored directive as it travels. Every reference is a name — `binding.skillName`, `dependsOn` and `excludes` — so nothing here needs re-keying on import. */
+        AgentBundleAuthoredDirective: {
+            name: string;
+            condition: components["schemas"]["AuthoredDirectiveCondition"];
+            action: string;
+            priority: number | null;
+            requiredCapabilities: string[];
+            dependsOn: string[];
+            excludes: string[];
+            routes: ("retrieval" | "direct")[];
+            surfaces: components["schemas"]["GenerationSurface"][];
+            tags: string[];
+            description: string | null;
+            binding: components["schemas"]["AuthoredDirectiveBinding"] | null;
+            lifecycle: components["schemas"]["AuthoredDirectiveLifecycle"] | null;
+            enabled: boolean;
+            metadata: {
+                [key: string]: unknown;
+            };
+        };
+        /** @description Exported for completeness. Import does not re-create these: an MCP connection cannot serve until its credential is re-entered, so each one comes back in `unresolved` for the operator to rebuild. */
+        AgentBundleExternalSkills: {
+            connections: {
+                /** @description Within-bundle linkage key, never a database id. */
+                key: string;
+                displayName: string;
+                serverUrl: string;
+                authMethod: string;
+                credential: components["schemas"]["AgentConfigSecretPlaceholder"] | null;
+                oauth: {
+                    authorizationEndpoint: string;
+                    tokenEndpoint: string;
+                    clientId: string;
+                    clientSecret: components["schemas"]["AgentConfigSecretPlaceholder"] | null;
+                    scopes: string[];
+                } | null;
+            }[];
+            skills: {
+                skillName: string;
+                connection: components["schemas"]["AgentConfigRefPlaceholder"];
+                toolName: string;
+                boundParams: {
+                    [key: string]: unknown;
+                };
+                exposedParams: {
+                    [key: string]: {
+                        description?: string;
+                        slotBinding?: string;
+                    };
+                };
+                declaredOutcomes: string[] | null;
+                outcomeMap: {
+                    [key: string]: string;
+                } | null;
+                enabled: boolean;
+            }[];
+        };
+        /** @description The agent configuration projection (AgentConfig) at schemaVersion 4. Fields classified `ref` or `secret` in `portability` carry placeholders rather than values, so an exported bundle never contains a credential or a workspace-scoped id. `contactRequestDelivery` is always redacted: its recipients and webhook stay in the source workspace so an imported agent cannot deliver contact requests to another workspace's people, and import reports `contact_delivery_unbound` when contact requests are on. */
+        AgentBundleAgentConfig: {
+            schemaVersion: number;
+            /** @description Per-field classification, keyed by field path. `ref` and `secret` fields carry placeholders. */
+            portability: {
+                [key: string]: "portable" | "ref" | "secret";
+            };
+            name: string;
+            internalName: string | null;
+            customInstruction: string;
+            handoffOnRetrievalMiss: boolean;
+            contactRequestsEnabled: boolean;
+            webhookExportsEnabled: boolean;
+            contactRequestDelivery: components["schemas"]["AgentConfigSecretPlaceholder"];
+            /** @description Metadata only. The image lives in object storage and is not part of the bundle. */
+            logo: {
+                bucket: components["schemas"]["AgentConfigRefPlaceholder"];
+                objectPath: components["schemas"]["AgentConfigRefPlaceholder"];
+                generation: components["schemas"]["AgentConfigRefPlaceholder"] | null;
+                mimeType: string;
+                filename: string;
+                sizeBytes: number;
+            } | null;
+            theme: {
+                brand: string;
+                brandText: string;
+                surface: string;
+                text: string;
+            };
+            branding: {
+                hidePoweredBy: boolean;
+                privacyPolicyUrl: string | null;
+            };
+            greetingInstruction: string;
+            assistantDefaultLocale: string | null;
+            proactiveGreetingEnabled: boolean;
+            surfaceSettings: {
+                authenticatedChat: {
+                    enabled: boolean;
+                };
+                anonymousChat: {
+                    enabled: boolean;
+                    token: components["schemas"]["AgentConfigSecretPlaceholder"] | null;
+                };
+                websiteEmbed: {
+                    enabled: boolean;
+                    token: components["schemas"]["AgentConfigSecretPlaceholder"] | null;
+                    allowedOrigins: components["schemas"]["AgentConfigRefPlaceholder"][];
+                    launcherLabel: string;
+                    /** @enum {string} */
+                    launcherPosition: "bottom-right" | "bottom-left";
+                    theme: {
+                        brand: string;
+                        brandText: string;
+                        surface: string;
+                        text: string;
+                    };
+                    copy: {
+                        [key: string]: {
+                            [key: string]: string;
+                        };
+                    };
+                    expertOverrides: {
+                        [key: string]: string;
+                    };
+                };
+                /** @description Surface extensions keyed by extension id; shape is owned by the contributing extension. */
+                extensions: {
+                    [key: string]: unknown;
+                };
+            };
+            /** @description Per-skill settings keyed by skill name. `retrieval.answer` carries an `{ enabled, settings }` envelope whose `settings.__agentRetrievalDefaults` holds the agent-level retrieval defaults and source scope. */
+            skillSettings: {
+                [key: string]: unknown;
+            };
+            chatModelOverride: {
+                provider: string;
+                model: string;
+            } | null;
+            authoredDirectives: components["schemas"]["AgentBundleAuthoredDirective"][];
+            externalSkills: components["schemas"]["AgentBundleExternalSkills"];
+        };
+        AgentBundleRoutine: {
+            name: string;
+            /** @description Source version, carried for provenance only; import always creates v1. */
+            version: number;
+            definition: {
+                name: string;
+                activation: {
+                    triggerDescription: string;
+                    gateRef?: string | null;
+                    priority: number;
+                    /**
+                     * @default once_per_conversation
+                     * @enum {string}
+                     */
+                    reentryMode: "once_per_conversation" | "always" | "semantic";
+                };
+                /** @default [] */
+                slots: {
+                    stableSlotId: string;
+                    key: string;
+                    /** @enum {string} */
+                    type: "text" | "number" | "boolean" | "email" | "date";
+                    required: boolean;
+                    description?: string | null;
+                    ordinal: number;
+                    mutable?: boolean;
+                }[];
+                steps: {
+                    stableStepId: string;
+                    /** @enum {string} */
+                    kind: "chat" | "tool" | "action" | "approval";
+                    toolRef?: string | null;
+                    actionType?: string | null;
+                    captureKey?: string | null;
+                    ordinal: number;
+                    /** @default {} */
+                    metadata: {
+                        inputBindings?: {
+                            [key: string]: {
+                                /** @enum {string} */
+                                kind: "literal";
+                                value: string | number | boolean;
+                            } | {
+                                /** @enum {string} */
+                                kind: "variableRef";
+                                ref: string;
+                            } | {
+                                /** @enum {string} */
+                                kind: "contextVariableRef";
+                                contextVariable: string;
+                            };
+                        };
+                        outputAssignments?: {
+                            [key: string]: string;
+                        };
+                        /** @enum {string} */
+                        mode?: "typed" | "untyped";
+                    };
+                    instruction: string;
+                    options?: {
+                        id: string;
+                        label: string;
+                        description?: string | null;
+                    }[];
+                }[];
+                /** @default [] */
+                transitions: {
+                    fromStep: string;
+                    toRef: string;
+                    /** @enum {string} */
+                    guardKind: "llm" | "default" | "slot_filled" | "outcome" | "counter" | "field";
+                    guardText?: string | null;
+                    outcomeStatus?: string | null;
+                    counterLimit?: number | null;
+                    fieldRef?: string | null;
+                    /** @enum {string|null} */
+                    fieldOp?: "is_true" | "is_false" | "equals" | "not_equals" | "in" | "is_present" | "is_absent" | "gt" | "gte" | "lt" | "lte" | "older_than" | "within" | null;
+                    fieldValue?: string | number | boolean | null;
+                    fieldValues?: (string | number | boolean)[] | null;
+                    /** @enum {string|null} */
+                    fieldUnit?: "days" | "weeks" | "months" | "years" | null;
+                    ordinal: number;
+                }[];
+                terminals: {
+                    stableStepId: string;
+                    /** @enum {string} */
+                    kind: "complete" | "handoff";
+                    instruction?: string | null;
+                    ordinal: number;
+                }[];
+                completionExport?: {
+                    /** @default false */
+                    enabled: boolean;
+                    /** @default [] */
+                    triggerKinds: ("complete" | "handoff")[];
+                    /** @default  */
+                    destinationRef: string;
+                };
+            };
+        };
+        AgentBundleContextVariable: {
+            variableName: string;
+            /** @enum {string} */
+            source: "pushed" | "browser" | "resolver";
+            resolverSkillName: string | null;
+            maxAgeSeconds: number | null;
+            resolverTimeoutMs: number | null;
+            /** @enum {string} */
+            surfacing: "always" | "on_reference" | "operator_only";
+            enabled: boolean;
+        };
+        AgentBundleSkill: {
+            name: string;
+            capability: string;
+            /** @enum {string} */
+            invocationMode: "default_answer" | "routine_named" | "agent_selectable";
+            enabled: boolean;
+            /** @description Only the fields a capability marked portable. */
+            config: {
+                [key: string]: unknown;
+            };
+            /** @description Settings the source agent had a value for that the capability does not mark portable. Key names only, never values; import reports them so the operator knows what to re-enter. */
+            omittedConfigKeys: string[];
+            /** @description Addresses a workspace connection that holds credentials, so the id is placeheld and the skill imports unbound. */
+            target: {
+                kind: string | null;
+                id: components["schemas"]["AgentConfigRefPlaceholder"] | null;
+            };
+        };
+        /**
+         * @description Why a bundle element could not be fully applied to the target workspace. Every element is reported
+         *     rather than silently dropped: a bundle that imports quietly minus a skill binding is an agent that
+         *     looks configured and answers wrong.
+         *     - context_variable_missing: the bundle names a context variable that does not exist in this workspace.
+         *     - resolver_skill_missing: the enablement's resolver skill did not survive import, so it stays unbound.
+         *     - skill_target_unbound: the skill's connection target is a credential-bearing workspace row.
+         *     - skill_capability_unknown: no capability with this id is registered in this deployment.
+         *     - routine_invalid: the routine imported as a draft because publish validation rejected it.
+         *     - document_source_unresolved: selected document sources cannot be matched; scope imports empty, not "all".
+         *     - surface_credential_unbound: a surface whose token cannot travel; imported disabled so it cannot serve.
+         *     - mcp_connection_unbound: an external MCP connection reference; the skill imports without its server.
+         *     - asset_not_portable: binary stored outside the database (the logo); not part of the bundle.
+         *     - skill_config_not_portable: a skill setting whose value the capability keeps inside its own workspace.
+         *     - directive_binding_unbound: a directive bound to a skill that did not survive import; kept, but disabled.
+         *     - contact_delivery_unbound: contact requests are on but their destination stayed in the source workspace.
+         * @enum {string}
+         */
+        AgentBundleUnresolvedKind: "context_variable_missing" | "resolver_skill_missing" | "skill_target_unbound" | "skill_capability_unknown" | "routine_invalid" | "document_source_unresolved" | "surface_credential_unbound" | "mcp_connection_unbound" | "asset_not_portable" | "skill_config_not_portable" | "directive_binding_unbound" | "contact_delivery_unbound";
+        AgentBundleUnresolvedReference: {
+            kind: components["schemas"]["AgentBundleUnresolvedKind"];
+            /** @description The bundle element the caller must fix, named the way they authored it. */
+            element: string;
+            detail: string;
+        };
+        AgentBundle: {
+            /** @enum {number} */
+            bundleVersion: 1;
+            /** @description Portability of the bundle's own top-level collections, keyed by field path (for example "agentSkills[].config"). */
+            portability: {
+                [key: string]: "portable" | "ref" | "secret";
+            };
+            agent: components["schemas"]["AgentBundleAgentConfig"];
+            routines: components["schemas"]["AgentBundleRoutine"][];
+            contextVariables: components["schemas"]["AgentBundleContextVariable"][];
+            agentSkills: components["schemas"]["AgentBundleSkill"][];
+        };
+        /** @description An agent configuration on any version this deployment reads. Fields introduced after the oldest accepted version are optional; an older bundle that omits them imports with the behaviour that version had. Export always emits the current version, with every field present. */
+        AgentBundleImportAgentConfig: {
+            schemaVersion: number;
+            /** @description Per-field classification, keyed by field path. `ref` and `secret` fields carry placeholders. */
+            portability: {
+                [key: string]: "portable" | "ref" | "secret";
+            };
+            name: string;
+            internalName?: string | null;
+            customInstruction: string;
+            handoffOnRetrievalMiss?: boolean;
+            contactRequestsEnabled: boolean;
+            webhookExportsEnabled: boolean;
+            contactRequestDelivery: components["schemas"]["AgentConfigSecretPlaceholder"];
+            /** @description Metadata only. The image lives in object storage and is not part of the bundle. */
+            logo: {
+                bucket: components["schemas"]["AgentConfigRefPlaceholder"];
+                objectPath: components["schemas"]["AgentConfigRefPlaceholder"];
+                generation: components["schemas"]["AgentConfigRefPlaceholder"] | null;
+                mimeType: string;
+                filename: string;
+                sizeBytes: number;
+            } | null;
+            theme: {
+                brand: string;
+                brandText: string;
+                surface: string;
+                text: string;
+            };
+            branding: {
+                hidePoweredBy: boolean;
+                privacyPolicyUrl: string | null;
+            };
+            greetingInstruction: string;
+            assistantDefaultLocale: string | null;
+            proactiveGreetingEnabled: boolean;
+            surfaceSettings: {
+                authenticatedChat: {
+                    enabled: boolean;
+                };
+                anonymousChat: {
+                    enabled: boolean;
+                    token: components["schemas"]["AgentConfigSecretPlaceholder"] | null;
+                };
+                websiteEmbed: {
+                    enabled: boolean;
+                    token: components["schemas"]["AgentConfigSecretPlaceholder"] | null;
+                    allowedOrigins: components["schemas"]["AgentConfigRefPlaceholder"][];
+                    launcherLabel: string;
+                    /** @enum {string} */
+                    launcherPosition: "bottom-right" | "bottom-left";
+                    theme: {
+                        brand: string;
+                        brandText: string;
+                        surface: string;
+                        text: string;
+                    };
+                    copy: {
+                        [key: string]: {
+                            [key: string]: string;
+                        };
+                    };
+                    expertOverrides: {
+                        [key: string]: string;
+                    };
+                };
+                /** @description Surface extensions keyed by extension id; shape is owned by the contributing extension. */
+                extensions: {
+                    [key: string]: unknown;
+                };
+            };
+            /** @description Per-skill settings keyed by skill name. `retrieval.answer` carries an `{ enabled, settings }` envelope whose `settings.__agentRetrievalDefaults` holds the agent-level retrieval defaults and source scope. */
+            skillSettings: {
+                [key: string]: unknown;
+            };
+            chatModelOverride: {
+                provider: string;
+                model: string;
+            } | null;
+            authoredDirectives: components["schemas"]["AgentBundleAuthoredDirective"][];
+            externalSkills: components["schemas"]["AgentBundleExternalSkills"];
+        };
+        /** @description A skill as accepted on import. `config` and `omittedConfigKeys` default to empty when absent, so a hand-written bundle need not restate them. */
+        AgentBundleImportSkill: {
+            name: string;
+            capability: string;
+            /** @enum {string} */
+            invocationMode: "default_answer" | "routine_named" | "agent_selectable";
+            enabled: boolean;
+            /** @description Only the fields a capability marked portable. */
+            config?: {
+                [key: string]: unknown;
+            };
+            /** @description Settings the source agent had a value for that the capability does not mark portable. Key names only, never values; import reports them so the operator knows what to re-enter. */
+            omittedConfigKeys?: string[];
+            /** @description Addresses a workspace connection that holds credentials, so the id is placeheld and the skill imports unbound. */
+            target: {
+                kind: string | null;
+                id: components["schemas"]["AgentConfigRefPlaceholder"] | null;
+            };
+        };
+        /** @description A previously exported agent bundle. `bundleVersion` and `agent.schemaVersion` are checked against what this deployment supports; an unsupported value fails the whole import with 400 rather than importing partially. Collections default to empty when omitted. */
+        AgentBundleImportRequest: {
+            bundleVersion: number;
+            portability?: {
+                [key: string]: "portable" | "ref" | "secret";
+            };
+            agent: components["schemas"]["AgentBundleImportAgentConfig"];
+            routines?: components["schemas"]["AgentBundleRoutine"][];
+            contextVariables?: components["schemas"]["AgentBundleContextVariable"][];
+            agentSkills?: components["schemas"]["AgentBundleImportSkill"][];
+        };
+        AgentBundleImportResponse: {
+            /** Format: uuid */
+            agentId: string;
+            unresolved: components["schemas"]["AgentBundleUnresolvedReference"][];
+        };
+        DocumentCreateRequest: {
+            title: string;
+            content: string;
+            metadata?: {
+                [key: string]: string | number | boolean | null;
+            };
+            externalDocumentId?: string;
+            source?: {
+                /** Format: uuid */
+                id: string;
+            } | {
+                /** @enum {string} */
+                kind: "website";
+                /** Format: uri */
+                url: string;
+            };
+            /** @enum {string} */
+            documentEnrichmentOverride?: "on" | "off";
+        };
+        DocumentSourceSummary: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            kind: "website" | "api" | "connector" | "upload";
+            name: string;
+            externalId: string | null;
+        };
+        DocumentSourceCrawlSettings: {
+            url: string | null;
+            limit: number;
+            includeUrlPatterns: string[];
+            excludeUrlPatterns: string[];
+            preserveContentLinks: boolean;
+        };
+        DocumentSourceListItem: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            kind: "website" | "api" | "connector" | "upload";
+            name: string;
+            externalId: string | null;
+            lastSyncStatus: string | null;
+            /** Format: date-time */
+            lastSyncedAt: string | null;
+            documentCount: number;
+            /** @enum {string} */
+            documentEnrichmentOverride: "inherit" | "on" | "off";
+            /**
+             * @description Tags stamped onto every chunk produced from this source's documents. A document's own metadata wins on key collisions.
+             * @default {}
+             */
+            documentMetadata: {
+                [key: string]: string | number | boolean | null;
+            };
+            crawlSettings?: components["schemas"]["DocumentSourceCrawlSettings"];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        DocumentSourceUpdateRequest: {
+            /** @enum {string} */
+            documentEnrichmentOverride?: "inherit" | "on" | "off";
+            documentMetadata?: {
+                [key: string]: string | number | boolean | null;
+            };
+            crawlSettings?: {
+                limit?: number;
+                includeUrlPatterns?: string[];
+                excludeUrlPatterns?: string[];
+                preserveContentLinks?: boolean;
+            };
+        };
+        DocumentReprocessRequest: {
+            /** @enum {string} */
+            documentEnrichmentOverride?: "on" | "off";
+        };
+        SourceReprocessResponse: {
+            /** Format: uuid */
+            sourceId: string;
+            /** Format: uuid */
+            workspaceId: string;
+            queuedDocumentCount: number;
+            skippedDocumentCount: number;
+            /** @enum {string} */
+            status: "queued" | "noop";
+        };
+        DocumentSourceListResponse: {
+            sources: components["schemas"]["DocumentSourceListItem"][];
+        };
+        DocumentImportRequest: {
+            /**
+             * Format: binary
+             * @description Source file to import.
+             */
+            file: string;
+            /** @description Optional title to use instead of the source filename. */
+            title?: string;
+            /**
+             * @description Force metadata extraction on or off for this import's processing run only.
+             * @enum {string}
+             */
+            documentEnrichmentOverride?: "on" | "off";
+            /** @description Operator-authored metadata for the imported document, as a JSON object of string, number, boolean, or null values. 16 KB maximum. */
+            metadata?: string;
+        };
+        DocumentStatus: string;
+        DocumentOperationResponse: {
+            /** Format: uuid */
+            documentId: string;
+            status: components["schemas"]["DocumentStatus"];
+        };
+        DocumentEnrichment: {
+            /** @enum {string} */
+            status: "applied" | "skipped" | "failed";
+            /** @enum {string} */
+            shape?: "event" | "article" | "profile" | "reference" | "generic";
+            model?: string | null;
+            /** Format: date-time */
+            enrichedAt?: string | null;
+            anchorDate?: string | null;
+            /** @enum {string|null} */
+            anchorSource?: "source_last_sync" | "document_created_at" | null;
+            factCount?: number;
+            appliedChunkCount?: number;
+            failureReason?: string | null;
+            /** @description The document type catalog entry that matched. Equals `shape` for built-in entries; an operator-defined key otherwise. */
+            matchedTypeKey?: string | null;
+            /** @description The catalog revision this run resolved at execution time. */
+            catalogRevision?: string | null;
+            /** @description The metadata keys this run generated. Extraction owns exactly these keys and replaces them on the next successful run; every other key is manually or connector owned. */
+            generatedKeys?: string[];
+            /** @description Content-free tallies of what the run did with the model's field payload. */
+            fieldCounts?: {
+                applied: number;
+                droppedInvalid: number;
+                droppedUndeclared: number;
+                droppedDuplicate: number;
+                droppedOverCap: number;
+                skippedCollision: number;
+            } | null;
+            /** @description Content-free note about a classification fallback on an otherwise successful run. */
+            classificationNote?: string | null;
+        };
+        RagStatus: string;
+        DocumentSummary: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+            status: components["schemas"]["DocumentStatus"];
+            ragStatus: components["schemas"]["RagStatus"];
+            failureReason?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** @default {} */
+            metadata: {
+                [key: string]: string | number | boolean | null;
+            };
+            enrichment?: components["schemas"]["DocumentEnrichment"] & (Record<string, never> | null);
+            /** Format: uuid */
+            sourceId?: string | null;
+            source?: components["schemas"]["DocumentSourceSummary"] & (Record<string, never> | null);
+            externalDocumentId?: string | null;
+            /** @enum {string} */
+            sourceKind: "inline_text" | "uploaded_file";
+            sourceFilename?: string | null;
+            sourceMimeType?: string | null;
+            contentSize?: number | null;
+            /** @description When false, the document is excluded from retrieval regardless of processing status. */
+            retrievalEnabled: boolean;
+            /**
+             * Format: date-time
+             * @description Instant after which the document is auto-excluded from retrieval. Null when no expiry is set.
+             */
+            retrievalExpiresAt: string | null;
+        };
+        DocumentRetrievalUpdateRequest: {
+            retrievalEnabled?: boolean;
+            /** Format: date-time */
+            retrievalExpiresAt?: string | null;
+            metadata?: {
+                [key: string]: string | number | boolean | null;
+            };
+        };
+        DocumentDetails: components["schemas"]["DocumentSummary"] & {
+            content: string;
+        };
+        DocumentListResponse: {
+            documents: components["schemas"]["DocumentSummary"][];
+            total: number;
+            nextCursor: string | null;
+            hasMore: boolean;
+        };
+        DocumentSearchAction: {
+            /** @enum {string} */
+            type: "open_document" | "inspect_match_evidence" | "open_history_entry" | "rerun_search";
+            /** @enum {string} */
+            status: "available" | "unavailable";
+        };
+        DocumentSearchResult: {
+            /** Format: uuid */
+            documentId: string;
+            title: string;
+            status: components["schemas"]["DocumentStatus"];
+            ragStatus: components["schemas"]["RagStatus"];
+            metadata: {
+                [key: string]: unknown;
+            };
+            score: number;
+            rank: number;
+            matchEvidence: string[];
+            /** @enum {string} */
+            sourceKind: "inline_text" | "uploaded_file";
+            sourceFilename?: string | null;
+            sourceMimeType?: string | null;
+            actions: components["schemas"]["DocumentSearchAction"][];
+        };
+        DocumentSearchHistoryEntry: {
+            /** Format: uuid */
+            searchId: string;
+            query: string;
+            /** Format: date-time */
+            createdAt: string;
+            resultCount: number;
+            activityTraceAvailable: boolean;
+            previewTopTitles: string[];
+        };
+        DocumentSearchHistoryListResponse: {
+            searches: components["schemas"]["DocumentSearchHistoryEntry"][];
+            total: number;
+            nextCursor: string | null;
+            hasMore: boolean;
+        };
+        DocumentSearchRequest: {
+            query: string;
+            metadataFilter?: {
+                [key: string]: string | number | boolean | null;
+            };
+            /** @default false */
+            includeDebug: boolean;
+        };
+        WebsiteCrawlRequest: {
+            /** Format: uri */
+            url: string;
+            limit?: number;
+            includeUrlPatterns?: string[];
+            excludeUrlPatterns?: string[];
+            preserveContentLinks?: boolean;
+        };
+        WebsiteCrawlJobResponse: {
+            /** Format: uuid */
+            jobId: string;
+            /** Format: uuid */
+            sourceId: string | null;
+            /** Format: uri */
+            requestedUrl: string;
+            /** @enum {string} */
+            status: "queued";
+        };
+        WebsiteCrawlPublicationResponse: {
+            provider: string;
+            runId: string | null;
+            status: string | null;
+            requestedUrl: string;
+            accepted: number;
+            skipped: number;
+            failed: number;
+            documents: {
+                externalDocumentId: string;
+                documentId: string;
+                status: string;
+                sourceUrl: string;
+                canonicalUrl: string | null;
+            }[];
+            failures: {
+                sourceUrl: string;
+                reason: string;
+            }[];
+        };
+        /** @enum {string} */
+        WebsiteCrawlJobStatus: "queued" | "processing" | "paused" | "completed" | "failed";
+        CrawlPageFailure: {
+            sourceUrl: string;
+            reason: string;
+        };
+        WebsiteCrawlJobSummary: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uri */
+            requestedUrl: string;
+            status: components["schemas"]["WebsiteCrawlJobStatus"];
+            limit: number;
+            /** Format: uuid */
+            sourceId: string | null;
+            documentCount: number | null;
+            failedPageCount: number | null;
+            skippedPageCount: number | null;
+            failures: components["schemas"]["CrawlPageFailure"][];
+            lastError: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: date-time */
+            completedAt: string | null;
+        };
+        WebsiteCrawlJobListResponse: {
+            jobs: components["schemas"]["WebsiteCrawlJobSummary"][];
+        };
+        Citation: {
+            /** Format: uuid */
+            documentId: string;
+            /** Format: uuid */
+            chunkId: string;
+            title: string;
+            /** Format: uri */
+            sourceUrl?: string;
+        };
+        AnswerSegment: {
+            text: string;
+            citationIndices?: number[];
+        };
+        ParsedQuery: {
+            originalQuery?: string;
+            semanticQuery: string;
+            lexicalQuery: string;
+            constraintSummary: string[];
+        };
+        CandidateCounts: {
+            semantic: number;
+            lexical: number;
+            merged: number;
+            final: number;
+        };
+        RetrievalSubquery: {
+            id: string;
+            label: string;
+            semanticQuery: string;
+            lexicalQuery: string;
+            reason?: string;
+            /** @enum {string} */
+            responseLanguagePolicy?: "match_user_question";
+        };
+        AppliedConstraint: {
+            signalKey: string;
+            /** @enum {string} */
+            mode: "boost_only" | "hard_filter";
+            /** @enum {string} */
+            outcome: "applied" | "relaxed" | "skipped";
+            summary: string;
+        };
+        RewriteInfo: {
+            status: string;
+            eligible: boolean;
+            ran: boolean;
+            materialDisagreement: boolean;
+            continuityDecision?: string;
+            rejectionReason?: string;
+        };
+        RetrievalExecutionMetadata: {
+            /** @enum {string} */
+            surface: "assistant" | "retrieval" | "mcp_capability";
+            /** @enum {string} */
+            path: "assistant_direct" | "assistant_retrieval" | "retrieval_search" | "retrieval_answer" | "mcp_grounded_answer";
+            retrievalInvoked: boolean;
+        };
+        ActivitySummary: {
+            traceId?: string;
+            skillName?: string;
+            surface?: string;
+            path?: string;
+            /** @enum {string} */
+            status?: "success" | "skipped" | "blocked" | "failed" | "fallback" | "pending";
+            outcome?: string;
+            primaryCounts?: {
+                [key: string]: number;
+            };
+            assistant?: {
+                [key: string]: unknown;
+            };
+            contact?: {
+                [key: string]: unknown;
+            };
+            execution?: components["schemas"]["RetrievalExecutionMetadata"];
+            parsedQuery?: components["schemas"]["ParsedQuery"];
+            retrievalSubqueries?: components["schemas"]["RetrievalSubquery"][];
+            retrievalSkipped?: boolean;
+            /** @enum {string} */
+            responseLanguagePolicy?: "match_user_question";
+            candidateCounts?: components["schemas"]["CandidateCounts"];
+            appliedConstraints?: components["schemas"]["AppliedConstraint"][];
+            fallbackApplied?: boolean;
+            /** @enum {string} */
+            rerankStatus?: "skipped" | "applied" | "fallback";
+            rewrite?: components["schemas"]["RewriteInfo"];
+            triggerAnalysis?: components["schemas"]["TriggerAnalysis"];
+            triggerBackoff?: components["schemas"]["TriggerBackoff"];
+            /** @enum {string} */
+            shapeName?: "definition_lookup" | "event_date_lookup" | "policy_answer" | "exploratory_summary" | "follow_up_grounding" | "default_hybrid";
+            /** @enum {string} */
+            queryShape?: "definition_lookup" | "event_date_lookup" | "policy_answer" | "exploratory_summary" | "follow_up_grounding" | "default_hybrid" | "general_grounding";
+            resolvedSteps?: {
+                [key: string]: unknown;
+            }[];
+            skillDiagnostic?: {
+                skillName: string;
+                shapeName?: string;
+                strategy?: string;
+                /** @enum {string} */
+                selectionMode: "deterministic" | "probabilistic";
+                selectionReason?: string;
+                selectionConfidence?: number;
+                /** @enum {string} */
+                callerSurface: "assistant" | "retrieval_api" | "sdk" | "mcp" | "dashboard" | "public_embed";
+                capabilityChecks: {
+                    capability: string;
+                    allowed: boolean;
+                    reason?: string;
+                }[];
+                parameters?: {
+                    [key: string]: unknown;
+                };
+                fallback?: {
+                    used: boolean;
+                    reason?: string;
+                    path?: string;
+                };
+                /** @enum {string} */
+                outcome: "success" | "unsupported" | "forbidden" | "failed" | "skipped";
+                error?: {
+                    code: string;
+                    message?: string;
+                };
+                evidence?: {
+                    queryShape?: string;
+                    retrievalShape?: string;
+                    retrievalStrategy?: string;
+                    candidateSourceSummary?: {
+                        [key: string]: unknown;
+                    };
+                    ranking?: {
+                        [key: string]: unknown;
+                    };
+                    resolvedSteps?: {
+                        [key: string]: unknown;
+                    }[];
+                    /** @enum {string} */
+                    evidenceStatus?: "found" | "missing" | "partial" | "not_applicable";
+                    /** @enum {string} */
+                    supportStatus?: "supported" | "unsupported" | "not_checked" | "not_applicable";
+                    groundingOutcome?: string;
+                };
+            };
+        };
+        ActivityStage: {
+            stageId: string;
+            kind: string;
+            label: string;
+            /** @enum {string} */
+            status: "applied" | "skipped" | "fallback" | "rejected" | "unavailable" | "failed";
+            /** Format: date-time */
+            startedAt?: string;
+            durationMs?: number;
+            settings?: {
+                [key: string]: unknown;
+            };
+            inputs?: {
+                [key: string]: unknown;
+            };
+            outputs?: {
+                [key: string]: unknown;
+            };
+            metrics?: {
+                [key: string]: number;
+            };
+            reason?: string;
+        };
+        ActivityLink: {
+            fromStageId: string;
+            toStageId: string;
+            /** @enum {string} */
+            kind: "sequence" | "branch" | "converge";
+        };
+        ActivityTrace: {
+            traceId: string;
+            /** Format: date-time */
+            startedAt: string;
+            /** Format: date-time */
+            completedAt?: string;
+            totalDurationMs?: number;
+            stages: components["schemas"]["ActivityStage"][];
+            links: components["schemas"]["ActivityLink"][];
+            summary?: components["schemas"]["ActivitySummary"];
+        };
+        DocumentSearchResponse: {
+            /** Format: uuid */
+            searchId: string;
+            /** @enum {string} */
+            mode: "live" | "snapshot";
+            query: string;
+            resultCount: number;
+            results: components["schemas"]["DocumentSearchResult"][];
+            debug?: {
+                activityTrace: components["schemas"]["ActivityTrace"];
+            };
+        };
+        RetrievalAgentScope: {
+            /** Format: uuid */
+            agentId: string;
+            retrievalEnabled: boolean;
+        } | null;
+        RetrievalSearchRequest: {
+            query: string;
+            /** Format: uuid */
+            agentId?: string;
+            metadataFilter?: {
+                [key: string]: unknown;
+            };
+            topK?: number;
+            /** @default false */
+            includeDebug: boolean;
+        };
+        RetrievalAnswerRequest: {
+            query: string;
+            /** Format: uuid */
+            agentId?: string;
+            conversationContext?: {
+                previousUserMessages?: string[];
+                previousAssistantMessages?: string[];
+                followUpToMessageId?: string;
+            };
+            metadataFilter?: {
+                [key: string]: unknown;
+            };
+            /** @default false */
+            includeDebug: boolean;
+        };
+        RetrievalSearchEvidence: {
+            /** Format: uuid */
+            documentId: string;
+            /** Format: uuid */
+            chunkId: string;
+            title: string;
+            content: string;
+            metadata?: {
+                [key: string]: unknown;
+            };
+            score?: number;
+        };
+        RetrievalSearchResponse: {
+            /** @enum {string} */
+            outcome: "results";
+            agentScope: components["schemas"]["RetrievalAgentScope"];
+            rewrittenQuery: {
+                semantic: string;
+                lexical: string;
+            };
+            results: components["schemas"]["RetrievalSearchEvidence"][];
+            debug?: {
+                activitySummary: components["schemas"]["ActivitySummary"];
+                activityTrace: components["schemas"]["ActivityTrace"];
+            };
+        };
+        RetrievalAnswerEvidence: {
+            /** Format: uuid */
+            documentId: string;
+            /** Format: uuid */
+            chunkId: string;
+            title: string;
+            content: string;
+            metadata?: {
+                [key: string]: unknown;
+            };
+            score?: number;
+        };
+        RetrievalAnswerSuccess: {
+            /** @enum {string} */
+            outcome: "answer";
+            agentScope: components["schemas"]["RetrievalAgentScope"];
+            answer: string;
+            citations?: components["schemas"]["Citation"][];
+            validation: {
+                /** @enum {string} */
+                status: "supported" | "unsupported" | "not_checked";
+            };
+            debug?: {
+                evidence: components["schemas"]["RetrievalAnswerEvidence"][];
+                activitySummary: components["schemas"]["ActivitySummary"];
+                activityTrace: components["schemas"]["ActivityTrace"];
+            };
+        };
+        RetrievalAnswerResponse: {
+            /** @enum {string} */
+            outcome: "answer";
+            agentScope: components["schemas"]["RetrievalAgentScope"];
+            answer: string;
+            citations?: components["schemas"]["Citation"][];
+            validation: {
+                /** @enum {string} */
+                status: "supported" | "unsupported" | "not_checked";
+            };
+            debug?: {
+                evidence: components["schemas"]["RetrievalAnswerEvidence"][];
+                activitySummary: components["schemas"]["ActivitySummary"];
+                activityTrace: components["schemas"]["ActivityTrace"];
+            };
+        };
+        SkillAvailability: {
+            /** @enum {string} */
+            state: "available" | "forbidden" | "unavailable";
+            reason?: string;
+        };
+        SkillContractReference: {
+            /** @enum {string} */
+            kind: "http" | "sdk" | "mcp_tool" | "documentation";
+            label: string;
+            /** @enum {string} */
+            method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+            path: string;
+        };
+        SkillDiagnosticsSummary: {
+            defined: boolean;
+            shapeAware: boolean;
+            strategyAware: boolean;
+            supportedFields?: string[];
+        };
+        SkillDisplayMetadata: {
+            icon?: string;
+            title?: string;
+        };
+        SkillOutcomeDefinition: {
+            name: string;
+            displayName: string;
+            description?: string;
+            /** @enum {string} */
+            status: "active" | "paused" | "awaiting_confirmation" | "awaiting_tool" | "completed" | "cancelled" | "expired" | "failed";
+            groundedAnswer?: boolean;
+            /** @enum {string} */
+            tone?: "positive" | "neutral" | "info" | "warning" | "muted";
+        };
+        SkillDiagnosticEvidence: {
+            queryShape?: string;
+            retrievalShape?: string;
+            retrievalStrategy?: string;
+            candidateSourceSummary?: {
+                [key: string]: unknown;
+            };
+            ranking?: {
+                [key: string]: unknown;
+            };
+            resolvedSteps?: {
+                [key: string]: unknown;
+            }[];
+            /** @enum {string} */
+            evidenceStatus?: "found" | "missing" | "partial" | "not_applicable";
+            /** @enum {string} */
+            supportStatus?: "supported" | "unsupported" | "not_checked" | "not_applicable";
+            groundingOutcome?: string;
+        };
+        SkillDiagnosticDefinition: {
+            skillName: string;
+            shapeName?: string;
+            strategy?: string;
+            /** @enum {string} */
+            selectionMode: "deterministic" | "probabilistic";
+            selectionReason?: string;
+            selectionConfidence?: number;
+            /** @enum {string} */
+            callerSurface: "assistant" | "retrieval_api" | "sdk" | "mcp" | "dashboard" | "public_embed";
+            capabilityChecks: {
+                capability: string;
+                allowed: boolean;
+                reason?: string;
+            }[];
+            parameters?: {
+                [key: string]: unknown;
+            };
+            fallback?: {
+                used: boolean;
+                reason?: string;
+                path?: string;
+            };
+            /** @enum {string} */
+            outcome: "success" | "unsupported" | "forbidden" | "failed" | "skipped";
+            error?: {
+                code: string;
+                message?: string;
+            };
+            evidence?: {
+                queryShape?: string;
+                retrievalShape?: string;
+                retrievalStrategy?: string;
+                candidateSourceSummary?: {
+                    [key: string]: unknown;
+                };
+                ranking?: {
+                    [key: string]: unknown;
+                };
+                resolvedSteps?: {
+                    [key: string]: unknown;
+                }[];
+                /** @enum {string} */
+                evidenceStatus?: "found" | "missing" | "partial" | "not_applicable";
+                /** @enum {string} */
+                supportStatus?: "supported" | "unsupported" | "not_checked" | "not_applicable";
+                groundingOutcome?: string;
+            };
+        };
+        SkillCatalogEntry: {
+            name: string;
+            displayName: string;
+            description: string;
+            display?: {
+                icon?: string;
+                title?: string;
+            };
+            /** @enum {string} */
+            owner: "assistant" | "retrieval" | "documents" | "mcp" | "platform" | "auth" | "contact";
+            /** @enum {string} */
+            executionClass: "interactive" | "deferred" | "administrative";
+            availability: components["schemas"]["SkillAvailability"];
+            supportedCallers: ("assistant" | "retrieval_api" | "sdk" | "mcp" | "dashboard" | "public_embed")[];
+            requiredCapabilities: string[];
+            contractReferences: components["schemas"]["SkillContractReference"][];
+            schemaReferences?: {
+                inputSchemaRef: string;
+                settingsSchemaRef?: string;
+            };
+            intake?: {
+                enabled: boolean;
+                supportedCallers: ("assistant" | "retrieval_api" | "sdk" | "mcp" | "dashboard" | "public_embed")[];
+                intent: {
+                    description: string;
+                    examples: string[];
+                };
+                fields: {
+                    name: string;
+                    displayName: string;
+                    /** @enum {string} */
+                    type: "string" | "email" | "phone" | "number" | "date" | "enum";
+                    required: boolean;
+                    sensitive?: boolean;
+                    ttlSeconds?: number;
+                    pattern?: string;
+                    enumValues?: string[];
+                    maxLength?: number;
+                    extractionHint?: string;
+                }[];
+                subjectIdentityField?: string;
+                /** @enum {string} */
+                confirmation: "none" | "before_execute" | "always";
+                /** @enum {string} */
+                interruptionPolicy: "pause_and_resume" | "cancel_on_topic_change";
+            };
+            execution?: {
+                /** @enum {string} */
+                kind: "internal";
+                adapter: string;
+                enqueue?: boolean;
+            } | {
+                /** @enum {string} */
+                kind: "webhook";
+                /** @enum {string} */
+                provider: "make" | "zapier" | "custom";
+                endpointId: string;
+                enqueue: boolean;
+                timeoutMs?: number;
+            } | {
+                /** @enum {string} */
+                kind: "delivery_pipeline";
+                adapter: string;
+                destinations: ("email" | "webhook")[];
+                enqueue: boolean;
+            };
+            diagnostics: components["schemas"]["SkillDiagnosticsSummary"];
+            steps?: {
+                name: string;
+                kind: string;
+            }[];
+            shapes?: {
+                name: string;
+                displayName?: string;
+                description?: string;
+            }[];
+            outcomes?: components["schemas"]["SkillOutcomeDefinition"][];
+        };
+        SkillCatalogResponse: {
+            skills: components["schemas"]["SkillCatalogEntry"][];
+        };
+        SkillParams: {
+            skillName: string;
+        };
+        /** @description Behavior triggered when the user activates the suggestion chip. Absent means ask_followup (default: submit the chip text as a new user turn). */
+        ChatSuggestionAction: {
+            /** @enum {string} */
+            kind: "ask_followup";
+        } | {
+            /** @enum {string} */
+            kind: "start_intent";
+            intent: {
+                skillName: string;
+                intentName?: string;
+                display?: components["schemas"]["SkillDisplayMetadata"];
+            };
+        };
+        ChatSuggestion: {
+            text: string;
+            kind: string;
+            citation?: components["schemas"]["Citation"];
+            action?: components["schemas"]["ChatSuggestionAction"];
+        };
+        AssistantRoute: {
+            /** @enum {string} */
+            type: "direct" | "retrieval";
+            /**
+             * @description Execution routing reason chosen by the assistant surface after intent and policy checks.
+             * @enum {string}
+             */
+            reason: "assistant_identity" | "conversation_start" | "evidence_required" | "social_only";
+        };
+        AssistantRouteDiagnostics: {
+            /**
+             * @description The human-facing assistant surface that produced this response.
+             * @enum {string}
+             */
+            generator: "assistant";
+            /** @enum {string} */
+            routeType: "direct" | "retrieval";
+            /**
+             * @description Route reason echoed into diagnostics for replay and history views.
+             * @enum {string}
+             */
+            routeReason: "assistant_identity" | "conversation_start" | "evidence_required" | "social_only";
+            retrievalInvoked: boolean;
+        };
+        CapabilitySubTrace: {
+            /** @description Capability that produced this sub-trace; the renderer keys on it (e.g. retrieval, skill-intake). */
+            namespace: string;
+            version: number;
+            /** @description Opaque capability-owned trace payload (e.g. an ActivityTrace). Shape varies by namespace/version. */
+            payload?: unknown;
+        };
+        ConversationTraceStage: {
+            id: string;
+            kind: string;
+            /** @enum {string} */
+            status: "applied" | "skipped" | "fallback" | "rejected" | "unavailable" | "failed";
+            startedAt?: string;
+            completedAt?: string;
+            inputs?: {
+                [key: string]: unknown;
+            };
+            outputs?: {
+                [key: string]: unknown;
+            };
+            metrics?: {
+                [key: string]: number;
+            };
+            subTrace?: components["schemas"]["CapabilitySubTrace"];
+        };
+        ConversationTrace: {
+            traceId: string;
+            startedAt: string;
+            completedAt?: string;
+            stages: components["schemas"]["ConversationTraceStage"][];
+            links?: {
+                from: string;
+                to: string;
+                kind: string;
+            }[];
+            summary?: {
+                [key: string]: unknown;
+            };
+        };
+        /** @description Debug-only OpenTelemetry correlation. Contains primitive trace identity only; no SDK span objects or payload data are embedded. */
+        TurnTraceOpenTelemetryCorrelation: {
+            /** @description Active OpenTelemetry trace id for correlating this product diagnostic turn with exported traces. */
+            traceId: string;
+            /** @description Active OpenTelemetry span id at the point the turn trace envelope was built. */
+            spanId: string;
+            /** @description Whether the active OpenTelemetry span context was sampled. */
+            sampled: boolean;
+        };
+        TurnTraceEnvelope: {
+            /** @description Envelope generation marker. 0 = synthesized from a legacy turn; >=1 = engine-emitted spine. */
+            version: number;
+            spine: components["schemas"]["ConversationTrace"];
+            openTelemetry?: components["schemas"]["TurnTraceOpenTelemetryCorrelation"];
+            summary?: {
+                [key: string]: unknown;
+            };
+        };
+        AssistantChatDebug: {
+            route: components["schemas"]["AssistantRoute"];
+            activitySummary: components["schemas"]["ActivitySummary"];
+            activityTrace: components["schemas"]["ActivityTrace"];
+            turnTrace?: components["schemas"]["TurnTraceEnvelope"];
+        };
+        ChatResponse: {
+            /** Format: uuid */
+            conversationId: string;
+            assistantMessageId: string;
+            /** Format: uuid */
+            agentId?: string;
+            agentName?: string;
+            answer: string;
+            citations?: components["schemas"]["Citation"][];
+            answerSegments?: components["schemas"]["AnswerSegment"][];
+            suggestions?: components["schemas"]["ChatSuggestion"][];
+            ownership?: {
+                /** @enum {string} */
+                state: "ai_owned" | "human_owned";
+                suppressed: boolean;
+            };
+            debug?: components["schemas"]["AssistantChatDebug"];
+        };
+        /** @description Ephemeral bootstrap greeting response. Conversation id is omitted until the first persisted user turn. The optional bootstrap greeting id can be sent with the first user message to save the displayed greeting in conversation history. */
+        ChatBootstrapResponse: {
+            /** Format: uuid */
+            conversationId?: string;
+            /** Format: uuid */
+            bootstrapGreetingId?: string;
+            /** Format: uuid */
+            agentId?: string;
+            agentName?: string;
+            answer: string;
+            citations?: components["schemas"]["Citation"][];
+            answerSegments?: components["schemas"]["AnswerSegment"][];
+            suggestions?: components["schemas"]["ChatSuggestion"][];
+            ownership?: {
+                /** @enum {string} */
+                state: "ai_owned" | "human_owned";
+                suppressed: boolean;
+            };
+            debug?: components["schemas"]["AssistantChatDebug"];
+        };
+        AssistantChatResponse: components["schemas"]["ChatResponse"] | components["schemas"]["ChatBootstrapResponse"];
+        /** @description `message` is required unless `startConversation` is true; bootstrap requests cannot include `conversationId`. */
+        AssistantChatRequest: {
+            /** Format: uuid */
+            agentId?: string;
+            /** Format: uuid */
+            conversationId?: string;
+            /** Format: uuid */
+            bootstrapGreetingId?: string;
+            message?: string;
+            /** @default false */
+            startConversation: boolean;
+            /** @default false */
+            stream: boolean;
+            /** @default false */
+            includeDebug: boolean;
+            userExpectedLocale?: string;
+            inputMetadata?: {
+                /** @enum {string} */
+                method: "typed" | "suggestion_click" | "intent_click";
+                /** Format: uuid */
+                suggestionSourceMessageId?: string;
+                intent?: {
+                    skillName: string;
+                    intentName?: string;
+                };
+            };
+            sourceContext?: {
+                /** @enum {string} */
+                surface?: "authenticated_chat" | "public_chat" | "website_embed";
+                sourceOrigin?: string | null;
+            };
+            metadataFilter?: {
+                [key: string]: unknown;
+            };
+            previewRoutineIds?: string[];
+        };
+        /** @description `message` is required unless `startConversation` is true; bootstrap requests cannot include `conversationId`. */
+        PublicChatRequest: {
+            message?: string;
+            /** @default false */
+            stream: boolean;
+            /** Format: uuid */
+            conversationId?: string;
+            /** Format: uuid */
+            bootstrapGreetingId?: string;
+            startConversation?: boolean;
+            userExpectedLocale?: string;
+            pageContext?: {
+                pageUrl?: string | null;
+                pageTitle?: string | null;
+                pageLocale?: string | null;
+                browserLocale?: string | null;
+                content?: string | null;
+            };
+            clientContextCapabilities?: {
+                "page.read"?: {
+                    available: boolean;
+                    /** @enum {string|null} */
+                    mode: "metadata" | "content" | null;
+                    supportedOperations: ("metadata" | "lookup" | "summarize")[];
+                };
+            };
+            signedIdentity?: string;
+            inputMetadata?: {
+                /** @enum {string} */
+                method: "typed" | "suggestion_click" | "intent_click";
+                /** Format: uuid */
+                suggestionSourceMessageId?: string;
+                intent?: {
+                    skillName: string;
+                    intentName?: string;
+                };
+            };
+        };
+        ConversationOwnership: {
+            /** Format: uuid */
+            conversationId: string;
+            /** Format: uuid */
+            workspaceId: string;
+            /** @enum {string} */
+            state: "ai_owned" | "human_owned";
+            /** Format: uuid */
+            ownerAccountId: string | null;
+            ownerDisplayName: string | null;
+            reason: string | null;
+            version: number;
+            /** Format: date-time */
+            takenOverAt: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ConversationChannelContext: {
+            /** @enum {string} */
+            provider: "slack";
+            team: {
+                id: string;
+                name?: string;
+            };
+            channel: {
+                id: string;
+                /** @enum {string} */
+                type: "im" | "channel";
+            };
+            threadTs?: string;
+            user: {
+                id: string;
+                displayName?: string;
+            };
+        } | {
+            /** @enum {string} */
+            provider: "web";
+            origin?: string;
+        };
+        ChatConversationSummary: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            agentId: string | null;
+            agentName: string | null;
+            agentInternalName: string | null;
+            sourceChannel: string | null;
+            sourceOrigin: string | null;
+            channelContext: components["schemas"]["ConversationChannelContext"] | null;
+            anonymousSessionId: string | null;
+            entryPageUrl: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            messageCount: number;
+            userMessageCount: number;
+            assistantMessageCount: number;
+            preview: string | null;
+            /** @description Short LLM-generated topic label refreshed alongside the rolling conversation summary. Null until the first successful regeneration; the dashboard falls back to `preview` until then. */
+            title: string | null;
+            ownership?: components["schemas"]["ConversationOwnership"];
+        };
+        ChatHistoryListResponse: {
+            workspaceName?: string;
+            assistantBootstrapActive?: boolean;
+            conversations: components["schemas"]["ChatConversationSummary"][];
+            assistantAvatarUrl?: string | null;
+            theme?: {
+                brand: string;
+                brandText: string;
+                surface: string;
+                text: string;
+            };
+            copy?: {
+                [key: string]: {
+                    [key: string]: string;
+                };
+            };
+            branding?: {
+                hidePoweredBy: boolean;
+                privacyPolicyUrl: string | null;
+            };
+            intakeActions?: {
+                skillName: string;
+                intentName: string;
+                display?: components["schemas"]["SkillDisplayMetadata"];
+            }[];
+            total: number;
+            nextCursor: string | null;
+            hasMore: boolean;
+        };
+        HistoryItem: {
+            /** @enum {string} */
+            kind: "chat";
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            sortAt: string;
+            conversation: components["schemas"]["ChatConversationSummary"];
+        } | {
+            /** @enum {string} */
+            kind: "search";
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            sortAt: string;
+            search: components["schemas"]["DocumentSearchHistoryEntry"];
+        };
+        HistoryItemsResponse: {
+            items: components["schemas"]["HistoryItem"][];
+            total: number;
+            nextCursor: null;
+            hasMore: boolean;
+        };
+        ChatConversationMessageDebug: {
+            /**
+             * @description "cancelled" means a newer message superseded this turn after it had already produced an assistant message (a suspended/durable turn). It is not an error.
+             * @enum {string}
+             */
+            eventStatus: "success" | "failure" | "cancelled";
+            /** Format: date-time */
+            recordedAt: string;
+            stream: boolean;
+            citationCount: number;
+            /** @enum {string} */
+            answerOutcome?: "grounded_success" | "no_context_refusal" | "non_retrieval_response";
+            skillName?: string;
+            skillOutcome?: string;
+            /** @enum {string} */
+            skillStatus?: "active" | "paused" | "awaiting_confirmation" | "awaiting_tool" | "completed" | "cancelled" | "expired" | "failed";
+            route?: components["schemas"]["AssistantRouteDiagnostics"];
+            activitySummary?: components["schemas"]["ActivitySummary"];
+            activityTrace?: components["schemas"]["ActivityTrace"];
+            turnTrace?: components["schemas"]["TurnTraceEnvelope"];
+            errorMessage?: string | null;
+        };
+        /** @description Dashboard-only debug for a user turn that never got a reply — a genuine failure or a turn a newer message superseded. Attached to the user's message because no assistant message exists for it. */
+        ChatConversationTurnFailure: {
+            /**
+             * @description "failure" is a genuine error; "cancelled" means a newer message superseded this turn before it could answer.
+             * @enum {string}
+             */
+            eventStatus: "failure" | "cancelled";
+            /** Format: date-time */
+            recordedAt: string;
+            stream: boolean;
+            /**
+             * @description Present for a "cancelled" turn: the pipeline stage the newer message interrupted.
+             * @enum {string}
+             */
+            stage?: "waiting" | "preparing" | "routing" | "rendering" | "persisting";
+            /** @description Present only for a genuine "failure"; a "cancelled" turn has no error to show. */
+            errorMessage?: string | null;
+        };
+        AnswerFeedbackEntry: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            value: "up" | "down";
+            comment: string | null;
+            /** @enum {string} */
+            actorType: "authenticated_user" | "api_token" | "anonymous_user";
+            actorId: string;
+            /** Format: uuid */
+            accountId: string | null;
+            /** Format: uuid */
+            userId: string | null;
+            anonymousSessionId: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        AnswerFeedbackRequest: {
+            /** @enum {string} */
+            value: "up" | "down";
+            comment?: string | null;
+        };
+        AnswerFeedbackResponse: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            value: "up" | "down";
+            comment: string | null;
+            /** @enum {string} */
+            actorType: "authenticated_user" | "api_token" | "anonymous_user";
+            actorId: string;
+            /** Format: uuid */
+            accountId: string | null;
+            /** Format: uuid */
+            userId: string | null;
+            anonymousSessionId: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ClearAnswerFeedbackResponse: {
+            cleared: boolean;
+        };
+        ChatConversationMessage: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            role: "user" | "assistant" | "system";
+            /** @enum {string} */
+            source: "customer" | "ai_agent" | "human_agent" | "human_agent_on_behalf_of_ai_agent" | "system";
+            content: string;
+            /** Format: date-time */
+            createdAt: string;
+            inputMetadata?: {
+                /** @enum {string} */
+                method: "typed" | "suggestion_click" | "intent_click";
+                /** Format: uuid */
+                suggestionSourceMessageId?: string;
+                intent?: {
+                    skillName: string;
+                    intentName?: string;
+                };
+            };
+            citations?: components["schemas"]["Citation"][];
+            answerSegments?: components["schemas"]["AnswerSegment"][];
+            suggestions?: components["schemas"]["ChatSuggestion"][];
+            answerFeedbackEntries?: components["schemas"]["AnswerFeedbackEntry"][];
+            operatorDisplayName?: string;
+            debug?: components["schemas"]["ChatConversationMessageDebug"];
+            turnFailure?: components["schemas"]["ChatConversationTurnFailure"];
+        };
+        PublicChatConversationMessage: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            role: "user" | "assistant" | "system";
+            /** @enum {string} */
+            source: "customer" | "ai_agent" | "human_agent" | "human_agent_on_behalf_of_ai_agent" | "system";
+            content: string;
+            /** Format: date-time */
+            createdAt: string;
+            inputMetadata?: {
+                /** @enum {string} */
+                method: "typed" | "suggestion_click" | "intent_click";
+                /** Format: uuid */
+                suggestionSourceMessageId?: string;
+                intent?: {
+                    skillName: string;
+                    intentName?: string;
+                };
+            };
+            citations?: components["schemas"]["Citation"][];
+            answerSegments?: components["schemas"]["AnswerSegment"][];
+            suggestions?: components["schemas"]["ChatSuggestion"][];
+            answerFeedbackEntries?: components["schemas"]["AnswerFeedbackEntry"][];
+            operatorDisplayName?: string;
+        };
+        ConversationOwnershipResponse: {
+            ownership: components["schemas"]["ConversationOwnership"];
+        };
+        HumanReplyMessage: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            conversationId: string;
+            /** Format: uuid */
+            workspaceId: string;
+            /** @enum {string} */
+            role: "user" | "assistant" | "system";
+            /** @enum {string} */
+            source?: "customer" | "ai_agent" | "human_agent" | "human_agent_on_behalf_of_ai_agent" | "system";
+            content: string;
+            metadata?: {
+                [key: string]: unknown;
+            };
+            inputMetadata?: {
+                /** @enum {string} */
+                method: "typed" | "suggestion_click" | "intent_click";
+                /** Format: uuid */
+                suggestionSourceMessageId?: string;
+                intent?: {
+                    skillName: string;
+                    intentName?: string;
+                };
+            };
+            skillName?: string;
+            skillOutcome?: string;
+            skillStatus?: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        HumanReplyMessageResponse: {
+            message: components["schemas"]["HumanReplyMessage"];
+        };
+        ChatConversationDetail: {
+            /** Format: uuid */
+            conversationId: string;
+            /** Format: uuid */
+            workspaceId: string;
+            /** Format: uuid */
+            agentId: string | null;
+            agentName?: string | null;
+            agentInternalName?: string | null;
+            sourceChannel: string | null;
+            sourceOrigin: string | null;
+            entryPageUrl?: string | null;
+            /** @description See ChatConversationSummary.title. */
+            title: string | null;
+            channelContext: components["schemas"]["ConversationChannelContext"] | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            messageCount: number;
+            userMessageCount: number;
+            assistantMessageCount: number;
+            messagesTotal: number;
+            messageWindowOffset: number;
+            messageWindowLimit: number;
+            hasOlderMessages: boolean;
+            nextCursor: string | null;
+            /** @description Cursor for subsequent tail requests. It marks the newest message included when this detail response was produced. */
+            tailCursor: string | null;
+            messages: components["schemas"]["ChatConversationMessage"][];
+            ownership?: components["schemas"]["ConversationOwnership"];
+        };
+        ChatConversationTail: {
+            messages: components["schemas"]["ChatConversationMessage"][];
+            cursor: string | null;
+            ownership?: components["schemas"]["ConversationOwnership"];
+        };
+        PublicChatConversationTail: {
+            messages: components["schemas"]["PublicChatConversationMessage"][];
+            cursor: string | null;
+        };
+        PublicChatConversationDetail: {
+            /** Format: uuid */
+            conversationId: string;
+            /** Format: uuid */
+            workspaceId: string;
+            /** Format: uuid */
+            agentId: string | null;
+            agentName?: string | null;
+            sourceChannel: string | null;
+            sourceOrigin: string | null;
+            /** @description See ChatConversationSummary.title. */
+            title: string | null;
+            channelContext: components["schemas"]["ConversationChannelContext"] | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            messageCount: number;
+            userMessageCount: number;
+            assistantMessageCount: number;
+            messagesTotal: number;
+            messageWindowOffset: number;
+            messageWindowLimit: number;
+            hasOlderMessages: boolean;
+            nextCursor: string | null;
+            /** @description Cursor for subsequent tail requests. It marks the newest message included when this detail response was produced. */
+            tailCursor: string | null;
+            messages: components["schemas"]["PublicChatConversationMessage"][];
+        };
+        PublicConversationSummary: {
+            /** Format: uuid */
+            id: string;
+            sourceChannel: string | null;
+            preview: string | null;
+            messageCount: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        PublicConversationListResponse: {
+            workspaceName: string;
+            assistantBootstrapActive: boolean;
+            conversations: components["schemas"]["PublicConversationSummary"][];
+            total: number;
+            nextCursor: string | null;
+            hasMore: boolean;
+        };
+        RateLimitExceededResponse: {
+            /** @enum {string} */
+            code: "rate_limit_exceeded";
+            message: string;
+            retryAfterSeconds: number;
+        };
+        ConnectorField: {
+            key: string;
+            label: string;
+            type: string;
+            required: boolean;
+            defaultValue?: string;
+            helpText?: string;
+        };
+        ConnectorSummary: {
+            id: string;
+            name: string;
+            description: string;
+            enabled: boolean;
+            errorStatus: string | null;
+            supportsManualSync: boolean;
+        };
+        ConnectorListResponse: {
+            connectors: components["schemas"]["ConnectorSummary"][];
+        };
+        ConnectorDetail: components["schemas"]["ConnectorSummary"] & {
+            schema: components["schemas"]["ConnectorField"][];
+            config: {
+                [key: string]: string | number | boolean;
+            };
+            /** Format: uri */
+            webhookUrl: string;
+            syncState: {
+                backfillCompletedAt: string | null;
+                syncRequestedAt: string | null;
+                syncStartedAt: string | null;
+                lastRunAt: string | null;
+                lastModifiedAt: string | null;
+                lastIngestedCount: number | null;
+                lastError: string | null;
+            };
+        };
+        ConnectorSyncResponse: {
+            accepted: boolean;
+        };
+        ConnectorConfigUpdateRequest: {
+            config: {
+                [key: string]: string | number | boolean;
+            };
+        };
+        ConnectorValidationIssue: {
+            key: string;
+            message: string;
+        };
+        ConnectorValidationErrorResponse: {
+            /** @enum {string} */
+            error: "Validation failed";
+            fields: components["schemas"]["ConnectorValidationIssue"][];
+        };
+        ConnectorConflictResponse: {
+            /** @enum {string} */
+            error: "Channel identity conflict";
+            detail: string;
+        };
+        /** @enum {string} */
+        QualityFeedbackValue: "up" | "down";
+        /** @description Complete immutable grounding snapshot for this answer. Null means no complete diagnostic is available. */
+        GroundingDiagnostic: {
+            /** @enum {string} */
+            verdict: "grounded" | "degraded" | "no_support";
+            claimCount: number;
+            sourcedClaimCount: number;
+            unsourcedClaimCount: number;
+            invalidSourceCount: number;
+        };
+        /** @enum {string} */
+        QualitySkillStatus: "active" | "paused" | "awaiting_confirmation" | "awaiting_tool" | "completed" | "cancelled" | "expired" | "failed";
+        /** @enum {string} */
+        QualityTriageState: "open" | "acknowledged" | "resolved" | "dismissed";
+        /** @enum {string} */
+        QualityResolutionReason: "knowledge_gap" | "retrieval_issue" | "agent_behavior" | "platform_bug" | "expected_behavior" | "out_of_scope" | "invalid_feedback" | "other";
+        QualityResolution: {
+            reason: components["schemas"]["QualityResolutionReason"];
+            note: string | null;
+        };
+        QualityResolutionInput: {
+            reason: components["schemas"]["QualityResolutionReason"];
+            note?: string | null;
+        };
+        QualityTriageRecord: {
+            state: components["schemas"]["QualityTriageState"];
+            version: number;
+            resolution: components["schemas"]["QualityResolution"] | null;
+            legacyReason: string | null;
+            /** Format: date-time */
+            closedAt: string | null;
+            /** Format: date-time */
+            updatedAt: string | null;
+        };
+        QualityVerification: {
+            /** Format: uuid */
+            caseId: string;
+            /** @enum {string} */
+            caseStatus: "pending" | "passing" | "failing" | "error";
+            /** @enum {string|null} */
+            latestRunStatus: "pass" | "fail" | "error" | "recorded" | null;
+            /** Format: date-time */
+            latestRunAt: string | null;
+        };
+        QualityTriageConflictResponse: {
+            error: {
+                /** @enum {string} */
+                code: "QUALITY_TRIAGE_CONFLICT";
+                message: string;
+                details: {
+                    current: components["schemas"]["QualityTriageRecord"];
+                };
+            };
+        };
+        QualityFeedbackComment: {
+            value: components["schemas"]["QualityFeedbackValue"];
+            comment: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        QualityFeedbackSummary: {
+            upCount: number;
+            downCount: number;
+            /** Format: date-time */
+            latestDownUpdatedAt: string | null;
+            comments: components["schemas"]["QualityFeedbackComment"][];
+        };
+        LowQualityTurn: {
+            /** Format: uuid */
+            assistantMessageId: string;
+            /** Format: uuid */
+            conversationId: string;
+            /** Format: uuid */
+            agentId: string | null;
+            agentName: string | null;
+            agentInternalName: string | null;
+            channel: string | null;
+            question: string | null;
+            answerPreview: string;
+            skillName: string | null;
+            skillOutcome: string | null;
+            skillStatus: components["schemas"]["QualitySkillStatus"] & (string | null);
+            totalLatencyMs: number | null;
+            grounding: components["schemas"]["GroundingDiagnostic"] | null;
+            /** Format: date-time */
+            createdAt: string;
+            feedback: components["schemas"]["QualityFeedbackSummary"];
+            triage: components["schemas"]["QualityTriageRecord"];
+            verification: components["schemas"]["QualityVerification"] | null;
+        };
+        /** @enum {string} */
+        QualitySignalId: "negative_feedback" | "grounding_gaps" | "skill_failures";
+        /** @enum {string} */
+        QualityStatsRange: "7d" | "30d";
+        QualityStatsMetric: {
+            /** @description Turns matching the metric within the window. */
+            count: number;
+            /** @description Turns the metric is defined over. */
+            denominator: number;
+            /** @description `count / denominator`, or null when the denominator is zero. */
+            rate: number | null;
+        };
+        QualityStatsWindow: {
+            /**
+             * Format: date-time
+             * @description Start of the window, inclusive.
+             */
+            from: string;
+            /**
+             * Format: date-time
+             * @description End of the window, exclusive.
+             */
+            to: string;
+            turnCount: number;
+            grounded: components["schemas"]["QualityStatsMetric"] & unknown;
+            negativeFeedback: components["schemas"]["QualityStatsMetric"] & unknown;
+            skillFailures: components["schemas"]["QualityStatsMetric"] & unknown;
+        };
+        QualityStatsBucket: {
+            /** @description UTC day as `YYYY-MM-DD`. */
+            date: string;
+            turnCount: number;
+            grounded: components["schemas"]["QualityStatsMetric"];
+            negativeFeedback: components["schemas"]["QualityStatsMetric"];
+            skillFailures: components["schemas"]["QualityStatsMetric"];
+        };
+        QualityStats: {
+            range: components["schemas"]["QualityStatsRange"];
+            filters: {
+                /** Format: uuid */
+                agentId?: string;
+                channel?: string;
+            };
+            current: components["schemas"]["QualityStatsWindow"];
+            previous: components["schemas"]["QualityStatsWindow"] & unknown;
+            /** @description Current window only, one entry per UTC day, zero-filled. */
+            buckets: components["schemas"]["QualityStatsBucket"][];
+            /** @description Turns still in an active triage state (`open` or `acknowledged`) per signal. All-time and independent of `range`. */
+            backlog: {
+                negative_feedback: number;
+                grounding_gaps: number;
+                skill_failures: number;
+            };
+            /** @description Current-window terminal triage counts grouped by state and structured reason. Closures without one are grouped as `unspecified`. */
+            resolutionBreakdown: {
+                /** @enum {string} */
+                state: "resolved" | "dismissed";
+                reason: components["schemas"]["QualityResolutionReason"] | "unspecified";
+                count: number;
+            }[];
+        };
+        SetQualityTriageRequest: {
+            state: components["schemas"]["QualityTriageState"];
+            expectedVersion: number;
+            /** @description Optional structured context for terminal states. Omit or send null to close without recording a reason. */
+            resolution?: components["schemas"]["QualityResolutionInput"] | null;
+            /**
+             * @deprecated
+             * @description Compatibility-only free text. It remains opaque and is never classified as a structured resolution reason.
+             */
+            reason?: string | null;
+        };
+        LowQualityTurnsPage: {
+            items: components["schemas"]["LowQualityTurn"][];
+            total: number;
+            page: number;
+            pageSize: number;
+            totalPages: number;
+        };
+        /** @enum {string} */
+        UsageTrendGranularity: "day" | "week" | "month";
+        UsageTrendBucket: {
+            /** Format: date-time */
+            periodStart: string;
+            /** Format: date-time */
+            periodEnd: string;
+            conversationsCreated: number;
+            messages: {
+                total: number;
+                user: number;
+                assistant: number;
+            };
+            tokens: {
+                input: number;
+                output: number;
+                total: number;
+            };
+        };
+        UsageTrendsResponse: {
+            granularity: components["schemas"]["UsageTrendGranularity"];
+            from: string;
+            to: string;
+            filters: {
+                /** Format: uuid */
+                workspaceId: string | null;
+                /** Format: uuid */
+                agentId: string | null;
+            };
+            buckets: components["schemas"]["UsageTrendBucket"][];
+        };
+        /** @enum {string} */
+        UsageEventKind: "model" | "embedding" | "unknown";
+        /** @enum {string} */
+        ReasoningCoverage: "complete" | "partial" | "unavailable";
+        UsageOperation: {
+            surface: string;
+            name: string;
+            label: string;
+        };
+        UsageAttempts: {
+            total: number;
+            succeeded: number;
+            failed: number;
+        };
+        UsageQualityCounts: {
+            actual: number;
+            estimated: number;
+        };
+        MessageModelTokens: {
+            input: number;
+            completion: number;
+            reasoning: {
+                tokens: number | null;
+                coverage: components["schemas"]["ReasoningCoverage"];
+            };
+            visibleOutput: number | null;
+            total: number;
+        };
+        MessageEmbeddingTokens: {
+            input: number;
+            total: number;
+            vectors: number;
+            attempts: number;
+        };
+        UnknownHistoricalTokens: {
+            total: number;
+            attempts: number;
+        };
+        MessageUsageSummary: {
+            /** Format: uuid */
+            messageId: string;
+            /** Format: uuid */
+            conversationId: string;
+            /** Format: uuid */
+            workspaceId: string;
+            /** Format: uuid */
+            agentId: string | null;
+            /** Format: date-time */
+            lastOccurredAt: string;
+            providers: string[];
+            models: string[];
+            operations: components["schemas"]["UsageOperation"][];
+            attempts: components["schemas"]["UsageAttempts"];
+            quality: components["schemas"]["UsageQualityCounts"];
+            modelTokens: components["schemas"]["MessageModelTokens"];
+            embeddingTokens: components["schemas"]["MessageEmbeddingTokens"];
+            unknownHistorical: components["schemas"]["UnknownHistoricalTokens"];
+        };
+        InternalUsageTokens: {
+            input: number | null;
+            completion: number | null;
+            reasoning: number | null;
+            visibleOutput: number | null;
+            total: number;
+        };
+        InternalUsageEvent: {
+            /** Format: uuid */
+            eventId: string;
+            /** Format: uuid */
+            workspaceId: string | null;
+            /** Format: uuid */
+            agentId: string | null;
+            /** Format: date-time */
+            occurredAt: string;
+            kind: components["schemas"]["UsageEventKind"];
+            operation: components["schemas"]["UsageOperation"];
+            provider: string;
+            model: string;
+            /** @enum {string} */
+            status: "succeeded" | "failed";
+            /** @enum {string} */
+            usageQuality: "actual" | "estimated";
+            tokens: components["schemas"]["InternalUsageTokens"];
+            vectorCount: number | null;
+        };
+        UsageDetailsFilters: {
+            /** Format: uuid */
+            workspaceId: string | null;
+        };
+        MessageUsageResponse: {
+            from: string;
+            to: string;
+            filters: components["schemas"]["UsageDetailsFilters"];
+            items: components["schemas"]["MessageUsageSummary"][];
+            nextCursor: string | null;
+        };
+        InternalUsageResponse: {
+            from: string;
+            to: string;
+            filters: components["schemas"]["UsageDetailsFilters"];
+            items: components["schemas"]["InternalUsageEvent"][];
+            nextCursor: string | null;
+        };
+        ContextVariable: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            workspaceId: string;
+            name: string;
+            description: string | null;
+            /** @enum {string} */
+            valueType: "string" | "json";
+            /** @enum {string} */
+            trustTier: "unverified" | "signed";
+            /** @enum {string} */
+            sensitivity: "normal" | "sensitive";
+            /** @enum {string} */
+            defaultSurfacing: "always" | "on_reference" | "operator_only";
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ContextVariableCreateRequest: {
+            name: string;
+            description?: string | null;
+            /** @enum {string} */
+            valueType: "string" | "json";
+            /** @enum {string} */
+            trustTier: "unverified" | "signed";
+            /** @enum {string} */
+            sensitivity: "normal" | "sensitive";
+            /** @enum {string} */
+            defaultSurfacing: "always" | "on_reference" | "operator_only";
+        };
+        ContextVariableUpdateRequest: {
+            name?: string;
+            description?: string | null;
+            /** @enum {string} */
+            valueType?: "string" | "json";
+            /** @enum {string} */
+            trustTier?: "unverified" | "signed";
+            /** @enum {string} */
+            sensitivity?: "normal" | "sensitive";
+            /** @enum {string} */
+            defaultSurfacing?: "always" | "on_reference" | "operator_only";
+        };
+        ContextVariableResponse: {
+            contextVariable: components["schemas"]["ContextVariable"];
+        };
+        ContextVariableListResponse: {
+            contextVariables: components["schemas"]["ContextVariable"][];
+        };
+        AgentContextVariableEnablement: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            agentId: string;
+            /** Format: uuid */
+            variableId: string;
+            /** @enum {string} */
+            source: "pushed" | "browser" | "resolver";
+            /** Format: uuid */
+            resolverSkillId: string | null;
+            maxAgeSeconds: number | null;
+            resolverTimeoutMs: number | null;
+            /** @enum {string} */
+            surfacing: "always" | "on_reference" | "operator_only";
+            enabled: boolean;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            variable?: components["schemas"]["ContextVariable"];
+        };
+        AgentContextVariableEnablementRequest: {
+            /** @enum {string} */
+            source: "pushed" | "browser" | "resolver";
+            /** Format: uuid */
+            resolverSkillId?: string | null;
+            maxAgeSeconds?: number | null;
+            resolverTimeoutMs?: number | null;
+            /** @enum {string} */
+            surfacing: "always" | "on_reference" | "operator_only";
+            enabled?: boolean;
+        };
+        AgentContextVariableEnablementResponse: {
+            enablement: components["schemas"]["AgentContextVariableEnablement"];
+        };
+        AgentContextVariableEnablementListResponse: {
+            enablements: components["schemas"]["AgentContextVariableEnablement"][];
+        };
+        ContextVariableScope: {
+            /** @enum {string} */
+            type: "session" | "customer" | "agent" | "workspace";
+            id: string;
+        };
+        ContextVariableValue: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            workspaceId: string;
+            /** Format: uuid */
+            variableId: string;
+            scope: components["schemas"]["ContextVariableScope"];
+            /** @description Arbitrary JSON value. The HTTP API rejects values above the serialized size limit. */
+            data?: unknown;
+            /** Format: date-time */
+            lastModified: string;
+        };
+        ContextVariableValueUpsertRequest: {
+            scope: components["schemas"]["ContextVariableScope"];
+            /** @description Arbitrary JSON value. The HTTP API rejects values above the serialized size limit. */
+            data?: unknown;
+        };
+        ContextVariableValueDeleteRequest: {
+            scope: components["schemas"]["ContextVariableScope"];
+        };
+        ContextVariableValueResponse: {
+            value: components["schemas"]["ContextVariableValue"];
+        };
+        ContextVariableSigningKeyResponse: {
+            signingKey: string;
+        };
+        AgentWizardAnalyzeRequest: {
+            /** Format: uri */
+            url: string;
+        };
+        AgentWizardAnalysis: {
+            suggestedName: string;
+            suggestedCustomInstruction: string;
+            suggestedGreetingMessage: string;
+            suggestedChunkingStrategy: {
+                /** @enum {string} */
+                strategy: "fixed_window" | "structured_semantic";
+                reasoning: string;
+            };
+            screenshotBase64: string | null;
+            screenshotUnavailableReason: string | null;
+            faviconUrl: string | null;
+            pagesAnalyzed: {
+                url: string;
+                title: string | null;
+            }[];
+            sourceUrl: string;
+            suggestedLocale: string | null;
+            suggestedPrivacyPolicyUrl: string | null;
+            suggestedContactEmail: string | null;
+        };
+        AgentWizardProgressEvent: {
+            /** @enum {string} */
+            type: "progress";
+            /** @enum {string} */
+            step: "crawling" | "analyzing" | "generating" | "complete";
+            page?: number;
+            total?: number;
+            url?: string;
+            title?: string | null;
+        };
+        AgentWizardStreamError: {
+            code: string;
+            message: string;
+            statusCode: number;
+        };
+        AgentWizardCreateRequest: {
+            /** Format: uri */
+            websiteUrl: string;
+            name: string;
+            /** @default  */
+            customInstruction: string;
+            /** @default  */
+            greetingInstruction: string;
+            /** @enum {string} */
+            chunkingStrategy?: "fixed_window" | "structured_semantic";
+            /** Format: uri */
+            faviconUrl?: string | null;
+            assistantDefaultLocale?: string | null;
+            /** Format: uri */
+            privacyPolicyUrl?: string | null;
+            contactEmail?: string | null;
+        };
+        AgentWizardCreateResponse: {
+            /** Format: uuid */
+            agentId: string;
+            crawlJobId: string | null;
+            incomplete?: {
+                /** @enum {string} */
+                step: "configuration" | "ingestion";
+                reason: string;
+            };
+        };
+        /**
+         * @description A server-sent event stream with named progress, complete, and error events. Each progress event's data field matches AgentWizardProgressEvent; the single complete event carries the whole AgentWizardAnalysis; an error event carries AgentWizardStreamError and is emitted in place of complete when the analysis fails after the headers are sent. The stream ends after complete or error.
+         * @example event: progress
+         *     data: {"type":"progress","step":"crawling","page":1,"total":8,"url":"https://acme.example.com","title":"Acme"}
+         *
+         *     event: progress
+         *     data: {"type":"progress","step":"generating"}
+         *
+         *     event: complete
+         *     data: {"suggestedName":"Acme Support","sourceUrl":"https://acme.example.com","pagesAnalyzed":[]}
+         */
+        AgentWizardAnalysisStream: string;
+        AudiencePulseGrounding: {
+            grounded: number;
+            degraded: number;
+            noSupport: number;
+            unknown: number;
+            contentGapEligible: number;
+        };
+        AudiencePulseCoverage: {
+            populationSize: number;
+            sampleSize: number;
+            sampled: boolean;
+            facetReadyQuestionCount: number;
+        };
+        AudiencePulseWeeklyVolume: {
+            /** Format: date-time */
+            weekStart: string;
+            visitorQuestionCount: number;
+            conversationCount: number;
+        };
+        AudiencePulseEvidence: {
+            reference: string;
+            /** Format: uuid */
+            conversationId: string;
+            /** Format: uuid */
+            messageId: string;
+            question: string;
+            occurrenceCount: number;
+        };
+        AudiencePulseEvidenceAnchorRequest: {
+            /** Format: uuid */
+            conversationId: string;
+            /** Format: uuid */
+            messageId: string;
+        };
+        AudiencePulseEvidenceAnchorSource: {
+            /** Format: uuid */
+            messageId: string;
+            /** @enum {string} */
+            role: "user";
+            /** @enum {string} */
+            source: "customer";
+            content: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        AudiencePulseEvidenceAnchorNextAssistant: {
+            /** Format: uuid */
+            messageId: string;
+            /** @enum {string} */
+            role: "assistant";
+            /** @enum {string} */
+            source: "customer" | "ai_agent" | "human_agent" | "human_agent_on_behalf_of_ai_agent" | "system";
+            content: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        AudiencePulseEvidenceAnchorResponse: {
+            /** Format: uuid */
+            conversationId: string;
+            source: components["schemas"]["AudiencePulseEvidenceAnchorSource"];
+            nextAssistant: components["schemas"]["AudiencePulseEvidenceAnchorNextAssistant"] | null;
+        };
+        AudiencePulseTheme: {
+            id: string;
+            title: string;
+            description: string;
+            memberCount: number;
+            share: number;
+            distinctQuestionCount: number;
+            weeklyPulse: {
+                /** Format: date-time */
+                weekStart: string;
+                count: number;
+            }[];
+            grounding: components["schemas"]["AudiencePulseGrounding"];
+            evidence: components["schemas"]["AudiencePulseEvidence"][];
+        };
+        AudiencePulseContentGap: {
+            themeId: string;
+            eligibleEvidenceCount: number;
+            distinctConversationCount: number;
+        };
+        AudiencePulseRecommendation: {
+            id: string;
+            themeId: string;
+            title: string;
+            rationale: string;
+            questions: string[];
+            evidenceReferences: string[];
+            startDraft: {
+                title: string;
+                questions: string[];
+            };
+        };
+        AudiencePulseReport: {
+            period: {
+                /** Format: date-time */
+                start: string;
+                /** Format: date-time */
+                end: string;
+            };
+            /** Format: date-time */
+            generatedAt: string;
+            coverage: components["schemas"]["AudiencePulseCoverage"];
+            weeklyVolume: components["schemas"]["AudiencePulseWeeklyVolume"][];
+            summary?: string;
+            unclassifiedQuestionCount: number;
+            themes: components["schemas"]["AudiencePulseTheme"][];
+            contentGaps: components["schemas"]["AudiencePulseContentGap"][];
+            recommendations: components["schemas"]["AudiencePulseRecommendation"][];
+            caveats: string[];
+        };
+        AudiencePulseReadResponse: {
+            /** @enum {string} */
+            kind: "not_generated";
+        } | {
+            /** @enum {string} */
+            kind: "completed";
+            report: components["schemas"]["AudiencePulseReport"];
+        };
+        AudiencePulseRefreshResponse: {
+            /** @enum {string} */
+            kind: "no_traffic";
+            period: {
+                /** Format: date-time */
+                start: string;
+                /** Format: date-time */
+                end: string;
+            };
+            weeklyVolume: components["schemas"]["AudiencePulseWeeklyVolume"][];
+        } | {
+            /** @enum {string} */
+            kind: "preparing";
+        } | {
+            /** @enum {string} */
+            kind: "unavailable";
+            /** @enum {string} */
+            reason: "provider" | "validation" | "cancelled";
+        } | {
+            /** @enum {string} */
+            kind: "completed";
+            report: components["schemas"]["AudiencePulseReport"];
+        };
+        AudiencePulseRefreshStatusResponse: {
+            pending: boolean;
+        };
+        /** @enum {string} */
+        WorkspaceInvalidationKind: "document.status_changed" | "crawl.status_changed" | "crawl.progress" | "conversation.created" | "conversation.turn_committed" | "conversation.contact_delivery_changed" | "conversation.ownership_changed" | "search.created" | "hitl.decision_created" | "hitl.decision_resolved" | "quality.feedback_changed" | "quality.triage_changed";
+        WorkspaceEventReadyData: {
+            /** @enum {number} */
+            protocolVersion: 1;
+        };
+        WorkspaceEventInvalidateData: {
+            /** @enum {number} */
+            protocolVersion: 1;
+            /** @description Unique invalidation kind strings. Known protocol version 1 kinds: document.status_changed, crawl.status_changed, crawl.progress, conversation.created, conversation.turn_committed, conversation.contact_delivery_changed, conversation.ownership_changed, search.created, hitl.decision_created, hitl.decision_resolved, quality.feedback_changed, quality.triage_changed. Clients process recognized kinds in mixed frames, ignore unknown future kinds, and retain their polling floor. */
+            changeKinds: string[];
+        };
+        WorkspaceEventResyncData: {
+            /** @enum {number} */
+            protocolVersion: 1;
+        };
+        /**
+         * @description A server-sent event stream with named ready, invalidate, and resync events. Each data field is JSON matching the corresponding WorkspaceEvent*Data schema. Heartbeat records are SSE comments (`: heartbeat`) and carry no data. Protocol version 1 has no event ID, cursor, replay, timestamp, or resource identifier.
+         * @example event: ready
+         *     data: {"protocolVersion":1}
+         *
+         *     event: invalidate
+         *     data: {"protocolVersion":1,"changeKinds":["document.status_changed"]}
+         *
+         *     event: resync
+         *     data: {"protocolVersion":1}
+         */
+        WorkspaceEventStream: string;
+        PendingApprovalDecisionOption: {
+            id: string;
+            label: string;
+            description?: string;
+        };
+        PendingApprovalDecision: {
+            handle: string;
+            conversationId: string;
+            agentId: string;
+            routineId: string;
+            stepId: string;
+            reason: string | null;
+            options: components["schemas"]["PendingApprovalDecisionOption"][];
+            contentHash: string;
+            canResolve: boolean;
+            /** Format: date-time */
+            deadline: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        PendingApprovalDecisionListResponse: {
+            decisions: components["schemas"]["PendingApprovalDecision"][];
+        };
+        EvalAssertion: {
+            /** @enum {string} */
+            type: "retrieval_includes_document";
+            /** Format: uuid */
+            documentId: string;
+        } | {
+            /** @enum {string} */
+            type: "retrieval_excludes_document";
+            /** Format: uuid */
+            documentId: string;
+        } | {
+            /** @enum {string} */
+            type: "retrieval_top_k_includes_document";
+            /** Format: uuid */
+            documentId: string;
+            k: number;
+        } | {
+            /** @enum {string} */
+            type: "retrieval_document_order";
+            documentIds: string[];
+        } | {
+            /** @enum {string} */
+            type: "retrieval_chunk_metadata";
+            /** Format: uuid */
+            documentId: string;
+            metadata: {
+                [key: string]: string | number | boolean | null;
+            };
+        } | {
+            /** @enum {string} */
+            type: "answer_cites_document";
+            /** Format: uuid */
+            documentId: string;
+        } | {
+            /** @enum {string} */
+            type: "answer_contains";
+            pattern: string;
+            /** @enum {string} */
+            matchMode: "substring" | "regex";
+            caseSensitive?: boolean;
+        } | {
+            /** @enum {string} */
+            type: "answer_does_not_contain";
+            pattern: string;
+            /** @enum {string} */
+            matchMode: "substring" | "regex";
+            caseSensitive?: boolean;
+        } | {
+            /** @enum {string} */
+            type: "llm_judge";
+            expectedAnswer: string;
+            criteria?: string;
+        };
+        EvalMessageCaseLookup: {
+            /** Format: uuid */
+            assistantMessageId: string;
+            case: {
+                /** Format: uuid */
+                id: string;
+                /** Format: uuid */
+                workspaceId: string;
+                /** Format: uuid */
+                snapshotId: string;
+                name: string;
+                assertions: ({
+                    /** @enum {string} */
+                    type: "retrieval_includes_document";
+                    /** Format: uuid */
+                    documentId: string;
+                } | {
+                    /** @enum {string} */
+                    type: "retrieval_excludes_document";
+                    /** Format: uuid */
+                    documentId: string;
+                } | {
+                    /** @enum {string} */
+                    type: "retrieval_top_k_includes_document";
+                    /** Format: uuid */
+                    documentId: string;
+                    k: number;
+                } | {
+                    /** @enum {string} */
+                    type: "retrieval_document_order";
+                    documentIds: string[];
+                } | {
+                    /** @enum {string} */
+                    type: "retrieval_chunk_metadata";
+                    /** Format: uuid */
+                    documentId: string;
+                    metadata: {
+                        [key: string]: string | number | boolean | null;
+                    };
+                } | {
+                    /** @enum {string} */
+                    type: "answer_cites_document";
+                    /** Format: uuid */
+                    documentId: string;
+                } | {
+                    /** @enum {string} */
+                    type: "answer_contains";
+                    pattern: string;
+                    /** @enum {string} */
+                    matchMode: "substring" | "regex";
+                    caseSensitive?: boolean;
+                } | {
+                    /** @enum {string} */
+                    type: "answer_does_not_contain";
+                    pattern: string;
+                    /** @enum {string} */
+                    matchMode: "substring" | "regex";
+                    caseSensitive?: boolean;
+                } | {
+                    /** @enum {string} */
+                    type: "llm_judge";
+                    expectedAnswer: string;
+                    criteria?: string;
+                })[];
+                /** @enum {string} */
+                executionMode: "safe_test" | "live";
+                /** @enum {string} */
+                status: "pending" | "passing" | "failing" | "error";
+                /** Format: uuid */
+                lastRunId: string | null;
+                /** Format: date-time */
+                createdAt: string;
+                /** Format: date-time */
+                updatedAt: string;
+                agent?: {
+                    /** Format: uuid */
+                    agentId: string | null;
+                    name: string | null;
+                    internalName: string | null;
+                    deleted: boolean;
+                };
+            };
+            snapshot: {
+                /** Format: uuid */
+                id: string;
+                /** Format: uuid */
+                workspaceId: string;
+                /** Format: uuid */
+                sourceConversationId: string;
+                /** Format: uuid */
+                sourceMessageId: string | null;
+                replayTarget: {
+                    /** Format: uuid */
+                    userMessageId: string;
+                    /** Format: uuid */
+                    assistantMessageId: string | null;
+                } | null;
+                /** @enum {string} */
+                fidelity: "full" | "messages_only";
+                messages: {
+                    /** Format: uuid */
+                    id: string;
+                    /** @enum {string} */
+                    role: "user" | "assistant" | "system";
+                    content: string;
+                    /** Format: date-time */
+                    createdAt: string;
+                    citations?: unknown[];
+                    answerSegments?: unknown[];
+                    groundingSummary?: unknown;
+                    directiveFirings?: string[];
+                }[];
+                originalInstructionBlock: string | null;
+                originalModelId: string | null;
+                originalRetrievalSettings?: unknown;
+                originalAgent?: unknown;
+                originalAgentConfig?: unknown;
+                /** Format: uuid */
+                sourceAgentId: string | null;
+                originalRoutineState?: unknown;
+                originalRetrievalResult: unknown[] | null;
+                conversationSummary?: string;
+                /** Format: date-time */
+                capturedAt: string;
+                /** Format: uuid */
+                capturedBy: string | null;
+            };
+            /** Format: uuid */
+            createdBy: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        EvalMessageCaseMutationResult: components["schemas"]["EvalMessageCaseLookup"] & {
+            /** @description True only when this request created the association. */
+            created: boolean;
+        };
+        EvalCase: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            workspaceId: string;
+            /** Format: uuid */
+            snapshotId: string;
+            name: string;
+            assertions: components["schemas"]["EvalAssertion"][];
+            /** @enum {string} */
+            executionMode: "safe_test" | "live";
+            /** @enum {string} */
+            status: "pending" | "passing" | "failing" | "error";
+            /** Format: uuid */
+            lastRunId: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            agent?: {
+                /** Format: uuid */
+                agentId: string | null;
+                name: string | null;
+                internalName: string | null;
+                deleted: boolean;
+            };
+        };
+        EvalSnapshot: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            workspaceId: string;
+            /** Format: uuid */
+            sourceConversationId: string;
+            /** Format: uuid */
+            sourceMessageId: string | null;
+            replayTarget: {
+                /** Format: uuid */
+                userMessageId: string;
+                /** Format: uuid */
+                assistantMessageId: string | null;
+            } | null;
+            /** @enum {string} */
+            fidelity: "full" | "messages_only";
+            messages: {
+                /** Format: uuid */
+                id: string;
+                /** @enum {string} */
+                role: "user" | "assistant" | "system";
+                content: string;
+                /** Format: date-time */
+                createdAt: string;
+                citations?: unknown[];
+                answerSegments?: unknown[];
+                groundingSummary?: unknown;
+                directiveFirings?: string[];
+            }[];
+            originalInstructionBlock: string | null;
+            originalModelId: string | null;
+            originalRetrievalSettings?: unknown;
+            originalAgent?: unknown;
+            originalAgentConfig?: unknown;
+            /** Format: uuid */
+            sourceAgentId: string | null;
+            originalRoutineState?: unknown;
+            originalRetrievalResult: unknown[] | null;
+            conversationSummary?: string;
+            /** Format: date-time */
+            capturedAt: string;
+            /** Format: uuid */
+            capturedBy: string | null;
+        };
+        EvalCaseWithRuns: components["schemas"]["EvalCase"] & {
+            runs: unknown[];
+        };
+        EvalCaseList: {
+            cases: (components["schemas"]["EvalCase"] & {
+                latestRun?: unknown;
+            })[];
+            summary: {
+                total: number;
+                scored: number;
+                passing: number;
+                failing: number;
+                error: number;
+                pending: number;
+                unscored: number;
+            };
+        };
+        /**
+         * @description A server-sent event stream. Status payloads use the named ChatStatusEvent schema. Successful order: status(interpreting), conversation (when available), status(searching) for retrieval, status(composing), one or more chunk events, done, then optional suggestions. A cancelled event is terminal and no event follows it.
+         * @example event: status
+         *     data: {"stage":"interpreting"}
+         *
+         *     event: chunk
+         *     data: {"text":"Hello"}
+         */
+        AssistantChatSseStream: string;
+        ConnectorNotFoundResponse: {
+            /** @enum {string} */
+            error: "Connector not found";
+        };
+        /**
+         * @description A server-sent event stream. Status payloads use the named ChatStatusEvent schema. Successful order: status(interpreting), conversation (when available), status(searching) for retrieval, status(composing), one or more chunk events, done, then optional suggestions. A cancelled event is terminal and no event follows it.
+         * @example event: status
+         *     data: {"stage":"interpreting"}
+         *
+         *     event: chunk
+         *     data: {"text":"Hello"}
+         */
+        PublicChatSseStream: string;
+    };
+    responses: never;
+    parameters: never;
+    requestBodies: never;
+    headers: never;
+    pathItems: never;
+}
+export type $defs = Record<string, never>;
+export interface operations {
+    getHealth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Service is healthy */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
+    createPublicChatSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PublicChatSessionRequest"];
+            };
+        };
+        responses: {
+            /** @description Public chat session returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicChatSessionResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Origin not allowed for this public chat channel */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Public chat not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Public chat session exchange rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitExceededResponse"];
+                };
+            };
+        };
+    };
+    getRegistrationAvailability: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Registration availability returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegistrationAvailabilityResponse"];
+                };
+            };
+        };
+    };
+    registerAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterRequest"];
+            };
+        };
+        responses: {
+            /** @description Account created; email verification may be required before sign-in */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegisterResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Open registration is closed and an invitation is required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource already exists */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unexpected server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    loginAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Session established */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required or invalid credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unexpected server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    requestPasswordReset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordResetRequest"];
+            };
+        };
+        responses: {
+            /** @description Password reset request accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcceptedResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    confirmPasswordReset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordResetConfirmRequest"];
+            };
+        };
+        responses: {
+            /** @description Password reset confirmed and session established */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasswordResetConfirmResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Reset token is invalid or expired */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    verifyEmail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmailVerificationVerifyRequest"];
+            };
+        };
+        responses: {
+            /** @description Email address verified */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailVerificationVerifyResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Verification token is invalid or expired */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    resendEmailVerification: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmailVerificationResendRequest"];
+            };
+        };
+        responses: {
+            /** @description Email verification request accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcceptedResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getCurrentSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current session described */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionResponse"];
+                };
+            };
+            /** @description No active session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAccountInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invitationToken: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Invitation details returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationDetailsResponse"];
+                };
+            };
+            /** @description Invitation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    acceptAccountInvitationAsCurrentUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invitationToken: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Invitation accepted and session switched to the joined account */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            /** @description No active session, or the session email does not match the invitation */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invitation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invitation is no longer valid */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    acceptAccountInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invitationToken: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvitationAcceptRequest"];
+            };
+        };
+        responses: {
+            /** @description Invitation accepted and session established */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            /** @description Invitation email mismatch or invalid credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invitation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invitation is no longer valid */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAccountUsageTrends: {
+        parameters: {
+            query: {
+                from: string;
+                to: string;
+                granularity: "day" | "week" | "month";
+                workspaceId?: string;
+                agentId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Usage trends returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsageTrendsResponse"];
+                };
+            };
+            /** @description Invalid date range, bucket count, or account-scoped filter */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAccountUsageMessages: {
+        parameters: {
+            query: {
+                from: string;
+                to: string;
+                workspaceId?: string;
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Detailed message usage returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageUsageResponse"];
+                };
+            };
+            /** @description Invalid detailed-usage range, cursor, limit, or account-scoped workspace filter */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAccountInternalUsage: {
+        parameters: {
+            query: {
+                from: string;
+                to: string;
+                workspaceId?: string;
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Detailed internal usage returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InternalUsageResponse"];
+                };
+            };
+            /** @description Invalid detailed-usage range, cursor, limit, or account-scoped workspace filter */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAccessibleAccounts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Accessible accounts returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccessibleAccountsResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAdditionalOrganization: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAccountRequest"];
+            };
+        };
+        responses: {
+            /** @description Organization created and session switched */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Additional organization creation is unavailable in this edition */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Enterprise monthly organization creation limit reached */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAccountUsers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Account users returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountUsersResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAccountInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountInvitationCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Invitation created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateAccountInvitationResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invitation already pending or user already has access */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    revokeAccountInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invitationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Invitation revoked */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invitation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invitation has already been accepted */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    removeAccountUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                membershipId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Account user removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Owner access required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Membership not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Membership cannot be removed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAccountUserRole: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                membershipId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountMembershipRoleUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Membership role updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountUser"];
+                };
+            };
+            /** @description Role management is not allowed for the caller */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    setWorkspaceGrant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceGrantRequest"];
+            };
+        };
+        responses: {
+            /** @description Workspace grant updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceGrant"];
+                };
+            };
+        };
+    };
+    removeWorkspaceGrant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Workspace grant removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    switchAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    accountId: string;
+                    /** Format: uuid */
+                    preferredWorkspaceId?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Account switched */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getApiAccessSummary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description API-access capabilities */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        effectiveRole: "member" | "admin" | "owner";
+                        capabilities: {
+                            manageOwnPersonalTokens: boolean;
+                            auditWorkspacePersonalTokens: boolean;
+                            manageServiceAccounts: boolean;
+                        };
+                        defaults: {
+                            /** @enum {number} */
+                            personalTokenLifetimeDays: 90;
+                            /** @enum {number} */
+                            serviceCredentialLifetimeDays: 365;
+                        };
+                        limits: {
+                            /** @enum {number} */
+                            personalTokensPerUser: 10;
+                            /** @enum {number} */
+                            serviceAccountsPerWorkspace: 50;
+                            /** @enum {number} */
+                            credentialsPerServiceAccount: 5;
+                            /** @enum {number} */
+                            maximumPageSize: 100;
+                        };
+                        legacyCredentialMigration: {
+                            /** @enum {string} */
+                            status: "destroyed" | "not_applicable";
+                            /** Format: date-time */
+                            migratedAt: string | null;
+                        };
+                    };
+                };
+            };
+            /** @description Invalid lifecycle request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace capability required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not available in this workspace or ownership boundary */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale revision, quota, or invalid lifecycle transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listPersonalApiTokens: {
+        parameters: {
+            query?: {
+                page?: number;
+                limit?: number;
+                view?: "mine" | "workspace";
+            };
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Safe personal-token metadata */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            /** Format: uuid */
+                            id: string;
+                            /** @enum {string} */
+                            kind: "personal" | "service";
+                            label: string;
+                            prefix: string;
+                            /** @enum {string|null} */
+                            roleCeiling: "member" | "admin" | null;
+                            /** Format: uuid */
+                            ownerUserId: string | null;
+                            /** Format: uuid */
+                            serviceAccountId: string | null;
+                            /** Format: uuid */
+                            createdByUserId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            expiresAt: string;
+                            /** @enum {string} */
+                            status: "active" | "expired" | "revoked" | "suspended" | "invalid";
+                            expiryWarningDays: 30 | 7 | 1 | null;
+                            /** Format: date-time */
+                            lastUsedAt: string | null;
+                            /** Format: date-time */
+                            revokedAt: string | null;
+                            /** Format: uuid */
+                            revokedByUserId: string | null;
+                            revocationReason: string | null;
+                            /** Format: uuid */
+                            rotatedFromCredentialId: string | null;
+                            revision: number;
+                        }[];
+                        page: number;
+                        limit: number;
+                        total: number;
+                    };
+                };
+            };
+            /** @description Invalid lifecycle request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace capability required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not available in this workspace or ownership boundary */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale revision, quota, or invalid lifecycle transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    issuePersonalApiToken: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    label: string;
+                    /** @enum {string} */
+                    roleCeiling: "member" | "admin";
+                    /** Format: date-time */
+                    expiresAt: string;
+                };
+            };
+        };
+        responses: {
+            /** @description One-time personal-token secret */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        credential: {
+                            /** Format: uuid */
+                            id: string;
+                            /** @enum {string} */
+                            kind: "personal" | "service";
+                            label: string;
+                            prefix: string;
+                            /** @enum {string|null} */
+                            roleCeiling: "member" | "admin" | null;
+                            /** Format: uuid */
+                            ownerUserId: string | null;
+                            /** Format: uuid */
+                            serviceAccountId: string | null;
+                            /** Format: uuid */
+                            createdByUserId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            expiresAt: string;
+                            /** @enum {string} */
+                            status: "active" | "expired" | "revoked" | "suspended" | "invalid";
+                            expiryWarningDays: 30 | 7 | 1 | null;
+                            /** Format: date-time */
+                            lastUsedAt: string | null;
+                            /** Format: date-time */
+                            revokedAt: string | null;
+                            /** Format: uuid */
+                            revokedByUserId: string | null;
+                            revocationReason: string | null;
+                            /** Format: uuid */
+                            rotatedFromCredentialId: string | null;
+                            revision: number;
+                        };
+                        secret: string;
+                    };
+                };
+            };
+            /** @description Invalid lifecycle request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace capability required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not available in this workspace or ownership boundary */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale revision, quota, or invalid lifecycle transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    relabelPersonalApiToken: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
+            path: {
+                workspaceId: string;
+                credentialId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    label: string;
+                    revision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Updated safe credential metadata */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        /** @enum {string} */
+                        kind: "personal" | "service";
+                        label: string;
+                        prefix: string;
+                        /** @enum {string|null} */
+                        roleCeiling: "member" | "admin" | null;
+                        /** Format: uuid */
+                        ownerUserId: string | null;
+                        /** Format: uuid */
+                        serviceAccountId: string | null;
+                        /** Format: uuid */
+                        createdByUserId: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        expiresAt: string;
+                        /** @enum {string} */
+                        status: "active" | "expired" | "revoked" | "suspended" | "invalid";
+                        expiryWarningDays: 30 | 7 | 1 | null;
+                        /** Format: date-time */
+                        lastUsedAt: string | null;
+                        /** Format: date-time */
+                        revokedAt: string | null;
+                        /** Format: uuid */
+                        revokedByUserId: string | null;
+                        revocationReason: string | null;
+                        /** Format: uuid */
+                        rotatedFromCredentialId: string | null;
+                        revision: number;
+                    };
+                };
+            };
+            /** @description Invalid lifecycle request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace capability required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not available in this workspace or ownership boundary */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale revision, quota, or invalid lifecycle transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    rotatePersonalApiToken: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
+            path: {
+                workspaceId: string;
+                credentialId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    revision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description One-time replacement secret */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        credential: {
+                            /** Format: uuid */
+                            id: string;
+                            /** @enum {string} */
+                            kind: "personal" | "service";
+                            label: string;
+                            prefix: string;
+                            /** @enum {string|null} */
+                            roleCeiling: "member" | "admin" | null;
+                            /** Format: uuid */
+                            ownerUserId: string | null;
+                            /** Format: uuid */
+                            serviceAccountId: string | null;
+                            /** Format: uuid */
+                            createdByUserId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            expiresAt: string;
+                            /** @enum {string} */
+                            status: "active" | "expired" | "revoked" | "suspended" | "invalid";
+                            expiryWarningDays: 30 | 7 | 1 | null;
+                            /** Format: date-time */
+                            lastUsedAt: string | null;
+                            /** Format: date-time */
+                            revokedAt: string | null;
+                            /** Format: uuid */
+                            revokedByUserId: string | null;
+                            revocationReason: string | null;
+                            /** Format: uuid */
+                            rotatedFromCredentialId: string | null;
+                            revision: number;
+                        };
+                        secret: string;
+                    };
+                };
+            };
+            /** @description Invalid lifecycle request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace capability required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not available in this workspace or ownership boundary */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale revision, quota, or invalid lifecycle transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    revokePersonalApiToken: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
+            path: {
+                workspaceId: string;
+                credentialId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revoked safe credential metadata */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        /** @enum {string} */
+                        kind: "personal" | "service";
+                        label: string;
+                        prefix: string;
+                        /** @enum {string|null} */
+                        roleCeiling: "member" | "admin" | null;
+                        /** Format: uuid */
+                        ownerUserId: string | null;
+                        /** Format: uuid */
+                        serviceAccountId: string | null;
+                        /** Format: uuid */
+                        createdByUserId: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        expiresAt: string;
+                        /** @enum {string} */
+                        status: "active" | "expired" | "revoked" | "suspended" | "invalid";
+                        expiryWarningDays: 30 | 7 | 1 | null;
+                        /** Format: date-time */
+                        lastUsedAt: string | null;
+                        /** Format: date-time */
+                        revokedAt: string | null;
+                        /** Format: uuid */
+                        revokedByUserId: string | null;
+                        revocationReason: string | null;
+                        /** Format: uuid */
+                        rotatedFromCredentialId: string | null;
+                        revision: number;
+                    };
+                };
+            };
+            /** @description Invalid lifecycle request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace capability required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not available in this workspace or ownership boundary */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale revision, quota, or invalid lifecycle transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listServiceAccounts: {
+        parameters: {
+            query?: {
+                page?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Service-account inventory */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            /** Format: uuid */
+                            id: string;
+                            displayName: string;
+                            /** @enum {string} */
+                            role: "member" | "admin";
+                            /** @enum {string} */
+                            status: "enabled" | "disabled" | "archived";
+                            /** Format: uuid */
+                            createdByUserId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            /** Format: date-time */
+                            disabledAt: string | null;
+                            /** Format: date-time */
+                            archivedAt: string | null;
+                            /** Format: date-time */
+                            lastUsedAt: string | null;
+                            activeCredentialCount: number;
+                            revision: number;
+                        }[];
+                        page: number;
+                        limit: number;
+                        total: number;
+                    };
+                };
+            };
+            /** @description Invalid lifecycle request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace capability required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not available in this workspace or ownership boundary */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale revision, quota, or invalid lifecycle transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createServiceAccount: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    displayName: string;
+                    /** @enum {string} */
+                    role: "member" | "admin";
+                    /** Format: date-time */
+                    credentialExpiresAt: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Service account and one-time credential secret */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        serviceAccount: {
+                            /** Format: uuid */
+                            id: string;
+                            displayName: string;
+                            /** @enum {string} */
+                            role: "member" | "admin";
+                            /** @enum {string} */
+                            status: "enabled" | "disabled" | "archived";
+                            /** Format: uuid */
+                            createdByUserId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            /** Format: date-time */
+                            disabledAt: string | null;
+                            /** Format: date-time */
+                            archivedAt: string | null;
+                            /** Format: date-time */
+                            lastUsedAt: string | null;
+                            activeCredentialCount: number;
+                            revision: number;
+                        };
+                        credential: {
+                            /** Format: uuid */
+                            id: string;
+                            /** @enum {string} */
+                            kind: "personal" | "service";
+                            label: string;
+                            prefix: string;
+                            /** @enum {string|null} */
+                            roleCeiling: "member" | "admin" | null;
+                            /** Format: uuid */
+                            ownerUserId: string | null;
+                            /** Format: uuid */
+                            serviceAccountId: string | null;
+                            /** Format: uuid */
+                            createdByUserId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            expiresAt: string;
+                            /** @enum {string} */
+                            status: "active" | "expired" | "revoked" | "suspended" | "invalid";
+                            expiryWarningDays: 30 | 7 | 1 | null;
+                            /** Format: date-time */
+                            lastUsedAt: string | null;
+                            /** Format: date-time */
+                            revokedAt: string | null;
+                            /** Format: uuid */
+                            revokedByUserId: string | null;
+                            revocationReason: string | null;
+                            /** Format: uuid */
+                            rotatedFromCredentialId: string | null;
+                            revision: number;
+                        };
+                        secret: string;
+                    };
+                };
+            };
+            /** @description Invalid lifecycle request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace capability required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not available in this workspace or ownership boundary */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale revision, quota, or invalid lifecycle transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getServiceAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                serviceAccountId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Service-account metadata */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        displayName: string;
+                        /** @enum {string} */
+                        role: "member" | "admin";
+                        /** @enum {string} */
+                        status: "enabled" | "disabled" | "archived";
+                        /** Format: uuid */
+                        createdByUserId: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        /** Format: date-time */
+                        disabledAt: string | null;
+                        /** Format: date-time */
+                        archivedAt: string | null;
+                        /** Format: date-time */
+                        lastUsedAt: string | null;
+                        activeCredentialCount: number;
+                        revision: number;
+                    };
+                };
+            };
+            /** @description Invalid lifecycle request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace capability required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not available in this workspace or ownership boundary */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale revision, quota, or invalid lifecycle transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateServiceAccount: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
+            path: {
+                workspaceId: string;
+                serviceAccountId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    displayName?: string;
+                    /** @enum {string} */
+                    role?: "member" | "admin";
+                    revision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Updated service-account metadata */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        displayName: string;
+                        /** @enum {string} */
+                        role: "member" | "admin";
+                        /** @enum {string} */
+                        status: "enabled" | "disabled" | "archived";
+                        /** Format: uuid */
+                        createdByUserId: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        /** Format: date-time */
+                        disabledAt: string | null;
+                        /** Format: date-time */
+                        archivedAt: string | null;
+                        /** Format: date-time */
+                        lastUsedAt: string | null;
+                        activeCredentialCount: number;
+                        revision: number;
+                    };
+                };
+            };
+            /** @description Invalid lifecycle request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace capability required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not available in this workspace or ownership boundary */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale revision, quota, or invalid lifecycle transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    disableServiceAccount: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
+            path: {
+                workspaceId: string;
+                serviceAccountId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    revision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Updated service-account metadata */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        displayName: string;
+                        /** @enum {string} */
+                        role: "member" | "admin";
+                        /** @enum {string} */
+                        status: "enabled" | "disabled" | "archived";
+                        /** Format: uuid */
+                        createdByUserId: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        /** Format: date-time */
+                        disabledAt: string | null;
+                        /** Format: date-time */
+                        archivedAt: string | null;
+                        /** Format: date-time */
+                        lastUsedAt: string | null;
+                        activeCredentialCount: number;
+                        revision: number;
+                    };
+                };
+            };
+            /** @description Invalid lifecycle request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace capability required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not available in this workspace or ownership boundary */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale revision, quota, or invalid lifecycle transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    enableServiceAccount: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
+            path: {
+                workspaceId: string;
+                serviceAccountId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    revision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Updated service-account metadata */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        displayName: string;
+                        /** @enum {string} */
+                        role: "member" | "admin";
+                        /** @enum {string} */
+                        status: "enabled" | "disabled" | "archived";
+                        /** Format: uuid */
+                        createdByUserId: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        /** Format: date-time */
+                        disabledAt: string | null;
+                        /** Format: date-time */
+                        archivedAt: string | null;
+                        /** Format: date-time */
+                        lastUsedAt: string | null;
+                        activeCredentialCount: number;
+                        revision: number;
+                    };
+                };
+            };
+            /** @description Invalid lifecycle request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace capability required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not available in this workspace or ownership boundary */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale revision, quota, or invalid lifecycle transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    archiveServiceAccount: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
+            path: {
+                workspaceId: string;
+                serviceAccountId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    revision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Updated service-account metadata */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        displayName: string;
+                        /** @enum {string} */
+                        role: "member" | "admin";
+                        /** @enum {string} */
+                        status: "enabled" | "disabled" | "archived";
+                        /** Format: uuid */
+                        createdByUserId: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        /** Format: date-time */
+                        disabledAt: string | null;
+                        /** Format: date-time */
+                        archivedAt: string | null;
+                        /** Format: date-time */
+                        lastUsedAt: string | null;
+                        activeCredentialCount: number;
+                        revision: number;
+                    };
+                };
+            };
+            /** @description Invalid lifecycle request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace capability required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not available in this workspace or ownership boundary */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale revision, quota, or invalid lifecycle transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listServiceAccountCredentials: {
+        parameters: {
+            query?: {
+                page?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                workspaceId: string;
+                serviceAccountId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Safe service-credential metadata */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            /** Format: uuid */
+                            id: string;
+                            /** @enum {string} */
+                            kind: "personal" | "service";
+                            label: string;
+                            prefix: string;
+                            /** @enum {string|null} */
+                            roleCeiling: "member" | "admin" | null;
+                            /** Format: uuid */
+                            ownerUserId: string | null;
+                            /** Format: uuid */
+                            serviceAccountId: string | null;
+                            /** Format: uuid */
+                            createdByUserId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            expiresAt: string;
+                            /** @enum {string} */
+                            status: "active" | "expired" | "revoked" | "suspended" | "invalid";
+                            expiryWarningDays: 30 | 7 | 1 | null;
+                            /** Format: date-time */
+                            lastUsedAt: string | null;
+                            /** Format: date-time */
+                            revokedAt: string | null;
+                            /** Format: uuid */
+                            revokedByUserId: string | null;
+                            revocationReason: string | null;
+                            /** Format: uuid */
+                            rotatedFromCredentialId: string | null;
+                            revision: number;
+                        }[];
+                        page: number;
+                        limit: number;
+                        total: number;
+                    };
+                };
+            };
+            /** @description Invalid lifecycle request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace capability required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not available in this workspace or ownership boundary */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale revision, quota, or invalid lifecycle transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    issueServiceAccountCredential: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
+            path: {
+                workspaceId: string;
+                serviceAccountId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    label: string;
+                    /** Format: date-time */
+                    expiresAt: string;
+                };
+            };
+        };
+        responses: {
+            /** @description One-time service credential secret */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        credential: {
+                            /** Format: uuid */
+                            id: string;
+                            /** @enum {string} */
+                            kind: "personal" | "service";
+                            label: string;
+                            prefix: string;
+                            /** @enum {string|null} */
+                            roleCeiling: "member" | "admin" | null;
+                            /** Format: uuid */
+                            ownerUserId: string | null;
+                            /** Format: uuid */
+                            serviceAccountId: string | null;
+                            /** Format: uuid */
+                            createdByUserId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            expiresAt: string;
+                            /** @enum {string} */
+                            status: "active" | "expired" | "revoked" | "suspended" | "invalid";
+                            expiryWarningDays: 30 | 7 | 1 | null;
+                            /** Format: date-time */
+                            lastUsedAt: string | null;
+                            /** Format: date-time */
+                            revokedAt: string | null;
+                            /** Format: uuid */
+                            revokedByUserId: string | null;
+                            revocationReason: string | null;
+                            /** Format: uuid */
+                            rotatedFromCredentialId: string | null;
+                            revision: number;
+                        };
+                        secret: string;
+                    };
+                };
+            };
+            /** @description Invalid lifecycle request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace capability required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not available in this workspace or ownership boundary */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale revision, quota, or invalid lifecycle transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    relabelServiceAccountCredential: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
+            path: {
+                workspaceId: string;
+                serviceAccountId: string;
+                credentialId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    label: string;
+                    revision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Updated safe credential metadata */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        /** @enum {string} */
+                        kind: "personal" | "service";
+                        label: string;
+                        prefix: string;
+                        /** @enum {string|null} */
+                        roleCeiling: "member" | "admin" | null;
+                        /** Format: uuid */
+                        ownerUserId: string | null;
+                        /** Format: uuid */
+                        serviceAccountId: string | null;
+                        /** Format: uuid */
+                        createdByUserId: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        expiresAt: string;
+                        /** @enum {string} */
+                        status: "active" | "expired" | "revoked" | "suspended" | "invalid";
+                        expiryWarningDays: 30 | 7 | 1 | null;
+                        /** Format: date-time */
+                        lastUsedAt: string | null;
+                        /** Format: date-time */
+                        revokedAt: string | null;
+                        /** Format: uuid */
+                        revokedByUserId: string | null;
+                        revocationReason: string | null;
+                        /** Format: uuid */
+                        rotatedFromCredentialId: string | null;
+                        revision: number;
+                    };
+                };
+            };
+            /** @description Invalid lifecycle request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace capability required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not available in this workspace or ownership boundary */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale revision, quota, or invalid lifecycle transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    rotateServiceAccountCredential: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
+            path: {
+                workspaceId: string;
+                serviceAccountId: string;
+                credentialId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    revision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description One-time replacement secret */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        credential: {
+                            /** Format: uuid */
+                            id: string;
+                            /** @enum {string} */
+                            kind: "personal" | "service";
+                            label: string;
+                            prefix: string;
+                            /** @enum {string|null} */
+                            roleCeiling: "member" | "admin" | null;
+                            /** Format: uuid */
+                            ownerUserId: string | null;
+                            /** Format: uuid */
+                            serviceAccountId: string | null;
+                            /** Format: uuid */
+                            createdByUserId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            expiresAt: string;
+                            /** @enum {string} */
+                            status: "active" | "expired" | "revoked" | "suspended" | "invalid";
+                            expiryWarningDays: 30 | 7 | 1 | null;
+                            /** Format: date-time */
+                            lastUsedAt: string | null;
+                            /** Format: date-time */
+                            revokedAt: string | null;
+                            /** Format: uuid */
+                            revokedByUserId: string | null;
+                            revocationReason: string | null;
+                            /** Format: uuid */
+                            rotatedFromCredentialId: string | null;
+                            revision: number;
+                        };
+                        secret: string;
+                    };
+                };
+            };
+            /** @description Invalid lifecycle request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace capability required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not available in this workspace or ownership boundary */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale revision, quota, or invalid lifecycle transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    revokeServiceAccountCredential: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
+            path: {
+                workspaceId: string;
+                serviceAccountId: string;
+                credentialId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revoked safe credential metadata */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        /** @enum {string} */
+                        kind: "personal" | "service";
+                        label: string;
+                        prefix: string;
+                        /** @enum {string|null} */
+                        roleCeiling: "member" | "admin" | null;
+                        /** Format: uuid */
+                        ownerUserId: string | null;
+                        /** Format: uuid */
+                        serviceAccountId: string | null;
+                        /** Format: uuid */
+                        createdByUserId: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        expiresAt: string;
+                        /** @enum {string} */
+                        status: "active" | "expired" | "revoked" | "suspended" | "invalid";
+                        expiryWarningDays: 30 | 7 | 1 | null;
+                        /** Format: date-time */
+                        lastUsedAt: string | null;
+                        /** Format: date-time */
+                        revokedAt: string | null;
+                        /** Format: uuid */
+                        revokedByUserId: string | null;
+                        revocationReason: string | null;
+                        /** Format: uuid */
+                        rotatedFromCredentialId: string | null;
+                        revision: number;
+                    };
+                };
+            };
+            /** @description Invalid lifecycle request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace capability required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not available in this workspace or ownership boundary */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale revision, quota, or invalid lifecycle transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getOperatorMcpSetup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current setup availability and client artifacts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        availability: "available" | "disabled" | "misconfigured" | "unavailable";
+                        /** Format: uri */
+                        resource: string | null;
+                        artifacts: {
+                            id: string;
+                            displayName: string;
+                            clientVersion: string | null;
+                            /** @enum {string} */
+                            status: "verified" | "unavailable" | "unverified";
+                            description: string;
+                            setupInstructions: string[];
+                            command: string | null;
+                            configuration: string | null;
+                            /** Format: uri */
+                            handoffUrl: string | null;
+                            permittedLaunchTarget: string;
+                            expectedClientId: string | null;
+                            redirectMechanism: string;
+                            failureRecovery: string;
+                        }[];
+                        /** Format: date-time */
+                        checkedAt: string;
+                        message: string | null;
+                    };
+                };
+            };
+            /** @description Invalid Operator MCP request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace access required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Operator MCP resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listOperatorMcpGrants: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description User or workspace grant inventory */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        grants: {
+                            /** Format: uuid */
+                            id: string;
+                            clientId: string;
+                            clientName: string;
+                            clientVersion: string | null;
+                            clientMetadataDigest: string;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            workspaceName: string;
+                            /** Format: uuid */
+                            userId: string;
+                            userName: string | null;
+                            scopes: ("operator:read" | "operator:probe" | "operator:act" | "operator:propose")[];
+                            offlineAccess: boolean;
+                            /** @enum {string} */
+                            status: "active" | "revoked" | "superseded" | "expired";
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            lastUsedAt: string | null;
+                            /** Format: date-time */
+                            revokedAt: string | null;
+                            revokedReason: string | null;
+                            canRevoke: boolean;
+                            isOwner: boolean;
+                        }[];
+                        canViewWorkspace: boolean;
+                    };
+                };
+            };
+            /** @description Invalid Operator MCP request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace access required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Operator MCP resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getOperatorMcpGrant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                grantId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Grant detail */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        clientId: string;
+                        clientName: string;
+                        clientVersion: string | null;
+                        clientMetadataDigest: string;
+                        /** Format: uuid */
+                        workspaceId: string;
+                        workspaceName: string;
+                        /** Format: uuid */
+                        userId: string;
+                        userName: string | null;
+                        scopes: ("operator:read" | "operator:probe" | "operator:act" | "operator:propose")[];
+                        offlineAccess: boolean;
+                        /** @enum {string} */
+                        status: "active" | "revoked" | "superseded" | "expired";
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        lastUsedAt: string | null;
+                        /** Format: date-time */
+                        revokedAt: string | null;
+                        revokedReason: string | null;
+                        canRevoke: boolean;
+                        isOwner: boolean;
+                        redirectHost: string;
+                        /** Format: uri */
+                        resource: string;
+                        credentialCount: number;
+                        recentInvocationCount: number;
+                    };
+                };
+            };
+            /** @description Invalid Operator MCP request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace access required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Operator MCP resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    revokeOperatorMcpGrant: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
+            path: {
+                workspaceId: string;
+                grantId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revoked grant */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        clientId: string;
+                        clientName: string;
+                        clientVersion: string | null;
+                        clientMetadataDigest: string;
+                        /** Format: uuid */
+                        workspaceId: string;
+                        workspaceName: string;
+                        /** Format: uuid */
+                        userId: string;
+                        userName: string | null;
+                        scopes: ("operator:read" | "operator:probe" | "operator:act" | "operator:propose")[];
+                        offlineAccess: boolean;
+                        /** @enum {string} */
+                        status: "active" | "revoked" | "superseded" | "expired";
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        lastUsedAt: string | null;
+                        /** Format: date-time */
+                        revokedAt: string | null;
+                        revokedReason: string | null;
+                        canRevoke: boolean;
+                        isOwner: boolean;
+                    };
+                };
+            };
+            /** @description Invalid Operator MCP request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace access required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Operator MCP resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getOperatorMcpConsentTransaction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                transactionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Consent transaction bound to the current session */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        transactionId: string;
+                        client: {
+                            clientId: string;
+                            displayName: string;
+                            /** Format: uri */
+                            clientUri: string | null;
+                            clientVersion: string | null;
+                            metadataDigest: string;
+                            /** @enum {string} */
+                            applicationType: "web" | "native";
+                        };
+                        requestedScopes: ("operator:read" | "operator:probe" | "operator:act" | "operator:propose")[];
+                        requestedOfflineAccess: boolean;
+                        redirectHost: string;
+                        /** Format: uri */
+                        redirectUri: string;
+                        /** Format: uri */
+                        resource: string;
+                        currentUser: {
+                            /** Format: uuid */
+                            id: string;
+                            displayName: string;
+                            /** Format: email */
+                            email: string | null;
+                        };
+                        workspaces: {
+                            /** Format: uuid */
+                            id: string;
+                            name: string;
+                            /** @enum {string} */
+                            role: "member" | "admin" | "owner";
+                        }[];
+                        /** @enum {string} */
+                        status: "pending" | "approved" | "denied" | "consumed" | "expired";
+                        /** Format: date-time */
+                        expiresAt: string;
+                    };
+                };
+            };
+            /** @description Invalid Operator MCP request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace access required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Operator MCP resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    decideOperatorMcpConsentTransaction: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
+            path: {
+                transactionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    decision: "approve" | "deny";
+                    /** Format: uuid */
+                    workspaceId?: string;
+                    approvedToolScopes?: ("operator:read" | "operator:probe" | "operator:act" | "operator:propose")[];
+                    offlineAccess: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description OAuth redirect for the client */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uri */
+                        redirectUrl: string;
+                    };
+                };
+            };
+            /** @description Invalid Operator MCP request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace access required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Operator MCP resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listWorkspaces: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Workspaces returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceListResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createWorkspace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Workspace created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Workspace"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getWorkspaceSummary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Workspace summary returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceSummaryResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    resolveWorkspaceRouteKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Workspace route key resolved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceRouteResolutionResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace not found or inaccessible */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteWorkspace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Workspace deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    renameWorkspace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceRenameRequest"];
+            };
+        };
+        responses: {
+            /** @description Workspace renamed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Workspace"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listWebhookDestinations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Webhook destinations returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookDestinationListResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createWebhookDestination: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebhookDestinationRequest"];
+            };
+        };
+        responses: {
+            /** @description Webhook destination created with one-time plaintext secret */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookDestinationCreateResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Destination name already exists */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getWebhookDestination: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Webhook destination returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookDestinationResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Webhook destination not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateWebhookDestination: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebhookDestinationRequest"];
+            };
+        };
+        responses: {
+            /** @description Webhook destination updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookDestinationResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Webhook destination not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Destination name already exists */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteWebhookDestination: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Webhook destination deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Webhook destination not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Destination is referenced by published routines */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    rotateWebhookDestinationSecret: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Webhook destination secret rotated with one-time plaintext secret */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookDestinationCreateResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Webhook destination not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getPlatformSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Shared assistant and channel settings returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformSettingsResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updatePlatformSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdatePlatformSettingsRequest"];
+            };
+        };
+        responses: {
+            /** @description Shared settings updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformSettingsResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getSettingsRetrievalDefaults: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Retrieval defaults returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetrievalDefaultsResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getIngestionSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Ingestion settings returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IngestionSettings"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateIngestionSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateIngestionSettingsRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated ingestion settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IngestionSettings"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getEmbeddingCoverage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Embedding coverage returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmbeddingCoverage"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getDocumentTypeCatalog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The document type catalog, with built-in entries merged ahead of operator-defined types */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentTypeCatalog"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateDocumentTypeCatalog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateDocumentTypeCatalogRequest"];
+            };
+        };
+        responses: {
+            /** @description The saved catalog at its new revision */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentTypeCatalog"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The catalog changed since it was loaded; the message carries the current revision */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    cancelPendingEmbeddingModel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pending embedding model change cancelled */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IngestionSettings"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    reprocessWorkspaceIngestion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ReprocessIngestionRequest"];
+            };
+        };
+        responses: {
+            /** @description Workspace documents accepted for reprocessing */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceIngestionReprocessResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getGeneralSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description General settings returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeneralSettingsResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlatErrorResponse"];
+                };
+            };
+        };
+    };
+    updateGeneralSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateGeneralSettingsRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated general settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeneralSettingsResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlatErrorResponse"];
+                };
+            };
+        };
+    };
+    rotateAnonymousChatToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Updated general settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeneralSettingsResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    rotateWebsiteEmbedToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Updated general settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeneralSettingsResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    uploadAssistantLogo: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["AssistantLogoUploadRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated general settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeneralSettingsResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteAssistantLogo: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Updated general settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeneralSettingsResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listWorkspaceProviderCredentials: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Configured providers and encryption status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceProviderCredentialsResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    setWorkspaceProviderCredential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: "openai" | "openai-compatible" | "gemini" | "claude";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetWorkspaceProviderCredentialRequest"];
+            };
+        };
+        responses: {
+            /** @description Credential stored */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Server-side secret encryption is not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    removeWorkspaceProviderCredential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: "openai" | "openai-compatible" | "gemini" | "claude";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Credential removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No credential found for the requested provider */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getWorkspaceLlmModels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Workspace LLM model preferences (null = inherit env default) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceLlmModelsResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateWorkspaceLlmModels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateWorkspaceLlmModelsRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated workspace LLM model preferences */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceLlmModelsResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAgents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Agents returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentListResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConversationAgentRequest"];
+            };
+        };
+        responses: {
+            /** @description Agent created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationAgent"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAgentChannelChatResponse: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentChannelChatRequest"];
+            };
+        };
+        responses: {
+            /** @description Agent chat response returned as JSON or SSE */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantChatResponse"];
+                    "text/event-stream": string;
+                };
+            };
+            /** @description Conversation start completed without a greeting */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invalid, inactive, cross-audience, or cross-agent credential */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent channel rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Agent returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationAgent"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConversationAgentRequest"];
+            };
+        };
+        responses: {
+            /** @description Agent updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationAgent"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAgentChannelsLifecycle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Channel lifecycle returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentChannelsLifecycleResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAgentChannelCredentials: {
+        parameters: {
+            query?: {
+                audience?: "mcp" | "rest";
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Role-free channel credential metadata returned without secret material */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentChannelCredentialListResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    issueAgentChannelCredential: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentChannelCredentialIssueRequest"];
+            };
+        };
+        responses: {
+            /** @description Agent channel credential issued. The secret is returned only in this response. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentChannelCredentialIssueResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    rotateAgentChannelCredential: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
+            path: {
+                agentId: string;
+                credentialId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Agent channel credential rotated. The new secret is returned only in this response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentChannelCredentialIssueResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or channel credential not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    revokeAgentChannelCredential: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
+            path: {
+                agentId: string;
+                credentialId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Agent channel credential revoked */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or channel credential not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAgentDirectives: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Directives returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DirectiveListResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAgentDirective: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuthoredDirectiveCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Directive created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthoredDirectiveSaveResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Directive name already exists for this agent */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    draftAgentDirective: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DirectiveDraftRequest"];
+            };
+        };
+        responses: {
+            /** @description Directive draft returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DirectiveDraftResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The model did not return a valid draft */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteAgentDirective: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                directiveId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Directive deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or directive not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAgentDirective: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                directiveId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuthoredDirectiveUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Directive updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthoredDirectiveSaveResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or directive not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Directive name already exists for this agent */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAgentRoutineSkillCatalog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Routine skill catalog returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoutineSkillCatalogResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAgentRoutines: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Routine definitions returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoutineDefinitionListResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAgentRoutine: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoutineDefinitionCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Draft routine definition created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoutineDefinitionSaveResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Routine name and version already exist for this agent */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAgentRoutine: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                routineId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Routine definition returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoutineDefinitionGetResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or routine definition not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteAgentRoutine: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                routineId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Draft routine definition deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or draft routine definition not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAgentRoutine: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                routineId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoutineDefinitionUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Draft routine definition updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoutineDefinitionSaveResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or routine definition not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    draftAgentRoutineFromProcedure: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoutineDraftAssistRequest"];
+            };
+        };
+        responses: {
+            /** @description Routine draft proposal returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoutineDraftAssistResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Routine draft could not be generated */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    validateAgentRoutine: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                routineId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Routine validation returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoutineDefinitionValidateResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or routine definition not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    publishAgentRoutine: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                routineId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Routine definition published */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoutineDefinitionPublishResponse"];
+                };
+            };
+            /** @description Routine definition cannot be published */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or routine definition not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Routine definition is invalid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoutineDefinitionPublishRejectedResponse"];
+                };
+            };
+        };
+    };
+    reviseAgentRoutine: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                routineId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Routine revision draft returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoutineDefinitionLifecycleResponse"];
+                };
+            };
+            /** @description Routine definition cannot be revised */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or routine definition not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    archiveAgentRoutine: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                routineId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Routine definition archived */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoutineDefinitionLifecycleResponse"];
+                };
+            };
+            /** @description Routine definition cannot be archived */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or routine definition not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    restoreAgentRoutine: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                routineId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Routine definition restored */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoutineDefinitionLifecycleResponse"];
+                };
+            };
+            /** @description Routine definition cannot be restored */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or routine definition not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Routine definition is invalid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoutineDefinitionPublishRejectedResponse"];
+                };
+            };
+        };
+    };
+    uploadAgentAssistantLogo: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["AssistantLogoUploadRequest"];
+            };
+        };
+        responses: {
+            /** @description Agent updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationAgent"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteAgentAssistantLogo: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Agent updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationAgent"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    setDefaultAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default agent updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationAgent"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    exportAgentBundle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Agent bundle returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentBundle"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    importAgentBundle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentBundleImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Agent created from bundle */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentBundleImportResponse"];
+                };
+            };
+            /** @description Unsupported bundle version or agent schema version */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    analyzeWebsiteForAgentWizard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentWizardAnalyzeRequest"];
+            };
+        };
+        responses: {
+            /** @description Suggested configuration derived from the site */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentWizardAnalysis"];
+                };
+            };
+            /** @description Request body or URL is invalid */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.agents.manage */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The site could not be reached, required authentication, or carried too little content to analyze */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Analysis rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Rate-limit state or workspace inference capability is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Website analysis exceeded its time budget */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    streamAgentWizardWebsiteAnalysis: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentWizardAnalyzeRequest"];
+            };
+        };
+        responses: {
+            /** @description Server-sent progress events followed by the suggested configuration, or an error event */
+            200: {
+                headers: {
+                    /** @description Disables intermediary transformation and caching. */
+                    "Cache-Control"?: "no-cache, no-transform";
+                    /** @description Keeps the HTTP connection open for the event stream. */
+                    Connection?: "keep-alive";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": components["schemas"]["AgentWizardAnalysisStream"];
+                };
+            };
+            /** @description Request body or URL is invalid */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.agents.manage */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Analysis rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Rate-limit state is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAgentFromWizard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentWizardCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Agent created; the response names any step after creation that did not finish */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentWizardCreateResponse"];
+                };
+            };
+            /** @description Request body or one of its URLs is invalid */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.agents.manage */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Creation rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Rate-limit state is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listContextVariables: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Context variables returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContextVariableListResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createContextVariable: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContextVariableCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Context variable created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContextVariableResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getContextVariable: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Context variable returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContextVariableResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Context variable not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteContextVariable: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Context variable deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Context variable not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateContextVariable: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContextVariableUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Context variable updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContextVariableResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Context variable not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAgentContextVariables: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Context variable enablements returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentContextVariableEnablementListResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAgentContextVariableSigningKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Signing key returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContextVariableSigningKeyResponse"];
+                };
+            };
+            /** @description Signing is not configured */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    upsertAgentContextVariable: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                variableId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentContextVariableEnablementRequest"];
+            };
+        };
+        responses: {
+            /** @description Context variable enablement saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentContextVariableEnablementResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or context variable not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteAgentContextVariable: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                variableId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Context variable enablement deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent, context variable, or enablement not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getContextVariableValue: {
+        parameters: {
+            query: {
+                scopeType: "session" | "customer" | "agent" | "workspace";
+                scopeId: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Context variable value returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContextVariableValueResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Context variable or value not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    upsertContextVariableValue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContextVariableValueUpsertRequest"];
+            };
+        };
+        responses: {
+            /** @description Context variable value saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContextVariableValueResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Context variable not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteContextVariableValue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContextVariableValueDeleteRequest"];
+            };
+        };
+        responses: {
+            /** @description Context variable value deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Context variable or value not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    searchRetrievalEvidence: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetrievalSearchRequest"];
+            };
+        };
+        responses: {
+            /** @description Retrieval evidence returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetrievalSearchResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks the workspace.retrieval.query permission, or supplied agentId without workspace.agents.read */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The agentId supplied does not resolve to an agent in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Expensive authenticated request rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitExceededResponse"];
+                };
+            };
+        };
+    };
+    listSkills: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Skills catalog returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillCatalogResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skillName: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Skill catalog entry returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillCatalogEntry"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Skill not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listMcpConnections: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Connections */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        connections: {
+                            id: string;
+                            displayName: string;
+                            serverUrl: string;
+                            authMethod: string;
+                            status: string;
+                            hasCredential: boolean;
+                            createdAt: string;
+                            updatedAt: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createMcpConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    displayName: string;
+                    /**
+                     * Format: uri
+                     * @description HTTPS MCP server URL. Must not embed credentials (userinfo).
+                     */
+                    serverUrl: string;
+                    /** @enum {string} */
+                    authMethod: "access_token" | "oauth";
+                    /** @description Required when authMethod is access_token. Write-only — never returned in responses. */
+                    accessToken?: string;
+                    /** @description Required when authMethod is oauth. Secrets are write-only. */
+                    oauth?: {
+                        /** Format: uri */
+                        authorizationEndpoint: string;
+                        /** Format: uri */
+                        tokenEndpoint: string;
+                        clientId: string;
+                        /** @description Write-only — never returned in responses. */
+                        clientSecret?: string;
+                        scopes?: string[];
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description Connection created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id: string;
+                        displayName: string;
+                        serverUrl: string;
+                        authMethod: string;
+                        status: string;
+                        hasCredential: boolean;
+                        createdAt: string;
+                        updatedAt: string;
+                    };
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    discoverMcpConnectionTools: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                connectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Discovered tools */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        tools: {
+                            name: string;
+                            description?: string;
+                            inputSchema?: unknown;
+                        }[];
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Connection not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getMcpConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                connectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Connection */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id: string;
+                        displayName: string;
+                        serverUrl: string;
+                        authMethod: string;
+                        status: string;
+                        hasCredential: boolean;
+                        createdAt: string;
+                        updatedAt: string;
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Connection not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteMcpConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                connectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Connection deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Connection not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Connection is still referenced by a skill */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateMcpConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                connectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    displayName?: string;
+                    /** @description Write-only — rotates the stored access token. */
+                    accessToken?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Connection updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id: string;
+                        displayName: string;
+                        serverUrl: string;
+                        authMethod: string;
+                        status: string;
+                        hasCredential: boolean;
+                        createdAt: string;
+                        updatedAt: string;
+                    };
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Connection not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listExternalSkills: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Skill definitions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        skills: {
+                            id: string;
+                            connectionId: string;
+                            skillName: string;
+                            toolName: string;
+                            boundParams: {
+                                [key: string]: unknown;
+                            };
+                            exposedParams: {
+                                [key: string]: unknown;
+                            };
+                            declaredOutcomes: string[] | null;
+                            outcomeMap: {
+                                [key: string]: string;
+                            } | null;
+                            enabled: boolean;
+                            createdAt: string;
+                            updatedAt: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createExternalSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    skillName: string;
+                    /** Format: uuid */
+                    connectionId: string;
+                    toolName: string;
+                    boundParams?: {
+                        [key: string]: unknown;
+                    };
+                    exposedParams?: {
+                        [key: string]: {
+                            slotBinding?: string;
+                            description?: string;
+                        };
+                    };
+                    declaredOutcomes?: string[];
+                    outcomeMap?: {
+                        [key: string]: string;
+                    };
+                    enabled?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Skill defined */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id: string;
+                        connectionId: string;
+                        skillName: string;
+                        toolName: string;
+                        boundParams: {
+                            [key: string]: unknown;
+                        };
+                        exposedParams: {
+                            [key: string]: unknown;
+                        };
+                        declaredOutcomes: string[] | null;
+                        outcomeMap: {
+                            [key: string]: string;
+                        } | null;
+                        enabled: boolean;
+                        createdAt: string;
+                        updatedAt: string;
+                    };
+                };
+            };
+            /** @description Validation failed (unknown tool or param mismatch) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or connection not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Skill name already used */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getExternalSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Skill definition */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id: string;
+                        connectionId: string;
+                        skillName: string;
+                        toolName: string;
+                        boundParams: {
+                            [key: string]: unknown;
+                        };
+                        exposedParams: {
+                            [key: string]: unknown;
+                        };
+                        declaredOutcomes: string[] | null;
+                        outcomeMap: {
+                            [key: string]: string;
+                        } | null;
+                        enabled: boolean;
+                        createdAt: string;
+                        updatedAt: string;
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Skill not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteExternalSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Skill deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Skill not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateExternalSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    boundParams?: {
+                        [key: string]: unknown;
+                    };
+                    exposedParams?: {
+                        [key: string]: {
+                            slotBinding?: string;
+                            description?: string;
+                        };
+                    };
+                    declaredOutcomes?: string[];
+                    outcomeMap?: {
+                        [key: string]: string;
+                    };
+                    enabled?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Skill updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id: string;
+                        connectionId: string;
+                        skillName: string;
+                        toolName: string;
+                        boundParams: {
+                            [key: string]: unknown;
+                        };
+                        exposedParams: {
+                            [key: string]: unknown;
+                        };
+                        declaredOutcomes: string[] | null;
+                        outcomeMap: {
+                            [key: string]: string;
+                        } | null;
+                        enabled: boolean;
+                        createdAt: string;
+                        updatedAt: string;
+                    };
+                };
+            };
+            /** @description Validation failed (param mismatch) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Skill or connection not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    startMcpConnectionOauth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                connectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorization URL */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description Open in the author's browser to grant consent. */
+                        authorizationUrl: string;
+                    };
+                };
+            };
+            /** @description Connection is not an OAuth connection or is misconfigured */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Connection not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description OAuth redirect URI or encryption not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    completeMcpConnectionOauth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                connectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Authorization code returned by the provider. */
+                    code: string;
+                    /** @description State value returned by the provider; must match the started flow. */
+                    state: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Connection authorized */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id: string;
+                        displayName: string;
+                        serverUrl: string;
+                        authMethod: string;
+                        status: string;
+                        hasCredential: boolean;
+                        createdAt: string;
+                        updatedAt: string;
+                    };
+                };
+            };
+            /** @description State mismatch or authorization could not be completed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Connection not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listWorkspaceOauthConnections: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OAuth connections */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        connections: {
+                            /** Format: uuid */
+                            id: string;
+                            provider: string;
+                            displayName: string;
+                            /** @enum {string} */
+                            status: "pending" | "authorized" | "needs_reauth" | "disabled" | "error";
+                            grantedScopes: string[];
+                            providerAccountId: string | null;
+                            updatedAt: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace settings permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createWorkspaceOauthConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    provider: string;
+                    displayName: string;
+                    requestedScopes?: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description Authorization started */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        connectionId: string;
+                        authorizationUrl: string;
+                        /** @enum {string} */
+                        status: "pending";
+                    };
+                };
+            };
+            /** @description Unsupported provider, scopes, or request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace settings permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description OAuth encryption or redirect URI is not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getWorkspaceOauthConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                connectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OAuth connection */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        connection: {
+                            /** Format: uuid */
+                            id: string;
+                            provider: string;
+                            displayName: string;
+                            /** @enum {string} */
+                            status: "pending" | "authorized" | "needs_reauth" | "disabled" | "error";
+                            grantedScopes: string[];
+                            providerAccountId: string | null;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace settings permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description OAuth connection not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    reauthorizeWorkspaceOauthConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                connectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorization restarted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        connectionId: string;
+                        authorizationUrl: string;
+                        /** @enum {string} */
+                        status: "pending";
+                    };
+                };
+            };
+            /** @description Connection is not ready for OAuth authorization */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace settings permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description OAuth connection not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    completeWorkspaceOauthCallback: {
+        parameters: {
+            query: {
+                code: string;
+                state: string;
+            };
+            header?: never;
+            path: {
+                provider: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redirects to the frontend OAuth status page */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description State mismatch or authorization could not be completed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description OAuth connection not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description OAuth encryption is not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listWorkspaceEmailSkillActivity: {
+        parameters: {
+            query?: {
+                agentId?: string;
+                connectionId?: string;
+                skillDefinitionId?: string;
+                outcome?: "drafted" | "sent" | "missing_input" | "disabled_connection" | "needs_reauth" | "provider_rejected" | "failed";
+                createdFrom?: string;
+                createdTo?: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sanitized email skill activity */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        activities: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            /** Format: uuid */
+                            agentId: string;
+                            /** Format: uuid */
+                            routineId: string | null;
+                            /** Format: uuid */
+                            conversationId: string | null;
+                            /** Format: uuid */
+                            skillDefinitionId: string;
+                            /** Format: uuid */
+                            connectionId: string;
+                            skillName: string;
+                            /** @enum {string} */
+                            mode: "draft" | "send";
+                            /** @enum {string} */
+                            outcome: "drafted" | "sent" | "missing_input" | "disabled_connection" | "needs_reauth" | "provider_rejected" | "failed";
+                            recipientSummary: {
+                                toCount: number;
+                                ccCount: number;
+                                domains: string[];
+                                redactedRecipients: string[];
+                            };
+                            providerMessageId: string | null;
+                            errorCode: string | null;
+                            createdAt: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Invalid activity query */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace settings permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listWorkspaceEmailConnections: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Customer email connections */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        connections: {
+                            /** Format: uuid */
+                            id: string;
+                            workspaceId: string;
+                            /** Format: uuid */
+                            oauthConnectionId: string;
+                            provider: string;
+                            displayName: string;
+                            senderEmail: string;
+                            senderName: string | null;
+                            replyToEmail: string | null;
+                            /** @enum {string} */
+                            status: "authorized" | "disabled" | "needs_reauth" | "error";
+                            /** @enum {string|null} */
+                            lastHealthStatus: "ok" | "failed" | "unknown" | null;
+                            lastHealthCheckedAt: string | null;
+                            lastErrorCode: string | null;
+                            updatedAt: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace settings permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createWorkspaceEmailConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    oauthConnectionId: string;
+                    displayName: string;
+                    /** Format: email */
+                    senderEmail: string;
+                    senderName?: string | null;
+                    /** Format: email */
+                    replyToEmail?: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Customer email connection */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        connection: {
+                            /** Format: uuid */
+                            id: string;
+                            workspaceId: string;
+                            /** Format: uuid */
+                            oauthConnectionId: string;
+                            provider: string;
+                            displayName: string;
+                            senderEmail: string;
+                            senderName: string | null;
+                            replyToEmail: string | null;
+                            /** @enum {string} */
+                            status: "authorized" | "disabled" | "needs_reauth" | "error";
+                            /** @enum {string|null} */
+                            lastHealthStatus: "ok" | "failed" | "unknown" | null;
+                            lastHealthCheckedAt: string | null;
+                            lastErrorCode: string | null;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+            /** @description Invalid input or OAuth connection is not usable for email */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace settings permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description OAuth connection not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listWorkspaceEmailOauthConnections: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Email-eligible OAuth connections */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        connections: {
+                            /** Format: uuid */
+                            id: string;
+                            provider: string;
+                            displayName: string;
+                            /** @enum {string} */
+                            status: "pending" | "authorized" | "needs_reauth" | "disabled" | "error";
+                            grantedScopes: string[];
+                            providerAccountId: string | null;
+                            updatedAt: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace settings permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteWorkspaceEmailConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                connectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace settings permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Customer email connection not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Customer email connection is still referenced by an email skill */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateWorkspaceEmailConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                connectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    displayName?: string;
+                    /** Format: email */
+                    senderEmail?: string;
+                    senderName?: string | null;
+                    /** Format: email */
+                    replyToEmail?: string | null;
+                    disabled?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Customer email connection */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        connection: {
+                            /** Format: uuid */
+                            id: string;
+                            workspaceId: string;
+                            /** Format: uuid */
+                            oauthConnectionId: string;
+                            provider: string;
+                            displayName: string;
+                            senderEmail: string;
+                            senderName: string | null;
+                            replyToEmail: string | null;
+                            /** @enum {string} */
+                            status: "authorized" | "disabled" | "needs_reauth" | "error";
+                            /** @enum {string|null} */
+                            lastHealthStatus: "ok" | "failed" | "unknown" | null;
+                            lastHealthCheckedAt: string | null;
+                            lastErrorCode: string | null;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+            /** @description Invalid input */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace settings permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Customer email connection not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    checkWorkspaceEmailConnectionHealth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                connectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Customer email connection */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        connection: {
+                            /** Format: uuid */
+                            id: string;
+                            workspaceId: string;
+                            /** Format: uuid */
+                            oauthConnectionId: string;
+                            provider: string;
+                            displayName: string;
+                            senderEmail: string;
+                            senderName: string | null;
+                            replyToEmail: string | null;
+                            /** @enum {string} */
+                            status: "authorized" | "disabled" | "needs_reauth" | "error";
+                            /** @enum {string|null} */
+                            lastHealthStatus: "ok" | "failed" | "unknown" | null;
+                            lastHealthCheckedAt: string | null;
+                            lastErrorCode: string | null;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace settings permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Customer email connection not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAgentEmailSkills: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Email skill definitions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        skills: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            /** Format: uuid */
+                            agentId: string;
+                            /** Format: uuid */
+                            connectionId: string;
+                            skillName: string;
+                            /** @enum {string} */
+                            mode: "draft" | "send";
+                            boundInputs: {
+                                [key: string]: unknown;
+                            };
+                            exposedInputs: {
+                                [key: string]: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                };
+                            };
+                            enabled: boolean;
+                            outcomes: ("drafted" | "sent" | "missing_input" | "disabled_connection" | "needs_reauth" | "provider_rejected" | "failed")[];
+                            createdAt: string;
+                            updatedAt: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent read permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAgentEmailSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    skillName: string;
+                    /** Format: uuid */
+                    connectionId: string;
+                    /**
+                     * @default draft
+                     * @enum {string}
+                     */
+                    mode?: "draft" | "send";
+                    /** @default {} */
+                    boundInputs?: {
+                        [key: string]: unknown;
+                    };
+                    /** @default {} */
+                    exposedInputs?: {
+                        [key: string]: {
+                            description?: string;
+                            slotBinding?: string;
+                        };
+                    };
+                    /** @default true */
+                    enabled?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Email skill definition */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        skill: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            /** Format: uuid */
+                            agentId: string;
+                            /** Format: uuid */
+                            connectionId: string;
+                            skillName: string;
+                            /** @enum {string} */
+                            mode: "draft" | "send";
+                            boundInputs: {
+                                [key: string]: unknown;
+                            };
+                            exposedInputs: {
+                                [key: string]: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                };
+                            };
+                            enabled: boolean;
+                            outcomes: ("drafted" | "sent" | "missing_input" | "disabled_connection" | "needs_reauth" | "provider_rejected" | "failed")[];
+                            createdAt: string;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+            /** @description Invalid email skill definition */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or customer email connection not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Email skill name already exists */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAgentEmailSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Email skill definition */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        skill: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            /** Format: uuid */
+                            agentId: string;
+                            /** Format: uuid */
+                            connectionId: string;
+                            skillName: string;
+                            /** @enum {string} */
+                            mode: "draft" | "send";
+                            boundInputs: {
+                                [key: string]: unknown;
+                            };
+                            exposedInputs: {
+                                [key: string]: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                };
+                            };
+                            enabled: boolean;
+                            outcomes: ("drafted" | "sent" | "missing_input" | "disabled_connection" | "needs_reauth" | "provider_rejected" | "failed")[];
+                            createdAt: string;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent read permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or email skill not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteAgentEmailSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or email skill not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAgentEmailSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    mode?: "draft" | "send";
+                    boundInputs?: {
+                        [key: string]: unknown;
+                    };
+                    exposedInputs?: {
+                        [key: string]: {
+                            description?: string;
+                            slotBinding?: string;
+                        };
+                    };
+                    enabled?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Email skill definition */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        skill: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            /** Format: uuid */
+                            agentId: string;
+                            /** Format: uuid */
+                            connectionId: string;
+                            skillName: string;
+                            /** @enum {string} */
+                            mode: "draft" | "send";
+                            boundInputs: {
+                                [key: string]: unknown;
+                            };
+                            exposedInputs: {
+                                [key: string]: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                };
+                            };
+                            enabled: boolean;
+                            outcomes: ("drafted" | "sent" | "missing_input" | "disabled_connection" | "needs_reauth" | "provider_rejected" | "failed")[];
+                            createdAt: string;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+            /** @description Invalid email skill definition */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or email skill not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    startWorkspaceSlackInstall: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Slack authorization started */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uri */
+                        authorizationUrl: string;
+                        /** Format: uuid */
+                        connectionId: string;
+                        /** @enum {string} */
+                        status: "pending";
+                    };
+                };
+            };
+            /** @description Invalid request or Slack OAuth is not configured */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Slack install is not fully configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getWorkspaceSlackInstallStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Slack installation status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status: "connected" | "needs_reauth" | "disabled" | "not_configured";
+                        readiness: {
+                            configured: boolean;
+                            missingEnvVars: ("SLACK_OAUTH_CLIENT_ID" | "SLACK_OAUTH_CLIENT_SECRET" | "SLACK_SIGNING_SECRET")[];
+                        };
+                        /** Format: uuid */
+                        installationId?: string;
+                        teamName?: string;
+                        /** Format: uuid */
+                        answeringAgentId?: string;
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent read permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getWorkspaceSlackManifest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Generated Slack app manifest */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        manifest: {
+                            display_information: {
+                                name: string;
+                            };
+                            features: {
+                                bot_user: {
+                                    display_name: string;
+                                    always_online: boolean;
+                                };
+                            };
+                            oauth_config: {
+                                redirect_urls: string[];
+                                scopes: {
+                                    bot: string[];
+                                };
+                            };
+                            settings: {
+                                event_subscriptions: {
+                                    /** Format: uri */
+                                    request_url: string;
+                                    bot_events: string[];
+                                };
+                                interactivity: {
+                                    is_enabled: boolean;
+                                };
+                                org_deploy_enabled: boolean;
+                                socket_mode_enabled: boolean;
+                                token_rotation_enabled: boolean;
+                            };
+                        };
+                        requiredEnvVars: ("SLACK_OAUTH_CLIENT_ID" | "SLACK_OAUTH_CLIENT_SECRET" | "SLACK_SIGNING_SECRET")[];
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent read permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getWorkspaceSlackBinding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Slack binding */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        channelId: string | null;
+                        /** Format: uuid */
+                        answeringAgentId: string | null;
+                        escalationChannelId: string | null;
+                        gapEscalationEnabled: boolean;
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent read permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    setWorkspaceSlackBinding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    channelId?: string | null;
+                    /** Format: uuid */
+                    answeringAgentId: string;
+                    escalationChannelId?: string | null;
+                    gapEscalationEnabled?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Slack binding */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        channelId: string | null;
+                        /** Format: uuid */
+                        answeringAgentId: string | null;
+                        escalationChannelId: string | null;
+                        gapEscalationEnabled: boolean;
+                    };
+                };
+            };
+            /** @description Invalid binding request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Slack installation not configured */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteWorkspaceSlackChannelBinding: {
+        parameters: {
+            query: {
+                channelId: string;
+            };
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Slack channel binding removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or invalid channel binding request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listWorkspaceSlackBindings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Slack bindings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        bindings: {
+                            channelId: string | null;
+                            /** Format: uuid */
+                            answeringAgentId: string | null;
+                            escalationChannelId: string | null;
+                            gapEscalationEnabled: boolean;
+                        }[];
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent read permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    disconnectWorkspaceSlackInstallation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Disconnected */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAgentWebhookSkills: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Webhook skill definitions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        skills: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            /** Format: uuid */
+                            agentId: string;
+                            /** Format: uuid */
+                            destinationId: string;
+                            skillName: string;
+                            boundPayload: {
+                                [key: string]: unknown;
+                            };
+                            exposedPayload: {
+                                [key: string]: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                            };
+                            enabled: boolean;
+                            outcomes: ("delivered" | "missing_input" | "destination_not_found" | "failed")[];
+                            createdAt: string;
+                            updatedAt: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent read permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAgentWebhookSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    skillName: string;
+                    /** Format: uuid */
+                    destinationId: string;
+                    /** @default {} */
+                    boundPayload?: {
+                        [key: string]: unknown;
+                    };
+                    /** @default {} */
+                    exposedPayload?: {
+                        [key: string]: {
+                            description?: string;
+                            slotBinding?: string;
+                            /** @default true */
+                            required?: boolean;
+                        };
+                    };
+                    /** @default true */
+                    enabled?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Webhook skill definition */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        skill: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            /** Format: uuid */
+                            agentId: string;
+                            /** Format: uuid */
+                            destinationId: string;
+                            skillName: string;
+                            boundPayload: {
+                                [key: string]: unknown;
+                            };
+                            exposedPayload: {
+                                [key: string]: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                            };
+                            enabled: boolean;
+                            outcomes: ("delivered" | "missing_input" | "destination_not_found" | "failed")[];
+                            createdAt: string;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+            /** @description Invalid webhook skill definition */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or webhook destination not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Webhook skill name already exists */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAgentWebhookSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Webhook skill definition */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        skill: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            /** Format: uuid */
+                            agentId: string;
+                            /** Format: uuid */
+                            destinationId: string;
+                            skillName: string;
+                            boundPayload: {
+                                [key: string]: unknown;
+                            };
+                            exposedPayload: {
+                                [key: string]: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                            };
+                            enabled: boolean;
+                            outcomes: ("delivered" | "missing_input" | "destination_not_found" | "failed")[];
+                            createdAt: string;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent read permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or webhook skill not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteAgentWebhookSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or webhook skill not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAgentWebhookSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    boundPayload?: {
+                        [key: string]: unknown;
+                    };
+                    exposedPayload?: {
+                        [key: string]: {
+                            description?: string;
+                            slotBinding?: string;
+                            /** @default true */
+                            required?: boolean;
+                        };
+                    };
+                    enabled?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Webhook skill definition */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        skill: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            /** Format: uuid */
+                            agentId: string;
+                            /** Format: uuid */
+                            destinationId: string;
+                            skillName: string;
+                            boundPayload: {
+                                [key: string]: unknown;
+                            };
+                            exposedPayload: {
+                                [key: string]: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                            };
+                            enabled: boolean;
+                            outcomes: ("delivered" | "missing_input" | "destination_not_found" | "failed")[];
+                            createdAt: string;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+            /** @description Invalid webhook skill definition */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or webhook skill not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAgentSlackSkills: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Slack skill definitions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        skills: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            /** Format: uuid */
+                            agentId: string;
+                            /** Format: uuid */
+                            installationId: string;
+                            skillName: string;
+                            boundInputs: {
+                                channelId?: unknown;
+                                text?: unknown;
+                                threadTs?: unknown;
+                            };
+                            exposedInputs: {
+                                channelId?: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                                text?: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                                threadTs?: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                            };
+                            enabled: boolean;
+                            outcomes: ("enqueued" | "missing_input" | "failed")[];
+                            createdAt: string;
+                            updatedAt: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent read permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAgentSlackSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    skillName: string;
+                    /** Format: uuid */
+                    installationId: string;
+                    /** @default {} */
+                    boundInputs?: {
+                        channelId?: unknown;
+                        text?: unknown;
+                        threadTs?: unknown;
+                    };
+                    /** @default {} */
+                    exposedInputs?: {
+                        channelId?: {
+                            description?: string;
+                            slotBinding?: string;
+                            /** @default true */
+                            required?: boolean;
+                        };
+                        text?: {
+                            description?: string;
+                            slotBinding?: string;
+                            /** @default true */
+                            required?: boolean;
+                        };
+                        threadTs?: {
+                            description?: string;
+                            slotBinding?: string;
+                            /** @default true */
+                            required?: boolean;
+                        };
+                    };
+                    /** @default true */
+                    enabled?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Slack skill definition */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        skill: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            /** Format: uuid */
+                            agentId: string;
+                            /** Format: uuid */
+                            installationId: string;
+                            skillName: string;
+                            boundInputs: {
+                                channelId?: unknown;
+                                text?: unknown;
+                                threadTs?: unknown;
+                            };
+                            exposedInputs: {
+                                channelId?: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                                text?: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                                threadTs?: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                            };
+                            enabled: boolean;
+                            outcomes: ("enqueued" | "missing_input" | "failed")[];
+                            createdAt: string;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+            /** @description Invalid Slack skill definition */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or Slack installation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Slack skill name already exists */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAgentSlackSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Slack skill definition */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        skill: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            /** Format: uuid */
+                            agentId: string;
+                            /** Format: uuid */
+                            installationId: string;
+                            skillName: string;
+                            boundInputs: {
+                                channelId?: unknown;
+                                text?: unknown;
+                                threadTs?: unknown;
+                            };
+                            exposedInputs: {
+                                channelId?: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                                text?: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                                threadTs?: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                            };
+                            enabled: boolean;
+                            outcomes: ("enqueued" | "missing_input" | "failed")[];
+                            createdAt: string;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent read permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or Slack skill not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteAgentSlackSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or Slack skill not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAgentSlackSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    boundInputs?: {
+                        channelId?: unknown;
+                        text?: unknown;
+                        threadTs?: unknown;
+                    };
+                    exposedInputs?: {
+                        channelId?: {
+                            description?: string;
+                            slotBinding?: string;
+                            /** @default true */
+                            required?: boolean;
+                        };
+                        text?: {
+                            description?: string;
+                            slotBinding?: string;
+                            /** @default true */
+                            required?: boolean;
+                        };
+                        threadTs?: {
+                            description?: string;
+                            slotBinding?: string;
+                            /** @default true */
+                            required?: boolean;
+                        };
+                    };
+                    enabled?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Slack skill definition */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        skill: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            /** Format: uuid */
+                            agentId: string;
+                            /** Format: uuid */
+                            installationId: string;
+                            skillName: string;
+                            boundInputs: {
+                                channelId?: unknown;
+                                text?: unknown;
+                                threadTs?: unknown;
+                            };
+                            exposedInputs: {
+                                channelId?: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                                text?: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                                threadTs?: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                            };
+                            enabled: boolean;
+                            outcomes: ("enqueued" | "missing_input" | "failed")[];
+                            createdAt: string;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+            /** @description Invalid Slack skill definition */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or Slack skill not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAgentSkillCapabilities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Skill capabilities */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        capabilities: {
+                            /** @enum {string} */
+                            id: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify";
+                            storedKind: string;
+                            targetKind: string;
+                            requiresTarget: boolean;
+                            inputSchema: {
+                                /** @enum {string} */
+                                source: "discovered";
+                            } | {
+                                /** @enum {string} */
+                                source: "static";
+                                schema: {
+                                    [key: string]: unknown;
+                                };
+                            };
+                            settingsFields: {
+                                key: string;
+                                label: string;
+                                /** @enum {string} */
+                                type: "boolean" | "number" | "text" | "textarea" | "select" | "string_list" | "source_scope" | "metadata_rules";
+                                help?: string;
+                                dependsOnKey?: string;
+                                options?: {
+                                    value: string;
+                                    label: string;
+                                }[];
+                                min?: number;
+                                max?: number;
+                                group?: string;
+                                advanced?: boolean;
+                                defaultValue?: string | number | boolean;
+                            }[];
+                            outcomeVocabulary: string[];
+                            supportedInvocationModes: ("default_answer" | "routine_named" | "agent_selectable")[];
+                            /** @enum {string} */
+                            defaultInvocationMode?: "default_answer" | "routine_named" | "agent_selectable";
+                            executorAdapter: string;
+                            targets: {
+                                id: string;
+                                label: string;
+                                status?: string;
+                            }[];
+                            available: boolean;
+                            /** @enum {string|null} */
+                            unavailableReason: "no_connection" | null;
+                        }[];
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent read permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAgentSkills: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Agent skills */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        skills: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            /** Format: uuid */
+                            agentId: string;
+                            name: string;
+                            /** @enum {string} */
+                            capability: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify";
+                            storedKind: string;
+                            target: {
+                                kind: string;
+                                /** Format: uuid */
+                                id: string | null;
+                            };
+                            config: {
+                                [key: string]: unknown;
+                            };
+                            /** @enum {string} */
+                            invocationMode: "default_answer" | "routine_named" | "agent_selectable";
+                            enabled: boolean;
+                            createdAt: string;
+                            updatedAt: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent read permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAgentSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                    /** @enum {string} */
+                    capability: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify";
+                    target: {
+                        kind: string;
+                        /** Format: uuid */
+                        id: string | null;
+                    };
+                    /** @default {} */
+                    config?: {
+                        [key: string]: unknown;
+                    };
+                    /**
+                     * @default routine_named
+                     * @enum {string}
+                     */
+                    invocationMode?: "default_answer" | "routine_named" | "agent_selectable";
+                    /** @default true */
+                    enabled?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Agent skill */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        skill: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            /** Format: uuid */
+                            agentId: string;
+                            name: string;
+                            /** @enum {string} */
+                            capability: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify";
+                            storedKind: string;
+                            target: {
+                                kind: string;
+                                /** Format: uuid */
+                                id: string | null;
+                            };
+                            config: {
+                                [key: string]: unknown;
+                            };
+                            /** @enum {string} */
+                            invocationMode: "default_answer" | "routine_named" | "agent_selectable";
+                            enabled: boolean;
+                            createdAt: string;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+            /** @description Invalid skill definition */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Skill name or default-answer already exists */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteAgentSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or skill not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAgentSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    target?: {
+                        kind: string;
+                        /** Format: uuid */
+                        id: string | null;
+                    };
+                    config?: {
+                        [key: string]: unknown;
+                    };
+                    replaceConfig?: {
+                        [key: string]: unknown;
+                    };
+                    /** @enum {string} */
+                    invocationMode?: "default_answer" | "routine_named" | "agent_selectable";
+                    enabled?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Agent skill */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        skill: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            /** Format: uuid */
+                            agentId: string;
+                            name: string;
+                            /** @enum {string} */
+                            capability: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify";
+                            storedKind: string;
+                            target: {
+                                kind: string;
+                                /** Format: uuid */
+                                id: string | null;
+                            };
+                            config: {
+                                [key: string]: unknown;
+                            };
+                            /** @enum {string} */
+                            invocationMode: "default_answer" | "routine_named" | "agent_selectable";
+                            enabled: boolean;
+                            createdAt: string;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+            /** @description Invalid skill definition */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or skill not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Default-answer already exists */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createRetrievalAnswer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetrievalAnswerRequest"];
+            };
+        };
+        responses: {
+            /** @description Retrieval answer or unsupported retrieval-scoped result returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetrievalAnswerResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks the workspace.retrieval.query permission, or supplied agentId without workspace.agents.read */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The agentId supplied does not resolve to an agent in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Expensive authenticated request rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitExceededResponse"];
+                };
+            };
+        };
+    };
+    searchDocuments: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocumentSearchRequest"];
+            };
+        };
+        responses: {
+            /** @description Search results returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentSearchResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listDocumentSearchHistory: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Document search history returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentSearchHistoryListResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getDocumentSearchHistory: {
+        parameters: {
+            query?: {
+                includeDebug?: boolean;
+            };
+            header?: never;
+            path: {
+                searchId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Document search replay returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentSearchResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Document search not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listDocuments: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Documents returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentListResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createDocument: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocumentCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Document accepted for processing */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentOperationResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listDocumentSources: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Document sources returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentSourceListResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listDocumentsBySource: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Documents returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentListResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Source not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteDocumentSource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Source and documents deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Source cannot be deleted */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Source not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateDocumentSource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DocumentSourceUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Source updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentSourceListItem"];
+                };
+            };
+            /** @description Request validation failed or crawl settings were sent for a non-website source */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Source not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    recrawlDocumentSource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Crawl job accepted for asynchronous processing */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebsiteCrawlJobResponse"];
+                };
+            };
+            /** @description Source is not a website or has no configured URL */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Source not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    pauseDocumentSourceCrawl: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Active crawl jobs paused */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        pausedJobCount: number;
+                    };
+                };
+            };
+            /** @description Source is not a website source */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Source not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    resumeDocumentSourceCrawl: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Paused crawl jobs queued for processing */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        resumedJobCount: number;
+                        pendingResumeJobCount: number;
+                        resumeDispatchFailureCount: number;
+                    };
+                };
+            };
+            /** @description Source is not a website source */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Source not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    importDocument: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["DocumentImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Document accepted for processing */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentOperationResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Uploaded file exceeds the configured size limit */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Upload rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    crawlWebsiteDocuments: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebsiteCrawlRequest"];
+            };
+        };
+        responses: {
+            /** @description Crawl job accepted for asynchronous processing */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebsiteCrawlJobResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Website crawler is disabled for this deployment */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Website crawler provider is not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listWebsiteCrawlJobs: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["WebsiteCrawlJobStatus"];
+                sinceMinutes?: number;
+                limit?: number;
+                sourceId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Recent crawl jobs returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebsiteCrawlJobListResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Website crawler is disabled for this deployment */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteWebsiteCrawlJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Crawl job deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Crawl job not found in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Crawl job is still in progress and cannot be deleted */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getDocument: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                documentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DocumentReprocessRequest"];
+            };
+        };
+        responses: {
+            /** @description Document returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentDetails"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Document not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateDocument: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                documentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    title: string;
+                    content: string;
+                    metadata?: {
+                        [key: string]: string | number | boolean | null;
+                    };
+                    externalDocumentId?: string;
+                    source?: {
+                        /** Format: uuid */
+                        id: string;
+                    } | {
+                        /** @enum {string} */
+                        kind: "website";
+                        /** Format: uri */
+                        url: string;
+                    };
+                    /** @enum {string} */
+                    documentEnrichmentOverride?: "on" | "off";
+                };
+            };
+        };
+        responses: {
+            /** @description Document accepted for reprocessing */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentOperationResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Document not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteDocument: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                documentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Document deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Document not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateDocumentRetrieval: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                documentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocumentRetrievalUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated document details */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentDetails"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Document not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    reprocessDocumentSource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DocumentReprocessRequest"];
+            };
+        };
+        responses: {
+            /** @description Source documents accepted for reprocessing */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceReprocessResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Source not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    reprocessDocument: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                documentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Document accepted for reprocessing */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentOperationResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Document not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAssistantChatResponse: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantChatRequest"];
+            };
+        };
+        responses: {
+            /** @description Chat response returned as JSON or SSE */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantChatResponse"];
+                    "text/event-stream": components["schemas"]["AssistantChatSseStream"];
+                };
+            };
+            /** @description Bootstrap request completed without creating a greeting */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conversation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Turn superseded by a newer message in the same conversation */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Expensive authenticated request rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitExceededResponse"];
+                };
+            };
+        };
+    };
+    upsertAnswerFeedback: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                assistantMessageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnswerFeedbackRequest"];
+            };
+        };
+        responses: {
+            /** @description Feedback saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnswerFeedbackResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Assistant message not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    clearAnswerFeedback: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                assistantMessageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Feedback cleared if present */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClearAnswerFeedbackResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Assistant message not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    upsertPublicAnswerFeedback: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+                assistantMessageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnswerFeedbackRequest"];
+            };
+        };
+        responses: {
+            /** @description Feedback saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnswerFeedbackResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Public chat session or assistant message not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    clearPublicAnswerFeedback: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+                assistantMessageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Feedback cleared if present */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClearAnswerFeedbackResponse"];
+                };
+            };
+            /** @description Public chat session or assistant message not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listHistory: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                sourceScope?: "end_user" | "operator_test" | "all";
+                q?: string;
+                agentId?: string;
+                sourceOrigin?: string;
+                outcome?: "in_progress" | "completed" | "handed_off";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Merged history items */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryItemsResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listChatHistory: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                cursor?: string;
+                sourceScope?: "end_user" | "operator_test" | "all";
+                ownership?: "human_owned";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Chat history summaries */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatHistoryListResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listHistorySearches: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Document search history returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentSearchHistoryListResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getHistoryConversation: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Historical conversation detail */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatConversationDetail"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conversation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    tailHistoryConversation: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description New conversation messages after the supplied tail cursor */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatConversationTail"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conversation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getLegacyHistoryConversation: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Historical conversation detail */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatConversationDetail"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conversation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getHistorySearch: {
+        parameters: {
+            query?: {
+                includeDebug?: boolean;
+            };
+            header?: never;
+            path: {
+                searchId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Document search replay returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentSearchResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Search history entry not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    takeOverConversation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    reason?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Conversation ownership returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationOwnershipResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace conversation takeover permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conversation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conversation ownership changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    replyToConversation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    message: string;
+                    expectedVersion: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Human reply message created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumanReplyMessageResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace conversation takeover permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conversation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conversation ownership changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    transferConversationOwnership: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    toAccountId: string;
+                    expectedVersion: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Conversation ownership returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationOwnershipResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace conversation takeover permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conversation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conversation ownership changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    handBackConversation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    expectedVersion: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Conversation ownership returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationOwnershipResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace conversation takeover permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conversation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conversation ownership changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    forkConversation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Forked test-session conversation created */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        conversationId: string;
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conversation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listPendingDecisions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pending approval decisions for the workspace */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PendingApprovalDecisionListResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller is not authorized to list decisions */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    resolveDecision: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    optionId: string;
+                    payload?: unknown;
+                    contentHash: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Decision resolved and routine resume attempted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status: "resolved";
+                        optionId: string;
+                        conversationId: string;
+                        resumed: boolean;
+                    };
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller is not an authorized decider */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Decision not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Decision already resolved, stale, or resolved concurrently */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Decision option is invalid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listConnectors: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Connectors returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectorListResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getConnectorDetail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connectorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Connector detail returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectorDetail"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Connector not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectorNotFoundResponse"];
+                };
+            };
+        };
+    };
+    updateConnectorConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connectorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConnectorConfigUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Connector config saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectorDetail"];
+                };
+            };
+            /** @description Connector config invalid */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectorValidationErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Connector not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        error: "Connector not found";
+                    };
+                };
+            };
+            /** @description Connector identity conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectorConflictResponse"];
+                };
+            };
+        };
+    };
+    enableConnector: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connectorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Connector enabled */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectorDetail"];
+                };
+            };
+            /** @description Connector config invalid */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectorValidationErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Connector not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        error: "Connector not found";
+                    };
+                };
+            };
+            /** @description Connector identity conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectorConflictResponse"];
+                };
+            };
+        };
+    };
+    disableConnector: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connectorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Connector disabled */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectorDetail"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Connector not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        error: "Connector not found";
+                    };
+                };
+            };
+        };
+    };
+    syncConnector: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connectorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Connector sync accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectorSyncResponse"];
+                };
+            };
+            /** @description Connector cannot sync in its current state */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectorValidationErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Connector not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        error: "Connector not found";
+                    };
+                };
+            };
+            /** @description Manual sync unsupported or already running */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: "Manual sync unsupported" | "Connector sync already running";
+                    };
+                };
+            };
+        };
+    };
+    listLowQualityTurns: {
+        parameters: {
+            query?: {
+                /** @description Comma-separated `QualitySignalId` values (`negative_feedback`, `grounding_gaps`, `skill_failures`), resolved server-side from the skill catalog. A turn matches if it carries any listed signal, and the result is layered on top of the other filters rather than replacing them. */
+                signal?: string;
+                /** @description Comma-separated `grounded`, `degraded`, or `no_support` verdicts. A turn matches any listed verdict. */
+                groundingVerdict?: string;
+                /** @description Filter complete diagnostics by whether the unsourced claim count is positive. Unknown diagnostics match neither value. */
+                hasUnsourcedClaims?: "true" | "false";
+                /** @description Filter complete diagnostics by whether the invalid source count is positive. Unknown diagnostics match neither value. */
+                hasInvalidSources?: "true" | "false";
+                /** @description Comma-separated `skillName:outcome` tuples, e.g. `retrieval.answer:no_context`. */
+                actions?: string;
+                /** @description Comma-separated `QualitySkillStatus` values. */
+                statuses?: string;
+                /** @description Comma-separated `QualityFeedbackValue` values (`up`, `down`). */
+                feedback?: string;
+                /** @description Comma-separated `QualityTriageState` values (`open`, `acknowledged`, `resolved`, `dismissed`). */
+                triage?: string;
+                /** @description Comma-separated structured resolution reasons, plus `unspecified` for any terminal record without one. */
+                resolutionReason?: string;
+                /** @description Sort order. Defaults to assistant-turn creation time. */
+                sort?: "turn_created_at" | "negative_feedback_updated_at";
+                /** @description When true, returns thumbs-down feedback that has not been triaged since its latest creation or edit. Feedback newer than terminal triage is treated as open. */
+                activeNegativeFeedbackOnly?: boolean | null;
+                /** @description When true, only turns with written feedback comments are returned. When false, only turns without written feedback comments are returned. When feedback values are also selected, comment presence is evaluated for those values. */
+                hasComment?: boolean | null;
+                agentId?: string;
+                channel?: string;
+                from?: string;
+                to?: string;
+                /** @description Terminal triage closure time, inclusive. Distinct from assistant-turn `from`. */
+                resolutionFrom?: string;
+                /** @description Terminal triage closure time, exclusive. Distinct from assistant-turn `to`. */
+                resolutionTo?: string;
+                minTotalLatencyMs?: number | null;
+                maxTotalLatencyMs?: number | null;
+                offset?: number | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Page of low-quality assistant turns */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LowQualityTurnsPage"];
+                };
+            };
+            /** @description Invalid query parameter */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks the workspace.quality.read permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getQualityStats: {
+        parameters: {
+            query?: {
+                /** @description Length of the health window. Defaults to `30d`. */
+                range?: components["schemas"]["QualityStatsRange"] & unknown;
+                agentId?: string;
+                channel?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Answer-quality statistics for the requested window */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QualityStats"];
+                };
+            };
+            /** @description Invalid query parameter */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks the workspace.quality.read permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    setQualityTurnTriage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                assistantMessageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetQualityTriageRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated triage record */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QualityTriageRecord"];
+                };
+            };
+            /** @description Invalid request body or assistant message id */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks the workspace.quality.manage permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Assistant turn not found in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The triage record changed after the caller loaded it; includes the current record */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QualityTriageConflictResponse"];
+                };
+            };
+        };
+    };
+    getAudiencePulse: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Saved report or no saved report */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AudiencePulseReadResponse"];
+                };
+            };
+            /** @description Browser dashboard session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.quality.read */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    refreshAudiencePulse: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Completed, no-traffic, or retryable inference result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AudiencePulseRefreshResponse"];
+                };
+            };
+            /** @description Browser dashboard session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.quality.read */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A workspace refresh is already in progress */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Refresh rate or usage capacity exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace inference capability is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAudiencePulseRefreshStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Facet preparation status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AudiencePulseRefreshStatusResponse"];
+                };
+            };
+            /** @description Browser dashboard session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.quality.read */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAudiencePulseEvidenceAnchor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AudiencePulseEvidenceAnchorRequest"];
+            };
+        };
+        responses: {
+            /** @description Bounded source and next assistant context */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AudiencePulseEvidenceAnchorResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Browser dashboard session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.history.read */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Exact source was not found in the selected workspace conversation */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getCopilotAvailability: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Availability */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        available: boolean;
+                        /** @enum {string} */
+                        reason: "ok" | "no_llm_capability";
+                        canManage: boolean;
+                        applyableProposalTargets: ("directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl" | "workspace_setting")[];
+                    };
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listCopilotConversations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Conversations */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        conversations: {
+                            /** Format: uuid */
+                            id: string;
+                            title: string | null;
+                            /** @enum {string} */
+                            status: "idle" | "running";
+                            createdAt: string;
+                            updatedAt: string;
+                        }[];
+                    };
+                };
+            };
+        };
+    };
+    getCopilotConversation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Conversation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        title: string | null;
+                        /** @enum {string} */
+                        status: "idle" | "running";
+                        messages: ({
+                            /** Format: uuid */
+                            id: string;
+                            /** @enum {string} */
+                            role: "operator";
+                            content: string;
+                            createdAt: string;
+                        } | {
+                            /** Format: uuid */
+                            id: string;
+                            /** @enum {string} */
+                            role: "copilot";
+                            content: string;
+                            createdAt: string;
+                            /** @enum {string} */
+                            outcome: "completed" | "budget_exhausted" | "failed";
+                            activity: {
+                                tool: string;
+                                /** @enum {string} */
+                                outcome: "completed" | "failed";
+                                entity?: {
+                                    type: string;
+                                    id: string;
+                                };
+                            }[];
+                            proposals: {
+                                /** Format: uuid */
+                                id: string;
+                                /** @enum {string} */
+                                targetType: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl" | "workspace_setting";
+                                targetLabel: string;
+                                summary: string;
+                                /** @enum {string} */
+                                status: "pending" | "applied" | "dismissed" | "failed" | "stale";
+                                reason?: string | null;
+                                evidence?: {
+                                    total: number;
+                                    improved: number;
+                                    regressed: number;
+                                    unchanged: number;
+                                    stale: number;
+                                };
+                                removal?: boolean;
+                                reach?: boolean;
+                            }[];
+                        })[];
+                    };
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    deleteCopilotConversation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    createCopilotTurn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    conversationId: string | null;
+                    message: string;
+                    pageContext: {
+                        /** @enum {string|null} */
+                        view: "activity" | "history" | "agent" | "documents" | "workbench" | "quality" | "evals" | "copilot" | "other" | null;
+                        /** Format: uuid */
+                        agentId: string | null;
+                        /** Format: uuid */
+                        conversationId: string | null;
+                        selection?: string | null;
+                        entities?: {
+                            /** @enum {string} */
+                            type: "agent" | "conversation" | "routine" | "directive" | "document" | "evalCase";
+                            id: string;
+                            label: string;
+                            focused: boolean;
+                        }[];
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description SSE stream */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            /** @description Conversation already running */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Copilot turn rate limit exceeded for this operator, workspace, and account, or the workspace answer allowance is exhausted. The rate limit clears on its own; the allowance does not until the billing period turns over. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No LLM capability */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getCopilotProposal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Proposal */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        /** Format: uuid */
+                        workspaceId: string;
+                        /** @enum {string} */
+                        targetType: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl" | "workspace_setting";
+                        targetRef?: unknown;
+                        target: {
+                            /** @enum {string} */
+                            type: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl" | "workspace_setting";
+                            ref?: unknown;
+                        };
+                        targetLabel: string;
+                        /** @enum {string} */
+                        status: "pending" | "applied" | "dismissed" | "failed" | "stale";
+                        preview: {
+                            targetLabel: string;
+                            current?: unknown;
+                            proposed?: unknown;
+                        };
+                        currentVersionMatches: boolean;
+                        reason?: string | null;
+                        appliedRef?: unknown;
+                        evidence?: {
+                            total: number;
+                            improved: number;
+                            regressed: number;
+                            unchanged: number;
+                            stale: number;
+                        };
+                        evidenceCases: {
+                            /** Format: uuid */
+                            caseId: string;
+                            caseName: string;
+                            /** Format: uuid */
+                            runId: string;
+                            /** @enum {string} */
+                            before: "pending" | "passing" | "failing" | "error";
+                            /** @enum {string} */
+                            after: "pass" | "fail" | "error" | "recorded";
+                            stale: boolean;
+                        }[] | null;
+                    };
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    applyCopilotProposal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Proposal outcome */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status: "applied" | "stale" | "failed";
+                        appliedRef?: unknown;
+                        reason?: string | null;
+                    };
+                };
+            };
+            /** @description Missing the permission that governs what the proposal changes */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Proposal is not pending */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    dismissCopilotProposal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Proposal outcome */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status: "dismissed";
+                    };
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Proposal is not pending */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    createEvalSnapshot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    conversationId: string;
+                    /** Format: uuid */
+                    messageId?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Immutable conversation snapshot captured */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalSnapshot"];
+                };
+            };
+            /** @description Invalid capture request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace retrieval-query permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conversation or message not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getEvalSnapshot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Eval snapshot */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalSnapshot"];
+                };
+            };
+            /** @description Invalid snapshot id */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace retrieval-query permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Snapshot not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listEvalCases: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Eval cases with each case's latest result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalCaseList"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace retrieval-query permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createEvalCase: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    snapshotId: string;
+                    name: string;
+                    /** @default [] */
+                    assertions?: ({
+                        /** @enum {string} */
+                        type: "retrieval_includes_document";
+                        /** Format: uuid */
+                        documentId: string;
+                    } | {
+                        /** @enum {string} */
+                        type: "retrieval_excludes_document";
+                        /** Format: uuid */
+                        documentId: string;
+                    } | {
+                        /** @enum {string} */
+                        type: "retrieval_top_k_includes_document";
+                        /** Format: uuid */
+                        documentId: string;
+                        k: number;
+                    } | {
+                        /** @enum {string} */
+                        type: "retrieval_document_order";
+                        documentIds: string[];
+                    } | {
+                        /** @enum {string} */
+                        type: "retrieval_chunk_metadata";
+                        /** Format: uuid */
+                        documentId: string;
+                        metadata: {
+                            [key: string]: string | number | boolean | null;
+                        };
+                    } | {
+                        /** @enum {string} */
+                        type: "answer_cites_document";
+                        /** Format: uuid */
+                        documentId: string;
+                    } | {
+                        /** @enum {string} */
+                        type: "answer_contains";
+                        pattern: string;
+                        /** @enum {string} */
+                        matchMode: "substring" | "regex";
+                        caseSensitive?: boolean;
+                    } | {
+                        /** @enum {string} */
+                        type: "answer_does_not_contain";
+                        pattern: string;
+                        /** @enum {string} */
+                        matchMode: "substring" | "regex";
+                        caseSensitive?: boolean;
+                    } | {
+                        /** @enum {string} */
+                        type: "llm_judge";
+                        expectedAnswer: string;
+                        criteria?: string;
+                    })[];
+                };
+            };
+        };
+        responses: {
+            /** @description Eval case created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalCase"];
+                };
+            };
+            /** @description Invalid case payload */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace retrieval-query permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Snapshot not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getEvalCaseBySourceMessage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                assistantMessageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The linked Eval case and snapshot */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalMessageCaseLookup"];
+                };
+            };
+            /** @description Invalid assistant message id */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace retrieval-query permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No Eval case is linked to this assistant message */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getOrCreateEvalCaseBySourceMessage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                assistantMessageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Existing linked Eval case and snapshot */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalMessageCaseMutationResult"];
+                };
+            };
+            /** @description New linked Eval case and immutable snapshot */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalMessageCaseMutationResult"];
+                };
+            };
+            /** @description Invalid id or source message is not an AI-authored assistant turn */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace retrieval-query permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Assistant message not found in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getEvalCase: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Eval case with recorded runs */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalCaseWithRuns"];
+                };
+            };
+            /** @description Invalid case id */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace retrieval-query permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Eval case not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteEvalCase: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Eval case deleted. Historical runs are retained without a case association. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace retrieval-query permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Eval case not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    renameEvalCase: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Renamed Eval case */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalCase"];
+                };
+            };
+            /** @description Invalid case id or name */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace retrieval-query permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Eval case not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    replaceEvalCaseAssertions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    assertions: ({
+                        /** @enum {string} */
+                        type: "retrieval_includes_document";
+                        /** Format: uuid */
+                        documentId: string;
+                    } | {
+                        /** @enum {string} */
+                        type: "retrieval_excludes_document";
+                        /** Format: uuid */
+                        documentId: string;
+                    } | {
+                        /** @enum {string} */
+                        type: "retrieval_top_k_includes_document";
+                        /** Format: uuid */
+                        documentId: string;
+                        k: number;
+                    } | {
+                        /** @enum {string} */
+                        type: "retrieval_document_order";
+                        documentIds: string[];
+                    } | {
+                        /** @enum {string} */
+                        type: "retrieval_chunk_metadata";
+                        /** Format: uuid */
+                        documentId: string;
+                        metadata: {
+                            [key: string]: string | number | boolean | null;
+                        };
+                    } | {
+                        /** @enum {string} */
+                        type: "answer_cites_document";
+                        /** Format: uuid */
+                        documentId: string;
+                    } | {
+                        /** @enum {string} */
+                        type: "answer_contains";
+                        pattern: string;
+                        /** @enum {string} */
+                        matchMode: "substring" | "regex";
+                        caseSensitive?: boolean;
+                    } | {
+                        /** @enum {string} */
+                        type: "answer_does_not_contain";
+                        pattern: string;
+                        /** @enum {string} */
+                        matchMode: "substring" | "regex";
+                        caseSensitive?: boolean;
+                    } | {
+                        /** @enum {string} */
+                        type: "llm_judge";
+                        expectedAnswer: string;
+                        criteria?: string;
+                    })[];
+                };
+            };
+        };
+        responses: {
+            /** @description Eval case with replacement assertions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalCase"];
+                };
+            };
+            /** @description Invalid case id or assertions */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace retrieval-query permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Eval case not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    setEvalCaseExecutionMode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * @description Live execution may invoke external skills. Changing the mode resets the case verdict.
+                     * @enum {string}
+                     */
+                    executionMode: "safe_test" | "live";
+                };
+            };
+        };
+        responses: {
+            /** @description Eval case with its replay execution mode updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalCase"];
+                };
+            };
+            /** @description Invalid case id or execution mode */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace retrieval-query permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Eval case not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createEvalCaseRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * @default full_assistant
+                     * @enum {string}
+                     */
+                    mode?: "retrieval_only" | "full_assistant";
+                    overrides?: {
+                        modelOverride?: {
+                            /** @enum {string} */
+                            provider: "openai" | "openai-compatible" | "gemini" | "claude";
+                            model: string;
+                        };
+                        assistantInstructionsOverride?: {
+                            customInstruction?: string;
+                        };
+                        retrievalSettingsOverride?: {
+                            [key: string]: unknown;
+                        };
+                        agentConfigOverride?: {
+                            name?: string;
+                            customInstruction?: string;
+                            contactRequestsEnabled?: boolean;
+                            webhookExportsEnabled?: boolean;
+                            contactRequestDelivery?: unknown;
+                            logo?: unknown;
+                            theme?: {
+                                [key: string]: unknown;
+                            };
+                            branding?: {
+                                [key: string]: unknown;
+                            };
+                            greetingInstruction?: string;
+                            assistantDefaultLocale?: string | null;
+                            proactiveGreetingEnabled?: boolean;
+                            surfaceSettings?: {
+                                [key: string]: unknown;
+                            };
+                            skillSettings?: {
+                                [key: string]: unknown;
+                            };
+                            chatModelOverride?: {
+                                /** @enum {string} */
+                                provider: "openai" | "openai-compatible" | "gemini" | "claude";
+                                model: string;
+                            } | null;
+                            authoredDirectives?: {
+                                [key: string]: unknown;
+                            }[];
+                        };
+                        routineStartState?: {
+                            routineId: string;
+                            path: string[];
+                            variables: {
+                                [key: string]: unknown;
+                            };
+                            attempts?: {
+                                [key: string]: number;
+                            };
+                            /** @enum {string} */
+                            status: "active" | "suspended" | "completed" | "expired";
+                            metadata?: {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                    /**
+                     * @description Per-run confirmation for external skill effects. Requires an interactive workspace session and only applies to cases configured for live execution.
+                     * @default false
+                     */
+                    allowLiveEffects?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Eval case replay recorded */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        run?: unknown;
+                        case?: unknown;
+                    };
+                };
+            };
+            /** @description Invalid replay request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace retrieval-query permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Eval case or snapshot not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workbench replay rate limit exceeded, or the workspace answer allowance is exhausted. Each run is charged as one answer; the rate limit clears on its own, the allowance does not until the billing period turns over. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    runEvalCases: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /**
+                     * @default full_assistant
+                     * @enum {string}
+                     */
+                    mode?: "retrieval_only" | "full_assistant";
+                    /** @description Subset of cases to run. Omit to run every case in the workspace. */
+                    caseIds?: string[];
+                    /**
+                     * @description Per-run confirmation for external skill effects. Requires an interactive workspace session and only applies to cases configured for live execution.
+                     * @default false
+                     */
+                    allowLiveEffects?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Suite run completed. Cases without expectations are reported as skipped. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        results: {
+                            /** Format: uuid */
+                            caseId: string;
+                            name: string;
+                            /**
+                             * @description "skipped" means the case carries no expectations, so it was not run.
+                             * @enum {string}
+                             */
+                            status: "pass" | "fail" | "error" | "recorded" | "skipped";
+                            run?: unknown;
+                            /** @description Set only when the case could not be run at all. */
+                            error: string | null;
+                        }[];
+                        /** @description Covers every case in the workspace, not only the cases this call ran. */
+                        summary: {
+                            total: number;
+                            scored: number;
+                            passing: number;
+                            failing: number;
+                            error: number;
+                            pending: number;
+                            unscored: number;
+                        };
+                    };
+                };
+            };
+            /** @description Invalid mode or case selection */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace retrieval-query permission, or a non-session caller requested live effects */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace answer allowance exhausted. Each replayed case is charged as one answer, so a suite can run out part-way; the cases already recorded are kept. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createEvalRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    snapshotId: string;
+                    /**
+                     * @default full_assistant
+                     * @enum {string}
+                     */
+                    mode?: "retrieval_only" | "full_assistant";
+                    overrides?: {
+                        modelOverride?: {
+                            /** @enum {string} */
+                            provider: "openai" | "openai-compatible" | "gemini" | "claude";
+                            model: string;
+                        };
+                        assistantInstructionsOverride?: {
+                            customInstruction?: string;
+                        };
+                        retrievalSettingsOverride?: {
+                            [key: string]: unknown;
+                        };
+                        agentConfigOverride?: {
+                            name?: string;
+                            customInstruction?: string;
+                            contactRequestsEnabled?: boolean;
+                            webhookExportsEnabled?: boolean;
+                            contactRequestDelivery?: unknown;
+                            logo?: unknown;
+                            theme?: {
+                                [key: string]: unknown;
+                            };
+                            branding?: {
+                                [key: string]: unknown;
+                            };
+                            greetingInstruction?: string;
+                            assistantDefaultLocale?: string | null;
+                            proactiveGreetingEnabled?: boolean;
+                            surfaceSettings?: {
+                                [key: string]: unknown;
+                            };
+                            skillSettings?: {
+                                [key: string]: unknown;
+                            };
+                            chatModelOverride?: {
+                                /** @enum {string} */
+                                provider: "openai" | "openai-compatible" | "gemini" | "claude";
+                                model: string;
+                            } | null;
+                            authoredDirectives?: {
+                                [key: string]: unknown;
+                            }[];
+                        };
+                        routineStartState?: {
+                            routineId: string;
+                            path: string[];
+                            variables: {
+                                [key: string]: unknown;
+                            };
+                            attempts?: {
+                                [key: string]: number;
+                            };
+                            /** @enum {string} */
+                            status: "active" | "suspended" | "completed" | "expired";
+                            metadata?: {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                    agentConfigOverride?: {
+                        name?: string;
+                        customInstruction?: string;
+                        contactRequestsEnabled?: boolean;
+                        webhookExportsEnabled?: boolean;
+                        contactRequestDelivery?: unknown;
+                        logo?: unknown;
+                        theme?: {
+                            [key: string]: unknown;
+                        };
+                        branding?: {
+                            [key: string]: unknown;
+                        };
+                        greetingInstruction?: string;
+                        assistantDefaultLocale?: string | null;
+                        proactiveGreetingEnabled?: boolean;
+                        surfaceSettings?: {
+                            [key: string]: unknown;
+                        };
+                        skillSettings?: {
+                            [key: string]: unknown;
+                        };
+                        chatModelOverride?: {
+                            /** @enum {string} */
+                            provider: "openai" | "openai-compatible" | "gemini" | "claude";
+                            model: string;
+                        } | null;
+                        authoredDirectives?: {
+                            [key: string]: unknown;
+                        }[];
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description Eval run recorded. Workbench replay runs also include answer, citations, turnTrace, and resolvedConfig at the top level. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        run?: unknown;
+                        case?: unknown;
+                        answer?: string;
+                        citations?: unknown[];
+                        answerSegments?: unknown[];
+                        suggestions?: unknown[];
+                        /** @enum {string} */
+                        groundingVerdict?: "grounded" | "degraded" | "no_support";
+                        groundingDiagnostics?: {
+                            protocolVersion: 1 | 2 | null;
+                            /** @enum {string} */
+                            parseStatus: "valid_v2" | "legacy_v1" | "missing" | "malformed" | "invalid_v2";
+                            claimCount: number;
+                            sourcedClaimCount: number;
+                            unsourcedClaimCount: number;
+                            invalidSourceCount: number;
+                            assertionMismatch: boolean;
+                        };
+                        turnTrace?: unknown;
+                        resolvedConfig?: unknown;
+                    };
+                };
+            };
+            /** @description Invalid snapshot, mode, or override payload */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace retrieval-query permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workbench replay rate limit exceeded, or the workspace answer allowance is exhausted. Each run is charged as one answer; the rate limit clears on its own, the allowance does not until the billing period turns over. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createMcpConverseSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    launchToken: string;
+                    client?: {
+                        name?: string;
+                        version?: string;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description MCP converse session issued */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        sessionToken: string;
+                        /** Format: date-time */
+                        expiresAt: string;
+                        resumeToken?: string;
+                        agent: {
+                            /** Format: uuid */
+                            id: string;
+                            name: string;
+                        };
+                        /** Format: uuid */
+                        conversationId: string;
+                    };
+                };
+            };
+            /** @description Invalid converse grant */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Grant channel or bound agent is not allowed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description MCP converse session rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    validateMcpConverseSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    sessionToken: string;
+                };
+            };
+        };
+        responses: {
+            /** @description MCP converse session is valid */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        valid: true;
+                        /** Format: uuid */
+                        workspaceId: string;
+                        /** Format: uuid */
+                        agentId: string;
+                        /** Format: uuid */
+                        conversationId: string;
+                        permissions: string[];
+                    };
+                };
+            };
+            /** @description Invalid or expired converse session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Underlying converse grant is no longer valid */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description MCP converse session rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    askMcpConverseAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    message: string;
+                    /** @enum {boolean} */
+                    stream?: false;
+                };
+            };
+        };
+        responses: {
+            /** @description Agent answer */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        conversationId: string;
+                        answer: {
+                            text: string;
+                            citations: unknown[];
+                        };
+                        traceId?: string;
+                    };
+                };
+            };
+            /** @description Invalid converse session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Converse session is no longer authorized */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Turn superseded by a newer message in the same conversation */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description MCP converse ask rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listPublicChatHistory: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Conversation summaries returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicConversationListResponse"];
+                };
+            };
+            /** @description Public chat link not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createPublicChatResponse: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublicChatRequest"];
+            };
+        };
+        responses: {
+            /** @description Public chat response returned as JSON or SSE */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantChatResponse"];
+                    "text/event-stream": components["schemas"]["PublicChatSseStream"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Public chat link not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Turn superseded by a newer message in the same conversation */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitExceededResponse"];
+                };
+            };
+            /** @description Public chat response is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getPublicChatHistoryConversation: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                token: string;
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Historical conversation detail */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicChatConversationDetail"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conversation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    tailPublicChatHistoryConversation: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                token: string;
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description New public conversation messages after the supplied tail cursor */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicChatConversationTail"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conversation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    streamPublicChatConversationEvents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Server-sent public conversation notifications. Events include ready and message.created. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conversation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    streamWorkspaceEvents: {
+        parameters: {
+            query?: never;
+            header: {
+                Accept: string;
+                "X-Workspace-Id": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Workspace event stream committed; ready is the first data event */
+            200: {
+                headers: {
+                    /** @description Disables intermediary transformation and caching. */
+                    "Cache-Control"?: "no-cache, no-transform";
+                    /** @description Keeps the HTTP connection open for the event stream. */
+                    Connection?: "keep-alive";
+                    /** @description Disables reverse-proxy response buffering. */
+                    "X-Accel-Buffering"?: "no";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": components["schemas"]["WorkspaceEventStream"];
+                };
+            };
+            /** @description Accept or workspace selection is malformed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Dashboard session is missing, invalid, expired, or too near expiry to open a stream */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Dashboard session cannot access the selected workspace */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Realtime is disabled for this deployment or account */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Only GET is supported */
+            405: {
+                headers: {
+                    /** @description Allowed method. */
+                    Allow?: "GET";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Reconnect or distributed workspace/account/principal admission limit exceeded */
+            429: {
+                headers: {
+                    /** @description Minimum reconnect delay in whole seconds. The browser also applies its local jittered exponential backoff. */
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Realtime admission, broker subscription, or runtime capacity is temporarily unavailable */
+            503: {
+                headers: {
+                    /** @description Minimum reconnect delay in whole seconds. The browser also applies its local jittered exponential backoff. */
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+}

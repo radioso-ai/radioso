@@ -89,6 +89,7 @@ import { QUALITY_TRIAGE_STATES } from "../../modules/quality/contracts/index.js"
 import { ConversationSummaryRepository } from "../../db/repositories/conversationSummaryRepository.js";
 import { RoutineStateRepository } from "../../db/repositories/routineStateRepository.js";
 import { QUALITY_RESOLUTION_REASONS } from "../../modules/quality/domain/resolution.js";
+import { buildOperatorMcpServices } from "./builders/operatorMcp.js";
 
 export interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
@@ -740,6 +741,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       },
     },
     proposalRepository: repositories.copilotRepository,
+    proposalRecovery: repositories.copilotRepository,
     proposalAdapters: copilotProposalAdapters,
     auditService: infrastructure.auditService,
     logger,
@@ -773,6 +775,15 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
     retentionDays: env.COPILOT_CONVERSATION_RETENTION_DAYS,
   });
+  const operatorMcp = buildOperatorMcpServices({
+    env,
+    database: infrastructure.database,
+    accountAccessService: access.accountAccessService,
+    auditService: infrastructure.auditService,
+    logger,
+    metricsRegistry: infrastructure.metricsRegistry,
+    copilotToolCatalog,
+  });
 
   const agentBundleServices = createAgentBundleServices({
     logger,
@@ -786,7 +797,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     mcpConnectionRepository,
     externalSkillDefinitionRepository,
   });
-
   return {
     env,
     logger,
@@ -928,5 +938,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     assertPublicWebsiteUrl,
     websiteCrawlerLimits,
     agentWizardService,
+    ...operatorMcp,
   };
 };

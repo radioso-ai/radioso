@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { AudiencePulseService, buildSummaryTopics, hydrateReport } from "../../../src/modules/audiencePulse/services/audiencePulseService.js";
+import {
+  AUDIENCE_PULSE_NARRATIVE_MAX_CONSECUTIVE_REUSES,
+  AudiencePulseService,
+  buildSummaryTopics,
+  hydrateReport,
+} from "../../../src/modules/audiencePulse/services/audiencePulseService.js";
 import type { AudiencePulseServiceDependencies } from "../../../src/modules/audiencePulse/services/audiencePulseService.js";
 import type {
   AudiencePulseHistorySnapshot,
@@ -78,6 +83,8 @@ const modelResponse = JSON.stringify({
 const priorNarrativeSnapshot = (input: {
   summary?: string;
   memberCount?: number;
+  narrativeGeneratedAt?: string;
+  narrativeReuseCount?: number;
   recommendations?: Array<{
     id: string;
     themeId: string;
@@ -94,6 +101,8 @@ const priorNarrativeSnapshot = (input: {
   report: {
     period: { start: "2026-06-01T00:00:00.000Z", end: "2026-07-01T00:00:00.000Z" },
     generatedAt: "2026-07-01T00:00:00.000Z",
+    narrativeGeneratedAt: input.narrativeGeneratedAt ?? "2026-06-15T00:00:00.000Z",
+    narrativeReuseCount: input.narrativeReuseCount ?? 0,
     coverage: { populationSize: 2, sampleSize: 2, sampled: false, facetReadyQuestionCount: 2 },
     weeklyVolume: [],
     summary: input.summary ?? "Reused narrative summary.",
@@ -243,7 +252,7 @@ const createService = (overrides: Partial<AudiencePulseServiceDependencies> = {}
 describe("AudiencePulseService", () => {
   it("reuses a stable prior narrative without creating an inference or consuming its reservation", async () => {
     const { service, calls } = createService({
-      snapshotStore: snapshotStoreFor(priorNarrativeSnapshot()),
+      snapshotStore: snapshotStoreFor(priorNarrativeSnapshot({ narrativeReuseCount: 1 })),
       censusServiceFactory: {
         create: () => ({ run: async () => censusResultWithDissolved([]) } as unknown as CensusService),
       } satisfies CensusServiceFactory,
@@ -255,6 +264,8 @@ describe("AudiencePulseService", () => {
       kind: "completed",
       report: {
         summary: "Reused narrative summary.",
+        narrativeGeneratedAt: "2026-06-15T00:00:00.000Z",
+        narrativeReuseCount: 2,
         recommendations: [{ title: "Reused recommendation" }],
         // Caveats come from the same completion as the summary, and the prompt forbids
         // them from restating coverage or counts, so they stay valid for exactly as long
@@ -267,6 +278,53 @@ describe("AudiencePulseService", () => {
       eventType: "audience_pulse.refresh_completed",
       metadata: { narrativeReused: true },
     });
+  });
+
+  it("reuses a stable legacy narrative with report time as its provenance baseline", async () => {
+    const snapshot = priorNarrativeSnapshot();
+    const legacyReport = snapshot.report as unknown as Record<string, unknown>;
+    delete legacyReport.narrativeGeneratedAt;
+    delete legacyReport.narrativeReuseCount;
+    const { service, calls } = createService({
+      snapshotStore: snapshotStoreFor(snapshot),
+      censusServiceFactory: {
+        create: () => ({ run: async () => censusResultWithDissolved([]) } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(result).toMatchObject({
+      kind: "completed",
+      report: {
+        narrativeGeneratedAt: "2026-07-01T00:00:00.000Z",
+        narrativeReuseCount: 1,
+      },
+    });
+    expect(calls).toMatchObject({ inference: 0, commit: 0, release: 1 });
+  });
+
+  it("regenerates when the prior narrative has reached the consecutive reuse cap", async () => {
+    const { service, calls } = createService({
+      snapshotStore: snapshotStoreFor(priorNarrativeSnapshot({
+        narrativeReuseCount: AUDIENCE_PULSE_NARRATIVE_MAX_CONSECUTIVE_REUSES,
+      })),
+      censusServiceFactory: {
+        create: () => ({ run: async () => censusResultWithDissolved([]) } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(result).toMatchObject({
+      kind: "completed",
+      report: {
+        summary: "Visitors ask about subscription changes.",
+        narrativeGeneratedAt: "2026-08-01T00:00:00.000Z",
+        narrativeReuseCount: 0,
+      },
+    });
+    expect(calls).toMatchObject({ inference: 1, commit: 1, release: 0 });
   });
 
   it("regenerates when the prior snapshot has no non-empty summary", async () => {
@@ -853,7 +911,14 @@ describe("AudiencePulseService", () => {
 
     const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
 
-    expect(result).toMatchObject({ kind: "completed", report: { generatedAt: afterCompletion.toISOString() } });
+    expect(result).toMatchObject({
+      kind: "completed",
+      report: {
+        generatedAt: afterCompletion.toISOString(),
+        narrativeGeneratedAt: afterCompletion.toISOString(),
+        narrativeReuseCount: 0,
+      },
+    });
   });
 
   it("maps a census-only report integrity failure to an unavailable census result", async () => {
@@ -907,6 +972,8 @@ describe("AudiencePulseService", () => {
     const report: AudiencePulseStoredReport = {
       period: { start: "2026-07-01T00:00:00.000Z", end: "2026-07-31T00:00:00.000Z" },
       generatedAt: "2026-08-01T00:00:00.000Z",
+      narrativeGeneratedAt: "2026-08-01T00:00:00.000Z",
+      narrativeReuseCount: 0,
       coverage: { populationSize: 3, sampleSize: 3, sampled: false, facetReadyQuestionCount: 3 },
       weeklyVolume: [],
       summary: "Summary",
@@ -1007,6 +1074,8 @@ describe("AudiencePulseService", () => {
     ]));
 
     expect(hydrated.coverage.facetReadyQuestionCount).toBe(3);
+    expect(hydrated.narrativeGeneratedAt).toBe(legacyReport.generatedAt);
+    expect(hydrated.narrativeReuseCount).toBe(0);
     expect(hydrated.unclassifiedQuestionCount).toBe(1);
     expect(hydrated.themes[0]).toMatchObject({ memberCount: 2, share: 2 / 3 });
     expect(hydrated.themes[0]?.transition).toBeNull();
@@ -1674,6 +1743,8 @@ describe("AudiencePulseService", () => {
       report: {
         period: { start: "2026-07-01T00:00:00.000Z", end: "2026-07-31T00:00:00.000Z" },
         generatedAt: "2026-08-01T00:00:00.000Z",
+        narrativeGeneratedAt: "2026-08-01T00:00:00.000Z",
+        narrativeReuseCount: 0,
         coverage: { populationSize: 2, sampleSize: 2, sampled: false, facetReadyQuestionCount: 2 },
         weeklyVolume: [],
         summary: "Summary",
@@ -1717,6 +1788,8 @@ describe("AudiencePulseService", () => {
       report: {
         period: { start: "2026-07-01T00:00:00.000Z", end: "2026-07-31T00:00:00.000Z" },
         generatedAt: "2026-08-01T00:00:00.000Z",
+        narrativeGeneratedAt: "2026-08-01T00:00:00.000Z",
+        narrativeReuseCount: 0,
         coverage: { populationSize: 1, sampleSize: 1, sampled: false, facetReadyQuestionCount: 1 },
         weeklyVolume: [],
         summary: "Saved summary",

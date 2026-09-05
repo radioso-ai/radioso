@@ -98,6 +98,8 @@ export const registerAudiencePulseSchemas = (registry: OpenAPIRegistry, schemas:
   const AudiencePulseReportSchema = registry.register("AudiencePulseReport", z.object({
     period: z.object({ start: z.string().datetime(), end: z.string().datetime() }),
     generatedAt: z.string().datetime(),
+    narrativeGeneratedAt: z.string().datetime(),
+    narrativeReuseCount: z.number().int().min(0),
     coverage: AudiencePulseCoverageSchema,
     weeklyVolume: z.array(AudiencePulseWeeklyVolumeSchema),
     summary: z.string().optional(),

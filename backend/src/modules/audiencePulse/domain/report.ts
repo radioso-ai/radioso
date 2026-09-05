@@ -108,6 +108,8 @@ export interface AudiencePulseStoredRecommendation {
 export interface AudiencePulseStoredReport {
   period: { start: string; end: string };
   generatedAt: string;
+  narrativeGeneratedAt: string;
+  narrativeReuseCount: number;
   coverage: AudiencePulseReportCoverage;
   weeklyVolume: AudiencePulseWeeklyVolume[];
   /**
@@ -389,6 +391,8 @@ export const buildAudiencePulseReport = (input: {
       end: input.period.end.toISOString(),
     },
     generatedAt: input.generatedAt.toISOString(),
+    narrativeGeneratedAt: input.generatedAt.toISOString(),
+    narrativeReuseCount: 0,
     coverage: input.coverage,
     weeklyVolume: input.weeklyVolume.map((week) => ({ ...week })),
     summary: model.summary,
@@ -421,6 +425,8 @@ export const buildAudiencePulseComputingReport = (input: {
     end: input.period.end.toISOString(),
   },
   generatedAt: input.generatedAt.toISOString(),
+  narrativeGeneratedAt: input.generatedAt.toISOString(),
+  narrativeReuseCount: 0,
   coverage: input.coverage,
   weeklyVolume: input.weeklyVolume.map((week) => ({ ...week })),
   unclassifiedQuestionCount: input.coverage.populationSize,

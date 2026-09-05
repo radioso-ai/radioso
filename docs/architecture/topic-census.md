@@ -206,8 +206,11 @@ a saved theme remains a member of that same topic. Every reused recommendation
 evidence id also remains a current, content-gap-eligible member of its own
 topic. Missing, expired, moved, or ineligible evidence regenerates the
 narrative. A saved report without an unclassified question count or a topic
-share also regenerates it. Themes, counts, shares, weekly pulse, grounding, and
-content gaps always derive from the fresh census.
+share also regenerates it. A narrative is reused for at most three consecutive
+refreshes; the following refresh regenerates it. `narrativeGeneratedAt` records
+when the current prose was generated, and `narrativeReuseCount` records how many
+consecutive refreshes reuse it. Themes, counts, shares, weekly pulse, grounding,
+and content gaps always derive from the fresh census.
 
 Census membership-integrity failures return the `census` unavailability reason
 and record the same outcome in refresh audit metadata. Model response failures

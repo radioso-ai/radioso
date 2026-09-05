@@ -23,6 +23,34 @@ describeIntegration("OperatorMcpAuthorizationRepository", () => {
   const resource = "https://mcp.example/operator/mcp";
   const tokenDigest = createHash("sha256").update(randomUUID()).digest("base64url");
 
+  it("serializes concurrent first registration of the same client metadata", async () => {
+    const concurrentClientId = `https://client.example/${randomUUID()}`;
+    const validatedAt = new Date();
+    const snapshot = {
+      id: randomUUID(),
+      clientId: concurrentClientId,
+      clientVersion: "1",
+      metadataDigest: createHash("sha256").update(concurrentClientId).digest("hex"),
+      normalizedMetadata: { clientId: concurrentClientId },
+      clientUri: "https://client.example/app",
+      displayName: "Concurrent client",
+      applicationType: "web" as const,
+      redirectUris: ["https://client.example/callback"],
+      source: "metadata_document" as const,
+      validatedAt,
+      expiresAt: null,
+    };
+
+    const [first, second] = await Promise.all([
+      repository.persistClientSnapshot(snapshot),
+      repository.persistClientSnapshot({ ...snapshot, id: randomUUID() }),
+    ]);
+
+    expect(second).toMatchObject({ recordId: first.recordId, clientVersion: "1", clientUri: "https://client.example/app" });
+    await database.query("DELETE FROM operator_mcp_client_metadata_snapshots WHERE client_id = $1", [first.recordId]);
+    await database.query("DELETE FROM operator_mcp_clients WHERE id = $1", [first.recordId]);
+  });
+
   beforeAll(async () => {
     await database.query("INSERT INTO accounts (id, name, email, password_hash) VALUES ($1, 'Operator MCP', $2, 'hash')", [accountId, `operator-${accountId}@example.com`]);
     await database.query("INSERT INTO users (id, email, password_hash) VALUES ($1, $2, 'hash')", [userId, `operator-user-${userId}@example.com`]);
@@ -82,6 +110,16 @@ describeIntegration("OperatorMcpAuthorizationRepository", () => {
       userDisabledAt: null,
     });
     await expect(repository.findCurrentCredential({ tokenDigest, resource: `${resource}/`, now: new Date() })).resolves.toBeNull();
+  });
+
+  it("does not revoke a credential presented by a different public client", async () => {
+    await expect(repository.revokeCredentialByDigest({
+      tokenDigest,
+      clientId: `https://different-client.example/${randomUUID()}`,
+      now: new Date(),
+    })).resolves.toBeNull();
+
+    await expect(repository.findCurrentCredential({ tokenDigest, resource, now: new Date() })).resolves.not.toBeNull();
   });
 
   it("fails closed for disabled users and revoked grants", async () => {

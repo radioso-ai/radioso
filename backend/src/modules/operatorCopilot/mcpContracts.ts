@@ -62,7 +62,7 @@ export interface OperatorMcpInvocationRepositoryPort {
   findById(invocationId: string): Promise<OperatorMcpInvocationRecord | null>;
   findByOperation(input: { grantId: string; operationId: string }): Promise<OperatorMcpInvocationRecord | null>;
   consumeProof(proofNonceDigest: string, now?: Date): Promise<"consumed" | "replay" | "missing">;
-  markRunning(input: { invocationId: string; now: Date }): Promise<OperatorMcpInvocationRecord | null>;
+  claimRunning(input: { invocationId: string; now: Date }): Promise<OperatorMcpInvocationRecord | null>;
   recordOutcome(input: {
     invocationId: string;
     status: "completed" | "refused" | "failed";

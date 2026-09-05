@@ -4,7 +4,7 @@ import type { AccountPermission } from "../account/public.js";
 import type { CopilotToolDescriptor } from "./contracts.js";
 import type { CopilotEntityDescription, CopilotEntityReference, CopilotToolInvocationContext } from "./contracts.js";
 import { CopilotToolAuthorizationError, hasCurrentCopilotPermissions } from "./authorization.js";
-import { buildCopilotDashboardLink } from "./dashboardLinks.js";
+import { buildCopilotDashboardLink, buildOperatorMcpProposalLink } from "./dashboardLinks.js";
 
 export const hasAllCopilotToolPermissions = (
   requiredPermissions: CopilotToolDescriptor["requiredPermissions"],
@@ -81,6 +81,34 @@ const unresolved = (workspaceKey: string, dashboardSubject: CopilotEntityReferen
   resolution: { status: "not_found" as const, candidates: [] },
 });
 
+const enrichSuccessfulOutput = (input: {
+  descriptor: CopilotToolDescriptor;
+  context: CopilotToolInvocationContext;
+  workspaceKey: string;
+  output: unknown;
+  resolvedEntity?: CopilotEntityReference | null;
+}): Record<string, unknown> => {
+  if (!isRecord(input.output)) {
+    throw new Error(`Copilot tool "${input.descriptor.name}" returned a non-object result`);
+  }
+  const outputEntity = input.descriptor.describeOutputEntity?.(input.output) ?? null;
+  const proposalId = input.context.surface === "mcp"
+    && input.descriptor.dashboardSubject.type === "proposal"
+    && typeof input.output.proposalId === "string"
+    ? input.output.proposalId
+    : null;
+  const enrichedOutput = {
+    ...input.output,
+    dashboardUrl: proposalId
+      ? buildOperatorMcpProposalLink(proposalId)
+      : buildCopilotDashboardLink(
+        input.workspaceKey,
+        handoffSubject(input.descriptor.dashboardSubject, outputEntity ?? input.resolvedEntity ?? null),
+      ),
+  };
+  return input.descriptor.finalizeEnrichedOutput?.(enrichedOutput) ?? enrichedOutput;
+};
+
 /**
  * Makes module-owned entity descriptions usable from transports with no page
  * context. The descriptor resolves names; this shared boundary only enforces
@@ -92,6 +120,22 @@ export const enrichCopilotToolCatalog = (
 ): ReadonlyArray<CopilotToolDescriptor> => descriptors.map((descriptor) => ({
   ...descriptor,
   outputSchema: linkedOutputSchema,
+  ...(descriptor.reconcileMcpInvocation ? {
+    reconcileMcpInvocation: async (input) => {
+      const reconciliation = await descriptor.reconcileMcpInvocation!(input);
+      if (reconciliation.status !== "recovered") return reconciliation;
+      const workspaceKey = await deps.resolveWorkspaceKey(input.context.workspaceId);
+      return {
+        status: "recovered" as const,
+        output: enrichSuccessfulOutput({
+          descriptor,
+          context: input.context,
+          workspaceKey,
+          output: reconciliation.output,
+        }),
+      };
+    },
+  } : {}),
   createTool: (context: CopilotToolInvocationContext) => {
     const tool = descriptor.createTool(context);
     return {
@@ -151,18 +195,7 @@ export const enrichCopilotToolCatalog = (
         if (!(await hasCurrentCopilotToolPermissions(descriptor, context))) {
           return unresolved(workspaceKey, descriptor.dashboardSubject);
         }
-        if (!isRecord(output)) {
-          throw new Error(`Copilot tool "${descriptor.name}" returned a non-object result`);
-        }
-        const outputEntity = descriptor.describeOutputEntity?.(output) ?? null;
-        const enrichedOutput = {
-          ...output,
-          dashboardUrl: buildCopilotDashboardLink(
-            workspaceKey,
-            handoffSubject(descriptor.dashboardSubject, outputEntity ?? resolution.entity),
-          ),
-        };
-        return descriptor.finalizeEnrichedOutput?.(enrichedOutput) ?? enrichedOutput;
+        return enrichSuccessfulOutput({ descriptor, context, workspaceKey, output, resolvedEntity: resolution.entity });
       },
     };
   },

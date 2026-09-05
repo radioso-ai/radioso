@@ -4,8 +4,10 @@ import { digestOperatorMcpCall, sha256Digest } from "@radioso/operator-mcp-contr
 
 import { OperatorMcpApplicationService } from "../../../src/modules/operatorCopilot/mcpApplicationService.js";
 import { OperatorMcpCatalogService } from "../../../src/modules/operatorCopilot/mcpCatalog.js";
+import { enrichCopilotToolCatalog } from "../../../src/modules/operatorCopilot/catalog.js";
 import { OperatorMcpAccessError } from "../../../src/modules/operatorMcpAuthorization/public.js";
 import type { CopilotToolDescriptor } from "../../../src/modules/operatorCopilot/public.js";
+import type { OperatorMcpInvocationRepositoryPort } from "../../../src/modules/operatorCopilot/mcpContracts.js";
 
 const uuid = (suffix: string) => `00000000-0000-4000-8000-${suffix.padStart(12, "0")}`;
 const now = new Date("2026-09-04T00:00:00Z");
@@ -23,10 +25,49 @@ const descriptor: CopilotToolDescriptor = {
   mcpDisposition: { status: "eligible", inputStrategy: "explicit", scope: "operator:read", retry: { effect: "none", idempotent: true, requiresOperationId: false } },
   createTool: () => ({ name: "workspace_settings", description: "Read settings", inputSchema: z.object({ section: z.string() }), outputSchema: z.object({ section: z.string() }), invoke: vi.fn(async (input: { section: string }) => input) }),
 };
+const proposalOutputSchema = z.object({
+  proposalId: z.string().uuid(),
+  targetType: z.literal("ingestion_settings"),
+  targetLabel: z.string(),
+  summary: z.string(),
+});
+const proposalReconciliation = vi.fn();
+const proposalInvoke = vi.fn(async () => ({
+  proposalId: uuid("14"),
+  targetType: "ingestion_settings" as const,
+  targetLabel: "Ingestion settings",
+  summary: "Change ingestion settings.",
+}));
+const rawProposalDescriptor: CopilotToolDescriptor = {
+  name: "propose_ingestion_settings",
+  shape: "propose",
+  verificationCost: () => 0,
+  uiLabel: "Draft ingestion settings",
+  description: "Draft ingestion settings",
+  inputSchema: z.object({ section: z.string() }).strict(),
+  outputSchema: proposalOutputSchema,
+  requiredPermissions: ["workspace.settings.manage"],
+  contributingModule: "settings",
+  dashboardSubject: { type: "proposal" },
+  mcpDisposition: {
+    status: "eligible",
+    inputStrategy: "explicit",
+    scope: "operator:read",
+    retry: { effect: "proposal", idempotent: true, requiresOperationId: true },
+  },
+  reconcileMcpInvocation: proposalReconciliation,
+  createTool: () => ({
+    name: "propose_ingestion_settings",
+    description: "Draft ingestion settings",
+    inputSchema: z.object({ section: z.string() }),
+    outputSchema: proposalOutputSchema,
+    invoke: proposalInvoke,
+  }),
+};
 const callDigest = (argumentsValue: Record<string, unknown>, operationId?: string): string =>
   digestOperatorMcpCall({ name: descriptor.name, arguments: argumentsValue, ...(operationId ? { operationId } : {}) });
 
-const build = () => {
+const build = (activeDescriptor: CopilotToolDescriptor = descriptor) => {
   const credentialValidation = { validate: vi.fn(async () => principal), revalidateCredential: vi.fn(async () => principal) };
   const invocation = {
     id: uuid("12"), credentialId: principal.credentialId, grantId: principal.grantId, grantVersion: principal.grantVersion,
@@ -36,21 +77,30 @@ const build = () => {
     safeOutcomeCode: null, resultReference: null, createdAt: now, completedAt: null, retainedUntil: new Date(now.getTime() + 86_400_000),
   };
   let proofConsumed = false;
+  const prepareInvocation = vi.fn<OperatorMcpInvocationRepositoryPort["prepareInvocation"]>(async () => ({
+    status: "prepared",
+    invocation: { ...invocation, method: "tools/call", descriptorName: activeDescriptor.name, shape: activeDescriptor.shape },
+  }));
+  const claimRunning = vi.fn<OperatorMcpInvocationRepositoryPort["claimRunning"]>(async () => ({
+    ...invocation,
+    status: "running",
+  }));
   const invocations = {
     admit: vi.fn(async () => ({ status: "admitted" as const, invocation })),
     consumeProof: vi.fn(async () => proofConsumed ? "replay" as const : (proofConsumed = true, "consumed" as const)),
-    prepareInvocation: vi.fn(async () => ({ status: "prepared" as const, invocation: { ...invocation, method: "tools/call" as const, descriptorName: descriptor.name, shape: "read" as const } })),
-    markRunning: vi.fn(async () => ({ ...invocation, status: "running" as const })),
+    prepareInvocation,
+    claimRunning,
     recordOutcome: vi.fn(async () => ({ ...invocation, status: "completed" as const })),
     refundReservation: vi.fn(), findById: vi.fn(), findByOperation: vi.fn(),
   };
   const currentAuthorization = { hasAllPermissions: vi.fn(async () => true) };
   const audit = { record: vi.fn(async () => undefined) };
+  const catalog = new OperatorMcpCatalogService([activeDescriptor]);
   const service = new OperatorMcpApplicationService({
-    credentialValidation, invocations, catalog: new OperatorMcpCatalogService([descriptor]),
+    credentialValidation, invocations, catalog,
     currentAuthorization, audit, secret: "internal-secret-at-least-thirty-two-bytes", now: () => now,
   });
-  return { service, credentialValidation, invocations, audit, invocation };
+  return { service, credentialValidation, invocations, audit, invocation, catalog };
 };
 
 describe("OperatorMcpApplicationService", () => {
@@ -215,5 +265,144 @@ describe("OperatorMcpApplicationService", () => {
     expect(invocations.recordOutcome).toHaveBeenCalledWith(expect.objectContaining({
       invocationId: uuid("12"), status: "completed", safeOutcomeCode: "replayed", resultReference: "proposal-1",
     }));
+  });
+
+  it.each(["running", "failed"] as const)("recovers a proposal committed before its original %s invocation outcome", async (priorStatus) => {
+    proposalReconciliation.mockReset();
+    proposalInvoke.mockClear();
+    proposalReconciliation.mockResolvedValueOnce({
+      status: "recovered",
+      output: {
+        proposalId: uuid("14"),
+        targetType: "ingestion_settings",
+        targetLabel: "Ingestion settings",
+        summary: "Change ingestion settings.",
+      },
+    });
+    const enriched = enrichCopilotToolCatalog([rawProposalDescriptor], { resolveWorkspaceKey: async () => "workspace-key" })[0]!;
+    const { service, invocations, invocation } = build(enriched);
+    const proposalId = uuid("14");
+    const operationId = "recover-proposal";
+    const argumentsValue = { section: "retrieval" };
+    const bodyDigest = digestOperatorMcpCall({ name: enriched.name, arguments: argumentsValue, operationId });
+    const admitted = await service.admit({
+      accessToken: "operator-access", invocationId: uuid("12"), method: "tools/call", descriptorName: enriched.name,
+      resource: principal.resource, timestamp: "1788480000", nonce: "edge", bodyDigest,
+    });
+    invocations.prepareInvocation.mockResolvedValueOnce({
+      status: "replay",
+      invocation: {
+        ...invocation,
+        id: uuid("13"),
+        status: priorStatus,
+        descriptorName: enriched.name,
+        shape: "propose",
+        operationId,
+        proofConsumedAt: new Date(now.getTime() - 1_000),
+      },
+    });
+
+    await expect(service.invoke({
+      proof: admitted.proof,
+      name: enriched.name,
+      arguments: argumentsValue,
+      operationId,
+      bodyDigest,
+    })).resolves.toMatchObject({
+      safeOutcomeCode: "completed",
+      resultReference: `/oauth/operator-mcp/proposal/${proposalId}`,
+    });
+    expect(proposalInvoke).not.toHaveBeenCalled();
+    expect(invocations.claimRunning).not.toHaveBeenCalled();
+    expect(invocations.recordOutcome).toHaveBeenCalledWith(expect.objectContaining({
+      invocationId: uuid("13"), status: "completed", safeOutcomeCode: "completed",
+      resultReference: `/oauth/operator-mcp/proposal/${proposalId}`,
+    }));
+    expect(invocations.recordOutcome).toHaveBeenCalledWith(expect.objectContaining({
+      invocationId: uuid("12"), status: "completed", safeOutcomeCode: "replayed",
+      resultReference: `/oauth/operator-mcp/proposal/${proposalId}`,
+    }));
+  });
+
+  it("re-prepares exactly once after a stale proposal attempt is released", async () => {
+    proposalReconciliation.mockReset();
+    proposalInvoke.mockClear();
+    proposalReconciliation.mockResolvedValueOnce({ status: "retry_prepare" });
+    const enriched = enrichCopilotToolCatalog([rawProposalDescriptor], { resolveWorkspaceKey: async () => "workspace-key" })[0]!;
+    const { service, invocations, invocation } = build(enriched);
+    const operationId = "retry-released-proposal";
+    const argumentsValue = { section: "retrieval" };
+    const bodyDigest = digestOperatorMcpCall({ name: enriched.name, arguments: argumentsValue, operationId });
+    const admitted = await service.admit({
+      accessToken: "operator-access", invocationId: uuid("12"), method: "tools/call", descriptorName: enriched.name,
+      resource: principal.resource, timestamp: "1788480000", nonce: "edge", bodyDigest,
+    });
+    invocations.prepareInvocation
+      .mockResolvedValueOnce({
+        status: "replay",
+        invocation: { ...invocation, id: uuid("13"), status: "running", descriptorName: enriched.name, shape: "propose", operationId },
+      })
+      .mockResolvedValueOnce({
+        status: "prepared",
+        invocation: { ...invocation, descriptorName: enriched.name, shape: "propose", operationId },
+      });
+
+    await expect(service.invoke({ proof: admitted.proof, name: enriched.name, arguments: argumentsValue, operationId, bodyDigest }))
+      .resolves.toMatchObject({
+        safeOutcomeCode: "completed",
+        resultReference: `/oauth/operator-mcp/proposal/${uuid("14")}`,
+      });
+    expect(invocations.prepareInvocation).toHaveBeenCalledTimes(2);
+    expect(invocations.claimRunning).toHaveBeenCalledOnce();
+    expect(proposalInvoke).toHaveBeenCalledOnce();
+  });
+
+  it("replays a failed proposal attempt when reconciliation proves no proposal committed", async () => {
+    proposalReconciliation.mockReset();
+    proposalInvoke.mockClear();
+    proposalReconciliation.mockResolvedValueOnce({ status: "retry_prepare" });
+    const enriched = enrichCopilotToolCatalog([rawProposalDescriptor], { resolveWorkspaceKey: async () => "workspace-key" })[0]!;
+    const { service, invocations, invocation } = build(enriched);
+    const operationId = "failed-before-proposal";
+    const argumentsValue = { section: "retrieval" };
+    const bodyDigest = digestOperatorMcpCall({ name: enriched.name, arguments: argumentsValue, operationId });
+    const admitted = await service.admit({
+      accessToken: "operator-access", invocationId: uuid("12"), method: "tools/call", descriptorName: enriched.name,
+      resource: principal.resource, timestamp: "1788480000", nonce: "edge", bodyDigest,
+    });
+    invocations.prepareInvocation.mockResolvedValueOnce({
+      status: "replay",
+      invocation: {
+        ...invocation,
+        id: uuid("13"),
+        status: "failed",
+        safeOutcomeCode: "dependency_error",
+        descriptorName: enriched.name,
+        shape: "propose",
+        operationId,
+      },
+    });
+
+    await expect(service.invoke({ proof: admitted.proof, name: enriched.name, arguments: argumentsValue, operationId, bodyDigest }))
+      .resolves.toMatchObject({ isError: true, safeOutcomeCode: "dependency_error" });
+    expect(invocations.prepareInvocation).toHaveBeenCalledOnce();
+    expect(invocations.claimRunning).not.toHaveBeenCalled();
+    expect(proposalInvoke).not.toHaveBeenCalled();
+  });
+
+  it("does not invoke a descriptor after losing the admitted-to-running claim", async () => {
+    const { service, invocations, catalog } = build();
+    const invoke = vi.spyOn(catalog, "invoke");
+    invocations.claimRunning.mockResolvedValueOnce(null);
+    const argumentsValue = { section: "retrieval" };
+    const bodyDigest = callDigest(argumentsValue);
+    const admitted = await service.admit({
+      accessToken: "operator-access", invocationId: uuid("12"), method: "tools/call", descriptorName: descriptor.name,
+      resource: principal.resource, timestamp: "1788480000", nonce: "edge", bodyDigest,
+    });
+
+    await expect(service.invoke({ proof: admitted.proof, name: descriptor.name, arguments: argumentsValue, bodyDigest }))
+      .rejects.toMatchObject({ code: "operation_conflict" });
+    expect(invoke).not.toHaveBeenCalled();
   });
 });

@@ -2056,6 +2056,7 @@ export const createTestDependencies = (overrides: {
       },
     },
     proposalRepository: copilotRepository,
+    proposalRecovery: { recoverOperatorMcpProposal: async () => ({ status: "conflict" }) },
     proposalAdapters: copilotProposalAdapters,
     auditService,
     workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver,

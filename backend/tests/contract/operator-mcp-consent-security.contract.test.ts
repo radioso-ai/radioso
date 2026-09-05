@@ -8,11 +8,12 @@ import { createOperatorMcpOauthRoutes } from "../../src/modules/operatorMcpAutho
 const transactionId = "00000000-0000-4000-8000-000000000001";
 const transaction: {
   id: string; clientId: string; clientDisplayName: string; clientVersion: string;
-  clientMetadataDigest: string; applicationType: "web"; redirectUri: string;
+  clientUri: string | null; clientMetadataDigest: string; applicationType: "web"; redirectUri: string;
   requestedToolScopes: string[]; requestedOfflineAccess: boolean; resource: string;
   status: "pending"; expiresAt: Date; userId: string | null; accountId: string | null; sessionId: string | null;
 } = {
   id: transactionId, clientId: "https://client.example/cimd", clientDisplayName: "Client", clientVersion: "1",
+  clientUri: "https://client.example/app",
   clientMetadataDigest: "digest", applicationType: "web", redirectUri: "https://client.example/callback",
   requestedToolScopes: ["operator:read"], requestedOfflineAccess: false, resource: "https://mcp.example/operator/mcp",
   status: "pending", expiresAt: new Date(Date.now() + 60_000), userId: null, accountId: null, sessionId: null,
@@ -51,7 +52,11 @@ describe("operator MCP consent security contract", () => {
     await request(app).get(`/api/v1/operator-mcp/oauth/transactions/${transactionId}`).expect(401);
     const response = await request(app).get(`/api/v1/operator-mcp/oauth/transactions/${transactionId}`).set("Cookie", "session=value").expect(200);
     expect(response.headers["cache-control"]).toBe("no-store");
-    expect(response.body).toMatchObject({ transactionId, currentUser: { id: "user" } });
+    expect(response.body).toMatchObject({
+      transactionId,
+      client: { clientUri: "https://client.example/app" },
+      currentUser: { id: "user" },
+    });
   });
 
   it("rejects account/session swaps and requires CSRF before a decision", async () => {

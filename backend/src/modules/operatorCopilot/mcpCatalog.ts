@@ -1,7 +1,8 @@
 import type { OperatorMcpScope, OperatorToolDescriptor } from "@radioso/operator-mcp-contract";
 import { zodToJsonSchema } from "zod-to-json-schema";
 
-import type { CopilotToolDescriptor, CopilotToolInvocationContext } from "./contracts.js";
+import type { CopilotMcpInvocationReconciliation, CopilotToolDescriptor, CopilotToolInvocationContext } from "./contracts.js";
+import type { OperatorMcpInvocationRecord } from "./mcpContracts.js";
 import { hasCurrentCopilotToolPermissions } from "./catalog.js";
 
 export class OperatorMcpCatalogError extends Error {
@@ -70,5 +71,38 @@ export class OperatorMcpCatalogService {
     const parsedOutput = descriptor.outputSchema.safeParse(output);
     if (!parsedOutput.success) throw new OperatorMcpCatalogError("invalid_result");
     return parsedOutput.data;
+  }
+
+  async reconcileInvocation(input: {
+    name: string;
+    invocation: OperatorMcpInvocationRecord;
+    context: CopilotToolInvocationContext;
+    scopes: ReadonlySet<OperatorMcpScope>;
+    staleBefore: Date;
+    now: Date;
+  }): Promise<CopilotMcpInvocationReconciliation<unknown>> {
+    const descriptor = this.descriptors.get(input.name);
+    if (!descriptor) throw new OperatorMcpCatalogError("unknown_tool");
+    const disposition = eligible(descriptor);
+    if (!disposition || disposition.retry.effect !== "proposal" || !input.scopes.has(disposition.scope)) {
+      throw new OperatorMcpCatalogError("forbidden");
+    }
+    if (!(await hasCurrentCopilotToolPermissions(descriptor, input.context))) {
+      throw new OperatorMcpCatalogError("forbidden");
+    }
+    if (!descriptor.reconcileMcpInvocation) return { status: "conflict" };
+    const reconciliation = await descriptor.reconcileMcpInvocation({
+      invocation: input.invocation,
+      context: input.context,
+      staleBefore: input.staleBefore,
+      now: input.now,
+    });
+    if (reconciliation.status !== "recovered") return reconciliation;
+    if (!(await hasCurrentCopilotToolPermissions(descriptor, input.context))) {
+      throw new OperatorMcpCatalogError("forbidden");
+    }
+    const parsedOutput = descriptor.outputSchema.safeParse(reconciliation.output);
+    if (!parsedOutput.success) throw new OperatorMcpCatalogError("invalid_result");
+    return { status: "recovered", output: parsedOutput.data };
   }
 }

@@ -26,7 +26,7 @@ const createHarness = (envOverrides: Partial<typeof env> = {}) => {
     operatorMcpClientResolver: { resolve: vi.fn(async () => ({
       recordId: "client", clientId: "https://client.example/cimd", clientVersion: "1",
       metadataSnapshotId: "snapshot", metadataDigest: "digest", applicationType: "web" as const,
-      displayName: "Client", redirectUris: ["https://client.example/callback"],
+      displayName: "Client", clientUri: "https://client.example/app", redirectUris: ["https://client.example/callback"],
     })) },
     authService: { authenticateSession: vi.fn(async () => ({ userId: "00000000-0000-4000-8000-000000000001", accountId: "00000000-0000-4000-8000-000000000002", sessionId: "00000000-0000-4000-8000-000000000003" })) },
     accountAccessService: {
@@ -136,8 +136,24 @@ describe("operator MCP OAuth HTTP contract", () => {
       code_verifier: "a".repeat(43), resource: env.OPERATOR_MCP_RESOURCE_URL,
     }).expect(200);
     expect(token.body).toEqual({ access_token: "access", token_type: "Bearer", expires_in: 900, scope: "operator:read" });
-    await request(app).post("/api/v1/operator-mcp/oauth/revoke").type("form").send({ token: "unknown" }).expect(200);
-    expect(service.revoke).toHaveBeenCalledWith("unknown", expect.any(Date));
+    await request(app).post("/api/v1/operator-mcp/oauth/revoke").type("form").send({
+      token: "unknown",
+      client_id: "client",
+    }).expect(200);
+    expect(service.revoke).toHaveBeenCalledWith({ token: "unknown", clientId: "client", now: expect.any(Date) });
+  });
+
+  it("requires the public client identity on revocation requests", async () => {
+    const { app, service } = createHarness();
+
+    const response = await request(app)
+      .post("/api/v1/operator-mcp/oauth/revoke")
+      .type("form")
+      .send({ token: "opaque-access-token" })
+      .expect(400);
+
+    expect(response.body).toEqual({ error: "invalid_request" });
+    expect(service.revoke).not.toHaveBeenCalled();
   });
 
   it.each([

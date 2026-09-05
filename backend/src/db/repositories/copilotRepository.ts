@@ -4,12 +4,13 @@ import { sql } from "kysely";
 
 import type { Db } from "../../shared/infra/kysely/types.js";
 import { nowMinusSeconds } from "../../shared/infra/kysely/sqlHelpers.js";
-import type { CopilotConversation, CopilotMessage, CopilotProposal, CopilotProposalApplyClaimGuard, CopilotProposalCard, CopilotProposalClaim, CopilotProposalDraft, CopilotProposalEvidence, CopilotRepositoryPort, CopilotRetentionPort } from "../../modules/operatorCopilot/public.js";
+import type { CopilotConversation, CopilotMcpProposalRecoveryPort, CopilotMessage, CopilotProposal, CopilotProposalApplyClaimGuard, CopilotProposalCard, CopilotProposalClaim, CopilotProposalDraft, CopilotProposalEvidence, CopilotRepositoryPort, CopilotRetentionPort } from "../../modules/operatorCopilot/public.js";
 import { copilotProposalTargetTypes, summarizeProposalEvidence } from "../../modules/operatorCopilot/public.js";
 
 interface CopilotConversationRow { id: string; workspace_id: string; operator_user_id: string; title: string | null; status: string; created_at: Date; updated_at: Date; }
 interface CopilotMessageRow { id: string; conversation_id: string; role: string; content: string; outcome: string | null; activity: unknown; created_at: Date; }
 interface CopilotProposalRow { id: string; workspace_id: string; operator_user_id: string; conversation_id: string | null; operator_mcp_invocation_id: string | null; message_id: string | null; target_type: string; target_ref: unknown; payload: unknown; version_token: string; evidence: unknown; status: string; failure_reason: string | null; applied_ref: unknown | null; created_at: Date; updated_at: Date; }
+interface RecoverableOperatorMcpInvocationRow { id: string; grant_id: string; workspace_id: string; user_id: string; operation_id: string | null; descriptor_name: string | null; input_digest: string; proof_consumed_at: Date | null; status: string; }
 const conversationColumns = ["id", "workspace_id", "operator_user_id", "title", "status", "created_at", "updated_at"] as const;
 const messageColumns = ["id", "conversation_id", "role", "content", "outcome", "activity", "created_at"] as const;
 const proposalColumns = ["id", "workspace_id", "operator_user_id", "conversation_id", "operator_mcp_invocation_id", "message_id", "target_type", "target_ref", "payload", "version_token", "evidence", "status", "failure_reason", "applied_ref", "created_at", "updated_at"] as const;
@@ -51,7 +52,7 @@ export const presentProposalCard = (proposal: CopilotProposal): CopilotProposalC
 const asRecord = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const textValue = (value: unknown, fallback: string): string => typeof value === "string" ? value : fallback;
 
-export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentionPort {
+export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentionPort, CopilotMcpProposalRecoveryPort {
   constructor(private readonly db: Db) {}
   async createConversation(input: { workspaceId: string; operatorUserId: string; title: string | null }): Promise<CopilotConversation> { const row = await this.db.insertInto("copilot_conversations").values({ id: randomUUID(), workspace_id: input.workspaceId, operator_user_id: input.operatorUserId, title: input.title }).returning(conversationColumns).executeTakeFirstOrThrow(); return mapConversation(row); }
   async findConversation(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotConversation | null> { const row = await this.db.selectFrom("copilot_conversations").select(conversationColumns).where("id", "=", input.id).where("workspace_id", "=", input.workspaceId).where("operator_user_id", "=", input.operatorUserId).executeTakeFirst(); return row ? mapConversation(row) : null; }
@@ -200,6 +201,57 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
       evidence: input.evidence ? JSON.stringify(input.evidence) : null,
     }).returning(proposalColumns).executeTakeFirstOrThrow();
     return mapProposal(row as CopilotProposalRow);
+  }
+  async recoverOperatorMcpProposal(input: Parameters<CopilotMcpProposalRecoveryPort["recoverOperatorMcpProposal"]>[0]): ReturnType<CopilotMcpProposalRecoveryPort["recoverOperatorMcpProposal"]> {
+    return this.db.transaction().execute(async (trx) => {
+      // createProposal locks this same invocation before inserting. Taking that lock first makes
+      // "proposal exists" versus "safe to release" an atomic decision across backend replicas.
+      const selected = await sql<RecoverableOperatorMcpInvocationRow>`
+        SELECT id, grant_id, workspace_id, user_id, operation_id, descriptor_name, input_digest,
+          proof_consumed_at, status
+        FROM operator_mcp_invocations
+        WHERE id = ${input.invocationId}
+        FOR UPDATE
+      `.execute(trx);
+      const invocation = selected.rows[0];
+      if (!invocation
+        || invocation.grant_id !== input.grantId
+        || invocation.workspace_id !== input.workspaceId
+        || invocation.user_id !== input.operatorUserId
+        || invocation.operation_id !== input.operationId
+        || invocation.descriptor_name !== input.descriptorName
+        || invocation.input_digest !== input.inputDigest) {
+        return { status: "conflict" as const };
+      }
+
+      const proposals = await sql<CopilotProposalRow>`
+        SELECT ${sql.join(proposalColumns.map((column) => sql.ref(column)))}
+        FROM copilot_proposals
+        WHERE operator_mcp_invocation_id = ${input.invocationId}
+          AND workspace_id = ${input.workspaceId}
+          AND operator_user_id = ${input.operatorUserId}
+        LIMIT 2
+      `.execute(trx);
+      if (proposals.rows.length === 1) {
+        return { status: "recovered" as const, proposal: mapProposal(proposals.rows[0]!) };
+      }
+      if (proposals.rows.length > 1) return { status: "conflict" as const };
+      if (invocation.status !== "admitted" && invocation.status !== "running") {
+        return { status: "retry_prepare" as const };
+      }
+      if (!invocation.proof_consumed_at) return { status: "conflict" as const };
+      if (new Date(invocation.proof_consumed_at).getTime() > input.staleBefore.getTime()) {
+        return { status: "in_progress" as const };
+      }
+
+      await sql`
+        UPDATE operator_mcp_invocations
+        SET status = 'refused', safe_outcome_code = 'abandoned_before_effect',
+          budget_reserved_at = NULL, completed_at = ${input.now}
+        WHERE id = ${input.invocationId} AND status IN ('admitted', 'running')
+      `.execute(trx);
+      return { status: "retry_prepare" as const };
+    });
   }
   async findProposal(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null> { const row = await this.db.selectFrom("copilot_proposals").select(proposalColumns).where("id", "=", input.id).where("workspace_id", "=", input.workspaceId).where("operator_user_id", "=", input.operatorUserId).executeTakeFirst(); return row ? mapProposal(row) : null; }
   async findProposalWorkspace(input: { id: string; accountId: string; operatorUserId: string }): Promise<string | null> {

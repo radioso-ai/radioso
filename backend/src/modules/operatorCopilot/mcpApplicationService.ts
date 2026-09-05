@@ -25,6 +25,8 @@ import type { OperatorMcpInvocationRecord, OperatorMcpInvocationRepositoryPort }
 
 const MAX_RESULT_BYTES = 256 * 1024;
 const PROOF_TTL_MS = 15_000;
+const PROPOSAL_RECOVERY_LEASE_MS = 120_000;
+const MAX_PREPARE_ATTEMPTS = 2;
 
 type CredentialValidation = Pick<OperatorMcpCredentialValidationService, "validate" | "revalidateCredential">;
 
@@ -90,7 +92,7 @@ const contextFor = (
 const resultReference = (output: unknown): string | null => {
   if (!output || typeof output !== "object" || Array.isArray(output)) return null;
   const record = output as Record<string, unknown>;
-  for (const key of ["proposalId", "dashboardUrl"] as const) {
+  for (const key of ["dashboardUrl", "proposalId"] as const) {
     const value = record[key];
     if (typeof value === "string" && value.length > 0 && value.length <= 256) return value;
   }
@@ -314,32 +316,117 @@ export class OperatorMcpApplicationService {
       const parsed = descriptor.inputSchema.safeParse(input.arguments);
       if (!parsed.success) throw new OperatorMcpApplicationError("invalid_arguments");
       const verificationCost = descriptor.verificationCost(parsed.data);
-      const prepared = await this.dependencies.invocations.prepareInvocation({
-        invocationId: input.proof.invocationId,
-        operationId: input.operationId ?? null,
+      const inputDigest = digestOperatorMcpInput({
+        secret: this.dependencies.secret,
         descriptorName: input.name,
-        shape: descriptor.shape,
-        inputDigest: digestOperatorMcpInput({ secret: this.dependencies.secret, descriptorName: input.name, descriptorVersion: "1", value: parsed.data }),
-        verificationCost,
-        now: this.now(),
+        descriptorVersion: "1",
+        value: parsed.data,
       });
-      if (prepared.status === "conflict") throw new OperatorMcpApplicationError("operation_conflict");
-      if (prepared.status === "budget_exhausted") throw new OperatorMcpApplicationError("budget_exhausted");
-      if (prepared.status === "replay") {
+      let readyToInvoke = false;
+      for (let attempt = 0; attempt < MAX_PREPARE_ATTEMPTS; attempt += 1) {
+        const prepared = await this.dependencies.invocations.prepareInvocation({
+          invocationId: input.proof.invocationId,
+          operationId: input.operationId ?? null,
+          descriptorName: input.name,
+          shape: descriptor.shape,
+          inputDigest,
+          verificationCost,
+          now: this.now(),
+        });
+        if (!("invocation" in prepared)) {
+          if (prepared.status === "conflict") throw new OperatorMcpApplicationError("operation_conflict");
+          throw new OperatorMcpApplicationError("budget_exhausted");
+        }
+        if (prepared.status === "prepared") {
+          readyToInvoke = true;
+          break;
+        }
+
+        const replayed = prepared.invocation;
+        const activeProposalAttempt = disposition.retry.effect === "proposal"
+          && input.operationId
+          && (replayed.status === "admitted" || replayed.status === "running" || replayed.status === "failed");
+        if (activeProposalAttempt) {
+          const recoveryNow = this.now();
+          const reconciliation = await this.dependencies.catalog.reconcileInvocation({
+            name: input.name,
+            invocation: replayed,
+            context: contextFor(principal, input.proof.invocationId, this.currentAuthorizationFor(principal)),
+            scopes: new Set(principal.currentToolScopes),
+            staleBefore: new Date(recoveryNow.getTime() - PROPOSAL_RECOVERY_LEASE_MS),
+            now: recoveryNow,
+          });
+          if (reconciliation.status === "recovered") {
+            const serialized = JSON.stringify(reconciliation.output);
+            if (Buffer.byteLength(serialized, "utf8") > MAX_RESULT_BYTES) throw new OperatorMcpApplicationError("result_too_large");
+            if (!reconciliation.output || typeof reconciliation.output !== "object" || Array.isArray(reconciliation.output)) {
+              throw new OperatorMcpApplicationError("invalid_result");
+            }
+            const reference = resultReference(reconciliation.output);
+            await this.dependencies.invocations.recordOutcome({
+              invocationId: replayed.id,
+              status: "completed",
+              safeOutcomeCode: "completed",
+              ...(reference ? { resultReference: reference } : {}),
+              now: this.now(),
+            });
+            await this.dependencies.invocations.recordOutcome({
+              invocationId: input.proof.invocationId,
+              status: "completed",
+              safeOutcomeCode: "replayed",
+              ...(reference ? { resultReference: reference } : {}),
+              now: this.now(),
+            });
+            await this.audit({
+              principal, invocationId: input.proof.invocationId, method: "tools/call", descriptorName: input.name,
+              capabilityShape, eventStatus: "success", outcome: "replayed", reason: "proposal_recovered",
+            });
+            return {
+              structuredContent: reconciliation.output as Record<string, unknown>,
+              content: [],
+              safeOutcomeCode: "completed",
+              ...(reference ? { resultReference: reference } : {}),
+            };
+          }
+          if (reconciliation.status === "conflict") throw new OperatorMcpApplicationError("operation_conflict");
+          if (reconciliation.status === "retry_prepare") {
+            // A terminal failure with no proposal is the authoritative prior outcome. Only an
+            // active, effect-free attempt may be released and prepared again.
+            if (replayed.status !== "failed") {
+              if (attempt + 1 < MAX_PREPARE_ATTEMPTS) continue;
+              throw new OperatorMcpApplicationError("operation_conflict");
+            }
+          } else {
+            await this.dependencies.invocations.recordOutcome({
+              invocationId: input.proof.invocationId,
+              status: "completed",
+              safeOutcomeCode: "replayed",
+              now: this.now(),
+            });
+            await this.audit({
+              principal, invocationId: input.proof.invocationId, method: "tools/call", descriptorName: input.name,
+              capabilityShape, eventStatus: "success", outcome: "replayed", reason: "operation_in_progress",
+            });
+            return replayResponse(replayed);
+          }
+        }
+
         await this.dependencies.invocations.recordOutcome({
           invocationId: input.proof.invocationId,
           status: "completed",
           safeOutcomeCode: "replayed",
-          ...(prepared.invocation.resultReference ? { resultReference: prepared.invocation.resultReference } : {}),
+          ...(replayed.resultReference ? { resultReference: replayed.resultReference } : {}),
           now: this.now(),
         });
         await this.audit({
           principal, invocationId: input.proof.invocationId, method: "tools/call", descriptorName: input.name,
           capabilityShape, eventStatus: "success", outcome: "replayed", reason: "operation_replay",
         });
-        return replayResponse(prepared.invocation);
+        return replayResponse(replayed);
       }
-      await this.dependencies.invocations.markRunning({ invocationId: input.proof.invocationId, now: this.now() });
+      if (!readyToInvoke) throw new OperatorMcpApplicationError("operation_conflict");
+      const claimed = await this.dependencies.invocations.claimRunning({ invocationId: input.proof.invocationId, now: this.now() });
+      if (!claimed) throw new OperatorMcpApplicationError("operation_conflict");
       const output = await this.dependencies.catalog.invoke({
         name: input.name,
         arguments: parsed.data,

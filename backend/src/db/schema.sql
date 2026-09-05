@@ -6069,7 +6069,7 @@ CREATE INDEX copilot_proposals_operator_created_idx ON public.copilot_proposals 
 -- Name: copilot_proposals_operator_mcp_invocation_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX copilot_proposals_operator_mcp_invocation_idx ON public.copilot_proposals USING btree (operator_mcp_invocation_id) WHERE (operator_mcp_invocation_id IS NOT NULL);
+CREATE UNIQUE INDEX copilot_proposals_operator_mcp_invocation_idx ON public.copilot_proposals USING btree (operator_mcp_invocation_id) WHERE (operator_mcp_invocation_id IS NOT NULL);
 
 
 --
@@ -7042,7 +7042,7 @@ CREATE INDEX operator_mcp_invocations_budget_idx ON public.operator_mcp_invocati
 -- Name: operator_mcp_invocations_operation_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX operator_mcp_invocations_operation_idx ON public.operator_mcp_invocations USING btree (grant_id, operation_id) WHERE (operation_id IS NOT NULL);
+CREATE UNIQUE INDEX operator_mcp_invocations_operation_idx ON public.operator_mcp_invocations USING btree (grant_id, operation_id) WHERE ((operation_id IS NOT NULL) AND ((status <> 'refused'::text) OR (safe_outcome_code IS DISTINCT FROM 'abandoned_before_effect'::text)));
 
 
 --

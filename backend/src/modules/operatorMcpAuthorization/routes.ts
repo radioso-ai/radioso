@@ -25,6 +25,10 @@ const decisionBody = z.object({
   approvedToolScopes: z.array(z.enum(OPERATOR_MCP_SCOPES)).min(1).max(OPERATOR_MCP_SCOPES.length).optional(),
   offlineAccess: z.boolean().default(false),
 });
+const revocationBody = z.object({
+  token: z.string().min(1).max(4096),
+  client_id: z.string().min(1).max(2048),
+});
 
 const noStore = (_req: unknown, res: { setHeader(name: string, value: string): void }, next: () => void) => {
   res.setHeader("Cache-Control", "no-store");
@@ -157,8 +161,12 @@ export const createOperatorMcpOauthRoutes = (dependencies: Dependencies): Router
       res.status(400).json({ error: "invalid_request" });
       return;
     }
-    const token = typeof req.body?.token === "string" ? req.body.token : "";
-    await service.revoke(token, new Date()).catch(() => undefined);
+    const parsed = revocationBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_request" });
+      return;
+    }
+    await service.revoke({ token: parsed.data.token, clientId: parsed.data.client_id, now: new Date() }).catch(() => undefined);
     res.status(200).end();
   });
 
@@ -184,7 +192,7 @@ export const createOperatorMcpOauthRoutes = (dependencies: Dependencies): Router
       res.status(200).json({
         transactionId: transaction.id,
         client: {
-          clientId: transaction.clientId, displayName: transaction.clientDisplayName, clientUri: null,
+          clientId: transaction.clientId, displayName: transaction.clientDisplayName, clientUri: transaction.clientUri,
           clientVersion: transaction.clientVersion, metadataDigest: transaction.clientMetadataDigest,
           applicationType: transaction.applicationType,
         },

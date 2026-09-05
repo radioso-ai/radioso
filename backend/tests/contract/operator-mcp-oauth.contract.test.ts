@@ -10,6 +10,7 @@ const env = {
   SESSION_COOKIE_NAME: "radioso_session", OPERATOR_MCP_ENABLED: true,
   OPERATOR_MCP_ISSUER_URL: "https://app.example", OPERATOR_MCP_RESOURCE_URL: "https://mcp.example/operator/mcp",
   AUTH_RATE_LIMIT_MAX_ATTEMPTS: 5, AUTH_RATE_LIMIT_WINDOW_MS: 60_000,
+  OPERATOR_MCP_OAUTH_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 300,
   RADIOSO_TRUSTED_PROXY_HOPS: 0,
 };
 
@@ -79,6 +80,29 @@ describe("operator MCP OAuth HTTP contract", () => {
 
     expect(dependencies.abuseControlService.enforce).toHaveBeenCalledWith(expect.objectContaining({ scope: "api.operator_mcp_oauth_authorize" }));
     expect(dependencies.operatorMcpClientResolver.resolve).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["token", { grant_type: "authorization_code", code: "code" }, "api.operator_mcp_oauth_token"],
+    ["revoke", { token: "opaque-token" }, "api.operator_mcp_oauth_revoke"],
+  ] as const)("rate-limits the unauthenticated %s endpoint before credential work", async (endpoint, body, scope) => {
+    const { app, dependencies, service } = createHarness();
+    dependencies.abuseControlService.enforce.mockRejectedValueOnce(Object.assign(new Error("Too many requests"), { statusCode: 429 }));
+
+    await request(app)
+      .post(`/api/v1/operator-mcp/oauth/${endpoint}`)
+      .type("form")
+      .send(body)
+      .expect(429);
+
+    expect(dependencies.abuseControlService.enforce).toHaveBeenCalledWith(expect.objectContaining({
+      scope,
+      limit: 300,
+      subjectKey: expect.stringMatching(/^source:/),
+    }));
+    expect(service.exchangeAuthorizationCode).not.toHaveBeenCalled();
+    expect(service.refresh).not.toHaveBeenCalled();
+    expect(service.revoke).not.toHaveBeenCalled();
   });
 
   it("resolves trusted client metadata before redirecting to consent", async () => {

@@ -73,7 +73,7 @@ export interface SkillCapabilityDescriptor<
   storedKind: StoredKind;
   targetKind: string;
   requiresTarget?: boolean;
-  enumerateTargets(context: SkillCapabilityTargetContext): Promise<SkillCapabilityTarget[]>;
+  enumerateTargets: (context: SkillCapabilityTargetContext) => Promise<SkillCapabilityTarget[]>;
   inputSchema: SkillCapabilityInputSchema;
   settingsFields: readonly SkillCapabilitySettingsField[];
   outcomeVocabulary: readonly string[];

@@ -7532,6 +7532,7 @@ export interface components {
             kind: "survived" | "split" | "merged" | "emerged" | "dissolved";
             parentTopicIds: string[];
             viaCentroidFallback: boolean;
+            membershipOverlap: number | null;
         };
         AudiencePulseCoverage: {
             populationSize: number;
@@ -7636,6 +7637,7 @@ export interface components {
             };
             /** Format: date-time */
             generatedAt: string;
+            isFirstCensus: boolean;
             /** Format: date-time */
             narrativeGeneratedAt: string;
             narrativeReuseCount: number;

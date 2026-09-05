@@ -16823,12 +16823,28 @@
           },
           "viaCentroidFallback": {
             "type": "boolean"
+          },
+          "membershipOverlap": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              {
+                "type": "null"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
           "kind",
           "parentTopicIds",
-          "viaCentroidFallback"
+          "viaCentroidFallback",
+          "membershipOverlap"
         ]
       },
       "AudiencePulseCoverage": {
@@ -17248,6 +17264,9 @@
             "type": "string",
             "format": "date-time"
           },
+          "isFirstCensus": {
+            "type": "boolean"
+          },
           "narrativeGeneratedAt": {
             "type": "string",
             "format": "date-time"
@@ -17311,6 +17330,7 @@
         "required": [
           "period",
           "generatedAt",
+          "isFirstCensus",
           "narrativeGeneratedAt",
           "narrativeReuseCount",
           "narrativeReuseMaxDrift",

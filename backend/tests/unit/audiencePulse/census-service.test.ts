@@ -522,7 +522,7 @@ describe("CensusService.run identity matching (T028+T029)", () => {
     const clusterableFacets = buildClusterableFacets();
     const eligibleIds = clusterableFacets.map((facet) => facet.messageId);
     const priorTopic = buildPriorTopic({
-      memberIds: [...groupAIds],
+      memberIds: [...groupAIds, randomUUID()],
       centroid: [1, 0, 0],
       title: "Existing title",
       description: "Existing description",
@@ -554,12 +554,15 @@ describe("CensusService.run identity matching (T028+T029)", () => {
       kind: "survived",
       parentTopicIds: [priorTopic.id],
       viaCentroidFallback: false,
+      membershipOverlap: 0.8,
     });
     expect(saved.dissolvedTopicIds).toEqual([]);
 
     const reportedTopic = result.topics.find((topic) => topic.topicId === priorTopic.id);
     expect(reportedTopic?.title).toBe("Existing title");
     expect(reportedTopic?.description).toBe("Existing description");
+    expect(reportedTopic?.transition?.membershipOverlap).toBe(0.8);
+    expect(result.namingCallsIssued).toBe(1);
   });
 
   it("marks a topic with no counterpart in the new run as dissolved rather than deleting it", async () => {
@@ -639,6 +642,12 @@ describe("CensusService.run identity matching (T028+T029)", () => {
     const descendantIds = new Set(splitTransitions.map((transition) => transition.topicId));
     expect(descendantIds.size).toBe(2);
     expect(saved.dissolvedTopicIds).toEqual([priorTopic.id]);
+    expect(saved.transitions).toContainEqual({
+      topicId: priorTopic.id,
+      kind: "dissolved",
+      parentTopicIds: [],
+      viaCentroidFallback: false,
+    });
   });
 
   it("records a merge with both prior topics as parents", async () => {
@@ -657,6 +666,8 @@ describe("CensusService.run identity matching (T028+T029)", () => {
     expect(mergedTransitions).toHaveLength(1);
     expect(new Set(mergedTransitions[0]!.parentTopicIds)).toEqual(new Set([parentOne.id, parentTwo.id]));
     expect(new Set(saved.dissolvedTopicIds)).toEqual(new Set([parentOne.id, parentTwo.id]));
+    expect(saved.transitions!.filter((transition) => transition.kind === "dissolved").map((transition) => transition.topicId).sort())
+      .toEqual([parentOne.id, parentTwo.id].sort());
     // Group B never overlapped either parent, so its cluster is unrelated to the merge.
     expect(saved.transitions!.some((transition) => transition.kind === "emerged")).toBe(true);
   });
@@ -678,6 +689,7 @@ describe("CensusService.run identity matching (T028+T029)", () => {
     const survivedTransition = saved.transitions!.find((transition) => transition.topicId === priorTopic.id);
     expect(survivedTransition?.kind).toBe("survived");
     expect(survivedTransition?.viaCentroidFallback).toBe(true);
+    expect(survivedTransition?.membershipOverlap).toBeNull();
     // The surviving cluster still gets no naming call; only group B's does.
     expect(namingPort.name).toHaveBeenCalledTimes(1);
   });

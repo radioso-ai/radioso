@@ -19,6 +19,7 @@ export const registerAudiencePulseSchemas = (registry: OpenAPIRegistry, schemas:
     kind: z.enum(["survived", "split", "merged", "emerged", "dissolved"]),
     parentTopicIds: z.array(z.string()),
     viaCentroidFallback: z.boolean(),
+    membershipOverlap: z.union([z.number().min(0).max(1), z.null()]),
   }));
   const AudiencePulseCoverageSchema = registry.register("AudiencePulseCoverage", z.object({
     populationSize: z.number().int().min(0),
@@ -102,6 +103,7 @@ export const registerAudiencePulseSchemas = (registry: OpenAPIRegistry, schemas:
   const AudiencePulseReportSchema = registry.register("AudiencePulseReport", z.object({
     period: z.object({ start: z.string().datetime(), end: z.string().datetime() }),
     generatedAt: z.string().datetime(),
+    isFirstCensus: z.boolean(),
     narrativeGeneratedAt: z.string().datetime(),
     narrativeReuseCount: z.number().int().min(0),
     narrativeReuseMaxDrift: z.number().min(0).max(1),

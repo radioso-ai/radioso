@@ -21,6 +21,7 @@ const evidenceMessageTwo = "bbbbbbbb-bbbb-4bbb-8bbb-000000000002";
 const completedReport: AudiencePulseHydratedReport = {
   period,
   generatedAt: nowIso,
+  isFirstCensus: false,
   narrativeGeneratedAt: nowIso,
   narrativeReuseCount: 0,
   narrativeReuseMaxDrift: 0.2,
@@ -827,11 +828,11 @@ test.describe("Audience Pulse dashboard", () => {
     await expect(dissolvedTopics.getByText("Stopped appearing: Shipping delays.", { exact: true })).toBeVisible();
   });
 
-  test("a first census suppresses New badges", async ({ page }) => {
+  test("New badges follow the first-census flag", async ({ page }) => {
     await seedDashboardStorage(page);
     await installDashboardApiMocks(page);
 
-    const firstCensusReport: AudiencePulseHydratedReport = {
+    const allEmergedReport: AudiencePulseHydratedReport = {
       ...completedReport,
       contentGaps: [],
       recommendations: [],
@@ -855,10 +856,21 @@ test.describe("Audience Pulse dashboard", () => {
       ],
     };
 
-    await installAudiencePulseMocks(page, { read: "completed", report: firstCensusReport });
+    const audiencePulseMocks = await installAudiencePulseMocks(page, {
+      read: "completed",
+      report: allEmergedReport,
+    });
     await page.goto(`/w/${workspaceKey}/quality?view=audience-pulse`);
 
     const topics = page.locator('section[aria-labelledby="audience-pulse-topics"]');
+    for (const title of ["Refund timing", "Shipping updates"]) {
+      const topic = topics.getByTestId("audience-pulse-topic-row").filter({ hasText: title });
+      await expect(topic.getByText("New", { exact: true })).toBeVisible();
+    }
+
+    audiencePulseMocks.state.report = { ...allEmergedReport, isFirstCensus: true };
+    await page.reload();
+
     for (const title of ["Refund timing", "Shipping updates"]) {
       const topic = topics.getByTestId("audience-pulse-topic-row").filter({ hasText: title });
       await expect(topic.getByText("New", { exact: true })).toHaveCount(0);

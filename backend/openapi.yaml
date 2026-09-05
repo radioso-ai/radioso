@@ -11407,10 +11407,18 @@ components:
             type: string
         viaCentroidFallback:
           type: boolean
+        membershipOverlap:
+          anyOf:
+            - type: number
+              minimum: 0
+              maximum: 1
+            - type: "null"
+            - type: "null"
       required:
         - kind
         - parentTopicIds
         - viaCentroidFallback
+        - membershipOverlap
     AudiencePulseCoverage:
       type: object
       properties:
@@ -11705,6 +11713,8 @@ components:
         generatedAt:
           type: string
           format: date-time
+        isFirstCensus:
+          type: boolean
         narrativeGeneratedAt:
           type: string
           format: date-time
@@ -11749,6 +11759,7 @@ components:
       required:
         - period
         - generatedAt
+        - isFirstCensus
         - narrativeGeneratedAt
         - narrativeReuseCount
         - narrativeReuseMaxDrift

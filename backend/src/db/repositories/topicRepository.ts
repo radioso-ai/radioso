@@ -327,6 +327,7 @@ export class TopicRepository implements TopicRepositoryPort {
               kind: transition.kind,
               parent_topic_ids: transition.parentTopicIds,
               via_centroid_fallback: transition.viaCentroidFallback ?? false,
+              membership_overlap: transition.membershipOverlap ?? null,
             })),
           )
           .execute();
@@ -396,7 +397,15 @@ export class TopicRepository implements TopicRepositoryPort {
     // per run/topic; ordering keeps the read deterministic across topics.
     const transitionRows = await this.db
       .selectFrom("topic_transitions")
-      .select(["topic_id", "kind", "parent_topic_ids", "via_centroid_fallback", "created_at", "id"])
+      .select([
+        "topic_id",
+        "kind",
+        "parent_topic_ids",
+        "via_centroid_fallback",
+        sql<number | null>`topic_transitions.membership_overlap`.as("membership_overlap"),
+        "created_at",
+        "id",
+      ])
       .where("run_id", "=", run.id)
       .orderBy("created_at", "asc")
       .orderBy("id", "asc")
@@ -404,13 +413,14 @@ export class TopicRepository implements TopicRepositoryPort {
     const transitionByTopicId = new Map(transitionRows.map((transition) => [transition.topic_id, transition]));
 
     const dissolvedTopics: TopicCensusRunDissolvedTopic[] = await this.db
-      .selectFrom("topics")
-      .select(["id", "title"])
-      .where("workspace_id", "=", run.workspace_id)
-      .where("last_seen_run_id", "=", run.id)
-      .where("dissolved_at", "is not", null)
-      .orderBy("dissolved_at", "asc")
-      .orderBy("id", "asc")
+      .selectFrom("topic_transitions")
+      .innerJoin("topics", "topics.id", "topic_transitions.topic_id")
+      .select(["topics.id as id", "topics.title as title"])
+      .where("topic_transitions.workspace_id", "=", run.workspace_id)
+      .where("topic_transitions.run_id", "=", run.id)
+      .where("topic_transitions.kind", "=", "dissolved")
+      .orderBy("topic_transitions.created_at", "asc")
+      .orderBy("topic_transitions.id", "asc")
       .execute();
 
     const topics: TopicCensusRunTopicSummary[] = topicRows
@@ -428,6 +438,7 @@ export class TopicRepository implements TopicRepositoryPort {
             kind: transition.kind as TopicTransitionKind,
             parentTopicIds: transition.parent_topic_ids ?? [],
             viaCentroidFallback: transition.via_centroid_fallback ?? false,
+            membershipOverlap: transition.membership_overlap ?? null,
           },
         };
       })

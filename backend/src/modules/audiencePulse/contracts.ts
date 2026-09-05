@@ -112,11 +112,13 @@ const topicTransitionSchema = z.object({
   kind: z.enum(["survived", "split", "merged", "emerged", "dissolved"]),
   parentTopicIds: z.array(z.string()),
   viaCentroidFallback: z.boolean(),
+  membershipOverlap: z.number().min(0).max(1).nullable(),
 });
 
 export const audiencePulseReportResponseSchema = z.object({
   period: z.object({ start: dateTime, end: dateTime }),
   generatedAt: dateTime,
+  isFirstCensus: z.boolean(),
   narrativeGeneratedAt: dateTime,
   narrativeReuseCount: z.number().int().min(0),
   narrativeReuseMaxDrift: z.number().min(0).max(1),

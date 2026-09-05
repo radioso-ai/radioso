@@ -2703,7 +2703,9 @@ CREATE TABLE public.topic_transitions (
     parent_topic_ids uuid[] DEFAULT '{}'::uuid[] NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     via_centroid_fallback boolean DEFAULT false NOT NULL,
-    CONSTRAINT topic_transitions_kind_check CHECK ((kind = ANY (ARRAY['survived'::text, 'split'::text, 'merged'::text, 'emerged'::text, 'dissolved'::text])))
+    membership_overlap double precision,
+    CONSTRAINT topic_transitions_kind_check CHECK ((kind = ANY (ARRAY['survived'::text, 'split'::text, 'merged'::text, 'emerged'::text, 'dissolved'::text]))),
+    CONSTRAINT topic_transitions_membership_overlap_check CHECK (((membership_overlap IS NULL) OR ((membership_overlap >= (0)::double precision) AND (membership_overlap <= (1)::double precision))))
 );
 
 

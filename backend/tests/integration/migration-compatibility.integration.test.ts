@@ -240,13 +240,14 @@ describeIfDatabase("topic transition uniqueness migration", () => {
     }
   });
 
-  it("keeps the earliest transition per run/topic before creating the unique index", async () => {
+  it("keeps the earliest non-dissolved correction per run/topic before creating the unique index", async () => {
     const accountId = randomUUID();
     const workspaceId = randomUUID();
     const runId = randomUUID();
     const topicId = randomUUID();
     const earliestId = randomUUID();
     const laterId = randomUUID();
+    const latestId = randomUUID();
     await database.execute(
       "INSERT INTO accounts(id, name, email, password_hash) VALUES ($1, 'Acct', $2, 'hash')",
       [accountId, `mig166-${accountId}@example.com`],
@@ -272,9 +273,10 @@ describeIfDatabase("topic transition uniqueness migration", () => {
       `INSERT INTO topic_transitions(
          id, workspace_id, run_id, topic_id, kind, created_at
        ) VALUES
-         ($1, $2, $3, $4, 'emerged', '2026-07-01T00:00:00.000Z'::timestamptz),
-         ($5, $2, $3, $4, 'survived', '2026-07-01T00:00:01.000Z'::timestamptz)`,
-      [earliestId, workspaceId, runId, topicId, laterId],
+         ($1, $2, $3, $4, 'dissolved', '2026-07-01T00:00:00.000Z'::timestamptz),
+         ($5, $2, $3, $4, 'survived', '2026-07-01T00:00:01.000Z'::timestamptz),
+         ($6, $2, $3, $4, 'emerged', '2026-07-01T00:00:02.000Z'::timestamptz)`,
+      [earliestId, workspaceId, runId, topicId, laterId, latestId],
     );
 
     await expect(applyTestMigration(database, topicTransitionUniquenessMigration)).resolves.not.toThrow();
@@ -283,7 +285,7 @@ describeIfDatabase("topic transition uniqueness migration", () => {
       "SELECT id, kind FROM topic_transitions WHERE run_id = $1 AND topic_id = $2",
       [runId, topicId],
     );
-    expect(transitions).toEqual([{ id: earliestId, kind: "emerged" }]);
+    expect(transitions).toEqual([{ id: laterId, kind: "survived" }]);
     await expect(database.execute(
       `INSERT INTO topic_transitions(workspace_id, run_id, topic_id, kind)
        VALUES ($1, $2, $3, 'survived')`,

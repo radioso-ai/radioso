@@ -31,6 +31,7 @@ const period = {
 const report = (summary: string): AudiencePulseStoredReport => ({
   period: { start: period.start.toISOString(), end: period.end.toISOString() },
   generatedAt: "2026-08-01T00:00:00.000Z",
+  isFirstCensus: false,
   narrativeGeneratedAt: "2026-08-01T00:00:00.000Z",
   narrativeReuseCount: 0,
   narrativeReuseMaxDrift: 0.2,

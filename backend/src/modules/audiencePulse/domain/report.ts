@@ -116,6 +116,8 @@ export const AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT = 0.2;
 export interface AudiencePulseStoredReport {
   period: { start: string; end: string };
   generatedAt: string;
+  /** True only when the service found no prior saved census snapshot. */
+  isFirstCensus: boolean;
   narrativeGeneratedAt: string;
   narrativeReuseCount: number;
   /** Exact relative-drift threshold used for this report's narrative reuse decision. */
@@ -316,6 +318,7 @@ export interface AudiencePulseCensusReport {
 export const buildAudiencePulseCensusReport = (input: {
   period: { start: Date; end: Date };
   generatedAt: Date;
+  isFirstCensus: boolean;
   coverage: AudiencePulseReportCoverage;
   weeklyVolume: AudiencePulseWeeklyVolume[];
   population: AudiencePulseEvidence[];
@@ -390,6 +393,7 @@ export const buildAudiencePulseCensusReport = (input: {
         end: input.period.end.toISOString(),
       },
       generatedAt: input.generatedAt.toISOString(),
+      isFirstCensus: input.isFirstCensus,
       narrativeGeneratedAt: input.generatedAt.toISOString(),
       narrativeReuseCount: 0,
       narrativeReuseMaxDrift: AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT,
@@ -450,6 +454,7 @@ export const applyAudiencePulseNarrative = (input: {
 export const buildAudiencePulseReport = (input: {
   period: { start: Date; end: Date };
   generatedAt: Date;
+  isFirstCensus: boolean;
   coverage: AudiencePulseReportCoverage;
   weeklyVolume: AudiencePulseWeeklyVolume[];
   population: AudiencePulseEvidence[];
@@ -477,6 +482,7 @@ export const buildAudiencePulseReport = (input: {
 export const buildAudiencePulseComputingReport = (input: {
   period: { start: Date; end: Date };
   generatedAt: Date;
+  isFirstCensus: boolean;
   coverage: AudiencePulseReportCoverage;
   weeklyVolume: AudiencePulseWeeklyVolume[];
 }): AudiencePulseStoredReport => ({
@@ -485,6 +491,7 @@ export const buildAudiencePulseComputingReport = (input: {
     end: input.period.end.toISOString(),
   },
   generatedAt: input.generatedAt.toISOString(),
+  isFirstCensus: input.isFirstCensus,
   narrativeGeneratedAt: input.generatedAt.toISOString(),
   narrativeReuseCount: 0,
   narrativeReuseMaxDrift: AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT,

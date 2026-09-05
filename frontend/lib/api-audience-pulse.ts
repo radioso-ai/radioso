@@ -87,6 +87,8 @@ export interface AudiencePulseRecommendation {
 export interface AudiencePulseHydratedReport {
   period: AudiencePulsePeriod
   generatedAt: string
+  /** Whether this report is the workspace's first topic census. */
+  isFirstCensus: boolean
   narrativeGeneratedAt: string
   narrativeReuseCount: number
   narrativeReuseMaxDrift: number

@@ -373,6 +373,7 @@ const buildDefaultAgentSettings = (settings: PlatformSettingsFixture): ApiSchema
   citationDisplayEnabled: true,
   contactRequestsEnabled: false,
   webhookExportsEnabled: false,
+  handoffOnRetrievalMiss: false,
   contactRequestDelivery: {
     recipientEmails: [],
     webhook: null,

@@ -12,10 +12,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Spinner } from '@/components/ui/spinner'
 
 const scopeLabels: Record<OperatorMcpToolScope, string> = {
-  'operator:read': 'Read workspace and agent state',
-  'operator:probe': 'Run bounded diagnostics and retrieval probes',
-  'operator:act': 'Perform admitted safe operational effects',
-  'operator:propose': 'Create reviewable proposals without applying them',
+  'operator:read': 'View workspace settings',
+  'operator:probe': 'Run document searches',
+  'operator:act': 'Make workspace changes',
+  'operator:propose': 'Draft changes for review',
 }
 
 const isSensitiveRedirect = (redirectUri: string): boolean => {
@@ -28,8 +28,8 @@ const isSensitiveRedirect = (redirectUri: string): boolean => {
 }
 
 export const consentWarnings = (transaction: OperatorMcpTransactionResponse): string[] => {
-  const warnings = ['The requesting client may receive workspace data available to your current access. Radioso does not certify this external client.']
-  if (isSensitiveRedirect(transaction.redirectUri)) warnings.push('This client uses a loopback or private-scheme redirect. Verify that the redirect host belongs to the client you intended to connect.')
+  const warnings = [`${transaction.client.displayName} receives only the permissions you select.`]
+  if (isSensitiveRedirect(transaction.redirectUri)) warnings.push(`This connection returns approval to this app on your computer (${transaction.redirectHost}).`)
   return warnings
 }
 
@@ -124,22 +124,17 @@ export function OperatorMcpConsent({ transactionId }: { transactionId: string })
   return (
     <ConsentShell>
       <Card className="w-full max-w-2xl">
-        <CardHeader className="space-y-4">
-          <div className="flex items-start justify-between gap-4"><div><CardTitle>Authorize Radioso MCP</CardTitle><CardDescription className="mt-1">Review what {transaction.client.displayName} is asking to access.</CardDescription></div><LockKeyhole className="h-5 w-5 text-primary" aria-hidden /></div>
-          <div className="grid gap-3 rounded-xl border border-border bg-muted/30 p-4 text-sm sm:grid-cols-2">
-            <div><p className="text-muted-foreground">Client</p><p className="font-medium">{transaction.client.displayName}{transaction.client.clientVersion ? ` · ${transaction.client.clientVersion}` : ''}</p>{transaction.client.clientUri ? <a className="block break-all text-xs text-primary underline-offset-4 hover:underline" href={transaction.client.clientUri} target="_blank" rel="noreferrer">{transaction.client.clientUri}</a> : null}<p className="break-all text-xs text-muted-foreground">{transaction.client.clientId}</p></div>
-            <div><p className="text-muted-foreground">Redirect host</p><p className="font-medium">{transaction.redirectHost}</p><p className="break-all text-xs text-muted-foreground">{transaction.redirectUri}</p></div>
-            <div><p className="text-muted-foreground">Signed-in user</p><p className="font-medium">{transaction.currentUser.displayName}</p><p className="text-xs text-muted-foreground">{transaction.currentUser.email}</p></div>
-            <div><p className="text-muted-foreground">Request expires</p><p className="font-medium">{new Date(transaction.expiresAt).toLocaleString()}</p></div>
-          </div>
+        <CardHeader className="space-y-3">
+          <div className="flex items-start justify-between gap-4"><div><CardTitle>Authorize Radioso MCP</CardTitle><CardDescription className="mt-1">Choose what {transaction.client.displayName} can do.</CardDescription></div><LockKeyhole className="h-5 w-5 text-primary" aria-hidden /></div>
+          <p className="text-sm text-muted-foreground"><span className="font-medium text-foreground">{transaction.client.displayName}{transaction.client.clientVersion ? ` · ${transaction.client.clientVersion}` : ''}</span> · Approval returns to <span className="font-medium text-foreground">{transaction.redirectHost}</span></p>
         </CardHeader>
-        <CardContent className="space-y-6">
+        <CardContent className="space-y-5">
           <div className="space-y-2"><label htmlFor="operator-mcp-workspace" className="text-sm font-medium">Workspace</label><select id="operator-mcp-workspace" className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={workspaceId} onChange={(event) => setWorkspaceId(event.target.value)}>{transaction.workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name} · {workspace.role}</option>)}</select></div>
-          <fieldset className="space-y-3"><legend className="text-sm font-medium">Capabilities</legend>{transaction.requestedScopes.map((scope) => <label key={scope} className="flex items-start gap-3 rounded-lg border border-border p-3 text-sm"><input type="checkbox" checked={scopes.includes(scope)} onChange={(event) => setScopes((current) => event.target.checked ? [...current, scope] : current.filter((item) => item !== scope))} /><span><span className="font-medium">{scopeLabels[scope]}</span><span className="block text-xs text-muted-foreground">{scope}</span></span></label>)}</fieldset>
-          {transaction.requestedOfflineAccess ? <label className="flex items-start gap-3 rounded-lg border border-border p-3 text-sm"><input type="checkbox" checked={offlineAccess} onChange={(event) => setOfflineAccess(event.target.checked)} /><span><span className="font-medium">Keep access for future sessions</span><span className="block text-xs text-muted-foreground">Allow a refresh credential. You can revoke this grant from API access at any time.</span></span></label> : null}
-          <div className="space-y-2 rounded-xl border border-amber-300/50 bg-amber-50/50 p-4 text-sm dark:bg-amber-950/20">{warnings.map((warning) => <p key={warning} className="flex gap-2 text-muted-foreground"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" aria-hidden />{warning}</p>)}</div>
+          <fieldset className="space-y-0"><legend className="mb-1 text-sm font-medium">Allow {transaction.client.displayName} to</legend>{transaction.requestedScopes.map((scope) => <label key={scope} className="flex items-center gap-3 border-b border-border py-3 text-sm first:border-t"><input type="checkbox" checked={scopes.includes(scope)} onChange={(event) => setScopes((current) => event.target.checked ? [...current, scope] : current.filter((item) => item !== scope))} /><span className="font-medium">{scopeLabels[scope]}</span></label>)}</fieldset>
+          {transaction.requestedOfflineAccess ? <label className="flex items-start gap-3 border-t border-border pt-4 text-sm"><input type="checkbox" checked={offlineAccess} onChange={(event) => setOfflineAccess(event.target.checked)} /><span><span className="font-medium">Stay signed in</span><span className="block text-xs text-muted-foreground">Keep access until you revoke it.</span></span></label> : null}
+          <div className="space-y-1 text-sm">{warnings.map((warning) => <p key={warning} className="flex gap-2 text-muted-foreground"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" aria-hidden />{warning}</p>)}</div>
           {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
-          <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-muted-foreground">Resource: <span className="break-all">{transaction.resource}</span></p><div className="flex gap-2"><Button type="button" variant="ghost" onClick={() => void decide('deny')} disabled={submitting}>Cancel</Button><Button type="button" variant="outline" onClick={() => void decide('deny')} disabled={submitting}>Deny</Button><Button type="button" onClick={() => void decide('approve')} disabled={submitting || decisionUnavailable}>{submitting ? <Spinner className="mr-2 h-4 w-4" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}Approve access</Button></div></div>
+          <div className="flex justify-end gap-2"><Button type="button" variant="outline" onClick={() => void decide('deny')} disabled={submitting}>Don't allow</Button><Button type="button" onClick={() => void decide('approve')} disabled={submitting || decisionUnavailable}>{submitting ? <Spinner className="mr-2 h-4 w-4" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}Approve access</Button></div>
         </CardContent>
       </Card>
     </ConsentShell>

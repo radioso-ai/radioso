@@ -300,7 +300,7 @@ describe("website crawl worker", () => {
       documentIngestionService: {
         ingest: vi.fn(),
         resolveSource: vi.fn().mockRejectedValue(internalError),
-      } as never,
+      },
       errorReporter: { report },
       logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() } as never,
     });

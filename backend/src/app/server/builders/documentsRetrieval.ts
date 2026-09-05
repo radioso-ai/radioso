@@ -272,6 +272,7 @@ export const buildDocumentServices = (input: {
     dispatcher: websiteCrawlJobDispatcher,
     documentIngestionService: websiteCrawlerIngestionPort,
     auditService,
+    errorReporter: input.errorReporter,
     logger,
     pollIntervalMs: env.WEBSITE_CRAWL_WORKER_POLL_INTERVAL_MS,
     jobLeaseMs: env.WEBSITE_CRAWL_JOB_LEASE_MS,

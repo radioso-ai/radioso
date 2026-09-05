@@ -67,44 +67,35 @@ const findingsFrom = (report) => {
   return found
 }
 
-const changedFiles = () => {
+/**
+ * Resolve the merge base once. A merge base that cannot be resolved at all is an
+ * environment problem, not a first run: treating the two the same would silently switch
+ * the gate into bootstrap mode, where it compares a change against its own baseline and
+ * skips the touched-file rule entirely — passing everything while checking nothing.
+ */
+const resolveMergeBase = () => {
   try {
-    const mergeBase = execFileSync('git', ['merge-base', 'HEAD', baseRef], { cwd: ROOT, encoding: 'utf8' }).trim()
-    // Diff the merge base against the working tree, not against HEAD: locally the files you
-    // are being asked to clean up are usually the ones you have not committed yet.
-    const changed = execFileSync('git', ['diff', '--name-only', '--diff-filter=ACMR', mergeBase], {
+    return execFileSync('git', ['merge-base', 'HEAD', baseRef], {
       cwd: ROOT,
       encoding: 'utf8',
-    })
-    const untracked = execFileSync('git', ['ls-files', '--others', '--exclude-standard'], {
-      cwd: ROOT,
-      encoding: 'utf8',
-    })
-    return new Set([...changed.split('\n'), ...untracked.split('\n')].filter(Boolean))
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim()
   } catch {
-    console.warn(`knip-ratchet: could not diff against ${baseRef}; skipping the touched-file rule.`)
     return null
   }
 }
 
-const report = JSON.parse(runKnip())
-const found = findingsFrom(report)
+const mergeBase = resolveMergeBase()
 
-if (shouldUpdate) {
-  writeFileSync(BASELINE_PATH, `${JSON.stringify([...found.keys()].sort(), null, 2)}\n`)
-  console.log(`knip-ratchet: recorded ${found.size} findings in knip-baseline.json`)
-  process.exit(0)
+if (!mergeBase) {
+  console.error(`knip-ratchet: cannot resolve a merge base with ${baseRef}.`)
+  console.error(`\nWithout it there is nothing to compare against, and passing would mean the gate ran\nbut checked nothing. Fetch the base branch (\`git fetch origin main\`), or point the gate\nsomewhere else with --base=<ref>.\n`)
+  process.exit(1)
 }
 
-/**
- * Read the baseline as of the merge base, not the working tree. Otherwise a change could
- * exempt its own dead code by appending to the baseline in the same commit. On the change
- * that first introduces the baseline there is nothing to read, so the working-tree file is
- * the baseline by definition.
- */
+/** Present at the merge base means a real prior baseline; absent means this change creates it. */
 const baselineAtMergeBase = () => {
   try {
-    const mergeBase = execFileSync('git', ['merge-base', 'HEAD', baseRef], { cwd: ROOT, encoding: 'utf8' }).trim()
     const raw = execFileSync('git', ['show', `${mergeBase}:knip-baseline.json`], {
       cwd: ROOT,
       encoding: 'utf8',
@@ -114,6 +105,29 @@ const baselineAtMergeBase = () => {
   } catch {
     return null
   }
+}
+
+const changedFiles = () => {
+  // Diff the merge base against the working tree, not against HEAD: locally the files you
+  // are being asked to clean up are usually the ones you have not committed yet.
+  const changed = execFileSync('git', ['diff', '--name-only', '--diff-filter=ACMR', mergeBase], {
+    cwd: ROOT,
+    encoding: 'utf8',
+  })
+  const untracked = execFileSync('git', ['ls-files', '--others', '--exclude-standard'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+  })
+  return new Set([...changed.split('\n'), ...untracked.split('\n')].filter(Boolean))
+}
+
+const report = JSON.parse(runKnip())
+const found = findingsFrom(report)
+
+if (shouldUpdate) {
+  writeFileSync(BASELINE_PATH, `${JSON.stringify([...found.keys()].sort(), null, 2)}\n`)
+  console.log(`knip-ratchet: recorded ${found.size} findings in knip-baseline.json`)
+  process.exit(0)
 }
 
 const workingBaseline = new Set(existsSync(BASELINE_PATH) ? JSON.parse(readFileSync(BASELINE_PATH, 'utf8')) : [])

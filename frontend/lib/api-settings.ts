@@ -359,6 +359,7 @@ export const agentsApi = {
     if (data.citationDisplayEnabled !== saved.citationDisplayEnabled) update.citationDisplayEnabled = data.citationDisplayEnabled
     if (data.contactRequestsEnabled !== saved.contactRequestsEnabled) update.contactRequestsEnabled = data.contactRequestsEnabled
     if (data.webhookExportsEnabled !== saved.webhookExportsEnabled) update.webhookExportsEnabled = data.webhookExportsEnabled
+    if (data.handoffOnRetrievalMiss !== saved.handoffOnRetrievalMiss) update.handoffOnRetrievalMiss = data.handoffOnRetrievalMiss
     if (hasChanged(data.contactRequestDelivery, saved.contactRequestDelivery)) update.contactRequestDelivery = data.contactRequestDelivery
     if (data.retrievalEnabled !== saved.retrievalEnabled) update.retrievalEnabled = data.retrievalEnabled
     if (hasChanged(data.theme, saved.theme)) update.theme = data.theme

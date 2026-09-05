@@ -37,6 +37,10 @@ locals {
     var.copilot_retention_schedule,
     "30 4 * * *",
   )
+  agent_bundle_import_cleanup_schedule = coalesce(
+    var.agent_bundle_import_cleanup_schedule,
+    "*/5 * * * *",
+  )
   public_chat_base_url = (
     var.public_chat_base_url_override != null
     ? var.public_chat_base_url_override

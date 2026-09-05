@@ -210,6 +210,8 @@ module "radioso" {
   copilot_probe_budget_per_turn             = var.copilot_probe_budget_per_turn
   copilot_conversation_retention_days       = var.copilot_conversation_retention_days
   copilot_retention_schedule                = var.copilot_retention_schedule
+  agent_bundle_import_orphan_age_ms         = var.agent_bundle_import_orphan_age_ms
+  agent_bundle_import_cleanup_schedule      = var.agent_bundle_import_cleanup_schedule
   document_storage_bucket_name              = var.document_storage_bucket_name
   document_upload_max_bytes                 = var.document_upload_max_bytes
   openai_api_key                            = var.openai_api_key

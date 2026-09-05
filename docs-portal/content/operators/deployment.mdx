@@ -125,7 +125,7 @@ The sweep runs in the document worker, so retention happens only where that proc
 
 ## Agent bundle import recovery
 
-An interrupted bundle import can leave the newly created agent behind before the request can compensate for a later failure. The document worker checks durable import jobs and removes agents from jobs that have stayed `applying` longer than `AGENT_BUNDLE_IMPORT_ORPHAN_AGE_MS`. The default is `900000` (15 minutes); raise it only when an import can legitimately take longer in your deployment. Each cleanup writes an audit event and a `agent_bundle_import_compensations_total` metric, with ids but never bundle content.
+An interrupted bundle import can leave the newly created agent behind before the request can compensate for a later failure. The document worker checks durable import jobs and removes agents from jobs that have stayed active longer than `AGENT_BUNDLE_IMPORT_ORPHAN_AGE_MS`. The default is `900000` (15 minutes); raise it only when an import can legitimately take longer in your deployment. Imports normally take seconds: once an import exceeds the threshold, cleanup fences it and the request returns a retryable conflict instead of claiming an agent that cleanup may delete. Terraform-managed deployments set the same value with `agent_bundle_import_orphan_age_ms`; Cloud Scheduler calls `POST /internal/tasks/agent-bundle-imports/sweep` every five minutes by default (override with `agent_bundle_import_cleanup_schedule`). Each cleanup writes an audit event and a `agent_bundle_import_compensations_total` metric, with ids but never bundle content.
 
 ## Reverse proxy client IPs
 

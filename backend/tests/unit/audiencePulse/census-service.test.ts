@@ -141,6 +141,34 @@ const buildDependencies = (input: {
 };
 
 describe("CensusService.run (T020)", () => {
+  it("waits for every concurrent naming task before surfacing the first failure", async () => {
+    const namingPort = buildNamingPort();
+    const firstFailure = new Error("first naming setup failed");
+    let resolveSibling!: (label: TopicLabel) => void;
+    namingPort.name
+      .mockRejectedValueOnce(firstFailure)
+      .mockImplementationOnce(() => new Promise<TopicLabel>((resolve) => {
+        resolveSibling = resolve;
+      }));
+    const service = new CensusService(buildDependencies({
+      eligibleIds: [...groupAIds, ...groupBIds],
+      facets: buildClusterableFacets(),
+      namingPort,
+    }));
+
+    const run = service.run({ workspaceId, windowStart, windowEnd });
+    const observedOutcome = run.then(() => "resolved", () => "rejected");
+    await vi.waitFor(() => expect(namingPort.name).toHaveBeenCalledTimes(2));
+    const outcomeBeforeSiblingSettles = await Promise.race([
+      observedOutcome,
+      new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 0)),
+    ]);
+    resolveSibling({ title: "Sibling topic", description: "The sibling naming task completed." });
+
+    await expect(run).rejects.toBe(firstFailure);
+    expect(outcomeBeforeSiblingSettles).toBe("pending");
+  });
+
   it("reports a naming call before a later persistence failure", async () => {
     const topicRepository = buildTopicRepository();
     topicRepository.saveRun.mockRejectedValueOnce(new Error("save failed"));

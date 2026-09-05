@@ -103,7 +103,9 @@ export class ModelTopicNamingGateway implements TopicNamingPort {
       workspaceContext: this.deps.workspaceContext,
       modelCallContext,
     });
-    input.onModelCallIssued?.();
+    if (!input.signal?.aborted) {
+      input.onModelCallIssued?.();
+    }
     const completion = await inference.complete({
       prompt: input.prompt,
       maxInputTokens: TOPIC_NAMING_MAX_TOTAL_TOKENS,

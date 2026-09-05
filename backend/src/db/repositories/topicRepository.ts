@@ -422,7 +422,14 @@ export class TopicRepository implements TopicRepositoryPort {
 
     const dissolvedTopics: TopicCensusRunDissolvedTopic[] = await this.db
       .selectFrom("topic_transitions")
-      .select(["topic_id as id", "topic_title as title"])
+      .innerJoin("topics", (join) =>
+        join
+          .onRef("topics.id", "=", "topic_transitions.topic_id")
+          .onRef("topics.workspace_id", "=", "topic_transitions.workspace_id"))
+      .select([
+        "topic_transitions.topic_id as id",
+        sql<string>`coalesce(topic_transitions.topic_title, topics.title)`.as("title"),
+      ])
       .where("topic_transitions.workspace_id", "=", run.workspace_id)
       .where("topic_transitions.run_id", "=", run.id)
       .where("topic_transitions.kind", "=", "dissolved")

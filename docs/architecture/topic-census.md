@@ -1,7 +1,7 @@
 ---
 title: "Topic Census"
 description: "How Audience Pulse computes an exact, deterministic topic distribution over visitor questions and tracks topic identity across analyses."
-last_updated: 2026-09-05
+last_updated: 2026-09-06
 ---
 
 # Topic Census
@@ -205,15 +205,16 @@ the prior snapshot regardless of where the previous and current analysis-window
 boundaries fall. The snapshot's stored census run id also matches the single
 prior run whose memberships supply the current overlap measurement. Reuse
 requires a fully facet-ready run with at least one topic,
-a saved summary, and shared-membership survival for every current topic. No
-topic dissolves or relies on centroid fallback. The ordered ids of the eight
+a saved summary, and shared-membership survival for every current topic. Each
+current topic's membership overlap with its prior run is more than 80 percent.
+No topic dissolves or relies on centroid fallback. The ordered ids of the 8
 richest topics shown to the narrative model are identical to the prior report's
 ordered top eight, so a topic entering the narrative cap always regenerates its
 recommendation.
 
 Count, share, population, and unclassified drift becomes material when the
 relative movement reaches 20 percent and the underlying count moves by at least
-three questions. The absolute floor treats one- and two-question changes as
+3 questions. The absolute floor treats one- and two-question changes as
 integer noise in small topics. The report publishes the exact relative threshold
 used for its decision as `narrativeReuseMaxDrift`, so clients render the backend's
 rule instead of maintaining another constant.
@@ -225,7 +226,7 @@ ordered output for its topic. Every selected id remains a current,
 content-gap-eligible member of that topic. Missing, expired, moved, ineligible,
 reordered, or newly selected evidence regenerates the narrative. A saved report
 without an unclassified question count or topic share also regenerates it. A
-narrative is reused for at most three consecutive refreshes; the following
+narrative is reused for at most 3 consecutive refreshes; the following
 refresh regenerates it.
 `narrativeGeneratedAt` records when the current prose is generated, and
 `narrativeReuseCount` records how many consecutive refreshes reuse it. Reports

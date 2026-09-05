@@ -3,7 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 import { ModelTopicLabelPrivacyAuditGateway, type TopicLabelPrivacyAuditInferenceFactory } from "../../../src/modules/audiencePulse/infra/modelTopicLabelPrivacyAuditGateway.js";
 import { TOPIC_LABEL_AUDIT_RESPONSE_FORMAT } from "../../../src/modules/audiencePulse/services/topicLabelPrivacyAuditPrompt.js";
 import { TopicLabelValidationError } from "../../../src/modules/audiencePulse/domain/topicLabel.js";
-import type { ModelInferenceRequest } from "../../../src/shared/infra/llm/modelInferencePipeline.js";
+import type {
+  ModelInferencePipeline,
+  ModelInferenceRequest,
+} from "../../../src/shared/infra/llm/modelInferencePipeline.js";
 
 const workspaceId = "22222222-2222-2222-2222-222222222222";
 const label = { title: "Pricing questions", description: "Visitors asking about plan pricing." };
@@ -34,6 +37,37 @@ describe("ModelTopicLabelPrivacyAuditGateway", () => {
     await gateway.review(label, undefined, onModelCallIssued);
 
     expect(onModelCallIssued).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not report a model call when the signal aborts during inference setup", async () => {
+    let resolveCreate!: (inference: ModelInferencePipeline) => void;
+    const complete = vi.fn(async (request: ModelInferenceRequest) => {
+      if (request.signal?.aborted) {
+        throw Object.assign(new Error("aborted before provider dispatch"), { name: "AbortError" });
+      }
+      return { text: JSON.stringify({ flagged: false }) };
+    });
+    const inferenceFactory: TopicLabelPrivacyAuditInferenceFactory = {
+      create: vi.fn(() => new Promise<ModelInferencePipeline>((resolve) => {
+        resolveCreate = resolve;
+      })),
+    };
+    const controller = new AbortController();
+    const onModelCallIssued = vi.fn();
+    const gateway = new ModelTopicLabelPrivacyAuditGateway({ inferenceFactory, workspaceContext: { workspaceId } });
+
+    const review = gateway.review(label, controller.signal, onModelCallIssued);
+    const observedError = review.catch((error: unknown) => error);
+    controller.abort();
+    resolveCreate({
+      metadata: { capability: "rewrite", provider: "openai", model: "test-model" },
+      complete,
+      stream: vi.fn(),
+    });
+
+    await expect(observedError).resolves.toMatchObject({ name: "AbortError" });
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(onModelCallIssued).not.toHaveBeenCalled();
   });
 
   it("returns the parsed verdict from a well-formed completion", async () => {

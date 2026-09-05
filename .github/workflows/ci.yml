@@ -174,7 +174,7 @@ jobs:
         run: pnpm --filter "./packages/*" --filter "./ee/packages/*" run build
 
       - name: Fetch base branch for the dead-code ratchet
-        run: git fetch --no-tags --depth=0 origin main:refs/remotes/origin/main
+        run: git fetch --no-tags origin main:refs/remotes/origin/main
 
       - name: Lint
         run: pnpm run lint

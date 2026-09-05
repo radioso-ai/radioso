@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-09-03
+last_updated: 2026-09-05
 ---
 
 # Code Map
@@ -156,6 +156,11 @@ typed query builder) on the shared `pg.Pool`; Postgres-specific fragments live i
 the `Database` pool wrapper, the pgvector/full-text adapters, and the connector files bound to
 the published `@radioso/connector-api` contract — enforced by `pnpm run lint:no-raw-sql`
 (`scripts/checkNoRawSql.mjs`). Migrations themselves stay raw `.sql`.
+
+`pnpm run lint:unbound-methods` (`scripts/checkUnboundMethods.mjs`) catches a class or
+interface method being passed or stored without its receiver. Bind the method or pass
+an arrow that calls it with its owner; reviewed structural-port exceptions live in the
+path-and-member allowlist beside the script.
 
 Should not own product rules. Domain modules depend on a `*RepositoryPort` (a
 type) and never import `pg`, Kysely, the `Database` class, or a concrete repository.

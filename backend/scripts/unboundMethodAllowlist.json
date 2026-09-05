@@ -1,0 +1,32 @@
+[
+  {
+    "file": "src/modules/agents/domain.ts",
+    "member": "parse",
+    "reason": "The registry callback is invoked immediately with settings as its receiver."
+  },
+  {
+    "file": "src/modules/agents/domain.ts",
+    "member": "normalize",
+    "reason": "The registry callback is invoked immediately with settings as its receiver."
+  },
+  {
+    "file": "src/modules/chat/services/chatTurnAssembly.ts",
+    "member": "agenticRetrievalToolFactories",
+    "reason": "The runtime implementation is an arrow-valued callback; the interface shorthand preserves the intended port shape."
+  },
+  {
+    "file": "src/app/composition/realtimeComposition.ts",
+    "member": "stopTracing",
+    "reason": "The composition receives a module-level shutdown function, then invokes it through a closure."
+  },
+  {
+    "file": "src/app/composition/realtimeComposition.ts",
+    "member": "random",
+    "reason": "The test seam receives a standalone random function and forwards it to the sampler."
+  },
+  {
+    "file": "src/app/composition/realtimeComposition.ts",
+    "member": "health",
+    "reason": "The runtime factory returns a closure-backed health function; the composition stores that function for the server callback."
+  }
+]

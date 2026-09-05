@@ -56,6 +56,7 @@ interface SafeLogger {
 }
 
 export const AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT = 0.2;
+export const AUDIENCE_PULSE_NARRATIVE_MAX_CONSECUTIVE_REUSES = 3;
 
 export interface AudiencePulseServiceDependencies {
   historySource: AudiencePulseHistorySource;
@@ -146,8 +147,10 @@ type LegacyAudiencePulseStoredTheme = Omit<
 };
 type LegacyAudiencePulseStoredReport = Omit<
   AudiencePulseStoredReport,
-  "unclassifiedQuestionCount" | "coverage" | "themes"
+  "narrativeGeneratedAt" | "narrativeReuseCount" | "unclassifiedQuestionCount" | "coverage" | "themes"
 > & {
+  narrativeGeneratedAt?: string;
+  narrativeReuseCount?: number;
   unclassifiedQuestionCount?: number;
   coverage: AudiencePulseStoredReport["coverage"] & { facetReadyQuestionCount?: number };
   themes: LegacyAudiencePulseStoredTheme[];
@@ -215,6 +218,8 @@ const hydrateReport = (
   return {
     period: report.period,
     generatedAt: report.generatedAt,
+    narrativeGeneratedAt: legacyReport.narrativeGeneratedAt ?? report.generatedAt,
+    narrativeReuseCount: legacyReport.narrativeReuseCount ?? 0,
     coverage,
     weeklyVolume: report.weeklyVolume,
     summary: report.summary,
@@ -376,6 +381,10 @@ const reusableNarrativeSnapshot = (input: {
     contentGapThemeIds,
   } = input;
   if (!snapshot || typeof snapshot.report.summary !== "string" || snapshot.report.summary.trim().length === 0) {
+    return null;
+  }
+  const legacyReport = snapshot.report as LegacyAudiencePulseStoredReport;
+  if ((legacyReport.narrativeReuseCount ?? 0) >= AUDIENCE_PULSE_NARRATIVE_MAX_CONSECUTIVE_REUSES) {
     return null;
   }
   if (!censusResult.fullyFacetReady || censusResult.topics.length === 0) {
@@ -781,6 +790,9 @@ export class AudiencePulseService implements AudiencePulsePort {
         report = {
           ...censusOnlyReport,
           generatedAt: generatedAt.toISOString(),
+          narrativeGeneratedAt: reusableSnapshot.report.narrativeGeneratedAt
+            ?? reusableSnapshot.report.generatedAt,
+          narrativeReuseCount: (reusableSnapshot.report.narrativeReuseCount ?? 0) + 1,
           summary: reusableSnapshot.report.summary,
           recommendations: reusableSnapshot.report.recommendations.map((recommendation) => ({
             ...recommendation,

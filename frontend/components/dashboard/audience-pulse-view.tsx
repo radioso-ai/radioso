@@ -544,6 +544,11 @@ function ReportContent({
           ) : (
             <p className="text-sm text-muted-foreground">{report.summary}</p>
           )}
+          {report.narrativeReuseCount > 0 ? (
+            <p className="text-xs text-muted-foreground">
+              Wording unchanged since {formatDate(report.narrativeGeneratedAt)}.
+            </p>
+          ) : null}
         </CardContent>
       </Card>
 

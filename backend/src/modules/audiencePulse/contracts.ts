@@ -116,6 +116,8 @@ const topicTransitionSchema = z.object({
 export const audiencePulseReportResponseSchema = z.object({
   period: z.object({ start: dateTime, end: dateTime }),
   generatedAt: dateTime,
+  narrativeGeneratedAt: dateTime,
+  narrativeReuseCount: z.number().int().min(0),
   coverage: z.object({
     populationSize: z.number().int().min(0),
     sampleSize: z.number().int().min(0),

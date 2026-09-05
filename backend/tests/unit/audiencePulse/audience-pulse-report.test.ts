@@ -93,6 +93,11 @@ describe("Audience Pulse report domain", () => {
         viaCentroidFallback: false,
       },
     });
+    expect(report).toMatchObject({
+      generatedAt: baseInput.generatedAt.toISOString(),
+      narrativeGeneratedAt: baseInput.generatedAt.toISOString(),
+      narrativeReuseCount: 0,
+    });
     expect(report.themes[0]!.evidenceIds).toHaveLength(12);
   });
 
@@ -587,6 +592,11 @@ describe("buildAudiencePulseComputingReport (spec 956 follow-up)", () => {
     // No model ever ran, so there is nothing to narrate -- `summary` stays absent
     // rather than a hardcoded stand-in for it.
     expect(report.summary).toBeUndefined();
+    expect(report).toMatchObject({
+      generatedAt: "2026-08-01T00:00:00.000Z",
+      narrativeGeneratedAt: "2026-08-01T00:00:00.000Z",
+      narrativeReuseCount: 0,
+    });
     expect(report.themes).toEqual([]);
     expect(report.contentGaps).toEqual([]);
     expect(report.recommendations).toEqual([]);

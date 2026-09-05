@@ -17233,6 +17233,14 @@
             "type": "string",
             "format": "date-time"
           },
+          "narrativeGeneratedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "narrativeReuseCount": {
+            "type": "integer",
+            "minimum": 0
+          },
           "coverage": {
             "$ref": "#/components/schemas/AudiencePulseCoverage"
           },
@@ -17277,6 +17285,8 @@
         "required": [
           "period",
           "generatedAt",
+          "narrativeGeneratedAt",
+          "narrativeReuseCount",
           "coverage",
           "weeklyVolume",
           "unclassifiedQuestionCount",

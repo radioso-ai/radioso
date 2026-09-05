@@ -19,6 +19,8 @@ const evidenceMessageTwo = "bbbbbbbb-bbbb-4bbb-8bbb-000000000002";
 const completedReport = {
   period,
   generatedAt: nowIso,
+  narrativeGeneratedAt: nowIso,
+  narrativeReuseCount: 0,
   coverage: { populationSize: 240, sampleSize: 240, sampled: false, facetReadyQuestionCount: 240 },
   weeklyVolume: [
     { weekStart: "2026-04-01T00:00:00.000Z", visitorQuestionCount: 40, conversationCount: 22 },
@@ -97,6 +99,7 @@ interface AudiencePulseMocks {
     refreshOutcome: "completed" | "busy" | "capacity" | "provider_unavailable";
     getCount: number;
     postCount: number;
+    report: typeof completedReport;
   };
 }
 
@@ -110,6 +113,7 @@ const installAudiencePulseMocks = async (
       refreshOutcome: initial.refreshOutcome ?? "completed",
       getCount: 0,
       postCount: 0,
+      report: initial.report ?? completedReport,
     },
   };
 
@@ -118,7 +122,7 @@ const installAudiencePulseMocks = async (
     if (method === "GET") {
       mocks.state.getCount += 1;
       const body = mocks.state.read === "completed"
-        ? { kind: "completed", report: completedReport }
+        ? { kind: "completed", report: mocks.state.report }
         : { kind: "not_generated" };
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
       return;
@@ -164,7 +168,7 @@ const installAudiencePulseMocks = async (
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ kind: "completed", report: completedReport }),
+        body: JSON.stringify({ kind: "completed", report: mocks.state.report }),
       });
       return;
     }
@@ -223,6 +227,33 @@ test.describe("Audience Pulse dashboard", () => {
     await expect(page.getByText(/Preparing your report from all pending visitor questions/i)).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Refresh" })).toBeEnabled();
     expect(mocks.state.postCount).toBe(0);
+  });
+
+  test("a reused narrative shows when its wording was generated", async ({ page }) => {
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+    await installAudiencePulseMocks(page, {
+      read: "completed",
+      report: {
+        ...completedReport,
+        narrativeGeneratedAt: "2026-04-10T00:00:00.000Z",
+        narrativeReuseCount: 2,
+      },
+    });
+
+    await page.goto(`/w/${workspaceKey}/quality?view=audience-pulse`);
+
+    await expect(page.getByText("Wording unchanged since Apr 10, 2026.")).toBeVisible();
+  });
+
+  test("a newly generated narrative has no unchanged-since line", async ({ page }) => {
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+    await installAudiencePulseMocks(page, { read: "completed", report: completedReport });
+
+    await page.goto(`/w/${workspaceKey}/quality?view=audience-pulse`);
+
+    await expect(page.getByText(/Wording unchanged since/)).toHaveCount(0);
   });
 
   test("an explicit refresh waits for facet preparation and completes automatically", async ({ page }) => {

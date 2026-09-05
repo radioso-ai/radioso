@@ -37,8 +37,16 @@ describe("Audience Pulse OpenAPI contract", () => {
       properties: { distinctQuestionCount: { type: "integer", minimum: 0 } },
     });
     expect(document.components?.schemas?.AudiencePulseReport).toMatchObject({
-      required: expect.arrayContaining(["unclassifiedQuestionCount"]),
-      properties: { unclassifiedQuestionCount: { type: "integer", minimum: 0 } },
+      required: expect.arrayContaining([
+        "narrativeGeneratedAt",
+        "narrativeReuseCount",
+        "unclassifiedQuestionCount",
+      ]),
+      properties: {
+        narrativeGeneratedAt: { type: "string", format: "date-time" },
+        narrativeReuseCount: { type: "integer", minimum: 0 },
+        unclassifiedQuestionCount: { type: "integer", minimum: 0 },
+      },
     });
 
     expect(anchorPath?.post?.operationId).toBe("getAudiencePulseEvidenceAnchor");

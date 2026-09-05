@@ -82,6 +82,8 @@ export interface AudiencePulseRecommendation {
 export interface AudiencePulseHydratedReport {
   period: AudiencePulsePeriod
   generatedAt: string
+  narrativeGeneratedAt: string
+  narrativeReuseCount: number
   coverage: AudiencePulseCoverage
   weeklyVolume: AudiencePulseWeeklyVolume[]
   /** Absent when no narrative call ran because nothing in the window was facet-ready. */

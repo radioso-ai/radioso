@@ -7632,6 +7632,9 @@ export interface components {
             };
             /** Format: date-time */
             generatedAt: string;
+            /** Format: date-time */
+            narrativeGeneratedAt: string;
+            narrativeReuseCount: number;
             coverage: components["schemas"]["AudiencePulseCoverage"];
             weeklyVolume: components["schemas"]["AudiencePulseWeeklyVolume"][];
             summary?: string;

@@ -124,6 +124,7 @@ export const agentBodySchema = z.object({
   citationDisplayEnabled: z.boolean().optional(),
   contactRequestsEnabled: z.boolean().optional(),
   webhookExportsEnabled: z.boolean().optional(),
+  handoffOnRetrievalMiss: z.boolean().optional(),
   contactRequestDelivery: contactRequestDeliverySchema,
   theme: assistantThemeSchema.optional(),
   branding: brandingSchema,

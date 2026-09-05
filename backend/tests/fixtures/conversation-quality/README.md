@@ -64,7 +64,7 @@ baseline therefore produces false regressions. Sampling fixes this:
 
 ```bash
 pnpm run evals                                 # run each case 5×, reduce to a stable status
-pnpm run evals:ci                              # same, as a named script
+pnpm run evals:ci                              # same five-sample gated shape as the nightly workflow
 pnpm run evals -- --samples 5 --pass-threshold 0.8  # tolerate one flaky sample in five
 pnpm run evals:update-baseline                 # record a gate-worthy five-sample baseline
 ```

@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import type { AudiencePulseHydratedReport } from "@/lib/api-audience-pulse";
+
 import {
   accountId,
   installDashboardApiMocks,
@@ -16,9 +18,13 @@ const conversationTwo = "aaaaaaaa-aaaa-4aaa-8aaa-000000000002";
 const evidenceMessageOne = "bbbbbbbb-bbbb-4bbb-8bbb-000000000001";
 const evidenceMessageTwo = "bbbbbbbb-bbbb-4bbb-8bbb-000000000002";
 
-const completedReport = {
+const completedReport: AudiencePulseHydratedReport = {
   period,
   generatedAt: nowIso,
+  isFirstCensus: false,
+  narrativeGeneratedAt: nowIso,
+  narrativeReuseCount: 0,
+  narrativeReuseMaxDrift: 0.2,
   coverage: { populationSize: 240, sampleSize: 240, sampled: false, facetReadyQuestionCount: 240 },
   weeklyVolume: [
     { weekStart: "2026-04-01T00:00:00.000Z", visitorQuestionCount: 40, conversationCount: 22 },
@@ -27,12 +33,16 @@ const completedReport = {
     { weekStart: "2026-04-22T00:00:00.000Z", visitorQuestionCount: 75, conversationCount: 39 },
   ],
   summary: "Visitors mainly asked about refunds and shipping windows in the last 30 days.",
+  dissolvedTopics: [],
   themes: [
     {
       id: "theme-1",
       title: "Refund timing",
       description: "Repeat questions about how long refunds take after a return is accepted.",
       memberCount: 30,
+      previousMemberCount: null,
+      previousShare: null,
+      transition: null,
       share: 0.125,
       distinctQuestionCount: 2,
       weeklyPulse: [
@@ -94,6 +104,7 @@ interface AudiencePulseMocks {
     refreshOutcome: "completed" | "busy" | "capacity" | "provider_unavailable";
     getCount: number;
     postCount: number;
+    report: AudiencePulseHydratedReport;
   };
 }
 
@@ -107,6 +118,7 @@ const installAudiencePulseMocks = async (
       refreshOutcome: initial.refreshOutcome ?? "completed",
       getCount: 0,
       postCount: 0,
+      report: initial.report ?? completedReport,
     },
   };
 
@@ -115,7 +127,7 @@ const installAudiencePulseMocks = async (
     if (method === "GET") {
       mocks.state.getCount += 1;
       const body = mocks.state.read === "completed"
-        ? { kind: "completed", report: completedReport }
+        ? { kind: "completed", report: mocks.state.report }
         : { kind: "not_generated" };
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
       return;
@@ -161,7 +173,7 @@ const installAudiencePulseMocks = async (
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ kind: "completed", report: completedReport }),
+        body: JSON.stringify({ kind: "completed", report: mocks.state.report }),
       });
       return;
     }
@@ -220,6 +232,33 @@ test.describe("Audience Pulse dashboard", () => {
     await expect(page.getByText(/Preparing your report from all pending visitor questions/i)).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Refresh" })).toBeEnabled();
     expect(mocks.state.postCount).toBe(0);
+  });
+
+  test("a reused narrative shows when its wording was generated", async ({ page }) => {
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+    await installAudiencePulseMocks(page, {
+      read: "completed",
+      report: {
+        ...completedReport,
+        narrativeGeneratedAt: "2026-04-10T00:00:00.000Z",
+        narrativeReuseCount: 2,
+      },
+    });
+
+    await page.goto(`/w/${workspaceKey}/quality?view=audience-pulse`);
+
+    await expect(page.getByText("Wording unchanged since Apr 10, 2026.")).toBeVisible();
+  });
+
+  test("a newly generated narrative has no unchanged-since line", async ({ page }) => {
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+    await installAudiencePulseMocks(page, { read: "completed", report: completedReport });
+
+    await page.goto(`/w/${workspaceKey}/quality?view=audience-pulse`);
+
+    await expect(page.getByText(/Wording unchanged since/)).toHaveCount(0);
   });
 
   test("an explicit refresh waits for facet preparation and completes automatically", async ({ page }) => {
@@ -625,6 +664,217 @@ test.describe("Audience Pulse dashboard", () => {
     const topicRow = page.getByTestId("audience-pulse-topic-row").first();
     await expect(topicRow.getByText("asked 6× in 4 conversations", { exact: true })).toBeVisible();
     await expect(page.getByText("Explain refund timelines end-to-end")).toHaveCount(0);
+  });
+
+  test("topic transitions badge each row and show a delta only when count and share agree", async ({ page }) => {
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+
+    const transitionedReport = {
+      ...completedReport,
+      contentGaps: [],
+      recommendations: [],
+      dissolvedTopics: [{ id: "prior-shipping", title: "Shipping delays" }],
+      themes: [
+        {
+          ...completedReport.themes[0],
+          id: "theme-emerged",
+          title: "New interest",
+          transition: { kind: "emerged", parentTopicIds: [], viaCentroidFallback: false },
+          previousMemberCount: null,
+          previousShare: null,
+        },
+        {
+          ...completedReport.themes[0],
+          id: "theme-survived-up",
+          title: "Growing interest",
+          memberCount: 96,
+          share: 0.4,
+          transition: { kind: "survived", parentTopicIds: ["prior-growing"], viaCentroidFallback: false },
+          previousMemberCount: 40,
+          previousShare: 0.2,
+        },
+        {
+          ...completedReport.themes[0],
+          id: "theme-survived-just-below",
+          title: "Just below threshold",
+          memberCount: 47,
+          share: 47 / 240,
+          transition: { kind: "survived", parentTopicIds: ["prior-just-below"], viaCentroidFallback: false },
+          previousMemberCount: 40,
+          previousShare: 0.19,
+        },
+        {
+          ...completedReport.themes[0],
+          id: "theme-survived-just-above",
+          title: "Just above threshold",
+          memberCount: 49,
+          share: 49 / 240,
+          transition: { kind: "survived", parentTopicIds: ["prior-just-above"], viaCentroidFallback: false },
+          previousMemberCount: 40,
+          previousShare: 0.19,
+        },
+        {
+          ...completedReport.themes[0],
+          id: "theme-survived-down",
+          title: "Declining interest",
+          memberCount: 32,
+          share: 0.12,
+          transition: { kind: "survived", parentTopicIds: ["prior-declining"], viaCentroidFallback: false },
+          previousMemberCount: 40,
+          previousShare: 0.2,
+        },
+        {
+          ...completedReport.themes[0],
+          id: "theme-split",
+          title: "Split interest",
+          transition: { kind: "split", parentTopicIds: ["prior-split"], viaCentroidFallback: false },
+          previousMemberCount: null,
+          previousShare: null,
+        },
+        {
+          ...completedReport.themes[0],
+          id: "theme-merged",
+          title: "Merged interest",
+          transition: { kind: "merged", parentTopicIds: ["prior-a", "prior-b"], viaCentroidFallback: false },
+          previousMemberCount: null,
+          previousShare: null,
+        },
+        {
+          ...completedReport.themes[0],
+          id: "theme-centroid",
+          title: "Estimated interest",
+          memberCount: 60,
+          share: 0.25,
+          transition: { kind: "survived", parentTopicIds: ["prior-estimated"], viaCentroidFallback: true },
+          previousMemberCount: 40,
+          previousShare: 0.2,
+        },
+        {
+          ...completedReport.themes[0],
+          id: "theme-unknown-history",
+          title: "Unknown history",
+          memberCount: 96,
+          share: 0.4,
+          transition: null,
+          previousMemberCount: 40,
+          previousShare: 0.2,
+        },
+        {
+          ...completedReport.themes[0],
+          id: "theme-diluted",
+          title: "Diluted interest",
+          memberCount: 96,
+          share: 0.1,
+          transition: { kind: "survived", parentTopicIds: ["prior-diluted"], viaCentroidFallback: false },
+          previousMemberCount: 40,
+          previousShare: 0.4,
+        },
+      ],
+    };
+
+    await page.route("**/backend/api/v1/quality/audience-pulse", async (route) => {
+      if (route.request().method() === "GET") {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ kind: "completed", report: transitionedReport }),
+        });
+        return;
+      }
+      await route.fallback();
+    });
+
+    await page.goto(`/w/${workspaceKey}/quality?view=audience-pulse`);
+
+    const topics = page.locator('section[aria-labelledby="audience-pulse-topics"]');
+    const newTopic = topics.getByTestId("audience-pulse-topic-row").filter({ hasText: "New interest" });
+    await expect(newTopic.getByText("New", { exact: true })).toBeVisible();
+
+    const splitTopic = topics.getByTestId("audience-pulse-topic-row").filter({ hasText: "Split interest" });
+    await expect(splitTopic.getByText("Split from prior topic", { exact: true })).toBeVisible();
+
+    const mergedTopic = topics.getByTestId("audience-pulse-topic-row").filter({ hasText: "Merged interest" });
+    await expect(mergedTopic.getByText("Merged from 2 topics", { exact: true })).toBeVisible();
+
+    // A direction renders only when the raw count and the topic's share moved the same way.
+    for (const title of ["Growing interest", "Just above threshold"]) {
+      const topic = topics.getByTestId("audience-pulse-topic-row").filter({ hasText: title });
+      await expect(topic.getByText(/up from 40/)).toBeVisible();
+    }
+
+    const decliningTopic = topics.getByTestId("audience-pulse-topic-row").filter({ hasText: "Declining interest" });
+    await expect(decliningTopic.getByText(/down from 40/)).toBeVisible();
+
+    for (const title of [
+      // below the 20% materiality bar
+      "Just below threshold",
+      // identity for this run is unknown, so continuity cannot be claimed
+      "Unknown history",
+      // count rose while share fell -- reporting "up" would invert what happened
+      "Diluted interest",
+    ]) {
+      const topic = topics.getByTestId("audience-pulse-topic-row").filter({ hasText: title });
+      await expect(topic.getByText(/up from|down from/)).toHaveCount(0);
+    }
+
+    const estimatedTopic = topics.getByTestId("audience-pulse-topic-row").filter({ hasText: "Estimated interest" });
+    await expect(estimatedTopic.getByText("Match estimate", { exact: true })).toBeVisible();
+
+    const unknownHistoryTopic = topics.getByTestId("audience-pulse-topic-row").filter({ hasText: "Unknown history" });
+    await expect(unknownHistoryTopic.getByText("Prior identity unknown", { exact: true })).toBeVisible();
+
+    const dissolvedTopics = page.locator('section[aria-label="Topics that stopped appearing"]');
+    await expect(dissolvedTopics.getByText("Stopped appearing: Shipping delays.", { exact: true })).toBeVisible();
+  });
+
+  test("New badges follow the first-census flag", async ({ page }) => {
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+
+    const allEmergedReport: AudiencePulseHydratedReport = {
+      ...completedReport,
+      contentGaps: [],
+      recommendations: [],
+      themes: [
+        {
+          ...completedReport.themes[0],
+          id: "theme-first-census-refunds",
+          title: "Refund timing",
+          transition: { kind: "emerged", parentTopicIds: [], viaCentroidFallback: false },
+          previousMemberCount: null,
+          previousShare: null,
+        },
+        {
+          ...completedReport.themes[0],
+          id: "theme-first-census-shipping",
+          title: "Shipping updates",
+          transition: { kind: "emerged", parentTopicIds: [], viaCentroidFallback: false },
+          previousMemberCount: null,
+          previousShare: null,
+        },
+      ],
+    };
+
+    const audiencePulseMocks = await installAudiencePulseMocks(page, {
+      read: "completed",
+      report: allEmergedReport,
+    });
+    await page.goto(`/w/${workspaceKey}/quality?view=audience-pulse`);
+
+    const topics = page.locator('section[aria-labelledby="audience-pulse-topics"]');
+    for (const title of ["Refund timing", "Shipping updates"]) {
+      const topic = topics.getByTestId("audience-pulse-topic-row").filter({ hasText: title });
+      await expect(topic.getByText("New", { exact: true })).toBeVisible();
+    }
+
+    audiencePulseMocks.state.report = { ...allEmergedReport, isFirstCensus: true };
+    await page.reload();
+
+    for (const title of ["Refund timing", "Shipping updates"]) {
+      const topic = topics.getByTestId("audience-pulse-topic-row").filter({ hasText: title });
+      await expect(topic.getByText("New", { exact: true })).toHaveCount(0);
+    }
   });
 
   test("topic sparkline announces every weekly value when the trend is non-monotonic", async ({ page }) => {

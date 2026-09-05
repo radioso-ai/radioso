@@ -32,6 +32,17 @@ export interface AudiencePulseGroundingSummary {
   contentGapEligible: number
 }
 
+export interface AudiencePulseTopicTransition {
+  kind: 'survived' | 'split' | 'merged' | 'emerged' | 'dissolved'
+  parentTopicIds: string[]
+  viaCentroidFallback: boolean
+}
+
+export interface AudiencePulseDissolvedTopic {
+  id: string
+  title: string
+}
+
 export interface AudiencePulseThemeEvidence {
   reference: string
   conversationId: string
@@ -46,6 +57,9 @@ export interface AudiencePulseTheme {
   description: string
   /** Exact count of population questions in this topic -- a census, never a sample. */
   memberCount: number
+  previousMemberCount: number | null
+  previousShare: number | null
+  transition: AudiencePulseTopicTransition | null
   /** `memberCount` divided by the window population size. */
   share: number
   distinctQuestionCount: number
@@ -73,10 +87,16 @@ export interface AudiencePulseRecommendation {
 export interface AudiencePulseHydratedReport {
   period: AudiencePulsePeriod
   generatedAt: string
+  /** Whether this report is the workspace's first topic census. */
+  isFirstCensus: boolean
+  narrativeGeneratedAt: string
+  narrativeReuseCount: number
+  narrativeReuseMaxDrift: number
   coverage: AudiencePulseCoverage
   weeklyVolume: AudiencePulseWeeklyVolume[]
   /** Absent when no narrative call ran because nothing in the window was facet-ready. */
   summary?: string
+  dissolvedTopics: AudiencePulseDissolvedTopic[]
   themes: AudiencePulseTheme[]
   contentGaps: AudiencePulseContentGap[]
   recommendations: AudiencePulseRecommendation[]
@@ -125,7 +145,7 @@ export type AudiencePulseReadResponse =
 export type AudiencePulseRefreshResponse =
   | { kind: 'no_traffic'; period: AudiencePulsePeriod; weeklyVolume: AudiencePulseWeeklyVolume[] }
   | { kind: 'preparing' }
-  | { kind: 'unavailable'; reason: 'provider' | 'validation' | 'cancelled' }
+  | { kind: 'unavailable'; reason: 'provider' | 'validation' | 'census' | 'cancelled' }
   | { kind: 'completed'; report: AudiencePulseHydratedReport }
 
 const BASE_PATH = '/quality/audience-pulse'

@@ -26,6 +26,16 @@ const buildInferenceFactory = (text: string): TopicLabelPrivacyAuditInferenceFac
 };
 
 describe("ModelTopicLabelPrivacyAuditGateway", () => {
+  it("reports a model call when completion dispatch begins", async () => {
+    const inferenceFactory = buildInferenceFactory(JSON.stringify({ flagged: false }));
+    const onModelCallIssued = vi.fn();
+    const gateway = new ModelTopicLabelPrivacyAuditGateway({ inferenceFactory, workspaceContext: { workspaceId } });
+
+    await gateway.review(label, undefined, onModelCallIssued);
+
+    expect(onModelCallIssued).toHaveBeenCalledTimes(1);
+  });
+
   it("returns the parsed verdict from a well-formed completion", async () => {
     const inferenceFactory = buildInferenceFactory(JSON.stringify({ flagged: false }));
     const gateway = new ModelTopicLabelPrivacyAuditGateway({ inferenceFactory, workspaceContext: { workspaceId } });

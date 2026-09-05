@@ -28,6 +28,7 @@ import type {
   TopicSaveInput,
   TopicTransitionInput,
   TopicTransitionKind,
+  TopicTransition as PersistedTopicTransition,
 } from "../contracts/topicCensus.js";
 import type {
   TopicLabel,
@@ -87,10 +88,18 @@ export interface CensusRunTopicResult {
   memberIds: string[];
   memberCount: number;
   share: number;
+  /** Null when this partial run does not persist its identity classifications. */
+  transition?: PersistedTopicTransition | null;
 }
 
 export interface CensusRunResult {
   runId: string;
+  /** True when the workspace had no prior topics available for identity matching. */
+  isFirstCensus: boolean;
+  /** The single prior run whose memberships supplied survived-topic overlap, when provable. */
+  membershipBaselineRunId: string | null;
+  /** Naming model calls issued during this run; reused labels do not count. */
+  namingCallsIssued: number;
   populationSize: number;
   unclassifiedCount: number;
   /**
@@ -102,7 +111,13 @@ export interface CensusRunResult {
    * found" (spec 956 follow-up).
    */
   facetReadyQuestionCount: number;
+  /** Whether every question in the run had a current embedded facet. */
+  fullyFacetReady: boolean;
   topics: CensusRunTopicResult[];
+  /** Topic identities retired by this fully facet-ready run. */
+  dissolvedTopicIds: string[];
+  /** Retired topics with the labels needed by report consumers; no current membership is implied. */
+  dissolvedTopics: Array<{ id: string; title: string }>;
 }
 
 export interface CensusServiceDependencies {
@@ -208,6 +223,28 @@ const resolveClusterIdentity = (
 };
 
 /**
+ * Strongest symmetric retention score for a survived topic, computed over the full
+ * untruncated memberships. Taking the smaller directional containment is equivalent
+ * to intersection / max(size), so high churn on either side lowers the score.
+ */
+const fullMembershipOverlap = (
+  transition: TopicTransition,
+  cluster: CensusCluster,
+  priorTopicsById: ReadonlyMap<string, ActiveTopicRecord>,
+): number | null => {
+  if (transition.kind !== "survived" || transition.viaCentroidFallback) return null;
+  const priorTopic = priorTopicsById.get(transition.topicId!);
+  if (!priorTopic) return null;
+  const priorMembers = new Set(priorTopic.memberIds);
+  const overlap = cluster.memberIds.reduce(
+    (count, memberId) => count + (priorMembers.has(memberId) ? 1 : 0),
+    0,
+  );
+  const denominator = Math.max(priorMembers.size, new Set(cluster.memberIds).size);
+  return denominator === 0 ? null : overlap / denominator;
+};
+
+/**
  * Orchestrates one topic census run (spec 956, `algorithm.md`): resolves the exact
  * eligible-question population for a window, loads the facets already extracted for
  * it and the workspace's prior active topics, clusters the current facets via
@@ -225,8 +262,10 @@ export class CensusService {
     windowStart: Date;
     windowEnd: Date;
     signal?: AbortSignal;
+    /** Reports billable model work before awaiting it, so failures cannot erase issued usage. */
+    onModelCallIssued?: () => void;
   }): Promise<CensusRunResult> {
-    const { workspaceId, windowStart, windowEnd, signal } = input;
+    const { workspaceId, windowStart, windowEnd, signal, onModelCallIssued } = input;
 
     // Loaded alongside the eligible-question fetch so it is ready by the time
     // clustering completes and identity matching needs it.
@@ -311,6 +350,7 @@ export class CensusService {
         throw new Error(`census: identity matching produced no transition for cluster ${cluster.id}`);
       }
       const { topicId, parentTopicIds, survivedLabel } = resolveClusterIdentity(transition, priorTopicsById);
+      const membershipOverlap = fullMembershipOverlap(transition, cluster, priorTopicsById);
       const { exemplars, distanceByMessageId } = selectExemplars({ cluster, facetTextById, unitVectorById });
 
       if (survivedLabel) {
@@ -321,7 +361,13 @@ export class CensusService {
       // A survived topic keeps the label already on file -- no naming call, so an
       // operator watching a digest never sees a topic reworded on a refresh where
       // nothing about it changed (spec 956 US3).
-      const label = survivedLabel ?? await this.nameCluster({ workspaceId, topicId, exemplars, signal });
+      const label = survivedLabel ?? await this.nameCluster({
+        workspaceId,
+        topicId,
+        exemplars,
+        signal,
+        onModelCallIssued,
+      });
 
       topics.push({
         id: topicId,
@@ -343,12 +389,19 @@ export class CensusService {
           distanceByMessageId.get(left)! - distanceByMessageId.get(right)! || left.localeCompare(right)),
         memberCount: cluster.memberIds.length,
         share: populationSize === 0 ? 0 : cluster.memberIds.length / populationSize,
+        transition: fullyFacetReady ? {
+          kind: toPersistedTransitionKind(transition.kind),
+          parentTopicIds,
+          viaCentroidFallback: transition.viaCentroidFallback,
+          membershipOverlap,
+        } : null,
       });
       transitions.push({
         topicId,
         kind: toPersistedTransitionKind(transition.kind),
         parentTopicIds,
         viaCentroidFallback: transition.viaCentroidFallback,
+        ...(transition.kind === "survived" ? { membershipOverlap } : {}),
       });
     }));
 
@@ -361,7 +414,15 @@ export class CensusService {
     for (const transition of clusterTransitions) {
       if (transition.kind === "split" || transition.kind === "merged") {
         for (const parentTopicId of transition.parentTopicIds) {
-          dissolvedTopicIds.add(parentTopicId);
+          if (priorTopicsById.get(parentTopicId)?.dissolvedAt === null && !dissolvedTopicIds.has(parentTopicId)) {
+            dissolvedTopicIds.add(parentTopicId);
+            transitions.push({
+              topicId: parentTopicId,
+              kind: "dissolved",
+              parentTopicIds: [],
+              viaCentroidFallback: false,
+            });
+          }
         }
         continue;
       }
@@ -372,6 +433,9 @@ export class CensusService {
         continue;
       }
       const topicId = transition.topicId!;
+      if (priorTopicsById.get(topicId)?.dissolvedAt !== null) {
+        continue;
+      }
       dissolvedTopicIds.add(topicId);
       transitions.push({
         topicId,
@@ -439,13 +503,31 @@ export class CensusService {
     }).catch(() => undefined);
 
     reportTopics.sort((a, b) => b.memberCount - a.memberCount || a.topicId.localeCompare(b.topicId));
+    const membershipBaselineRunIds = new Set(reportTopics.flatMap((topic) => {
+      if (topic.transition?.kind !== "survived" || topic.transition.viaCentroidFallback) return [];
+      const baselineRunId = priorTopicsById.get(topic.topicId)?.lastSeenRunId;
+      return baselineRunId ? [baselineRunId] : [];
+    }));
+    const dissolvedTopics = fullyFacetReady
+      ? [...dissolvedTopicIds]
+        .sort((left, right) => left.localeCompare(right))
+        .map((id) => ({ id, title: priorTopicsById.get(id)!.title }))
+      : [];
 
     return {
       runId,
+      isFirstCensus: priorTopics.length === 0,
+      membershipBaselineRunId: membershipBaselineRunIds.size === 1
+        ? [...membershipBaselineRunIds][0]!
+        : null,
+      namingCallsIssued,
       populationSize,
       unclassifiedCount,
       facetReadyQuestionCount: clusterable.length,
+      fullyFacetReady,
       topics: reportTopics,
+      dissolvedTopicIds: fullyFacetReady ? [...dissolvedTopicIds] : [],
+      dissolvedTopics,
     };
   }
 
@@ -455,8 +537,13 @@ export class CensusService {
     topicId: string;
     exemplars: TopicNamingExemplars;
     signal?: AbortSignal;
+    onModelCallIssued?: () => void;
   }): Promise<TopicLabel> {
-    const candidate = await this.dependencies.namingPort.name(input.exemplars, input.signal);
+    const candidate = await this.dependencies.namingPort.name(
+      input.exemplars,
+      input.signal,
+      input.onModelCallIssued,
+    );
     return resolveAuditedTopicLabel({
       workspaceId: input.workspaceId,
       topicId: input.topicId,
@@ -466,6 +553,7 @@ export class CensusService {
       privacyAuditPort: this.dependencies.privacyAuditPort,
       telemetryService: this.dependencies.telemetryService,
       signal: input.signal,
+      onModelCallIssued: input.onModelCallIssued,
     });
   }
 }

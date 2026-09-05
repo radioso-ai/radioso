@@ -55,7 +55,7 @@ type RefreshState =
   | { kind: 'cancelled' }
   | { kind: 'busy' }
   | { kind: 'capacity'; message: string }
-  | { kind: 'unavailable'; reason: 'provider' | 'validation' | 'cancelled' }
+  | { kind: 'unavailable'; reason: 'provider' | 'validation' | 'census' | 'cancelled' }
   | { kind: 'error'; message: string }
 
 const numberFormat = new Intl.NumberFormat()
@@ -71,6 +71,26 @@ const formatDate = (iso: string) => {
 const formatDateTime = (iso: string) => {
   const date = new Date(iso)
   return Number.isNaN(date.getTime()) ? iso : dateTimeFormat.format(date)
+}
+
+export const getMemberCountDelta = (
+  theme: AudiencePulseTheme,
+  previousShare: number | null,
+  materialityThreshold: number,
+): string | null => {
+  if (theme.transition?.kind !== 'survived' || theme.previousMemberCount === null) return null
+  if (previousShare === null) return null
+
+  const relativeChange = Math.abs(theme.memberCount - theme.previousMemberCount) / Math.max(theme.previousMemberCount, 1)
+  if (relativeChange < materialityThreshold) return null
+
+  const countDirection = Math.sign(theme.memberCount - theme.previousMemberCount)
+  const shareDirection = Math.sign(theme.share - previousShare)
+  if (countDirection !== shareDirection) return null
+
+  return countDirection > 0
+    ? `up from ${numberFormat.format(theme.previousMemberCount)}`
+    : `down from ${numberFormat.format(theme.previousMemberCount)}`
 }
 
 
@@ -527,6 +547,11 @@ function ReportContent({
           ) : (
             <p className="text-sm text-muted-foreground">{report.summary}</p>
           )}
+          {report.narrativeReuseCount > 0 ? (
+            <p className="text-xs text-muted-foreground">
+              Wording unchanged since {formatDate(report.narrativeGeneratedAt)}.
+            </p>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -640,11 +665,20 @@ function ReportContent({
                 theme={theme}
                 gap={contentGapByTheme.get(theme.id) ?? null}
                 maxShare={maxThemeShare}
+                materialityThreshold={report.narrativeReuseMaxDrift}
+                showNewBadge={!report.isFirstCensus}
                 onOpenConversation={onOpenConversation}
               />
             ))}
           </Card>
         )}
+        {report.dissolvedTopics.length > 0 ? (
+          <section aria-label="Topics that stopped appearing" className="mt-3">
+            <p className="text-sm text-muted-foreground">
+              Stopped appearing: {report.dissolvedTopics.map((topic) => topic.title).join(', ')}.
+            </p>
+          </section>
+        ) : null}
       </section>
 
       {report.caveats.length > 0 ? (
@@ -675,11 +709,15 @@ function TopicRow({
   theme,
   gap,
   maxShare,
+  materialityThreshold,
+  showNewBadge,
   onOpenConversation,
 }: {
   theme: AudiencePulseTheme
   gap: AudiencePulseContentGap | null
   maxShare: number
+  materialityThreshold: number
+  showNewBadge: boolean
   onOpenConversation: (evidence: AudiencePulseThemeEvidence) => void
 }) {
   const [expanded, setExpanded] = useState(false)
@@ -689,6 +727,16 @@ function TopicRow({
     theme.grounding.contentGapEligible,
     theme.memberCount,
   )
+  // The response has the current share but no prior population or share. Do not
+  // turn a raw count change into an importance claim without that comparison.
+  const memberCountDelta = getMemberCountDelta(theme, theme.previousShare, materialityThreshold)
+  const transitionBadge = theme.transition?.kind === 'emerged'
+    ? showNewBadge ? 'New' : null
+    : theme.transition?.kind === 'split'
+      ? 'Split from prior topic'
+      : theme.transition?.kind === 'merged'
+        ? `Merged from ${theme.transition.parentTopicIds.length} ${theme.transition.parentTopicIds.length === 1 ? 'topic' : 'topics'}`
+        : null
 
   return (
     <div className="border-b last:border-b-0" data-testid="audience-pulse-topic-row">
@@ -702,6 +750,13 @@ function TopicRow({
         >
           <span className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
             <span className="text-sm font-medium text-foreground">{theme.title}</span>
+            {transitionBadge ? <Badge variant="secondary">{transitionBadge}</Badge> : null}
+            {theme.transition === null ? (
+              <span className="text-xs text-muted-foreground">Prior identity unknown</span>
+            ) : null}
+            {theme.transition?.viaCentroidFallback ? (
+              <Badge variant="outline" className="text-muted-foreground">Match estimate</Badge>
+            ) : null}
             {gap ? (
               <>
                 <Badge
@@ -727,7 +782,8 @@ function TopicRow({
         </button>
         <TopicShareBar normalizedShare={normalizedShare} coverageGapFraction={coverageGapFraction} />
         <p className="text-xs tabular-nums text-muted-foreground">
-          asked {numberFormat.format(theme.memberCount)}× · {percentFormat.format(theme.share)} of questions
+          asked {numberFormat.format(theme.memberCount)}×
+          {memberCountDelta ? ` · ${memberCountDelta}` : ''} · {percentFormat.format(theme.share)} of questions
         </p>
         {expanded ? (
           <div id={contentId} className="space-y-3 pt-1">

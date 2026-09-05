@@ -16834,6 +16834,51 @@
           "contentGapEligible"
         ]
       },
+      "AudiencePulseTopicTransition": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "survived",
+              "split",
+              "merged",
+              "emerged",
+              "dissolved"
+            ]
+          },
+          "parentTopicIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "viaCentroidFallback": {
+            "type": "boolean"
+          },
+          "membershipOverlap": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              {
+                "type": "null"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "parentTopicIds",
+          "viaCentroidFallback",
+          "membershipOverlap"
+        ]
+      },
       "AudiencePulseCoverage": {
         "type": "object",
         "properties": {
@@ -17053,6 +17098,34 @@
             "type": "integer",
             "minimum": 0
           },
+          "previousMemberCount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "previousShare": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1
+          },
+          "transition": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AudiencePulseTopicTransition"
+              },
+              {
+                "type": "null"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "share": {
             "type": "number",
             "minimum": 0,
@@ -17097,6 +17170,9 @@
           "title",
           "description",
           "memberCount",
+          "previousMemberCount",
+          "previousShare",
+          "transition",
           "share",
           "distinctQuestionCount",
           "weeklyPulse",
@@ -17123,6 +17199,21 @@
           "themeId",
           "eligibleEvidenceCount",
           "distinctConversationCount"
+        ]
+      },
+      "AudiencePulseDissolvedTopic": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title"
         ]
       },
       "AudiencePulseRecommendation": {
@@ -17205,6 +17296,22 @@
             "type": "string",
             "format": "date-time"
           },
+          "isFirstCensus": {
+            "type": "boolean"
+          },
+          "narrativeGeneratedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "narrativeReuseCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "narrativeReuseMaxDrift": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
           "coverage": {
             "$ref": "#/components/schemas/AudiencePulseCoverage"
           },
@@ -17220,6 +17327,12 @@
           "unclassifiedQuestionCount": {
             "type": "integer",
             "minimum": 0
+          },
+          "dissolvedTopics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AudiencePulseDissolvedTopic"
+            }
           },
           "themes": {
             "type": "array",
@@ -17249,9 +17362,14 @@
         "required": [
           "period",
           "generatedAt",
+          "isFirstCensus",
+          "narrativeGeneratedAt",
+          "narrativeReuseCount",
+          "narrativeReuseMaxDrift",
           "coverage",
           "weeklyVolume",
           "unclassifiedQuestionCount",
+          "dissolvedTopics",
           "themes",
           "contentGaps",
           "recommendations",
@@ -17363,6 +17481,7 @@
                 "enum": [
                   "provider",
                   "validation",
+                  "census",
                   "cancelled"
                 ]
               }

@@ -1071,9 +1071,11 @@ export interface TopicTransitions {
   created_at: Generated<Timestamp>;
   id: Generated<string>;
   kind: string;
+  membership_overlap: number | null;
   parent_topic_ids: Generated<string[]>;
   run_id: string;
   topic_id: string;
+  topic_title: string;
   via_centroid_fallback: Generated<boolean>;
   workspace_id: string;
 }

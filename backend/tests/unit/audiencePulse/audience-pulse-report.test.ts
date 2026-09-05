@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  applyAudiencePulseNarrative,
+  buildAudiencePulseCensusReport,
   buildAudiencePulseComputingReport,
   buildAudiencePulseReport,
   contentGapEligible,
@@ -53,6 +55,7 @@ const emptyModel: AudiencePulseModelOutput = {
 const baseInput = {
   period,
   generatedAt: new Date("2026-08-01T00:00:00.000Z"),
+  isFirstCensus: false,
   coverage: { populationSize: 3, sampleSize: 3, sampled: false, facetReadyQuestionCount: 3 },
   weeklyVolume: [{
     weekStart: "2026-06-29T00:00:00.000Z",
@@ -62,6 +65,48 @@ const baseInput = {
 };
 
 describe("Audience Pulse report domain", () => {
+  it("carries census transitions and prior full-membership counts into stored themes", () => {
+    const population = buildPopulation(13);
+
+    const report = buildAudiencePulseReport({
+      ...baseInput,
+      coverage: { populationSize: 13, sampleSize: 13, sampled: false, facetReadyQuestionCount: 13 },
+      population,
+      topics: [{
+        id: "topic-survived",
+        title: "Plans",
+        description: "Questions about plans.",
+        evidenceIds: population.map((item) => item.id),
+        transition: {
+          kind: "survived",
+          parentTopicIds: ["topic-before"],
+          viaCentroidFallback: false,
+          membershipOverlap: 0.9,
+        },
+      }],
+      previousThemeMemberCounts: new Map([["topic-survived", 9]]),
+      model: emptyModel,
+    });
+
+    expect(report.themes[0]).toMatchObject({
+      memberCount: 13,
+      previousMemberCount: 9,
+      transition: {
+        kind: "survived",
+        parentTopicIds: ["topic-before"],
+        viaCentroidFallback: false,
+      },
+    });
+    expect(report).toMatchObject({
+      generatedAt: baseInput.generatedAt.toISOString(),
+      narrativeGeneratedAt: baseInput.generatedAt.toISOString(),
+      narrativeReuseCount: 0,
+      narrativeReuseMaxDrift: 0.2,
+      dissolvedTopics: [],
+    });
+    expect(report.themes[0]!.evidenceIds).toHaveLength(12);
+  });
+
   it("qualifies only the two typed retrieval outcomes with matching diagnostics", () => {
     expect(contentGapEligible({
       assistantAuthorship: "ai",
@@ -535,6 +580,46 @@ describe("Audience Pulse report domain", () => {
 
     expect(report.themes[0]?.evidenceIds).toEqual(population.map((item) => item.id).reverse().slice(0, 12));
   });
+
+  it("applies model narrative to one precomputed census report with current gap evidence", () => {
+    const population = buildPopulation(4, (index) => ({ contentGapEligible: index < 2 }));
+    const census = buildAudiencePulseCensusReport({
+      ...baseInput,
+      coverage: { populationSize: 4, sampleSize: 4, sampled: false, facetReadyQuestionCount: 4 },
+      population,
+      topics: [{
+        id: "topic-1",
+        title: "Topic",
+        description: "Description",
+        evidenceIds: population.map((item) => item.id),
+      }],
+      dissolvedTopics: [{ id: "dissolved-topic", title: "Former topic" }],
+    });
+
+    const report = applyAudiencePulseNarrative({
+      census,
+      generatedAt: baseInput.generatedAt,
+      model: {
+        summary: "Current narrative",
+        themes: [],
+        recommendations: [{
+          themeIndex: 0,
+          title: "Document the topic",
+          rationale: "Two current conversations lack support.",
+          questions: ["How does this work?"],
+        }],
+        caveats: [],
+      },
+    });
+
+    expect(report).toMatchObject({
+      summary: "Current narrative",
+      dissolvedTopics: [{ id: "dissolved-topic", title: "Former topic" }],
+      recommendations: [{ themeId: "topic-1", evidenceIds: ["evidence-1", "evidence-2"] }],
+    });
+    expect(report.themes).toBe(census.report.themes);
+    expect(report.contentGaps).toBe(census.report.contentGaps);
+  });
 });
 
 describe("buildAudiencePulseComputingReport (spec 956 follow-up)", () => {
@@ -542,6 +627,7 @@ describe("buildAudiencePulseComputingReport (spec 956 follow-up)", () => {
     const report = buildAudiencePulseComputingReport({
       period,
       generatedAt: new Date("2026-08-01T00:00:00.000Z"),
+      isFirstCensus: true,
       coverage: { populationSize: 104, sampleSize: 104, sampled: false, facetReadyQuestionCount: 0 },
       weeklyVolume: [{
         weekStart: "2026-06-29T00:00:00.000Z",
@@ -553,6 +639,14 @@ describe("buildAudiencePulseComputingReport (spec 956 follow-up)", () => {
     // No model ever ran, so there is nothing to narrate -- `summary` stays absent
     // rather than a hardcoded stand-in for it.
     expect(report.summary).toBeUndefined();
+    expect(report).toMatchObject({
+      generatedAt: "2026-08-01T00:00:00.000Z",
+      isFirstCensus: true,
+      narrativeGeneratedAt: "2026-08-01T00:00:00.000Z",
+      narrativeReuseCount: 0,
+      narrativeReuseMaxDrift: 0.2,
+      dissolvedTopics: [],
+    });
     expect(report.themes).toEqual([]);
     expect(report.contentGaps).toEqual([]);
     expect(report.recommendations).toEqual([]);

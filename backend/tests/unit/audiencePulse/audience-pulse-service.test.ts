@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { AudiencePulseService, buildSummaryTopics, hydrateReport } from "../../../src/modules/audiencePulse/services/audiencePulseService.js";
+import {
+  AUDIENCE_PULSE_NARRATIVE_REUSE_MIN_ABSOLUTE_MOVEMENT,
+  AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT,
+  AUDIENCE_PULSE_NARRATIVE_MAX_CONSECUTIVE_REUSES,
+  AudiencePulseService,
+  buildSummaryTopics,
+  hydrateReport,
+} from "../../../src/modules/audiencePulse/services/audiencePulseService.js";
 import type { AudiencePulseServiceDependencies } from "../../../src/modules/audiencePulse/services/audiencePulseService.js";
 import type {
   AudiencePulseHistorySnapshot,
@@ -44,9 +51,15 @@ const history = (): AudiencePulseHistorySnapshot => ({
 /** Census result matching `history()`: one topic claiming both evidence items, nothing unclassified. */
 const censusResult = (): CensusRunResult => ({
   runId: "run-1",
+  isFirstCensus: false,
+  membershipBaselineRunId: "run-0",
+  namingCallsIssued: 0,
   populationSize: 2,
   unclassifiedCount: 0,
   facetReadyQuestionCount: 2,
+  fullyFacetReady: true,
+  dissolvedTopicIds: [],
+  dissolvedTopics: [],
   topics: [{
     topicId: "topic-1",
     title: "Subscription changes",
@@ -54,8 +67,19 @@ const censusResult = (): CensusRunResult => ({
     memberIds: ["evidence-1", "evidence-2"],
     memberCount: 2,
     share: 1,
+    transition: {
+      kind: "survived",
+      parentTopicIds: ["topic-1"],
+      viaCentroidFallback: false,
+      membershipOverlap: 1,
+    },
   }],
 });
+
+const censusResultWithDissolved = (dissolvedTopics: Array<{ id: string; title: string }>) => Object.assign(
+  censusResult(),
+  { dissolvedTopicIds: dissolvedTopics.map((topic) => topic.id), dissolvedTopics },
+);
 
 const recommendationCopy = (themeIndex: number) => ({
   title: `Document topic ${themeIndex + 1}`,
@@ -68,6 +92,77 @@ const modelResponse = JSON.stringify({
   themes: [],
   recommendations: { "0": recommendationCopy(0) },
   caveats: [],
+});
+
+const priorNarrativeSnapshot = (input: {
+  summary?: string;
+  memberCount?: number;
+  narrativeGeneratedAt?: string;
+  narrativeReuseCount?: number;
+  recommendations?: Array<{
+    id: string;
+    themeId: string;
+    title: string;
+    rationale: string;
+    questions: string[];
+    evidenceIds: string[];
+  }>;
+} = {}): AudiencePulseSnapshotRecord => ({
+  workspaceId: WORKSPACE_ID,
+  revision: "revision-0",
+  period: { start: new Date("2026-06-01T00:00:00.000Z"), end: new Date("2026-07-01T00:00:00.000Z") },
+  generatedAt: new Date("2026-07-01T00:00:00.000Z"),
+  report: {
+    period: { start: "2026-06-01T00:00:00.000Z", end: "2026-07-01T00:00:00.000Z" },
+    generatedAt: "2026-07-01T00:00:00.000Z",
+    censusRunId: "run-0",
+    isFirstCensus: false,
+    narrativeGeneratedAt: input.narrativeGeneratedAt ?? "2026-06-15T00:00:00.000Z",
+    narrativeReuseCount: input.narrativeReuseCount ?? 0,
+    narrativeReuseMaxDrift: AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT,
+    coverage: { populationSize: 2, sampleSize: 2, sampled: false, facetReadyQuestionCount: 2 },
+    weeklyVolume: [],
+    summary: input.summary ?? "Reused narrative summary.",
+    unclassifiedQuestionCount: 0,
+    dissolvedTopics: [],
+    themes: [{
+      id: "topic-1",
+      title: "Subscription changes",
+      description: "Repeated questions about changing a plan.",
+      evidenceIds: ["evidence-1", "evidence-2"],
+      memberCount: input.memberCount ?? 2,
+      previousMemberCount: null,
+      previousShare: null,
+      transition: {
+        kind: "survived",
+        parentTopicIds: ["topic-1"],
+        viaCentroidFallback: false,
+        membershipOverlap: 1,
+      },
+      share: 1,
+      weeklyPulse: [],
+      grounding: { grounded: 0, degraded: 0, noSupport: 2, unknown: 0, contentGapEligible: 2 },
+    }],
+    contentGaps: [{ themeId: "topic-1", eligibleEvidenceCount: 2, distinctConversationCount: 2 }],
+    recommendations: input.recommendations ?? [{
+      id: "recommendation-1",
+      themeId: "topic-1",
+      title: "Reused recommendation",
+      rationale: "The recurring question merits durable guidance.",
+      questions: ["How do I change a plan?"],
+      evidenceIds: ["evidence-1", "evidence-2"],
+    }],
+    caveats: ["Visitors rarely mention which plan they are on."],
+  },
+  promptEvidenceRefs: [],
+});
+
+const snapshotStoreFor = (snapshot: AudiencePulseSnapshotRecord | null) => ({
+  async find() { return snapshot; },
+  async replace(input: Omit<AudiencePulseSnapshotRecord, "revision">) {
+    return { ...input, revision: "revision-1" };
+  },
+  async invalidate() { return true; },
 });
 
 const createService = (overrides: Partial<AudiencePulseServiceDependencies> = {}) => {
@@ -131,7 +226,11 @@ const createService = (overrides: Partial<AudiencePulseServiceDependencies> = {}
       async create() {
         return {
           metadata: { capability: "chat", provider: "openai", model: "test" },
-          async complete() { calls.inference += 1; return { text: modelResponse }; },
+          async complete() {
+            calls.inference += 1;
+            calls.lifecycle.push("inference");
+            return { text: modelResponse };
+          },
           stream() { throw new Error("not used"); },
         };
       },
@@ -178,6 +277,1267 @@ const createService = (overrides: Partial<AudiencePulseServiceDependencies> = {}
 };
 
 describe("AudiencePulseService", () => {
+  it("releases the pre-census reservation when every label and the narrative are reused", async () => {
+    const { service, calls } = createService({
+      snapshotStore: snapshotStoreFor(priorNarrativeSnapshot({ narrativeReuseCount: 1 })),
+    });
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(result).toMatchObject({
+      kind: "completed",
+      report: {
+        isFirstCensus: false,
+        summary: "Reused narrative summary.",
+        narrativeGeneratedAt: "2026-06-15T00:00:00.000Z",
+        narrativeReuseCount: 2,
+        recommendations: [{ title: "Reused recommendation" }],
+        // Caveats come from the same completion as the summary, and the prompt forbids
+        // them from restating coverage or counts, so they stay valid for exactly as long
+        // as the summary does.
+        caveats: ["Visitors rarely mention which plan they are on."],
+      },
+    });
+    expect(calls).toMatchObject({ inference: 0, reserve: 1, commit: 0, release: 1 });
+    expect(calls.lifecycle.slice(0, 2)).toEqual(["reserve", "census"]);
+    expect(calls.auditEvents.at(-1)).toMatchObject({
+      eventType: "audience_pulse.refresh_completed",
+      metadata: { narrativeReused: true },
+    });
+  });
+
+  it("publishes a real first-census signal when no prior snapshot exists", async () => {
+    const { service } = createService({
+      censusServiceFactory: {
+        create: () => ({
+          run: async () => Object.assign(censusResult(), { isFirstCensus: true }),
+        } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    await expect(service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID }))
+      .resolves.toMatchObject({ kind: "completed", report: { isFirstCensus: true } });
+  });
+
+  it("does not call a retry the first census when topics survived a run whose snapshot write failed", async () => {
+    const { service } = createService({
+      snapshotStore: snapshotStoreFor(null),
+      censusServiceFactory: {
+        create: () => ({
+          run: async () => Object.assign(censusResult(), { isFirstCensus: false }),
+        } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    await expect(service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID }))
+      .resolves.toMatchObject({ kind: "completed", report: { isFirstCensus: false } });
+  });
+
+  it("persists the current census run id on a generated report", async () => {
+    let savedReport: AudiencePulseStoredReport | undefined;
+    const { service } = createService({
+      snapshotStore: {
+        async find() { return null; },
+        async replace(input) {
+          savedReport = input.report;
+          return { ...input, revision: "revision-1" };
+        },
+        async invalidate() { return true; },
+      },
+    });
+
+    await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(savedReport?.censusRunId).toBe("run-1");
+  });
+
+  it("commits the pre-census reservation when naming ran but the narrative was reused", async () => {
+    const { service, calls } = createService({
+      snapshotStore: snapshotStoreFor(priorNarrativeSnapshot()),
+      censusServiceFactory: {
+        create: () => ({
+          run: async (input: { onModelCallIssued?: () => void }) => {
+            input.onModelCallIssued?.();
+            return { ...censusResultWithDissolved([]), namingCallsIssued: 1 };
+          },
+        } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    await expect(service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID }))
+      .resolves.toMatchObject({ kind: "completed", report: { summary: "Reused narrative summary." } });
+    expect(calls).toMatchObject({ inference: 0, reserve: 1, commit: 1, release: 0 });
+  });
+
+  it("commits when the census reports a naming call before a later census failure", async () => {
+    const censusFailure = new Error("later cluster failed");
+    const { service, calls } = createService({
+      censusServiceFactory: {
+        create: () => ({
+          run: async (input: { onModelCallIssued?: () => void }) => {
+            input.onModelCallIssued?.();
+            throw censusFailure;
+          },
+        } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    await expect(service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID }))
+      .resolves.toEqual({ kind: "unavailable", reason: "provider" });
+    expect(calls).toMatchObject({ inference: 0, reserve: 1, commit: 1, release: 0, leaseRelease: 1 });
+  });
+
+  it("releases when the census fails before issuing any model call", async () => {
+    const { service, calls } = createService({
+      censusServiceFactory: {
+        create: () => ({
+          run: async () => { throw new Error("clustering failed before naming"); },
+        } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    await expect(service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID }))
+      .resolves.toEqual({ kind: "unavailable", reason: "provider" });
+    expect(calls).toMatchObject({ inference: 0, reserve: 1, commit: 0, release: 1, leaseRelease: 1 });
+  });
+
+  it("commits when a narrative request fails after it is dispatched", async () => {
+    const { service, calls } = createService({
+      inferenceFactory: {
+        async create() {
+          return {
+            metadata: { capability: "chat", provider: "openai", model: "test" },
+            async complete() { throw new Error("provider failed after dispatch"); },
+            stream() { throw new Error("not used"); },
+          };
+        },
+      },
+    });
+
+    await expect(service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID }))
+      .resolves.toEqual({ kind: "unavailable", reason: "provider" });
+    expect(calls).toMatchObject({ reserve: 1, commit: 1, release: 0, leaseRelease: 1 });
+  });
+
+  it("regenerates when the saved narrative belongs to a different census baseline", async () => {
+    const snapshot = priorNarrativeSnapshot();
+    (snapshot.report as AudiencePulseStoredReport & { censusRunId: string }).censusRunId = "run-before-snapshot-failure";
+    const mismatchedCensus = Object.assign(censusResult(), {
+      membershipBaselineRunId: "run-after-snapshot-failure",
+    });
+    const { service, calls } = createService({
+      snapshotStore: snapshotStoreFor(snapshot),
+      censusServiceFactory: {
+        create: () => ({ run: async () => mismatchedCensus } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(calls).toMatchObject({ inference: 1, commit: 1, release: 0 });
+  });
+
+  it("does not start the census when usage capacity cannot be reserved", async () => {
+    const { service, calls } = createService({
+      snapshotStore: snapshotStoreFor(priorNarrativeSnapshot()),
+      usageLimitPolicy: {
+        async reserveAnswer() { throw { code: "usage_limit_exceeded" }; },
+        async reserveDocument() { throw new Error("not used"); },
+        async reserveIndexedStorage() { throw new Error("not used"); },
+        async reserveMonthlyIndexedContent() { throw new Error("not used"); },
+      },
+    });
+
+    await expect(service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID }))
+      .resolves.toEqual({ kind: "usage_limited" });
+    expect(calls).toMatchObject({ inference: 0, censusRun: 0, commit: 0, release: 0 });
+    expect(calls.auditEvents.at(-1)).toMatchObject({
+      eventType: "audience_pulse.refresh_failed",
+      metadata: { outcome: "usage_limited", narrativeReused: false },
+    });
+  });
+
+  it("surfaces an accounting failure when a free reuse reservation cannot be released", async () => {
+    let reserveCalls = 0;
+    let releaseCalls = 0;
+    const { service, calls } = createService({
+      snapshotStore: snapshotStoreFor(priorNarrativeSnapshot()),
+      censusServiceFactory: {
+        create: () => ({ run: async () => censusResultWithDissolved([]) } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+      usageLimitPolicy: {
+        async reserveAnswer() {
+          reserveCalls += 1;
+          return {
+            async commit() { throw new Error("not used"); },
+            async release() {
+              releaseCalls += 1;
+              throw new Error("unused reservation release failed");
+            },
+          };
+        },
+        async reserveDocument() { throw new Error("not used"); },
+        async reserveIndexedStorage() { throw new Error("not used"); },
+        async reserveMonthlyIndexedContent() { throw new Error("not used"); },
+      },
+    });
+
+    await expect(service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID }))
+      .rejects.toThrow("unused reservation release failed");
+    expect({ reserveCalls, releaseCalls }).toEqual({ reserveCalls: 1, releaseCalls: 1 });
+    expect(calls).toMatchObject({ inference: 0, commit: 0 });
+    expect(calls.auditEvents.at(-1)).toMatchObject({
+      eventType: "audience_pulse.refresh_failed",
+      metadata: { outcome: "internal", narrativeReused: true },
+    });
+  });
+
+  it("reuses a stable legacy narrative with report time as its provenance baseline", async () => {
+    const snapshot = priorNarrativeSnapshot();
+    const legacyReport = snapshot.report as unknown as Record<string, unknown>;
+    delete legacyReport.narrativeGeneratedAt;
+    delete legacyReport.narrativeReuseCount;
+    const { service, calls } = createService({
+      snapshotStore: snapshotStoreFor(snapshot),
+      censusServiceFactory: {
+        create: () => ({ run: async () => censusResultWithDissolved([]) } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(result).toMatchObject({
+      kind: "completed",
+      report: {
+        narrativeGeneratedAt: "2026-07-01T00:00:00.000Z",
+        narrativeReuseCount: 1,
+      },
+    });
+    expect(calls).toMatchObject({ inference: 0, reserve: 1, commit: 0, release: 1 });
+  });
+
+  it("regenerates when the prior narrative has reached the consecutive reuse cap", async () => {
+    const { service, calls } = createService({
+      snapshotStore: snapshotStoreFor(priorNarrativeSnapshot({
+        narrativeReuseCount: AUDIENCE_PULSE_NARRATIVE_MAX_CONSECUTIVE_REUSES,
+      })),
+      censusServiceFactory: {
+        create: () => ({ run: async () => censusResultWithDissolved([]) } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(result).toMatchObject({
+      kind: "completed",
+      report: {
+        summary: "Visitors ask about subscription changes.",
+        narrativeGeneratedAt: "2026-08-01T00:00:00.000Z",
+        narrativeReuseCount: 0,
+        narrativeReuseMaxDrift: AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT,
+      },
+    });
+    expect(calls).toMatchObject({ inference: 1, commit: 1, release: 0 });
+  });
+
+  it("regenerates when the prior snapshot has no non-empty summary", async () => {
+    const { service, calls } = createService({
+      snapshotStore: snapshotStoreFor(priorNarrativeSnapshot({ summary: "  " })),
+      censusServiceFactory: {
+        create: () => ({ run: async () => censusResultWithDissolved([]) } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(result).toMatchObject({ kind: "completed", report: { summary: "Visitors ask about subscription changes." } });
+    expect(calls).toMatchObject({ inference: 1, reserve: 1, commit: 1, release: 0 });
+  });
+
+  it("regenerates when a current topic did not survive", async () => {
+    const changedCensus = censusResultWithDissolved([]);
+    changedCensus.topics[0]!.transition = {
+      kind: "emerged",
+      parentTopicIds: [],
+      viaCentroidFallback: false,
+      membershipOverlap: null,
+    };
+    const { service, calls } = createService({
+      snapshotStore: snapshotStoreFor(priorNarrativeSnapshot()),
+      censusServiceFactory: {
+        create: () => ({ run: async () => changedCensus } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(calls).toMatchObject({ inference: 1, commit: 1, release: 0 });
+  });
+
+  it("regenerates when a survived topic was matched only by centroid fallback", async () => {
+    const changedCensus = censusResultWithDissolved([]);
+    changedCensus.topics[0]!.transition = {
+      kind: "survived",
+      parentTopicIds: ["topic-1"],
+      viaCentroidFallback: true,
+      membershipOverlap: null,
+    };
+    const { service, calls } = createService({
+      snapshotStore: snapshotStoreFor(priorNarrativeSnapshot()),
+      censusServiceFactory: {
+        create: () => ({ run: async () => changedCensus } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(calls).toMatchObject({ inference: 1, commit: 1, release: 0 });
+  });
+
+  it("regenerates when prior theme evidence is no longer in the same topic", async () => {
+    const replacementEvidence = [3, 4].map((ordinal) => ({
+      ...history().evidence[0]!,
+      id: `evidence-${ordinal}`,
+      reference: {
+        messageId: `aaaaaaaa-aaaa-aaaa-aaaa-${String(ordinal).padStart(12, "0")}`,
+        conversationId: `bbbbbbbb-bbbb-bbbb-bbbb-${String(ordinal).padStart(12, "0")}`,
+      },
+      question: `Replacement question ${ordinal}`,
+    }));
+    const currentHistory = {
+      ...history(),
+      coverage: { populationSize: 4, sampleSize: 4, sampled: false },
+      evidence: [...history().evidence, ...replacementEvidence],
+    };
+    const snapshot = priorNarrativeSnapshot({ recommendations: [] });
+    snapshot.report.coverage = { populationSize: 4, sampleSize: 4, sampled: false, facetReadyQuestionCount: 4 };
+    snapshot.report.unclassifiedQuestionCount = 2;
+    snapshot.report.themes[0]!.share = 0.5;
+    const changedCensus = censusResultWithDissolved([]);
+    changedCensus.populationSize = 4;
+    changedCensus.unclassifiedCount = 2;
+    changedCensus.facetReadyQuestionCount = 4;
+    changedCensus.topics[0] = {
+      ...changedCensus.topics[0]!,
+      memberIds: replacementEvidence.map((item) => item.id),
+      share: 0.5,
+    };
+    const { service, calls } = createService({
+      historySource: {
+        async read() { return currentHistory; },
+        async listEligibleQuestionIds() { return []; },
+        async rehydrate() { return new Map(); },
+        async readEvidenceAnchor() { return null; },
+      },
+      snapshotStore: snapshotStoreFor(snapshot),
+      censusServiceFactory: {
+        create: () => ({ run: async () => changedCensus } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(calls).toMatchObject({ inference: 1, commit: 1, release: 0 });
+  });
+
+  it("regenerates when full topic membership overlap falls below the reuse threshold", async () => {
+    const retained = Array.from({ length: 12 }, (_unused, index) => ({
+      ...history().evidence[index % 2]!,
+      id: `retained-${index + 1}`,
+      reference: { messageId: `retained-message-${index + 1}`, conversationId: `retained-conversation-${index + 1}` },
+      question: `Retained question ${index + 1}`,
+      contentGapEligible: false,
+    }));
+    const replacements = Array.from({ length: 88 }, (_unused, index) => ({
+      ...history().evidence[index % 2]!,
+      id: `replacement-${index + 1}`,
+      reference: { messageId: `replacement-message-${index + 1}`, conversationId: `replacement-conversation-${index + 1}` },
+      question: `Unrelated replacement ${index + 1}`,
+      contentGapEligible: false,
+    }));
+    const evidence = [...retained, ...replacements];
+    const snapshot = priorNarrativeSnapshot({ memberCount: 100, recommendations: [] });
+    snapshot.report.coverage = { populationSize: 100, sampleSize: 100, sampled: false, facetReadyQuestionCount: 100 };
+    snapshot.report.themes[0] = {
+      ...snapshot.report.themes[0]!,
+      evidenceIds: retained.map((item) => item.id),
+      memberCount: 100,
+      share: 1,
+    };
+    snapshot.report.contentGaps = [];
+    const { service, calls } = createService({
+      historySource: {
+        async read() {
+          return {
+            ...history(),
+            coverage: { populationSize: 100, sampleSize: 100, sampled: false },
+            evidence,
+          };
+        },
+        async listEligibleQuestionIds() { return []; },
+        async rehydrate() { return new Map(); },
+        async readEvidenceAnchor() { return null; },
+      },
+      snapshotStore: snapshotStoreFor(snapshot),
+      censusServiceFactory: {
+        create: () => ({ run: async () => ({
+          ...censusResultWithDissolved([]),
+          populationSize: 100,
+          facetReadyQuestionCount: 100,
+          topics: [{
+            ...censusResult().topics[0]!,
+            memberIds: evidence.map((item) => item.id),
+            memberCount: 100,
+            transition: {
+              kind: "survived",
+              parentTopicIds: ["topic-1"],
+              viaCentroidFallback: false,
+              membershipOverlap: 0.12,
+            },
+          }],
+        }) } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+      inferenceFactory: {
+        async create() {
+          return {
+            metadata: { capability: "chat", provider: "openai", model: "test" },
+            async complete() {
+              calls.inference += 1;
+              return { text: JSON.stringify({ summary: "Membership changed.", themes: [], recommendations: {}, caveats: [] }) };
+            },
+            stream() { throw new Error("not used"); },
+          };
+        },
+      },
+    });
+
+    await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(calls).toMatchObject({ inference: 1, commit: 1, release: 0 });
+  });
+
+  it("regenerates when recommendation evidence moved to another topic", async () => {
+    const evidence = Array.from({ length: 26 }, (_unused, index) => ({
+      ...history().evidence[index % 2]!,
+      id: `evidence-${index + 1}`,
+      reference: {
+        messageId: `aaaaaaaa-aaaa-aaaa-aaaa-${String(index + 1).padStart(12, "0")}`,
+        conversationId: `bbbbbbbb-bbbb-bbbb-bbbb-${String(index + 1).padStart(12, "0")}`,
+      },
+      question: `Question ${index + 1}`,
+    }));
+    const currentHistory = {
+      ...history(),
+      coverage: { populationSize: 26, sampleSize: 26, sampled: false },
+      evidence,
+    };
+    const snapshot = priorNarrativeSnapshot({
+      memberCount: 13,
+      recommendations: [{
+        ...priorNarrativeSnapshot().report.recommendations[0]!,
+        evidenceIds: ["evidence-12", "evidence-13"],
+      }],
+    });
+    snapshot.report.coverage = { populationSize: 26, sampleSize: 26, sampled: false, facetReadyQuestionCount: 26 };
+    snapshot.report.themes[0]!.evidenceIds = evidence.slice(0, 12).map((item) => item.id);
+    snapshot.report.themes[0]!.share = 0.5;
+    snapshot.report.themes.push({
+      ...snapshot.report.themes[0]!,
+      id: "topic-2",
+      title: "Billing questions",
+      evidenceIds: evidence.slice(13, 25).map((item) => item.id),
+    });
+    snapshot.report.contentGaps = [
+      { themeId: "topic-1", eligibleEvidenceCount: 13, distinctConversationCount: 13 },
+      { themeId: "topic-2", eligibleEvidenceCount: 13, distinctConversationCount: 13 },
+    ];
+    const changedCensus: CensusRunResult = {
+      ...censusResultWithDissolved([]),
+      populationSize: 26,
+      unclassifiedCount: 0,
+      facetReadyQuestionCount: 26,
+      topics: [
+        {
+          ...censusResult().topics[0]!,
+          memberIds: [...evidence.slice(0, 12).map((item) => item.id), "evidence-26"],
+          memberCount: 13,
+          share: 0.5,
+        },
+        {
+          ...censusResult().topics[0]!,
+          topicId: "topic-2",
+          title: "Billing questions",
+          memberIds: [...evidence.slice(13, 25).map((item) => item.id), "evidence-13"],
+          memberCount: 13,
+          share: 0.5,
+          transition: {
+            kind: "survived",
+            parentTopicIds: ["topic-2"],
+            viaCentroidFallback: false,
+            membershipOverlap: 1,
+          },
+        },
+      ],
+    };
+    const { service, calls } = createService({
+      historySource: {
+        async read() { return currentHistory; },
+        async listEligibleQuestionIds() { return []; },
+        async rehydrate() { return new Map(); },
+        async readEvidenceAnchor() { return null; },
+      },
+      snapshotStore: snapshotStoreFor(snapshot),
+      censusServiceFactory: {
+        create: () => ({ run: async () => changedCensus } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+      inferenceFactory: {
+        async create() {
+          return {
+            metadata: { capability: "chat", provider: "openai", model: "test" },
+            async complete() {
+              calls.inference += 1;
+              return { text: JSON.stringify({
+                summary: "Current summary.",
+                themes: [],
+                recommendations: { "0": recommendationCopy(0), "1": recommendationCopy(1) },
+                caveats: [],
+              }) };
+            },
+            stream() { throw new Error("not used"); },
+          };
+        },
+      },
+    });
+
+    await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(calls).toMatchObject({ inference: 1, commit: 1, release: 0 });
+  });
+
+  it("regenerates when stored recommendation evidence differs from the current selector output", async () => {
+    const snapshot = priorNarrativeSnapshot({ recommendations: [{
+      ...priorNarrativeSnapshot().report.recommendations[0]!,
+      evidenceIds: ["evidence-2", "evidence-1"],
+    }] });
+    const { service, calls } = createService({
+      snapshotStore: snapshotStoreFor(snapshot),
+      censusServiceFactory: {
+        create: () => ({ run: async () => censusResultWithDissolved([]) } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(calls).toMatchObject({ inference: 1, commit: 1, release: 0 });
+  });
+
+  it("regenerates when a partially facet-ready run still contains a topic", async () => {
+    const changedCensus = censusResultWithDissolved([]);
+    changedCensus.fullyFacetReady = false;
+    const { service, calls } = createService({
+      snapshotStore: snapshotStoreFor(priorNarrativeSnapshot()),
+      censusServiceFactory: {
+        create: () => ({ run: async () => changedCensus } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(calls).toMatchObject({ inference: 1, commit: 1, release: 0 });
+  });
+
+  it("regenerates when a fully facet-ready run produces no topics", async () => {
+    const snapshot = priorNarrativeSnapshot({ recommendations: [] });
+    snapshot.report.contentGaps = [];
+    snapshot.report.unclassifiedQuestionCount = 2;
+    const changedCensus = censusResultWithDissolved([]);
+    changedCensus.unclassifiedCount = 2;
+    changedCensus.topics = [];
+    const { service, calls } = createService({
+      snapshotStore: snapshotStoreFor(snapshot),
+      censusServiceFactory: {
+        create: () => ({ run: async () => changedCensus } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+      inferenceFactory: {
+        async create() {
+          return {
+            metadata: { capability: "chat", provider: "openai", model: "test" },
+            async complete() {
+              calls.inference += 1;
+              return { text: JSON.stringify({ summary: "No recurring topics.", themes: [], recommendations: {}, caveats: [] }) };
+            },
+            stream() { throw new Error("not used"); },
+          };
+        },
+      },
+    });
+
+    await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(calls).toMatchObject({ inference: 1, commit: 1, release: 0 });
+  });
+
+  it("regenerates when a topic dissolved in the census run", async () => {
+    const { service, calls } = createService({
+      snapshotStore: snapshotStoreFor(priorNarrativeSnapshot()),
+      censusServiceFactory: {
+        create: () => ({
+          run: async () => censusResultWithDissolved([{ id: "dissolved-topic", title: "Former topic" }]),
+        } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(result).toMatchObject({
+      kind: "completed",
+      report: { dissolvedTopics: [{ id: "dissolved-topic", title: "Former topic" }] },
+    });
+    expect(calls).toMatchObject({ inference: 1, commit: 1, release: 0 });
+  });
+
+  it("regenerates when the ordered narrative topic set changes at the display cap", async () => {
+    const priorCounts = [109, 108, 107, 106, 105, 104, 103, 102, 101];
+    const currentCounts = [109, 108, 107, 106, 105, 104, 103, 101, 102];
+    const population = currentCounts.flatMap((count, topicIndex) =>
+      Array.from({ length: count }, (_unused, memberIndex) => ({
+        id: `topic-${topicIndex + 1}-evidence-${memberIndex + 1}`,
+        reference: {
+          messageId: `topic-${topicIndex + 1}-message-${memberIndex + 1}`,
+          conversationId: `topic-${topicIndex + 1}-conversation-${memberIndex + 1}`,
+        },
+        question: `Question ${memberIndex + 1} for topic ${topicIndex + 1}`,
+        weekStart: "2026-06-29T00:00:00.000Z",
+        channel: null,
+        grounding: "no_support" as const,
+        contentGapEligible: true,
+      })),
+    );
+    const populationSize = population.length;
+    const currentTopics = currentCounts.map((memberCount, index) => ({
+      topicId: `topic-${index + 1}`,
+      title: `Topic ${index + 1}`,
+      description: `Questions for topic ${index + 1}.`,
+      memberIds: population
+        .filter((item) => item.id.startsWith(`topic-${index + 1}-evidence-`))
+        .map((item) => item.id),
+      memberCount,
+      share: memberCount / populationSize,
+      transition: {
+        kind: "survived" as const,
+        parentTopicIds: [`topic-${index + 1}`],
+        viaCentroidFallback: false,
+        membershipOverlap: 1,
+      },
+    }));
+    const snapshot = priorNarrativeSnapshot();
+    snapshot.report.coverage = {
+      populationSize,
+      sampleSize: populationSize,
+      sampled: false,
+      facetReadyQuestionCount: populationSize,
+    };
+    snapshot.report.themes = priorCounts.map((memberCount, index) => ({
+      id: `topic-${index + 1}`,
+      title: `Topic ${index + 1}`,
+      description: `Questions for topic ${index + 1}.`,
+      evidenceIds: [`topic-${index + 1}-evidence-1`, `topic-${index + 1}-evidence-2`],
+      memberCount,
+      previousMemberCount: null,
+      previousShare: null,
+      transition: {
+        kind: "survived" as const,
+        parentTopicIds: [`topic-${index + 1}`],
+        viaCentroidFallback: false,
+        membershipOverlap: 1,
+      },
+      share: memberCount / populationSize,
+      weeklyPulse: [],
+      grounding: {
+        grounded: 0,
+        degraded: 0,
+        noSupport: memberCount,
+        unknown: 0,
+        contentGapEligible: memberCount,
+      },
+    }));
+    snapshot.report.contentGaps = priorCounts.map((_count, index) => ({
+      themeId: `topic-${index + 1}`,
+      eligibleEvidenceCount: priorCounts[index]!,
+      distinctConversationCount: priorCounts[index]!,
+    }));
+    snapshot.report.recommendations = priorCounts.slice(0, AUDIENCE_PULSE_SUMMARY_MAX_TOPICS).map((_count, index) => ({
+      id: `recommendation-${index + 1}`,
+      themeId: `topic-${index + 1}`,
+      title: `Prior recommendation ${index + 1}`,
+      rationale: `Prior rationale ${index + 1}`,
+      questions: [`Prior question ${index + 1}`],
+      evidenceIds: [`topic-${index + 1}-evidence-1`, `topic-${index + 1}-evidence-2`],
+    }));
+    const { service, calls } = createService({
+      historySource: {
+        async read() {
+          return {
+            ...history(),
+            coverage: { populationSize, sampleSize: populationSize, sampled: false },
+            evidence: population,
+          };
+        },
+        async listEligibleQuestionIds() { return []; },
+        async rehydrate() { return new Map(); },
+        async readEvidenceAnchor() { return null; },
+      },
+      snapshotStore: snapshotStoreFor(snapshot),
+      censusServiceFactory: {
+        create: () => ({ run: async () => ({
+          ...censusResult(),
+          populationSize,
+          facetReadyQuestionCount: populationSize,
+          topics: currentTopics,
+        }) } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+      inferenceFactory: {
+        async create() {
+          return {
+            metadata: { capability: "chat", provider: "openai", model: "test" },
+            async complete() {
+              calls.inference += 1;
+              return {
+                text: JSON.stringify({
+                  summary: "The eighth-ranked topic changed.",
+                  themes: [],
+                  recommendations: Object.fromEntries(
+                    Array.from({ length: AUDIENCE_PULSE_SUMMARY_MAX_TOPICS }, (_unused, index) => [
+                      String(index),
+                      recommendationCopy(index),
+                    ]),
+                  ),
+                  caveats: [],
+                }),
+              };
+            },
+            stream() { throw new Error("not used"); },
+          };
+        },
+      },
+    });
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(result).toMatchObject({
+      kind: "completed",
+      report: { recommendations: expect.arrayContaining([expect.objectContaining({ themeId: "topic-9" })]) },
+    });
+    expect(calls).toMatchObject({ inference: 1, commit: 1, release: 0 });
+  });
+
+  it("ignores ratio drift when a survived topic moves by less than the absolute noise floor", async () => {
+    const { service, calls } = createService({
+      snapshotStore: snapshotStoreFor(priorNarrativeSnapshot({ memberCount: 3 })),
+      censusServiceFactory: {
+        create: () => ({ run: async () => censusResultWithDissolved([]) } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(AUDIENCE_PULSE_NARRATIVE_REUSE_MIN_ABSOLUTE_MOVEMENT).toBe(3);
+    expect(calls).toMatchObject({ inference: 0, commit: 0, reserve: 1, release: 1 });
+  });
+
+  it("regenerates when topic count drift reaches both the ratio and absolute floors", async () => {
+    const { service, calls } = createService({
+      snapshotStore: snapshotStoreFor(priorNarrativeSnapshot({ memberCount: 5 })),
+      censusServiceFactory: {
+        create: () => ({ run: async () => censusResultWithDissolved([]) } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(calls).toMatchObject({ inference: 1, commit: 1, release: 0 });
+  });
+
+  it("regenerates when topic share drifts even though every count remains below the reuse threshold", async () => {
+    const evidence = Array.from({ length: 848 }, (_unused, index) => ({
+      id: `evidence-${index + 1}`,
+      reference: { messageId: `message-${index + 1}`, conversationId: `conversation-${index + 1}` },
+      question: `Question ${index + 1}`,
+      weekStart: "2026-06-29T00:00:00.000Z",
+      channel: null,
+      grounding: "no_support" as const,
+      contentGapEligible: true,
+    }));
+    const currentHistory = {
+      ...history(),
+      coverage: { populationSize: 848, sampleSize: 848, sampled: false },
+      evidence,
+    };
+    const snapshot = priorNarrativeSnapshot();
+    snapshot.report.coverage = { populationSize: 1000, sampleSize: 1000, sampled: false, facetReadyQuestionCount: 1000 };
+    snapshot.report.unclassifiedQuestionCount = 100;
+    snapshot.report.themes = [
+      {
+        ...snapshot.report.themes[0]!,
+        id: "topic-2",
+        title: "Billing questions",
+        evidenceIds: evidence.slice(119, 131).map((item) => item.id),
+        memberCount: 800,
+        share: 0.8,
+      },
+      {
+        ...snapshot.report.themes[0]!,
+        evidenceIds: evidence.slice(0, 12).map((item) => item.id),
+        memberCount: 100,
+        share: 0.1,
+      },
+    ];
+    snapshot.report.contentGaps = [
+      { themeId: "topic-1", eligibleEvidenceCount: 100, distinctConversationCount: 100 },
+      { themeId: "topic-2", eligibleEvidenceCount: 800, distinctConversationCount: 800 },
+    ];
+    snapshot.report.recommendations[0]!.evidenceIds = evidence.slice(0, 6).map((item) => item.id);
+    const { service, calls } = createService({
+      historySource: {
+        async read() { return currentHistory; },
+        async listEligibleQuestionIds() { return []; },
+        async rehydrate() { return new Map(); },
+        async readEvidenceAnchor() { return null; },
+      },
+      snapshotStore: snapshotStoreFor(snapshot),
+      censusServiceFactory: {
+        create: () => ({ run: async () => ({
+          ...censusResultWithDissolved([]),
+          populationSize: 848,
+          unclassifiedCount: 81,
+          facetReadyQuestionCount: 848,
+          topics: [
+            { ...censusResult().topics[0]!, memberIds: evidence.slice(0, 119).map((item) => item.id), memberCount: 119, share: 119 / 848 },
+            {
+              ...censusResult().topics[0]!,
+              topicId: "topic-2",
+              title: "Billing questions",
+              memberIds: evidence.slice(119, 767).map((item) => item.id),
+              memberCount: 648,
+              share: 648 / 848,
+              transition: {
+                kind: "survived",
+                parentTopicIds: ["topic-2"],
+                viaCentroidFallback: false,
+                membershipOverlap: 1,
+              },
+            },
+          ],
+        }) } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+      inferenceFactory: {
+        async create() {
+          return {
+            metadata: { capability: "chat", provider: "openai", model: "test" },
+            async complete() {
+              calls.inference += 1;
+              return {
+                text: JSON.stringify({
+                  summary: "Topic mix shifted.",
+                  themes: [],
+                  recommendations: { "0": recommendationCopy(0), "1": recommendationCopy(1) },
+                  caveats: [],
+                }),
+              };
+            },
+            stream() { throw new Error("not used"); },
+          };
+        },
+      },
+    });
+
+    await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    // topic-1 changes from 100 / 1000 (10%) to 119 / 848 (about 14%), a 40% share drift.
+    expect(calls).toMatchObject({ inference: 1, commit: 1, release: 0 });
+  });
+
+  it("regenerates when population drift reaches both floors while topic and unclassified drift do not", async () => {
+    const evidence = Array.from({ length: 14 }, (_unused, index) => ({
+      ...history().evidence[index % 2]!,
+      id: `population-${index + 1}`,
+      reference: {
+        messageId: `population-message-${index + 1}`,
+        conversationId: `population-conversation-${index + 1}`,
+      },
+      question: `Population question ${index + 1}`,
+      contentGapEligible: false,
+    }));
+    const snapshot = priorNarrativeSnapshot({ memberCount: 2, recommendations: [] });
+    snapshot.report.coverage = { populationSize: 10, sampleSize: 10, sampled: false, facetReadyQuestionCount: 10 };
+    snapshot.report.unclassifiedQuestionCount = 8;
+    snapshot.report.themes[0] = {
+      ...snapshot.report.themes[0]!,
+      evidenceIds: evidence.slice(0, 2).map((item) => item.id),
+      memberCount: 2,
+      share: 0.2,
+    };
+    snapshot.report.contentGaps = [];
+    const { service, calls } = createService({
+      historySource: {
+        async read() {
+          return {
+            ...history(),
+            coverage: { populationSize: 14, sampleSize: 14, sampled: false },
+            evidence,
+          };
+        },
+        async listEligibleQuestionIds() { return []; },
+        async rehydrate() { return new Map(); },
+        async readEvidenceAnchor() { return null; },
+      },
+      snapshotStore: snapshotStoreFor(snapshot),
+      censusServiceFactory: {
+        create: () => ({ run: async () => ({
+          ...censusResultWithDissolved([]),
+          populationSize: 14,
+          unclassifiedCount: 10,
+          facetReadyQuestionCount: 14,
+          topics: [{
+            ...censusResult().topics[0]!,
+            memberIds: evidence.slice(0, 4).map((item) => item.id),
+            memberCount: 4,
+            share: 4 / 14,
+          }],
+        }) } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+      inferenceFactory: {
+        async create() {
+          return {
+            metadata: { capability: "chat", provider: "openai", model: "test" },
+            async complete() {
+              calls.inference += 1;
+              return { text: JSON.stringify({ summary: "Population changed.", themes: [], recommendations: {}, caveats: [] }) };
+            },
+            stream() { throw new Error("not used"); },
+          };
+        },
+      },
+    });
+
+    await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(calls).toMatchObject({ inference: 1, commit: 1, release: 0 });
+  });
+
+  it("ignores population ratio drift below the absolute noise floor", async () => {
+    const currentHistory = {
+      ...history(),
+      coverage: { populationSize: 3, sampleSize: 3, sampled: false },
+      evidence: [...history().evidence, {
+        id: "evidence-unclassified",
+        reference: { messageId: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee", conversationId: "ffffffff-ffff-ffff-ffff-ffffffffffff" },
+        question: "A one-off question outside this topic.",
+        weekStart: "2026-06-29T00:00:00.000Z",
+        channel: null,
+        grounding: "unknown" as const,
+        contentGapEligible: false,
+      }],
+    };
+    const snapshot = priorNarrativeSnapshot();
+    snapshot.report.coverage.populationSize = 2;
+    snapshot.report.unclassifiedQuestionCount = 1;
+    snapshot.report.themes[0]!.share = 2 / 3;
+    const { service, calls } = createService({
+      historySource: {
+        async read() { return currentHistory; },
+        async listEligibleQuestionIds() { return []; },
+        async rehydrate() { return new Map(); },
+        async readEvidenceAnchor() { return null; },
+      },
+      snapshotStore: snapshotStoreFor(snapshot),
+      censusServiceFactory: {
+        create: () => ({ run: async () => ({
+          ...censusResultWithDissolved([]),
+          populationSize: 3,
+          unclassifiedCount: 1,
+          facetReadyQuestionCount: 3,
+        }) } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(calls).toMatchObject({ inference: 0, commit: 0, reserve: 1, release: 1 });
+  });
+
+  it("ignores unclassified ratio drift below the absolute noise floor", async () => {
+    const currentHistory = {
+      ...history(),
+      coverage: { populationSize: 4, sampleSize: 4, sampled: false },
+      evidence: [...history().evidence, ...[3, 4].map((ordinal) => ({
+        id: `evidence-unclassified-${ordinal}`,
+        reference: {
+          messageId: `eeeeeeee-eeee-eeee-eeee-${String(ordinal).padStart(12, "0")}`,
+          conversationId: `ffffffff-ffff-ffff-ffff-${String(ordinal).padStart(12, "0")}`,
+        },
+        question: `A one-off question ${ordinal}.`,
+        weekStart: "2026-06-29T00:00:00.000Z",
+        channel: null,
+        grounding: "unknown" as const,
+        contentGapEligible: false,
+      }))],
+    };
+    const snapshot = priorNarrativeSnapshot();
+    snapshot.report.coverage.populationSize = 4;
+    snapshot.report.coverage.sampleSize = 4;
+    snapshot.report.unclassifiedQuestionCount = 0;
+    snapshot.report.themes[0]!.share = 0.5;
+    const { service, calls } = createService({
+      historySource: {
+        async read() { return currentHistory; },
+        async listEligibleQuestionIds() { return []; },
+        async rehydrate() { return new Map(); },
+        async readEvidenceAnchor() { return null; },
+      },
+      snapshotStore: snapshotStoreFor(snapshot),
+      censusServiceFactory: {
+        create: () => ({ run: async () => ({
+          ...censusResultWithDissolved([]),
+          populationSize: 4,
+          unclassifiedCount: 2,
+          facetReadyQuestionCount: 4,
+        }) } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(calls).toMatchObject({ inference: 0, commit: 0, reserve: 1, release: 1 });
+  });
+
+  it("regenerates when unclassified drift reaches both the ratio and absolute floors", async () => {
+    const extraEvidence = Array.from({ length: 3 }, (_unused, index) => ({
+      id: `unclassified-floor-${index + 1}`,
+      reference: {
+        messageId: `unclassified-message-${index + 1}`,
+        conversationId: `unclassified-conversation-${index + 1}`,
+      },
+      question: `One-off question ${index + 1}`,
+      weekStart: "2026-06-29T00:00:00.000Z",
+      channel: null,
+      grounding: "unknown" as const,
+      contentGapEligible: false,
+    }));
+    const currentHistory = {
+      ...history(),
+      coverage: { populationSize: 5, sampleSize: 5, sampled: false },
+      evidence: [...history().evidence, ...extraEvidence],
+    };
+    const snapshot = priorNarrativeSnapshot();
+    snapshot.report.coverage = { populationSize: 5, sampleSize: 5, sampled: false, facetReadyQuestionCount: 5 };
+    snapshot.report.themes[0]!.share = 2 / 5;
+    const { service, calls } = createService({
+      historySource: {
+        async read() { return currentHistory; },
+        async listEligibleQuestionIds() { return []; },
+        async rehydrate() { return new Map(); },
+        async readEvidenceAnchor() { return null; },
+      },
+      snapshotStore: snapshotStoreFor(snapshot),
+      censusServiceFactory: {
+        create: () => ({ run: async () => ({
+          ...censusResultWithDissolved([]),
+          populationSize: 5,
+          unclassifiedCount: 3,
+          facetReadyQuestionCount: 5,
+          topics: [{ ...censusResult().topics[0]!, share: 2 / 5 }],
+        }) } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(calls).toMatchObject({ inference: 1, commit: 1, release: 0 });
+  });
+
+  it("regenerates when a current content gap has closed", async () => {
+    const closedGapHistory = {
+      ...history(),
+      evidence: history().evidence.map((evidence) => ({ ...evidence, contentGapEligible: false })),
+    };
+    const { service, calls } = createService({
+      historySource: {
+        async read() { return closedGapHistory; },
+        async listEligibleQuestionIds() { return []; },
+        async rehydrate() { return new Map(); },
+        async readEvidenceAnchor() { return null; },
+      },
+      snapshotStore: snapshotStoreFor(priorNarrativeSnapshot()),
+      censusServiceFactory: {
+        create: () => ({ run: async () => censusResultWithDissolved([]) } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+      inferenceFactory: {
+        async create() {
+          return {
+            metadata: { capability: "chat", provider: "openai", model: "test" },
+            async complete() {
+              calls.inference += 1;
+              return { text: JSON.stringify({ summary: "The gap closed.", themes: [], recommendations: {}, caveats: [] }) };
+            },
+            stream() { throw new Error("not used"); },
+          };
+        },
+      },
+    });
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(result).toMatchObject({ kind: "completed", report: { recommendations: [] } });
+    expect(calls).toMatchObject({ inference: 1, commit: 1, release: 0 });
+  });
+
+  it("regenerates when a current content gap has newly opened", async () => {
+    const snapshot = priorNarrativeSnapshot({ recommendations: [] });
+    snapshot.report.contentGaps = [];
+    const { service, calls } = createService({
+      snapshotStore: snapshotStoreFor(snapshot),
+      censusServiceFactory: {
+        create: () => ({ run: async () => censusResultWithDissolved([]) } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(calls).toMatchObject({ inference: 1, commit: 1, release: 0 });
+  });
+
+  it("regenerates when a survived topic has no prior report member count", async () => {
+    const snapshot = priorNarrativeSnapshot();
+    snapshot.report.themes = [];
+    const { service, calls } = createService({
+      snapshotStore: snapshotStoreFor(snapshot),
+      censusServiceFactory: {
+        create: () => ({ run: async () => censusResultWithDissolved([]) } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(calls).toMatchObject({ inference: 1, commit: 1, release: 0 });
+  });
+
+  it("regenerates when a reused recommendation references evidence outside the current window", async () => {
+    const { service, calls } = createService({
+      snapshotStore: snapshotStoreFor(priorNarrativeSnapshot({ recommendations: [{
+        id: "recommendation-1",
+        themeId: "topic-1",
+        title: "Expired recommendation",
+        rationale: "Its source left the current analysis window.",
+        questions: ["How do I change a plan?"],
+        evidenceIds: ["expired-evidence"],
+      }] })),
+      censusServiceFactory: {
+        create: () => ({ run: async () => censusResultWithDissolved([]) } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(result).toMatchObject({
+      kind: "completed",
+      report: { recommendations: [{ title: "Document topic 1" }] },
+    });
+    expect(calls).toMatchObject({ inference: 1, commit: 1, release: 0 });
+  });
+
+  it("regenerates when reused recommendation evidence remains in the window but is no longer content-gap eligible", async () => {
+    const currentHistory = {
+      ...history(),
+      coverage: { populationSize: 4, sampleSize: 4, sampled: false },
+      evidence: [
+        ...history().evidence.map((item) => ({ ...item, grounding: "grounded" as const, contentGapEligible: false })),
+        ...[3, 4].map((ordinal) => ({
+          ...history().evidence[0]!,
+          id: `evidence-${ordinal}`,
+          reference: { messageId: `message-${ordinal}`, conversationId: `conversation-${ordinal}` },
+          question: `New unanswered question ${ordinal}`,
+        })),
+      ],
+    };
+    const snapshot = priorNarrativeSnapshot();
+    snapshot.report.coverage = { populationSize: 4, sampleSize: 4, sampled: false, facetReadyQuestionCount: 4 };
+    snapshot.report.themes[0] = { ...snapshot.report.themes[0]!, memberCount: 4, share: 1 };
+    const { service, calls } = createService({
+      historySource: {
+        async read() { return currentHistory; },
+        async listEligibleQuestionIds() { return []; },
+        async rehydrate() { return new Map(); },
+        async readEvidenceAnchor() { return null; },
+      },
+      snapshotStore: snapshotStoreFor(snapshot),
+      censusServiceFactory: {
+        create: () => ({ run: async () => ({
+          ...censusResultWithDissolved([]),
+          populationSize: 4,
+          facetReadyQuestionCount: 4,
+          topics: [{ ...censusResult().topics[0]!, memberIds: currentHistory.evidence.map((item) => item.id), memberCount: 4 }],
+        }) } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(result).toMatchObject({ kind: "completed", report: { recommendations: [{ title: "Document topic 1" }] } });
+    expect(calls).toMatchObject({ inference: 1, commit: 1, release: 0 });
+  });
+
+  it("samples a regenerated report timestamp after the model completion", async () => {
+    let completionFinished = false;
+    const beforeCompletion = new Date("2026-08-01T00:00:00.000Z");
+    const afterCompletion = new Date("2026-08-01T00:01:00.000Z");
+    const { service } = createService({
+      now: () => completionFinished ? afterCompletion : beforeCompletion,
+      inferenceFactory: {
+        async create() {
+          return {
+            metadata: { capability: "chat", provider: "openai", model: "test" },
+            async complete() {
+              completionFinished = true;
+              return { text: modelResponse };
+            },
+            stream() { throw new Error("not used"); },
+          };
+        },
+      },
+    });
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(result).toMatchObject({
+      kind: "completed",
+      report: {
+        generatedAt: afterCompletion.toISOString(),
+        narrativeGeneratedAt: afterCompletion.toISOString(),
+        narrativeReuseCount: 0,
+      },
+    });
+  });
+
+  it("maps a census-only report integrity failure to an unavailable census result", async () => {
+    const { service, calls } = createService({
+      censusServiceFactory: {
+        create: () => ({ run: async () => ({
+          ...censusResult(),
+          topics: [{ ...censusResult().topics[0]!, memberIds: ["evidence-1"], memberCount: 1, share: 0.5 }],
+        }) } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    await expect(service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID }))
+      .resolves.toEqual({ kind: "unavailable", reason: "census" });
+    expect(calls).toMatchObject({ inference: 0, reserve: 1, commit: 0, release: 1, replace: 0 });
+    expect(calls.auditEvents.at(-1)).toMatchObject({
+      eventType: "audience_pulse.refresh_failed",
+      metadata: { outcome: "census" },
+    });
+  });
+
   it("weights shown exemplars toward eligible questions from distinct conversations", () => {
     const evidenceById = new Map([
       ["evidence-1", { ...history().evidence[0]!, id: "evidence-1", reference: { messageId: "message-1", conversationId: "conversation-1" }, contentGapEligible: true }],
@@ -210,16 +1570,24 @@ describe("AudiencePulseService", () => {
     const report: AudiencePulseStoredReport = {
       period: { start: "2026-07-01T00:00:00.000Z", end: "2026-07-31T00:00:00.000Z" },
       generatedAt: "2026-08-01T00:00:00.000Z",
+      isFirstCensus: false,
+      narrativeGeneratedAt: "2026-08-01T00:00:00.000Z",
+      narrativeReuseCount: 0,
+      narrativeReuseMaxDrift: AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT,
       coverage: { populationSize: 3, sampleSize: 3, sampled: false, facetReadyQuestionCount: 3 },
       weeklyVolume: [],
       summary: "Summary",
       unclassifiedQuestionCount: 1,
+      dissolvedTopics: [],
       themes: [{
         id: "theme-1",
         title: "Plans",
         description: "Visitors ask about plans.",
         evidenceIds: ["evidence-1", "evidence-2"],
         memberCount: 2,
+        previousMemberCount: null,
+        previousShare: null,
+        transition: null,
         share: 2 / 3,
         weeklyPulse: [],
         grounding: { grounded: 0, degraded: 0, noSupport: 2, unknown: 0, contentGapEligible: 2 },
@@ -251,6 +1619,8 @@ describe("AudiencePulseService", () => {
     ]));
 
     expect(hydrated).toMatchObject({
+      narrativeReuseMaxDrift: AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT,
+      dissolvedTopics: [],
       unclassifiedQuestionCount: 1,
       themes: [{
         memberCount: 2,
@@ -307,8 +1677,50 @@ describe("AudiencePulseService", () => {
     ]));
 
     expect(hydrated.coverage.facetReadyQuestionCount).toBe(3);
+    expect(hydrated.narrativeGeneratedAt).toBe(legacyReport.generatedAt);
+    expect(hydrated.narrativeReuseCount).toBe(0);
+    expect(hydrated.narrativeReuseMaxDrift).toBe(AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT);
+    expect(hydrated.isFirstCensus).toBe(false);
     expect(hydrated.unclassifiedQuestionCount).toBe(1);
+    expect(hydrated.dissolvedTopics).toEqual([]);
     expect(hydrated.themes[0]).toMatchObject({ memberCount: 2, share: 2 / 3 });
+    expect(hydrated.themes[0]?.transition).toBeNull();
+    expect(hydrated.themes[0]?.previousMemberCount).toBeNull();
+  });
+
+  it("reads the prior snapshot before replacing it to carry forward full member counts", async () => {
+    const lifecycle: string[] = [];
+    const priorSnapshot = {
+      workspaceId: WORKSPACE_ID,
+      revision: "revision-0",
+      period: { start: new Date("2026-06-01T00:00:00.000Z"), end: new Date("2026-06-30T00:00:00.000Z") },
+      generatedAt: new Date("2026-07-01T00:00:00.000Z"),
+      report: {
+        themes: [{ id: "topic-1", memberCount: 7 }],
+      },
+      promptEvidenceRefs: [],
+    } as unknown as AudiencePulseSnapshotRecord;
+    const { service } = createService({
+      snapshotStore: {
+        async find() {
+          lifecycle.push("find");
+          return priorSnapshot;
+        },
+        async replace(input) {
+          lifecycle.push("replace");
+          return { ...input, revision: "revision-1" };
+        },
+        async invalidate() { return true; },
+      },
+    });
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(result).toMatchObject({
+      kind: "completed",
+      report: { themes: [{ id: "topic-1", previousMemberCount: 7 }] },
+    });
+    expect(lifecycle).toEqual(["find", "replace"]);
   });
 
   it("delegates an evidence anchor to the Chat-owned history port without report or provider work", async () => {
@@ -426,7 +1838,7 @@ describe("AudiencePulseService", () => {
     expect(result.kind).toBe("completed");
     expect(calls).toMatchObject({ inference: 1, reserve: 1, replace: 1, commit: 1, release: 0, rate: 1, leaseRelease: 1, censusRun: 1, facetDrain: 0 });
     expect(calls.facetDrainInputs).toEqual([]);
-    expect(calls.lifecycle).toEqual(["reserve", "census", "commit", "snapshot"]);
+    expect(calls.lifecycle).toEqual(["reserve", "census", "inference", "commit", "snapshot"]);
   });
 
   it("maps structurally keyed recommendation copy to every qualifying domain topic", async () => {
@@ -835,18 +2247,36 @@ describe("AudiencePulseService", () => {
     expect(historyRead.calls).toMatchObject({ inference: 0, reserve: 0, replace: 0, commit: 0, release: 0, leaseRelease: 1 });
   });
 
+  it("records narrative reuse when persistence fails after the reuse gate passes", async () => {
+    const snapshotFailure = new Error("snapshot write failed after reuse");
+    const priorSnapshot = priorNarrativeSnapshot();
+    const { service, calls } = createService({
+      snapshotStore: {
+        async find() { return priorSnapshot; },
+        async replace() { throw snapshotFailure; },
+        async invalidate() { return true; },
+      },
+      censusServiceFactory: {
+        create: () => ({ run: async () => censusResultWithDissolved([]) } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    await expect(service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID }))
+      .rejects.toBe(snapshotFailure);
+
+    expect(calls).toMatchObject({ inference: 0, reserve: 1, commit: 0, release: 1, leaseRelease: 1 });
+    expect(calls.auditEvents.at(-1)).toMatchObject({
+      eventType: "audience_pulse.refresh_failed",
+      metadata: { outcome: "internal", narrativeReused: true },
+    });
+  });
+
   it("rethrows release accounting failures and still releases the refresh lease", async () => {
     const releaseFailure = new Error("usage release failed");
     let releaseCalls = 0;
     const { service, calls } = createService({
       inferenceFactory: {
-        async create() {
-          return {
-            metadata: { capability: "chat", provider: "openai", model: "test" },
-            async complete() { throw new Error("provider unavailable"); },
-            stream() { throw new Error("not used"); },
-          };
-        },
+        async create() { throw new Error("provider unavailable before dispatch"); },
       },
       usageLimitPolicy: {
         async reserveAnswer() {
@@ -913,10 +2343,15 @@ describe("AudiencePulseService", () => {
       report: {
         period: { start: "2026-07-01T00:00:00.000Z", end: "2026-07-31T00:00:00.000Z" },
         generatedAt: "2026-08-01T00:00:00.000Z",
+        isFirstCensus: false,
+        narrativeGeneratedAt: "2026-08-01T00:00:00.000Z",
+        narrativeReuseCount: 0,
+        narrativeReuseMaxDrift: AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT,
         coverage: { populationSize: 2, sampleSize: 2, sampled: false, facetReadyQuestionCount: 2 },
         weeklyVolume: [],
         summary: "Summary",
         unclassifiedQuestionCount: 0,
+        dissolvedTopics: [],
         themes: [],
         contentGaps: [],
         recommendations: [],
@@ -956,10 +2391,15 @@ describe("AudiencePulseService", () => {
       report: {
         period: { start: "2026-07-01T00:00:00.000Z", end: "2026-07-31T00:00:00.000Z" },
         generatedAt: "2026-08-01T00:00:00.000Z",
+        isFirstCensus: false,
+        narrativeGeneratedAt: "2026-08-01T00:00:00.000Z",
+        narrativeReuseCount: 0,
+        narrativeReuseMaxDrift: AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT,
         coverage: { populationSize: 1, sampleSize: 1, sampled: false, facetReadyQuestionCount: 1 },
         weeklyVolume: [],
         summary: "Saved summary",
         unclassifiedQuestionCount: 0,
+        dissolvedTopics: [],
         themes: [],
         contentGaps: [],
         recommendations: [],
@@ -984,7 +2424,7 @@ describe("AudiencePulseService", () => {
     expect(calls).toMatchObject({ inference: 0, reserve: 0, commit: 0, release: 0, leaseRelease: 0 });
   });
 
-  it("releases a reservation and preserves the prior snapshot when provider or validation work fails", async () => {
+  it("commits a reservation and preserves the prior snapshot when dispatched provider or validation work fails", async () => {
     const failureCases = [
       {
         expectedReason: "provider",
@@ -1022,7 +2462,7 @@ describe("AudiencePulseService", () => {
       await expect(service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID }))
         .resolves.toEqual({ kind: "unavailable", reason: failure.expectedReason });
       expect(providerCalls).toBe(1);
-      expect(calls).toMatchObject({ reserve: 1, commit: 0, release: 1, replace: 0, leaseRelease: 1 });
+      expect(calls).toMatchObject({ reserve: 1, commit: 1, release: 0, replace: 0, leaseRelease: 1 });
     }
   });
 
@@ -1084,6 +2524,7 @@ describe("AudiencePulseService", () => {
 
 describe("AudiencePulseService facet readiness (spec 956 follow-up)", () => {
   it("skips the narrative model call and commits no usage when nothing has been computed for the window yet", async () => {
+    let savedReport: AudiencePulseStoredReport | undefined;
     const { service, calls } = createService({
       censusServiceFactory: {
         create: () => ({
@@ -1095,15 +2536,25 @@ describe("AudiencePulseService facet readiness (spec 956 follow-up)", () => {
           }),
         } as unknown as CensusService),
       } satisfies CensusServiceFactory,
+      snapshotStore: {
+        async find() { return null; },
+        async replace(input) {
+          savedReport = input.report;
+          return { ...input, revision: "revision-1" };
+        },
+        async invalidate() { return true; },
+      },
     });
 
     const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
 
     expect(result.kind).toBe("completed");
     if (result.kind !== "completed") throw new Error("expected a completed refresh");
-    // No narrative call ran; the early reservation is released without being committed.
-    expect(calls).toMatchObject({ inference: 0, reserve: 1, commit: 0, release: 1, replace: 1, leaseRelease: 1 });
+    // No model call runs, so the pre-census reservation is released rather than committed.
+    expect(calls).toMatchObject({ inference: 0, reserve: 1, commit: 0, release: 1, leaseRelease: 1 });
     expect(result.report.summary).toBeUndefined();
+    expect(result.report.isFirstCensus).toBe(false);
+    expect(savedReport?.censusRunId).toBe("run-1");
     expect(result.report.themes).toEqual([]);
     expect(result.report.recommendations).toEqual([]);
     // Every population question is still unclassified, but the report says so

@@ -24,6 +24,8 @@ export interface TopicNamingExemplars {
   readonly peripheral: readonly string[];
 }
 
+export type ModelCallIssuedReporter = () => void;
+
 /**
  * Names one cluster. `name` never partitions or reassigns membership: the caller
  * decides cluster contents before calling this port, and the response shape it
@@ -32,8 +34,12 @@ export interface TopicNamingExemplars {
  * input, used only when a label fails privacy review twice.
  */
 export interface TopicNamingPort {
-  name(exemplars: TopicNamingExemplars, signal?: AbortSignal): Promise<TopicLabel>;
-  nameFallback(signal?: AbortSignal): Promise<TopicLabel>;
+  name(
+    exemplars: TopicNamingExemplars,
+    signal?: AbortSignal,
+    onModelCallIssued?: ModelCallIssuedReporter,
+  ): Promise<TopicLabel>;
+  nameFallback(signal?: AbortSignal, onModelCallIssued?: ModelCallIssuedReporter): Promise<TopicLabel>;
 }
 
 /**
@@ -45,5 +51,9 @@ export interface TopicNamingPort {
  * carried.
  */
 export interface TopicLabelPrivacyAuditPort {
-  review(label: TopicLabel, signal?: AbortSignal): Promise<TopicLabelPrivacyAuditResult>;
+  review(
+    label: TopicLabel,
+    signal?: AbortSignal,
+    onModelCallIssued?: ModelCallIssuedReporter,
+  ): Promise<TopicLabelPrivacyAuditResult>;
 }

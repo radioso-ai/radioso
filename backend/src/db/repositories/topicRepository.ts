@@ -4,11 +4,13 @@ import type {
   ActiveTopicRecord,
   CreateTopicCensusRunInput,
   SaveTopicCensusRunInput,
+  TopicCensusRunDissolvedTopic,
   TopicCensusRunDetail,
   TopicCensusRunTopicSummary,
   TopicMembershipInput,
   TopicRepositoryPort,
   TopicSaveInput,
+  TopicTransitionKind,
   TopicTransitionInput,
 } from "../../modules/audiencePulse/contracts/topicCensus.js";
 import { currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
@@ -176,6 +178,7 @@ export class TopicRepository implements TopicRepositoryPort {
         "description",
         "created_run_id",
         "last_seen_run_id",
+        "dissolved_at",
       ])
       .where("workspace_id", "=", workspaceId)
       .$if(!options.includeDissolved, (qb) => qb.where("dissolved_at", "is", null))
@@ -216,6 +219,7 @@ export class TopicRepository implements TopicRepositoryPort {
       description: row.description,
       createdRunId: row.created_run_id,
       lastSeenRunId: row.last_seen_run_id,
+      dissolvedAt: row.dissolved_at,
       memberIds: memberIdsByTopic.get(row.id) ?? [],
     }));
   }
@@ -312,6 +316,13 @@ export class TopicRepository implements TopicRepositoryPort {
         ]),
         { requireExisting: true },
       );
+      const topicTitleRows = await trx
+        .selectFrom("topics")
+        .select(["id", "title"])
+        .where("workspace_id", "=", workspaceId)
+        .where("id", "in", [...new Set(transitions.map((transition) => transition.topicId))])
+        .execute();
+      const topicTitleById = new Map(topicTitleRows.map((topic) => [topic.id, topic.title]));
       for (const batch of chunk(transitions, BATCH_SIZE)) {
         await trx
           .insertInto("topic_transitions")
@@ -320,9 +331,11 @@ export class TopicRepository implements TopicRepositoryPort {
               workspace_id: workspaceId,
               run_id: runId,
               topic_id: transition.topicId,
+              topic_title: topicTitleById.get(transition.topicId)!,
               kind: transition.kind,
               parent_topic_ids: transition.parentTopicIds,
               via_centroid_fallback: transition.viaCentroidFallback ?? false,
+              membership_overlap: transition.membershipOverlap ?? null,
             })),
           )
           .execute();
@@ -371,29 +384,55 @@ export class TopicRepository implements TopicRepositoryPort {
   }
 
   private async hydrateRun(run: TopicCensusRunRow): Promise<TopicCensusRunDetail> {
-    const memberCounts = await this.db
+    const topicRows = await this.db
       .selectFrom("topic_memberships")
-      .select(["topic_id", (eb) => eb.fn.countAll<string>().as("member_count")])
-      .where("run_id", "=", run.id)
-      .groupBy("topic_id")
+      .innerJoin("topics", "topics.id", "topic_memberships.topic_id")
+      .select([
+        "topics.id as id",
+        "topics.title as title",
+        "topics.description as description",
+        "topics.centroid as centroid",
+        "topics.radius as radius",
+        "topics.dissolved_at as dissolved_at",
+        (eb) => eb.fn.countAll<string>().as("member_count"),
+      ])
+      .where("topic_memberships.run_id", "=", run.id)
+      .groupBy("topics.id")
       .execute();
 
-    const topicIds = memberCounts.map((row) => row.topic_id);
-    const topicRows = topicIds.length === 0
-      ? []
-      : await this.db
-          .selectFrom("topics")
-          .select(["id", "title", "description", "centroid", "radius", "dissolved_at"])
-          .where("id", "in", topicIds)
-          .execute();
-    const topicsById = new Map(topicRows.map((topic) => [topic.id, topic]));
+    // Transitions stay separate from the membership aggregate so counts remain
+    // structurally independent of identity metadata. The database guarantees one row
+    // per run/topic; ordering keeps the read deterministic across topics.
+    const transitionRows = await this.db
+      .selectFrom("topic_transitions")
+      .select([
+        "topic_id",
+        "kind",
+        "parent_topic_ids",
+        "via_centroid_fallback",
+        sql<number | null>`topic_transitions.membership_overlap`.as("membership_overlap"),
+        "created_at",
+        "id",
+      ])
+      .where("run_id", "=", run.id)
+      .orderBy("created_at", "asc")
+      .orderBy("id", "asc")
+      .execute();
+    const transitionByTopicId = new Map(transitionRows.map((transition) => [transition.topic_id, transition]));
 
-    const topics: TopicCensusRunTopicSummary[] = memberCounts
-      .map((memberCount) => {
-        const topic = topicsById.get(memberCount.topic_id);
-        if (!topic) {
-          return null;
-        }
+    const dissolvedTopics: TopicCensusRunDissolvedTopic[] = await this.db
+      .selectFrom("topic_transitions")
+      .select(["topic_id as id", "topic_title as title"])
+      .where("topic_transitions.workspace_id", "=", run.workspace_id)
+      .where("topic_transitions.run_id", "=", run.id)
+      .where("topic_transitions.kind", "=", "dissolved")
+      .orderBy("topic_transitions.created_at", "asc")
+      .orderBy("topic_transitions.id", "asc")
+      .execute();
+
+    const topics: TopicCensusRunTopicSummary[] = topicRows
+      .map((topic) => {
+        const transition = transitionByTopicId.get(topic.id);
         return {
           id: topic.id,
           title: topic.title,
@@ -401,10 +440,15 @@ export class TopicRepository implements TopicRepositoryPort {
           centroid: parseVector(topic.centroid),
           radius: topic.radius,
           dissolvedAt: topic.dissolved_at,
-          memberCount: Number(memberCount.member_count),
+          memberCount: Number(topic.member_count),
+          transition: transition === undefined ? null : {
+            kind: transition.kind as TopicTransitionKind,
+            parentTopicIds: transition.parent_topic_ids ?? [],
+            viaCentroidFallback: transition.via_centroid_fallback ?? false,
+            membershipOverlap: transition.membership_overlap ?? null,
+          },
         };
       })
-      .filter((topic): topic is TopicCensusRunTopicSummary => topic !== null)
       .sort((a, b) => b.memberCount - a.memberCount || a.id.localeCompare(b.id));
 
     return {
@@ -418,6 +462,7 @@ export class TopicRepository implements TopicRepositoryPort {
       params: run.params_json as Record<string, unknown>,
       createdAt: run.created_at,
       topics,
+      dissolvedTopics,
     };
   }
 }

@@ -37,8 +37,41 @@ describe("Audience Pulse OpenAPI contract", () => {
       properties: { distinctQuestionCount: { type: "integer", minimum: 0 } },
     });
     expect(document.components?.schemas?.AudiencePulseReport).toMatchObject({
-      required: expect.arrayContaining(["unclassifiedQuestionCount"]),
-      properties: { unclassifiedQuestionCount: { type: "integer", minimum: 0 } },
+      required: expect.arrayContaining([
+        "narrativeGeneratedAt",
+        "narrativeReuseCount",
+        "narrativeReuseMaxDrift",
+        "isFirstCensus",
+        "unclassifiedQuestionCount",
+        "dissolvedTopics",
+      ]),
+      properties: {
+        narrativeGeneratedAt: { type: "string", format: "date-time" },
+        narrativeReuseCount: { type: "integer", minimum: 0 },
+        narrativeReuseMaxDrift: { type: "number", minimum: 0, maximum: 1 },
+        isFirstCensus: { type: "boolean" },
+        unclassifiedQuestionCount: { type: "integer", minimum: 0 },
+        dissolvedTopics: {
+          type: "array",
+          items: { $ref: "#/components/schemas/AudiencePulseDissolvedTopic" },
+        },
+      },
+    });
+    expect(document.components?.schemas?.AudiencePulseDissolvedTopic).toMatchObject({
+      type: "object",
+      required: ["id", "title"],
+      properties: { id: { type: "string" }, title: { type: "string" } },
+    });
+    expect(document.components?.schemas?.AudiencePulseTopicTransition).toMatchObject({
+      required: expect.arrayContaining(["membershipOverlap"]),
+      properties: {
+        membershipOverlap: {
+          anyOf: expect.arrayContaining([
+            { type: "number", minimum: 0, maximum: 1 },
+            { type: "null" },
+          ]),
+        },
+      },
     });
 
     expect(anchorPath?.post?.operationId).toBe("getAudiencePulseEvidenceAnchor");

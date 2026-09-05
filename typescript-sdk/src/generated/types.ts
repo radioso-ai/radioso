@@ -7572,6 +7572,13 @@ export interface components {
             unknown: number;
             contentGapEligible: number;
         };
+        AudiencePulseTopicTransition: {
+            /** @enum {string} */
+            kind: "survived" | "split" | "merged" | "emerged" | "dissolved";
+            parentTopicIds: string[];
+            viaCentroidFallback: boolean;
+            membershipOverlap: number | null;
+        };
         AudiencePulseCoverage: {
             populationSize: number;
             sampleSize: number;
@@ -7632,6 +7639,9 @@ export interface components {
             title: string;
             description: string;
             memberCount: number;
+            previousMemberCount: number | null;
+            previousShare: number | null;
+            transition: components["schemas"]["AudiencePulseTopicTransition"] | null;
             share: number;
             distinctQuestionCount: number;
             weeklyPulse: {
@@ -7646,6 +7656,10 @@ export interface components {
             themeId: string;
             eligibleEvidenceCount: number;
             distinctConversationCount: number;
+        };
+        AudiencePulseDissolvedTopic: {
+            id: string;
+            title: string;
         };
         AudiencePulseRecommendation: {
             id: string;
@@ -7668,10 +7682,16 @@ export interface components {
             };
             /** Format: date-time */
             generatedAt: string;
+            isFirstCensus: boolean;
+            /** Format: date-time */
+            narrativeGeneratedAt: string;
+            narrativeReuseCount: number;
+            narrativeReuseMaxDrift: number;
             coverage: components["schemas"]["AudiencePulseCoverage"];
             weeklyVolume: components["schemas"]["AudiencePulseWeeklyVolume"][];
             summary?: string;
             unclassifiedQuestionCount: number;
+            dissolvedTopics: components["schemas"]["AudiencePulseDissolvedTopic"][];
             themes: components["schemas"]["AudiencePulseTheme"][];
             contentGaps: components["schemas"]["AudiencePulseContentGap"][];
             recommendations: components["schemas"]["AudiencePulseRecommendation"][];
@@ -7702,7 +7722,7 @@ export interface components {
             /** @enum {string} */
             kind: "unavailable";
             /** @enum {string} */
-            reason: "provider" | "validation" | "cancelled";
+            reason: "provider" | "validation" | "census" | "cancelled";
         } | {
             /** @enum {string} */
             kind: "completed";

@@ -12,9 +12,11 @@ import type {
   AudiencePulseStoredReport,
 } from "../domain/report.js";
 import {
+  applyAudiencePulseNarrative,
+  AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT,
   AudiencePulseReportValidationError,
+  buildAudiencePulseCensusReport,
   buildAudiencePulseComputingReport,
-  buildAudiencePulseReport,
   evaluateTopicContentGap,
   parseAudiencePulseModelOutput,
 } from "../domain/report.js";
@@ -54,6 +56,17 @@ interface SafeLogger {
   info?(context: Record<string, unknown>, message: string): void;
   warn?(context: Record<string, unknown>, message: string): void;
 }
+
+export { AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT };
+/** One or two questions are treated as integer noise even when their ratio is large. */
+export const AUDIENCE_PULSE_NARRATIVE_REUSE_MIN_ABSOLUTE_MOVEMENT = 3;
+export const AUDIENCE_PULSE_NARRATIVE_MAX_CONSECUTIVE_REUSES = 3;
+/**
+ * Reuse requires more than 80% mutual retention of full topic membership. This
+ * mirrors the existing 20% drift boundary while refusing equality at the boundary;
+ * display evidence is intentionally irrelevant to this decision.
+ */
+export const AUDIENCE_PULSE_NARRATIVE_REUSE_MIN_MEMBERSHIP_OVERLAP = 0.8;
 
 export interface AudiencePulseServiceDependencies {
   historySource: AudiencePulseHistorySource;
@@ -96,6 +109,7 @@ const errorStatusCode = (error: unknown): number | undefined => {
 type AudiencePulseRefreshFailureOutcome =
   | "provider"
   | "validation"
+  | "census"
   | "cancelled"
   | "rate_limited"
   | "rate_limit_unavailable"
@@ -130,6 +144,37 @@ const createHydratedEvidence = (evidence: AudiencePulseEvidence[]): Map<string, 
 
 type AudiencePulseThemeResponse = AudiencePulseHydratedReport["themes"][number];
 type AudiencePulseEvidenceResponse = AudiencePulseThemeResponse["evidence"][number];
+type LegacyAudiencePulseStoredTheme = Omit<
+  AudiencePulseStoredReport["themes"][number],
+  "memberCount" | "previousMemberCount" | "previousShare" | "transition" | "share"
+> & {
+  memberCount?: number;
+  previousMemberCount?: number | null;
+  previousShare?: number | null;
+  transition?: AudiencePulseStoredReport["themes"][number]["transition"];
+  sampleCount?: number;
+  share?: number;
+};
+type LegacyAudiencePulseStoredReport = Omit<
+  AudiencePulseStoredReport,
+  | "narrativeGeneratedAt"
+  | "narrativeReuseCount"
+  | "narrativeReuseMaxDrift"
+  | "isFirstCensus"
+  | "unclassifiedQuestionCount"
+  | "dissolvedTopics"
+  | "coverage"
+  | "themes"
+> & {
+  narrativeGeneratedAt?: string;
+  narrativeReuseCount?: number;
+  narrativeReuseMaxDrift?: number;
+  isFirstCensus?: boolean;
+  unclassifiedQuestionCount?: number;
+  dissolvedTopics?: AudiencePulseStoredReport["dissolvedTopics"];
+  coverage: AudiencePulseStoredReport["coverage"] & { facetReadyQuestionCount?: number };
+  themes: LegacyAudiencePulseStoredTheme[];
+};
 
 const normalizeQuestionForDisplay = (question: string): string => question
   .trim()
@@ -177,11 +222,7 @@ const hydrateReport = (
     return evidence;
   };
 
-  const legacyReport = report as AudiencePulseStoredReport & {
-    unclassifiedQuestionCount?: number;
-    coverage: AudiencePulseStoredReport["coverage"] & { facetReadyQuestionCount?: number };
-    themes: Array<AudiencePulseStoredReport["themes"][number] & { sampleCount?: number }>;
-  };
+  const legacyReport = report as LegacyAudiencePulseStoredReport;
   const populationSize = legacyReport.coverage.populationSize;
   const groupedEvidenceIds = new Set(legacyReport.themes.flatMap((theme) => theme.evidenceIds));
   const unclassifiedQuestionCount = typeof legacyReport.unclassifiedQuestionCount === "number"
@@ -197,18 +238,19 @@ const hydrateReport = (
   return {
     period: report.period,
     generatedAt: report.generatedAt,
+    isFirstCensus: legacyReport.isFirstCensus ?? false,
+    narrativeGeneratedAt: legacyReport.narrativeGeneratedAt ?? report.generatedAt,
+    narrativeReuseCount: legacyReport.narrativeReuseCount ?? 0,
+    narrativeReuseMaxDrift: legacyReport.narrativeReuseMaxDrift ?? AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT,
     coverage,
     weeklyVolume: report.weeklyVolume,
     summary: report.summary,
     // Computed once, in `buildAudiencePulseReport`, against the population -- not
     // reconstructed here from whichever evidence ids happened to rehydrate.
     unclassifiedQuestionCount,
+    dissolvedTopics: (legacyReport.dissolvedTopics ?? []).map((topic) => ({ ...topic })),
     themes: legacyReport.themes.map((theme) => {
-      const legacyTheme = theme as AudiencePulseStoredReport["themes"][number] & {
-        memberCount?: number;
-        sampleCount?: number;
-        share?: number;
-      };
+      const legacyTheme: LegacyAudiencePulseStoredTheme = theme;
       const memberCount = legacyTheme.memberCount ?? legacyTheme.sampleCount ?? theme.evidenceIds.length;
       const share = legacyTheme.share ?? (populationSize === 0 ? 0 : memberCount / populationSize);
       return {
@@ -216,6 +258,12 @@ const hydrateReport = (
         title: theme.title,
         description: theme.description,
         memberCount,
+        previousMemberCount: theme.previousMemberCount ?? null,
+        previousShare: theme.previousShare ?? null,
+        transition: theme.transition ? {
+          ...theme.transition,
+          membershipOverlap: theme.transition.membershipOverlap ?? null,
+        } : null,
         share,
         ...hydrateThemeEvidence(theme.evidenceIds, resolve),
         weeklyPulse: theme.weeklyPulse,
@@ -309,8 +357,191 @@ const richestFirst = (topics: readonly CensusRunTopicResult[]): CensusRunTopicRe
 const censusTopicsFromRun = (input: {
   topics: readonly CensusRunTopicResult[];
 }): AudiencePulseCensusTopic[] => richestFirst(input.topics).map((topic) => {
-  return { id: topic.topicId, title: topic.title, description: topic.description, evidenceIds: topic.memberIds };
+  return {
+    id: topic.topicId,
+    title: topic.title,
+    description: topic.description,
+    evidenceIds: topic.memberIds,
+    transition: topic.transition,
+  };
 });
+
+const previousThemeMemberCounts = (snapshot: AudiencePulseSnapshotRecord | null): Map<string, number> => {
+  const counts = new Map<string, number>();
+  for (const theme of snapshot?.report.themes ?? []) {
+    if (typeof theme.memberCount === "number") {
+      counts.set(theme.id, theme.memberCount);
+    }
+  }
+  return counts;
+};
+
+const previousThemeShares = (snapshot: AudiencePulseSnapshotRecord | null): Map<string, number> => {
+  const shares = new Map<string, number>();
+  for (const theme of snapshot?.report.themes ?? []) {
+    if (typeof theme.share === "number") {
+      shares.set(theme.id, theme.share);
+    }
+  }
+  return shares;
+};
+
+const reachesNarrativeDriftGate = (absoluteMovement: number, relativeMovement: number): boolean =>
+  absoluteMovement >= AUDIENCE_PULSE_NARRATIVE_REUSE_MIN_ABSOLUTE_MOVEMENT
+  && relativeMovement >= AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT;
+
+type AudiencePulseNarrativeSnapshot = AudiencePulseSnapshotRecord & {
+  report: AudiencePulseStoredReport & { summary: string };
+};
+
+const reusableNarrativeSnapshot = (input: {
+  snapshot: AudiencePulseSnapshotRecord | null;
+  censusResult: CensusRunResult;
+  currentEvidenceById: ReadonlyMap<string, AudiencePulseEvidence>;
+  populationSize: number;
+  unclassifiedQuestionCount: number;
+  contentGapThemeIds: readonly string[];
+  recommendationEvidenceIdsByThemeId: ReadonlyMap<string, readonly string[]>;
+}): AudiencePulseNarrativeSnapshot | null => {
+  const {
+    snapshot,
+    censusResult,
+    currentEvidenceById,
+    populationSize,
+    unclassifiedQuestionCount,
+    contentGapThemeIds,
+    recommendationEvidenceIdsByThemeId,
+  } = input;
+  if (!snapshot || typeof snapshot.report.summary !== "string" || snapshot.report.summary.trim().length === 0) {
+    return null;
+  }
+  if (!snapshot.report.censusRunId
+    || snapshot.report.censusRunId !== censusResult.membershipBaselineRunId) {
+    return null;
+  }
+  const legacyReport = snapshot.report as LegacyAudiencePulseStoredReport;
+  if ((legacyReport.narrativeReuseCount ?? 0) >= AUDIENCE_PULSE_NARRATIVE_MAX_CONSECUTIVE_REUSES) {
+    return null;
+  }
+  if (!censusResult.fullyFacetReady || censusResult.topics.length === 0) {
+    return null;
+  }
+  if (censusResult.topics.some((topic) =>
+    topic.transition?.kind !== "survived" || topic.transition.viaCentroidFallback)) {
+    return null;
+  }
+  if (censusResult.topics.some((topic) =>
+    topic.transition?.membershipOverlap === null
+    || topic.transition?.membershipOverlap === undefined
+    || topic.transition.membershipOverlap <= AUDIENCE_PULSE_NARRATIVE_REUSE_MIN_MEMBERSHIP_OVERLAP)) {
+    return null;
+  }
+  if (censusResult.dissolvedTopicIds.length > 0) {
+    return null;
+  }
+
+  const currentNarrativeTopicIds = richestFirst(censusResult.topics)
+    .slice(0, AUDIENCE_PULSE_SUMMARY_MAX_TOPICS)
+    .map((topic) => topic.topicId);
+  const priorNarrativeTopicIds = snapshot.report.themes
+    .slice(0, AUDIENCE_PULSE_SUMMARY_MAX_TOPICS)
+    .map((theme) => theme.id);
+  if (currentNarrativeTopicIds.length !== priorNarrativeTopicIds.length
+    || currentNarrativeTopicIds.some((topicId, index) => topicId !== priorNarrativeTopicIds[index])) {
+    return null;
+  }
+
+  const priorCounts = previousThemeMemberCounts(snapshot);
+  const priorShares = previousThemeShares(snapshot);
+  const topicDrifts = censusResult.topics.map((topic) => {
+    const previousMemberCount = priorCounts.get(topic.topicId);
+    const previousShare = priorShares.get(topic.topicId);
+    if (previousMemberCount === undefined || previousShare === undefined) {
+      return null;
+    }
+    const countMovement = Math.abs(topic.memberCount - previousMemberCount);
+    const countDrift = countMovement / Math.max(previousMemberCount, 1);
+    const currentShare = topic.memberCount / populationSize;
+    const shareDrift = previousShare === 0
+      ? currentShare === 0 ? 0 : Infinity
+      : Math.abs(currentShare - previousShare) / previousShare;
+    return { countMovement, countDrift, shareDrift };
+  });
+  if (topicDrifts.some((drift) => drift === null
+    || reachesNarrativeDriftGate(drift.countMovement, drift.countDrift))) {
+    return null;
+  }
+  if (topicDrifts.some((drift) => drift !== null
+    && reachesNarrativeDriftGate(drift.countMovement, drift.shareDrift))) {
+    return null;
+  }
+
+  const currentMemberIdsByTopicId = new Map(
+    censusResult.topics.map((topic) => [topic.topicId, new Set(topic.memberIds)]),
+  );
+  if (snapshot.report.themes.some((theme) => {
+    const currentMemberIds = currentMemberIdsByTopicId.get(theme.id);
+    return currentMemberIds === undefined
+      || theme.evidenceIds.some((evidenceId) => !currentMemberIds.has(evidenceId));
+  })) {
+    return null;
+  }
+
+  const priorPopulationSize = snapshot.report.coverage.populationSize;
+  const populationMovement = typeof priorPopulationSize === "number"
+    ? Math.abs(populationSize - priorPopulationSize)
+    : Infinity;
+  if (typeof priorPopulationSize !== "number"
+    || reachesNarrativeDriftGate(
+      populationMovement,
+      populationMovement / Math.max(priorPopulationSize, 1),
+    )) {
+    return null;
+  }
+
+  // Snapshots written before this field exists cannot prove that unclassified demand
+  // stayed stable, so their narratives are regenerated.
+  const priorUnclassifiedQuestionCount = snapshot.report.unclassifiedQuestionCount;
+  const unclassifiedMovement = typeof priorUnclassifiedQuestionCount === "number"
+    ? Math.abs(unclassifiedQuestionCount - priorUnclassifiedQuestionCount)
+    : Infinity;
+  if (typeof priorUnclassifiedQuestionCount !== "number"
+    || reachesNarrativeDriftGate(
+      unclassifiedMovement,
+      unclassifiedMovement / Math.max(priorUnclassifiedQuestionCount, 1),
+    )) {
+    return null;
+  }
+
+  // A snapshot predating content gaps cannot prove which topics qualified, so its
+  // narrative is regenerated rather than trusted -- the same treatment absent legacy
+  // fields get above.
+  const priorContentGaps = snapshot.report.contentGaps as AudiencePulseStoredReport["contentGaps"] | undefined;
+  if (priorContentGaps === undefined) {
+    return null;
+  }
+  const priorContentGapThemeIds = new Set(priorContentGaps.map((gap) => gap.themeId));
+  if (priorContentGapThemeIds.size !== contentGapThemeIds.length
+    || contentGapThemeIds.some((themeId) => !priorContentGapThemeIds.has(themeId))) {
+    return null;
+  }
+
+  if (snapshot.report.recommendations.some((recommendation) => {
+    const currentMemberIds = currentMemberIdsByTopicId.get(recommendation.themeId);
+    const selectedEvidenceIds = recommendationEvidenceIdsByThemeId.get(recommendation.themeId);
+    return currentMemberIds === undefined
+      || selectedEvidenceIds === undefined
+      || recommendation.evidenceIds.length !== selectedEvidenceIds.length
+      || recommendation.evidenceIds.some((evidenceId, index) =>
+        evidenceId !== selectedEvidenceIds[index]
+        || !currentMemberIds.has(evidenceId)
+        || !currentEvidenceById.get(evidenceId)?.contentGapEligible);
+  })) {
+    return null;
+  }
+
+  return snapshot as AudiencePulseNarrativeSnapshot;
+};
 
 /**
  * Builds the narrative call's input (spec 956): the richest
@@ -460,6 +691,8 @@ export class AudiencePulseService implements AudiencePulsePort {
 
     let reservation: UsageLimitReservation | null = null;
     let reservationMustRemain = false;
+    let modelCallsIssued = 0;
+    let narrativeReused = false;
     let deferredFailureOutcome: AudiencePulseRefreshFailureOutcome | null = null;
     try {
       try {
@@ -523,6 +756,9 @@ export class AudiencePulseService implements AudiencePulsePort {
           windowStart: analysisStart,
           windowEnd: analysisEnd,
           signal: input.signal,
+          onModelCallIssued: () => {
+            modelCallsIssued += 1;
+          },
         });
       } catch (error) {
         if (errorStatusCode(error) !== undefined) throw error;
@@ -543,6 +779,7 @@ export class AudiencePulseService implements AudiencePulsePort {
         ...history.coverage,
         facetReadyQuestionCount: censusResult.facetReadyQuestionCount,
       };
+      const priorSnapshot = await this.deps.snapshotStore.find(input.workspaceId);
 
       if (censusResult.facetReadyQuestionCount === 0) {
         // Every eligible question in this window is still missing a current, embedded
@@ -550,16 +787,18 @@ export class AudiencePulseService implements AudiencePulsePort {
         // backfill still draining (spec 956 follow-up). The census could not cluster
         // anything, so there is nothing for a narrative call to summarize; skip it
         // rather than ask a model to narrate zero computed data, the same precedent
-        // an empty population already sets for `no_traffic`. The early reservation
-        // above is released by the shared `finally` path because no billable model
-        // completion ran for the report.
+        // an empty population already sets for `no_traffic`.
         const generatedAt = this.now();
-        const report = buildAudiencePulseComputingReport({
-          period: { start: analysisStart, end: analysisEnd },
-          generatedAt,
-          coverage: reportCoverage,
-          weeklyVolume: history.weeklyVolume,
-        });
+        const report = {
+          ...buildAudiencePulseComputingReport({
+            period: { start: analysisStart, end: analysisEnd },
+            generatedAt,
+            isFirstCensus: censusResult.isFirstCensus,
+            coverage: reportCoverage,
+            weeklyVolume: history.weeklyVolume,
+          }),
+          censusRunId: censusResult.runId,
+        };
         await this.deps.snapshotStore.replace({
           workspaceId: input.workspaceId,
           period: { start: analysisStart, end: analysisEnd },
@@ -578,112 +817,176 @@ export class AudiencePulseService implements AudiencePulsePort {
         return { kind: "completed", report: hydrated };
       }
 
-      const censusTopics = censusTopicsFromRun({ topics: censusResult.topics });
-
       const evidenceById = new Map(history.evidence.map((item) => [item.id, item]));
-      const { shown, additionalTopics } = buildSummaryTopics({
-        topics: censusResult.topics,
-        evidenceById,
-      });
-      const summaryInput: AudiencePulseSummaryInput = {
-        period: { start: analysisStart, end: analysisEnd },
-        coverage: {
-          populationSize: history.coverage.populationSize,
-          unclassifiedQuestionCount: censusResult.unclassifiedCount,
-          facetReadyQuestionCount: censusResult.facetReadyQuestionCount,
-        },
-        weeklyVolume: history.weeklyVolume,
-        topics: shown,
-        additionalTopics,
-      };
-      const boundedSummaryInput = boundAudiencePulseSummaryInputForPrompt(summaryInput);
-      const prompt = buildAudiencePulsePrompt(boundedSummaryInput);
-      // Qualifying topics beyond the narrative cap retain their badge but cannot receive model copy.
-      const shownQualifyingTopicIndexes = shown.flatMap((topic, index) =>
-        topic.contentGapQualifies ? [index] : []);
-      const responseFormat = buildAudiencePulseResponseFormat(shownQualifyingTopicIndexes);
-      const modelCallContext = {
-        accountId: input.accountId,
-        workspaceId: input.workspaceId,
-        requestId: randomUUID(),
-        surface: "audience_pulse",
-        operation: "analysis",
-        attemptKey: randomUUID(),
-      };
-      const inference = await this.deps.inferenceFactory.create({
-        workspaceContext: { workspaceId: input.workspaceId, accountId: input.accountId },
-        modelCallContext,
-      });
-
-      let completion: Awaited<ReturnType<typeof inference.complete>>;
+      const censusTopics = censusTopicsFromRun({ topics: censusResult.topics });
+      // This report supplies the current census-derived data to both branches. Reuse
+      // carries over only model-authored narrative fields, never an old content-gap
+      // decision or a recommendation that the domain no longer qualifies.
+      let censusReport: ReturnType<typeof buildAudiencePulseCensusReport>;
       try {
-        completion = await inference.complete({
-          prompt,
-          maxInputTokens: AUDIENCE_PULSE_MAX_TOTAL_TOKENS,
-          maxOutputTokens: AUDIENCE_PULSE_MAX_OUTPUT_TOKENS,
-          responseFormat,
-          signal: input.signal,
-          operation: modelCallContext,
-          validateResult(result) {
-            parseModelResult(result.text, shownQualifyingTopicIndexes);
-          },
-        });
-      } catch (error) {
-        if (errorStatusCode(error) !== undefined) throw error;
-        const reason = unavailableReason(error);
-        deferredFailureOutcome = reason;
-        return { kind: "unavailable", reason };
-      }
-
-      let report: AudiencePulseStoredReport;
-      let generatedAt: Date;
-      try {
-        const model = parseModelResult(completion.text, shownQualifyingTopicIndexes);
-        generatedAt = this.now();
-        report = buildAudiencePulseReport({
+        const computedCensusReport = buildAudiencePulseCensusReport({
           period: { start: analysisStart, end: analysisEnd },
-          generatedAt,
+          // Final reports resample this timestamp when narrative reuse or generation
+          // completes; the census-owned arrays themselves are built only here.
+          generatedAt: startedAt,
+          isFirstCensus: censusResult.isFirstCensus,
           coverage: reportCoverage,
           weeklyVolume: history.weeklyVolume,
           population: history.evidence,
           topics: censusTopics,
-          model,
+          dissolvedTopics: censusResult.dissolvedTopics,
+          previousThemeMemberCounts: previousThemeMemberCounts(priorSnapshot),
+          previousThemeShares: previousThemeShares(priorSnapshot),
         });
-        // Belt-and-suspenders on the invariant the whole feature exists for (spec 956
-        // FR-005): every eligible question is a member of exactly one topic, or
-        // unclassified, and the two sum to the population. `buildAudiencePulseReport`
-        // derives `unclassifiedQuestionCount` independently of the census's own
-        // count; they must agree.
-        if (report.unclassifiedQuestionCount !== censusResult.unclassifiedCount) {
-          throw new Error(
-            `audience_pulse: report unclassified count (${report.unclassifiedQuestionCount}) does not match `
-            + `census unclassified count (${censusResult.unclassifiedCount}) for workspace ${input.workspaceId}`,
-          );
-        }
-        const shownQualifyingThemeIds = shownQualifyingTopicIndexes
-          .flatMap((topicIndex) => report.themes[topicIndex]?.id ?? [])
-          .sort();
-        const recommendationThemeIds = report.recommendations.map((recommendation) => recommendation.themeId).sort();
-        if (shownQualifyingThemeIds.join("\u0000") !== recommendationThemeIds.join("\u0000")) {
-          this.deps.logger?.warn?.({
-            workspaceId: input.workspaceId,
-            qualifyingThemeCount: shownQualifyingThemeIds.length,
-            recommendationThemeCount: recommendationThemeIds.length,
-            qualifyingThemeIds: shownQualifyingThemeIds,
-            recommendationThemeIds,
-          }, "audience_pulse_recommendation_divergence");
-        }
+        censusReport = {
+          ...computedCensusReport,
+          report: { ...computedCensusReport.report, censusRunId: censusResult.runId },
+        };
       } catch (error) {
-        if (!isAbortError(error) && !isModelValidationError(error)) throw error;
-        const reason = unavailableReason(error);
+        if (!isAbortError(error) && !(error instanceof AudiencePulseReportValidationError)) throw error;
+        const reason = isAbortError(error) ? "cancelled" : "census";
         deferredFailureOutcome = reason;
         return { kind: "unavailable", reason };
       }
+      const reusableSnapshot = reusableNarrativeSnapshot({
+        snapshot: priorSnapshot,
+        censusResult,
+        currentEvidenceById: evidenceById,
+        populationSize: censusReport.report.coverage.populationSize,
+        unclassifiedQuestionCount: censusReport.report.unclassifiedQuestionCount,
+        contentGapThemeIds: censusReport.report.contentGaps.map((gap) => gap.themeId),
+        recommendationEvidenceIdsByThemeId: censusReport.recommendationEvidenceIdsByThemeId,
+      });
+      narrativeReused = reusableSnapshot !== null;
 
-      // A validated model completion is billable even when a later snapshot write or
-      // accounting operation fails, so do not release its reservation afterward.
-      reservationMustRemain = true;
-      await reservation.commit();
+      let generatedAt: Date;
+      let report: AudiencePulseStoredReport;
+      if (reusableSnapshot) {
+        generatedAt = this.now();
+        report = {
+          ...censusReport.report,
+          generatedAt: generatedAt.toISOString(),
+          narrativeGeneratedAt: reusableSnapshot.report.narrativeGeneratedAt
+            ?? reusableSnapshot.report.generatedAt,
+          narrativeReuseCount: (reusableSnapshot.report.narrativeReuseCount ?? 0) + 1,
+          summary: reusableSnapshot.report.summary,
+          recommendations: reusableSnapshot.report.recommendations.map((recommendation) => ({
+            ...recommendation,
+            questions: [...recommendation.questions],
+            evidenceIds: [...recommendation.evidenceIds],
+          })),
+          // Summary, recommendations and caveats all come from one completion, so they
+          // carry over together. Reusing the narrative while dropping its caveats would
+          // strip qualifications the operator saw a moment ago and bring them back on
+          // the next regenerated run.
+          caveats: [...reusableSnapshot.report.caveats],
+        };
+      } else {
+        const { shown, additionalTopics } = buildSummaryTopics({
+          topics: censusResult.topics,
+          evidenceById,
+        });
+        const summaryInput: AudiencePulseSummaryInput = {
+          period: { start: analysisStart, end: analysisEnd },
+          coverage: {
+            populationSize: history.coverage.populationSize,
+            unclassifiedQuestionCount: censusResult.unclassifiedCount,
+            facetReadyQuestionCount: censusResult.facetReadyQuestionCount,
+          },
+          weeklyVolume: history.weeklyVolume,
+          topics: shown,
+          additionalTopics,
+        };
+        const boundedSummaryInput = boundAudiencePulseSummaryInputForPrompt(summaryInput);
+        const prompt = buildAudiencePulsePrompt(boundedSummaryInput);
+        // Qualifying topics beyond the narrative cap retain their badge but cannot receive model copy.
+        const shownQualifyingTopicIndexes = shown.flatMap((topic, index) =>
+          topic.contentGapQualifies ? [index] : []);
+        const responseFormat = buildAudiencePulseResponseFormat(shownQualifyingTopicIndexes);
+        const modelCallContext = {
+          accountId: input.accountId,
+          workspaceId: input.workspaceId,
+          requestId: randomUUID(),
+          surface: "audience_pulse",
+          operation: "analysis",
+          attemptKey: randomUUID(),
+        };
+        const inference = await this.deps.inferenceFactory.create({
+          workspaceContext: { workspaceId: input.workspaceId, accountId: input.accountId },
+          modelCallContext,
+        });
+
+        let completion: Awaited<ReturnType<typeof inference.complete>>;
+        try {
+          modelCallsIssued += 1;
+          completion = await inference.complete({
+            prompt,
+            maxInputTokens: AUDIENCE_PULSE_MAX_TOTAL_TOKENS,
+            maxOutputTokens: AUDIENCE_PULSE_MAX_OUTPUT_TOKENS,
+            responseFormat,
+            signal: input.signal,
+            operation: modelCallContext,
+            validateResult(result) {
+              parseModelResult(result.text, shownQualifyingTopicIndexes);
+            },
+          });
+        } catch (error) {
+          if (errorStatusCode(error) !== undefined) throw error;
+          const reason = unavailableReason(error);
+          deferredFailureOutcome = reason;
+          return { kind: "unavailable", reason };
+        }
+
+        try {
+          const model = parseModelResult(completion.text, shownQualifyingTopicIndexes);
+          generatedAt = this.now();
+          report = applyAudiencePulseNarrative({
+            census: censusReport,
+            generatedAt,
+            model,
+          });
+          const shownQualifyingThemeIds = shownQualifyingTopicIndexes
+            .flatMap((topicIndex) => report.themes[topicIndex]?.id ?? [])
+            .sort();
+          const recommendationThemeIds = report.recommendations.map((recommendation) => recommendation.themeId).sort();
+          if (shownQualifyingThemeIds.join("\u0000") !== recommendationThemeIds.join("\u0000")) {
+            this.deps.logger?.warn?.({
+              workspaceId: input.workspaceId,
+              qualifyingThemeCount: shownQualifyingThemeIds.length,
+              recommendationThemeCount: recommendationThemeIds.length,
+              qualifyingThemeIds: shownQualifyingThemeIds,
+              recommendationThemeIds,
+            }, "audience_pulse_recommendation_divergence");
+          }
+        } catch (error) {
+          if (!isAbortError(error) && !isModelValidationError(error)) throw error;
+          const reason = unavailableReason(error);
+          deferredFailureOutcome = reason;
+          return { kind: "unavailable", reason };
+        }
+      }
+
+      // Belt-and-suspenders on the invariant the whole feature exists for (spec 956
+      // FR-005): every eligible question is a member of exactly one topic, or
+      // unclassified, and the two sum to the population. `buildAudiencePulseReport`
+      // derives `unclassifiedQuestionCount` independently of the census's own
+      // count; they must agree on both generated and reused narratives.
+      if (report.unclassifiedQuestionCount !== censusResult.unclassifiedCount) {
+        throw new Error(
+          `audience_pulse: report unclassified count (${report.unclassifiedQuestionCount}) does not match `
+          + `census unclassified count (${censusResult.unclassifiedCount}) for workspace ${input.workspaceId}`,
+        );
+      }
+
+      // Issued model work is billable even when validation or a later snapshot write
+      // fails, so commit before persistence once the successful path reaches here.
+      if (modelCallsIssued > 0) {
+        if (!reservation) {
+          throw new Error("audience_pulse: model completion has no usage reservation");
+        }
+        reservationMustRemain = true;
+        await reservation.commit();
+      }
       // Only evidence a theme or recommendation actually references ever needs to
       // rehydrate later -- an unclassified question's evidence ref would never be
       // read again, and the population can be far larger than what any topic claimed.
@@ -705,6 +1008,7 @@ export class AudiencePulseService implements AudiencePulsePort {
         sampleSize: history.coverage.sampleSize,
         unclassifiedCount: censusResult.unclassifiedCount,
         topicCount: censusTopics.length,
+        narrativeReused,
       });
       return { kind: "completed", report: hydrated };
     } catch (error) {
@@ -713,17 +1017,22 @@ export class AudiencePulseService implements AudiencePulsePort {
     } finally {
       try {
         if (reservation && !reservationMustRemain) {
-          await reservation.release();
+          if (modelCallsIssued > 0) {
+            reservationMustRemain = true;
+            await reservation.commit();
+          } else {
+            await reservation.release();
+          }
         }
       } catch (error) {
-        // Releasing is accounting work, so surface failures while still cleaning up the lease.
-        await this.recordOutcome(input, "internal", startedAt, {}).catch(() => undefined);
+        // Settling usage is accounting work, so surface failures while still cleaning up the lease.
+        await this.recordOutcome(input, "internal", startedAt, { narrativeReused }).catch(() => undefined);
         throw error;
       } finally {
         await lease.release().catch(() => undefined);
       }
       if (deferredFailureOutcome) {
-        await this.recordOutcome(input, deferredFailureOutcome, startedAt, {});
+        await this.recordOutcome(input, deferredFailureOutcome, startedAt, { narrativeReused });
       }
     }
   }
@@ -732,11 +1041,12 @@ export class AudiencePulseService implements AudiencePulsePort {
     input: { accountId: string; userId: string; workspaceId: string },
     outcome: string,
     startedAt: Date,
-    counts: Record<string, number>,
+    counts: Record<string, number | boolean>,
   ): Promise<void> {
     const durationMs = Math.max(0, this.now().getTime() - startedAt.getTime());
     const eventStatus: "success" | "failure" = outcome === "completed" || outcome === "no_traffic" ? "success" : "failure";
-    const metadata = { userId: input.userId, outcome, durationMs, ...counts };
+    const narrativeReused = counts.narrativeReused === true;
+    const metadata = { userId: input.userId, outcome, durationMs, ...counts, narrativeReused };
     await safeAudit(this.deps.auditService, {
       accountId: input.accountId,
       workspaceId: input.workspaceId,
@@ -746,7 +1056,7 @@ export class AudiencePulseService implements AudiencePulsePort {
       eventStatus,
       metadata,
     });
-    const context = { workspaceId: input.workspaceId, outcome, durationMs, ...counts };
+    const context = { workspaceId: input.workspaceId, outcome, durationMs, ...counts, narrativeReused };
     if (eventStatus === "success") {
       this.deps.logger?.info?.(context, "audience_pulse_refresh");
     } else {

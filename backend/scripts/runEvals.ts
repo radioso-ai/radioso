@@ -34,6 +34,7 @@ import { runMigrations } from "../src/db/runMigrations.js";
 import { createLogger } from "../src/shared/observability/logger.js";
 import { projectInternalAgentConfig } from "../src/modules/agents/public.js";
 import {
+  buildBaselineFile,
   diffAgainstBaseline,
   formatReport,
   hasBaselineGateFailures,
@@ -360,9 +361,12 @@ const main = async (): Promise<void> => {
         );
       }
       const generatedAt = new Date().toISOString();
+      const updatedBaseline = flags.tags.length > 0
+        ? mergeBaselineFile(baseline, outcomes, generatedAt, flags.passThreshold)
+        : buildBaselineFile(outcomes, generatedAt, flags.passThreshold);
       writeFileSync(
         BASELINE_PATH,
-        `${JSON.stringify(mergeBaselineFile(baseline, outcomes, generatedAt, flags.passThreshold), null, 2)}\n`,
+        `${JSON.stringify(updatedBaseline, null, 2)}\n`,
       );
       console.log(`Baseline updated: ${path.relative(process.cwd(), BASELINE_PATH)}`);
       return;

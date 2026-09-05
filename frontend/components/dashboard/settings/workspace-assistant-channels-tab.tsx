@@ -528,6 +528,7 @@ export function WorkspaceAssistantChannelsTab({
           assistantBehaviorSettings.suggestedQuestionsEnabled !== savedAssistantBehaviorSettings.suggestedQuestionsEnabled ||
           assistantBehaviorSettings.assistantLinkUtmEnabled !== savedAssistantBehaviorSettings.assistantLinkUtmEnabled ||
           assistantBehaviorSettings.citationDisplayEnabled !== savedAssistantBehaviorSettings.citationDisplayEnabled ||
+          assistantBehaviorSettings.handoffOnRetrievalMiss !== savedAssistantBehaviorSettings.handoffOnRetrievalMiss ||
           JSON.stringify(assistantBehaviorSettings.theme ?? DEFAULT_ASSISTANT_THEME) !==
             JSON.stringify(savedAssistantBehaviorSettings.theme ?? DEFAULT_ASSISTANT_THEME) ||
           JSON.stringify(assistantBehaviorSettings.branding ?? null) !==

@@ -401,6 +401,28 @@ export function AssistantProfileSection({
                 </div>
               ) : null}
             </div>
+            {assistantBehaviorSettings.handoffOnRetrievalMiss !== undefined ? (
+              <div className="flex items-start justify-between gap-4 p-3">
+                <div className="min-w-0">
+                  <Label htmlFor="handoffOnRetrievalMiss" className="text-foreground">
+                    Hand off on retrieval miss
+                  </Label>
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    Send a no-context grounded miss to a person.
+                  </p>
+                </div>
+                <Switch
+                  id="handoffOnRetrievalMiss"
+                  checked={assistantBehaviorSettings.handoffOnRetrievalMiss}
+                  onCheckedChange={(checked) =>
+                    onAssistantBehaviorDraft((current) => ({
+                      ...current,
+                      handoffOnRetrievalMiss: checked,
+                    }))
+                  }
+                />
+              </div>
+            ) : null}
           </div>
         </div>
       </div>

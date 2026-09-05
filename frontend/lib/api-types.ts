@@ -165,6 +165,7 @@ export type AssistantBehaviorSettings = Pick<
   // (assistant) settings; the workspace-level mapping leaves it undefined.
   contactRequestsEnabled?: boolean
   webhookExportsEnabled?: boolean
+  handoffOnRetrievalMiss?: boolean
   contactRequestDelivery?: AgentContactRequestDelivery
   theme: WebsiteEmbedThemeSettings
   branding?: AgentBrandingSettings
@@ -725,6 +726,7 @@ export const agentToAssistantBehaviorSettings = (agent: AgentSettings): Assistan
   citationDisplayEnabled: agent.citationDisplayEnabled,
   contactRequestsEnabled: agent.contactRequestsEnabled,
   webhookExportsEnabled: agent.webhookExportsEnabled,
+  handoffOnRetrievalMiss: agent.handoffOnRetrievalMiss,
   contactRequestDelivery: agent.contactRequestDelivery,
   theme: agent.theme,
   branding: agent.branding,

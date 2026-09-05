@@ -86,6 +86,8 @@ const declarations: readonly PolicyDeclaration[] = [
   sessionOnly("POST", "/api/v1/account/invitations", "account.users.manage"),
   sessionOnly("DELETE", "/api/v1/account/invitations/:invitationId", "account.users.manage"),
   sessionOnly("POST", "/api/v1/account/switch", "account.membership.read"),
+  sessionOnly("GET", "/api/v1/auth/session"),
+  sessionOnly("POST", "/api/v1/auth/invitations/:invitationToken/accept-as-current-user"),
   sessionOnly("DELETE", "/api/v1/account", "account.organization.delete"),
   sessionOnly("PATCH", "/api/v1/account", "account.organization.rename"),
   sessionOnly("PATCH", "/api/v1/account/users/:membershipId", "account.membership.role.update"),

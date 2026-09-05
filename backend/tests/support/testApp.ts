@@ -274,6 +274,7 @@ import {
   InMemoryMessageRepository,
   InMemoryConversationOwnershipRepository,
   InMemoryRetrievalSettingsRepository,
+  InMemoryFederatedIdentityRepository,
   InMemorySessionRepository,
   InMemoryEmailVerificationTokenRepository,
   InMemoryPasswordResetTokenRepository,
@@ -765,6 +766,7 @@ export const createTestDependencies = (overrides: {
     }),
   );
   const sessionRepository = new InMemorySessionRepository();
+  const federatedIdentityRepository = new InMemoryFederatedIdentityRepository();
   const machineAccessRepository = new InMemoryMachineAccessRepository();
   const ingestionSettingsRepository = new InMemoryIngestionSettingsRepository();
   const retrievalSettingsRepository = new InMemoryRetrievalSettingsRepository();
@@ -2103,6 +2105,7 @@ export const createTestDependencies = (overrides: {
     accountRepository,
     userRepository,
     sessionRepository,
+    federatedIdentityRepository,
     workspaceService,
     accountAccessService,
     accountInvitationService,
@@ -2200,6 +2203,7 @@ export const createTestDependencies = (overrides: {
       accountRepository,
       userRepository,
       sessionRepository,
+      federatedIdentityRepository,
       accountAccessService,
       workspaceService,
       passwordResetTokenRepository: new InMemoryPasswordResetTokenRepository(),

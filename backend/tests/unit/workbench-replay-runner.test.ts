@@ -515,8 +515,6 @@ describe("WorkbenchReplayRunner", () => {
       route: "retrieval",
       isIdentityQuestion: false,
       intentTopic: null,
-      inScopeRequest: null,
-      outsideScopeRequest: null,
       rewrite: {
         rewrittenQuery: "refund processing duration",
         semanticQuery: "refund processing duration",
@@ -636,8 +634,6 @@ describe("WorkbenchReplayRunner", () => {
       route: "direct",
       isIdentityQuestion: false,
       intentTopic: null,
-      inScopeRequest: null,
-      outsideScopeRequest: null,
       rewrite: null,
       responseLanguage: "English",
       routineRankings: [],

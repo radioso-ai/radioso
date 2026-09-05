@@ -44,6 +44,7 @@ import type { AssistantPageContext } from "../types/assistantApi.js";
 import type { PageReadCapability } from "./pageRead/pageReadDecision.js";
 import type { PageReadOutcome } from "./pageRead/pageReadSessionOutcome.js";
 import { CHAT_TURN_ROUTE, type ChatTurnRoute } from "../../../shared/domain/chatTurnRoute.js";
+import type { SessionPreparationTimings } from "./turnTraceEnvelope.js";
 import { normalizeRewriteContinuityState } from "./rewriteContinuityState.js";
 import type { RetrievalTurnPort } from "./retrievalTurnDispatch.js";
 import type { DirectiveSteeringResult } from "../../directives/public.js";
@@ -82,6 +83,12 @@ export const isEligibleForFacetExtraction = (input: {
   && isAudiencePulseEndUserChannel(input.sourceChannel);
 
 export interface PreparedSession {
+  /**
+   * Wall clock for the pre-engine preparation steps. The engine opens the trace
+   * spine after this runs, so without these the whole pre-planner wait is
+   * indistinguishable from network latency.
+   */
+  preparationTimings?: SessionPreparationTimings;
   agent: AgentRecord;
   conversation: ConversationRecord;
   history: MessageRecord[];
@@ -221,23 +228,35 @@ export class ChatSessionPreparer {
   ) {}
 
   async prepare(input: PrepareChatSessionInput, options: PrepareChatSessionOptions = {}): Promise<PreparedSession> {
+    const preparationStartedAtMs = Date.now();
+    const steps: Record<string, number> = {};
+    const timed = async <T>(step: string, run: () => Promise<T>): Promise<T> => {
+      const startedAtMs = Date.now();
+      try {
+        return await run();
+      } finally {
+        steps[step] = (steps[step] ?? 0) + (Date.now() - startedAtMs);
+      }
+    };
     const chatSessionId = input.chatSessionId ?? input.anonymousSessionId ?? null;
     const conversation = input.conversationId
-      ? await this.ensureConversation(input.conversationId, input.workspaceId, chatSessionId)
+      ? await timed("conversation", () =>
+          this.ensureConversation(input.conversationId!, input.workspaceId, chatSessionId))
       : null;
     const agent = options.preResolvedAgent ?? (this.agentService
-      ? await this.agentService.resolve(input.workspaceId, input.agentId ?? conversation?.agentId ?? null)
-      : await this.resolveLegacyAgent(input.workspaceId));
+      ? await timed("agent", () =>
+          this.agentService!.resolve(input.workspaceId, input.agentId ?? conversation?.agentId ?? null))
+      : await timed("agent", () => this.resolveLegacyAgent(input.workspaceId)));
     if (conversation?.agentId && conversation.agentId !== agent.id) {
       throw notFound("Conversation not found");
     }
     const effectiveVerifiedCustomerId = input.verifiedCustomerId ?? conversation?.verifiedCustomerId ?? null;
     const history = options.preResolvedHistory ?? (conversation
-      ? await this.messageRepository.listRecentByConversationId(
+      ? await timed("history", () => this.messageRepository.listRecentByConversationId(
           input.workspaceId,
           conversation.id,
           RETRIEVAL_BEHAVIOR.rewriteConversationContextMaxMessages,
-        )
+        ))
       : []);
     const [rewriteContinuityState, conversationSummary] = await Promise.all([
       conversation
@@ -280,17 +299,18 @@ export class ChatSessionPreparer {
       ? [...history, promotedBootstrapGreeting]
       : history;
 
-    const userMessage = await this.messageRepository.create({
+    const userMessage = await timed("userMessage", () => this.messageRepository.create({
       conversationId: persistedConversation.id,
       workspaceId: input.workspaceId,
       role: "user",
       content: input.query,
       inputMetadata: input.inputMetadata,
-    });
+    }));
     this.enqueueFacetExtraction(userMessage, persistedConversation);
     // The direct-only (non-grounded) base turn. Used as-is when retrieval is
     // skipped, otherwise as the throwaway base `prepareRetrieval` recomputes from.
-    const hostVariables = await this.resolveHostVariables(input, agent, effectiveVerifiedCustomerId, chatSessionId);
+    const hostVariables = await timed("hostVariables", () =>
+      this.resolveHostVariables(input, agent, effectiveVerifiedCustomerId, chatSessionId));
     const directOnlyTurn = this.prepareDirectOnlyTurn(
       this.buildPipelineInput(input, agent, turnHistory, conversationForTurn, userMessage),
       agent,
@@ -317,6 +337,7 @@ export class ChatSessionPreparer {
         }, defaultTurnFraming(), hostVariables);
 
     return {
+      preparationTimings: { totalMs: Date.now() - preparationStartedAtMs, steps },
       agent,
       conversation: conversationForTurn,
       history: turnHistory,

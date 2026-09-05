@@ -3057,6 +3057,21 @@ CREATE TABLE public.usage_events (
 
 
 --
+-- Name: user_federated_identities; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.user_federated_identities (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid NOT NULL,
+    provider text NOT NULL,
+    subject text NOT NULL,
+    provider_email text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_authenticated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: users; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4947,6 +4962,22 @@ ALTER TABLE ONLY public.usage_events
 
 
 --
+-- Name: user_federated_identities user_federated_identities_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_federated_identities
+    ADD CONSTRAINT user_federated_identities_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: user_federated_identities user_federated_identities_provider_subject_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_federated_identities
+    ADD CONSTRAINT user_federated_identities_provider_subject_key UNIQUE (provider, subject);
+
+
+--
 -- Name: users users_email_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6802,6 +6833,13 @@ CREATE INDEX idx_usage_events_conversation_id ON public.usage_events USING btree
 --
 
 CREATE INDEX idx_usage_events_workspace_occurred_at ON public.usage_events USING btree (workspace_id, occurred_at);
+
+
+--
+-- Name: idx_user_federated_identities_user; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_user_federated_identities_user ON public.user_federated_identities USING btree (user_id);
 
 
 --
@@ -9742,6 +9780,14 @@ ALTER TABLE ONLY public.usage_events
 
 ALTER TABLE ONLY public.usage_events
     ADD CONSTRAINT usage_events_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: user_federated_identities user_federated_identities_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_federated_identities
+    ADD CONSTRAINT user_federated_identities_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 
 --

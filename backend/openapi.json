@@ -293,6 +293,25 @@
           }
         ]
       },
+      "SessionResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/LoginResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "email": {
+                "type": "string",
+                "format": "email"
+              }
+            },
+            "required": [
+              "email"
+            ]
+          }
+        ]
+      },
       "EmailVerificationVerifyResponse": {
         "type": "object",
         "properties": {
@@ -937,13 +956,26 @@
           "expiresAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "requiresExistingPassword": {
+            "type": "boolean",
+            "description": "True when a login already exists for the invited email, so accepting with a password verifies the existing one instead of setting a new one."
+          },
+          "federatedProviders": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Identity providers the invited login can sign in with, such as \"google\". A login listed here can accept the invitation through that provider without a password."
           }
         },
         "required": [
           "accountId",
           "email",
           "status",
-          "expiresAt"
+          "expiresAt",
+          "requiresExistingPassword",
+          "federatedProviders"
         ]
       },
       "RetrievalDefaultsResponse": {
@@ -19140,6 +19172,43 @@
         }
       }
     },
+    "/api/v1/auth/session": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Describe the account context of the current session",
+        "description": "Recovers the signed-in identity from the session cookie. Sign-in paths that redirect the browser, such as provider OAuth, set the cookie without returning a body; this reports who the session belongs to and which account and workspace it lands on.",
+        "operationId": "getCurrentSession",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current session described",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No active session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/invitations/{invitationToken}": {
       "get": {
         "tags": [
@@ -19171,6 +19240,73 @@
           },
           "404": {
             "description": "Invitation not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/invitations/{invitationToken}/accept-as-current-user": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Accept an invitation as the signed-in user, without a password",
+        "operationId": "acceptAccountInvitationAsCurrentUser",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "invitationToken",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Invitation accepted and session switched to the joined account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No active session, or the session email does not match the invitation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Invitation not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Invitation is no longer valid",
             "content": {
               "application/json": {
                 "schema": {

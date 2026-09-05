@@ -245,6 +245,7 @@ export interface OpenApiSchemaCatalog {
   RegistrationAvailabilityResponseSchema: z.ZodTypeAny;
   PasswordResetConfirmRequestSchema: z.ZodTypeAny;
   PasswordResetConfirmResponseSchema: z.ZodTypeAny;
+  SessionResponseSchema: z.ZodTypeAny;
   PasswordResetRequestSchema: z.ZodTypeAny;
   ParsedQuerySchema: z.ZodTypeAny;
   PlatformChannelsSettingsSectionSchema: z.ZodTypeAny;

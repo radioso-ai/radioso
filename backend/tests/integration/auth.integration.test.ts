@@ -647,4 +647,282 @@ describe("auth integration", () => {
       }),
     );
   });
+
+  it("reports requiresExistingPassword as false when no login exists for the invited email", async () => {
+    const { app } = createTestApp();
+
+    const owner = await issueTestSession(app, "owner-no-existing-user@example.com");
+
+    const invitation = await request(app)
+      .post("/api/v1/account/invitations")
+      .set("Cookie", owner.cookie)
+      .send({ email: "fresh-invitee@example.com" });
+    const invitationToken = invitation.body.acceptanceUrl.split("/").at(-1);
+
+    const fetched = await request(app).get(`/api/v1/auth/invitations/${invitationToken}`);
+
+    expect(fetched.status).toBe(200);
+    expect(fetched.body.requiresExistingPassword).toBe(false);
+  });
+
+  it("reports requiresExistingPassword as true when a login already exists for the invited email", async () => {
+    const { app } = createTestApp();
+
+    await issueTestSession(app, "already-registered-invitee@example.com");
+    const owner = await issueTestSession(app, "owner-existing-user@example.com");
+
+    const invitation = await request(app)
+      .post("/api/v1/account/invitations")
+      .set("Cookie", owner.cookie)
+      .send({ email: "already-registered-invitee@example.com" });
+    const invitationToken = invitation.body.acceptanceUrl.split("/").at(-1);
+
+    const fetched = await request(app).get(`/api/v1/auth/invitations/${invitationToken}`);
+
+    expect(fetched.status).toBe(200);
+    expect(fetched.body.requiresExistingPassword).toBe(true);
+  });
+
+  it("reports an empty federatedProviders list for an invited email whose login has no federated link", async () => {
+    const { app } = createTestApp();
+
+    await issueTestSession(app, "no-federated-link-invitee@example.com");
+    const owner = await issueTestSession(app, "owner-no-federated-link@example.com");
+
+    const invitation = await request(app)
+      .post("/api/v1/account/invitations")
+      .set("Cookie", owner.cookie)
+      .send({ email: "no-federated-link-invitee@example.com" });
+    const invitationToken = invitation.body.acceptanceUrl.split("/").at(-1);
+
+    const fetched = await request(app).get(`/api/v1/auth/invitations/${invitationToken}`);
+
+    expect(fetched.status).toBe(200);
+    expect(fetched.body.federatedProviders).toEqual([]);
+  });
+
+  it("reports the linked provider in federatedProviders once the invited email's user has signed in federated", async () => {
+    const { app, dependencies } = createTestApp();
+
+    await issueTestSession(app, "google-linked-invitee@example.com");
+    const owner = await issueTestSession(app, "owner-google-linked@example.com");
+    // Drives the real federated sign-in path (rather than poking a repository
+    // fake directly) so the link is created exactly as production traffic
+    // would create it: AuthService.federatedLogin upserts the identity link
+    // for the email-matched user under the hood.
+    await dependencies.authService.federatedLogin({
+      provider: "google",
+      subject: "google-sub-invitee-link",
+      email: "google-linked-invitee@example.com",
+      emailVerified: true,
+    });
+
+    const invitation = await request(app)
+      .post("/api/v1/account/invitations")
+      .set("Cookie", owner.cookie)
+      .send({ email: "google-linked-invitee@example.com" });
+    const invitationToken = invitation.body.acceptanceUrl.split("/").at(-1);
+
+    const fetched = await request(app).get(`/api/v1/auth/invitations/${invitationToken}`);
+
+    expect(fetched.status).toBe(200);
+    expect(fetched.body.federatedProviders).toEqual(["google"]);
+    expect(fetched.body.requiresExistingPassword).toBe(true);
+  });
+
+  it("reports an empty federatedProviders list when no user exists for the invited email at all", async () => {
+    const { app } = createTestApp();
+
+    const owner = await issueTestSession(app, "owner-no-user-for-invitee@example.com");
+
+    const invitation = await request(app)
+      .post("/api/v1/account/invitations")
+      .set("Cookie", owner.cookie)
+      .send({ email: "no-user-at-all-invitee@example.com" });
+    const invitationToken = invitation.body.acceptanceUrl.split("/").at(-1);
+
+    const fetched = await request(app).get(`/api/v1/auth/invitations/${invitationToken}`);
+
+    expect(fetched.status).toBe(200);
+    expect(fetched.body.federatedProviders).toEqual([]);
+  });
+
+  it("lets a signed-in invited user accept an invitation without a password", async () => {
+    const { app } = createTestApp();
+
+    const invitee = await issueTestSession(app, "current-user-accept@example.com");
+    const owner = await issueTestSession(app, "owner-current-user-accept@example.com");
+
+    const invitation = await request(app)
+      .post("/api/v1/account/invitations")
+      .set("Cookie", owner.cookie)
+      .send({ email: "current-user-accept@example.com" });
+    const invitationToken = invitation.body.acceptanceUrl.split("/").at(-1);
+
+    const accepted = await request(app)
+      .post(`/api/v1/auth/invitations/${invitationToken}/accept-as-current-user`)
+      .set("Cookie", invitee.cookie);
+
+    expect(accepted.status).toBe(200);
+    expect(accepted.body.accountId).toBe(owner.accountId);
+    expect(accepted.headers["set-cookie"]).toBeDefined();
+
+    const acceptedCookie = accepted.headers["set-cookie"]?.[0];
+    const accounts = await request(app)
+      .get("/api/v1/account/accounts")
+      .set("Cookie", acceptedCookie);
+
+    expect(accounts.body.accounts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ accountId: owner.accountId }),
+      ]),
+    );
+  });
+
+  it("rejects and audits accept-as-current-user when the session email does not match the invitation", async () => {
+    const { app, dependencies } = createTestApp();
+
+    const wrongUser = await issueTestSession(app, "wrong-current-user@example.com");
+    const owner = await issueTestSession(app, "owner-current-user-mismatch@example.com");
+
+    const invitation = await request(app)
+      .post("/api/v1/account/invitations")
+      .set("Cookie", owner.cookie)
+      .send({ email: "intended-invitee-mismatch@example.com" });
+    const invitationToken = invitation.body.acceptanceUrl.split("/").at(-1);
+
+    const accepted = await request(app)
+      .post(`/api/v1/auth/invitations/${invitationToken}/accept-as-current-user`)
+      .set("Cookie", wrongUser.cookie);
+
+    expect(accepted.status).toBe(401);
+    expect((dependencies.auditService as InMemoryAuditService).events).toContainEqual(
+      expect.objectContaining({
+        accountId: owner.accountId,
+        eventType: "account.invitation.accept",
+        eventStatus: "failure",
+        metadata: expect.objectContaining({
+          email: "wrong-current-user@example.com",
+          reason: "email_mismatch",
+        }),
+      }),
+    );
+
+    const stillPending = await request(app).get(`/api/v1/auth/invitations/${invitationToken}`);
+    expect(stillPending.body.status).toBe("pending");
+  });
+
+  it("rejects accept-as-current-user with no session cookie", async () => {
+    const { app } = createTestApp();
+
+    const owner = await issueTestSession(app, "owner-current-user-no-cookie@example.com");
+
+    const invitation = await request(app)
+      .post("/api/v1/account/invitations")
+      .set("Cookie", owner.cookie)
+      .send({ email: "no-cookie-invitee@example.com" });
+    const invitationToken = invitation.body.acceptanceUrl.split("/").at(-1);
+
+    const accepted = await request(app).post(
+      `/api/v1/auth/invitations/${invitationToken}/accept-as-current-user`,
+    );
+
+    expect(accepted.status).toBe(401);
+  });
+
+  it("returns the signed-in session context from a valid cookie", async () => {
+    const { app } = createTestApp();
+
+    const session = await issueTestSession(app, "session-context@example.com");
+
+    const response = await request(app)
+      .get("/api/v1/auth/session")
+      .set("Cookie", session.cookie);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      userId: session.userId,
+      email: "session-context@example.com",
+      accountId: session.accountId,
+      workspaceId: session.workspaceId,
+    });
+    expect(response.headers["cache-control"]).toBe("no-store");
+  });
+
+  it("rejects GET /api/v1/auth/session with no session cookie", async () => {
+    const { app } = createTestApp();
+
+    const response = await request(app).get("/api/v1/auth/session");
+
+    expect(response.status).toBe(401);
+  });
+
+  it("rejects GET /api/v1/auth/session with a garbage cookie value", async () => {
+    const { app } = createTestApp();
+
+    const response = await request(app)
+      .get("/api/v1/auth/session")
+      .set("Cookie", "radioso_session=not-a-real-session-token");
+
+    expect(response.status).toBe(401);
+  });
+
+  it("describes the joined account through GET /api/v1/auth/session after accept-as-current-user switches it", async () => {
+    const { app } = createTestApp();
+
+    const invitee = await issueTestSession(app, "session-after-join@example.com");
+    const owner = await issueTestSession(app, "owner-session-after-join@example.com");
+
+    const invitation = await request(app)
+      .post("/api/v1/account/invitations")
+      .set("Cookie", owner.cookie)
+      .send({ email: "session-after-join@example.com" });
+    const invitationToken = invitation.body.acceptanceUrl.split("/").at(-1);
+
+    const accepted = await request(app)
+      .post(`/api/v1/auth/invitations/${invitationToken}/accept-as-current-user`)
+      .set("Cookie", invitee.cookie);
+    const joinedCookie = accepted.headers["set-cookie"]?.[0];
+
+    const session = await request(app)
+      .get("/api/v1/auth/session")
+      .set("Cookie", joinedCookie);
+
+    expect(accepted.status).toBe(200);
+    expect(session.status).toBe(200);
+    expect(session.body.userId).toBe(invitee.userId);
+    expect(session.body.accountId).toBe(owner.accountId);
+  });
+
+  it("dedupes repeated provider links in federatedProviders", async () => {
+    const { app, dependencies } = createTestApp();
+
+    await issueTestSession(app, "dedupe-google-invitee@example.com");
+    const owner = await issueTestSession(app, "owner-dedupe-google@example.com");
+    // Two identities at the same provider (e.g. a personal and a work Google
+    // account) must still collapse to one entry in the wire contract.
+    await dependencies.authService.federatedLogin({
+      provider: "google",
+      subject: "google-sub-dedupe-1",
+      email: "dedupe-google-invitee@example.com",
+      emailVerified: true,
+    });
+    await dependencies.authService.federatedLogin({
+      provider: "google",
+      subject: "google-sub-dedupe-2",
+      email: "dedupe-google-invitee@example.com",
+      emailVerified: true,
+    });
+
+    const invitation = await request(app)
+      .post("/api/v1/account/invitations")
+      .set("Cookie", owner.cookie)
+      .send({ email: "dedupe-google-invitee@example.com" });
+    const invitationToken = invitation.body.acceptanceUrl.split("/").at(-1);
+
+    const fetched = await request(app).get(`/api/v1/auth/invitations/${invitationToken}`);
+
+    expect(fetched.status).toBe(200);
+    expect(fetched.body.federatedProviders).toEqual(["google"]);
+  });
 });

@@ -160,6 +160,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Describe the account context of the current session
+         * @description Recovers the signed-in identity from the session cookie. Sign-in paths that redirect the browser, such as provider OAuth, set the cookie without returning a body; this reports who the session belongs to and which account and workspace it lands on.
+         */
+        get: operations["getCurrentSession"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/invitations/{invitationToken}": {
         parameters: {
             query?: never;
@@ -171,6 +191,23 @@ export interface paths {
         get: operations["getAccountInvitation"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/invitations/{invitationToken}/accept-as-current-user": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept an invitation as the signed-in user, without a password */
+        post: operations["acceptAccountInvitationAsCurrentUser"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3632,6 +3669,10 @@ export interface components {
             /** Format: email */
             email: string;
         };
+        SessionResponse: components["schemas"]["LoginResponse"] & {
+            /** Format: email */
+            email: string;
+        };
         EmailVerificationVerifyResponse: {
             /** @enum {boolean} */
             verified: true;
@@ -3820,6 +3861,10 @@ export interface components {
             status: "pending" | "accepted" | "revoked" | "expired";
             /** Format: date-time */
             expiresAt: string;
+            /** @description True when a login already exists for the invited email, so accepting with a password verifies the existing one instead of setting a new one. */
+            requiresExistingPassword: boolean;
+            /** @description Identity providers the invited login can sign in with, such as "google". A login listed here can accept the invitation through that provider without a password. */
+            federatedProviders: string[];
         };
         RetrievalDefaultsResponse: {
             queryRewriteEnabled: boolean;
@@ -8494,6 +8539,35 @@ export interface operations {
             };
         };
     };
+    getCurrentSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current session described */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionResponse"];
+                };
+            };
+            /** @description No active session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     getAccountInvitation: {
         parameters: {
             query?: never;
@@ -8516,6 +8590,55 @@ export interface operations {
             };
             /** @description Invitation not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    acceptAccountInvitationAsCurrentUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invitationToken: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Invitation accepted and session switched to the joined account */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            /** @description No active session, or the session email does not match the invitation */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invitation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invitation is no longer valid */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -300,6 +300,35 @@ export const registerAuthPaths = (
 
   registry.registerPath({
     method: "get",
+    path: "/api/v1/auth/session",
+    tags: ["Auth"],
+    summary: "Describe the account context of the current session",
+    description:
+      "Recovers the signed-in identity from the session cookie. Sign-in paths that redirect the browser, such as provider OAuth, set the cookie without returning a body; this reports who the session belongs to and which account and workspace it lands on.",
+    operationId: "getCurrentSession",
+    security: [{ [security.sessionCookieScheme.name]: [] }],
+    responses: {
+      200: {
+        description: "Current session described",
+        content: {
+          "application/json": {
+            schema: schemas.SessionResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "No active session",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
     path: "/api/v1/auth/invitations/{invitationToken}",
     tags: ["Auth"],
     summary: "Get invitation details for an account join flow",
@@ -318,6 +347,52 @@ export const registerAuthPaths = (
       },
       404: {
         description: "Invitation not found",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/auth/invitations/{invitationToken}/accept-as-current-user",
+    tags: ["Auth"],
+    summary: "Accept an invitation as the signed-in user, without a password",
+    operationId: "acceptAccountInvitationAsCurrentUser",
+    security: [{ [security.sessionCookieScheme.name]: [] }],
+    request: {
+      params: schemas.invitationTokenParamsSchema,
+    },
+    responses: {
+      200: {
+        description: "Invitation accepted and session switched to the joined account",
+        content: {
+          "application/json": {
+            schema: schemas.LoginResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "No active session, or the session email does not match the invitation",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      404: {
+        description: "Invitation not found",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      409: {
+        description: "Invitation is no longer valid",
         content: {
           "application/json": {
             schema: schemas.ErrorResponseSchema,

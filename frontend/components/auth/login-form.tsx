@@ -61,7 +61,7 @@ export function LoginForm({
   }, [])
 
   const handleGoogleSignIn = () => {
-    window.location.assign(authApi.getGoogleLoginStartUrl(returnTo))
+    window.location.assign(authApi.getGoogleLoginStartUrl({ returnTo }))
   }
 
   const handleSubmit = async (e: React.FormEvent) => {

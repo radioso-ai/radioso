@@ -108,7 +108,7 @@ describe("FacetExtractionWorker", () => {
     expect(store.markFailed).toHaveBeenCalledWith(
       expect.objectContaining({ id: "job-1", attemptCount: 1 }),
       "provider unavailable",
-      new Date(NOW.getTime() + FACET_EXTRACTION_RETRY_DELAYS_MS[0]!),
+      new Date(NOW.getTime() + FACET_EXTRACTION_RETRY_DELAYS_MS[0]),
     );
   });
 
@@ -124,7 +124,7 @@ describe("FacetExtractionWorker", () => {
     expect(store.markFailed).toHaveBeenCalledWith(
       expect.objectContaining({ id: "job-1", attemptCount: 2 }),
       "provider unavailable",
-      new Date(NOW.getTime() + FACET_EXTRACTION_RETRY_DELAYS_MS[1]!),
+      new Date(NOW.getTime() + FACET_EXTRACTION_RETRY_DELAYS_MS[1]),
     );
   });
 
@@ -138,7 +138,7 @@ describe("FacetExtractionWorker", () => {
     await worker.runOnce(NOW);
 
     const [, , nextScheduledAt] = store.markFailed.mock.calls[0] as [FacetExtractionJob, string, Date | null];
-    expect(nextScheduledAt).toEqual(new Date(NOW.getTime() + FACET_EXTRACTION_RETRY_DELAYS_MS[0]!));
+    expect(nextScheduledAt).toEqual(new Date(NOW.getTime() + FACET_EXTRACTION_RETRY_DELAYS_MS[0]));
   });
 
   it("fails a permanent provider rejection immediately without spending the retry budget", async () => {

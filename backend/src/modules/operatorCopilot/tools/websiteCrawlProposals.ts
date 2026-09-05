@@ -96,5 +96,5 @@ export const createWebsiteCrawlProposalCopilotTools = (
         };
       },
     }),
-  } as CopilotToolDescriptor];
+  }];
 };

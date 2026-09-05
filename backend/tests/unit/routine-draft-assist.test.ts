@@ -114,7 +114,7 @@ const createService = (
     actionCatalog,
     ...(skillAuthoringCatalog ? { skillAuthoringCatalog } : {}),
     logger: logger as never,
-    telemetryService: telemetryService as never,
+    telemetryService: telemetryService,
   });
   return { service, repository, logger, telemetryService };
 };

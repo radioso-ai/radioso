@@ -45,7 +45,7 @@ describe("contact routine ranked activation", () => {
         },
       });
     expect(gateway.complete).toHaveBeenCalledTimes(1);
-    expect(gateway.complete.mock.calls[0]![0].systemPrompt).toContain("The user asks a human to follow up with them.");
+    expect(gateway.complete.mock.calls[0][0].systemPrompt).toContain("The user asks a human to follow up with them.");
   });
 
   it("declines contact activation when the ranked matcher scores contact intent below the floor", async () => {

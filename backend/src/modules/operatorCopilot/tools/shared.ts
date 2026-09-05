@@ -81,11 +81,11 @@ export const describeNamedAgent = async <TInput extends NamedAgentInput>(
   if (candidates.length !== 1) {
     return candidates.length === 0 ? { kind: "not_found" } : { kind: "ambiguous", candidates };
   }
-  const candidate = candidates[0]!;
+  const candidate = candidates[0];
   return {
     kind: "resolved",
     entity: candidate,
-    input: { ...input, agentId: candidate.id, agentName: undefined } as TInput,
+    input: { ...input, agentId: candidate.id, agentName: undefined },
   };
 };
 

@@ -42,7 +42,7 @@ describe("chunk repository", () => {
             },
           };
 
-          return callback(client as never);
+          return callback(client);
         },
       } as never,
     );
@@ -80,7 +80,7 @@ describe("chunk repository", () => {
           },
         };
 
-        return callback(client as never);
+        return callback(client);
       },
     } as never);
 
@@ -148,7 +148,7 @@ describe("chunk repository", () => {
           },
         };
 
-        return callback(client as never);
+        return callback(client);
       },
     } as never);
 
@@ -193,7 +193,7 @@ describe("chunk repository", () => {
           },
         };
 
-        return callback(client as never);
+        return callback(client);
       },
     } as never);
 
@@ -443,7 +443,7 @@ describe("chunk repository", () => {
           },
         };
 
-        return callback(client as never);
+        return callback(client);
       },
     } as never);
 
@@ -502,7 +502,7 @@ describe("chunk repository", () => {
             },
           };
 
-          return callback(client as never);
+          return callback(client);
         },
       } as never,
     );
@@ -590,7 +590,7 @@ describe("chunk repository", () => {
             },
           };
 
-          return callback(client as never);
+          return callback(client);
         },
       } as never,
     );

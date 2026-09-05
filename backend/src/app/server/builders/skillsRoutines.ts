@@ -1,4 +1,5 @@
 import type { ConversationModelGateway } from "@radioso/conversation-contract";
+import { stringifyUnknown } from "../../../shared/text/stringifyUnknown.js";
 import { createDirectiveCoherenceChecker, scopeTag } from "@radioso/conversation-defaults";
 import type { ApplicationComposition } from "../../composition/index.js";
 import { bindSkillCapabilityExecutors } from "../../composition/skillCapabilityRegistry.js";
@@ -61,7 +62,9 @@ const createConversationModelGateway = (pipeline: ModelInferencePipeline): Conve
         agentId: invocationContext.agentId,
         surface: "agents",
         operation: "directive_coherence",
-        attemptKey: String(input.metadata?.candidateDirectiveName ?? "candidate"),
+        attemptKey: input.metadata?.candidateDirectiveName === undefined || input.metadata.candidateDirectiveName === null
+          ? "candidate"
+          : stringifyUnknown(input.metadata.candidateDirectiveName),
       },
     });
     return {

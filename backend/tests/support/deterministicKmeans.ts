@@ -58,7 +58,7 @@ export const unitNormalize = (vector: readonly number[]): number[] => {
 const squaredDistance = (left: readonly number[], right: readonly number[]): number => {
   let total = 0;
   for (let index = 0; index < left.length; index += 1) {
-    const delta = left[index]! - right[index]!;
+    const delta = left[index] - right[index];
     total += delta * delta;
   }
   return total;
@@ -69,7 +69,7 @@ const nearestCentroid = (vector: readonly number[], centroids: readonly number[]
   let best = 0;
   let bestDistance = Number.POSITIVE_INFINITY;
   for (let index = 0; index < centroids.length; index += 1) {
-    const distance = squaredDistance(vector, centroids[index]!);
+    const distance = squaredDistance(vector, centroids[index]);
     if (distance < bestDistance) {
       best = index;
       bestDistance = distance;
@@ -83,25 +83,25 @@ const kmeansPlusPlusInit = (
   clusterCount: number,
   random: () => number,
 ): number[][] => {
-  const centroids: number[][] = [[...vectors[Math.floor(random() * vectors.length)]!]];
+  const centroids: number[][] = [[...vectors[Math.floor(random() * vectors.length)]]];
 
   while (centroids.length < clusterCount) {
-    const distances = vectors.map((vector) => squaredDistance(vector, centroids[nearestCentroid(vector, centroids)]!));
+    const distances = vectors.map((vector) => squaredDistance(vector, centroids[nearestCentroid(vector, centroids)]));
     const total = distances.reduce((sum, value) => sum + value, 0);
     if (total <= 0) {
-      centroids.push([...vectors[centroids.length % vectors.length]!]);
+      centroids.push([...vectors[centroids.length % vectors.length]]);
       continue;
     }
     let threshold = random() * total;
     let chosen = vectors.length - 1;
     for (let index = 0; index < distances.length; index += 1) {
-      threshold -= distances[index]!;
+      threshold -= distances[index];
       if (threshold <= 0) {
         chosen = index;
         break;
       }
     }
-    centroids.push([...vectors[chosen]!]);
+    centroids.push([...vectors[chosen]]);
   }
 
   return centroids;
@@ -113,26 +113,26 @@ const recomputeCentroids = (
   clusterCount: number,
   previous: readonly number[][],
 ): number[][] => {
-  const dimensions = vectors[0]!.length;
+  const dimensions = vectors[0].length;
   const sums = Array.from({ length: clusterCount }, () => new Array<number>(dimensions).fill(0));
   const counts = new Array<number>(clusterCount).fill(0);
 
   for (let index = 0; index < vectors.length; index += 1) {
-    const cluster = assignments[index]!;
+    const cluster = assignments[index];
     counts[cluster] += 1;
-    const vector = vectors[index]!;
-    const sum = sums[cluster]!;
+    const vector = vectors[index];
+    const sum = sums[cluster];
     for (let dimension = 0; dimension < dimensions; dimension += 1) {
-      sum[dimension] += vector[dimension]!;
+      sum[dimension] += vector[dimension];
     }
   }
 
   return sums.map((sum, cluster) => {
-    const count = counts[cluster]!;
+    const count = counts[cluster];
     // An emptied cluster keeps its previous centroid rather than drifting to the
     // origin, which would silently pull unrelated points into it next round.
     if (count === 0) {
-      return [...previous[cluster]!];
+      return [...previous[cluster]];
     }
     return sum.map((value) => value / count);
   });
@@ -158,7 +158,7 @@ const runOnce = (
   }
 
   const inertia = vectors.reduce(
-    (total, vector, index) => total + squaredDistance(vector, centroids[assignments[index]!]!),
+    (total, vector, index) => total + squaredDistance(vector, centroids[assignments[index]]),
     0,
   );
   return { assignments, inertia };

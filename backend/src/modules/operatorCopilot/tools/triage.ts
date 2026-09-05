@@ -5,7 +5,6 @@ import type { CopilotEvalResultsPort } from "../contracts/evalCases.js";
 import { buildCopilotDashboardLink } from "../dashboardLinks.js";
 import {
   clip,
-  copilotTriageSourcePermissions,
   escalatedAt,
   latestDownComment,
   readAuthorizedSource,

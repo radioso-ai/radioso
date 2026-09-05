@@ -149,7 +149,7 @@ class MarkEmailVerifiedFailingUserRepository extends InMemoryUserRepository {
 class RecordingOrganizationCreationGuard implements OrganizationCreationGuard {
   readonly reservations: RecordingOrganizationCreationReservation[] = [];
   readonly requests: OrganizationCreationRequest[] = [];
-  shouldReject: unknown = null;
+  shouldReject: Error | null = null;
 
   async reserve(input: OrganizationCreationRequest): Promise<OrganizationCreationReservation> {
     this.requests.push(input);
@@ -559,17 +559,16 @@ describe("AuthService rollback", () => {
 
   it("does not create account records when the organization creation guard rejects", async () => {
     const guard = new RecordingOrganizationCreationGuard();
-    guard.shouldReject = {
+    guard.shouldReject = Object.assign(new Error("Organization creation limit reached."), {
       statusCode: 429,
       code: "rate_limit_exceeded",
-      message: "Organization creation limit reached.",
       details: {
         limit: 1,
         used: 1,
         periodStart: "2026-06-01",
         resetAt: "2026-07-01T00:00:00.000Z",
       },
-    };
+    });
     const accountRepository = new TrackingAccountRepository();
     const userRepository = new InMemoryUserRepository();
     await userRepository.create({
@@ -602,12 +601,11 @@ describe("AuthService rollback", () => {
 
   it("records sanitized signup denial metadata without customer content", async () => {
     const guard = new RecordingOrganizationCreationGuard();
-    guard.shouldReject = {
+    guard.shouldReject = Object.assign(new Error("Registration is closed"), {
       statusCode: 403,
       code: "forbidden",
-      message: "Registration is closed",
       details: { organizationName: "Sensitive Org", email: "owner@example.com" },
-    };
+    });
     const accountRepository = new TrackingAccountRepository();
     const { authService, auditService, userRepository } = createAuthService({
       accountRepository,
@@ -631,11 +629,10 @@ describe("AuthService rollback", () => {
 
   it("returns closed registration before duplicate-account handling on initialized OSS", async () => {
     const guard = new RecordingOrganizationCreationGuard();
-    guard.shouldReject = {
+    guard.shouldReject = Object.assign(new Error("Registration is closed"), {
       statusCode: 403,
       code: "forbidden",
-      message: "Registration is closed",
-    };
+    });
     const userRepository = new InMemoryUserRepository();
     await userRepository.create({
       id: "existing-user",

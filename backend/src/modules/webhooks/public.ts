@@ -1,12 +1,8 @@
 export {
-  WEBHOOK_DESTINATION_LIMITS,
-  toWebhookDestination,
   webhookDeliveryOutcomeStatuses,
   webhookDestinationCreateSchema,
   webhookDestinationIdSchema,
-  webhookDestinationNameSchema,
   webhookDestinationUpdateSchema,
-  webhookDestinationUrlSchema,
   type WebhookDeliveryOutcomeStatus,
   type WebhookDestination,
   type WebhookDestinationRecord,
@@ -14,26 +10,18 @@ export {
 } from "./domain.js";
 export {
   EncryptionNotConfiguredError,
-  WebhookDestinationInUseError,
   WebhookDestinationService,
-  type WebhookDestinationActor,
   type WebhookDestinationExistencePort,
   type WebhookDestinationRepositoryPort,
   type WebhookDestinationRoutineReferencePort,
-  type WebhookDestinationSkillReferencePort,
-  type WebhookDestinationUrlGuard,
-  type WebhookDestinationsEncryptionConfig,
 } from "./service.js";
 export {
   DefaultWebhookDestinationResolver,
-  type ResolvedWebhookDestination,
   type WebhookDestinationResolver,
-  type WebhookDestinationResolverContext,
 } from "./resolver.js";
 export {
   DefaultWebhookDestinationAdapter,
   type WebhookDestinationDeliveryOutcomePort,
-  type WebhookDestinationManagementPort,
   type WebhookDestinationPublicAdapter,
   type WebhookDestinationReferencePort,
   type WebhookDestinationRuntimePort,
@@ -41,7 +29,5 @@ export {
 export {
   FetchWebhookHttpClient,
   createSignedWebhookHeaders,
-  verifyWebhookSignature,
   type WebhookHttpClient,
-  type WebhookUrlGuard,
 } from "./delivery.js";

@@ -468,7 +468,7 @@ describe("document processing enrichment split", () => {
     const enrichJobs = [...jobRepository.items.values()].filter((job) => job.kind === "enrich");
     expect(enrichJobs).toHaveLength(1);
     expect(dispatch).toHaveBeenCalledOnce();
-    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ jobId: enrichJobs[0]!.id }));
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ jobId: enrichJobs[0].id }));
   });
 
   it("vectorize retry after enrich enqueue is idempotent and never duplicates the enrich job", async () => {

@@ -174,7 +174,7 @@ describe("Slack gap escalation policy", () => {
       action_id: "ownership_takeover",
       text: { text: "Take over" },
     });
-    expect(JSON.parse(actions.elements[0]!.value as string)).toEqual({
+    expect(JSON.parse(actions.elements[0].value as string)).toEqual({
       conversationId: "44444444-4444-4444-4444-444444444444",
       workspaceId: installation.workspaceId,
     });

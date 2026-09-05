@@ -68,7 +68,7 @@ const createApp = (dependencies = createDependencies()) => {
   app.use(express.json());
   app.use("/api/v1/mcp/converse", createMcpConverseRoutes(dependencies, {
     audit: {} as never,
-    sessionService: sessionService as never,
+    sessionService: sessionService,
     converseService: converseService as never,
   }));
   app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

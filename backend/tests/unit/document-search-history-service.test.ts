@@ -20,7 +20,7 @@ describe("document search history service", () => {
         searchId: "search-1",
         results: "invalid-results-shape",
         activityTrace: "invalid-trace-shape",
-      } as unknown as Record<string, unknown>,
+      },
     });
 
     const list = await service.listHistory("workspace-1");

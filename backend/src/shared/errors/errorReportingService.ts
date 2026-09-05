@@ -45,10 +45,15 @@ const serializeError = (
     };
   }
 
-  return {
-    errorClass: error === undefined || error === null ? undefined : typeof error,
-    message: error === undefined || error === null ? "Unknown error" : String(error),
-  };
+  switch (typeof error) {
+    // `typeof null === "object"`, but the object check above only returns for truthy objects,
+    // so `null` is the only value that reaches this case.
+    case "undefined":
+    case "object":
+      return { message: "Unknown error" };
+    default:
+      return { errorClass: typeof error, message: String(error) };
+  }
 };
 
 export class ErrorReportingService {

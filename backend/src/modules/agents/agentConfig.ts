@@ -18,7 +18,6 @@ import {
   refPlaceholder,
   secretPlaceholder,
   type AgentConfigPortability,
-  type AgentConfigRefKind,
   type AgentConfigRefPlaceholder,
   type AgentConfigSecretPlaceholder,
 } from "./agentConfigPlaceholders.js";
@@ -658,7 +657,7 @@ export const serializeAuthoredDirectivesWithIds = (
 ): ReadonlyArray<{ id: string; config: AuthoredDirectiveConfig }> => {
   const directives = agent.authoredDirectives ?? [];
   const serialized = serializeAuthoredDirectives(directives);
-  return directives.map((directive, index) => ({ id: directive.id, config: serialized[index]! }));
+  return directives.map((directive, index) => ({ id: directive.id, config: serialized[index] }));
 };
 
 const descriptor = <FieldName extends AgentConfigFieldName>(

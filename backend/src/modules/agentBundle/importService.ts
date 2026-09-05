@@ -354,10 +354,10 @@ const SUPPORTED_AGENT_CONFIG_VERSIONS: readonly number[] = [3, AGENT_CONFIG_SCHE
 const assertSupportedVersions = (bundle: AgentBundle): void => {
   if (bundle.bundleVersion !== AGENT_BUNDLE_SCHEMA_VERSION) {
     throw badRequest(
-      `Unsupported bundle version ${String(bundle.bundleVersion)}; this deployment reads version ${AGENT_BUNDLE_SCHEMA_VERSION}.`,
+      `Unsupported bundle version ${String(bundle.bundleVersion)}; this deployment reads version ${String(AGENT_BUNDLE_SCHEMA_VERSION)}.`,
     );
   }
-  if (!SUPPORTED_AGENT_CONFIG_VERSIONS.includes(bundle.agent?.schemaVersion as number)) {
+  if (!SUPPORTED_AGENT_CONFIG_VERSIONS.includes(bundle.agent?.schemaVersion)) {
     throw badRequest(
       `Unsupported agent config version ${String(bundle.agent?.schemaVersion)}; this deployment reads ${SUPPORTED_AGENT_CONFIG_VERSIONS.join(", ")}.`,
     );

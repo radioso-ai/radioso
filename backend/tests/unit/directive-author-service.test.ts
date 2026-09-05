@@ -54,7 +54,7 @@ const createService = (textGenerationClient: FakeTextClient) => {
     repository,
     textGenerationClient,
     logger: logger as never,
-    telemetryService: telemetryService as never,
+    telemetryService: telemetryService,
     buildStepScopeTag: (routineId, stepId) => `step:${routineId}:${stepId}`,
   });
   return { service, repository, logger, telemetryService };

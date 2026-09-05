@@ -83,16 +83,16 @@ describe("enterprise observability module", () => {
     const posthogSink = new PosthogAnalyticsSink({
       apiKey: "posthog-key",
       host: "https://app.posthog.com",
-      fetchImpl: posthogFetch as unknown as typeof fetch,
+      fetchImpl: posthogFetch,
     });
     const posthogErrorSink = new PosthogErrorSink({
       apiKey: "posthog-key",
       host: "https://us.i.posthog.com",
-      fetchImpl: posthogErrorFetch as unknown as typeof fetch,
+      fetchImpl: posthogErrorFetch,
     });
     const sentrySink = new SentryErrorSink({
       dsn: "https://public@example.ingest.sentry.io/123456",
-      fetchImpl: sentryFetch as unknown as typeof fetch,
+      fetchImpl: sentryFetch,
     });
 
     await posthogSink.emit({

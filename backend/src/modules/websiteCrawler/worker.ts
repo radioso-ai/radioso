@@ -10,9 +10,15 @@ import {
   type WebsiteCrawlJobRepositoryPort,
 } from "../../db/repositories/websiteCrawlJobRepository.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
+import type { ErrorReporter } from "../../shared/errors/errorReporter.js";
 import type { WebsiteCrawlerProvider } from "./provider.js";
 import type { WebsiteCrawlJobDispatcherPort } from "./jobDispatcher.js";
 import { WebsiteCrawlerService, type WebsiteCrawlerDocumentIngestionPort, type WebsiteCrawlerAuditPort } from "./service.js";
+import {
+  classifyWebsiteCrawlerFailure,
+  getWebsiteCrawlerOperatorFailureMessage,
+  toSafeWebsiteCrawlerInternalFault,
+} from "./errors.js";
 
 export class WebsiteCrawlWorker {
   private static readonly DEFAULT_SLICE_DURATION_MS = 120_000;
@@ -35,6 +41,7 @@ export class WebsiteCrawlWorker {
     dispatcher: WebsiteCrawlJobDispatcherPort;
     documentIngestionService: WebsiteCrawlerDocumentIngestionPort;
     auditService?: WebsiteCrawlerAuditPort;
+    errorReporter?: Pick<ErrorReporter, "report">;
     logger: AppLogger;
     pollIntervalMs?: number;
     jobLeaseMs?: number;
@@ -136,17 +143,19 @@ export class WebsiteCrawlWorker {
     if (!this.running) {
       return;
     }
-    this.timer = setTimeout(async () => {
-      try {
-        const processed = await this.runOnce();
-        this.scheduleNextTick(processed ? 0 : this.dependencies.pollIntervalMs ?? 5_000);
-      } catch (error) {
-        this.dependencies.logger.error(
-          { role: "website-crawl-worker", error: error instanceof Error ? error.message : String(error) },
-          "Website crawl worker tick failed",
-        );
-        this.scheduleNextTick();
-      }
+    this.timer = setTimeout(() => {
+      void (async () => {
+        try {
+          const processed = await this.runOnce();
+          this.scheduleNextTick(processed ? 0 : this.dependencies.pollIntervalMs ?? 5_000);
+        } catch (error) {
+          this.dependencies.logger.error(
+            { role: "website-crawl-worker", error: error instanceof Error ? error.message : String(error) },
+            "Website crawl worker tick failed",
+          );
+          this.scheduleNextTick();
+        }
+      })();
     }, delayMs);
   }
 
@@ -308,20 +317,26 @@ export class WebsiteCrawlWorker {
       if (cancelled) {
         return;
       }
+      const failure = classifyWebsiteCrawlerFailure(error);
       const failed = await this.dependencies.repository.markFailed(
         job.id,
         job.attemptCount,
-        error instanceof Error && error.message.trim() ? error.message : "Website crawl failed",
+        getWebsiteCrawlerOperatorFailureMessage(error),
       );
       if (failed) {
         this.publish(job.workspaceId, "crawl.status_changed");
+      }
+      if (failure.kind === "internal") {
+        this.reportInternalFault(job, error);
       }
       this.dependencies.logger.error(
         {
           role: "website-crawl-worker",
           jobId: job.id,
           workspaceId: job.workspaceId,
-          error: error instanceof Error ? error.message : String(error),
+          error: failure.kind === "internal"
+            ? "Unexpected internal website crawl failure"
+            : error instanceof Error ? error.message : String(error),
         },
         "Website crawl job failed",
       );
@@ -329,6 +344,23 @@ export class WebsiteCrawlWorker {
       clearInterval(cancellationMonitor);
       await this.releasePausedClaim(job.id, job.attemptCount, job.workspaceId);
     }
+  }
+
+  private reportInternalFault(job: WebsiteCrawlJobRecord, error: unknown): void {
+    // Reporting must not prevent a failed job from being released and observed.
+    void this.dependencies.errorReporter
+      ?.report({
+        errorType: "website_crawler.worker.internal_fault",
+        error: toSafeWebsiteCrawlerInternalFault(error),
+        severity: "error",
+        correlation: { workspaceId: job.workspaceId, jobId: job.id },
+      })
+      .catch((reportError) => {
+        this.dependencies.logger.error(
+          { role: "website-crawl-worker", error: reportError instanceof Error ? reportError.message : String(reportError) },
+          "Website crawl internal fault report failed",
+        );
+      });
   }
 
   private async releasePausedClaim(
@@ -356,24 +388,26 @@ export class WebsiteCrawlWorker {
     job: WebsiteCrawlJobRecord,
     cancel: () => void,
   ): NodeJS.Timeout {
-    const timer = setInterval(async () => {
-      try {
-        const current = await this.dependencies.repository.findById(job.id);
-        if (
-          !current
-          || current.workspaceId !== job.workspaceId
-          || current.status !== "processing"
-          || !current.claimedAt
-          || current.attemptCount !== job.attemptCount
-        ) {
-          cancel();
+    const timer = setInterval(() => {
+      void (async () => {
+        try {
+          const current = await this.dependencies.repository.findById(job.id);
+          if (
+            !current
+            || current.workspaceId !== job.workspaceId
+            || current.status !== "processing"
+            || !current.claimedAt
+            || current.attemptCount !== job.attemptCount
+          ) {
+            cancel();
+          }
+        } catch (error) {
+          this.dependencies.logger.warn(
+            { role: "website-crawl-worker", jobId: job.id, error: error instanceof Error ? error.message : String(error) },
+            "Failed to check website crawl job cancellation state",
+          );
         }
-      } catch (error) {
-        this.dependencies.logger.warn(
-          { role: "website-crawl-worker", jobId: job.id, error: error instanceof Error ? error.message : String(error) },
-          "Failed to check website crawl job cancellation state",
-        );
-      }
+      })();
     }, this.dependencies.cancellationPollMs ?? 1_000);
     timer.unref?.();
     return timer;

@@ -41,7 +41,7 @@ import { createOperatorMcpDashboardRoutes } from "../../../modules/operatorMcpAu
 import { createOperatorMcpDiscoveryRoutes, createOperatorMcpOauthRoutes } from "../../../modules/operatorMcpAuthorization/routes.js";
 import { createOperatorMcpInternalRoutes } from "../../../modules/operatorCopilot/mcpRoutes.js";
 
-export type ApiRouteMount = {
+type ApiRouteMount = {
   path: string;
   createRouter: (dependencies: AppDependencies) => Router;
 };
@@ -50,7 +50,7 @@ export type ApiRouteMount = {
  * The public API's mount table. The route-policy contract inspects every router here
  * and every application contribution, then discovers authentication structurally.
  */
-export const createApiRouteMounts = (dependencies: AppDependencies): readonly ApiRouteMount[] => [
+export const createApiRouteMounts = (_dependencies: AppDependencies): readonly ApiRouteMount[] => [
   { path: "/.well-known", createRouter: createOperatorMcpDiscoveryRoutes },
   { path: "/api/v1/auth", createRouter: createAuthRoutes },
   { path: "/api/v1/account", createRouter: createAccountRoutes },

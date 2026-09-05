@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { load } from "cheerio";
+import { load, type CheerioAPI } from "cheerio";
 import type { FetchedPage } from "./crawler.js";
 import {
   extractStructuredTextWithFallback,
@@ -154,8 +154,8 @@ const elementName = (element: unknown): string => {
   return name.toLowerCase();
 };
 
-const removeAttributeMarkedPageChrome = ($: any): void => {
-  $("[class], [id]").each((_index: number, element: unknown) => {
+const removeAttributeMarkedPageChrome = ($: CheerioAPI): void => {
+  $("[class], [id]").each((_index, element) => {
     if (PROTECTED_PAGE_CONTAINER_ELEMENTS.has(elementName(element))) {
       return;
     }
@@ -169,8 +169,8 @@ const removeAttributeMarkedPageChrome = ($: any): void => {
   });
 };
 
-const removeContextualPageChrome = ($: any): void => {
-  $(CONTEXTUAL_NON_CONTENT_SELECTOR).each((_index: number, element: unknown) => {
+const removeContextualPageChrome = ($: CheerioAPI): void => {
+  $(CONTEXTUAL_NON_CONTENT_SELECTOR).each((_index, element) => {
     const block = $(element);
     if (block.closest(PRIMARY_CONTENT_SELECTOR).length > 0 || block.find(PRIMARY_CONTENT_SUBTREE_SELECTOR).length > 0) {
       return;
@@ -179,11 +179,11 @@ const removeContextualPageChrome = ($: any): void => {
   });
 };
 
-const removePageChrome = ($: any): void => {
+const removePageChrome = ($: CheerioAPI): void => {
   $(ALWAYS_NON_CONTENT_SELECTOR).remove();
   removeContextualPageChrome($);
   removeAttributeMarkedPageChrome($);
-  $(LINK_DENSE_BLOCK_SELECTOR).each((_index: number, element: unknown) => {
+  $(LINK_DENSE_BLOCK_SELECTOR).each((_index, element) => {
     const block = $(element);
     if (block.closest(PRIMARY_CONTENT_SELECTOR).length > 0 || block.find(PRIMARY_CONTENT_SELECTOR).length > 0) {
       return;
@@ -203,24 +203,27 @@ const removePageChrome = ($: any): void => {
   });
 };
 
-const isStructurallyLinkDensePage = ($: any): boolean => {
+const isStructurallyLinkDensePage = ($: CheerioAPI): boolean => {
   const body = $("body");
-  const scope = body.length > 0 ? body : $.root();
-  const text = normalizeText(scope.text());
+  const hasBody = body.length > 0;
+  // `.text()`/`.find()` both return non-generic results (`string` / `Cheerio<Element>`), so
+  // branching here instead of on a `Cheerio<Element> | Cheerio<Document>` variable sidesteps
+  // TS's inability to call a `this`-generic method through that union.
+  const text = normalizeText(hasBody ? body.text() : $.root().text());
   if (text.length < 80) {
     return false;
   }
-  const anchors = scope.find("a[href]");
+  const anchors = hasBody ? body.find("a[href]") : $.root().find("a[href]");
   if (anchors.length < LINK_DENSE_MIN_LINKS) {
     return false;
   }
   return normalizeText(anchors.text()).length / Math.max(text.length, 1) >= LINK_DENSE_MIN_RATIO;
 };
 
-export const extractLinks = ($: any, loadedUrl: string): string[] =>
+export const extractLinks = ($: CheerioAPI, loadedUrl: string): string[] =>
   $("a[href]")
     .toArray()
-    .map((anchor: unknown) => {
+    .map((anchor) => {
       const href = $(anchor).attr("href");
       if (!href) return null;
       try {

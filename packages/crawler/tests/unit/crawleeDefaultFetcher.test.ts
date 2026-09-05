@@ -7,6 +7,14 @@ import { crawlSite, crawlSiteStream } from "../../src/index.js";
 const CRAWLER_MAX_FETCH_RESPONSE_BYTES = 25 * 1024 * 1024;
 const CRAWLER_MAX_DECOMPRESSED_BYTES = 50 * 1024 * 1024;
 
+// `AbortSignal.reason` is typed `any` by lib.dom; these tests always abort with an actual
+// Error, so this narrows without changing identity (it returns the same reference when the
+// reason already is one) rather than rejecting with an unknown-typed value directly.
+const abortReasonAsError = (signal: AbortSignal | undefined): Error => {
+  const reason: unknown = signal?.reason;
+  return reason instanceof Error ? reason : new Error(String(reason));
+};
+
 const listen = async (
   handler: Parameters<typeof createServer>[0]
 ): Promise<{ server: Server; baseUrl: string }> => {
@@ -115,7 +123,7 @@ describe("default Crawlee fetcher", () => {
       fetchPage: async (_url, options) => {
         notifyFetchStarted();
         await new Promise<void>((_resolve, reject) => {
-          options?.signal?.addEventListener("abort", () => reject(options.signal?.reason), {
+          options?.signal?.addEventListener("abort", () => reject(abortReasonAsError(options.signal)), {
             once: true
           });
         });
@@ -152,7 +160,7 @@ describe("default Crawlee fetcher", () => {
       fetchPage: async (_url, options) => {
         notifyFetchStarted();
         await new Promise<void>((_resolve, reject) => {
-          options?.signal?.addEventListener("abort", () => reject(options.signal?.reason), {
+          options?.signal?.addEventListener("abort", () => reject(abortReasonAsError(options.signal)), {
             once: true
           });
         });

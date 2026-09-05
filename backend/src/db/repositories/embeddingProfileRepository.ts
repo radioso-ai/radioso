@@ -184,7 +184,7 @@ export class EmbeddingProfileRepository implements EmbeddingProfileRepositoryPor
       .executeTakeFirst();
 
     if (inserted) {
-      return mapEmbeddingSpace(inserted as EmbeddingSpaceRow);
+      return mapEmbeddingSpace(inserted);
     }
 
     const existing = await this.db
@@ -192,7 +192,7 @@ export class EmbeddingProfileRepository implements EmbeddingProfileRepositoryPor
       .select(embeddingSpaceColumns)
       .where("identity_fingerprint", "=", input.identityFingerprint)
       .executeTakeFirstOrThrow();
-    return mapEmbeddingSpace(existing as EmbeddingSpaceRow);
+    return mapEmbeddingSpace(existing);
   }
 
   async findEmbeddingSpaceById(id: string): Promise<EmbeddingSpaceRecord | null> {
@@ -201,7 +201,7 @@ export class EmbeddingProfileRepository implements EmbeddingProfileRepositoryPor
       .select(embeddingSpaceColumns)
       .where("id", "=", id)
       .executeTakeFirst();
-    return row ? mapEmbeddingSpace(row as EmbeddingSpaceRow) : null;
+    return row ? mapEmbeddingSpace(row) : null;
   }
 
   async initializeWorkspaceProfile(input: {
@@ -239,7 +239,7 @@ export class EmbeddingProfileRepository implements EmbeddingProfileRepositoryPor
         }
         const transition = await this.findLatestTransition(trx, workspaceId);
         return mapWorkspaceProfile(
-          profileRow as WorkspaceProfileRow,
+          profileRow,
           transition,
         );
       });
@@ -668,7 +668,7 @@ export class EmbeddingProfileRepository implements EmbeddingProfileRepositoryPor
       .where("id", "=", input.embeddingSpaceId)
       .returning(embeddingSpaceColumns)
       .executeTakeFirstOrThrow();
-    return mapEmbeddingSpace(row as EmbeddingSpaceRow);
+    return mapEmbeddingSpace(row);
   }
 
   async hasLiveReferences(embeddingSpaceId: string): Promise<boolean> {
@@ -721,10 +721,10 @@ export class EmbeddingProfileRepository implements EmbeddingProfileRepositoryPor
           .where("id", "=", transitionId)
           .forUpdate()
           .executeTakeFirst()
-          .then((row) => row ? mapTransition(row as EmbeddingTransitionRow) : null)
+          .then((row) => row ? mapTransition(row) : null)
       : await this.findLatestTransition(db, workspaceId);
     return mapWorkspaceProfile(
-      profileRow as WorkspaceProfileRow,
+      profileRow,
       transition,
     );
   }
@@ -741,7 +741,7 @@ export class EmbeddingProfileRepository implements EmbeddingProfileRepositoryPor
       .orderBy("created_at", "desc")
       .limit(1)
       .executeTakeFirst();
-    return row ? mapTransition(row as EmbeddingTransitionRow) : null;
+    return row ? mapTransition(row) : null;
   }
 }
 

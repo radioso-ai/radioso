@@ -1,4 +1,4 @@
-import type { Routine, RoutineGuard, RoutineSkillOutcomeStatus, RoutineSlotSchema, RoutineStep } from "@radioso/conversation-contract";
+import type { Routine, RoutineGuard, RoutineSlotSchema, RoutineStep } from "@radioso/conversation-contract";
 
 import type { RoutineDefinition, RoutineStepMetadata } from "./domain.js";
 import { collectSlotKeys, collectedSlotsByStep } from "./slotCollection.js";
@@ -36,7 +36,7 @@ const guardFor = (transition: RoutineDefinition["transitions"][number]): Routine
     }
     case "outcome": {
       const status = transition.outcomeStatus ?? transition.guardText;
-      return status ? { kind: "outcome", status: status as RoutineSkillOutcomeStatus } : undefined;
+      return status ? { kind: "outcome", status: status } : undefined;
     }
     case "counter": {
       const limit = transition.counterLimit ?? parsePositiveInteger(transition.guardText);
@@ -112,7 +112,7 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
   const autoGatedStepIds = new Set(
     [...slotsCollectedByStep.keys()].filter((stepId) => {
       const outgoing = definition.transitions.filter((transition) => transition.fromStep === stepId);
-      return outgoing.length === 1 && outgoing[0]!.guardKind === "default";
+      return outgoing.length === 1 && outgoing[0].guardKind === "default";
     }),
   );
   // Slot-aware condition for the promoted edge, mirroring authored llm guardText so the
@@ -197,7 +197,7 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
 
   return {
     id: routineId(definition),
-    rootStepId: sortedSteps[0]!.stableStepId,
+    rootStepId: sortedSteps[0].stableStepId,
     slots,
     steps,
     transitions: [...definition.transitions]

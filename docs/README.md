@@ -1,7 +1,7 @@
 ---
 title: "Docs"
 description: "Guide to documentation sources for operators, SDK users, and contributors with links to key starting points and architecture materials."
-last_updated: 2026-08-21
+last_updated: 2026-09-04
 ---
 
 # Docs
@@ -15,6 +15,7 @@ Before creating or revising documentation in this repo, read the [Docs Style Gui
 - [Code Map](./architecture/code-map.md) - stable map from product areas to owners, entry points, tests, and related docs
 - [Topic Census](./architecture/topic-census.md) - how Audience Pulse computes an exact topic distribution over visitor questions and tracks topic identity across analyses
 - [Agent Context Workflow](./agent-context-workflow.md) - lightweight workflow and `.context/` template for low-context feature starts
+- [Lint And Dead-Code Gates](./code-quality-gates.md) - what the workspace lint run and the dead-code ratchet check, and what to do when one fails
 - [OSS And SaaS Observability](./oss-saas-observability.md) - runtime flags, `/metrics`, and optional PostHog or Sentry adapters
 - [Monitoring And Alerts](./monitoring-alerts.md) - which signals a deployment exposes, and example Prometheus alert rules
 - [Monitoring On Google Cloud](./monitoring-google-cloud.md) - Terraform alert policies, uptime check, and Cloud Run health probes

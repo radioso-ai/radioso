@@ -305,7 +305,7 @@ describe("website crawl job service", () => {
       repository: { resumePausedBySourceId } as never,
       dispatcher: { dispatch },
       documentIngestionService: {} as never,
-      logger: { warn } as never,
+      logger: { warn },
     });
 
     await expect(service.resumeJobsForSource({
@@ -414,7 +414,7 @@ describe("website crawl job service", () => {
       } as never,
       dispatcher: { dispatch: vi.fn().mockRejectedValue(new Error("queue offline")) },
       documentIngestionService: {} as never,
-      logger: { warn } as never,
+      logger: { warn },
       assertCrawlUrlAllowed: vi.fn().mockResolvedValue(undefined),
     });
 

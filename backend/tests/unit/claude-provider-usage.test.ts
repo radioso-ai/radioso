@@ -52,7 +52,7 @@ describe("ClaudeTextGenerationClient.complete", () => {
     const result = await new ClaudeTextGenerationClient(chatConfig).complete({ prompt: "Hi", responseFormat });
 
     const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
-    expect(JSON.parse(String(request.body))).toMatchObject({
+    expect(JSON.parse(request.body as string)).toMatchObject({
       tools: [{ name: "answer_envelope", input_schema: responseFormat.schema }],
       tool_choice: { type: "tool", name: "answer_envelope" },
     });

@@ -39,7 +39,7 @@ describe("chat bootstrap service", () => {
     const service = new ChatBootstrapService(
       workspaceRepository,
       bootstrapGreetingCacheRepository,
-      chatGateway as never,
+      chatGateway,
       auditService,
       undefined,
       productAnalyticsService,
@@ -101,7 +101,7 @@ describe("chat bootstrap service", () => {
     const service = new ChatBootstrapService(
       workspaceRepository,
       new InMemoryBootstrapGreetingCacheRepository(),
-      chatGateway as never,
+      chatGateway,
       createAuditService(),
       undefined,
       productAnalyticsService,
@@ -152,7 +152,7 @@ describe("chat bootstrap service", () => {
     const service = new ChatBootstrapService(
       workspaceRepository,
       bootstrapGreetingCacheRepository,
-      chatGateway as never,
+      chatGateway,
       createAuditService(),
       undefined,
       createProductAnalyticsService(),
@@ -188,7 +188,7 @@ describe("chat bootstrap service", () => {
       {
         answer: vi.fn(),
         streamAnswer: vi.fn(),
-      } as never,
+      },
       createAuditService(),
       undefined,
       undefined,
@@ -219,7 +219,7 @@ describe("chat bootstrap service", () => {
     const service = new ChatBootstrapService(
       workspaceRepository,
       new InMemoryBootstrapGreetingCacheRepository(),
-      chatGateway as never,
+      chatGateway,
       createAuditService(),
       undefined,
       undefined,

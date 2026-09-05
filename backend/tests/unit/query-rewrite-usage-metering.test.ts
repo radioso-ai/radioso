@@ -75,8 +75,8 @@ describe("query rewrite usage metering", () => {
       usageQuality: "actual",
       providerRequestId: "req-rewrite-1",
     });
-    expect(events[0]!.idempotencyKey).toContain("request-1");
-    expect(events[0]!.idempotencyKey).toContain("rewrite");
+    expect(events[0].idempotencyKey).toContain("request-1");
+    expect(events[0].idempotencyKey).toContain("rewrite");
   });
 
   it("records estimated failed usage when the rewrite provider throws", async () => {

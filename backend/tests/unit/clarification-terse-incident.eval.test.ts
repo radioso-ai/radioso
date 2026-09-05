@@ -96,8 +96,8 @@ describe("clarification terse-incident eval — #3 ask less eagerly", () => {
       expect(after?.kind).toBe("offer");
       // Answer-first scopes retrieval to the strongest sense and offers the other.
       if (after?.kind === "offer") {
-        expect(after.documentScope).toEqual([incident.candidates[0]!.id]);
-        expect(after.alternatives.map((candidate) => candidate.id)).toEqual([incident.candidates[1]!.id]);
+        expect(after.documentScope).toEqual([incident.candidates[0].id]);
+        expect(after.alternatives.map((candidate) => candidate.id)).toEqual([incident.candidates[1].id]);
       }
     });
   }
@@ -137,7 +137,7 @@ describe("clarification terse-incident eval — #2 question never collapses", ()
     expect(question).toContain("2. What spirituality means and how to approach it");
     // The model is never handed the option labels, so it cannot have been the source
     // of the numbered list — proving the options come from code, not the model.
-    const systemPrompt = vi.mocked((clarifier as unknown as { modelGateway: ConversationModelGateway }).modelGateway.complete).mock.calls[0]![0].systemPrompt;
+    const systemPrompt = vi.mocked((clarifier as unknown as { modelGateway: ConversationModelGateway }).modelGateway.complete).mock.calls[0][0].systemPrompt;
     expect(systemPrompt).not.toContain("How a spiritual path becomes practical");
   });
 

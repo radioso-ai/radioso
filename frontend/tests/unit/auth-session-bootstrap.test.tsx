@@ -169,6 +169,7 @@ describe('AuthProvider bootstrap effect', () => {
     email: 'recovered@example.com',
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- querySelector returns Element; the assertion is what gives callers `.dataset`.
   const probe = () => document.querySelector('[data-testid="auth-probe"]') as HTMLElement | null
 
   beforeEach(() => {

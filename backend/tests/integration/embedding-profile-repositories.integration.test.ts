@@ -23,7 +23,7 @@ const { describeIntegration, integrationDatabaseUrl } = await resolveIntegration
 const claimableNow = () => new Date(Date.now() + 1_000);
 
 describeIntegration("embedding profile repositories (Postgres)", () => {
-  const database = new Database(integrationDatabaseUrl as string);
+  const database = new Database(integrationDatabaseUrl);
   const profileRepository = new EmbeddingProfileRepository(database.kysely);
   const cleanupRepository = new EmbeddingProfileCleanupRepository(database.kysely);
   const chunkEmbeddingRepository = new ChunkEmbeddingRepository(database.kysely);
@@ -942,7 +942,7 @@ describeIntegration("embedding profile repositories (Postgres)", () => {
       },
       cursor: null,
       limit: 10,
-    })).records[0]!;
+    })).records[0];
     await database.query(
       `UPDATE vector_index_work
        SET status = 'completed', completed_at = NOW()

@@ -68,7 +68,7 @@ export const loadRecordedFacets = (ids: readonly string[], explicitPath?: string
  */
 export const writeRecordedFacets = (ids: readonly string[], facets: readonly string[]): string => {
   const path = sidecarPath();
-  const byId = Object.fromEntries(ids.map((id, index) => [id, facets[index]!]));
+  const byId = Object.fromEntries(ids.map((id, index) => [id, facets[index]]));
   writeFileSync(path, `${JSON.stringify(byId, null, 2)}\n`, "utf8");
   return path;
 };

@@ -86,7 +86,7 @@ export const reduceSamples = <TVerdict>(
     samples.find((sample) => sample.status === "fail") ??
     samples.find((sample) => sample.status === "error") ??
     samples.find((sample) => sample.status === "pass") ??
-    samples[0]!;
+    samples[0];
 
   return {
     status,

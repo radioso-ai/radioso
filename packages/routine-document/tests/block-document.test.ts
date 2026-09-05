@@ -33,7 +33,7 @@ const draft = (overrides: Record<string, unknown> = {}): CompleteAuthoringDraft 
   terminals: [{ stableStepId: 'finished', kind: 'complete', instruction: 'All done.', ordinal: 5 }, { stableStepId: 'human', kind: 'handoff', instruction: 'A person will take over.', ordinal: 6 }],
   completionExport: { enabled: true, triggerKinds: ['complete', 'handoff'], destinationRef: 'crm' },
   ...overrides,
-} as CompleteAuthoringDraft)
+})
 
 const roundTrip = (input: ReturnType<typeof draft>) => {
   const projected = routineToBlockDoc(input)
@@ -270,8 +270,8 @@ describe('routine block document', () => {
 
   it('round-trips generated valid routine shapes', () => {
     fc.assert(fc.property(
-      fc.constantFrom('chat', 'tool', 'action') as fc.Arbitrary<'chat' | 'tool' | 'action'>,
-      fc.constantFrom('llm', 'default', 'slot_filled', 'outcome', 'counter', 'field') as fc.Arbitrary<'llm' | 'default' | 'slot_filled' | 'outcome' | 'counter' | 'field'>,
+      fc.constantFrom('chat', 'tool', 'action'),
+      fc.constantFrom('llm', 'default', 'slot_filled', 'outcome', 'counter', 'field'),
       fc.array(fc.constantFrom(...'abcdefghijklmnopqrstuvwxyz'), { minLength: 1, maxLength: 8 }).map((characters) => characters.join('')),
       (kind, guardKind, key) => {
         const step = { stableStepId: 'start', kind, instruction: `Use {{slot.${key}}}.`, toolRef: kind === 'tool' ? 'tool' : null, actionType: kind === 'action' ? 'action' : null, ordinal: 0, metadata: {} }

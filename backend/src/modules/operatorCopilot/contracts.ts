@@ -2,7 +2,7 @@ import { z, type ZodType } from "zod";
 import type { OperatorMcpScope } from "@radioso/operator-mcp-contract";
 
 import type { AccountPermission } from "../account/public.js";
-import type { AgentTool, AgentToolContext } from "../../shared/agent-runtime/index.js";
+import type { AgentTool } from "../../shared/agent-runtime/index.js";
 import type { OperatorMcpInvocationRecord } from "./mcpContracts.js";
 
 /**
@@ -16,7 +16,6 @@ import type { OperatorMcpInvocationRecord } from "./mcpContracts.js";
  * already follows.
  */
 export const copilotPageEntityTypes = ["agent", "conversation", "routine", "directive", "document", "evalCase"] as const;
-export type CopilotPageEntityType = (typeof copilotPageEntityTypes)[number];
 
 export const copilotPageContextSchema = z.object({
   view: z.enum(["activity", "history", "agent", "documents", "workbench", "quality", "evals", "copilot", "other"]).nullable(),
@@ -42,8 +41,6 @@ export const copilotTurnRequestSchema = z.object({
 }).strict();
 
 export type CopilotPageContext = z.infer<typeof copilotPageContextSchema>;
-export type CopilotTurnRequest = z.infer<typeof copilotTurnRequestSchema>;
-
 export interface CopilotToolInvocationContext {
   readonly workspaceId: string;
   readonly accountId: string;
@@ -198,7 +195,7 @@ export interface CopilotProposal {
   readonly evidence: CopilotProposalEvidence | null;
   readonly status: CopilotProposalStatus;
   readonly reason?: string | null;
-  readonly appliedRef: unknown | null;
+  readonly appliedRef: unknown;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -253,7 +250,7 @@ export interface CopilotProposalAdapter {
    * addresses an existing row ignore it.
    */
   readVersionToken(workspaceId: string, targetRef: unknown, payload?: unknown): Promise<string>;
-  preview(workspaceId: string, targetRef: unknown, payload: unknown): Promise<{ targetLabel: string; current: unknown | null; proposed: unknown }>;
+  preview(workspaceId: string, targetRef: unknown, payload: unknown): Promise<{ targetLabel: string; current: unknown; proposed: unknown }>;
   applyIfVersionMatches(workspaceId: string, targetRef: unknown, payload: unknown, versionToken: string): Promise<
     /**
      * `reason` on an applied outcome states what an operator still has to finish. It exists because
@@ -536,9 +533,6 @@ export type CopilotSseEvent =
   | { readonly event: "done"; readonly data: Record<string, never> };
 
 export type CopilotTurnOutcome = "completed" | "budget_exhausted" | "failed";
-
-export type CopilotAgentTool = AgentTool<unknown, unknown>;
-export type CopilotAgentToolContext = AgentToolContext;
 
 /** One case a proposal was measured against, as the operator reviews it. */
 export interface CopilotProposalEvidenceCase {

@@ -10,7 +10,7 @@ export const toCallToolResult = (result: ToolExecutionResult): CallToolResult =>
       type: "text",
     },
   ],
-  structuredContent: result.data as Record<string, unknown>,
+  structuredContent: result.data,
 });
 
 export const toErrorCallToolResult = (error: StructuredToolError): CallToolResult => ({

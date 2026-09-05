@@ -31,9 +31,9 @@ describe("usage limit copilot contribution", () => {
     const [descriptor] = contribution.descriptors;
 
     expect(Object.keys(contribution.operationPermissions ?? {}))
-      .toEqual(descriptor!.capabilityProvenance.backingOperationIds);
+      .toEqual(descriptor.capabilityProvenance.backingOperationIds);
     expect(Object.keys(contribution.applicationPrimitives ?? {}))
-      .toEqual(descriptor!.capabilityProvenance.applicationPrimitiveIds);
+      .toEqual(descriptor.capabilityProvenance.applicationPrimitiveIds);
   });
 
   it("is a read gated on a workspace permission the copilot turn route resolves", () => {
@@ -51,7 +51,7 @@ describe("usage limit copilot contribution", () => {
     const getAccountUsage = vi.fn(async () => summary());
     const [descriptor] = createUsageLimitCopilotToolContribution({ usage: { getAccountUsage } }).descriptors;
 
-    const result = await descriptor!.createTool(toolContext).invoke({}, invocation);
+    const result = await descriptor.createTool(toolContext).invoke({}, invocation);
 
     expect(getAccountUsage).toHaveBeenCalledWith("account-1");
     expect(result).toEqual({
@@ -70,7 +70,7 @@ describe("usage limit copilot contribution", () => {
     }));
     const [descriptor] = createUsageLimitCopilotToolContribution({ usage: { getAccountUsage } }).descriptors;
 
-    const result = await descriptor!.createTool(toolContext).invoke({}, invocation) as { monthlyAnswers: { remaining: number } };
+    const result = await descriptor.createTool(toolContext).invoke({}, invocation) as { monthlyAnswers: { remaining: number } };
 
     expect(result.monthlyAnswers.remaining).toBe(0);
   });
@@ -78,7 +78,7 @@ describe("usage limit copilot contribution", () => {
   it("returns a result its own output schema accepts, since the catalog validates tool output", async () => {
     const getAccountUsage = vi.fn(async () => summary({ profile: null }));
     const [descriptor] = createUsageLimitCopilotToolContribution({ usage: { getAccountUsage } }).descriptors;
-    const tool = descriptor!.createTool(toolContext);
+    const tool = descriptor.createTool(toolContext);
 
     expect(tool.outputSchema.safeParse(await tool.invoke({}, invocation)).success).toBe(true);
   });

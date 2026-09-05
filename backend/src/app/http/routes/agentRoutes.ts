@@ -33,7 +33,7 @@ import {
   routineDefinitionDraftInputSchema,
   routineDraftAssistRequestSchema,
 } from "../../../modules/routines/public.js";
-import type { AgentInput, AgentSettingsResource } from "../../../modules/agents/public.js";
+import type { AgentSettingsResource } from "../../../modules/agents/public.js";
 import { builtInAnswerDirectiveViews } from "../../../modules/directives/public.js";
 import {
   ASSISTANT_LOGO_MIME_TYPES,

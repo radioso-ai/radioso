@@ -94,6 +94,15 @@ import { freezePageReadOutcome } from "./pageRead/pageReadSessionOutcome.js";
 
 const CLARIFICATION_TURN_SKILL = "clarification.answer";
 
+/**
+ * Retrieval candidates cannot settle a question that the admitted current-page
+ * excerpt already resolves. Let the answer path use that evidence instead of
+ * asking the visitor to choose among unrelated workspace results.
+ */
+export const shouldSuppressRetrievalSenseClarification = (
+  session: Pick<PreparedSession, "pageReadOutcome">,
+): boolean => session.pageReadOutcome?.gate.kind === "capture";
+
 type PrepareRetrievalInput = Parameters<ChatSessionPreparer["prepareRetrieval"]>[0];
 
 export type RetrievalSenseClarificationTurn =
@@ -995,6 +1004,7 @@ export class ChatTurnAssembly {
     if (
       !input.clarification.store ||
       !input.clarification.clarifier ||
+      shouldSuppressRetrievalSenseClarification(input.session) ||
       input.clarification.resolution?.suppressNewClarification
     ) {
       return null;

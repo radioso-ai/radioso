@@ -53,10 +53,11 @@ That particular rule is worth a warning. `no-unnecessary-type-assertion` judges 
 
 `knip` walks the import graph from each package's real entry points and reports what nothing reaches: unused files, unused exports, unused exported types. The configuration lives in `knip.json`, and entry points that no static analysis could find — the launcher script served as a raw asset, the Enterprise feature manifests loaded by path — are declared there.
 
-The full report is large, so the gate is a ratchet rather than a pass/fail on the total. `scripts/knip-ratchet.mjs` applies two rules:
+The full report is large, so the gate is a ratchet rather than a pass/fail on the total. `scripts/knip-ratchet.mjs` applies three rules:
 
 1. **A finding that isn't in `knip-baseline.json` fails the build.** New dead code cannot enter the repo. This includes dead code you created somewhere else by deleting the last caller of an export you never opened.
 2. **A baselined finding in a file your change touches also fails the build.** You aren't asked to clean the whole repo, only the part you were already editing.
+3. **A baseline that no longer matches the findings fails the build.** Both directions count: a key whose finding is gone, and a finding with no key. A key that outlives its finding would sit in the baseline exempting that exact `kind|file|name`, so the same dead code could come back later and rule 1 would wave it through.
 
 The baseline is read as of the merge base, so appending to it in the same commit exempts nothing. The one exception is the change that first creates the baseline: there is nothing at the merge base to compare against, so rule 2 has no prior finding to point at and starts applying to the change after it.
 
@@ -72,7 +73,7 @@ When you remove dead code, bank it:
 pnpm run lint:dead-code:baseline
 ```
 
-That rewrites `knip-baseline.json`; commit it with your change. The ratchet reports how far the baseline has drifted from reality on every run, so a stale baseline is visible rather than silent.
+That rewrites `knip-baseline.json`; commit it with your change. Rule 3 means this is not optional — removing dead code without re-recording fails the build, which is what keeps the baseline from accumulating keys that outlive the findings they stand for.
 
 ## Test files and their tsconfigs
 

@@ -101,7 +101,7 @@ pnpm run lint:fix          # applies the safe autofixes
 pnpm run lint:dead-code:ci # the dead-code ratchet
 ```
 
-The ratchet asks two things of a pull request: don't introduce dead code, and clean up the dead code already sitting in the files you touched. When you delete some, re-record the baseline with `pnpm run lint:dead-code:baseline` and commit it.
+The ratchet asks three things of a pull request: don't introduce dead code, clean up the dead code already sitting in the files you touched, and keep `knip-baseline.json` matching what knip actually finds. So when you delete some, re-record the baseline with `pnpm run lint:dead-code:baseline` and commit it — the build fails until you do.
 
 [`docs/code-quality-gates.md`](./docs/code-quality-gates.md) explains what each gate catches and what to do when one fails.
 

@@ -450,7 +450,7 @@ export class RepositoryAgentSkillTurnSkillProvider implements AgentSkillTurnSkil
 
   async forSession(
     session: PreparedSession,
-    coordination?: { throwIfCancelled(): void },
+    coordination?: { throwIfCancelled?: () => void },
   ): Promise<AgentSkillTurnRuntime> {
     const throwIfCancelled = coordination?.throwIfCancelled ?? (() => undefined);
     const records = await this.options.agentSkills.listByAgent(session.agent.workspaceId, session.agent.id);

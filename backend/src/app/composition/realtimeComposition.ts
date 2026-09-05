@@ -39,10 +39,10 @@ export const createRealtimeComposition = (input: {
   metrics?: MetricsRegistry;
   port: number;
   /** Test-only composition seam; production uses workload metadata when IAM is enabled. */
-  resolveRedisCredentialsProvider?(iamEnabled: true): RedisCredentialsProvider;
-  random?(): number;
+  resolveRedisCredentialsProvider?: (iamEnabled: true) => RedisCredentialsProvider;
+  random?: () => number;
   sessionCookieName: string;
-  stopTracing?(): Promise<void>;
+  stopTracing?: () => Promise<void>;
 }): RealtimeComposition => {
   const metrics = input.metrics ?? new MetricsRegistry();
   const redisCredentialsProvider = input.config.redis.iam
@@ -202,7 +202,7 @@ export const createRealtimeComposition = (input: {
 
   return {
     dependencies,
-    setRuntime: (runtime) => { runtimeHealth = runtime.health; },
+    setRuntime: (runtime) => { runtimeHealth = () => runtime.health(); },
   };
 };
 

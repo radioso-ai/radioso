@@ -600,8 +600,9 @@ const normalizeSkillSettings = (
     const settings = registry?.get(key);
     if (settings) {
       try {
-        const normalize = mode === "read" && settings.parse ? settings.parse : settings.normalize;
-        next[key] = normalize.call(settings, entry);
+        next[key] = mode === "read" && settings.parse
+          ? settings.parse.call(settings, entry)
+          : settings.normalize.call(settings, entry);
       } catch (error) {
         if (mode === "read") {
           next[key] = {};

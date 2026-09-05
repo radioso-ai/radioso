@@ -543,7 +543,9 @@ export class ChatTurnAssembly {
       clarificationState,
       clarification: input.clarification,
       activeRoutineAtTurnStart: input.activeRoutineAtTurnStart,
-      agenticRetrievalToolFactories: agentSkillRuntime?.agenticRetrievalToolFactories,
+      agenticRetrievalToolFactories: agentSkillRuntime
+        ? (currentSession) => agentSkillRuntime.agenticRetrievalToolFactories(currentSession)
+        : undefined,
       coordination: input.coordination,
     });
     const { presentation, result } = await runPreparedChatTurnWithConversationEngine({
@@ -648,7 +650,9 @@ export class ChatTurnAssembly {
       clarificationState,
       clarification: input.clarification,
       activeRoutineAtTurnStart: input.activeRoutineAtTurnStart,
-      agenticRetrievalToolFactories: agentSkillRuntime?.agenticRetrievalToolFactories,
+      agenticRetrievalToolFactories: agentSkillRuntime
+        ? (currentSession) => agentSkillRuntime.agenticRetrievalToolFactories(currentSession)
+        : undefined,
       coordination: input.coordination,
     });
     for await (const event of runPreparedChatTurnStreamWithConversationEngine({

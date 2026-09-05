@@ -82,7 +82,7 @@ export class AudiencePulseSnapshotRepository implements AudiencePulseSnapshotSto
       .select(audiencePulseSnapshotColumns)
       .where("workspace_id", "=", workspaceId)
       .executeTakeFirst();
-    return row ? mapSnapshot(row as AudiencePulseSnapshotRow) : null;
+    return row ? mapSnapshot(row) : null;
   }
 
   async replace(input: Omit<AudiencePulseSnapshotRecord, "revision">): Promise<AudiencePulseSnapshotRecord> {
@@ -111,7 +111,7 @@ export class AudiencePulseSnapshotRepository implements AudiencePulseSnapshotSto
       )
       .returning(audiencePulseSnapshotColumns)
       .executeTakeFirstOrThrow();
-    return mapSnapshot(row as AudiencePulseSnapshotRow);
+    return mapSnapshot(row);
   }
 
   async invalidate(input: { workspaceId: string; expectedRevision: string }): Promise<boolean> {

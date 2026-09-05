@@ -129,7 +129,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
   async summarizeWorkspace(workspaceId: string): Promise<DocumentWorkspaceSummaryRecord> {
     const row = await this.db
       .selectFrom("documents")
-      .select((eb) => [
+      .select([
         sql<string>`COUNT(*)::text`.as("document_count"),
         sql<string>`COUNT(*) FILTER (WHERE status = 'ready')::text`.as("ready_document_count"),
         sql<string>`COUNT(*) FILTER (WHERE status IN ('queued', 'processing'))::text`.as("pending_document_count"),
@@ -186,6 +186,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
       // on (workspace_id, source_id, external_document_id); a manual document keys on
       // (workspace_id, external_document_id). Each is a partial unique index, so the target
       // is its column list plus the index predicate (Kysely: .columns(...).where(...)).
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- pins the literal column names; without it the ternary widens to string[] and Kysely rejects it.
       const conflictColumns = (input.sourceId
         ? ["workspace_id", "source_id", "external_document_id"]
         : ["workspace_id", "external_document_id"]) as ("workspace_id" | "source_id" | "external_document_id")[];

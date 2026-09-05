@@ -125,7 +125,7 @@ describe("exchangeAuthorizationCode", () => {
       expiresAt: 1_000_000 + 3600 * 1000,
       tokenType: "Bearer",
     });
-    const [, init] = fetchImpl.mock.calls[0]!;
+    const [, init] = fetchImpl.mock.calls[0];
     expect(init.headers.Authorization).toMatch(/^Basic /);
     const body = new URLSearchParams(init.body);
     expect(body.get("grant_type")).toBe("authorization_code");
@@ -146,7 +146,7 @@ describe("exchangeAuthorizationCode", () => {
       redirectUri: "https://app.example.com/oauth/callback",
       fetchImpl,
     });
-    const [, init] = fetchImpl.mock.calls[0]!;
+    const [, init] = fetchImpl.mock.calls[0];
     expect(init.headers.Authorization).toBeUndefined();
     expect(new URLSearchParams(init.body).get("client_id")).toBe("client-123");
   });

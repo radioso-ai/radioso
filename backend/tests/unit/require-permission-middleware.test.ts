@@ -2,7 +2,6 @@ import type { NextFunction, Request, Response } from "express";
 import { describe, expect, it, vi } from "vitest";
 
 import { requirePublicChatPermission, requireWorkspacePermission } from "../../src/app/http/middleware/requirePermission.js";
-import type { AccountAccessService } from "../../src/modules/account/services/accountAccessService.js";
 
 const createRequestResponse = (locals: Record<string, unknown>) => {
   const req = {} as Request;
@@ -18,7 +17,7 @@ describe("requireWorkspacePermission", () => {
       {
         accountAccessService: {
           requirePermission,
-        } as unknown as AccountAccessService,
+        },
       },
       "workspace.settings.manage",
     );
@@ -54,7 +53,7 @@ describe("requireWorkspacePermission", () => {
       {
         accountAccessService: {
           requirePermission,
-        } as unknown as AccountAccessService,
+        },
       },
       "workspace.documents.manage",
       () => "workspace-b",
@@ -89,7 +88,7 @@ describe("requirePublicChatPermission", () => {
       {
         accountAccessService: {
           requirePermission,
-        } as unknown as AccountAccessService,
+        },
       },
       "public_chat.turn.create",
     );

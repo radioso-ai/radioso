@@ -42,14 +42,14 @@ describe("draft_reply", () => {
       requiredPermissions: ["workspace.history.read", "workspace.conversation.takeover"],
       dashboardSubject: { type: "conversation" },
     });
-    expect(descriptor!.verificationCost({} as never)).toBeGreaterThan(0);
+    expect(descriptor.verificationCost({})).toBeGreaterThan(0);
   });
 
   it("drafts for the conversation on screen and hands back text nobody has been sent", async () => {
     const replyDraft = port();
     const [descriptor] = createReplyDraftCopilotTools({ replyDraft });
 
-    const result = await descriptor!.createTool(context).invoke({}, {} as never);
+    const result = await descriptor.createTool(context).invoke({}, {} as never);
 
     expect(replyDraft.draft).toHaveBeenCalledWith(expect.objectContaining({
       workspaceId: "workspace-1",
@@ -99,7 +99,7 @@ describe("ReplyDraftProbeService", () => {
 
   it("spends the operator's expensive-operation budget before composing", async () => {
     const deps = dependencies();
-    const service = new ReplyDraftProbeService(deps as never);
+    const service = new ReplyDraftProbeService(deps);
 
     await service.draft({
       workspaceId: "workspace-1",
@@ -127,7 +127,7 @@ describe("ReplyDraftProbeService", () => {
       }),
     };
     const deps = { ...dependencies(chatReplyDraft as never), usageLimitPolicy: { reserveAnswer } };
-    const service = new ReplyDraftProbeService(deps as never);
+    const service = new ReplyDraftProbeService(deps);
 
     await service.draft({
       workspaceId: "workspace-1",
@@ -150,8 +150,8 @@ describe("ReplyDraftProbeService", () => {
     const chatReplyDraft = {
       draftReply: vi.fn(async () => { throw new Error("The conversation's last turn is not a waiting customer message"); }),
     };
-    const deps = { ...dependencies(chatReplyDraft as never), usageLimitPolicy: { reserveAnswer } };
-    const service = new ReplyDraftProbeService(deps as never);
+    const deps = { ...dependencies(chatReplyDraft), usageLimitPolicy: { reserveAnswer } };
+    const service = new ReplyDraftProbeService(deps);
 
     await expect(service.draft({
       workspaceId: "workspace-1",
@@ -168,7 +168,7 @@ describe("ReplyDraftProbeService", () => {
     deps.abuseControl.enforce = vi.fn(async () => {
       throw Object.assign(new Error("Please wait before trying again"), { statusCode: 429, details: { retryAfterSeconds: 30 } });
     });
-    const service = new ReplyDraftProbeService(deps as never);
+    const service = new ReplyDraftProbeService(deps);
 
     await expect(service.draft({
       workspaceId: "workspace-1",

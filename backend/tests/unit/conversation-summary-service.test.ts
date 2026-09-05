@@ -140,7 +140,7 @@ describe("ConversationSummaryService", () => {
     expect(capturedPrompt).toContain("message 12");
     expect(capturedPrompt).not.toContain("message 11");
     // Usage context is passed for accounting.
-    const call = vi.mocked(generator.generate).mock.calls[0]![0];
+    const call = vi.mocked(generator.generate).mock.calls[0][0];
     expect(call.usageContext).toMatchObject({
       workspaceId: "ws_1",
       conversationId: "conv_1",
@@ -267,7 +267,7 @@ describe("ConversationSummaryService", () => {
 
     // A fixed per-conversation key would collide in the usage ledger's
     // idempotency dedupe and drop every regeneration after the first.
-    const call = vi.mocked(generator.generate).mock.calls[0]![0];
+    const call = vi.mocked(generator.generate).mock.calls[0][0];
     expect(call.usageContext.attemptKey).toBe("conversation_summary:conv_1:15");
   });
 
@@ -379,7 +379,7 @@ describe("ConversationSummaryService", () => {
       expect.any(String),
     );
     // The log payload never carries summary/message content.
-    const [payload] = logger.warn.mock.calls[0]!;
+    const [payload] = logger.warn.mock.calls[0];
     expect(JSON.stringify(payload)).not.toContain("message 14");
   });
 });
@@ -442,8 +442,8 @@ describe("ConversationSummaryService title generation", () => {
     await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
 
     expect(titleWriter.calls).toHaveLength(1);
-    expect(titleWriter.calls[0]!.title.length).toBeLessThanOrEqual(20);
-    expect(titleWriter.calls[0]!.title.endsWith("…")).toBe(true);
+    expect(titleWriter.calls[0].title.length).toBeLessThanOrEqual(20);
+    expect(titleWriter.calls[0].title.endsWith("…")).toBe(true);
   });
 
   it("normalizes internal whitespace in the title to a single line", async () => {
@@ -455,7 +455,7 @@ describe("ConversationSummaryService title generation", () => {
 
     await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
 
-    expect(titleWriter.calls[0]!.title).toBe("Refund for order 4821");
+    expect(titleWriter.calls[0].title).toBe("Refund for order 4821");
   });
 
   it("does not save a title when the summary itself is blank (whole regeneration skipped)", async () => {

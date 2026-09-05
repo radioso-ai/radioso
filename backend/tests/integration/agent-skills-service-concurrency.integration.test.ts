@@ -178,7 +178,7 @@ describeIfDatabase("AgentSkillsService.update concurrency (Kysely/Postgres)", ()
     expect(settled.filter((result) => result.status === "fulfilled")).toHaveLength(1);
     const rejected = settled.filter((result) => result.status === "rejected");
     expect(rejected).toHaveLength(1);
-    expect((rejected[0] as PromiseRejectedResult).reason).toMatchObject({ statusCode: 409 });
+    expect((rejected[0]).reason).toMatchObject({ statusCode: 409 });
 
     const persisted = await repository.findById(workspaceId, agentId, created.id);
     const capability = createDefaultSkillCapabilityRegistry().get("mcp_tool")!;

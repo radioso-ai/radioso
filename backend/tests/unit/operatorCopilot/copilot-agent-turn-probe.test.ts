@@ -72,10 +72,10 @@ const build = (testTurn = vi.fn(async () => result()), workspaceKey = "acme") =>
     agentLookup: { listExisting: vi.fn(async () => [{ id: agentId, name: "Support", isDefault: true, assistantBootstrapActive: false }]) },
     agentTurnProbe: { testTurn },
   });
-  const [enriched] = enrichCopilotToolCatalog([descriptor!], {
+  const [enriched] = enrichCopilotToolCatalog([descriptor], {
     resolveWorkspaceKey: async () => workspaceKey,
   });
-  return { descriptor: descriptor!, enriched: enriched!, testTurn };
+  return { descriptor: descriptor, enriched: enriched, testTurn };
 };
 
 describe("test_agent_turn", () => {

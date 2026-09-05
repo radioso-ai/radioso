@@ -1,5 +1,3 @@
-type MetricKind = "counter" | "gauge" | "histogram";
-
 export interface MetricWriteOptions {
   help: string;
   labels?: Record<string, string>;
@@ -121,7 +119,7 @@ export class MetricsRegistry {
     const value = options.value ?? 0;
 
     for (let index = 0; index < metric.buckets.length; index += 1) {
-      if (value <= metric.buckets[index]!) {
+      if (value <= metric.buckets[index]) {
         series.bucketCounts[index] += 1;
       }
     }

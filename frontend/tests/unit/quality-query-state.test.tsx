@@ -51,7 +51,7 @@ describe('quality query state', () => {
     expect(qualityTurnsApiOptions(normalized)).not.toHaveProperty('pageSize')
 
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    const api = vi.spyOn(qualityApi, 'listTurns').mockResolvedValue({ items: [], total: 0, page: 2, pageSize: 25, totalPages: 0 } as never)
+    const api = vi.spyOn(qualityApi, 'listTurns').mockResolvedValue({ items: [], total: 0, page: 2, pageSize: 25, totalPages: 0 })
     const root = createRoot(document.createElement('div'))
     await act(async () => {
       root.render(createElement(QueryClientProvider, { client }, createElement(Probe, { enabled: true, workspaceId: 'workspace-a' })))
@@ -165,7 +165,7 @@ describe('quality query state', () => {
   it('retains cached stats and turns on background failure with their policy floor', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const turns = vi.spyOn(qualityApi, 'listTurns')
-      .mockResolvedValueOnce({ items: [], total: 0, page: 2, pageSize: 25, totalPages: 0 } as never)
+      .mockResolvedValueOnce({ items: [], total: 0, page: 2, pageSize: 25, totalPages: 0 })
       .mockRejectedValueOnce(new Error('temporary'))
     const stats = vi.spyOn(qualityApi, 'getStats')
       .mockResolvedValueOnce({ range: '7d' } as never)

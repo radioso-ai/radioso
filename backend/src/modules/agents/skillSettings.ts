@@ -11,7 +11,7 @@ export class AgentSkillSettingsRegistry {
     if (this.entries.has(entry.skillName)) {
       throw new Error(`Agent skill settings "${entry.skillName}" are already registered.`);
     }
-    this.entries.set(entry.skillName, entry as AgentSkillSettingsEntry);
+    this.entries.set(entry.skillName, entry);
   }
 
   get(skillName: string): AgentSkillSettingsEntry | undefined {

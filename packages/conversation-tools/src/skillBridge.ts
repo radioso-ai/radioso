@@ -94,7 +94,7 @@ const outputRecord = (result: ToolCallResult): Record<string, unknown> | undefin
   return undefined;
 };
 
-const normalizeToolResult = (result: ToolCallResult | SkillOutcome | unknown): SkillOutcome => {
+const normalizeToolResult = (result: unknown): SkillOutcome => {
   if (isSkillOutcome(result)) {
     return result;
   }
@@ -185,7 +185,7 @@ export class ToolSkillBridge {
     selected: SelectedSkill;
   }): Promise<TurnOutcome> {
     const toolName = getToolNameForSkill(input.skill);
-    let rawResult: ToolCallResult | SkillOutcome | unknown;
+    let rawResult: unknown;
     let outcome: SkillOutcome;
     let status: ConversationTraceStage["status"] = "applied";
 

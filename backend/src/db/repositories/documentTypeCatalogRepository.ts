@@ -53,7 +53,7 @@ export class DocumentTypeCatalogRepository implements DocumentTypeCatalogReposit
       .where("workspace_id", "=", workspaceId)
       .executeTakeFirst();
 
-    return row ? mapCatalog(row as DocumentTypeCatalogRow) : null;
+    return row ? mapCatalog(row) : null;
   }
 
   /**
@@ -113,7 +113,7 @@ export class DocumentTypeCatalogRepository implements DocumentTypeCatalogReposit
         .returning(documentTypeCatalogColumns)
         .executeTakeFirst();
 
-      return row ? mapCatalog(row as DocumentTypeCatalogRow) : null;
+      return row ? mapCatalog(row) : null;
     });
   }
 }

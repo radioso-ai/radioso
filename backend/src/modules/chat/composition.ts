@@ -12,9 +12,7 @@ export { AssistantHistoryService } from "./services/assistantHistoryService.js";
 export { ChatBootstrapService } from "./services/chatBootstrapService.js";
 export {
   ChatService,
-  type ChatAnswerInput,
   type ChatRoutineProvider,
-  type ChatTurnReceipt,
 } from "./services/chatService.js";
 export { ChatTurnAssemblyFactory } from "./services/chatTurnAssembly.js";
 export type { PreparedSession } from "./services/chatSessionPreparer.js";
@@ -24,8 +22,6 @@ export type {
 } from "./services/agentSkillTurnSkillProvider.js";
 export {
   WorkbenchReplayRunner,
-  type WorkbenchReplayInput,
-  type WorkbenchReplayResolvedConfig,
   type WorkbenchReplayResult,
 } from "./services/workbenchReplayRunner.js";
 export { TurnPlanService } from "./services/turnPlanService.js";
@@ -39,26 +35,14 @@ export {
   RoutineNextStepSelector,
   RoutineRegistry,
   RoutineStepRenderer,
-  RoutineSlotCorrector,
-  RoutineReentryGate,
   DefaultClarifier,
-  type RoutineActivationPrefilter,
   type RoutineRegistration,
 } from "@radioso/conversation-defaults";
-export {
-  RoutineChatModelGateway,
-  type RoutineModelTurnContext,
-} from "./services/routines/routineChatModelGateway.js";
 export {
   ConfiguredContactDeliveryResolver,
   ContactSendActionHandler,
   FetchContactWebhookHttpClient,
   WorkspaceOwnerContactRecipientResolver,
-  type ContactNotificationMailer,
-  type ContactRecipientResolver,
-  type ContactWebhookHttpClient,
-  type ContactWorkspaceLookup,
-  type ContactMembershipLookup,
 } from "./services/actions/contactSendActionHandler.js";
 export { HandoffNotifyActionHandler } from "./services/actions/handoffNotifyActionHandler.js";
 export { EmailWebhookOperatorNotificationSink } from "./services/actions/emailWebhookSink.js";
@@ -66,34 +50,20 @@ export {
   ApprovalRequestActionHandler,
   APPROVAL_REQUEST_ACTION_TYPE,
 } from "./services/actions/approvalRequestActionHandler.js";
-export {
-  FetchWebhookHttpClient,
-  createSignedWebhookHeaders,
-  verifyWebhookSignature,
-  type WebhookHttpClient,
-  type WebhookUrlGuard,
-} from "./services/actions/webhookDelivery.js";
+export { FetchWebhookHttpClient } from "./services/actions/webhookDelivery.js";
 export {
   ConversationAgentWebhookPermissionResolver,
   WebhookSendActionHandler,
   WEBHOOK_SEND_ACTION_TYPE,
-  type WebhookSendDeliveryOutcomeRecorder,
-  type WebhookSendHttpClient,
-  type WebhookSendPermissionResolver,
 } from "./services/actions/webhookSendActionHandler.js";
 export {
   contactRoutineDefinition,
-  CONTACT_ROUTINE_ID,
   CONTACT_SEND_ACTION_TYPE,
   HANDOFF_NOTIFY_ACTION_TYPE,
   CONTACT_INTENT_SKILL_NAME,
   CONTACT_INTENT_NAME,
 } from "./services/routines/contactRoutine.js";
-export {
-  buildChatTurnRuntime,
-  type ChatTurnRuntime,
-  type ChatTurnRuntimeDependencies,
-} from "./services/chatTurnRuntime.js";
+export { buildChatTurnRuntime } from "./services/chatTurnRuntime.js";
 export {
   GenericTurnOutcomeRenderer,
   type TurnOutcome,
@@ -105,75 +75,36 @@ export {
   toConversationInputEvent,
   toConversationMessages,
 } from "./services/conversationContractMappers.js";
-export {
-  createRouteScopedDirectiveSteering,
-  type RouteScopedDirectiveRegistration,
-  type DirectiveRoutePolicy,
-} from "./services/routeScopedDirectiveSteering.js";
+export { createRouteScopedDirectiveSteering } from "./services/routeScopedDirectiveSteering.js";
 export {
   DefaultTurnSelectionStrategy,
   type TurnSelectionStrategy,
-  type TurnCandidate,
-  type TurnSelectionInput,
 } from "./services/turnSelectionStrategy.js";
 export {
   LlmConversationTurnInterpreter,
   ModelTurnInterpretationGateway,
-  buildTurnInterpretationPrompt,
-  parseTurnInterpretation,
-  type TurnInterpretationGateway,
-  type TurnInterpretationGatewayInput,
-  type TurnInterpretationGatewayResult,
-  type ConversationTurnInterpretationResult,
-  type ChatConversationTurnInterpreter,
 } from "./services/conversationTurnInterpreter.js";
 export {
-  ChatGatewayTurnRouterGateway,
   LlmTurnRouter,
   ModelTurnRouterGateway,
-  buildTurnRouterPrompt,
-  normalizeTurnRouting,
-  parseTurnRouting,
-  type TurnRouter,
-  type TurnRouterGateway,
-  type TurnRouterGatewayInput,
-  type TurnRouterGatewayResult,
-  type TurnRouterInput,
-  type TurnRouting,
 } from "./services/turnRouter.js";
 export {
   SkillRetrievalTurnDispatch,
-  DirectRetrievalTurnDispatch,
   RetrievalTurnController,
-  type RetrievalTurnDispatchPort,
-  type RetrievalTurnPort,
 } from "./services/retrievalTurnDispatch.js";
 export { AnswerPresentationService } from "./services/answerPresentationService.js";
-export { composeGroundedAnswerSystemPrompt } from "./services/groundedAnswerPromptComposer.js";
-export { parseGroundedAnswerEnvelope } from "./services/groundedAnswerEnvelope.js";
-export { computeGroundingSummary } from "./services/groundingAssertions.js";
 export { createSkillOutcomeCapabilityProvider } from "./services/chatAnswerPresenter.js";
 export {
   ActionDispatcher,
   ActionHandlerRegistry,
   type ActionHandler,
-  type ActionHandlerContext,
-  type ActionOutboxConsumerPort,
 } from "./services/actions/actionDispatcher.js";
-export {
-  ActionDispatchWorker,
-  type ActionDispatchPort,
-  type ActionDispatchWorkerOptions,
-} from "./services/actions/actionDispatchWorker.js";
+export { ActionDispatchWorker } from "./services/actions/actionDispatchWorker.js";
 export {
   NoopActionDrainDispatcher,
   type ActionDrainDispatcherPort,
 } from "./services/actions/actionDrainDispatcher.js";
-export {
-  DrainTriggeringActionOutbox,
-  type EnqueueingActionOutboxPort,
-} from "./services/actions/drainTriggeringActionOutbox.js";
-export type { ChatGateway, ChatStreamEvent } from "./contracts/index.js";
+export { DrainTriggeringActionOutbox } from "./services/actions/drainTriggeringActionOutbox.js";
 export { ChatHistoryService } from "./services/chatHistoryService.js";
 export { ProbeConversationReader } from "./services/probeConversationReader.js";
 export { ReplyDraftRunner } from "./services/replyDraftRunner.js";
@@ -186,46 +117,22 @@ export {
   type PublicChatActionAdvertiserPort,
   type PublicChatIntakeAction,
 } from "./services/publicChatActionAdvertiser.js";
-export {
-  NoopContactHistoryProvider,
-  type ContactHistoryProviderPort,
-} from "./services/contactHistoryProvider.js";
+export { NoopContactHistoryProvider } from "./services/contactHistoryProvider.js";
 export {
   InMemoryPublicConversationEventBus,
-  type PublicConversationEvent,
   type PublicConversationEventBus,
 } from "./services/publicConversationEventBus.js";
 export {
   NoopAnswerFeedbackHistoryProvider,
   type AnswerFeedbackHistoryProviderPort,
-  type ChatAnswerFeedbackEntry,
-  type ChatAnswerFeedbackValue,
 } from "./services/answerFeedbackHistoryProvider.js";
-export {
-  AnswerFeedbackService,
-  type AnswerFeedbackActor,
-  type AnswerFeedbackActorType,
-} from "./services/answerFeedbackService.js";
-export {
-  createAnswerFeedbackRoutes,
-  type AnswerFeedbackRouteDependencies,
-} from "./routes/answerFeedbackRoutes.js";
+export { AnswerFeedbackService } from "./services/answerFeedbackService.js";
+export { createAnswerFeedbackRoutes } from "./routes/answerFeedbackRoutes.js";
 export { ChatActionSuggestionRegistry } from "./services/actionSuggestions/chatActionSuggestionRegistry.js";
 export { ChatActionSuggestionService } from "./services/actionSuggestions/chatActionSuggestionService.js";
-export type {
-  ChatActionSuggestionContext,
-  ChatActionSuggestionProvider,
-} from "./services/actionSuggestions/chatActionSuggestionProvider.js";
-export {
-  recordClarificationDecision,
-  type ClarificationMetricDecision,
-} from "./services/clarification/clarificationMetrics.js";
+export { recordClarificationDecision } from "./services/clarification/clarificationMetrics.js";
 export { ChatAnswerSupport } from "./services/chatAnswerSupport.js";
 export {
-  ChatTurnSupersededError,
   InMemoryConversationTurnRegistry,
   LoggingConversationTurnInterruptionObserver,
-  type ConversationTurnInterruptionObserver,
-  type ConversationTurnLease,
-  type ConversationTurnRegistry,
 } from "./services/conversationTurnRegistry.js";

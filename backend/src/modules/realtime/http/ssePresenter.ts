@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 
-import type { WorkspaceInvalidationKind } from "@radioso/workspace-invalidation-contract";
 
 import type { WorkspaceGatewayAttachment, WorkspaceGatewayConnection } from "../application/workspaceGateway.js";
 import { RealtimeSession } from "../domain/realtimeSession.js";
@@ -143,14 +142,14 @@ export class SsePresenter {
       }
 
       const admissionIdentity = { accountId: identity.accountId, workspaceId: identity.workspaceId, principalId: identity.principalId };
-      await this.awaitDependency((signal) => this.input.admission.checkReconnect(admissionIdentity));
+      await this.awaitDependency((_signal) => this.input.admission.checkReconnect(admissionIdentity));
       if (this.closed) return;
       if (this.input.clock.monotonicNow() >= this.effectiveExpiryAt) {
         throw this.precommitExpiredError();
       }
 
       const lease = await this.awaitDependency(
-        (signal) => this.input.admission.admit(admissionIdentity),
+        (_signal) => this.input.admission.admit(admissionIdentity),
         undefined,
         (lateLease) => this.releaseLease(lateLease),
       );
@@ -370,7 +369,7 @@ export class SsePresenter {
     this.input.telemetry?.gaugeDelta("blocked", -1);
     if (started !== undefined) this.input.telemetry?.histogram("blocked_duration", Math.max(0, this.input.clock.monotonicNow() - started));
     for (let index = this.listeners.length - 1; index >= 0; index -= 1) {
-      const [event, listener] = this.listeners[index]!;
+      const [event, listener] = this.listeners[index];
       if (event !== "drain") continue;
       this.input.response.off(event, listener);
       this.listeners.splice(index, 1);

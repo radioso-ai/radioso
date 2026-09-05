@@ -6,6 +6,7 @@ import {
   type WorkspaceInvalidationPublisher,
 } from "@radioso/workspace-invalidation-contract";
 import type { WorkspaceInvalidationTransport } from "../domain/contracts.js";
+import { asError } from "../../../shared/errors/asError.js";
 
 interface PendingEntry {
   workspaceId: string;
@@ -261,7 +262,7 @@ export class BoundedInvalidationProducer implements WorkspaceInvalidationPublish
       controller.signal.addEventListener("abort", onAbort, { once: true });
       void operation.then(
         () => finish(resolve),
-        (error: unknown) => finish(() => reject(error)),
+        (error: unknown) => finish(() => reject(asError(error))),
       );
     });
   }

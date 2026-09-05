@@ -49,7 +49,6 @@ import type {
 } from "../contracts/documentContracts.js";
 import type {
   DocumentEnrichmentStagePort,
-  DocumentEnrichmentStageResult,
 } from "./documentEnrichmentService.js";
 import { NoopDocumentJobDispatcher, type DocumentJobDispatcherPort } from "./documentJobDispatcher.js";
 import type { MaterializedDocumentContent } from "./documentSourceContentService.js";
@@ -117,7 +116,7 @@ const boundedTraceCount = (value: number | undefined): number =>
 const compactTraceAttributes = (attributes: TraceAttributes): TraceAttributes =>
   Object.fromEntries(
     Object.entries(attributes).filter(([, value]) => value !== undefined && value !== null),
-  ) as TraceAttributes;
+  );
 
 /** `documents.enrichment` is untyped JSONB; read it back through the domain guard. */
 const toEnrichmentProvenance = (value: unknown): DocumentEnrichmentProvenance | null =>
@@ -303,36 +302,30 @@ export class DocumentProcessingService {
       });
       const embeddingUsage = this.buildEmbeddingUsage(job, enrichedChunks);
       const embeddingStartedAt = Date.now();
-      let embeddings: number[][];
-      let embeddingSpace: EmbeddingSpaceRef;
-      try {
-        const embeddingResult = await traceActiveSpan("document.processing.embedding", buildDocumentProcessingTraceAttributes(job, {
-          stage: "embedding",
-          chunkCount: enrichedChunks.length,
-        }), () => this.documentEmbeddings.embedDocumentChunks({
+      const embeddingResult = await traceActiveSpan("document.processing.embedding", buildDocumentProcessingTraceAttributes(job, {
+        stage: "embedding",
+        chunkCount: enrichedChunks.length,
+      }), () => this.documentEmbeddings.embedDocumentChunks({
+        workspaceId: job.workspaceId,
+        texts: enrichedChunks.map((chunk) => chunk.searchText),
+        sourceId: documentWithContent.sourceId ?? null,
+        documentId: job.documentId,
+        documentRevision: job.documentRevision,
+        jobId: job.id,
+        usageItems: embeddingUsage.chunks,
+        usageContext: {
           workspaceId: job.workspaceId,
-          texts: enrichedChunks.map((chunk) => chunk.searchText),
-          sourceId: documentWithContent.sourceId ?? null,
-          documentId: job.documentId,
-          documentRevision: job.documentRevision,
-          jobId: job.id,
-          usageItems: embeddingUsage.chunks,
-          usageContext: {
-            workspaceId: job.workspaceId,
-            requestId: job.id,
-            surface: "documents",
-            operation: "embedding",
-            attemptKey: embeddingUsage.attemptKey,
-          },
-        }), (result) => buildDocumentProcessingTraceAttributes(job, {
-          stage: "embedding",
-          chunkCount: result.vectors.length,
-        }));
-        embeddings = embeddingResult.vectors.map((vector) => [...vector]);
-        embeddingSpace = embeddingResult.space;
-      } catch (error) {
-        throw error;
-      }
+          requestId: job.id,
+          surface: "documents",
+          operation: "embedding",
+          attemptKey: embeddingUsage.attemptKey,
+        },
+      }), (result) => buildDocumentProcessingTraceAttributes(job, {
+        stage: "embedding",
+        chunkCount: result.vectors.length,
+      }));
+      const embeddings: number[][] = embeddingResult.vectors.map((vector) => [...vector]);
+      const embeddingSpace: EmbeddingSpaceRef = embeddingResult.space;
       const storageEmbeddingDurationMs = Math.max(0, Date.now() - embeddingStartedAt);
       this.logger?.info(
         {

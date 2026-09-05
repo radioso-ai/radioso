@@ -13,7 +13,7 @@ export class MonotonicDueHeap<T extends DueItem> {
     let index = this.values.length - 1;
     while (index > 0) {
       const parent = Math.floor((index - 1) / 2);
-      if (this.values[parent]!.dueAtMs <= value.dueAtMs) break;
+      if (this.values[parent].dueAtMs <= value.dueAtMs) break;
       this.values[index] = this.values[parent]!;
       index = parent;
     }
@@ -29,8 +29,8 @@ export class MonotonicDueHeap<T extends DueItem> {
       const left = index * 2 + 1;
       const right = left + 1;
       if (left >= this.values.length) break;
-      const child = right < this.values.length && this.values[right]!.dueAtMs < this.values[left]!.dueAtMs ? right : left;
-      if (this.values[child]!.dueAtMs >= tail.dueAtMs) break;
+      const child = right < this.values.length && this.values[right].dueAtMs < this.values[left].dueAtMs ? right : left;
+      if (this.values[child].dueAtMs >= tail.dueAtMs) break;
       this.values[index] = this.values[child]!;
       index = child;
     }

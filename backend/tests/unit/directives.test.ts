@@ -59,9 +59,9 @@ describe("AlwaysMatchDirectiveMatcher", () => {
     });
 
     expect(matches).toHaveLength(1);
-    expect(matches[0]!.directive.name).toBe("standing");
-    expect(matches[0]!.selectionMode).toBe("deterministic");
-    expect(matches[0]!.selectionReason).toBeTruthy();
+    expect(matches[0].directive.name).toBe("standing");
+    expect(matches[0].selectionMode).toBe("deterministic");
+    expect(matches[0].selectionReason).toBeTruthy();
   });
 });
 
@@ -175,7 +175,7 @@ describe("DirectiveSteeringService", () => {
     expect(result.matches).toHaveLength(3);
     expect(result.bounded).toEqual([{ directiveName: "low", reason: "top_k" }]);
     expect(debug).toHaveLength(1);
-    expect(debug[0]!.payload).toMatchObject({ event: "directive_steering_bounded", workspaceId: "w1" });
+    expect(debug[0].payload).toMatchObject({ event: "directive_steering_bounded", workspaceId: "w1" });
   });
 
   it("preserves registration order for equal-priority directives when nothing is dropped", async () => {

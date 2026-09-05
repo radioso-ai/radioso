@@ -99,7 +99,7 @@ export function ConditionBuilderDialog({
                 const next = event.target.value
                 setRefId(next)
                 const variable = variables.find((candidate) => candidate.id === next)
-                if (variable) setOp(fieldGuardOpsForType(variable.type)[0]!)
+                if (variable) setOp(fieldGuardOpsForType(variable.type)[0])
               }}
               className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm"
             >
@@ -118,7 +118,7 @@ export function ConditionBuilderDialog({
                 onChange={(event) => {
                   const nextType = event.target.value as RoutineSlotType
                   onSetVariableType(selected.id, nextType)
-                  setOp(fieldGuardOpsForType(nextType)[0]!)
+                  setOp(fieldGuardOpsForType(nextType)[0])
                 }}
                 className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm"
               >

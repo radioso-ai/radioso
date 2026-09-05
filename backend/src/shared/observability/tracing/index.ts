@@ -1,5 +1,5 @@
 import { context, SpanStatusCode, trace, TraceFlags } from "@opentelemetry/api";
-import type { Attributes, Span, SpanOptions, Tracer } from "@opentelemetry/api";
+import type { Span, SpanOptions, Tracer } from "@opentelemetry/api";
 import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { resourceFromAttributes } from "@opentelemetry/resources";
@@ -25,7 +25,7 @@ import { safeTraceAttributes } from "./attributePolicy.js";
 import { type ActiveTraceCorrelation, correlationAttributes } from "./correlation.js";
 
 export { correlationAttributes, safeTraceAttributes };
-export type { ActiveTraceCorrelation, TraceCorrelationFields } from "./correlation.js";
+export type { ActiveTraceCorrelation } from "./correlation.js";
 
 export const safeSpanAttributes = safeTraceAttributes;
 
@@ -44,7 +44,7 @@ interface TracingLogger {
   info?: AppLogger["info"];
 }
 
-export interface TracingConfig {
+interface TracingConfig {
   enabled: boolean;
   environment: string;
   logger?: TracingLogger;
@@ -122,6 +122,9 @@ class LoggingSpanExporter implements SpanExporter {
 
   export(spans: Parameters<SpanExporter["export"]>[0], callback: Parameters<SpanExporter["export"]>[1]): void {
     this.exporter.export(spans, (result) => {
+      // result.code is @opentelemetry/core's ExportResultCode (SUCCESS = 0, FAILED = 1); comparing
+      // to the literal avoids adding a direct dependency on that package for one enum value.
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-enum-comparison -- see comment above
       if (result.code !== 0) {
         this.logger?.error(
           {
@@ -311,7 +314,7 @@ export const currentTraceCorrelation = (): ActiveTraceCorrelation | undefined =>
   }
 
   return {
-    sampled: (spanContext.traceFlags & TraceFlags.SAMPLED) === TraceFlags.SAMPLED,
+    sampled: (spanContext.traceFlags & TraceFlags.SAMPLED) !== 0,
     spanId: spanContext.spanId,
     traceId: spanContext.traceId,
   };

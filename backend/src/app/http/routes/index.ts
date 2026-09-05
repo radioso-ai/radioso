@@ -37,7 +37,7 @@ import { createEvalRoutes } from "../../../modules/eval/composition.js";
 import { createCopilotRoutes } from "../../../modules/operatorCopilot/routes.js";
 import { createApiAccessRoutes } from "./apiAccessRoutes.js";
 
-export type ApiRouteMount = {
+type ApiRouteMount = {
   path: string;
   createRouter: (dependencies: AppDependencies) => Router;
 };
@@ -46,7 +46,7 @@ export type ApiRouteMount = {
  * The public API's mount table. The route-policy contract inspects every router here
  * and every application contribution, then discovers authentication structurally.
  */
-export const createApiRouteMounts = (dependencies: AppDependencies): readonly ApiRouteMount[] => [
+export const createApiRouteMounts = (_dependencies: AppDependencies): readonly ApiRouteMount[] => [
   { path: "/api/v1/auth", createRouter: createAuthRoutes },
   { path: "/api/v1/account", createRouter: createAccountRoutes },
   { path: "/api/v1/account", createRouter: createAccountUserRoutes },

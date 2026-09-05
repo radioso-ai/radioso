@@ -39,15 +39,15 @@ describe("DB-backed routine composition source", () => {
     expect(repository.listPublishedByAgent).toHaveBeenCalledWith("agent_1");
     // Directive scope tags (`routine:<id>` / `step:<id>:<stepId>`) match against
     // the engine's activeRoutineId — the compiled id must BE the definition id.
-    expect(registrations[0]!.routine.id).toBe(DEFINITION_ID);
-    expect(registrations[0]!.trigger).toEqual({
+    expect(registrations[0].routine.id).toBe(DEFINITION_ID);
+    expect(registrations[0].trigger).toEqual({
       description: "The user asks for help.",
       priority: 7,
       gateRef: "retrieval.answer",
     });
     // Reentry policy is carried by the compiled routine, not duplicated onto the
     // registration, so the registry and the reentry gate cannot disagree.
-    expect(registrations[0]!.routine.activation).toEqual({
+    expect(registrations[0].routine.activation).toEqual({
       triggerDescription: "The user asks for help.",
       priority: 7,
       reentryMode: "once_per_conversation",
@@ -149,8 +149,8 @@ describe("DB-backed routine composition source", () => {
     expect(findById).toHaveBeenCalledWith("agent_1", DEFINITION_ID);
     expect(repository.listPublishedByAgent).not.toHaveBeenCalled();
     expect(registrations).toHaveLength(1);
-    expect(registrations[0]!.routine.id).toBe(DEFINITION_ID);
-    expect(registrations[0]!.trigger.description).toBe("The user asks for help.");
+    expect(registrations[0].routine.id).toBe(DEFINITION_ID);
+    expect(registrations[0].trigger.description).toBe("The user asks for help.");
   });
 
   it("loadPreview reports a preview id that resolves to no definition and skips it", async () => {
@@ -189,7 +189,7 @@ describe("DB-backed routine composition source", () => {
     });
 
     expect(registrations).toHaveLength(1);
-    expect(registrations[0]!.routine.id).toBe("routine:agent_1:handoff:v1");
-    expect(registrations[0]!.trigger.priority).toBe(published.activation.priority);
+    expect(registrations[0].routine.id).toBe("routine:agent_1:handoff:v1");
+    expect(registrations[0].trigger.priority).toBe(published.activation.priority);
   });
 });

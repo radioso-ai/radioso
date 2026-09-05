@@ -5,7 +5,7 @@ import type { OpenApiSchemas, OpenApiSecurity } from "../openApiRegistry.js";
 export const registerSystemPaths = (
   registry: OpenAPIRegistry,
   schemas: OpenApiSchemas,
-  security: OpenApiSecurity,
+  _security: OpenApiSecurity,
 ) => {
   registry.registerPath({
     method: "get",

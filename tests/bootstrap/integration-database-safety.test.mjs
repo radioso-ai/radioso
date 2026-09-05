@@ -42,7 +42,7 @@ test("normal application environment files do not configure an integration datab
 
 test("Docker application containers override a stale integration database URL from .env", async () => {
   const compose = await fs.readFile("docker-compose.yml", "utf8");
-  const serviceStarts = [...compose.matchAll(/^  [a-z][a-z-]*:\n/gm)].map((match) => match.index);
+  const serviceStarts = [...compose.matchAll(/^ {2}[a-z][a-z-]*:\n/gm)].map((match) => match.index);
 
   for (const service of ["backend", "backend-worker", "backend-crawler-worker", "frontend"]) {
     const serviceStart = compose.indexOf(`  ${service}:`);
@@ -51,7 +51,7 @@ test("Docker application containers override a stale integration database URL fr
     const serviceDefinition = compose.slice(serviceStart, nextService === -1 ? undefined : nextService);
     assert.match(
       serviceDefinition,
-      /^      INTEGRATION_DATABASE_URL:\s*""$/m,
+      /^ {6}INTEGRATION_DATABASE_URL:\s*""$/m,
       `${service} must clear any legacy INTEGRATION_DATABASE_URL inherited from .env`,
     );
   }

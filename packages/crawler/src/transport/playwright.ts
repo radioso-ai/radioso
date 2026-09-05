@@ -1,3 +1,4 @@
+import type { Page, Response, Route } from "playwright";
 import type { FetchPage, FetchedPage, ValidateNavigationUrl } from "./crawler.js";
 import { extractStructuredTextWithFallback } from "./htmlProcessing.js";
 
@@ -70,9 +71,9 @@ const extractLinksFromPage = async (page: any, baseUrl: string): Promise<string[
   return links;
 };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 const extractFaviconUrl = async (
-  page: any,
+  page: Page,
   baseUrl: string,
   validateNavigationUrl?: ValidateNavigationUrl
 ): Promise<string | null> => {
@@ -182,7 +183,7 @@ const fetchWithPlaywright = async (
         // Intercept network requests and validate HTTP(S) URLs before
         // they're allowed onto the wire. Local browser schemes are not
         // website navigations, so they bypass the public-host validator.
-        await context.route("**/*", async (route: any) => {
+        await context.route("**/*", async (route: Route) => {
           const request = route.request();
           const isDocument = request.resourceType() === "document";
           let requestUrl: URL;
@@ -227,7 +228,7 @@ const fetchWithPlaywright = async (
       }
 
       try {
-        let response: any;
+        let response: Response | null;
         try {
           response = await page.goto(url, {
             waitUntil: "domcontentloaded",
@@ -236,12 +237,18 @@ const fetchWithPlaywright = async (
           await page.waitForLoadState("networkidle", { timeout: NETWORK_SETTLE_TIMEOUT }).catch(() => {});
         } catch (error) {
           if (validationError) {
+            // validationError faithfully re-throws whatever the caller-supplied
+            // validateNavigationUrl threw (or a locally constructed Error); wrapping a
+            // non-Error value here would lose the caller's original error shape.
+            // eslint-disable-next-line @typescript-eslint/only-throw-error -- see comment above
             throw validationError;
           }
           throw error;
         }
 
         if (validationError) {
+          // Same rethrow-as-is rationale as the catch block above.
+          // eslint-disable-next-line @typescript-eslint/only-throw-error -- see comment above
           throw validationError;
         }
 

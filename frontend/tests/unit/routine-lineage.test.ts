@@ -82,7 +82,7 @@ describe('groupRoutineLineages', () => {
       activeRoutine: expect.objectContaining({ id: 'archived-1' }),
       pendingDraft: null,
     })
-    expect(grouped.active[0]!.versions.map((version) => version.id)).toEqual(['draft-2', 'archived-1'])
+    expect(grouped.active[0].versions.map((version) => version.id)).toEqual(['draft-2', 'archived-1'])
   })
 
   it('sorts version history newest first with drafts before same-version history rows', () => {

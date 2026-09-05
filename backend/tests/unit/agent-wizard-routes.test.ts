@@ -20,7 +20,7 @@ const createDependencies = (overrides: Partial<RouteDependencies> = {}): RouteDe
   authService: {
     authenticateSession: vi.fn().mockImplementation(async (token: string) => {
       if (token !== "valid-session") {
-        throw { statusCode: 401, code: "unauthorized", message: "Unauthorized" };
+        throw Object.assign(new Error("Unauthorized"), { statusCode: 401, code: "unauthorized" });
       }
       return { accountId: "account-1", userId: "user-1", sessionId: "session-1" };
     }),

@@ -26,7 +26,7 @@ const GROUP_A_VECTORS = [[1, 0, 0], [0.98, 0.02, 0], [0.97, 0, 0.03], [0.99, 0.0
 const GROUP_B_VECTORS = [[0, 1, 0], [0.02, 0.98, 0], [0, 0.97, 0.03], [0.01, 0.99, 0.01]];
 
 describeIntegration("AudiencePulseService.refresh() (Postgres, real census)", () => {
-  const database = new Database(integrationDatabaseUrl as string);
+  const database = new Database(integrationDatabaseUrl);
   const historySource = new PostgresAudiencePulseHistorySource(database.kysely);
   const facetSource = new MessageFacetRepository(database.kysely);
   const topicRepository = new TopicRepository(database.kysely);
@@ -209,7 +209,7 @@ describeIntegration("AudiencePulseService.refresh() (Postgres, real census)", ()
       [workspaceId],
     );
     expect(runRow).toHaveLength(1);
-    expect(runRow[0]!.question_count).toBe(populationSize);
-    expect(runRow[0]!.unclassified_count).toBe(result.report.unclassifiedQuestionCount);
+    expect(runRow[0].question_count).toBe(populationSize);
+    expect(runRow[0].unclassified_count).toBe(result.report.unclassifiedQuestionCount);
   });
 });

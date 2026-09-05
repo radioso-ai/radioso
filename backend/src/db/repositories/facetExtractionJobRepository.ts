@@ -157,7 +157,7 @@ export class FacetExtractionJobRepository implements FacetExtractionJobStore {
       .returning(facetExtractionJobColumns.map((column) => `facet_extraction_jobs.${column}` as const))
       .execute();
 
-    return rows.map((row) => mapJob(row as FacetExtractionJobRow));
+    return rows.map((row) => mapJob(row));
   }
 
   async nextWorkspaceScheduledAt(workspaceId: string, messageWindow?: { start: Date; end: Date }): Promise<Date | null> {

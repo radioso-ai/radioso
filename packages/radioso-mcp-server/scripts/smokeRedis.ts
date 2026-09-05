@@ -69,7 +69,9 @@ const waitForRedis = async (redisUrl: string): Promise<void> => {
     }
   }
 
-  throw lastError ?? new Error("Redis did not become ready in time.");
+  // The redis client always rejects with an Error; this only falls back to a synthesized
+  // one if the loop somehow never captured a failure.
+  throw lastError instanceof Error ? lastError : new Error("Redis did not become ready in time.");
 };
 
 const startLocalRedisServer = async (): Promise<EphemeralRedisHandle> => {

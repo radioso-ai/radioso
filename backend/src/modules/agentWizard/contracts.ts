@@ -6,7 +6,7 @@ import { z } from "zod";
  * accepts cannot drift apart.
  */
 
-export const agentWizardUrlSchema = z.string().url().max(2048).refine((value) => {
+const agentWizardUrlSchema = z.string().url().max(2048).refine((value) => {
   try {
     const parsed = new URL(value);
     return parsed.protocol === "http:" || parsed.protocol === "https:";
@@ -31,7 +31,7 @@ export const agentWizardCreateRequestSchema = z.object({
   contactEmail: z.string().max(320).nullable().optional(),
 });
 
-export const agentWizardChunkingStrategySchema = z.enum(["fixed_window", "structured_semantic"]);
+const agentWizardChunkingStrategySchema = z.enum(["fixed_window", "structured_semantic"]);
 
 export const agentWizardAnalysisSchema = z.object({
   suggestedName: z.string(),
@@ -82,5 +82,3 @@ export const agentWizardStreamErrorSchema = z.object({
   statusCode: z.number().int(),
 });
 
-export type AgentWizardAnalyzeRequest = z.infer<typeof agentWizardAnalyzeRequestSchema>;
-export type AgentWizardCreateRequest = z.infer<typeof agentWizardCreateRequestSchema>;

@@ -48,7 +48,7 @@ describe("WordpressClient", () => {
     const fetchImpl = vi.fn(async () => new Response("not found", { status: 404 }));
     const client = new WordpressClient({
       siteUrl: "https://example.com",
-      fetchImpl: fetchImpl as unknown as typeof fetch,
+      fetchImpl: fetchImpl,
     });
 
     const result = await client.fetchPostsPage({ type: "event", page: 1, perPage: 10 });
@@ -61,7 +61,7 @@ describe("WordpressClient", () => {
       siteUrl: "https://example.com",
       username: "alice",
       applicationPassword: "secret",
-      fetchImpl: fetchImpl as unknown as typeof fetch,
+      fetchImpl: fetchImpl,
     });
 
     await client.fetchPostsPage({ type: "page", page: 1, perPage: 10 });
@@ -75,7 +75,7 @@ describe("WordpressClient", () => {
     const fetchImpl = vi.fn(async () => okJsonResponse([], { "x-wp-totalpages": "1" }));
     const client = new WordpressClient({
       siteUrl: "https://example.com",
-      fetchImpl: fetchImpl as unknown as typeof fetch,
+      fetchImpl: fetchImpl,
     });
 
     await client.fetchPostsPage({ type: "page", page: 1, perPage: 10 });
@@ -97,7 +97,7 @@ describe("WordpressClient", () => {
       siteUrl: "https://example.com",
       username: "alice",
       applicationPassword: "secret",
-      fetchImpl: fetchImpl as unknown as typeof fetch,
+      fetchImpl: fetchImpl,
       assertPublicUrl,
     });
 
@@ -116,7 +116,7 @@ describe("WordpressClient", () => {
     const fetchImpl = vi.fn();
     const client = new WordpressClient({
       siteUrl: "http://127.0.0.1",
-      fetchImpl: fetchImpl as unknown as typeof fetch,
+      fetchImpl: fetchImpl,
       assertPublicUrl: async () => {
         throw new Error("publicly routable host required");
       },
@@ -133,7 +133,7 @@ describe("WordpressClient", () => {
     );
     const client = new WordpressClient({
       siteUrl: "https://example.com",
-      fetchImpl: fetchImpl as unknown as typeof fetch,
+      fetchImpl: fetchImpl,
     });
 
     const result = await client.fetchPostsPage({ type: "post", page: 1, perPage: 10 });
@@ -148,7 +148,7 @@ describe("WordpressClient", () => {
     );
     const client = new WordpressClient({
       siteUrl: "https://example.com",
-      fetchImpl: fetchImpl as unknown as typeof fetch,
+      fetchImpl: fetchImpl,
     });
 
     const result = await client.fetchPostsPage({ type: "post", page: 9, perPage: 10 });
@@ -160,7 +160,7 @@ describe("WordpressClient", () => {
     const fetchImpl = vi.fn(async () => new Response("nope", { status: 500 }));
     const client = new WordpressClient({
       siteUrl: "https://example.com",
-      fetchImpl: fetchImpl as unknown as typeof fetch,
+      fetchImpl: fetchImpl,
     });
 
     await expect(

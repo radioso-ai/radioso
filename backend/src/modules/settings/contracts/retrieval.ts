@@ -1,17 +1,9 @@
 export {
-  DEFAULT_LEXICAL_REWRITE_INSTRUCTIONS,
   DEFAULT_RETRIEVAL_STRATEGY_PREFERENCE,
-  DEFAULT_SEMANTIC_REWRITE_INSTRUCTIONS,
   DEFAULT_SUGGESTED_QUESTIONS_COUNT,
-  DEFAULT_SUGGESTED_QUESTIONS_ENABLED,
-  MAX_SUGGESTED_QUESTIONS_COUNT,
-  MIN_SUGGESTED_QUESTIONS_COUNT,
   retrievalStrategyPreferences,
   resolveRetrievalStrategyPreference,
   type RetrievalStrategyPreference,
-  allowedOperatorsForValueType,
-  createDefaultMetadataCondition,
-  createDefaultMetadataRule,
   defaultRetrievalSettings,
   getNormalizedMetadataConditions,
   inferMetadataValueType,
@@ -20,16 +12,11 @@ export {
   metadataRuleOperators,
   metadataRuleTriggerModes,
   metadataValueTypes,
-  normalizeMetadataField,
   normalizeMetadataRules,
   validateRetrievalSettings,
   type MetadataFieldSuggestion,
-  type MetadataRuleCombinator,
-  type MetadataRuleEffect,
   type MetadataRuleOperator,
-  type MetadataRuleTriggerMode,
   type MetadataValueType,
-  type RetrievalMetadataCondition,
   type RetrievalMetadataRule,
   type RetrievalSettingsInput,
   type RetrievalSettingsRecord,
@@ -41,6 +28,5 @@ export {
 } from "../domain/retrievalSettingsSnapshot.js";
 
 export {
-  mergeMetadataFieldSuggestions,
   type DeclaredMetadataField,
 } from "../domain/metadataFieldSuggestions.js";

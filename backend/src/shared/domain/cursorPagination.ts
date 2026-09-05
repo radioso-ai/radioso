@@ -80,5 +80,5 @@ export const decodeCursorWithKeys = <TKeys extends string>(
     }
   }
 
-  return parsed as RequiredCursorPayload<TKeys>;
+  return parsed;
 };

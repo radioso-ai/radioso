@@ -25,10 +25,6 @@ interface PendingCall {
   rationaleHint: string | null;
 }
 
-interface FinalizedCall {
-  stage: ActivityStage;
-}
-
 export interface AgenticTraceInput {
   events: ReadonlyArray<AgentTraceEvent>;
   runResult: AgentRunResult;

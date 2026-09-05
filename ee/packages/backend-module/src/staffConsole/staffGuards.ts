@@ -1,5 +1,6 @@
 import type { RequestHandler } from "express";
 
+import { HttpError } from "../shared/httpError.js";
 import { StaffAuthService } from "./staffAuthService.js";
 import type { StaffRole } from "./staffTypes.js";
 
@@ -26,7 +27,7 @@ export const requireStaffSession = (
   try {
     const sessionToken = req.cookies?.[cookieName];
     if (typeof sessionToken !== "string" || sessionToken.length === 0) {
-      throw { statusCode: 401, code: "unauthorized", message: "Unauthorized" };
+      throw new HttpError(401, "unauthorized", "Unauthorized");
     }
     const { staff } = await authService.authenticateStaffSession(sessionToken);
     res.locals.staff = {

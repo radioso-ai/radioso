@@ -106,10 +106,7 @@ const sanitizeDestinationParts = (input: {
     return removeUndefinedProperties({
       destinationOrigin,
       destinationPath,
-    }) as {
-      destinationOrigin?: string;
-      destinationPath?: string;
-    };
+    });
   } catch {
     return {};
   }

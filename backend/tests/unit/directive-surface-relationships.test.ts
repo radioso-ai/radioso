@@ -16,7 +16,7 @@ const match = (name: string, overrides: Partial<Directive> = {}): DirectiveMatch
     condition: { kind: "always" },
     action: `${name} action`,
     ...overrides,
-  } as Directive,
+  },
   selectionMode: "deterministic",
   selectionReason: "test",
 });
@@ -138,7 +138,7 @@ describe("steering result — post-bound surfaces on matches", () => {
         contextual("answer-b"),
         contextual("both", ["answer", "suggested_questions"]),
       ]),
-      matcher: confidenceMatcher({ "answer-a": 0.9, "answer-b": 0.8, both: 0.1 }) as never,
+      matcher: confidenceMatcher({ "answer-a": 0.9, "answer-b": 0.8, both: 0.1 }),
       capabilityPolicy: new AllowAll() as never,
       // The answer block fits two, so the weakest loses that pass; the suggestion
       // block has room and keeps its only occupant.
@@ -160,7 +160,7 @@ describe("steering result — post-bound surfaces on matches", () => {
   it("keeps a fully bounded match inspectable without allowing an engine host to render it", async () => {
     const service = new DirectiveSteeringService({
       registry: new DirectiveCatalogRegistry([contextual("fully-bounded")]),
-      matcher: confidenceMatcher({ "fully-bounded": 0.9 }) as never,
+      matcher: confidenceMatcher({ "fully-bounded": 0.9 }),
       capabilityPolicy: new AllowAll() as never,
       steeringBound: { maxRenderedDirectives: 0, renderedTokenBudget: 10_000 },
     });
@@ -188,7 +188,7 @@ describe("steering result — post-bound surfaces on matches", () => {
           binding: { kind: "skill", skillName: "order.lookup" },
         },
       ]),
-      matcher: confidenceMatcher({ "answer-a": 0.9, "answer-b": 0.8, both: 0.1 }) as never,
+      matcher: confidenceMatcher({ "answer-a": 0.9, "answer-b": 0.8, both: 0.1 }),
       capabilityPolicy: new AllowAll() as never,
       steeringBound: { maxRenderedDirectives: 2, renderedTokenBudget: 10_000 },
     });
@@ -213,7 +213,7 @@ describe("steering result — post-bound surfaces on matches", () => {
     // answer directive from engine-rebuilt routine and clarification prompts.
     const service = new DirectiveSteeringService({
       registry: new DirectiveCatalogRegistry([contextual("unscoped"), contextual("also-unscoped")]),
-      matcher: confidenceMatcher({ unscoped: 0.9, "also-unscoped": 0.8 }) as never,
+      matcher: confidenceMatcher({ unscoped: 0.9, "also-unscoped": 0.8 }),
       capabilityPolicy: new AllowAll() as never,
       steeringBound: { maxRenderedDirectives: 10, renderedTokenBudget: 10_000 },
     });

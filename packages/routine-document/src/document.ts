@@ -1,6 +1,5 @@
 import type {
   RoutineDefinitionDraft,
-  RoutineDefinitionDraftAuthoring,
   RoutineDefinitionDraftAuthored,
   RoutineDraftSource,
   RoutineDraftSourceStep,
@@ -796,7 +795,7 @@ function parseInstructionSegments(instruction: string, nameByRef: Map<string, st
   for (const match of instruction.matchAll(SLOT_REFERENCE)) {
     const index = match.index ?? 0
     if (index > lastIndex) segments.push({ kind: 'text', text: instruction.slice(lastIndex, index) })
-    const refId = match[1]!
+    const refId = match[1]
     segments.push({ kind: 'chip', chipKind: 'variable', refId, label: `@${nameByRef.get(refId) ?? refId}` })
     lastIndex = index + match[0].length
   }
@@ -905,7 +904,7 @@ export function routineToChipDoc(routine: RoutineDraftSource): ProseDoc | null {
 
   const primaryComplete = completeTerminals.find((terminal) =>
     transitions.some((transition) => transition.guardKind === 'default' && transition.toRef === terminal.stableStepId))
-    ?? completeTerminals[0]!
+    ?? completeTerminals[0]
   const completeById = new Map(completeTerminals.map((terminal) => [terminal.stableStepId, terminal] as const))
   const handoff = handoffTerminals[0]
   const completeId = primaryComplete.stableStepId
@@ -945,7 +944,7 @@ export function routineToChipDoc(routine: RoutineDraftSource): ProseDoc | null {
   }
 
   const titleOf = (step: RoutineDraftSourceStep): string | null => {
-    const label = (step.metadata as Record<string, unknown> | undefined)?.outlineLabel
+    const label = (step.metadata)?.outlineLabel
     return typeof label === 'string' && label.trim() ? label.trim() : null
   }
 
@@ -985,7 +984,7 @@ export function routineToChipDoc(routine: RoutineDraftSource): ProseDoc | null {
 
   const paragraphs: ProseParagraph[] = []
   for (let index = 0; index < steps.length; index++) {
-    const step = steps[index]!
+    const step = steps[index]
     // Includes a title synthesized for an untitled jump target, so it renders as a heading.
     const title = titleByStepId.get(step.stableStepId) ?? null
     if (step.kind === 'approval') {
@@ -1060,7 +1059,7 @@ export function routineToChipDoc(routine: RoutineDraftSource): ProseDoc | null {
       const bodyText = (step.instruction ?? '') !== title ? (step.instruction ?? '') : ''
       const bodySegments = bodyText ? parseInstructionSegments(bodyText, nameByRef) : []
       if (step.kind === 'tool' && step.toolRef) {
-        const metadata = step.metadata as RoutineSkillBindingState | undefined
+        const metadata = step.metadata
         bodySegments.push({
           kind: 'chip',
           chipKind: 'skill',
@@ -1078,7 +1077,7 @@ export function routineToChipDoc(routine: RoutineDraftSource): ProseDoc | null {
     } else {
       const segments = parseInstructionSegments(step.instruction ?? '', nameByRef)
       if (step.kind === 'tool' && step.toolRef) {
-        const metadata = step.metadata as RoutineSkillBindingState | undefined
+        const metadata = step.metadata
         segments.push({
           kind: 'chip',
           chipKind: 'skill',

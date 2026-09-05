@@ -84,7 +84,7 @@ export const withTruncation = <T extends Record<string, unknown>>(
         truncated: true,
         entries: truncation,
       },
-    } as T;
+    };
 
 const fitsBudget = <T extends Record<string, unknown>>(
   result: CompactionResult<T>,

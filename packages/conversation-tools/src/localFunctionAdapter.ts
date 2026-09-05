@@ -37,7 +37,9 @@ export class LocalFunctionToolService implements ToolService {
     return [...this.tools.values()].map(({ execute: _execute, ...definition }) => definition);
   }
 
-  async callTool(input: ToolCallInput): Promise<ToolCallResult | SkillOutcome | unknown> {
+  // The port declares `ToolCallResult | SkillOutcome | unknown`; `unknown` already
+  // subsumes the other members, so this is the same type without the redundant listing.
+  async callTool(input: ToolCallInput): Promise<unknown> {
     const tool = this.tools.get(input.toolName);
     if (!tool) {
       throw new Error(`Tool "${input.toolName}" is not registered`);

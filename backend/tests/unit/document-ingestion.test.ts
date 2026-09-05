@@ -42,7 +42,7 @@ describe("document ingestion", () => {
       () => jobRepository.getQueueSnapshot(),
       jobRepository,
       dispatcher,
-      analyticsService as never,
+      analyticsService,
     );
 
     const response = await service.ingest({
@@ -262,7 +262,7 @@ describe("document ingestion", () => {
       undefined,
       undefined,
       undefined,
-      analyticsService as never,
+      analyticsService,
     );
 
     jobRepository.enqueue = async () => {
@@ -654,7 +654,7 @@ describe("document ingestion", () => {
 
     expect(await processingWorker.runOnce()).toBe(true);
     expect(embedDocumentChunks).toHaveBeenCalledOnce();
-    const request = embedDocumentChunks.mock.calls[0]![0] as Record<string, unknown>;
+    const request = embedDocumentChunks.mock.calls[0][0] as Record<string, unknown>;
     expect(request).toEqual(expect.objectContaining({
       workspaceId: "workspace-1",
       texts: expect.any(Array),
@@ -731,7 +731,7 @@ describe("document ingestion", () => {
 
     expect(await processingWorker.runOnce()).toBe(true);
     expect(seenModels).toEqual(["text-embedding-3-small"]);
-    expect(chunkRepository.items.get((await documentRepository.listByWorkspaceId("workspace-1"))[0]!.id)?.[0]?.embeddingModel).toBe("text-embedding-3-small");
+    expect(chunkRepository.items.get((await documentRepository.listByWorkspaceId("workspace-1"))[0].id)?.[0]?.embeddingModel).toBe("text-embedding-3-small");
     expect(promotePendingEmbeddingModelIfReady).toHaveBeenCalledWith("workspace-1");
   });
 
@@ -811,14 +811,14 @@ describe("document ingestion", () => {
       title: "Synced doc",
       content: "First content",
       externalDocumentId: "crm-123",
-    } as any);
+    });
 
     const second = await service.ingest({
       workspaceId: "workspace-1",
       title: "Synced doc",
       content: "Second content",
       externalDocumentId: "crm-123",
-    } as any);
+    });
 
     expect(second.documentId).toBe(first.documentId);
 
@@ -854,7 +854,7 @@ describe("document ingestion", () => {
       content: "Same body",
       externalDocumentId: "wp_post_42",
       metadata,
-    } as any);
+    });
 
     await service.ingest({
       workspaceId: "workspace-1",
@@ -862,7 +862,7 @@ describe("document ingestion", () => {
       content: "Same body",
       externalDocumentId: "wp_post_42",
       metadata: { ...metadata },
-    } as any);
+    });
 
     const current = await documentRepository.findByIdAndWorkspaceId(first.documentId, "workspace-1");
     expect(current?.revision).toBe(1);
@@ -882,7 +882,7 @@ describe("document ingestion", () => {
       content: "Same body",
       externalDocumentId: "wp_post_42",
       metadata: { sourceUrl: "https://example.com/p" },
-    } as any);
+    });
 
     const second = await service.ingest({
       workspaceId: "workspace-1",
@@ -890,7 +890,7 @@ describe("document ingestion", () => {
       content: "Same body",
       externalDocumentId: "wp_post_42",
       metadata: { sourceUrl: "https://example.com/p", author: "Sabine Kaphingst" },
-    } as any);
+    });
 
     expect(second.documentId).toBe(first.documentId);
     const current = await documentRepository.findByIdAndWorkspaceId(first.documentId, "workspace-1");
@@ -912,7 +912,7 @@ describe("document ingestion", () => {
       externalDocumentId: "wp_post_42",
       metadata: { sourceUrl: "https://example.com/p" },
       indexedFields: { price: 17, on_sale: false },
-    } as any);
+    });
 
     const second = await service.ingest({
       workspaceId: "workspace-1",
@@ -921,7 +921,7 @@ describe("document ingestion", () => {
       externalDocumentId: "wp_post_42",
       metadata: { sourceUrl: "https://example.com/p" },
       indexedFields: { price: 12.5, on_sale: true },
-    } as any);
+    });
 
     expect(second.documentId).toBe(first.documentId);
     const current = await documentRepository.findByIdAndWorkspaceId(first.documentId, "workspace-1");
@@ -943,7 +943,7 @@ describe("document ingestion", () => {
       externalDocumentId: "wp_post_42",
       metadata: { sourceUrl: "https://example.com/p" },
       indexedFields: { price: 17, sku: "AEY0112" },
-    } as any);
+    });
 
     // Key order must not matter: the plugin builds the map from whatever the
     // shop returns, so a reordered payload is the same document.
@@ -954,7 +954,7 @@ describe("document ingestion", () => {
       externalDocumentId: "wp_post_42",
       metadata: { sourceUrl: "https://example.com/p" },
       indexedFields: { sku: "AEY0112", price: 17 },
-    } as any);
+    });
 
     const current = await documentRepository.findByIdAndWorkspaceId(first.documentId, "workspace-1");
     expect(current?.revision).toBe(1);
@@ -975,7 +975,7 @@ describe("document ingestion", () => {
       content: "Same body",
       externalDocumentId: "wp_post_42",
       indexedFields: { price: "17", on_sale: "false" },
-    } as any);
+    });
 
     await service.ingest({
       workspaceId: "workspace-1",
@@ -983,7 +983,7 @@ describe("document ingestion", () => {
       content: "Same body",
       externalDocumentId: "wp_post_42",
       indexedFields: { price: 17, on_sale: false },
-    } as any);
+    });
 
     const current = await documentRepository.findByIdAndWorkspaceId(first.documentId, "workspace-1");
     expect(current?.revision).toBe(2);
@@ -1003,7 +1003,7 @@ describe("document ingestion", () => {
       content: "Same body",
       externalDocumentId: "wp_post_42",
       indexedFields: { sku: "A\u0001zone=north" },
-    } as any);
+    });
 
     await service.ingest({
       workspaceId: "workspace-1",
@@ -1011,7 +1011,7 @@ describe("document ingestion", () => {
       content: "Same body",
       externalDocumentId: "wp_post_42",
       indexedFields: { sku: "A", zone: "north" },
-    } as any);
+    });
 
     const current = await documentRepository.findByIdAndWorkspaceId(first.documentId, "workspace-1");
     expect(current?.revision).toBe(2);
@@ -1031,7 +1031,7 @@ describe("document ingestion", () => {
       externalDocumentId: "wp_post_42",
       metadata: { author: "Swami Kriyananda", sourceUrl: "https://example.com/p" },
       indexedFields: { author: "staff-uploader", price: 17 },
-    } as any);
+    });
 
     const current = await documentRepository.findByIdAndWorkspaceId(result.documentId, "workspace-1");
     expect(current?.metadata).toMatchObject({ author: "Swami Kriyananda", price: 17 });
@@ -1050,7 +1050,7 @@ describe("document ingestion", () => {
       content: "Same body",
       externalDocumentId: "wp_post_42",
       metadata: { sourceUrl: "https://example.com/p", author: "Sabine Kaphingst" },
-    } as any);
+    });
 
     await service.ingest({
       workspaceId: "workspace-1",
@@ -1059,7 +1059,7 @@ describe("document ingestion", () => {
       externalDocumentId: "wp_post_42",
       metadata: { sourceUrl: "https://example.com/p", author: "Sabine Kaphingst" },
       indexedFields: {},
-    } as any);
+    });
 
     const current = await documentRepository.findByIdAndWorkspaceId(first.documentId, "workspace-1");
     expect(current?.revision).toBe(1);
@@ -1084,7 +1084,7 @@ describe("document ingestion", () => {
       title: "Mutable once",
       content: "Assigned content",
       externalDocumentId: "crm-123",
-    } as any);
+    });
 
     const assigned = await documentRepository.findByIdAndWorkspaceId(created.documentId, "workspace-1");
     expect(assigned?.externalDocumentId).toBe("crm-123");
@@ -1108,7 +1108,6 @@ describe("document ingestion", () => {
     const auditService = createAuditService();
     const ingestionService = new DocumentIngestionService(documentRepository, auditService);
     const publisher = { enqueue: vi.fn() };
-    let processingService!: DocumentProcessingService;
     let newerRevisionPublished = false;
 
     const first = await ingestionService.ingest({
@@ -1117,7 +1116,7 @@ describe("document ingestion", () => {
       content: "First content",
     });
 
-    processingService = new DocumentProcessingService(
+    const processingService: DocumentProcessingService = new DocumentProcessingService(
       documentRepository,
       chunkRepository,
       createDocumentEmbeddingPort({
@@ -1314,7 +1313,7 @@ describe("document ingestion", () => {
     const chunks = chunkRepository.items.get(queued.documentId);
     expect(chunks).toBeDefined();
     expect(chunks).toHaveLength(1);
-    expect(chunks![0]!.metadata).toEqual({ sourceUrl: "https://example.com" });
+    expect(chunks![0].metadata).toEqual({ sourceUrl: "https://example.com" });
   });
 
   it("uses source enrichment override during processing and clears stale enrichment metadata when disabled", async () => {
@@ -1698,14 +1697,14 @@ describe("document ingestion", () => {
       jobRepository,
       {
         async process() {
-          throw {
+          throw Object.assign(new Error("Incorrect API key provided."), {
             status: 401,
             code: "invalid_api_key",
             error: {
               message: "Incorrect API key provided.",
               code: "invalid_api_key",
             },
-          };
+          });
         },
       } as any,
       auditService,

@@ -13,7 +13,6 @@ import {
 } from "./domain.js";
 import { boundSteeringPerSurface, resolveRelationshipsPerSurface } from "./surfaceScopedResolution.js";
 import {
-  boundSteeringMatches,
   type SteeringBoundConfig,
   type SteeringBoundDrop,
 } from "./steeringBound.js";

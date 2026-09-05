@@ -3,27 +3,13 @@ export * from "./contracts.js";
 export * from "./contribution.js";
 export * from "./applicationPrimitiveRegistry.js";
 export type {
-  CopilotAgentTurnProbeInput,
-  CopilotAgentTurnProbePort,
-  CopilotAgentTurnProbeResult,
-} from "./contracts/agentTurnProbe.js";
-export type {
-  CopilotAgentDirectivesPort,
-  CopilotAgentSkillConfigPort,
-  CopilotAgentVersionPort,
   CopilotEvalCaseCapturePort,
-  CopilotEvalCaseReaderPort,
-  CopilotEvalCaseReplayOverrides,
   CopilotEvalCaseReplayPort,
-  CopilotEvalCaseReplayRunnerPort,
   CopilotEvalCaseStatus,
-  CopilotEvalMessageCasePort,
   CopilotEvalRunStatus,
   CopilotEvalSuiteProbePort,
-  CopilotEvalSuiteRunnerPort,
   CopilotReplayEvidenceRecord,
   CopilotReplayEvidenceRepositoryPort,
-  CopilotSkillConfigEnvelope,
 } from "./contracts/evalCases.js";
 export { MAX_COPILOT_EVAL_SUITE_CASES } from "./contracts/evalCases.js";
 export * from "./neverList.js";
@@ -33,26 +19,16 @@ export { AgentTurnProbeService } from "./services/agentTurnProbeService.js";
 export { EvalCaseCaptureService } from "./services/evalCaseCaptureService.js";
 export { EvalCaseReplayService } from "./services/evalCaseReplayService.js";
 export { summarizeProposalEvidence } from "./proposalEvidence.js";
-export { resolveProposalEvidence } from "./services/proposalEvidenceService.js";
 export type { ProposalEvidenceDependencies } from "./services/proposalEvidenceService.js";
 export { EvalSuiteProbeService } from "./services/evalSuiteProbeService.js";
 export { ReplyDraftProbeService } from "./services/replyDraftProbeService.js";
 export { RetrievalProbeService } from "./services/retrievalProbeService.js";
-export type {
-  CopilotRetrievalProbeInput,
-  CopilotRetrievalProbePort,
-  CopilotRetrievalProbeResult,
-  CopilotRetrievalSearchPort,
-} from "./contracts/retrievalProbe.js";
 export * from "./toolShape.js";
 export * from "./probeBudget.js";
 export {
   COPILOT_CONVERSATION_RETENTION_DAYS_DEFAULT,
-  COPILOT_RETENTION_BATCH_SIZE_DEFAULT,
   CopilotRetentionWorker,
 } from "./services/copilotRetentionWorker.js";
 export type {
-  CopilotRetentionLoggerPort,
   CopilotRetentionPort,
-  CopilotRetentionWorkerOptions,
 } from "./services/copilotRetentionWorker.js";

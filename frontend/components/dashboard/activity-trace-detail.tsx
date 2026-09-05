@@ -154,7 +154,7 @@ function RawBlock({
   label: string
   value: unknown
 }) {
-  if (!value || (typeof value === 'object' && Object.keys(value as Record<string, unknown>).length === 0)) {
+  if (!value || (typeof value === 'object' && Object.keys(value).length === 0)) {
     return null
   }
 
@@ -471,8 +471,9 @@ function SpecializedStageOverview({ stage }: { stage: ActivityStage }) {
               {consideredRules.map((rule, index) => {
                 const item = asRecord(rule)
                 const matchStrength = item.matchStrength
+                const ruleId = item.ruleId as string | undefined
                 return (
-                  <div key={`${String(item.ruleId ?? index)}`} className="rounded-lg border border-border/70 bg-background/70 p-3">
+                  <div key={String(ruleId ?? index)} className="rounded-lg border border-border/70 bg-background/70 p-3">
                     <KeyValueList
                       rows={[
                         { label: 'Rule id', value: item.ruleId as string | undefined },
@@ -614,9 +615,9 @@ function SpecializedStageOverview({ stage }: { stage: ActivityStage }) {
         {outputs.fallbackApplied ? (
           <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
             <p className="text-sm font-medium text-amber-700 dark:text-amber-300">Fallback was applied</p>
-            {outputs.continuityDecision ? (
+            {typeof outputs.continuityDecision === 'string' && outputs.continuityDecision ? (
               <p className="mt-1 text-xs text-muted-foreground">
-                Continuity: {String(outputs.continuityDecision).replaceAll('_', ' ')}
+                Continuity: {outputs.continuityDecision.replaceAll('_', ' ')}
               </p>
             ) : null}
           </div>

@@ -71,7 +71,7 @@ const FENCE_CLOSE = /^ {0,3}(`{3,}|~{3,})[ \t]*$/;
 // bare `---` also matches this shape, so a pipe is required separately to keep thematic
 // breaks and setext underlines out.
 const TABLE_DELIMITER_ROW = /^ {0,3}\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$/;
-const AUTOLINK = /<(?:[A-Za-z][A-Za-z0-9+.\-]{1,31}:[^<>\s]*|[^\s<>@]+@[^\s<>]+)>/y;
+const AUTOLINK = /<(?:[A-Za-z][A-Za-z0-9+.-]{1,31}:[^<>\s]*|[^\s<>@]+@[^\s<>]+)>/y;
 const BLANK_LINE = /\r?\n[ \t]*\r?\n/g;
 
 const isWhitespaceChar = (char: string | undefined): boolean =>
@@ -160,21 +160,21 @@ const findBlockRanges = (markdown: string): ProtectedRange[] => {
   let index = 0;
 
   while (index < lines.length) {
-    const line = lines[index]!;
+    const line = lines[index];
     const fence = FENCE_OPEN.exec(line.text);
 
     if (fence) {
-      const marker = fence[1]!;
+      const marker = fence[1];
       let close = index + 1;
       while (close < lines.length) {
-        const candidate = FENCE_CLOSE.exec(lines[close]!.text);
-        if (candidate && candidate[1]![0] === marker[0] && candidate[1]!.length >= marker.length) {
+        const candidate = FENCE_CLOSE.exec(lines[close].text);
+        if (candidate && candidate[1][0] === marker[0] && candidate[1].length >= marker.length) {
           break;
         }
         close += 1;
       }
 
-      const last = lines[Math.min(close, lines.length - 1)]!;
+      const last = lines[Math.min(close, lines.length - 1)];
       ranges.push({ start: line.start, end: last.end, construct: "code_fence" });
       index = close + 1;
       continue;
@@ -184,14 +184,14 @@ const findBlockRanges = (markdown: string): ProtectedRange[] => {
     if (delimiter && isDelimiterRow(delimiter.text) && isTableRowCandidate(line.text)) {
       let last = index + 1;
       while (last + 1 < lines.length) {
-        const body = lines[last + 1]!;
+        const body = lines[last + 1];
         if (body.text.trim().length === 0 || FENCE_OPEN.test(body.text)) {
           break;
         }
         last += 1;
       }
 
-      ranges.push({ start: line.start, end: lines[last]!.end, construct: "table" });
+      ranges.push({ start: line.start, end: lines[last].end, construct: "table" });
       index = last + 1;
       continue;
     }
@@ -221,7 +221,7 @@ class InlineScanner {
         continue;
       }
 
-      const char = this.markdown[index]!;
+      const char = this.markdown[index];
 
       if (char === "\\") {
         index += ASCII_PUNCTUATION.test(this.markdown[index + 1] ?? "") ? 2 : 1;
@@ -295,7 +295,7 @@ class InlineScanner {
 
     while (low <= high) {
       const middle = (low + high) >> 1;
-      const range = this.ignored[middle]!;
+      const range = this.ignored[middle];
       if (index < range.start) {
         high = middle - 1;
       } else if (index >= range.end) {
@@ -358,7 +358,7 @@ class InlineScanner {
         continue;
       }
 
-      const char = this.markdown[index]!;
+      const char = this.markdown[index];
 
       if (char === "\\") {
         index += 2;
@@ -417,7 +417,7 @@ class InlineScanner {
         continue;
       }
 
-      const char = this.markdown[index]!;
+      const char = this.markdown[index];
 
       if (char === "\\") {
         index += 2;
@@ -455,7 +455,7 @@ class InlineScanner {
         continue;
       }
 
-      const char = this.markdown[index]!;
+      const char = this.markdown[index];
 
       if (char === "\\") {
         index += 2;
@@ -505,12 +505,12 @@ class InlineScanner {
 
     if (canClose) {
       let depth = stack.length - 1;
-      while (depth >= 0 && stack[depth]!.char !== char) {
+      while (depth >= 0 && stack[depth].char !== char) {
         depth -= 1;
       }
 
       if (depth >= 0) {
-        this.ranges.push({ start: stack[depth]!.start, end: runEnd, construct: "emphasis" });
+        this.ranges.push({ start: stack[depth].start, end: runEnd, construct: "emphasis" });
         stack.length = depth;
         return runEnd;
       }

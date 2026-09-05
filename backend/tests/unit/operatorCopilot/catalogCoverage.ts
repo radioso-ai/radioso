@@ -1,4 +1,4 @@
-import { copilotNeverList, neverListExclusion, type CopilotNeverListEntry } from "../../../src/modules/operatorCopilot/neverList.js";
+import { neverListExclusion, type CopilotNeverListEntry } from "../../../src/modules/operatorCopilot/neverList.js";
 
 interface CatalogCoverageExclusion {
   readonly disposition: "deferred" | "permanent";

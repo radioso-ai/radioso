@@ -34,6 +34,20 @@ import type {
 
 const retrievalStrategies: RetrievalStrategy[] = ['auto', 'fixed', 'reasoning']
 
+// Slot values are `unknown` (a routine can collect strings, numbers, booleans, or
+// structured values). Coercing an object/array straight through `String()` would
+// render "[object Object]" into the editable input, so serialize non-primitives as
+// JSON instead of relying on default stringification.
+const formatSlotValue = (raw: unknown): string => {
+  if (raw === undefined || raw === null) return ''
+  if (typeof raw === 'string' || typeof raw === 'number' || typeof raw === 'boolean') return String(raw)
+  try {
+    return JSON.stringify(raw)
+  } catch {
+    return ''
+  }
+}
+
 const stepLabel = (step: RoutineDefinition['steps'][number]): string => {
   const outline = step.metadata?.outlineLabel
   if (typeof outline === 'string' && outline.length > 0) return outline
@@ -146,7 +160,7 @@ function RoutineStartStateSection({
                         </label>
                         <Input
                           id={`slot-${slot.stableSlotId}`}
-                          value={String(value?.variables?.[slot.key] ?? '')}
+                          value={formatSlotValue(value?.variables?.[slot.key])}
                           onChange={(event) =>
                             emit({
                               routineId: selectedRoutine.id,

@@ -393,7 +393,7 @@ export class AccessGrantService {
     return this.dependencies.workspaceTokenSecret;
   }
 
-  private defaultRole(kind: GrantPrincipalKind, channel?: AccessGrantChannel): AccessGrantRole {
+  private defaultRole(kind: GrantPrincipalKind, _channel?: AccessGrantChannel): AccessGrantRole {
     if (kind === "agent-api") {
       return "agent";
     }

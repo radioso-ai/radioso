@@ -11,7 +11,7 @@ const match = (name: string, overrides: Partial<Directive> = {}): DirectiveMatch
     action: `${name} action`,
     binding: { kind: "skill", skillName: "order.lookup" },
     ...overrides,
-  } as Directive,
+  },
   selectionMode: "deterministic",
   selectionReason: "test",
 });

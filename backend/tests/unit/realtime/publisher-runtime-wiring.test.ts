@@ -47,7 +47,7 @@ describe("realtime publisher production runtime wiring", () => {
       const source = await readFile(`${srcRoot}/${relativePath}`, "utf8");
       if (
         source.includes("flushPostCommitInvalidationReceipt")
-        || INVALIDATION_KINDS.some((kind) => source.includes(`\"${kind}\"`))
+        || INVALIDATION_KINDS.some((kind) => source.includes(`"${kind}"`))
       ) {
         invalidationOwners.push({ path: relativePath, source });
       }

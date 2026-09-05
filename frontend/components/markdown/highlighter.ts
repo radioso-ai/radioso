@@ -125,7 +125,7 @@ const tokenStyle = (light?: TokenStyles, dark?: TokenStyles): HighlightedCodeTok
     fontStyle: (fontStyle & FONT_STYLE_ITALIC) !== 0 ? 'italic' : undefined,
     fontWeight: (fontStyle & FONT_STYLE_BOLD) !== 0 ? 'bold' : undefined,
     textDecorationLine: decorations.length > 0
-      ? decorations.join(' ') as CSSProperties['textDecorationLine']
+      ? decorations.join(' ')
       : undefined,
   }
 }

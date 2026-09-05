@@ -5,8 +5,5 @@
  * boundary rule (`scripts/validate-architecture-boundaries.mjs`).
  */
 export type {
-  FacetExtractionEnqueueResult,
-  FacetExtractionJob,
-  FacetExtractionJobStatus,
   FacetExtractionJobStore,
 } from "./contracts.js";

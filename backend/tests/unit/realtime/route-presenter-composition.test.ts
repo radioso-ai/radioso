@@ -105,7 +105,7 @@ describe("realtime route/presenter composition", () => {
     app.use("/api/v1/events", createWorkspaceEventsRoutes(deps));
     await request(app).get("/api/v1/events").set("Accept", "text/event-stream").set("X-Workspace-Id", workspaceId).set("Cookie", "radioso_session=session").expect(200);
 
-    const telemetry = captures.inputs[0]!.telemetry as typeof streamTelemetry;
+    const telemetry = captures.inputs[0].telemetry as typeof streamTelemetry;
     expect(telemetry).toBeDefined();
     telemetry.gaugeDelta("active", 1);
     telemetry.gaugeDelta("active", -1);

@@ -45,7 +45,7 @@ describe("proposal evidence resolution", () => {
   it("carries the measured verdicts onto the proposal", async () => {
     const { deps, findMany } = harness();
 
-    const evidence = await resolveProposalEvidence(deps as never, {
+    const evidence = await resolveProposalEvidence(deps, {
       workspaceId: ids.workspace,
       operatorUserId: ids.operator,
       copilotConversationId: "conversation-1",
@@ -67,7 +67,7 @@ describe("proposal evidence resolution", () => {
   it("marks a measurement stale when the agent moved after the replay", async () => {
     const { deps } = harness({ updatedAt: new Date("2026-08-25T12:00:00.000Z") });
 
-    const evidence = await resolveProposalEvidence(deps as never, {
+    const evidence = await resolveProposalEvidence(deps, {
       workspaceId: ids.workspace,
       operatorUserId: ids.operator,
       copilotConversationId: "conversation-1",
@@ -112,7 +112,7 @@ describe("proposal evidence resolution", () => {
   it("returns nothing when no evidence is cited, so an unmeasured proposal stays unmeasured", async () => {
     const { deps, get } = harness();
 
-    const evidence = await resolveProposalEvidence(deps as never, {
+    const evidence = await resolveProposalEvidence(deps, {
       workspaceId: ids.workspace,
       operatorUserId: ids.operator,
       copilotConversationId: "conversation-1",
@@ -129,7 +129,7 @@ describe("proposal evidence resolution", () => {
     const second = record({ id: ids.otherEvidence, runId: "run-2", verdict: "fail" });
     const { deps } = harness({ records: [record(), second] });
 
-    const evidence = await resolveProposalEvidence(deps as never, {
+    const evidence = await resolveProposalEvidence(deps, {
       workspaceId: ids.workspace,
       operatorUserId: ids.operator,
       copilotConversationId: "conversation-1",
@@ -153,7 +153,7 @@ describe("proposal evidence staleness window", () => {
     const get = vi.fn(async () => ({ updatedAt: new Date("2026-08-24T10:00:00.000Z") }));
 
     const evidence = await resolveProposalEvidence(
-      { evidence: { record: vi.fn(), findMany }, agentVersion: { get } } as never,
+      { evidence: { record: vi.fn(), findMany }, agentVersion: { get } },
       { workspaceId: ids.workspace, operatorUserId: ids.operator, copilotConversationId: "conversation-1", agentId: ids.agent, evidenceIds: [ids.evidence], change: { targetType: "directive" } },
     );
 
@@ -166,7 +166,7 @@ describe("proposal evidence staleness window", () => {
     const get = vi.fn(async () => ({ updatedAt: new Date("2026-08-19T09:00:00.000Z") }));
 
     const evidence = await resolveProposalEvidence(
-      { evidence: { record: vi.fn(), findMany }, agentVersion: { get } } as never,
+      { evidence: { record: vi.fn(), findMany }, agentVersion: { get } },
       { workspaceId: ids.workspace, operatorUserId: ids.operator, copilotConversationId: "conversation-1", agentId: ids.agent, evidenceIds: [ids.evidence], change: { targetType: "directive" } },
     );
 
@@ -313,7 +313,7 @@ describe("proposal evidence staleness window", () => {
         agentVersion: { get },
         agentSkillConfig: { getDefaultAnswerSkill },
         cases: { findCase },
-      } as never,
+      },
       { workspaceId: ids.workspace, operatorUserId: ids.operator, copilotConversationId: "conversation-1", agentId: ids.agent, evidenceIds: [ids.evidence], change: { targetType: "directive" } },
     );
 
@@ -332,7 +332,7 @@ describe("proposal evidence thread scope", () => {
     const get = vi.fn(async () => ({ updatedAt: baselineCapturedAt }));
 
     await expect(resolveProposalEvidence(
-      { evidence: { record: vi.fn(), findMany }, agentVersion: { get } } as never,
+      { evidence: { record: vi.fn(), findMany }, agentVersion: { get } },
       {
         workspaceId: ids.workspace,
         operatorUserId: ids.operator,
@@ -349,7 +349,7 @@ describe("proposal evidence thread scope", () => {
     const get = vi.fn(async () => ({ updatedAt: baselineCapturedAt }));
 
     const evidence = await resolveProposalEvidence(
-      { evidence: { record: vi.fn(), findMany }, agentVersion: { get } } as never,
+      { evidence: { record: vi.fn(), findMany }, agentVersion: { get } },
       {
         workspaceId: ids.workspace,
         operatorUserId: ids.operator,

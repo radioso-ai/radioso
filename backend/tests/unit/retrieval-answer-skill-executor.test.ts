@@ -41,7 +41,7 @@ const sampleResult = (): RetrievalPipelineResult =>
       suggestedQuestionsCount: 3,
     },
     diagnostics: {} as RetrievalPipelineResult["diagnostics"],
-    trace: { traceId: "t", startedAt: "now", stages: [], links: [] } as RetrievalPipelineResult["trace"],
+    trace: { traceId: "t", startedAt: "now", stages: [], links: [] },
   });
 
 const stubController = (result: RetrievalPipelineResult): RetrievalPipelinePort => ({
@@ -147,7 +147,7 @@ describe("RetrievalAnswerSkillExecutor", () => {
             exposedInputs: { query: true },
           },
         },
-      } as unknown as SkillDefinition,
+      },
       collected: { query: "Which events are upcoming?" },
       context: {
         workspaceId: "w1",
@@ -187,7 +187,7 @@ describe("RetrievalAnswerSkillExecutor", () => {
       skill: {
         name: "retrieve_events",
         metadata: { retrieveConfig: { sourceScope: "all", exposedInputs: { query: true } } },
-      } as unknown as SkillDefinition,
+      },
       collected: { query: "Anything?" },
       context: { request: { workspaceId: "w1", query: "Anything?", history: [] } },
       emit: noopSkillEmitPort,

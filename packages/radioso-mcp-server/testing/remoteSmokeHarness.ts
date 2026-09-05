@@ -58,9 +58,11 @@ const resolveBaseUrl = (server: Server): string => {
   return `http://127.0.0.1:${address.port}`;
 };
 
-const readJson = async (response: Response): Promise<any> => {
+// The MCP wire response is arbitrary third-party JSON; callers narrow the specific shape
+// they expect from each call (matching the request they just made) with a local cast.
+const readJson = async (response: Response): Promise<unknown> => {
   const text = await response.text();
-  return text.length > 0 ? JSON.parse(text) : undefined;
+  return text.length > 0 ? (JSON.parse(text) as unknown) : undefined;
 };
 
 const loadTestAppModule = async (): Promise<TestAppModule> => {
@@ -108,21 +110,30 @@ const mcpRequest = async (baseUrl: string, accessToken: string | null, payload: 
     method: "POST",
   });
 
-const getStructuredContent = (payload: any): any =>
-  payload?.result?.structuredContent ??
-  (() => {
-    const text = payload?.result?.content?.[0]?.text;
-    if (typeof text !== "string") {
-      return undefined;
-    }
+const getStructuredContent = (payload: unknown): unknown => {
+  const result = (payload as { result?: { content?: Array<{ text?: unknown }>; structuredContent?: unknown } } | undefined)
+    ?.result;
 
-    const boundary = text.indexOf("\n\n");
-    if (boundary === -1) {
-      return undefined;
-    }
+  return result?.structuredContent ??
+    (() => {
+      const text = result?.content?.[0]?.text;
+      if (typeof text !== "string") {
+        return undefined;
+      }
 
-    return JSON.parse(text.slice(boundary + 2));
-  })();
+      const boundary = text.indexOf("\n\n");
+      if (boundary === -1) {
+        return undefined;
+      }
+
+      return JSON.parse(text.slice(boundary + 2)) as unknown;
+    })();
+};
+
+// `ask_agent`'s structuredContent always carries this shape; call sites that invoke it
+// specifically (rather than a generic tool) narrow to it here.
+const asAskAgentAnswer = (structuredContent: unknown): { answer: { text: string } } =>
+  structuredContent as { answer: { text: string } };
 
 export const startBackendHarness = async (): Promise<BackendHarness> => {
   const { createTestApp, issueTestSession } = await loadTestAppModule();
@@ -206,7 +217,9 @@ export const initializeSession = async (baseUrl: string, accessToken: string) =>
       protocolVersion: MCP_PROTOCOL_VERSION,
     },
   });
-  const initializePayload = await readJson(initializeResponse);
+  const initializePayload = (await readJson(initializeResponse)) as
+    | { result?: { protocolVersion?: string } }
+    | undefined;
   assert.ok(initializeResponse.ok, `Expected initialize to succeed, got ${initializeResponse.status}`);
   assert.equal(initializePayload?.result?.protocolVersion, MCP_PROTOCOL_VERSION);
   assert.equal(initializeResponse.headers.get("mcp-session-id"), null, "Expected standalone MCP to use stateless HTTP transport.");
@@ -282,8 +295,9 @@ export const runConverseGrantSmoke = async (logger: SmokeLogger): Promise<Conver
       message: "Hello from the MCP converse smoke test.",
     });
     assert.equal(ask.response.status, 200);
-    assert.equal(typeof ask.structuredContent.answer.text, "string");
-    assert.ok(ask.structuredContent.answer.text.length > 0);
+    const askAnswer = asAskAgentAnswer(ask.structuredContent).answer;
+    assert.equal(typeof askAnswer.text, "string");
+    assert.ok(askAnswer.text.length > 0);
 
     logger.step("confirming no direct agent resources are exposed");
     const resourcesResponse = await mcpRequest(remote.baseUrl, grant.token, {
@@ -292,13 +306,15 @@ export const runConverseGrantSmoke = async (logger: SmokeLogger): Promise<Conver
       method: "resources/list",
       params: {},
     });
-    const resourcesPayload = await readJson(resourcesResponse);
+    const resourcesPayload = (await readJson(resourcesResponse)) as
+      | { error?: unknown; result?: { resources?: unknown } }
+      | undefined;
     assert.equal(resourcesResponse.status, 200, `Expected resources/list to return an empty catalogue, got ${resourcesResponse.status}: ${JSON.stringify(resourcesPayload)}`);
     assert.equal(resourcesPayload?.result?.resources, undefined);
     assert.ok(resourcesPayload?.error, "Expected resources/list to be unavailable for an agent chat credential");
 
     return {
-      answer: ask.structuredContent.answer.text,
+      answer: askAnswer.text,
       agentId: grant.agentId,
       workspaceId: grant.workspaceId,
     };
@@ -338,11 +354,12 @@ export const runSharedStoreConverseSmoke = async (
       message: "Hello from the Redis MCP smoke test.",
     });
     assert.equal(ask.response.status, 200);
-    assert.equal(typeof ask.structuredContent.answer.text, "string");
+    const askAnswer = asAskAgentAnswer(ask.structuredContent).answer;
+    assert.equal(typeof askAnswer.text, "string");
 
     return {
       agentId: grant.agentId,
-      answer: ask.structuredContent.answer.text,
+      answer: askAnswer.text,
       workspaceId: grant.workspaceId,
     };
   } finally {

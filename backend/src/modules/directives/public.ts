@@ -2,11 +2,7 @@ export {
   directiveToSteeringRule,
   resolveDirectiveRelationships,
   type Directive,
-  type DirectiveCondition,
-  type DirectiveLifecycle,
   type DirectiveMatch,
-  type DirectiveOmission,
-  type DirectiveSelectionMode,
 } from "./domain.js";
 export {
   AlwaysMatchDirectiveMatcher,
@@ -14,15 +10,10 @@ export {
   DirectiveCatalogRegistry,
   ModelDirectiveMatchGateway,
   ProbabilisticDirectiveMatcher,
-  buildDirectiveMatchPrompt,
-  getDirectiveMatchSystemPrompt,
   parseDirectiveClassifications,
   type DirectiveClassification,
   type DirectiveMatchGateway,
   type DirectiveMatcherPort,
-  type DirectiveMatchInput,
-  type DirectiveMatchUnavailableObserver,
-  type DirectiveTextGenerationClient,
 } from "@radioso/conversation-defaults";
 export {
   reportContextualMatchUnavailable,
@@ -39,22 +30,15 @@ export {
 export {
   boundSteeringMatches,
   type SteeringBoundConfig,
-  type SteeringBoundDrop,
-  type SteeringBoundReason,
 } from "./steeringBound.js";
 export {
   commitDirectiveFirings,
-  directiveHasTrackedLifecycle,
   emptyDirectiveFiringState,
-  isDirectiveLifecycleEligible,
-  lifecycleSuppressedDirectives,
   parseDirectiveLifecycle,
   partitionDirectivesByLifecycle,
   renderedDirectiveNames,
   type DirectiveFiring,
   type DirectiveFiringState,
-  type DirectiveLifecyclePartition,
-  type DirectiveLifecycleSuppression,
 } from "./directiveLifecycle.js";
 export {
   noopDirectiveStateStore,
@@ -82,4 +66,4 @@ export {
   representOrganizationDirective,
   type BuiltInDirectiveView,
 } from "./defaultAnswerDirectives.js";
-export { createDirectiveMatcher, createDirectiveSteering } from "./composition.js";
+export { createDirectiveMatcher } from "./composition.js";

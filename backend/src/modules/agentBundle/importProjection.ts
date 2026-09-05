@@ -19,7 +19,7 @@ const requireConfigSection = <T>(value: T, path: string): NonNullable<T> => {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw badRequest(`Bundle agent config is missing ${path}; this is not an exported agent bundle.`);
   }
-  return value as NonNullable<T>;
+  return value;
 };
 
 const isPlaceholder = (value: unknown): boolean =>
@@ -28,18 +28,6 @@ const isPlaceholder = (value: unknown): boolean =>
   && !Array.isArray(value)
   && ("__ref" in (value as Record<string, unknown>) || "__redacted" in (value as Record<string, unknown>));
 
-const containsPlaceholder = (value: unknown): boolean => {
-  if (isPlaceholder(value)) {
-    return true;
-  }
-  if (Array.isArray(value)) {
-    return value.some(containsPlaceholder);
-  }
-  if (typeof value === "object" && value !== null) {
-    return Object.values(value as Record<string, unknown>).some(containsPlaceholder);
-  }
-  return false;
-};
 
 export interface AgentConfigImportProjection {
   input: AgentInput;
@@ -122,7 +110,7 @@ export const projectAgentConfigForImport = (config: AgentConfig): AgentConfigImp
       skillSettings: retrieval.skillSettings,
       chatModelOverride: config.chatModelOverride,
       surfaceSettings,
-    } as AgentInput,
+    },
     unresolved,
   };
 };
@@ -193,7 +181,7 @@ const projectSurfaceSettings = (
       enabled: surfaces.websiteEmbed.enabled && !embedBlocked,
       allowedOrigins: [],
     },
-    extensions: stripPlaceholders(surfaces.extensions) as Record<string, unknown>,
+    extensions: stripPlaceholders(surfaces.extensions),
   } as AgentInput["surfaceSettings"];
 };
 
@@ -209,9 +197,9 @@ const stripPlaceholders = <T>(value: T): T => {
   if (Array.isArray(value)) {
     // Drop an element that *is* a placeholder; recurse into one that merely
     // contains one, exactly as the object branch below drops only the offending
-    // key and keeps its siblings. Filtering on `containsPlaceholder` instead would
-    // throw away a whole entry because one nested field could not travel — the
-    // silent, over-wide narrowing this file exists to prevent.
+    // key and keeps its siblings. Dropping an entry because something nested
+    // inside it could not travel would throw the whole entry away — the silent,
+    // over-wide narrowing this file exists to prevent.
     return value.filter((entry) => !isPlaceholder(entry)).map(stripPlaceholders) as unknown as T;
   }
   if (typeof value === "object" && value !== null) {

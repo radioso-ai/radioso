@@ -4,11 +4,9 @@ import type { SkillDefinition as ContractSkillDefinition } from "@radioso/skill-
 
 export type { SkillDefinition } from "@radioso/skill-contract";
 
-export const skillOwnerSchema = z.enum(["assistant", "retrieval", "documents", "mcp", "platform", "auth", "contact"]);
-export type SkillOwner = z.infer<typeof skillOwnerSchema>;
+const skillOwnerSchema = z.enum(["assistant", "retrieval", "documents", "mcp", "platform", "auth", "contact"]);
 
-export const skillExecutionClassSchema = z.enum(["interactive", "deferred", "administrative"]);
-export type SkillExecutionClass = z.infer<typeof skillExecutionClassSchema>;
+const skillExecutionClassSchema = z.enum(["interactive", "deferred", "administrative"]);
 
 export const skillCallerSurfaceSchema = z.enum([
   "assistant",
@@ -32,7 +30,6 @@ export const skillContractReferenceSchema = z.object({
   method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).optional(),
   path: z.string(),
 });
-export type SkillContractReference = z.infer<typeof skillContractReferenceSchema>;
 
 export const skillDiagnosticsSummarySchema = z.object({
   defined: z.boolean(),
@@ -40,7 +37,6 @@ export const skillDiagnosticsSummarySchema = z.object({
   strategyAware: z.boolean(),
   supportedFields: z.array(z.string()).optional(),
 });
-export type SkillDiagnosticsSummary = z.infer<typeof skillDiagnosticsSummarySchema>;
 
 export const skillDisplayMetadataSchema = z.object({
   icon: z.string().min(1).optional(),
@@ -48,11 +44,10 @@ export const skillDisplayMetadataSchema = z.object({
 });
 export type SkillDisplayMetadata = z.infer<typeof skillDisplayMetadataSchema>;
 
-export const skillSchemaReferencesSchema = z.object({
+const skillSchemaReferencesSchema = z.object({
   inputSchemaRef: z.string(),
   settingsSchemaRef: z.string().optional(),
 });
-export type SkillSchemaReferences = z.infer<typeof skillSchemaReferencesSchema>;
 
 export const skillIntakeFieldSchema = z.object({
   name: z.string(),
@@ -102,9 +97,8 @@ export const skillIntakeDefinitionSchema = z.object({
   confirmation: z.enum(["none", "before_execute", "always"]),
   interruptionPolicy: z.enum(["pause_and_resume", "cancel_on_topic_change"]),
 });
-export type SkillIntakeDefinition = z.infer<typeof skillIntakeDefinitionSchema>;
 
-export const skillGeneratedContractSchema = z.object({
+const skillGeneratedContractSchema = z.object({
   path: z.string(),
 });
 export type SkillGeneratedContract = z.infer<typeof skillGeneratedContractSchema>;
@@ -113,14 +107,12 @@ const skillStepSummarySchema = z.object({
   name: z.string(),
   kind: z.string(),
 });
-export type SkillStepSummary = z.infer<typeof skillStepSummarySchema>;
 
 const skillShapeSummarySchema = z.object({
   name: z.string(),
   displayName: z.string().optional(),
   description: z.string().optional(),
 });
-export type SkillShapeSummary = z.infer<typeof skillShapeSummarySchema>;
 
 export const skillOutcomeStatusSchema = z.enum([
   "active",
@@ -134,14 +126,13 @@ export const skillOutcomeStatusSchema = z.enum([
 ]);
 export type SkillOutcomeStatus = z.infer<typeof skillOutcomeStatusSchema>;
 
-export const skillOutcomeToneSchema = z.enum([
+const skillOutcomeToneSchema = z.enum([
   "positive",
   "neutral",
   "info",
   "warning",
   "muted",
 ]);
-export type SkillOutcomeTone = z.infer<typeof skillOutcomeToneSchema>;
 
 export const skillOutcomeDefinitionSchema = z.object({
   name: z.string(),
@@ -195,7 +186,7 @@ export const skillParamsSchema = z.object({
   skillName: z.string().min(1),
 });
 
-export const skillCapabilityCheckSchema = z.object({
+const skillCapabilityCheckSchema = z.object({
   capability: z.string(),
   allowed: z.boolean(),
   reason: z.string().optional(),
@@ -237,31 +228,9 @@ export const skillDiagnosticSchema = z.object({
 });
 export type SkillDiagnostic = z.infer<typeof skillDiagnosticSchema>;
 
-export type SkillStepClauses = Record<string, unknown>;
+type SkillStepClauses = Record<string, unknown>;
 
-export interface SkillStepDefinition {
-  name: string;
-  kind: string;
-  displayName?: string;
-  clauses: SkillStepClauses;
-  trace?: {
-    expose: boolean;
-    redact?: string[];
-  };
-  telemetry?: {
-    eventName?: string;
-    tags?: string[];
-  };
-}
-
-export type SkillStepOverride = Partial<SkillStepClauses>;
-
-export interface SkillShapeDefinition {
-  name: string;
-  displayName?: string;
-  description?: string;
-  stepOverrides: Record<string, SkillStepOverride>;
-}
+type SkillStepOverride = Partial<SkillStepClauses>;
 
 // SkillDefinition is re-exported from @radioso/skill-contract above so OSS
 // and Enterprise modules share a single typed shape. The Zod schema below
@@ -303,7 +272,7 @@ export const skillDiagnosticFieldNames = [
 
 export const validateSkillDiagnostic = (input: unknown) => skillDiagnosticSchema.safeParse(input);
 
-export const skillStepDefinitionSchema = skillStepSummarySchema.extend({
+const skillStepDefinitionSchema = skillStepSummarySchema.extend({
   displayName: z.string().optional(),
   clauses: z.record(z.unknown()),
   trace: z.object({
@@ -316,7 +285,7 @@ export const skillStepDefinitionSchema = skillStepSummarySchema.extend({
   }).optional(),
 });
 
-export const skillShapeDefinitionSchema = skillShapeSummarySchema.extend({
+const skillShapeDefinitionSchema = skillShapeSummarySchema.extend({
   stepOverrides: z.record(z.record(z.unknown())),
 });
 

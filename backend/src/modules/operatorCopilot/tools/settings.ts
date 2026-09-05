@@ -296,7 +296,7 @@ export const createWorkspaceSettingsCopilotTools = (deps: {
               websiteEmbedLauncherPosition: general.channels.websiteEmbedLauncherPosition,
             },
           },
-        }) as z.infer<typeof workspaceSettingsOutputSchema>;
+        });
       },
     }),
   },

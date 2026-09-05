@@ -42,7 +42,6 @@ export const copilotWebsiteCrawlPayloadSchema = z.object({
 
 export const copilotWebsiteCrawlTargetRefSchema = z.object({ url: httpUrlSchema }).strict();
 
-export type CopilotWebsiteCrawlChange = z.infer<typeof copilotWebsiteCrawlChangeSchema>;
 export type CopilotWebsiteCrawlPayload = z.infer<typeof copilotWebsiteCrawlPayloadSchema>;
 
 export interface CopilotWebsiteCrawlPort {

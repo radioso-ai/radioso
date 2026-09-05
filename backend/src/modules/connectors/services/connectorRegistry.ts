@@ -20,6 +20,7 @@ import type { ApprovalDecisionService } from "../../approvals/public.js";
 import type { AuditPort } from "../../audit/contracts/index.js";
 import type { OperatorReplyService } from "../../handoff/public.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
+import { stringifyUnknown } from "../../../shared/text/stringifyUnknown.js";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 import {
   decryptField,
@@ -731,7 +732,7 @@ export class ConnectorRegistry {
       if (value === null || value === undefined) {
         continue;
       }
-      normalized[key] = typeof value === "string" ? value.trim() : String(value);
+      normalized[key] = typeof value === "string" ? value.trim() : stringifyUnknown(value);
     }
     return normalized;
   }

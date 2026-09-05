@@ -57,7 +57,7 @@ describe("RoutineReentryGate", () => {
   it("includes the routine guidance and collected variables in the prompt", async () => {
     const gw = gateway(JSON.stringify({ decision: "suppress" }));
     await new RoutineReentryGate([routine("semantic")], gw).decide({ turn, completedState });
-    const prompt = vi.mocked(gw.complete).mock.calls[0]![0].systemPrompt;
+    const prompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt;
     expect(prompt).toContain("Qualify a prospect.");
     expect(prompt).toContain("budget: 10k");
   });

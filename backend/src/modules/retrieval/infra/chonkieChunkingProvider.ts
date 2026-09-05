@@ -237,7 +237,7 @@ export class ChonkieChunkingProvider implements TextChunkingProviderPort {
 
   private getChunker(
     request: TextChunkingProviderRequest,
-  ): Promise<TokenChunkerInstance | RecursiveChunkerInstance | SemanticChunkerInstance> {
+  ): Promise<TokenChunkerInstance    > {
     if (request.method === "fixed_window") {
       return this.getTokenChunker(request);
     }
@@ -250,7 +250,7 @@ export class ChonkieChunkingProvider implements TextChunkingProviderPort {
       return this.getSemanticChunker(request);
     }
 
-    throw new Error(`Unsupported ChonkieJS chunking method: ${request.method satisfies never}`);
+    throw new Error(`Unsupported ChonkieJS chunking method: ${String(request.method satisfies never)}`);
   }
 
   private getTokenChunker(request: TextChunkingProviderRequest): Promise<TokenChunkerInstance> {
@@ -463,8 +463,8 @@ const findFencedCodeRegions = (content: string): SpecializedRegion[] => {
       continue;
     }
 
-    const openingLine = lines[index]!;
-    const closingLine = lines[endIndex]!;
+    const openingLine = lines[index];
+    const closingLine = lines[endIndex];
     const contentStartOffset = lines[index + 1]?.startOffset ?? openingLine.endOffset;
     const contentEndOffset = closingLine.startOffset;
     const codeContent = content.slice(contentStartOffset, contentEndOffset);
@@ -525,8 +525,8 @@ const findMarkdownTableRegions = (content: string): SpecializedRegion[] => {
       endIndex += 1;
     }
 
-    const startOffset = lines[index]!.startOffset;
-    const endOffset = lines[endIndex]!.endOffset;
+    const startOffset = lines[index].startOffset;
+    const endOffset = lines[endIndex].endOffset;
     regions.push({
       kind: "table",
       sourceStartOffset: startOffset,
@@ -629,7 +629,7 @@ const parseFenceOpener = (value: string): { marker: string; language?: string } 
   }
 
   return {
-    marker: match[1]!,
+    marker: match[1],
     language: match[2],
   };
 };
@@ -694,7 +694,7 @@ const normalizeCodeLanguageHint = (
 const loadTreeSitterLanguagePack = async (): Promise<TreeSitterLanguagePack | null> => {
   try {
     const module = await import("@kreuzberg/tree-sitter-language-pack");
-    return (module.default ?? module) as TreeSitterLanguagePack;
+    return (module.default ?? module);
   } catch {
     return null;
   }

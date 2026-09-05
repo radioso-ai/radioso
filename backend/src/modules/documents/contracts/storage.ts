@@ -19,7 +19,7 @@ export interface DocumentStorageReadInput {
   generation?: string | null;
 }
 
-export interface DocumentStorageDeleteInput extends DocumentStorageReadInput {}
+export type DocumentStorageDeleteInput = DocumentStorageReadInput;
 
 export interface DocumentStoragePort {
   upload(input: DocumentStorageUploadInput): Promise<StoredDocumentObject>;

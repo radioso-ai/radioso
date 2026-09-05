@@ -470,7 +470,7 @@ export class SlackInstallationRepository implements SlackInstallationRepositoryP
       .select(installationColumns)
       .where("id", "=", installationId)
       .executeTakeFirst();
-    return row ? mapInstallation(row as SlackInstallationRow) : null;
+    return row ? mapInstallation(row) : null;
   }
 
   async findByTeamId(teamId: string): Promise<SlackInstallationRecord | null> {
@@ -479,7 +479,7 @@ export class SlackInstallationRepository implements SlackInstallationRepositoryP
       .select(installationColumns)
       .where("team_id", "=", teamId)
       .executeTakeFirst();
-    return row ? mapInstallation(row as SlackInstallationRow) : null;
+    return row ? mapInstallation(row) : null;
   }
 
   async findByWorkspaceId(workspaceId: string): Promise<SlackInstallationRecord | null> {
@@ -490,7 +490,7 @@ export class SlackInstallationRepository implements SlackInstallationRepositoryP
       .orderBy("updated_at", "desc")
       .limit(1)
       .executeTakeFirst();
-    return row ? mapInstallation(row as SlackInstallationRow) : null;
+    return row ? mapInstallation(row) : null;
   }
 
   async findByAccountId(accountId: string): Promise<SlackInstallationRecord | null> {
@@ -502,7 +502,7 @@ export class SlackInstallationRepository implements SlackInstallationRepositoryP
       .orderBy("team_id", "asc")
       .limit(1)
       .executeTakeFirst();
-    return row ? mapInstallation(row as SlackInstallationRow) : null;
+    return row ? mapInstallation(row) : null;
   }
 
   async upsert(input: UpsertSlackInstallationInput): Promise<SlackInstallationRecord> {
@@ -529,7 +529,7 @@ export class SlackInstallationRepository implements SlackInstallationRepositoryP
       )
       .returning(installationColumns)
       .executeTakeFirstOrThrow();
-    return mapInstallation(row as SlackInstallationRow);
+    return mapInstallation(row);
   }
 
   async removeByWorkspaceId(workspaceId: string): Promise<boolean> {
@@ -615,7 +615,7 @@ export class SlackChannelBindingRepository implements SlackBindingRepositoryPort
       .where("installation_id", "=", installationId)
       .where("channel_id", "is", null)
       .executeTakeFirst();
-    return row ? mapBinding(row as SlackChannelBindingRow) : null;
+    return row ? mapBinding(row) : null;
   }
 
   async listByInstallationId(installationId: string): Promise<SlackChannelBindingRecord[]> {
@@ -629,7 +629,7 @@ export class SlackChannelBindingRepository implements SlackBindingRepositoryPort
       .orderBy(sql`channel_id is not null`, "asc")
       .orderBy("channel_id", "asc")
       .execute();
-    return rows.map((row) => mapBinding(row as SlackChannelBindingRow));
+    return rows.map((row) => mapBinding(row));
   }
 
   async findAnswerer(
@@ -647,7 +647,7 @@ export class SlackChannelBindingRepository implements SlackBindingRepositoryPort
         .where("channel_id", "=", channelId)
         .executeTakeFirst();
       if (channelRow) {
-        return mapBinding(channelRow as SlackChannelBindingRow);
+        return mapBinding(channelRow);
       }
     }
     // Fall back to the installation default answerer.
@@ -685,7 +685,7 @@ export class SlackChannelBindingRepository implements SlackBindingRepositoryPort
         eb.ref("gap_escalation_enabled").as("gap_escalation_enabled"),
       ])
       .executeTakeFirstOrThrow();
-    return mapBinding(row as SlackChannelBindingRow);
+    return mapBinding(row);
   }
 
   async removeByInstallationId(installationId: string): Promise<boolean> {

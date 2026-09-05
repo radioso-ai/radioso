@@ -110,9 +110,9 @@ describe("retrieval semantic degradation", () => {
           new Error("embedding provider unavailable"),
         ),
       },
-      vectorSearch as never,
-      lexicalSearch as never,
-      { hydrate: vi.fn() } as never,
+      vectorSearch,
+      lexicalSearch,
+      { hydrate: vi.fn() },
     );
 
     const result = await stage.execute(input as never);
@@ -152,9 +152,9 @@ describe("retrieval semantic degradation", () => {
         search: vi.fn().mockRejectedValue(
           new Error("vector backend unavailable"),
         ),
-      } as never,
-      lexicalSearch as never,
-      { hydrate: vi.fn() } as never,
+      },
+      lexicalSearch,
+      { hydrate: vi.fn() },
     );
 
     const result = await stage.execute(input as never);
@@ -182,9 +182,9 @@ describe("retrieval semantic degradation", () => {
           vectors: [[0.1, 0.2, 0.3]],
         }),
       },
-      { search: vi.fn().mockResolvedValue([semanticChunk]) } as never,
-      lexicalSearch as never,
-      { hydrate: vi.fn().mockResolvedValue([semanticChunk]) } as never,
+      { search: vi.fn().mockResolvedValue([semanticChunk]) },
+      lexicalSearch,
+      { hydrate: vi.fn().mockResolvedValue([semanticChunk]) },
     );
 
     const result = await stage.execute(input as never);
@@ -216,14 +216,14 @@ describe("retrieval semantic degradation", () => {
           vectors: [[0.1, 0.2, 0.3]],
         }),
       },
-      { search: vi.fn().mockResolvedValue([]) } as never,
-      { search: vi.fn().mockResolvedValue([lexicalChunk]) } as never,
-      { hydrate: vi.fn().mockResolvedValue([]) } as never,
+      { search: vi.fn().mockResolvedValue([]) },
+      { search: vi.fn().mockResolvedValue([lexicalChunk]) },
+      { hydrate: vi.fn().mockResolvedValue([]) },
       {
         findUpcoming: vi.fn().mockRejectedValue(
           new Error("canceling statement due to statement timeout"),
         ),
-      } as never,
+      },
     );
 
     const result = await stage.execute(temporalInput as never);
@@ -241,9 +241,9 @@ describe("retrieval semantic degradation", () => {
           vectors: [[0.1, 0.2, 0.3]],
         }),
       },
-      { search: vi.fn().mockResolvedValue([]) } as never,
-      { search: vi.fn().mockResolvedValue([lexicalChunk]) } as never,
-      { hydrate: vi.fn().mockResolvedValue([]) } as never,
+      { search: vi.fn().mockResolvedValue([]) },
+      { search: vi.fn().mockResolvedValue([lexicalChunk]) },
+      { hydrate: vi.fn().mockResolvedValue([]) },
     );
 
     const result = await stage.execute(input as never);

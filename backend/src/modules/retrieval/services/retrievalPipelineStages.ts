@@ -293,7 +293,7 @@ const boundedTraceCount = (value: number | undefined): number =>
 const compactTraceAttributes = (attributes: TraceAttributes): TraceAttributes =>
   Object.fromEntries(
     Object.entries(attributes).filter(([, value]) => value !== undefined && value !== null),
-  ) as TraceAttributes;
+  );
 
 export const buildRetrievalPipelineTraceAttributes = (request?: TraceRetrievalPipelineRequest): TraceAttributes => {
   if (!request) {

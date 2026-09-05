@@ -1,6 +1,5 @@
 import type { RetrievalMetadataRule } from "../../settings/contracts/retrieval.js";
 import type {
-  RewriteTurnKind,
   StructuredRewriteResult,
   TemporalQueryMode,
   TriggerAnalysisResult,
@@ -75,7 +74,7 @@ export const parseStructuredRewrite = (raw: string): StructuredRewriteResult => 
     temporalQueryMode,
     retrievalSubqueries: parsedSubqueries,
     turnKind:
-      typeof parsed.turnKind === "string" ? (parsed.turnKind as RewriteTurnKind) : REWRITE_TURN_KIND.AMBIGUOUS,
+      typeof parsed.turnKind === "string" ? (parsed.turnKind) : REWRITE_TURN_KIND.AMBIGUOUS,
     proposedActiveSubject: typeof parsed.proposedActiveSubject === "string" ? parsed.proposedActiveSubject : undefined,
     relatedEntities: Array.isArray(parsed.relatedEntities)
       ? parsed.relatedEntities.filter((entity): entity is string => typeof entity === "string")

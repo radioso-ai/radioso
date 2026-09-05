@@ -15,7 +15,7 @@ import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
 describeIntegration("PostgresWhatsAppPersistence (Postgres)", () => {
-  const database = new Database(integrationDatabaseUrl as string);
+  const database = new Database(integrationDatabaseUrl);
   const persistence = new PostgresWhatsAppPersistence(database.kysely);
 
   const accountId = randomUUID();

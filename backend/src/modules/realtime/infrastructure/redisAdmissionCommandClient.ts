@@ -3,6 +3,7 @@ import { createClient, createCluster } from "redis";
 import type { RedisCredentialsProvider, RedisTransportMode } from "./redisInvalidationTransport.js";
 import type { RedisAdmissionScriptPort } from "./redisAdmissionController.js";
 import { redisAdmissionScripts } from "./redisAdmissionScripts.js";
+import { asError } from "../../../shared/errors/asError.js";
 
 type Health = "ready" | "degraded";
 
@@ -105,7 +106,7 @@ export class RedisAdmissionCommandClient implements RedisAdmissionScriptPort {
         this.lifecycle = "failed";
         this.cleanupStartFence();
         if (destroy) this.destroyOnce();
-        reject(error);
+        reject(asError(error));
       };
       if (signal) {
         const onAbort = () => fail(abortError(), true);

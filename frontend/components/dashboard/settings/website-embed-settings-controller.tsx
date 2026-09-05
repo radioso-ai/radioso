@@ -229,39 +229,41 @@ function WebsiteEmbedSettingsPanel({
       return
     }
 
-    const timeout = window.setTimeout(async () => {
-      const draftVersionAtRequestStart = anonDraftVersionRef.current
-      const saveId = saveSequenceRef.current + 1
-      saveSequenceRef.current = saveId
-      setIsAnonSaving(true)
-      setSaveState('saving')
-      setSaveError(null)
-      try {
-        const updated = await updateGeneralSettings({
-          websiteEmbedEnabled: anonSettings.websiteEmbedEnabled ?? false,
-          websiteEmbedAllowedOrigins: websiteEmbedStoredOrigins,
-          websiteEmbedLauncherLabel: anonSettings.websiteEmbedLauncherLabel ?? 'Chat with us',
-          websiteEmbedLauncherPosition: anonSettings.websiteEmbedLauncherPosition ?? 'bottom-right',
-          websiteEmbedCopy: anonSettings.websiteEmbedCopy ?? {},
-          websiteEmbedExpertOverrides: anonSettings.websiteEmbedExpertOverrides ?? {},
-        })
-        if (saveSequenceRef.current !== saveId) return
-        setSavedAnonSettings(updated)
-        if (anonDraftVersionRef.current === draftVersionAtRequestStart) {
-          setAnonSettings(updated)
-          setSaveState('saved')
+    const timeout = window.setTimeout(() => {
+      void (async () => {
+        const draftVersionAtRequestStart = anonDraftVersionRef.current
+        const saveId = saveSequenceRef.current + 1
+        saveSequenceRef.current = saveId
+        setIsAnonSaving(true)
+        setSaveState('saving')
+        setSaveError(null)
+        try {
+          const updated = await updateGeneralSettings({
+            websiteEmbedEnabled: anonSettings.websiteEmbedEnabled ?? false,
+            websiteEmbedAllowedOrigins: websiteEmbedStoredOrigins,
+            websiteEmbedLauncherLabel: anonSettings.websiteEmbedLauncherLabel ?? 'Chat with us',
+            websiteEmbedLauncherPosition: anonSettings.websiteEmbedLauncherPosition ?? 'bottom-right',
+            websiteEmbedCopy: anonSettings.websiteEmbedCopy ?? {},
+            websiteEmbedExpertOverrides: anonSettings.websiteEmbedExpertOverrides ?? {},
+          })
+          if (saveSequenceRef.current !== saveId) return
+          setSavedAnonSettings(updated)
+          if (anonDraftVersionRef.current === draftVersionAtRequestStart) {
+            setAnonSettings(updated)
+            setSaveState('saved')
+          }
+        } catch (error) {
+          if (saveSequenceRef.current !== saveId) return
+          const message = getApiErrorMessage(error, 'Failed to save website embed settings')
+          console.error('Failed to update website embed settings:', message, error)
+          setSaveState('error')
+          setSaveError(message)
+        } finally {
+          if (saveSequenceRef.current === saveId) {
+            setIsAnonSaving(false)
+          }
         }
-      } catch (error) {
-        if (saveSequenceRef.current !== saveId) return
-        const message = getApiErrorMessage(error, 'Failed to save website embed settings')
-        console.error('Failed to update website embed settings:', message, error)
-        setSaveState('error')
-        setSaveError(message)
-      } finally {
-        if (saveSequenceRef.current === saveId) {
-          setIsAnonSaving(false)
-        }
-      }
+      })()
     }, 700)
 
     return () => window.clearTimeout(timeout)
@@ -524,7 +526,7 @@ function WebsiteEmbedSettingsPanel({
           <Label htmlFor="websiteEmbedDisplayMode" className="text-foreground">Display mode</Label>
           <select
             id="websiteEmbedDisplayMode"
-            value={(anonSettings.websiteEmbedExpertOverrides?.displayMode ?? 'bubble') as 'bubble' | 'panel'}
+            value={(anonSettings.websiteEmbedExpertOverrides?.displayMode ?? 'bubble')}
             onChange={(event) =>
               handleWebsiteEmbedExpertOverrideChange('displayMode', event.target.value === 'bubble' ? '' : event.target.value)
             }
@@ -581,7 +583,7 @@ function WebsiteEmbedSettingsPanel({
             <Label htmlFor="websiteEmbedInitialState" className="text-foreground">When a page loads</Label>
             <select
               id="websiteEmbedInitialState"
-              value={(anonSettings.websiteEmbedExpertOverrides?.initialState ?? 'collapsed') as 'collapsed' | 'open'}
+              value={(anonSettings.websiteEmbedExpertOverrides?.initialState ?? 'collapsed')}
               onChange={(event) =>
                 handleWebsiteEmbedExpertOverrideChange('initialState', event.target.value === 'collapsed' ? '' : event.target.value)
               }
@@ -596,7 +598,7 @@ function WebsiteEmbedSettingsPanel({
             <Label htmlFor="websiteEmbedPageContext" className="text-foreground">What the assistant knows about the page</Label>
             <select
               id="websiteEmbedPageContext"
-              value={(anonSettings.websiteEmbedExpertOverrides?.pageContext ?? 'metadata') as 'metadata' | 'content'}
+              value={(anonSettings.websiteEmbedExpertOverrides?.pageContext ?? 'metadata')}
               onChange={(event) =>
                 handleWebsiteEmbedExpertOverrideChange('pageContext', event.target.value === 'metadata' ? '' : event.target.value)
               }

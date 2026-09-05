@@ -6,6 +6,7 @@ import request from "supertest";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import type { ApplicationRouteMount, UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
+import { HttpError } from "../shared/httpError.js";
 import { usageLimitMigrator } from "./usageLimitMigrator.js";
 import { createUsageLimitRoutes } from "./usageLimitRoutes.js";
 
@@ -77,7 +78,7 @@ const createDependencies = (database: UsageLimitDatabasePort): RouteDependencies
   authService: {
     async authenticateSession(token: string) {
       if (token !== "valid-session") {
-        throw { statusCode: 401, code: "unauthorized", message: "Unauthorized" };
+        throw new HttpError(401, "unauthorized", "Unauthorized");
       }
       return {
         accountId: sessionAccountId,

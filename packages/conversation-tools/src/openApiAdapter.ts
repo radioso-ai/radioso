@@ -95,6 +95,28 @@ const toolInputSchema = (
   },
 });
 
+// Tool-call input is JSON-typed (string | number | boolean | null | array | object), so
+// this reproduces `String()`'s own coercion per branch rather than calling it on `unknown`
+// directly, which is otherwise indistinguishable from a type with no meaningful `toString`.
+const toParameterString = (value: unknown): string => {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return String(value);
+  }
+  if (typeof value === "function" || typeof value === "symbol") {
+    return value.toString();
+  }
+  if (value === null) {
+    return "null";
+  }
+  if (value === undefined) {
+    return "undefined";
+  }
+  return Array.isArray(value) ? value.toString() : Object.prototype.toString.call(value);
+};
+
 const mergeRecord = (
   existing: Record<string, unknown> | undefined,
   name: string,
@@ -134,7 +156,7 @@ const applyFlatParameter = (
         ...normalized,
         headers: {
           ...(normalized.headers ?? {}),
-          [parameter.name]: String(value),
+          [parameter.name]: toParameterString(value),
         },
       };
     case "cookie":
@@ -176,7 +198,7 @@ const appendQuery = (url: URL, query: Record<string, unknown> | undefined): void
       }
       continue;
     }
-    url.searchParams.set(key, String(value));
+    url.searchParams.set(key, toParameterString(value));
   }
 };
 
@@ -186,7 +208,7 @@ const pathWithParams = (path: string, params: Record<string, unknown> | undefine
     if (value === undefined || value === null) {
       throw new Error(`Missing OpenAPI path parameter "${name}"`);
     }
-    return encodeURIComponent(String(value));
+    return encodeURIComponent(toParameterString(value));
   });
 
 const parseResponseBody = async (response: Awaited<ReturnType<ToolFetch>>): Promise<unknown> => {
@@ -212,7 +234,7 @@ export class OpenApiToolService implements ToolService {
   private readonly baseUrl: string | URL;
 
   constructor(private readonly options: OpenApiToolServiceOptions) {
-    this.fetchImpl = options.fetch ?? (globalThis.fetch as unknown as ToolFetch);
+    this.fetchImpl = options.fetch ?? (globalThis.fetch);
     this.baseUrl = options.baseUrl ?? options.spec.servers?.[0]?.url ?? "http://localhost";
     for (const [path, pathItem] of Object.entries(options.spec.paths)) {
       if (!pathItem) {

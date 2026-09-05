@@ -100,7 +100,7 @@ describe("AgenticCapabilityRunner final-message requirement", () => {
     description: "echo",
     inputSchema: z.object({ text: z.string() }),
     outputSchema: z.object({ text: z.string() }),
-    invoke: async (input) => input as { text: string },
+    invoke: async (input) => input,
   };
 
   const gateway = (calls: ModelToolCallRequest[]): ModelToolCallingGateway => ({

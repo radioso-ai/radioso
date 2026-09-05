@@ -178,7 +178,7 @@ describe("copilot document readers", () => {
 
   it("never returns more than the structural page cap", async () => {
     const ports = knowledgePorts();
-    const descriptor = createDocumentKnowledgeCopilotTools({ documentChunks: ports, documentMaintenance: ports })[0]!;
+    const descriptor = createDocumentKnowledgeCopilotTools({ documentChunks: ports, documentMaintenance: ports })[0];
 
     const result = await descriptor.createTool(context).invoke({
       documentId,
@@ -195,7 +195,7 @@ describe("copilot document readers", () => {
     const descriptor = createDocumentKnowledgeCopilotTools({
       documentChunks: knowledgePorts(),
       documentMaintenance: knowledgePorts(),
-    })[0]!;
+    })[0];
 
     expect(descriptor.inputSchema.safeParse({ documentId, startChunkIndex: 0, limit: 11 }).success).toBe(false);
     expect(descriptor.describeEntity?.({ documentId, startChunkIndex: 0, limit: 1 }, context)).toEqual({
@@ -219,7 +219,7 @@ describe("copilot document readers", () => {
 
   it("reprocesses exactly one workspace-scoped document or source target", async () => {
     const ports = knowledgePorts();
-    const descriptor = createDocumentKnowledgeCopilotTools({ documentChunks: ports, documentMaintenance: ports })[1]!;
+    const descriptor = createDocumentKnowledgeCopilotTools({ documentChunks: ports, documentMaintenance: ports })[1];
 
     await expect(descriptor.createTool(context).invoke({ documentId }, {} as never)).resolves.toEqual({
       target: { type: "document", id: documentId },
@@ -256,7 +256,7 @@ describe("copilot document readers", () => {
       queuedDocumentCount: 0,
       skippedDocumentCount: 1,
     });
-    const descriptor = createDocumentKnowledgeCopilotTools({ documentChunks: ports, documentMaintenance: ports })[1]!;
+    const descriptor = createDocumentKnowledgeCopilotTools({ documentChunks: ports, documentMaintenance: ports })[1];
 
     await expect(descriptor.createTool(context).invoke({ documentId }, {} as never)).resolves.toEqual({
       target: { type: "document", id: documentId },
@@ -268,7 +268,7 @@ describe("copilot document readers", () => {
 
   it("recrawls only a stored source id and never accepts caller-supplied crawl configuration", async () => {
     const ports = knowledgePorts();
-    const descriptor = createDocumentKnowledgeCopilotTools({ documentChunks: ports, documentMaintenance: ports })[2]!;
+    const descriptor = createDocumentKnowledgeCopilotTools({ documentChunks: ports, documentMaintenance: ports })[2];
 
     await expect(descriptor.createTool(context).invoke({ sourceId }, {} as never)).resolves.toEqual({
       jobId: "44444444-4444-4444-8444-444444444444",

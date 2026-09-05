@@ -147,7 +147,7 @@ describe("routine defaults", () => {
       turn,
     });
 
-    expect(vi.mocked(gw.complete).mock.calls[0]![0].systemPrompt).toBe("- Ask literally for {{missing}}.");
+    expect(vi.mocked(gw.complete).mock.calls[0][0].systemPrompt).toBe("- Ask literally for {{missing}}.");
   });
 
   it("renders a step reply through the model gateway and trims it", async () => {
@@ -234,7 +234,7 @@ describe("routine defaults", () => {
       },
     });
 
-    const call = vi.mocked(gw.complete).mock.calls[0]![0];
+    const call = vi.mocked(gw.complete).mock.calls[0][0];
     expect(call.systemPrompt).toContain("Write one short message in English");
     expect(call.systemPrompt).toContain("Bringing in a teammate.");
     expect(call.systemPrompt).toContain("Do not add links, contact details");
@@ -258,7 +258,7 @@ describe("routine defaults", () => {
       turn,
     });
 
-    const call = vi.mocked(gw.complete).mock.calls[0]![0];
+    const call = vi.mocked(gw.complete).mock.calls[0][0];
     expect(call.systemPrompt).toContain("Write one short message in Italian");
     expect(call.systemPrompt).toContain("saying that a person will connect to the chat soon");
     expect(call.systemPrompt).toContain("Do not add links, contact details");
@@ -278,7 +278,7 @@ describe("routine defaults", () => {
       turn,
     });
 
-    const call = vi.mocked(gw.complete).mock.calls[0]![0];
+    const call = vi.mocked(gw.complete).mock.calls[0][0];
     expect(call.systemPrompt).toContain("saying that a person will connect to the chat soon");
     expect(call.systemPrompt).not.toContain("Ask for the user's email.");
   });
@@ -305,7 +305,7 @@ describe("routine defaults", () => {
       },
     });
 
-    const call = vi.mocked(gw.complete).mock.calls[0]![0];
+    const call = vi.mocked(gw.complete).mock.calls[0][0];
     expect(call.systemPrompt).toContain("Write one short message in the user's language");
     expect(call.messages).toEqual([{
       role: "user",
@@ -323,7 +323,7 @@ describe("routine defaults", () => {
       turn,
     });
 
-    const systemPrompt = vi.mocked(gw.complete).mock.calls[0]![0].systemPrompt;
+    const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt;
     expect(systemPrompt).not.toContain("This handoff has already been selected");
     expect(systemPrompt).not.toContain("Do not ask whether the user wants to be connected");
   });
@@ -347,7 +347,7 @@ describe("routine defaults", () => {
       },
     });
 
-    const call = vi.mocked(gw.complete).mock.calls[0]![0];
+    const call = vi.mocked(gw.complete).mock.calls[0][0];
     expect(call.systemPrompt).toContain("untrusted quoted data");
     expect(call.systemPrompt).not.toContain("Course Guide");
     expect(call.systemPrompt).not.toContain("Kriya is introduced");
@@ -420,7 +420,7 @@ describe("routine defaults", () => {
       turn: scopedTurn,
     });
 
-    const systemPrompt = vi.mocked(gw.complete).mock.calls[0]![0].systemPrompt;
+    const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt;
     expect(systemPrompt).toContain("Ananda");
     expect(systemPrompt).toContain("Help only with Ananda Europe programs and events.");
     expect(systemPrompt).toContain("do not answer or perform it");

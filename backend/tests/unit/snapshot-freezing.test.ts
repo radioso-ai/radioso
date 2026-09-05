@@ -134,7 +134,7 @@ describe("freezeAgent", () => {
     const snap = freezeAgent(agent);
 
     (agent.skillSettings["retrieval.answer"] as { vectorTopK: number }).vectorTopK = 99;
-    ((agent.skillSettings["retrieval.answer"] as { metadataRules: { id: string }[] }).metadataRules[0]!).id = "mutated";
+    ((agent.skillSettings["retrieval.answer"] as { metadataRules: { id: string }[] }).metadataRules[0]).id = "mutated";
     if (agent.sourceScope.mode === "selected") {
       agent.sourceScope.sourceIds.push("source-2");
     }

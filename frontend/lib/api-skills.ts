@@ -83,7 +83,7 @@ export type SkillCapabilityDescriptor = {
   executorAdapter: string
   targets: SkillCapabilityTarget[]
   available: boolean
-  unavailableReason: 'no_connection' | string | null
+  unavailableReason: 'no_connection' | (string & {}) | null
 }
 
 export type AgentSkillCreateInput = {

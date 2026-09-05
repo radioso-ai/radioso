@@ -27,7 +27,7 @@ const toolFor = (retrievalProbe: CopilotRetrievalProbePort) => {
     retrievalProbe,
     agentLookup: { listExisting: async () => [] },
   });
-  return descriptor!;
+  return descriptor;
 };
 
 /** The runtime supplies the tool context; these tests exercise projection, not the runtime. */
@@ -105,7 +105,7 @@ describe("retrieval_probe descriptor", () => {
     };
 
     expect(output.probe.results).toHaveLength(10);
-    expect(output.probe.results[0]!.content.length).toBeLessThanOrEqual(1_200);
+    expect(output.probe.results[0].content.length).toBeLessThanOrEqual(1_200);
     expect(output.omissions).toEqual(expect.arrayContaining([
       expect.objectContaining({ field: "results", reason: "array_length" }),
       expect.objectContaining({ field: "results.content", reason: "string_length" }),
@@ -135,7 +135,7 @@ describe("RetrievalProbeService", () => {
       rewrittenQuery: { semantic: "refund window", lexical: "refund" },
       results: [],
     }));
-    const service = new RetrievalProbeService({ ...dependencies, retrievalSearch: { search } } as never);
+    const service = new RetrievalProbeService({ ...dependencies, retrievalSearch: { search } });
 
     await service.probe(input);
 
@@ -150,7 +150,7 @@ describe("RetrievalProbeService", () => {
       rewrittenQuery: { semantic: "q", lexical: "q" },
       results: [],
     }));
-    const service = new RetrievalProbeService({ ...dependencies, retrievalSearch: { search } } as never);
+    const service = new RetrievalProbeService({ ...dependencies, retrievalSearch: { search } });
 
     await expect(service.probe(input)).rejects.toThrow(/agent/i);
   });
@@ -162,7 +162,7 @@ describe("RetrievalProbeService", () => {
       rewrittenQuery: { semantic: "q", lexical: "q" },
       results: [],
     }));
-    const service = new RetrievalProbeService({ ...dependencies, retrievalSearch: { search } } as never);
+    const service = new RetrievalProbeService({ ...dependencies, retrievalSearch: { search } });
 
     await expect(service.probe(input)).rejects.toThrow(/agent/i);
   });

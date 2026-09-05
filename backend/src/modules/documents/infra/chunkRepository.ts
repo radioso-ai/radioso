@@ -47,7 +47,7 @@ const mapChunkDetail = (row: ChunkDetailRow): ChunkDetail => ({
   searchText: row.search_text,
   startOffset: Number(row.start_offset),
   endOffset: Number(row.end_offset),
-  metadata: (row.metadata ?? {}) as Record<string, unknown>,
+  metadata: (row.metadata ?? {}),
   dateFrom: row.date_from,
   dateTo: row.date_to,
   createdAt: row.created_at,
@@ -189,7 +189,7 @@ export class ChunkRepository implements ChunkRepositoryPort {
       content: row.content,
       startOffset: Number(row.start_offset),
       endOffset: Number(row.end_offset),
-      metadata: (row.metadata ?? {}) as Record<string, unknown>,
+      metadata: (row.metadata ?? {}),
     }));
   }
 
@@ -327,7 +327,7 @@ export class ChunkRepository implements ChunkRepositoryPort {
     return {
       chunks: pageRows.map(mapChunkDetail),
       totalChunks: Number(countRows[0]?.total_count ?? "0"),
-      nextChunkIndex: rows.length > input.limit ? Number(rows[input.limit]!.chunk_index) : null,
+      nextChunkIndex: rows.length > input.limit ? Number(rows[input.limit].chunk_index) : null,
     };
   }
 

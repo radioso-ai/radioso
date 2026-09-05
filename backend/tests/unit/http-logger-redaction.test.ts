@@ -16,7 +16,7 @@ const createCapturedLogger = (): { logger: AppLogger; lines: string[] } => {
   });
 
   return {
-    logger: pino({ level: "info" }, stream) as AppLogger,
+    logger: pino({ level: "info" }, stream),
     lines,
   };
 };

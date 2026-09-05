@@ -42,7 +42,7 @@ describe("RoutineSlotCorrector", () => {
 
     expect(result).toEqual({ slots: routine.slots, slotKey: "email", rawValue: "new@example.com" });
     // The model only saw the mutable slot.
-    const prompt = vi.mocked(gw.complete).mock.calls[0]![0].systemPrompt;
+    const prompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt;
     expect(prompt).toContain("email");
     expect(prompt).not.toContain("key: name");
   });
@@ -90,7 +90,7 @@ describe("RoutineSlotCorrector", () => {
     const corrector = new RoutineSlotCorrector([routine], gw);
     const answer = await corrector.rejectInvalid({ turn: turn("change it"), routineId: "routine_intake", slotKey: "email" });
     expect(answer).toBe("That doesn't look like a valid email — what should I use?");
-    const prompt = vi.mocked(gw.complete).mock.calls[0]![0].systemPrompt;
+    const prompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt;
     expect(prompt).toContain("email");
   });
 });

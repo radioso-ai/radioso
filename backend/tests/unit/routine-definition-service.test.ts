@@ -28,9 +28,9 @@ const nextFakeRoutineUpdatedAt = (current: Date): Date =>
 
 class FakeRoutineDefinitionRepository implements RoutineDefinitionRepositoryPort {
   readonly items = new Map<string, RoutineDefinition>();
-  createDraftError: unknown = undefined;
-  publishError: unknown = undefined;
-  restoreError: unknown = undefined;
+  createDraftError: Error | undefined = undefined;
+  publishError: Error | undefined = undefined;
+  restoreError: Error | undefined = undefined;
 
   async listPublishedByAgent(inputAgentId: string): Promise<RoutineDefinition[]> {
     return [...this.items.values()].filter((definition) =>
@@ -522,10 +522,13 @@ describe("RoutineDefinitionService", () => {
 
   it("maps duplicate routine name and version create conflicts to a domain conflict", async () => {
     const { repository, service } = createService();
-    repository.createDraftError = {
-      code: "23505",
-      constraint: "routine_definition_agent_id_name_version_key",
-    };
+    repository.createDraftError = Object.assign(
+      new Error("duplicate key value violates unique constraint"),
+      {
+        code: "23505",
+        constraint: "routine_definition_agent_id_name_version_key",
+      },
+    );
 
     await expect(service.createDraft(workspaceId, agentId, validDraft())).rejects.toMatchObject({
       statusCode: 409,

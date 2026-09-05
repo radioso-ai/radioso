@@ -164,7 +164,7 @@ describe("attemptRoutineTurnWithConversationEngine", () => {
     routineRunner: { resume: async () => ({ response: { answer: "" }, nextState: null }) },
     routineActivator: { activate: async () => null },
     presentRoutineReply: (response: { answer: string }): ChatPresentedAnswer =>
-      ({ answer: response.answer, skillName: "routine", skillOutcome: "routine", skillStatus: "completed" }) as ChatPresentedAnswer,
+      ({ answer: response.answer, skillName: "routine", skillOutcome: "routine", skillStatus: "completed" }),
   };
   const engineWith = (result: ProcessTurnResult | null): ConversationEngine =>
     ({
@@ -172,12 +172,11 @@ describe("attemptRoutineTurnWithConversationEngine", () => {
       processTurn: async () => {
         throw new Error("processTurn should not run when attempting a routine");
       },
-      // eslint-disable-next-line require-yield
       processTurnStream: async function* () {
         throw new Error("processTurnStream should not run when attempting a routine");
       },
       resumeAwaitingDecision: async () => ({ resumed: false, response: { answer: "" }, nextState: null }),
-    }) as ConversationEngine;
+    });
 
   it("presents the routine reply when the engine claims the turn", async () => {
     const result = {
@@ -888,7 +887,7 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
           skillStatus: outcome.outcome.status,
         }),
         async *stream() {
-          const answer = await inference.stream({
+          const answer = inference.stream({
             operation: {
               workspaceId: "workspace_1",
               surface: "assistant",

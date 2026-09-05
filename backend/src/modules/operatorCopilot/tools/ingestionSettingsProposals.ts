@@ -76,5 +76,5 @@ export const createIngestionSettingsProposalCopilotTools = (
         };
       },
     }),
-  } as CopilotToolDescriptor];
+  }];
 };

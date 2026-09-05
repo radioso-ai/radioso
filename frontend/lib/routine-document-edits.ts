@@ -50,7 +50,7 @@ const isPristineSeedStep = (step: RoutineBlockStep) =>
 export const addStep = (doc: RoutineBlockDoc, kind: RoutineStepKind): RoutineBlockDoc => {
   const next = copy(doc)
   const step = createDocumentStep(kind, next.steps)
-  if (next.steps.length === 1 && isPristineSeedStep(next.steps[0]!)) next.steps = [step]
+  if (next.steps.length === 1 && isPristineSeedStep(next.steps[0])) next.steps = [step]
   else next.steps.push(step)
   return kind === 'approval' ? syncApprovalBranches(next, step.stableStepId) : next
 }
@@ -83,7 +83,7 @@ export const moveStep = (doc: RoutineBlockDoc, stableStepId: string, direction: 
   const index = next.steps.findIndex((step) => step.stableStepId === stableStepId)
   const destination = index + direction
   if (index < 0 || destination < 0 || destination >= next.steps.length) return next
-  ;[next.steps[index], next.steps[destination]] = [next.steps[destination]!, next.steps[index]!]
+  ;[next.steps[index], next.steps[destination]] = [next.steps[destination], next.steps[index]]
   return next
 }
 

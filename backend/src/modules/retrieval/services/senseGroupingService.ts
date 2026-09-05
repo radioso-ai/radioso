@@ -374,7 +374,7 @@ const distance = (left: number[], right: number[]): number | null => {
   }
   let sum = 0;
   for (let index = 0; index < left.length; index += 1) {
-    sum += (left[index]! - right[index]!) ** 2;
+    sum += (left[index] - right[index]) ** 2;
   }
   return Math.sqrt(sum);
 };

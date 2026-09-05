@@ -63,7 +63,7 @@ const runRequiredMachineMiddleware = async () => {
   const res = new TestResponse() as unknown as Response;
   const next = vi.fn() as unknown as NextFunction;
 
-  await requireApiToken(dependencies as never)(req, res, next);
+  await requireApiToken(dependencies)(req, res, next);
   return { next, recordApiTokenUse, res };
 };
 

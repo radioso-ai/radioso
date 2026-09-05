@@ -39,7 +39,7 @@ const resolve = (
   {
     evidence: { record: vi.fn(), findMany: vi.fn(async () => [record(measured, directivesExcluded)]) },
     agentVersion: { get: vi.fn(async () => ({ updatedAt: new Date("2026-08-24T10:00:00.000Z") })) },
-  } as never,
+  },
   {
     workspaceId: ids.workspace,
     operatorUserId: ids.operator,

@@ -194,7 +194,7 @@ describe('routine document edits', () => {
     const edited = addStep(pristineSeed(), 'approval')
 
     expect(edited.steps).toHaveLength(1)
-    expect(edited.steps[0]!.kind).toBe('approval')
+    expect(edited.steps[0].kind).toBe('approval')
   })
 
   it('appends when the single seed step has instruction text', () => {
@@ -221,9 +221,9 @@ describe('routine document edits', () => {
     const original = source()
     const withSteps = addStep(addStep(original, 'chat'), 'approval')
     expect(withSteps.steps.map((step) => step.kind)).toEqual(['chat', 'chat', 'approval'])
-    const moved = moveStep(withSteps, withSteps.steps[2]!.stableStepId, -1)
+    const moved = moveStep(withSteps, withSteps.steps[2].stableStepId, -1)
     expect(moved.steps.map((step) => step.kind)).toEqual(['chat', 'approval', 'chat'])
-    expect(removeStep(moved, moved.steps[1]!.stableStepId).steps).toHaveLength(2)
+    expect(removeStep(moved, moved.steps[1].stableStepId).steps).toHaveLength(2)
     expect(original.steps).toHaveLength(1)
   })
 
@@ -231,12 +231,12 @@ describe('routine document edits', () => {
     const branched = addBranch(source(), 'ask_email', 'field')
     const edited = updateBranchGuard(branched, 'ask_email', 0, { fieldRef: 'email', fieldOp: 'is_present' })
     const withTarget = targetBranchAtStep(addStep(edited, 'chat'), 'ask_email', 0, 'step_1')
-    expect(withTarget.steps[0]!.branches[0]).toMatchObject({
+    expect(withTarget.steps[0].branches[0]).toMatchObject({
       guard: { kind: 'field', fieldRef: 'email', fieldOp: 'is_present' },
       target: { kind: 'step', stableStepId: 'step_1' },
     })
-    expect(removeBranch(withTarget, 'ask_email', 0).steps[0]!.branches).toEqual([])
-    expect(changeBranchGuardKind(branched, 'ask_email', 0, 'llm').steps[0]!.branches[0]!.guard.kind).toBe('llm')
+    expect(removeBranch(withTarget, 'ask_email', 0).steps[0].branches).toEqual([])
+    expect(changeBranchGuardKind(branched, 'ask_email', 0, 'llm').steps[0].branches[0].guard.kind).toBe('llm')
   })
 
   it('creates and references endings while preserving a single definition', () => {
@@ -246,7 +246,7 @@ describe('routine document edits', () => {
     const referenced = referenceEnding(branched, 'ask_email', 0, handoff.stableStepId)
     // The branch embeds its own copy of the definition so later edits to other branches
     // can never orphan it; emission still deduplicates to a single terminal.
-    expect(referenced.steps[0]!.branches[0]!.target).toMatchObject({ kind: 'ending', terminalId: handoff.stableStepId, ending: { kind: 'handoff' } })
+    expect(referenced.steps[0].branches[0].target).toMatchObject({ kind: 'ending', terminalId: handoff.stableStepId, ending: { kind: 'handoff' } })
     const projected = draftFromBlockDoc(referenced)
     expect(projected.terminals.filter((ending) => ending.stableStepId === handoff.stableStepId)).toHaveLength(1)
   })
@@ -258,11 +258,11 @@ describe('routine document edits', () => {
       outputAssignments: { normalized_email: 'email' },
     })
     const renamed = renameSlot(withBindings, 'email', 'Customer email')
-    expect(renamed.information[0]!.stableSlotId).toBe('email')
-    expect(renamed.information[0]!.key).toBe('customer_email')
-    expect(renamed.steps[0]!.instruction).toContainEqual({ kind: 'slotReference', key: 'customer_email', source: '{{slot.customer_email}}' })
-    expect(renamed.steps[0]!.inputBindings?.recipient).toEqual({ kind: 'variableRef', ref: 'customer_email' })
-    expect(renamed.steps[0]!.branches[0]!.guard).toMatchObject({ slotKeys: ['customer_email'] })
+    expect(renamed.information[0].stableSlotId).toBe('email')
+    expect(renamed.information[0].key).toBe('customer_email')
+    expect(renamed.steps[0].instruction).toContainEqual({ kind: 'slotReference', key: 'customer_email', source: '{{slot.customer_email}}' })
+    expect(renamed.steps[0].inputBindings?.recipient).toEqual({ kind: 'variableRef', ref: 'customer_email' })
+    expect(renamed.steps[0].branches[0].guard).toMatchObject({ slotKeys: ['customer_email'] })
     expect(slotReferences(renamed, 'customer_email')).toEqual(expect.arrayContaining(['instruction in ask_email', 'binding in ask_email', 'output in ask_email', 'guard in ask_email']))
   })
 
@@ -277,8 +277,8 @@ describe('routine document edits', () => {
       outputAssignments: { account_id: 'account_id' },
       mode: 'typed',
     })
-    expect(edited.steps[1]!.inputBindings?.locale).toEqual({ kind: 'contextVariableRef', contextVariable: 'page_locale' })
-    expect(edited.steps[1]!.outputAssignments).toEqual({ account_id: 'account_id' })
+    expect(edited.steps[1].inputBindings?.locale).toEqual({ kind: 'contextVariableRef', contextVariable: 'page_locale' })
+    expect(edited.steps[1].outputAssignments).toEqual({ account_id: 'account_id' })
   })
 
   it('projects an edited document back to a clean block document', () => {
@@ -384,7 +384,7 @@ describe('approval decision edges', () => {
     const withThird = updateApproval(withApproval, approvalId, { options: [...options, { id: 'defer', label: 'Defer', description: null }] })
     expect(withThird.steps.find((step) => step.stableStepId === approvalId)!.branches).toHaveLength(3)
 
-    const withoutDecline = updateApproval(withThird, approvalId, { options: [options[0]!, { id: 'defer', label: 'Defer', description: null }] })
+    const withoutDecline = updateApproval(withThird, approvalId, { options: [options[0], { id: 'defer', label: 'Defer', description: null }] })
     const branches = withoutDecline.steps.find((step) => step.stableStepId === approvalId)!.branches
     expect(branches.map((branch) => branch.guard.fieldValue)).toEqual(['approve', 'defer'])
 

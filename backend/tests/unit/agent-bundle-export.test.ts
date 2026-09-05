@@ -94,7 +94,7 @@ const publishedRoutine = (over: Partial<RoutineDefinition> = {}): RoutineDefinit
     ordinal: 1,
   }],
   ...over,
-} as RoutineDefinition);
+});
 
 const service = (over: {
   routines?: RoutineDefinition[];

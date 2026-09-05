@@ -63,13 +63,25 @@ export const createOperatorMcpOauthRoutes = (dependencies: Dependencies): Router
   const rolloutWorkspaceIds = operatorMcpRolloutWorkspaceIds(dependencies.env.OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS);
   const sessionOnly = requireSession(dependencies);
   const service = dependencies.operatorMcpAuthorizationService;
-  const authorizeRateLimit = createPreAuthSourceRateLimiter({
+  const sourceRateLimit = (scope: string, limit: number) => createPreAuthSourceRateLimiter({
     service: dependencies.abuseControlService,
-    scope: "api.operator_mcp_oauth_authorize",
-    limit: dependencies.env.AUTH_RATE_LIMIT_MAX_ATTEMPTS,
+    scope,
+    limit,
     windowMs: dependencies.env.AUTH_RATE_LIMIT_WINDOW_MS,
     trustedProxyHops: dependencies.env.RADIOSO_TRUSTED_PROXY_HOPS,
   });
+  const authorizeRateLimit = sourceRateLimit(
+    "api.operator_mcp_oauth_authorize",
+    dependencies.env.AUTH_RATE_LIMIT_MAX_ATTEMPTS,
+  );
+  const tokenRateLimit = sourceRateLimit(
+    "api.operator_mcp_oauth_token",
+    dependencies.env.OPERATOR_MCP_OAUTH_SOURCE_RATE_LIMIT_MAX_ATTEMPTS ?? 300,
+  );
+  const revokeRateLimit = sourceRateLimit(
+    "api.operator_mcp_oauth_revoke",
+    dependencies.env.OPERATOR_MCP_OAUTH_SOURCE_RATE_LIMIT_MAX_ATTEMPTS ?? 300,
+  );
 
   router.get("/authorize", noStore, authorizeRateLimit, async (req, res) => {
     if (!service || !await dependencies.operatorMcpReadiness) {
@@ -105,7 +117,7 @@ export const createOperatorMcpOauthRoutes = (dependencies: Dependencies): Router
     }
   });
 
-  router.post("/token", noStore, async (req, res) => {
+  router.post("/token", noStore, tokenRateLimit, async (req, res) => {
     if (!service || !await dependencies.operatorMcpReadiness) {
       res.status(503).json({ error: "temporarily_unavailable" });
       return;
@@ -135,7 +147,7 @@ export const createOperatorMcpOauthRoutes = (dependencies: Dependencies): Router
     }
   });
 
-  router.post("/revoke", noStore, async (req, res) => {
+  router.post("/revoke", noStore, revokeRateLimit, async (req, res) => {
     if (!service || !await dependencies.operatorMcpReadiness) {
       res.status(503).json({ error: "temporarily_unavailable" });
       return;

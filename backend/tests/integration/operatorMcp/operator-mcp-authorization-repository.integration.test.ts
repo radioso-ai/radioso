@@ -85,11 +85,25 @@ describeIntegration("OperatorMcpAuthorizationRepository", () => {
   });
 
   it("fails closed for disabled users and revoked grants", async () => {
+    const lineageId = randomUUID();
+    await database.query("UPDATE operator_mcp_grants SET offline_access = true WHERE id = $1", [grantId]);
+    await database.query(
+      `INSERT INTO operator_mcp_refresh_lineages
+        (id, grant_id, client_version, client_metadata_snapshot_id, credential_epoch,
+         issued_tool_scopes, offline_access, idle_expires_at, absolute_expires_at)
+       VALUES ($1, $2, 1, $3, 7, ARRAY['operator:read'], true,
+         NOW() + INTERVAL '1 day', NOW() + INTERVAL '2 days')`,
+      [lineageId, grantId, snapshotId],
+    );
     await database.query("UPDATE users SET disabled_at = NOW() WHERE id = $1", [userId]);
     await expect(repository.findCurrentCredential({ tokenDigest, resource, now: new Date() })).resolves.toMatchObject({ userDisabledAt: expect.any(Date) });
     await database.query("UPDATE users SET disabled_at = NULL WHERE id = $1", [userId]);
     await expect(repository.revokeGrant({ grantId, reason: "explicit", now: new Date() })).resolves.toBe(true);
     await expect(repository.findCurrentCredential({ tokenDigest, resource, now: new Date() })).resolves.toBeNull();
+    await expect(database.query<{ status: string; revoked_reason: string | null }>(
+      "SELECT status, revoked_reason FROM operator_mcp_refresh_lineages WHERE id = $1",
+      [lineageId],
+    )).resolves.toEqual([{ status: "revoked", revoked_reason: "explicit" }]);
   });
 
   it("accepts only monotonic external epoch/key state and rejects mixed replicas", async () => {
@@ -183,6 +197,8 @@ describeIntegration("OperatorMcpAuthorizationRepository", () => {
   });
 
   it("atomically binds consent, exchanges a code, narrows scopes, and invalidates refresh successors on replay", async () => {
+    const supersededGrantId = grantId;
+    const supersededLineageId = randomUUID();
     const transactionId = randomUUID();
     const authorizationCodeDigest = createHash("sha256").update(randomUUID()).digest("hex");
     const firstAccessId = randomUUID();
@@ -190,6 +206,20 @@ describeIntegration("OperatorMcpAuthorizationRepository", () => {
     const firstRefreshDigest = createHash("sha256").update(randomUUID()).digest("hex");
     const lineageId = randomUUID();
     const testNow = new Date();
+    await database.query(
+      `UPDATE operator_mcp_grants
+       SET status = 'active', offline_access = true, revoked_at = NULL, revoked_reason = NULL
+       WHERE id = $1`,
+      [supersededGrantId],
+    );
+    await database.query(
+      `INSERT INTO operator_mcp_refresh_lineages
+        (id, grant_id, client_version, client_metadata_snapshot_id, credential_epoch,
+         issued_tool_scopes, offline_access, idle_expires_at, absolute_expires_at)
+       VALUES ($1, $2, 1, $3, 7, ARRAY['operator:read'], true,
+         NOW() + INTERVAL '1 day', NOW() + INTERVAL '2 days')`,
+      [supersededLineageId, supersededGrantId, snapshotId],
+    );
     await repository.createTransaction({
       id: transactionId,
       clientRecordId,
@@ -221,6 +251,10 @@ describeIntegration("OperatorMcpAuthorizationRepository", () => {
       now: testNow,
     });
     expect(exchanged).toMatchObject({ toolScopes: ["operator:read"], offlineAccess: true });
+    await expect(database.query<{ status: string; revoked_reason: string | null }>(
+      "SELECT status, revoked_reason FROM operator_mcp_refresh_lineages WHERE id = $1",
+      [supersededLineageId],
+    )).resolves.toEqual([{ status: "revoked", revoked_reason: "replaced" }]);
     await expect(repository.exchangeAuthorizationCode({
       authorizationCodeDigest, clientId, redirectUri: "http://127.0.0.1:43123/callback", resource,
       codeChallenge: "challenge", credentialEpoch: "7",
@@ -235,12 +269,29 @@ describeIntegration("OperatorMcpAuthorizationRepository", () => {
       accessCredential: { id: randomUUID(), tokenDigest: successorAccessDigest, expiresAt: new Date(testNow.getTime() + 900_000) },
       successorTokenDigest: successorRefreshDigest, idleExpiresAt: new Date(testNow.getTime() + 86_400_000), now: testNow,
     })).resolves.toMatchObject({ status: "rotated", toolScopes: ["operator:read"] });
+    const siblingLineageId = randomUUID();
+    await database.query(
+      `INSERT INTO operator_mcp_refresh_lineages
+        (id, grant_id, client_version, client_metadata_snapshot_id, credential_epoch,
+         issued_tool_scopes, offline_access, idle_expires_at, absolute_expires_at)
+       VALUES ($1, $2, 1, $3, 7, ARRAY['operator:read'], true,
+         NOW() + INTERVAL '1 day', NOW() + INTERVAL '2 days')`,
+      [siblingLineageId, exchanged!.grantId, snapshotId],
+    );
     await expect(repository.findCurrentCredential({ tokenDigest: successorAccessDigest, resource, now: testNow })).resolves.not.toBeNull();
     await expect(repository.rotateRefreshCredential({
       tokenDigest: firstRefreshDigest, clientId, resource, credentialEpoch: "7",
       accessCredential: { id: randomUUID(), tokenDigest: randomUUID(), expiresAt: new Date(testNow.getTime() + 900_000) },
       successorTokenDigest: randomUUID(), idleExpiresAt: new Date(testNow.getTime() + 86_400_000), now: testNow,
     })).resolves.toMatchObject({ status: "replay" });
+    await expect(database.query<{ id: string; status: string; revoked_reason: string | null }>(
+      `SELECT id, status, revoked_reason FROM operator_mcp_refresh_lineages
+       WHERE grant_id = $1 ORDER BY id`,
+      [exchanged!.grantId],
+    )).resolves.toEqual([
+      { id: lineageId, status: "revoked", revoked_reason: "replay" },
+      { id: siblingLineageId, status: "revoked", revoked_reason: "replay" },
+    ].sort((left, right) => left.id.localeCompare(right.id)));
     await expect(repository.findCurrentCredential({ tokenDigest: successorAccessDigest, resource, now: testNow })).resolves.toBeNull();
     await expect(repository.rotateRefreshCredential({
       tokenDigest: successorRefreshDigest, clientId, resource, credentialEpoch: "7",
@@ -250,7 +301,9 @@ describeIntegration("OperatorMcpAuthorizationRepository", () => {
   });
 
   it("revokes every grant and credential for one client record", async () => {
+    await database.query("UPDATE operator_mcp_grants SET status = 'revoked' WHERE id = $1", [grantId]);
     const grants = [randomUUID(), randomUUID()];
+    const lineages = [randomUUID(), randomUUID()];
     const workspaces = [randomUUID(), randomUUID()];
     const digests = [randomUUID(), randomUUID()].map((value) => createHash("sha256").update(value).digest("base64url"));
     for (const [index, nextGrantId] of grants.entries()) {
@@ -262,8 +315,16 @@ describeIntegration("OperatorMcpAuthorizationRepository", () => {
         `INSERT INTO operator_mcp_grants
           (id, client_id, client_version, client_metadata_snapshot_id, account_id, workspace_id, user_id,
            membership_id, resource, tool_scopes, offline_access, credential_epoch)
-         VALUES ($1, $2, 1, $3, $4, $5, $6, $7, $8, ARRAY['operator:read'], false, 7)`,
+         VALUES ($1, $2, 1, $3, $4, $5, $6, $7, $8, ARRAY['operator:read'], true, 7)`,
         [nextGrantId, clientRecordId, snapshotId, accountId, workspaces[index], userId, membershipId, resource],
+      );
+      await database.query(
+        `INSERT INTO operator_mcp_refresh_lineages
+          (id, grant_id, client_version, client_metadata_snapshot_id, credential_epoch,
+           issued_tool_scopes, offline_access, idle_expires_at, absolute_expires_at)
+         VALUES ($1, $2, 1, $3, 7, ARRAY['operator:read'], true,
+           NOW() + INTERVAL '1 day', NOW() + INTERVAL '2 days')`,
+        [lineages[index], nextGrantId, snapshotId],
       );
       await database.query(
         `INSERT INTO operator_mcp_access_credentials
@@ -280,5 +341,10 @@ describeIntegration("OperatorMcpAuthorizationRepository", () => {
     for (const digest of digests) {
       await expect(repository.findCurrentCredential({ tokenDigest: digest, resource, now: new Date() })).resolves.toBeNull();
     }
+    await expect(database.query<{ status: string; revoked_reason: string | null }>(
+      "SELECT status, revoked_reason FROM operator_mcp_refresh_lineages WHERE id = ANY($1::uuid[]) ORDER BY id",
+      [lineages],
+    )).resolves.toEqual(lineages
+      .map(() => ({ status: "revoked", revoked_reason: "security_response" })));
   });
 });

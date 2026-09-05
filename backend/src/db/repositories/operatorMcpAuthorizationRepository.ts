@@ -103,6 +103,18 @@ const mapGrantSummary = (row: GrantSummaryRow): OperatorMcpGrantSummaryRecord =>
 export class OperatorMcpAuthorizationRepository implements OperatorMcpAuthorizationRepositoryPort, OperatorMcpAuthorizationFlowRepositoryPort, OperatorMcpGrantRepositoryPort, OperatorMcpClientRepositoryPort {
   constructor(private readonly db: Db) {}
 
+  private async revokeActiveRefreshLineages(
+    trx: Db,
+    input: { grantIds: readonly string[]; reason: string; now: Date },
+  ): Promise<void> {
+    if (input.grantIds.length === 0) return;
+    await sql`
+      UPDATE operator_mcp_refresh_lineages
+      SET status = 'revoked', revoked_at = ${input.now}, revoked_reason = ${input.reason}
+      WHERE grant_id IN (${sql.join(input.grantIds)}) AND status = 'active'
+    `.execute(trx);
+  }
+
   private async findCredential(input: ({ tokenDigest: string } | { credentialId: string }) & { resource: string; now: Date }) {
     const selector = "tokenDigest" in input
       ? sql<boolean>`oc.token_digest = ${input.tokenDigest}`
@@ -178,14 +190,20 @@ export class OperatorMcpAuthorizationRepository implements OperatorMcpAuthorizat
   }
 
   async revokeGrant(input: { grantId: string; reason: string; now: Date }): Promise<boolean> {
-    const result = await sql`
-      UPDATE operator_mcp_grants
-      SET status = 'revoked', revoked_at = ${input.now}, revoked_reason = ${input.reason},
-          version = version + 1, updated_at = ${input.now}
-      WHERE id = ${input.grantId} AND status = 'active'
-      RETURNING id
-    `.execute(this.db);
-    return result.rows.length > 0;
+    return this.db.transaction().execute(async (trx) => {
+      const result = await sql<{ id: string }>`
+        UPDATE operator_mcp_grants
+        SET status = 'revoked', revoked_at = ${input.now}, revoked_reason = ${input.reason},
+            version = version + 1, updated_at = ${input.now}
+        WHERE id = ${input.grantId} AND status = 'active'
+        RETURNING id
+      `.execute(trx);
+      if (result.rows.length === 0) return false;
+      await this.revokeActiveRefreshLineages(trx, {
+        grantIds: result.rows.map((row) => row.id), reason: input.reason, now: input.now,
+      });
+      return true;
+    });
   }
 
   async revokeClient(input: { clientRecordId: string; reason: string; now: Date }): Promise<{
@@ -199,13 +217,16 @@ export class OperatorMcpAuthorizationRepository implements OperatorMcpAuthorizat
         WHERE id = ${input.clientRecordId} AND status = 'active'
         RETURNING id
       `.execute(trx);
-      const grants = await sql`
+      const grants = await sql<{ id: string }>`
         UPDATE operator_mcp_grants
         SET status = 'revoked', version = version + 1, revoked_at = ${input.now},
           revoked_reason = ${input.reason}, updated_at = ${input.now}
         WHERE client_id = ${input.clientRecordId} AND status = 'active'
         RETURNING id
       `.execute(trx);
+      await this.revokeActiveRefreshLineages(trx, {
+        grantIds: grants.rows.map((row) => row.id), reason: input.reason, now: input.now,
+      });
       return { clientRevoked: client.rows.length === 1, grantsRevoked: grants.rows.length };
     });
   }
@@ -359,12 +380,16 @@ export class OperatorMcpAuthorizationRepository implements OperatorMcpAuthorizat
       const ceiling = new Set(transaction.approved_tool_scopes);
       if (requested.length === 0 || requested.some((scope) => !ceiling.has(scope))) return null;
 
-      await sql`
+      const supersededGrants = await sql<{ id: string }>`
         UPDATE operator_mcp_grants SET status = 'superseded', version = version + 1,
           updated_at = ${input.now}, revoked_at = ${input.now}, revoked_reason = 'replaced'
         WHERE user_id = ${transaction.user_id} AND client_id = ${transaction.client_record_id}
           AND workspace_id = ${transaction.workspace_id} AND resource = ${input.resource} AND status = 'active'
+        RETURNING id
       `.execute(trx);
+      await this.revokeActiveRefreshLineages(trx, {
+        grantIds: supersededGrants.rows.map((row) => row.id), reason: "replaced", now: input.now,
+      });
       const grantId = randomUUID();
       await sql`
         INSERT INTO operator_mcp_grants (
@@ -464,14 +489,13 @@ export class OperatorMcpAuthorizationRepository implements OperatorMcpAuthorizat
       };
       if (row.consumed_at || row.generation !== row.current_generation) {
         await sql`
-          UPDATE operator_mcp_refresh_lineages SET status = 'revoked', revoked_at = ${input.now}, revoked_reason = 'replay'
-          WHERE id = ${row.lineage_id}
-        `.execute(trx);
-        await sql`
           UPDATE operator_mcp_grants SET status = 'revoked', version = version + 1,
             revoked_at = ${input.now}, revoked_reason = 'refresh_replay', updated_at = ${input.now}
           WHERE id = ${row.grant_id} AND status = 'active'
         `.execute(trx);
+        await this.revokeActiveRefreshLineages(trx, {
+          grantIds: [row.grant_id], reason: "replay", now: input.now,
+        });
         return { status: "replay" as const, attribution };
       }
       const ceiling = new Set(row.issued_tool_scopes.filter((scope) => row.grant_scopes.includes(scope)));
@@ -532,10 +556,9 @@ export class OperatorMcpAuthorizationRepository implements OperatorMcpAuthorizat
           revoked_at = ${input.now}, revoked_reason = 'oauth_revocation', updated_at = ${input.now}
         WHERE id = ${grantId} AND status = 'active'
       `.execute(trx);
-      await sql`
-        UPDATE operator_mcp_refresh_lineages SET status = 'revoked', revoked_at = ${input.now}, revoked_reason = 'oauth_revocation'
-        WHERE grant_id = ${grantId} AND status = 'active'
-      `.execute(trx);
+      await this.revokeActiveRefreshLineages(trx, {
+        grantIds: [grantId], reason: "oauth_revocation", now: input.now,
+      });
       return {
         accountId: row.account_id,
         workspaceId: row.workspace_id,

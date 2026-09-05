@@ -1,4 +1,5 @@
 import type { ErrorSeverity } from "./errorTypes.js";
+import type { CorrelationFields } from "../observability/telemetry/correlation.js";
 
 /**
  * Narrow port for code that only needs to *report* an error, not the full
@@ -12,6 +13,7 @@ export interface ErrorReporter {
     errorType: string;
     error?: unknown;
     severity?: ErrorSeverity;
+    correlation?: CorrelationFields;
     metadata?: Record<string, unknown>;
     tags?: Record<string, string>;
   }): Promise<unknown>;

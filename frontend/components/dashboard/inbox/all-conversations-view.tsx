@@ -53,9 +53,10 @@ const formatPageSummary = ({
  * The "All" lens (spec 1116 unification) — the conversation log in the same
  * two-pane shell the Needs-you lens uses. Replaces the old dedicated
  * Conversations table page (`chat-history-view.tsx` / the `chat` branch of
- * `HistoryList`); search and contact history entries keep their existing,
- * unstyled row content and still open the debug drawer directly, since they
- * have no response-view equivalent — only chat rows get the new row style and
+ * `HistoryList`). Document-search history stays on its dedicated Documents
+ * surface; contact history entries keep their existing, unstyled row content
+ * and still open the debug drawer directly, since they have no response-view
+ * equivalent — only chat rows get the new row style and
  * drive the reading pane.
  */
 export function AllConversationsView({

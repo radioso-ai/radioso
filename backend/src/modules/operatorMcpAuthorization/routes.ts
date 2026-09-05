@@ -153,6 +153,10 @@ export const createOperatorMcpOauthRoutes = (dependencies: Dependencies): Router
       res.status(503).json({ error: "temporarily_unavailable" });
       return;
     }
+    if (!req.is("application/x-www-form-urlencoded")) {
+      res.status(400).json({ error: "invalid_request" });
+      return;
+    }
     const token = typeof req.body?.token === "string" ? req.body.token : "";
     await service.revoke(token, new Date()).catch(() => undefined);
     res.status(200).end();

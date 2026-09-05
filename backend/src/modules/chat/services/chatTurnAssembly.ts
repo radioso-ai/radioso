@@ -95,9 +95,9 @@ import { freezePageReadOutcome } from "./pageRead/pageReadSessionOutcome.js";
 const CLARIFICATION_TURN_SKILL = "clarification.answer";
 
 /**
- * Retrieval candidates cannot settle a question that the admitted current-page
- * excerpt already resolves. Let the answer path use that evidence instead of
- * asking the visitor to choose among unrelated workspace results.
+ * An admitted current-page excerpt makes a retrieval-sense question unnecessary.
+ * The evaluator still scopes workspace retrieval; only its visitor-facing question
+ * is suppressed.
  */
 export const shouldSuppressRetrievalSenseClarification = (
   session: Pick<PreparedSession, "pageReadOutcome">,
@@ -1004,11 +1004,11 @@ export class ChatTurnAssembly {
     if (
       !input.clarification.store ||
       !input.clarification.clarifier ||
-      shouldSuppressRetrievalSenseClarification(input.session) ||
       input.clarification.resolution?.suppressNewClarification
     ) {
       return null;
     }
+    const suppressAskForPageCapture = shouldSuppressRetrievalSenseClarification(input.session);
     const effect = await evaluateRetrievalSenseClarification({
       detector: this.options.retrievalSenseDetector,
       workspaceId: input.session.conversation.workspaceId,
@@ -1028,7 +1028,10 @@ export class ChatTurnAssembly {
         ...input.session.usageAttribution,
       },
       policy: this.options.retrievalSenseClarificationPolicy,
-      suppressAsk: input.activeRoutineAtTurnStart,
+      suppressAsk: input.activeRoutineAtTurnStart || suppressAskForPageCapture,
+      ...(suppressAskForPageCapture
+        ? { suppressAskReason: "page_capture" as const }
+        : {}),
       suppressNewClarification: input.clarification.resolution?.suppressNewClarification,
       loopGuardCandidateIds: input.clarification.resolution?.kind === "normal"
         ? input.clarification.resolution.loopGuardCandidateIds

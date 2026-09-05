@@ -149,10 +149,17 @@ export const runConversationQualitySuiteSampled = async (
       verdicts: reduced.verdicts,
       samples,
       passCount: reduced.passCount,
+      passRate: reduced.passRate,
       flaky: reduced.flaky,
     });
   }
 
-  const outcomes: CaseOutcome[] = reports.map(({ caseId, name, status }) => ({ caseId, name, status }));
+  const outcomes: CaseOutcome[] = reports.map(({ caseId, name, status, passRate, samples }) => ({
+    caseId,
+    name,
+    status,
+    passRate,
+    samples,
+  }));
   return { reports, outcomes };
 };

@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-09-03
+last_updated: 2026-09-05
 ---
 
 # Code Map
@@ -1400,7 +1400,8 @@ Primary paths:
 - `backend/tests/fixtures/conversation-quality/` — the dataset (corpus, seed
   routines and directives, agent, cases, `baseline.json`) and its `README.md`
 - `backend/scripts/runEvals.ts` — headless CLI that seeds fixtures, drives turns
-  through `WorkbenchReplayRunner`, scores, and gates on the baseline
+  through `WorkbenchReplayRunner`, scores, and gates on the baseline; every selected
+  case must have a committed baseline entry
 - `.github/workflows/conversation-quality-evals.yml` — nightly live run
 
 Full-assistant runs use the same conversation turn assembly as production chat

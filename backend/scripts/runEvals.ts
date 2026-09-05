@@ -37,7 +37,9 @@ import {
   buildBaselineFile,
   diffAgainstBaseline,
   formatReport,
+  hasBaselineGateFailures,
   isBaselineInitialized,
+  mergeBaselineFile,
   parseConversationQualityCases,
   runConversationQualitySuiteSampled,
   summarizeRun,
@@ -113,7 +115,7 @@ const ensureTarget = async (
 const loadBaseline = (): BaselineFile => {
   try {
     const parsed = JSON.parse(readFileSync(BASELINE_PATH, "utf8")) as Partial<BaselineFile>;
-    return { generatedAt: parsed.generatedAt, cases: parsed.cases ?? {} };
+    return { generatedAt: parsed.generatedAt, passThreshold: parsed.passThreshold, cases: parsed.cases ?? {} };
   } catch {
     return { cases: {} };
   }
@@ -345,12 +347,27 @@ const main = async (): Promise<void> => {
 
     const summary = summarizeRun(outcomes);
     const baseline = loadBaseline();
-    const diff = diffAgainstBaseline(outcomes, baseline);
+    const diff = diffAgainstBaseline(outcomes, baseline, { passThreshold: flags.passThreshold });
     console.log(`\n${formatReport(reports, diff, summary)}\n`);
 
     if (flags.updateBaseline) {
+      if (
+        flags.tags.length > 0 &&
+        baseline.passThreshold !== undefined &&
+        baseline.passThreshold !== flags.passThreshold
+      ) {
+        throw new Error(
+          "A filtered baseline update cannot change the pass threshold; re-record the full suite at the new threshold.",
+        );
+      }
       const generatedAt = new Date().toISOString();
-      writeFileSync(BASELINE_PATH, `${JSON.stringify(buildBaselineFile(outcomes, generatedAt), null, 2)}\n`);
+      const updatedBaseline = flags.tags.length > 0
+        ? mergeBaselineFile(baseline, outcomes, generatedAt, flags.passThreshold)
+        : buildBaselineFile(outcomes, generatedAt, flags.passThreshold);
+      writeFileSync(
+        BASELINE_PATH,
+        `${JSON.stringify(updatedBaseline, null, 2)}\n`,
+      );
       console.log(`Baseline updated: ${path.relative(process.cwd(), BASELINE_PATH)}`);
       return;
     }
@@ -365,8 +382,10 @@ const main = async (): Promise<void> => {
       process.exitCode = 1;
     }
 
-    if (diff.regressions.length > 0) {
-      console.error(`${diff.regressions.length} case(s) regressed against the baseline.`);
+    if (hasBaselineGateFailures(diff)) {
+      console.error(
+        `${diff.regressions.length + diff.rateRegressions.length + diff.underSampled.length + diff.newCases.length + (diff.thresholdMismatch ? 1 : 0)} baseline gate failure(s).`,
+      );
       process.exitCode = 1;
     }
   } finally {

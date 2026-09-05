@@ -55,9 +55,10 @@ model their redirect responses.
 
 ## Revocation
 
-- `POST /api/v1/operator-mcp/oauth/revoke` accepts an access or refresh token as
-  `application/x-www-form-urlencoded` and returns success for known or unknown
-  tokens without leaking validity.
+- `POST /api/v1/operator-mcp/oauth/revoke` accepts an access or refresh `token`
+  plus the public `client_id` as `application/x-www-form-urlencoded`. It revokes
+  only credentials issued to that client and returns success for known or
+  unknown tokens without leaking validity.
 
 ## Dashboard setup
 

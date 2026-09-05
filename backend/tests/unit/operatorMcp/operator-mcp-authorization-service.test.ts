@@ -23,6 +23,7 @@ const config = {
 const transaction = {
   id: id("1"), clientRecordId: id("2"), clientId: "https://client.example/cimd", clientVersion: "3",
   clientMetadataSnapshotId: id("3"), clientMetadataDigest: "sha256:metadata", clientDisplayName: "Example Client",
+  clientUri: "https://client.example/app",
   applicationType: "web" as const, redirectUri: "https://client.example/callback", state: "state-value",
   codeChallenge: challenge, resource: config.resource, requestedToolScopes: ["operator:read", "operator:probe"] as const,
   requestedOfflineAccess: true, accountId: null, userId: null, sessionId: null, workspaceId: null, membershipId: null,
@@ -52,6 +53,7 @@ describe("OperatorMcpAuthorizationService", () => {
         recordId: transaction.clientRecordId, clientId: transaction.clientId, clientVersion: transaction.clientVersion,
         metadataSnapshotId: transaction.clientMetadataSnapshotId, metadataDigest: transaction.clientMetadataDigest,
         applicationType: "web", redirectUris: [transaction.redirectUri], displayName: transaction.clientDisplayName,
+        clientUri: transaction.clientUri,
       },
       responseType: "code", redirectUri: transaction.redirectUri, state: transaction.state,
       scope: "operator:read operator:probe offline_access", codeChallenge: challenge, codeChallengeMethod: "S256",
@@ -182,9 +184,13 @@ describe("OperatorMcpAuthorizationService", () => {
     const audit = { record: vi.fn(async () => undefined) };
     const metrics = { incrementCounter: vi.fn() };
     const service = new OperatorMcpAuthorizationService(repository, config, audit, metrics);
-    await expect(service.revoke("known", now)).resolves.toBeUndefined();
-    await expect(service.revoke("unknown", now)).resolves.toBeUndefined();
-    expect(repository.revokeCredentialByDigest).toHaveBeenNthCalledWith(2, { tokenDigest: hashOpaqueCredential("unknown"), now });
+    await expect(service.revoke({ token: "known", clientId: transaction.clientId, now })).resolves.toBeUndefined();
+    await expect(service.revoke({ token: "unknown", clientId: transaction.clientId, now })).resolves.toBeUndefined();
+    expect(repository.revokeCredentialByDigest).toHaveBeenNthCalledWith(2, {
+      tokenDigest: hashOpaqueCredential("unknown"),
+      clientId: transaction.clientId,
+      now,
+    });
     expect(audit.record).toHaveBeenCalledTimes(1);
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ eventType: "operator_mcp.revocation", metadata: expect.objectContaining({ grantId: attribution.grantId, reason: "oauth_revocation" }) }));
     expect(metrics.incrementCounter).toHaveBeenCalledWith("operator_mcp_oauth_total", expect.objectContaining({ labels: { stage: "revocation", outcome: "success", reason: "unknown_token" } }));

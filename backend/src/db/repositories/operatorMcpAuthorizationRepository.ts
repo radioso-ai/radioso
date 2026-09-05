@@ -31,6 +31,7 @@ interface AuthorizationTransactionRow {
   client_metadata_snapshot_id: string;
   client_metadata_digest: string;
   client_display_name: string;
+  client_uri: string | null;
   application_type: "web" | "native";
   redirect_uri: string;
   state: string;
@@ -60,6 +61,7 @@ const mapTransaction = (row: AuthorizationTransactionRow): OperatorMcpAuthorizat
   clientMetadataSnapshotId: row.client_metadata_snapshot_id,
   clientMetadataDigest: row.client_metadata_digest,
   clientDisplayName: row.client_display_name,
+  clientUri: row.client_uri,
   applicationType: row.application_type,
   redirectUri: row.redirect_uri,
   state: row.state,
@@ -303,7 +305,7 @@ export class OperatorMcpAuthorizationRepository implements OperatorMcpAuthorizat
       SELECT tx.id, tx.client_id AS client_record_id, client.client_id,
         client.version::text AS client_version, tx.client_metadata_snapshot_id,
         tx.client_metadata_digest, client.display_name AS client_display_name,
-        client.application_type, tx.redirect_uri, tx.state, tx.code_challenge, tx.resource,
+        client.client_uri, client.application_type, tx.redirect_uri, tx.state, tx.code_challenge, tx.resource,
         tx.requested_tool_scopes, tx.requested_offline_access, tx.account_id, tx.user_id,
         tx.session_id, tx.workspace_id, tx.membership_id, tx.approved_tool_scopes,
         tx.approved_offline_access, tx.status, tx.expires_at, tx.created_at, tx.decided_at, tx.consumed_at
@@ -534,12 +536,18 @@ export class OperatorMcpAuthorizationRepository implements OperatorMcpAuthorizat
   async revokeCredentialByDigest(input: Parameters<OperatorMcpAuthorizationFlowRepositoryPort["revokeCredentialByDigest"]>[0]) {
     return this.db.transaction().execute(async (trx) => {
       const access = await sql<{ grant_id: string }>`
-        SELECT grant_id FROM operator_mcp_access_credentials WHERE token_digest = ${input.tokenDigest}
+        SELECT credential.grant_id
+        FROM operator_mcp_access_credentials credential
+        JOIN operator_mcp_grants oauth_grant ON oauth_grant.id = credential.grant_id
+        JOIN operator_mcp_clients client ON client.id = oauth_grant.client_id
+        WHERE credential.token_digest = ${input.tokenDigest} AND client.client_id = ${input.clientId}
       `.execute(trx);
       const refresh = access.rows[0] ? null : await sql<{ grant_id: string }>`
         SELECT lineage.grant_id FROM operator_mcp_refresh_generations generation
         JOIN operator_mcp_refresh_lineages lineage ON lineage.id = generation.lineage_id
-        WHERE generation.token_digest = ${input.tokenDigest}
+        JOIN operator_mcp_grants oauth_grant ON oauth_grant.id = lineage.grant_id
+        JOIN operator_mcp_clients client ON client.id = oauth_grant.client_id
+        WHERE generation.token_digest = ${input.tokenDigest} AND client.client_id = ${input.clientId}
       `.execute(trx);
       const grantId = access.rows[0]?.grant_id ?? refresh?.rows[0]?.grant_id;
       if (!grantId) return null;
@@ -599,6 +607,7 @@ export class OperatorMcpAuthorizationRepository implements OperatorMcpAuthorizat
 
   async persistClientSnapshot(snapshot: OperatorMcpClientSnapshot): Promise<PersistedOperatorMcpClient> {
     return this.db.transaction().execute(async (trx) => {
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${snapshot.clientId}, 0))`.execute(trx);
       const existing = await sql<{ id: string; version: string; metadata_digest: string; status: string }>`
         SELECT id, version::text, metadata_digest, status
         FROM operator_mcp_clients WHERE client_id = ${snapshot.clientId} FOR UPDATE
@@ -613,16 +622,16 @@ export class OperatorMcpAuthorizationRepository implements OperatorMcpAuthorizat
         await sql`
           INSERT INTO operator_mcp_clients (
             id, client_id, registration_method, application_type, display_name, redirect_uris,
-            token_endpoint_auth_method, metadata_digest, version, status, expires_at, created_at, updated_at
+            client_uri, token_endpoint_auth_method, metadata_digest, version, status, expires_at, created_at, updated_at
           ) VALUES (
             ${clientRecordId}, ${snapshot.clientId}, ${snapshot.source === "metadata_document" ? "metadata_document" : "preregistered"}, ${snapshot.applicationType}, ${snapshot.displayName},
-            ${JSON.stringify(snapshot.redirectUris)}::jsonb, 'none', ${snapshot.metadataDigest}, ${clientVersion}, 'active',
+            ${JSON.stringify(snapshot.redirectUris)}::jsonb, ${snapshot.clientUri ?? null}, 'none', ${snapshot.metadataDigest}, ${clientVersion}, 'active',
             ${snapshot.expiresAt}, ${snapshot.validatedAt}, ${snapshot.validatedAt}
           )
         `.execute(trx);
       } else if (current.metadata_digest !== snapshot.metadataDigest) {
         await sql`
-          UPDATE operator_mcp_clients SET application_type = ${snapshot.applicationType}, display_name = ${snapshot.displayName},
+          UPDATE operator_mcp_clients SET application_type = ${snapshot.applicationType}, display_name = ${snapshot.displayName}, client_uri = ${snapshot.clientUri ?? null},
             redirect_uris = ${JSON.stringify(snapshot.redirectUris)}::jsonb, metadata_digest = ${snapshot.metadataDigest},
             version = ${clientVersion}, expires_at = ${snapshot.expiresAt}, updated_at = ${snapshot.validatedAt}
           WHERE id = ${clientRecordId}
@@ -653,6 +662,7 @@ export class OperatorMcpAuthorizationRepository implements OperatorMcpAuthorizat
         applicationType: snapshot.applicationType,
         redirectUris: snapshot.redirectUris,
         displayName: snapshot.displayName,
+        clientUri: snapshot.clientUri ?? null,
       };
     });
   }

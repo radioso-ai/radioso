@@ -233,6 +233,7 @@ test("consent identifies the real client, warns about loopback/external data, an
   expect(response?.headers()["cache-control"]).toContain("no-store");
 
   await expect(page.getByText("Authorize Radioso MCP", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "https://codex.example" })).toHaveAttribute("href", "https://codex.example")
   await expect(page.getByText("Codex CLI · 0.149.0")).toBeVisible();
   await expect(page.getByText("127.0.0.1:3210", { exact: true })).toBeVisible();
   await expect(page.getByText(/may receive workspace data/i)).toBeVisible();
@@ -397,4 +398,40 @@ test("proposal deep-link resolves its workspace independently for review, apply,
   await page.getByRole("button", { name: "Dismiss" }).click();
   await expect.poll(() => calls).toContain("dismiss");
   expect(workspaceHeaders).not.toContain("different-workspace");
+});
+
+test("proposal deep-link returns to review after a signed-out operator logs in", async ({ page }) => {
+  await installDashboardApiMocks(page, { platformSettings: basePlatformSettings() });
+  let authenticated = false;
+  await page.route("**/backend/api/v1/auth/registration", async (route) => route.fulfill({ json: { available: false } }));
+  await page.route("**/backend/api/v1/ee/auth/google/status", async (route) => route.fulfill({ json: { enabled: false } }));
+  await page.route("**/backend/api/v1/auth/login", async (route) => {
+    authenticated = true;
+    await route.fulfill({ json: {
+      userId: "user-1",
+      accountId: "account-1",
+      organizationName: "Demo account",
+      workspaceId,
+      workspaceName: "Demo workspace",
+      workspacePublicRouteKey: workspaceKey,
+    } });
+  });
+  await page.route("**/backend/api/v1/copilot/proposals/33333333-3333-4333-8333-333333333333", async (route) => {
+    await route.fulfill(authenticated
+      ? { json: proposalDetail }
+      : { status: 401, json: { error: { code: "unauthorized", message: "Unauthorized" } } });
+  });
+  await page.route("**/backend/api/v1/copilot/availability", async (route) => route.fulfill({
+    json: { available: true, reason: "ok", canManage: true, applyableProposalTargets: ["ingestion_settings"] },
+  }));
+
+  const proposalPath = "/oauth/operator-mcp/proposal/33333333-3333-4333-8333-333333333333";
+  await page.goto(proposalPath);
+  await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
+  await page.getByLabel("Email").fill("operator@example.com");
+  await page.getByLabel("Password").fill("password-for-test");
+  await page.getByRole("button", { name: "Sign In" }).click();
+
+  await expect(page).toHaveURL(proposalPath);
+  await expect(page.getByText("Review proposal from Radioso MCP", { exact: true })).toBeVisible();
 });

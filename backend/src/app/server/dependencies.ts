@@ -741,6 +741,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       },
     },
     proposalRepository: repositories.copilotRepository,
+    proposalRecovery: repositories.copilotRepository,
     proposalAdapters: copilotProposalAdapters,
     auditService: infrastructure.auditService,
     logger,

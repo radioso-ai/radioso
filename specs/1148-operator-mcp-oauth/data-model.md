@@ -119,9 +119,13 @@ Safe, transport-neutral receipt for one list or tool request.
 - `safeOutcomeCode`, `resultReference`: bounded non-customer-data reference.
 - `createdAt`, `completedAt`, `retainedUntil`.
 
-Uniqueness on `(grant_id, operation_id)` coordinates stateful retries. A
-different input digest or descriptor under the same operation identity fails.
-Rolling budget queries count committed reservations in the prior 60 seconds.
+Uniqueness on `(grant_id, operation_id)` coordinates stateful retries. A stale
+proposal attempt that is proven to have created no proposal becomes a retained
+`refused / abandoned_before_effect` tombstone and is excluded from the live
+uniqueness predicate, allowing exactly one retry to claim the same operation.
+A different input digest or descriptor under the same live operation identity
+fails. Rolling budget queries count committed reservations in the prior 60
+seconds.
 
 ## Deployment Credential State
 
@@ -152,7 +156,8 @@ grant update. Deletion continues to cascade through the lifecycle transaction.
 
 Messages may attach only conversation-origin proposals. MCP-origin proposals
 remain ordinary pending copilot proposals and use the existing optimistic apply
-and dismissal behavior.
+and dismissal behavior. A partial unique index permits at most one proposal for
+an MCP invocation, making lost-response reconciliation deterministic.
 
 `copilot_replay_evidence` receives the same exact-one origin invariant and the
 MCP invocation foreign key. Evidence cannot name a different origin than its

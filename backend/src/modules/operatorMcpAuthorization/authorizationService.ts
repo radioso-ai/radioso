@@ -324,9 +324,13 @@ export class OperatorMcpAuthorizationService {
     }
   }
 
-  async revoke(token: string, now: Date): Promise<void> {
+  async revoke(input: { token: string; clientId: string; now: Date }): Promise<void> {
     try {
-      const attribution = await this.repository.revokeCredentialByDigest({ tokenDigest: hashOpaqueCredential(token), now });
+      const attribution = await this.repository.revokeCredentialByDigest({
+        tokenDigest: hashOpaqueCredential(input.token),
+        clientId: input.clientId,
+        now: input.now,
+      });
       this.observe("revocation", "success", attribution ? "revoked" : "unknown_token");
       if (attribution) await this.recordLifecycle({ attribution, eventType: "revocation", eventStatus: "success", outcome: "revoked", reason: "oauth_revocation" });
     } catch (error) {

@@ -122,6 +122,7 @@ export class OperatorMcpInvocationRepository implements OperatorMcpInvocationRep
           SELECT ${invocationColumns}
           FROM operator_mcp_invocations
           WHERE grant_id = ${input.grantId} AND operation_id = ${operationId}
+            AND (status <> 'refused' OR safe_outcome_code IS DISTINCT FROM 'abandoned_before_effect')
           LIMIT 1
         `.execute(trx);
         if (existing.rows[0]) {
@@ -178,6 +179,7 @@ export class OperatorMcpInvocationRepository implements OperatorMcpInvocationRep
       SELECT ${invocationColumns}
       FROM operator_mcp_invocations
       WHERE grant_id = ${input.grantId} AND operation_id = ${input.operationId}
+        AND (status <> 'refused' OR safe_outcome_code IS DISTINCT FROM 'abandoned_before_effect')
       LIMIT 1
     `.execute(this.db);
     return result.rows[0] ? mapInvocation(result.rows[0]) : null;
@@ -200,13 +202,14 @@ export class OperatorMcpInvocationRepository implements OperatorMcpInvocationRep
     return existing.rows[0] ? "replay" : "missing";
   }
 
-  async markRunning(input: { invocationId: string; now: Date }): Promise<OperatorMcpInvocationRecord | null> {
-    await sql`
+  async claimRunning(input: { invocationId: string; now: Date }): Promise<OperatorMcpInvocationRecord | null> {
+    const claimed = await sql<OperatorMcpInvocationRow>`
       UPDATE operator_mcp_invocations
       SET status = 'running'
       WHERE id = ${input.invocationId} AND status = 'admitted'
+      RETURNING ${invocationColumns}
     `.execute(this.db);
-    return this.findById(input.invocationId);
+    return claimed.rows[0] ? mapInvocation(claimed.rows[0]) : null;
   }
 
   async recordOutcome(input: {
@@ -223,7 +226,11 @@ export class OperatorMcpInvocationRepository implements OperatorMcpInvocationRep
       UPDATE operator_mcp_invocations
       SET status = ${input.status}, safe_outcome_code = ${safeOutcomeCode},
           result_reference = ${resultReference}, completed_at = ${input.now}
-      WHERE id = ${input.invocationId} AND status IN ('admitted', 'running')
+      WHERE id = ${input.invocationId}
+        AND (
+          status IN ('admitted', 'running')
+          OR (status = 'failed' AND ${input.status} = 'completed' AND ${safeOutcomeCode} = 'completed')
+        )
       RETURNING ${invocationColumns}
     `.execute(this.db);
     return updated.rows[0] ? mapInvocation(updated.rows[0]) : this.findById(input.invocationId);
@@ -260,6 +267,7 @@ export class OperatorMcpInvocationRepository implements OperatorMcpInvocationRep
         const existing = await sql<OperatorMcpInvocationRow>`
           SELECT ${invocationColumns} FROM operator_mcp_invocations
           WHERE grant_id = ${current.grantId} AND operation_id = ${input.operationId} AND id <> ${input.invocationId}
+            AND (status <> 'refused' OR safe_outcome_code IS DISTINCT FROM 'abandoned_before_effect')
           LIMIT 1
         `.execute(trx);
         if (existing.rows[0]) {

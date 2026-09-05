@@ -3,6 +3,7 @@ import type { OperatorMcpScope } from "@radioso/operator-mcp-contract";
 
 import type { AccountPermission } from "../account/public.js";
 import type { AgentTool, AgentToolContext } from "../../shared/agent-runtime/index.js";
+import type { OperatorMcpInvocationRecord } from "./mcpContracts.js";
 
 /**
  * The single runtime list of page-context entity types a dashboard surface may report to the
@@ -405,6 +406,28 @@ export type CopilotAnyProposalAdapter =
 
 export type CopilotProposalAdapterRegistry = ReadonlyArray<CopilotAnyProposalAdapter>;
 
+export type CopilotMcpInvocationReconciliation<TOutput> =
+  | { readonly status: "recovered"; readonly output: TOutput }
+  | { readonly status: "in_progress" | "retry_prepare" | "conflict" };
+
+/** Narrow persistence boundary used only by descriptor-owned MCP proposal recovery. */
+export interface CopilotMcpProposalRecoveryPort {
+  recoverOperatorMcpProposal(input: {
+    readonly invocationId: string;
+    readonly grantId: string;
+    readonly workspaceId: string;
+    readonly operatorUserId: string;
+    readonly operationId: string;
+    readonly descriptorName: string;
+    readonly inputDigest: string;
+    readonly staleBefore: Date;
+    readonly now: Date;
+  }): Promise<
+    | { readonly status: "recovered"; readonly proposal: CopilotProposal }
+    | { readonly status: "in_progress" | "retry_prepare" | "conflict" }
+  >;
+}
+
 export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
   readonly name: string;
   readonly shape: CopilotToolShape;
@@ -447,6 +470,13 @@ export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
   describeOutputEntity?(output: TOutput): CopilotEntityReference | null;
   /** Optional last-mile sanitizer for the successful result after its dashboard link is attached. */
   finalizeEnrichedOutput?(output: Record<string, unknown>): Record<string, unknown>;
+  /** Reconstructs a proposal result after the proposal committed but its invocation outcome did not. */
+  reconcileMcpInvocation?(input: {
+    readonly invocation: OperatorMcpInvocationRecord;
+    readonly context: CopilotToolInvocationContext;
+    readonly staleBefore: Date;
+    readonly now: Date;
+  }): Promise<CopilotMcpInvocationReconciliation<TOutput>>;
 }
 
 export type CopilotMcpDisposition =

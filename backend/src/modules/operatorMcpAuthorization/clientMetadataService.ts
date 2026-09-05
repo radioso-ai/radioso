@@ -277,6 +277,7 @@ export const createOperatorMcpClientMetadataService = (options: OperatorMcpClien
         clientMetadataSnapshotId: snapshotId,
         metadataDigest,
         normalizedMetadata: normalized,
+        clientUri: normalized.clientUri ?? null,
         redirectUris: Object.freeze([...normalized.redirectUris]),
         source: "metadata_document",
         validatedAt: now(),

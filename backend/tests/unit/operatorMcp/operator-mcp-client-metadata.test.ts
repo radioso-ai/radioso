@@ -25,6 +25,7 @@ describe("operator MCP client metadata", () => {
     const service = createOperatorMcpClientMetadataService({ fetchImpl, now: () => new Date("2026-09-04T00:00:00Z") });
     const resolved = await service.resolve({ clientId, redirectUri: metadata.redirect_uris[0] });
     expect(resolved.clientId).toBe(clientId);
+    expect(resolved.clientUri).toBe(metadata.client_uri);
     expect(resolved.redirectUris).toEqual(metadata.redirect_uris);
     expect(resolved.metadataDigest).toMatch(/^[a-f0-9]{64}$/u);
     expect(resolved.clientMetadataSnapshotId).toMatch(/^[0-9a-f-]{36}$/u);

@@ -9,6 +9,7 @@ export interface OperatorMcpClientSnapshot {
   clientVersion: string;
   metadataDigest: string;
   normalizedMetadata: Readonly<Record<string, unknown>>;
+  clientUri?: string | null;
   displayName: string;
   applicationType: "web" | "native";
   redirectUris: readonly string[];
@@ -112,6 +113,7 @@ export interface OperatorMcpAuthorizationTransactionRecord {
   clientMetadataSnapshotId: string;
   clientMetadataDigest: string;
   clientDisplayName: string;
+  clientUri: string | null;
   applicationType: "web" | "native";
   redirectUri: string;
   state: string;
@@ -135,7 +137,7 @@ export interface OperatorMcpAuthorizationTransactionRecord {
 
 export interface OperatorMcpAuthorizationFlowRepositoryPort {
   createTransaction(input: Omit<OperatorMcpAuthorizationTransactionRecord,
-    "clientId" | "clientVersion" | "clientDisplayName" | "applicationType" | "accountId" | "userId" | "sessionId" |
+    "clientId" | "clientVersion" | "clientDisplayName" | "clientUri" | "applicationType" | "accountId" | "userId" | "sessionId" |
     "workspaceId" | "membershipId" | "approvedToolScopes" | "approvedOfflineAccess" | "status" | "decidedAt" | "consumedAt"
   >): Promise<void>;
   findTransaction(transactionId: string, now: Date): Promise<OperatorMcpAuthorizationTransactionRecord | null>;
@@ -175,7 +177,7 @@ export interface OperatorMcpAuthorizationFlowRepositoryPort {
     idleExpiresAt: Date;
     now: Date;
   }): Promise<{ status: "rotated" | "replay" | "invalid"; grantId?: string; toolScopes?: readonly OperatorMcpScope[]; attribution?: OperatorMcpLifecycleAttribution }>;
-  revokeCredentialByDigest(input: { tokenDigest: string; now: Date }): Promise<OperatorMcpLifecycleAttribution | null>;
+  revokeCredentialByDigest(input: { tokenDigest: string; clientId: string; now: Date }): Promise<OperatorMcpLifecycleAttribution | null>;
 }
 
 export interface OperatorMcpGrantSummaryRecord {
@@ -216,6 +218,7 @@ export interface PersistedOperatorMcpClient {
   applicationType: "web" | "native";
   redirectUris: readonly string[];
   displayName: string;
+  clientUri: string | null;
 }
 
 export interface OperatorMcpClientRepositoryPort {

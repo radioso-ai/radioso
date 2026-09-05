@@ -12,8 +12,9 @@
  *   2. A baselined finding in a file this change touches also fails the build. You are not
  *      asked to clean the whole repo, only the part you were already editing.
  *
- * The baseline only ever shrinks: `--update` re-records it, and dropped entries are
- * reported so the ratchet cannot silently be loosened.
+ * The baseline only ever shrinks. `--update` re-records it, and a baseline that no longer
+ * matches the findings fails the build, so a key cannot outlive the finding it stands for
+ * and quietly re-exempt the same dead code later.
  */
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
@@ -128,20 +129,29 @@ const added = [...found.entries()].filter(([key]) => !baseline.has(key))
 const inTouchedFile = touched && !isBootstrap
   ? [...found.entries()].filter(([key, f]) => baseline.has(key) && touched.has(f.file))
   : []
-const resolved = [...baseline].filter((key) => !found.has(key))
-const drifted = [...found.keys()].filter((key) => !workingBaseline.has(key)).length + [...workingBaseline].filter((key) => !found.has(key)).length
+// The committed baseline has to describe reality exactly. A key left behind after its
+// finding is gone would exempt the same dead code if it came back, which is precisely what
+// rule 1 exists to prevent.
+const staleKeys = [...workingBaseline].filter((key) => !found.has(key))
+const missingKeys = [...found.keys()].filter((key) => !workingBaseline.has(key))
 
 const describe = ([, f]) => `  ${f.file}${f.name ? ` → ${f.name}` : ''}  (${f.kind})`
-
-if (drifted) {
-  console.log(`knip-ratchet: knip-baseline.json is ${drifted} entry/entries out of date. Run \`pnpm run lint:dead-code:baseline\` and commit it.\n`)
-}
-
-if (resolved.length) {
-  console.log(`knip-ratchet: ${resolved.length} baselined finding(s) are gone. Run \`pnpm run lint:dead-code:baseline\` to bank the cleanup.\n`)
+const describeKey = (key) => {
+  const [kind, file, name] = key.split('|')
+  return `  ${file}${name ? ` → ${name}` : ''}  (${kind})`
 }
 
 let failed = false
+
+if (staleKeys.length || missingKeys.length) {
+  failed = true
+  console.error(`knip-ratchet: knip-baseline.json does not match the current findings (${staleKeys.length} stale, ${missingKeys.length} missing).\n`)
+  staleKeys.slice(0, 10).forEach((key) => console.error(`  gone:    ${describeKey(key).trim()}`))
+  if (staleKeys.length > 10) console.error(`  … and ${staleKeys.length - 10} more`)
+  missingKeys.slice(0, 10).forEach((key) => console.error(`  unbanked: ${describeKey(key).trim()}`))
+  if (missingKeys.length > 10) console.error(`  … and ${missingKeys.length - 10} more`)
+  console.error('\nRun `pnpm run lint:dead-code:baseline` and commit the result. A key that outlives its\nfinding would let the same dead code back in later without the gate noticing.\n')
+}
 
 if (added.length) {
   failed = true

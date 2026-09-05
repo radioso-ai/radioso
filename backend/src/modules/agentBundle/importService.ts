@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { AppError, badRequest } from "../../shared/domain/errors.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import { AGENT_CONFIG_SCHEMA_VERSION } from "../agents/public.js";
@@ -470,4 +472,3 @@ const assertSupportedVersions = (bundle: AgentBundle): void => {
     );
   }
 };
-import { randomUUID } from "node:crypto";

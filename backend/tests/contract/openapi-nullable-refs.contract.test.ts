@@ -12,11 +12,7 @@ import { describe, expect, it } from "vitest";
  * This scans the generated document rather than the builders, because the document
  * is what the SDK is generated from and therefore what a consumer is held to.
  */
-const KNOWN_UNSATISFIABLE_NULLABLE_REFS = [
-  "DocumentSummary.enrichment",
-  "DocumentSummary.source",
-  "LowQualityTurn.skillStatus",
-] as const;
+const KNOWN_UNSATISFIABLE_NULLABLE_REFS = [] as const;
 
 interface OpenApiNode {
   allOf?: Array<{ $ref?: string; type?: unknown }>;
@@ -60,10 +56,8 @@ describe("OpenAPI nullable references", () => {
   it("adds no new field an SDK consumer cannot construct", () => {
     const found = collectNullableRefs(document.components.schemas);
 
-    // Frozen baseline, not an accepted pattern: these predate the check and are
-    // tracked in #1186. The list may shrink, never grow — a new entry here means
-    // `Schema.nullable()` was used on a registered schema instead of
-    // `z.union([Schema, z.null()])`.
+    // An entry here means `Schema.nullable()` was used on a registered schema
+    // instead of `z.union([Schema, z.null()])`.
     expect(found.sort()).toEqual([...KNOWN_UNSATISFIABLE_NULLABLE_REFS].sort());
   });
 

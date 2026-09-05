@@ -5759,10 +5759,10 @@ export interface components {
             metadata: {
                 [key: string]: string | number | boolean | null;
             };
-            enrichment?: components["schemas"]["DocumentEnrichment"] & (Record<string, never> | null);
+            enrichment?: components["schemas"]["DocumentEnrichment"] | null;
             /** Format: uuid */
             sourceId?: string | null;
-            source?: components["schemas"]["DocumentSourceSummary"] & (Record<string, never> | null);
+            source?: components["schemas"]["DocumentSourceSummary"] | null;
             externalDocumentId?: string | null;
             /** @enum {string} */
             sourceKind: "inline_text" | "uploaded_file";
@@ -7143,7 +7143,7 @@ export interface components {
             answerPreview: string;
             skillName: string | null;
             skillOutcome: string | null;
-            skillStatus: components["schemas"]["QualitySkillStatus"] & (string | null);
+            skillStatus: components["schemas"]["QualitySkillStatus"] | null;
             totalLatencyMs: number | null;
             grounding: components["schemas"]["GroundingDiagnostic"] | null;
             /** Format: date-time */

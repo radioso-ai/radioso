@@ -55,6 +55,7 @@ const reportWithEvidence = (summary: string, evidenceId: string): AudiencePulseS
     evidenceIds: [evidenceId],
     memberCount: 1,
     previousMemberCount: null,
+    previousShare: null,
     transition: null,
     share: 0.5,
     weeklyPulse: [],

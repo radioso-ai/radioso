@@ -175,7 +175,47 @@ describeIntegration("TopicRepository (Postgres)", () => {
     await repository.markDissolved(runId, [topicId]);
 
     expect(await repository.listActiveTopics(workspaceId)).toEqual([]);
-    expect((await repository.listMatchableTopics(workspaceId)).map((topic) => topic.id)).toEqual([topicId]);
+    const matchable = await repository.listMatchableTopics(workspaceId);
+    expect(matchable.map((topic) => topic.id)).toEqual([topicId]);
+    expect(matchable[0]?.dissolvedAt).not.toBeNull();
+  });
+
+  it("loads one run containing topics with different centroid dimensions", async () => {
+    const workspaceId = randomUUID();
+    const runId = await createRun(workspaceId, { questionCount: 2, unclassifiedCount: 0 });
+    const [firstMessageId, secondMessageId] = await createMessages(workspaceId, 2);
+    const firstTopicId = randomUUID();
+    const secondTopicId = randomUUID();
+    await repository.saveTopics(runId, [
+      {
+        id: firstTopicId,
+        workspaceId,
+        centroid: [0.1, 0.2],
+        radius: 0.3,
+        title: "Two dimensions",
+        description: "Uses one embedding width",
+      },
+      {
+        id: secondTopicId,
+        workspaceId,
+        centroid: [0.1, 0.2, 0.3],
+        radius: 0.4,
+        title: "Three dimensions",
+        description: "Uses another embedding width",
+      },
+    ]);
+    await repository.saveMemberships(runId, [
+      { topicId: firstTopicId, messageId: firstMessageId!, distance: 0.1 },
+      { topicId: secondTopicId, messageId: secondMessageId!, distance: 0.2 },
+    ]);
+
+    const run = await repository.loadRun(runId);
+
+    expect(run?.topics.map((topic) => ({ id: topic.id, memberCount: topic.memberCount, dimensions: topic.centroid.length })))
+      .toEqual(expect.arrayContaining([
+        { id: firstTopicId, memberCount: 1, dimensions: 2 },
+        { id: secondTopicId, memberCount: 1, dimensions: 3 },
+      ]));
   });
 
   it("saveTopics reactivates a dissolved topic when identity matching reuses its id", async () => {

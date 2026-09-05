@@ -11390,6 +11390,27 @@ components:
         - noSupport
         - unknown
         - contentGapEligible
+    AudiencePulseTopicTransition:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum:
+            - survived
+            - split
+            - merged
+            - emerged
+            - dissolved
+        parentTopicIds:
+          type: array
+          items:
+            type: string
+        viaCentroidFallback:
+          type: boolean
+      required:
+        - kind
+        - parentTopicIds
+        - viaCentroidFallback
     AudiencePulseCoverage:
       type: object
       properties:
@@ -11546,6 +11567,22 @@ components:
         memberCount:
           type: integer
           minimum: 0
+        previousMemberCount:
+          type:
+            - integer
+            - "null"
+          minimum: 0
+        previousShare:
+          type:
+            - number
+            - "null"
+          minimum: 0
+          maximum: 1
+        transition:
+          anyOf:
+            - $ref: "#/components/schemas/AudiencePulseTopicTransition"
+            - type: "null"
+            - type: "null"
         share:
           type: number
           minimum: 0
@@ -11578,6 +11615,9 @@ components:
         - title
         - description
         - memberCount
+        - previousMemberCount
+        - previousShare
+        - transition
         - share
         - distinctQuestionCount
         - weeklyPulse
@@ -11760,6 +11800,7 @@ components:
               enum:
                 - provider
                 - validation
+                - census
                 - cancelled
           required:
             - kind

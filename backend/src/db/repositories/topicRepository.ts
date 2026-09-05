@@ -177,6 +177,7 @@ export class TopicRepository implements TopicRepositoryPort {
         "description",
         "created_run_id",
         "last_seen_run_id",
+        "dissolved_at",
       ])
       .where("workspace_id", "=", workspaceId)
       .$if(!options.includeDissolved, (qb) => qb.where("dissolved_at", "is", null))
@@ -217,6 +218,7 @@ export class TopicRepository implements TopicRepositoryPort {
       description: row.description,
       createdRunId: row.created_run_id,
       lastSeenRunId: row.last_seen_run_id,
+      dissolvedAt: row.dissolved_at,
       memberIds: memberIdsByTopic.get(row.id) ?? [],
     }));
   }
@@ -385,14 +387,7 @@ export class TopicRepository implements TopicRepositoryPort {
         (eb) => eb.fn.countAll<string>().as("member_count"),
       ])
       .where("topic_memberships.run_id", "=", run.id)
-      .groupBy([
-        "topics.id",
-        "topics.title",
-        "topics.description",
-        "topics.centroid",
-        "topics.radius",
-        "topics.dissolved_at",
-      ])
+      .groupBy("topics.id")
       .execute();
 
     // Transitions are read in their own query rather than joined into the aggregate

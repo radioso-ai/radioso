@@ -53,6 +53,7 @@ export interface AudiencePulseTheme {
   /** Exact count of population questions in this topic -- a census, never a sample. */
   memberCount: number
   previousMemberCount: number | null
+  previousShare: number | null
   transition: AudiencePulseTopicTransition | null
   /** `memberCount` divided by the window population size. */
   share: number
@@ -133,7 +134,7 @@ export type AudiencePulseReadResponse =
 export type AudiencePulseRefreshResponse =
   | { kind: 'no_traffic'; period: AudiencePulsePeriod; weeklyVolume: AudiencePulseWeeklyVolume[] }
   | { kind: 'preparing' }
-  | { kind: 'unavailable'; reason: 'provider' | 'validation' | 'cancelled' }
+  | { kind: 'unavailable'; reason: 'provider' | 'validation' | 'census' | 'cancelled' }
   | { kind: 'completed'; report: AudiencePulseHydratedReport }
 
 const BASE_PATH = '/quality/audience-pulse'

@@ -382,6 +382,7 @@ describe("CensusService.run facet readiness (spec 956 follow-up)", () => {
 
     expect(result.populationSize).toBe(3);
     expect(result.facetReadyQuestionCount).toBe(0);
+    expect(result.fullyFacetReady).toBe(false);
     expect(result.unclassifiedCount).toBe(3);
     expect(result.topics).toEqual([]);
     expect(namingPort.name).not.toHaveBeenCalled();
@@ -396,6 +397,7 @@ describe("CensusService.run facet readiness (spec 956 follow-up)", () => {
 
     expect(result.populationSize).toBe(8);
     expect(result.facetReadyQuestionCount).toBe(8);
+    expect(result.fullyFacetReady).toBe(true);
   });
 
   it("treats an embedding from a stale clustering space as not facet-ready", async () => {
@@ -438,6 +440,7 @@ describe("CensusService.run facet readiness (spec 956 follow-up)", () => {
 
     expect(result.populationSize).toBe(1);
     expect(result.facetReadyQuestionCount).toBe(1);
+    expect(result.fullyFacetReady).toBe(true);
     expect(result.unclassifiedCount).toBe(1);
     expect(result.topics).toEqual([]);
   });
@@ -465,6 +468,7 @@ const buildPriorTopic = (overrides: Partial<ActiveTopicRecord> & { id?: string }
   description: overrides.description ?? "Prior description",
   createdRunId: overrides.createdRunId ?? randomUUID(),
   lastSeenRunId: overrides.lastSeenRunId ?? randomUUID(),
+  dissolvedAt: overrides.dissolvedAt ?? null,
   memberIds: overrides.memberIds ?? [],
 });
 
@@ -582,6 +586,30 @@ describe("CensusService.run identity matching (T028+T029)", () => {
       parentTopicIds: [],
       viaCentroidFallback: false,
     });
+  });
+
+  it("does not emit another dissolved transition for a topic that was already dissolved", async () => {
+    const clusterableFacets = buildClusterableFacets();
+    const eligibleIds = clusterableFacets.map((facet) => facet.messageId);
+    const survivor = buildPriorTopic({ memberIds: [...groupAIds], centroid: [1, 0, 0] });
+    const alreadyDissolved = buildPriorTopic({
+      memberIds: [],
+      centroid: [0, 0, 1],
+      dissolvedAt: new Date("2026-07-15T00:00:00.000Z"),
+      title: "Previously dissolved topic",
+    });
+    const topicRepository = buildTopicRepository([survivor, alreadyDissolved]);
+    const service = new CensusService(buildDependencies({ eligibleIds, facets: clusterableFacets, topicRepository }));
+
+    const result = await service.run({ workspaceId, windowStart, windowEnd });
+
+    const saved = topicRepository.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
+    expect(saved.dissolvedTopicIds).not.toContain(alreadyDissolved.id);
+    expect(result.dissolvedTopicIds).not.toContain(alreadyDissolved.id);
+    expect(saved.transitions).not.toContainEqual(expect.objectContaining({
+      topicId: alreadyDissolved.id,
+      kind: "dissolved",
+    }));
   });
 
   it("records a split with the prior topic as parent and names both descendants", async () => {

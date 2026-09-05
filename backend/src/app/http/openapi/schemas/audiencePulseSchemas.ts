@@ -15,6 +15,11 @@ export const registerAudiencePulseSchemas = (registry: OpenAPIRegistry, schemas:
     unknown: z.number().int().min(0),
     contentGapEligible: z.number().int().min(0),
   }));
+  const AudiencePulseTopicTransitionSchema = registry.register("AudiencePulseTopicTransition", z.object({
+    kind: z.enum(["survived", "split", "merged", "emerged", "dissolved"]),
+    parentTopicIds: z.array(z.string()),
+    viaCentroidFallback: z.boolean(),
+  }));
   const AudiencePulseCoverageSchema = registry.register("AudiencePulseCoverage", z.object({
     populationSize: z.number().int().min(0),
     sampleSize: z.number().int().min(0),
@@ -65,6 +70,11 @@ export const registerAudiencePulseSchemas = (registry: OpenAPIRegistry, schemas:
     title: z.string(),
     description: z.string(),
     memberCount: z.number().int().min(0),
+    previousMemberCount: z.number().int().min(0).nullable(),
+    previousShare: z.number().min(0).max(1).nullable(),
+    // Registered components need an explicit union here; `.nullable()` emits an
+    // allOf whose null branch is not represented correctly by SDK generators.
+    transition: z.union([AudiencePulseTopicTransitionSchema, z.null()]),
     share: z.number().min(0).max(1),
     distinctQuestionCount: z.number().int().min(0),
     weeklyPulse: z.array(z.object({ weekStart: z.string().datetime(), count: z.number().int().min(0) })),
@@ -108,7 +118,7 @@ export const registerAudiencePulseSchemas = (registry: OpenAPIRegistry, schemas:
       weeklyVolume: z.array(AudiencePulseWeeklyVolumeSchema),
     }),
     z.object({ kind: z.literal("preparing") }),
-    z.object({ kind: z.literal("unavailable"), reason: z.enum(["provider", "validation", "cancelled"]) }),
+    z.object({ kind: z.literal("unavailable"), reason: z.enum(["provider", "validation", "census", "cancelled"]) }),
     z.object({ kind: z.literal("completed"), report: AudiencePulseReportSchema }),
   ]));
   const AudiencePulseRefreshStatusResponseSchema = registry.register(

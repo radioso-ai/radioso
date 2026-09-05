@@ -32,6 +32,8 @@ export interface ActiveTopicRecord {
   description: string;
   createdRunId: string;
   lastSeenRunId: string;
+  /** Null while active; set when a prior run dissolved the topic. */
+  dissolvedAt: Date | null;
   memberIds: string[];
 }
 

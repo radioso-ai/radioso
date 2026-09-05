@@ -55,7 +55,7 @@ type RefreshState =
   | { kind: 'cancelled' }
   | { kind: 'busy' }
   | { kind: 'capacity'; message: string }
-  | { kind: 'unavailable'; reason: 'provider' | 'validation' | 'cancelled' }
+  | { kind: 'unavailable'; reason: 'provider' | 'validation' | 'census' | 'cancelled' }
   | { kind: 'error'; message: string }
 
 const numberFormat = new Intl.NumberFormat()
@@ -74,13 +74,18 @@ const formatDateTime = (iso: string) => {
   return Number.isNaN(date.getTime()) ? iso : dateTimeFormat.format(date)
 }
 
-const getMemberCountDelta = (theme: AudiencePulseTheme): string | null => {
+export const getMemberCountDelta = (theme: AudiencePulseTheme, previousShare: number | null): string | null => {
   if (theme.transition?.kind !== 'survived' || theme.previousMemberCount === null) return null
+  if (previousShare === null) return null
 
   const relativeChange = Math.abs(theme.memberCount - theme.previousMemberCount) / Math.max(theme.previousMemberCount, 1)
   if (relativeChange < MATERIAL_MEMBER_COUNT_CHANGE) return null
 
-  return theme.memberCount > theme.previousMemberCount
+  const countDirection = Math.sign(theme.memberCount - theme.previousMemberCount)
+  const shareDirection = Math.sign(theme.share - previousShare)
+  if (countDirection !== shareDirection) return null
+
+  return countDirection > 0
     ? `up from ${numberFormat.format(theme.previousMemberCount)}`
     : `down from ${numberFormat.format(theme.previousMemberCount)}`
 }
@@ -701,7 +706,9 @@ function TopicRow({
     theme.grounding.contentGapEligible,
     theme.memberCount,
   )
-  const memberCountDelta = getMemberCountDelta(theme)
+  // The response has the current share but no prior population or share. Do not
+  // turn a raw count change into an importance claim without that comparison.
+  const memberCountDelta = getMemberCountDelta(theme, theme.previousShare)
   const transitionBadge = theme.transition?.kind === 'emerged'
     ? 'New'
     : theme.transition?.kind === 'split'
@@ -724,7 +731,7 @@ function TopicRow({
             <span className="text-sm font-medium text-foreground">{theme.title}</span>
             {transitionBadge ? <Badge variant="secondary">{transitionBadge}</Badge> : null}
             {theme.transition?.viaCentroidFallback ? (
-              <Badge variant="outline" className="text-muted-foreground">Estimated</Badge>
+              <Badge variant="outline" className="text-muted-foreground">Match estimate</Badge>
             ) : null}
             {gap ? (
               <>

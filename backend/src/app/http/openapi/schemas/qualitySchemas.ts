@@ -139,7 +139,7 @@ export const registerQualitySchemas = (registry: OpenAPIRegistry, schemas: OpenA
       answerPreview: z.string(),
       skillName: z.string().nullable(),
       skillOutcome: z.string().nullable(),
-      skillStatus: QualitySkillStatusSchema.nullable(),
+      skillStatus: z.union([QualitySkillStatusSchema, z.null()]),
       totalLatencyMs: z.number().int().nullable(),
       grounding: z.union([GroundingDiagnosticSchema, z.null()]),
       createdAt: z.string().datetime(),

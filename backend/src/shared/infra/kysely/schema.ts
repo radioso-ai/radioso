@@ -1075,6 +1075,7 @@ export interface TopicTransitions {
   parent_topic_ids: Generated<string[]>;
   run_id: string;
   topic_id: string;
+  topic_title: string;
   via_centroid_fallback: Generated<boolean>;
   workspace_id: string;
 }

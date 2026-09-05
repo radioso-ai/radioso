@@ -51,6 +51,8 @@ const history = (): AudiencePulseHistorySnapshot => ({
 /** Census result matching `history()`: one topic claiming both evidence items, nothing unclassified. */
 const censusResult = (): CensusRunResult => ({
   runId: "run-1",
+  isFirstCensus: false,
+  membershipBaselineRunId: "run-0",
   namingCallsIssued: 0,
   populationSize: 2,
   unclassifiedCount: 0,
@@ -113,6 +115,7 @@ const priorNarrativeSnapshot = (input: {
   report: {
     period: { start: "2026-06-01T00:00:00.000Z", end: "2026-07-01T00:00:00.000Z" },
     generatedAt: "2026-07-01T00:00:00.000Z",
+    censusRunId: "run-0",
     isFirstCensus: false,
     narrativeGeneratedAt: input.narrativeGeneratedAt ?? "2026-06-15T00:00:00.000Z",
     narrativeReuseCount: input.narrativeReuseCount ?? 0,
@@ -304,23 +307,134 @@ describe("AudiencePulseService", () => {
   });
 
   it("publishes a real first-census signal when no prior snapshot exists", async () => {
-    const { service } = createService();
+    const { service } = createService({
+      censusServiceFactory: {
+        create: () => ({
+          run: async () => Object.assign(censusResult(), { isFirstCensus: true }),
+        } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
 
     await expect(service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID }))
       .resolves.toMatchObject({ kind: "completed", report: { isFirstCensus: true } });
+  });
+
+  it("does not call a retry the first census when topics survived a run whose snapshot write failed", async () => {
+    const { service } = createService({
+      snapshotStore: snapshotStoreFor(null),
+      censusServiceFactory: {
+        create: () => ({
+          run: async () => Object.assign(censusResult(), { isFirstCensus: false }),
+        } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    await expect(service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID }))
+      .resolves.toMatchObject({ kind: "completed", report: { isFirstCensus: false } });
+  });
+
+  it("persists the current census run id on a generated report", async () => {
+    let savedReport: AudiencePulseStoredReport | undefined;
+    const { service } = createService({
+      snapshotStore: {
+        async find() { return null; },
+        async replace(input) {
+          savedReport = input.report;
+          return { ...input, revision: "revision-1" };
+        },
+        async invalidate() { return true; },
+      },
+    });
+
+    await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(savedReport?.censusRunId).toBe("run-1");
   });
 
   it("commits the pre-census reservation when naming ran but the narrative was reused", async () => {
     const { service, calls } = createService({
       snapshotStore: snapshotStoreFor(priorNarrativeSnapshot()),
       censusServiceFactory: {
-        create: () => ({ run: async () => ({ ...censusResultWithDissolved([]), namingCallsIssued: 1 }) } as unknown as CensusService),
+        create: () => ({
+          run: async (input: { onModelCallIssued?: () => void }) => {
+            input.onModelCallIssued?.();
+            return { ...censusResultWithDissolved([]), namingCallsIssued: 1 };
+          },
+        } as unknown as CensusService),
       } satisfies CensusServiceFactory,
     });
 
     await expect(service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID }))
       .resolves.toMatchObject({ kind: "completed", report: { summary: "Reused narrative summary." } });
     expect(calls).toMatchObject({ inference: 0, reserve: 1, commit: 1, release: 0 });
+  });
+
+  it("commits when the census reports a naming call before a later census failure", async () => {
+    const censusFailure = new Error("later cluster failed");
+    const { service, calls } = createService({
+      censusServiceFactory: {
+        create: () => ({
+          run: async (input: { onModelCallIssued?: () => void }) => {
+            input.onModelCallIssued?.();
+            throw censusFailure;
+          },
+        } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    await expect(service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID }))
+      .resolves.toEqual({ kind: "unavailable", reason: "provider" });
+    expect(calls).toMatchObject({ inference: 0, reserve: 1, commit: 1, release: 0, leaseRelease: 1 });
+  });
+
+  it("releases when the census fails before issuing any model call", async () => {
+    const { service, calls } = createService({
+      censusServiceFactory: {
+        create: () => ({
+          run: async () => { throw new Error("clustering failed before naming"); },
+        } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    await expect(service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID }))
+      .resolves.toEqual({ kind: "unavailable", reason: "provider" });
+    expect(calls).toMatchObject({ inference: 0, reserve: 1, commit: 0, release: 1, leaseRelease: 1 });
+  });
+
+  it("commits when a narrative request fails after it is dispatched", async () => {
+    const { service, calls } = createService({
+      inferenceFactory: {
+        async create() {
+          return {
+            metadata: { capability: "chat", provider: "openai", model: "test" },
+            async complete() { throw new Error("provider failed after dispatch"); },
+            stream() { throw new Error("not used"); },
+          };
+        },
+      },
+    });
+
+    await expect(service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID }))
+      .resolves.toEqual({ kind: "unavailable", reason: "provider" });
+    expect(calls).toMatchObject({ reserve: 1, commit: 1, release: 0, leaseRelease: 1 });
+  });
+
+  it("regenerates when the saved narrative belongs to a different census baseline", async () => {
+    const snapshot = priorNarrativeSnapshot();
+    (snapshot.report as AudiencePulseStoredReport & { censusRunId: string }).censusRunId = "run-before-snapshot-failure";
+    const mismatchedCensus = Object.assign(censusResult(), {
+      membershipBaselineRunId: "run-after-snapshot-failure",
+    });
+    const { service, calls } = createService({
+      snapshotStore: snapshotStoreFor(snapshot),
+      censusServiceFactory: {
+        create: () => ({ run: async () => mismatchedCensus } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(calls).toMatchObject({ inference: 1, commit: 1, release: 0 });
   });
 
   it("does not start the census when usage capacity cannot be reserved", async () => {
@@ -2162,13 +2276,7 @@ describe("AudiencePulseService", () => {
     let releaseCalls = 0;
     const { service, calls } = createService({
       inferenceFactory: {
-        async create() {
-          return {
-            metadata: { capability: "chat", provider: "openai", model: "test" },
-            async complete() { throw new Error("provider unavailable"); },
-            stream() { throw new Error("not used"); },
-          };
-        },
+        async create() { throw new Error("provider unavailable before dispatch"); },
       },
       usageLimitPolicy: {
         async reserveAnswer() {
@@ -2316,7 +2424,7 @@ describe("AudiencePulseService", () => {
     expect(calls).toMatchObject({ inference: 0, reserve: 0, commit: 0, release: 0, leaseRelease: 0 });
   });
 
-  it("releases a reservation and preserves the prior snapshot when provider or validation work fails", async () => {
+  it("commits a reservation and preserves the prior snapshot when dispatched provider or validation work fails", async () => {
     const failureCases = [
       {
         expectedReason: "provider",
@@ -2354,7 +2462,7 @@ describe("AudiencePulseService", () => {
       await expect(service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID }))
         .resolves.toEqual({ kind: "unavailable", reason: failure.expectedReason });
       expect(providerCalls).toBe(1);
-      expect(calls).toMatchObject({ reserve: 1, commit: 0, release: 1, replace: 0, leaseRelease: 1 });
+      expect(calls).toMatchObject({ reserve: 1, commit: 1, release: 0, replace: 0, leaseRelease: 1 });
     }
   });
 
@@ -2416,6 +2524,7 @@ describe("AudiencePulseService", () => {
 
 describe("AudiencePulseService facet readiness (spec 956 follow-up)", () => {
   it("skips the narrative model call and commits no usage when nothing has been computed for the window yet", async () => {
+    let savedReport: AudiencePulseStoredReport | undefined;
     const { service, calls } = createService({
       censusServiceFactory: {
         create: () => ({
@@ -2427,6 +2536,14 @@ describe("AudiencePulseService facet readiness (spec 956 follow-up)", () => {
           }),
         } as unknown as CensusService),
       } satisfies CensusServiceFactory,
+      snapshotStore: {
+        async find() { return null; },
+        async replace(input) {
+          savedReport = input.report;
+          return { ...input, revision: "revision-1" };
+        },
+        async invalidate() { return true; },
+      },
     });
 
     const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
@@ -2434,8 +2551,10 @@ describe("AudiencePulseService facet readiness (spec 956 follow-up)", () => {
     expect(result.kind).toBe("completed");
     if (result.kind !== "completed") throw new Error("expected a completed refresh");
     // No model call runs, so the pre-census reservation is released rather than committed.
-    expect(calls).toMatchObject({ inference: 0, reserve: 1, commit: 0, release: 1, replace: 1, leaseRelease: 1 });
+    expect(calls).toMatchObject({ inference: 0, reserve: 1, commit: 0, release: 1, leaseRelease: 1 });
     expect(result.report.summary).toBeUndefined();
+    expect(result.report.isFirstCensus).toBe(false);
+    expect(savedReport?.censusRunId).toBe("run-1");
     expect(result.report.themes).toEqual([]);
     expect(result.report.recommendations).toEqual([]);
     // Every population question is still unclassified, but the report says so

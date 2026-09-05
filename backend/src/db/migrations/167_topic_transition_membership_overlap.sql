@@ -2,6 +2,9 @@
 -- display evidence stored on reports. It is nullable because emerged/dissolved and
 -- centroid-fallback transitions have no containment-derived one-to-one match.
 
+SET LOCAL lock_timeout = '10s';
+SET LOCAL statement_timeout = '25s';
+
 ALTER TABLE topic_transitions
   ADD COLUMN membership_overlap DOUBLE PRECISION;
 

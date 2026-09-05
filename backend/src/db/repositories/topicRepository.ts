@@ -316,6 +316,13 @@ export class TopicRepository implements TopicRepositoryPort {
         ]),
         { requireExisting: true },
       );
+      const topicTitleRows = await trx
+        .selectFrom("topics")
+        .select(["id", "title"])
+        .where("workspace_id", "=", workspaceId)
+        .where("id", "in", [...new Set(transitions.map((transition) => transition.topicId))])
+        .execute();
+      const topicTitleById = new Map(topicTitleRows.map((topic) => [topic.id, topic.title]));
       for (const batch of chunk(transitions, BATCH_SIZE)) {
         await trx
           .insertInto("topic_transitions")
@@ -324,6 +331,7 @@ export class TopicRepository implements TopicRepositoryPort {
               workspace_id: workspaceId,
               run_id: runId,
               topic_id: transition.topicId,
+              topic_title: topicTitleById.get(transition.topicId)!,
               kind: transition.kind,
               parent_topic_ids: transition.parentTopicIds,
               via_centroid_fallback: transition.viaCentroidFallback ?? false,
@@ -414,8 +422,7 @@ export class TopicRepository implements TopicRepositoryPort {
 
     const dissolvedTopics: TopicCensusRunDissolvedTopic[] = await this.db
       .selectFrom("topic_transitions")
-      .innerJoin("topics", "topics.id", "topic_transitions.topic_id")
-      .select(["topics.id as id", "topics.title as title"])
+      .select(["topic_id as id", "topic_title as title"])
       .where("topic_transitions.workspace_id", "=", run.workspace_id)
       .where("topic_transitions.run_id", "=", run.id)
       .where("topic_transitions.kind", "=", "dissolved")

@@ -415,6 +415,10 @@ const reusableNarrativeSnapshot = (input: {
   if (!snapshot || typeof snapshot.report.summary !== "string" || snapshot.report.summary.trim().length === 0) {
     return null;
   }
+  if (!snapshot.report.censusRunId
+    || snapshot.report.censusRunId !== censusResult.membershipBaselineRunId) {
+    return null;
+  }
   const legacyReport = snapshot.report as LegacyAudiencePulseStoredReport;
   if ((legacyReport.narrativeReuseCount ?? 0) >= AUDIENCE_PULSE_NARRATIVE_MAX_CONSECUTIVE_REUSES) {
     return null;
@@ -687,6 +691,7 @@ export class AudiencePulseService implements AudiencePulsePort {
 
     let reservation: UsageLimitReservation | null = null;
     let reservationMustRemain = false;
+    let modelCallsIssued = 0;
     let narrativeReused = false;
     let deferredFailureOutcome: AudiencePulseRefreshFailureOutcome | null = null;
     try {
@@ -751,6 +756,9 @@ export class AudiencePulseService implements AudiencePulsePort {
           windowStart: analysisStart,
           windowEnd: analysisEnd,
           signal: input.signal,
+          onModelCallIssued: () => {
+            modelCallsIssued += 1;
+          },
         });
       } catch (error) {
         if (errorStatusCode(error) !== undefined) throw error;
@@ -781,13 +789,16 @@ export class AudiencePulseService implements AudiencePulsePort {
         // rather than ask a model to narrate zero computed data, the same precedent
         // an empty population already sets for `no_traffic`.
         const generatedAt = this.now();
-        const report = buildAudiencePulseComputingReport({
-          period: { start: analysisStart, end: analysisEnd },
-          generatedAt,
-          isFirstCensus: priorSnapshot === null,
-          coverage: reportCoverage,
-          weeklyVolume: history.weeklyVolume,
-        });
+        const report = {
+          ...buildAudiencePulseComputingReport({
+            period: { start: analysisStart, end: analysisEnd },
+            generatedAt,
+            isFirstCensus: censusResult.isFirstCensus,
+            coverage: reportCoverage,
+            weeklyVolume: history.weeklyVolume,
+          }),
+          censusRunId: censusResult.runId,
+        };
         await this.deps.snapshotStore.replace({
           workspaceId: input.workspaceId,
           period: { start: analysisStart, end: analysisEnd },
@@ -813,12 +824,12 @@ export class AudiencePulseService implements AudiencePulsePort {
       // decision or a recommendation that the domain no longer qualifies.
       let censusReport: ReturnType<typeof buildAudiencePulseCensusReport>;
       try {
-        censusReport = buildAudiencePulseCensusReport({
+        const computedCensusReport = buildAudiencePulseCensusReport({
           period: { start: analysisStart, end: analysisEnd },
           // Final reports resample this timestamp when narrative reuse or generation
           // completes; the census-owned arrays themselves are built only here.
           generatedAt: startedAt,
-          isFirstCensus: priorSnapshot === null,
+          isFirstCensus: censusResult.isFirstCensus,
           coverage: reportCoverage,
           weeklyVolume: history.weeklyVolume,
           population: history.evidence,
@@ -827,6 +838,10 @@ export class AudiencePulseService implements AudiencePulsePort {
           previousThemeMemberCounts: previousThemeMemberCounts(priorSnapshot),
           previousThemeShares: previousThemeShares(priorSnapshot),
         });
+        censusReport = {
+          ...computedCensusReport,
+          report: { ...computedCensusReport.report, censusRunId: censusResult.runId },
+        };
       } catch (error) {
         if (!isAbortError(error) && !(error instanceof AudiencePulseReportValidationError)) throw error;
         const reason = isAbortError(error) ? "cancelled" : "census";
@@ -903,6 +918,7 @@ export class AudiencePulseService implements AudiencePulsePort {
 
         let completion: Awaited<ReturnType<typeof inference.complete>>;
         try {
+          modelCallsIssued += 1;
           completion = await inference.complete({
             prompt,
             maxInputTokens: AUDIENCE_PULSE_MAX_TOTAL_TOKENS,
@@ -962,9 +978,9 @@ export class AudiencePulseService implements AudiencePulsePort {
         );
       }
 
-      // A validated model completion is billable even when a later snapshot write or
-      // accounting operation fails, so do not release its reservation afterward.
-      if (censusResult.namingCallsIssued > 0 || !narrativeReused) {
+      // Issued model work is billable even when validation or a later snapshot write
+      // fails, so commit before persistence once the successful path reaches here.
+      if (modelCallsIssued > 0) {
         if (!reservation) {
           throw new Error("audience_pulse: model completion has no usage reservation");
         }
@@ -1001,10 +1017,15 @@ export class AudiencePulseService implements AudiencePulsePort {
     } finally {
       try {
         if (reservation && !reservationMustRemain) {
-          await reservation.release();
+          if (modelCallsIssued > 0) {
+            reservationMustRemain = true;
+            await reservation.commit();
+          } else {
+            await reservation.release();
+          }
         }
       } catch (error) {
-        // Releasing is accounting work, so surface failures while still cleaning up the lease.
+        // Settling usage is accounting work, so surface failures while still cleaning up the lease.
         await this.recordOutcome(input, "internal", startedAt, { narrativeReused }).catch(() => undefined);
         throw error;
       } finally {

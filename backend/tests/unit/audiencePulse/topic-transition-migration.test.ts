@@ -6,6 +6,14 @@ const migrationUrl = new URL(
   "../../../src/db/migrations/166_topic_transitions_run_topic_unique.sql",
   import.meta.url,
 );
+const overlapMigrationUrl = new URL(
+  "../../../src/db/migrations/167_topic_transition_membership_overlap.sql",
+  import.meta.url,
+);
+const titleMigrationUrl = new URL(
+  "../../../src/db/migrations/168_topic_transition_title.sql",
+  import.meta.url,
+);
 
 describe("topic transition uniqueness migration", () => {
   it("bounds and excludes live writers across deduplication and index creation", async () => {
@@ -30,5 +38,36 @@ describe("topic transition uniqueness migration", () => {
     expect(sql).toMatch(/kind\s*=\s*'dissolved'/i);
     expect(sql).toMatch(/created_at/i);
     expect(sql).toMatch(/\bid\b/i);
+  });
+});
+
+describe("topic transition membership overlap migration", () => {
+  it("restores bounded timeouts before taking schema locks", async () => {
+    const sql = await readFile(overlapMigrationUrl, "utf8");
+    const lockTimeout = sql.search(/SET LOCAL lock_timeout\s*=\s*'10s'/i);
+    const statementTimeout = sql.search(/SET LOCAL statement_timeout\s*=\s*'25s'/i);
+    const firstAlter = sql.search(/ALTER TABLE topic_transitions/i);
+
+    expect(lockTimeout).toBeGreaterThanOrEqual(0);
+    expect(statementTimeout).toBeGreaterThanOrEqual(0);
+    expect(firstAlter).toBeGreaterThan(lockTimeout);
+    expect(firstAlter).toBeGreaterThan(statementTimeout);
+  });
+});
+
+describe("topic transition title migration", () => {
+  it("captures and backfills an immutable title for every transition", async () => {
+    const sql = await readFile(titleMigrationUrl, "utf8");
+    const lockTimeout = sql.search(/SET LOCAL lock_timeout\s*=\s*'10s'/i);
+    const statementTimeout = sql.search(/SET LOCAL statement_timeout\s*=\s*'25s'/i);
+    const firstAlter = sql.search(/ALTER TABLE topic_transitions/i);
+
+    expect(lockTimeout).toBeGreaterThanOrEqual(0);
+    expect(statementTimeout).toBeGreaterThanOrEqual(0);
+    expect(firstAlter).toBeGreaterThan(lockTimeout);
+    expect(firstAlter).toBeGreaterThan(statementTimeout);
+    expect(sql).toMatch(/ADD COLUMN topic_title TEXT/i);
+    expect(sql).toMatch(/UPDATE topic_transitions[\s\S]*FROM topics/i);
+    expect(sql).toMatch(/ALTER COLUMN topic_title SET NOT NULL/i);
   });
 });

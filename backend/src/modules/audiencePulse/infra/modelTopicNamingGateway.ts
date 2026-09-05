@@ -3,7 +3,12 @@ import { randomUUID } from "node:crypto";
 import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
 import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInferencePipeline.js";
 import type { TelemetryService } from "../../../shared/observability/telemetry/telemetryService.js";
-import type { TopicLabel, TopicNamingExemplars, TopicNamingPort } from "../contracts/topicLabel.js";
+import type {
+  ModelCallIssuedReporter,
+  TopicLabel,
+  TopicNamingExemplars,
+  TopicNamingPort,
+} from "../contracts/topicLabel.js";
 import { parseTopicLabelModelOutput, TopicLabelValidationError } from "../domain/topicLabel.js";
 import {
   TOPIC_NAMING_MAX_OUTPUT_TOKENS,
@@ -55,21 +60,27 @@ const parseLabel = (text: string): TopicLabel => {
 export class ModelTopicNamingGateway implements TopicNamingPort {
   constructor(private readonly deps: ModelTopicNamingGatewayDependencies) {}
 
-  async name(exemplars: TopicNamingExemplars, signal?: AbortSignal): Promise<TopicLabel> {
+  async name(
+    exemplars: TopicNamingExemplars,
+    signal?: AbortSignal,
+    onModelCallIssued?: ModelCallIssuedReporter,
+  ): Promise<TopicLabel> {
     return this.call({
       prompt: buildTopicNamingPrompt(exemplars),
       operation: "topic_naming",
       fallback: false,
       signal,
+      onModelCallIssued,
     });
   }
 
-  async nameFallback(signal?: AbortSignal): Promise<TopicLabel> {
+  async nameFallback(signal?: AbortSignal, onModelCallIssued?: ModelCallIssuedReporter): Promise<TopicLabel> {
     return this.call({
       prompt: buildTopicFallbackNamingPrompt(),
       operation: "topic_naming_fallback",
       fallback: true,
       signal,
+      onModelCallIssued,
     });
   }
 
@@ -78,6 +89,7 @@ export class ModelTopicNamingGateway implements TopicNamingPort {
     operation: string;
     fallback: boolean;
     signal?: AbortSignal;
+    onModelCallIssued?: ModelCallIssuedReporter;
   }): Promise<TopicLabel> {
     const { workspaceId } = this.deps.workspaceContext;
     const modelCallContext: ModelCallUsageContext = {
@@ -91,6 +103,7 @@ export class ModelTopicNamingGateway implements TopicNamingPort {
       workspaceContext: this.deps.workspaceContext,
       modelCallContext,
     });
+    input.onModelCallIssued?.();
     const completion = await inference.complete({
       prompt: input.prompt,
       maxInputTokens: TOPIC_NAMING_MAX_TOTAL_TOKENS,

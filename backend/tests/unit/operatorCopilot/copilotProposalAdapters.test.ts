@@ -775,3 +775,38 @@ describe("the agent setting adapter's channel boundary", () => {
     expect(update).not.toHaveBeenCalled();
   });
 });
+
+describe("the agent setting adapter's typed value validation", () => {
+  const agentId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const workspaceId = "workspace-1";
+
+  const adapter = () => createAgentSettingCopilotProposalAdapter({
+    agentService: {
+      get: vi.fn(async () => ({
+        id: agentId,
+        updatedAt: new Date("2026-09-01T10:00:00.000Z"),
+      })),
+      update: vi.fn(),
+    } as never,
+  });
+
+  it("accepts a boolean retrieval-miss handoff proposal", async () => {
+    const validated = await adapter().validatePayload(workspaceId, {
+      agentId,
+      settingKey: "handoffOnRetrievalMiss",
+    }, {
+      value: true,
+    });
+
+    expect(validated.payload).toEqual({ value: true });
+  });
+
+  it("rejects a non-boolean retrieval-miss handoff proposal", async () => {
+    await expect(adapter().validatePayload(workspaceId, {
+      agentId,
+      settingKey: "handoffOnRetrievalMiss",
+    }, {
+      value: "true",
+    })).rejects.toMatchObject({ statusCode: 400 });
+  });
+});

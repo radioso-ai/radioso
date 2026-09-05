@@ -19,20 +19,21 @@ describe('operator MCP resource validation', () => {
 })
 
 describe('operator MCP setup selection', () => {
-  it('selects the first usable artifact when named clients are unavailable', () => {
+  it('selects the first setup tab when no tab is already selected', () => {
     expect(selectOperatorMcpArtifactId([
-      { id: 'codex-cli', status: 'unavailable' },
-      { id: 'claude-code', status: 'unavailable' },
+      { id: 'codex-cli', status: 'unverified' },
+      { id: 'claude-code', status: 'unverified' },
+      { id: 'cursor', status: 'unverified' },
       { id: 'generic', status: 'unverified' },
-    ] as const, null)).toBe('generic')
+    ] as const, null)).toBe('codex-cli')
   })
 
-  it('keeps a usable selection and replaces an unavailable one', () => {
+  it('keeps a selected setup tab', () => {
     const artifacts = [
-      { id: 'codex-cli', status: 'unavailable' as const },
+      { id: 'codex-cli', status: 'unverified' as const },
       { id: 'generic', status: 'unverified' as const },
     ]
     expect(selectOperatorMcpArtifactId(artifacts, 'generic')).toBe('generic')
-    expect(selectOperatorMcpArtifactId(artifacts, 'codex-cli')).toBe('generic')
+    expect(selectOperatorMcpArtifactId(artifacts, 'codex-cli')).toBe('codex-cli')
   })
 })

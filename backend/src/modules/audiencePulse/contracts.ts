@@ -138,6 +138,7 @@ export const audiencePulseReportResponseSchema = z.object({
     description: z.string(),
     memberCount: z.number().int().min(0),
     previousMemberCount: z.number().int().min(0).nullable(),
+    previousShare: z.number().min(0).max(1).nullable(),
     transition: topicTransitionSchema.nullable(),
     share: z.number().min(0).max(1),
     distinctQuestionCount: z.number().int().min(0),
@@ -177,7 +178,7 @@ export type AudiencePulseReadResult =
 export type AudiencePulseRefreshResult =
   | { kind: "no_traffic"; period: { start: string; end: string }; weeklyVolume: AudiencePulseWeeklyVolume[] }
   | { kind: "preparing" }
-  | { kind: "unavailable"; reason: "provider" | "validation" | "cancelled" }
+  | { kind: "unavailable"; reason: "provider" | "validation" | "census" | "cancelled" }
   | { kind: "busy" }
   | { kind: "usage_limited" }
   | { kind: "completed"; report: AudiencePulseHydratedReport };

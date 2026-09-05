@@ -105,6 +105,8 @@ export interface CensusRunResult {
    * found" (spec 956 follow-up).
    */
   facetReadyQuestionCount: number;
+  /** Whether every question in the run had a current embedded facet. */
+  fullyFacetReady: boolean;
   topics: CensusRunTopicResult[];
   /** Topic identities retired by this fully facet-ready run. */
   dissolvedTopicIds: string[];
@@ -371,7 +373,9 @@ export class CensusService {
     for (const transition of clusterTransitions) {
       if (transition.kind === "split" || transition.kind === "merged") {
         for (const parentTopicId of transition.parentTopicIds) {
-          dissolvedTopicIds.add(parentTopicId);
+          if (priorTopicsById.get(parentTopicId)?.dissolvedAt === null) {
+            dissolvedTopicIds.add(parentTopicId);
+          }
         }
         continue;
       }
@@ -382,6 +386,9 @@ export class CensusService {
         continue;
       }
       const topicId = transition.topicId!;
+      if (priorTopicsById.get(topicId)?.dissolvedAt !== null) {
+        continue;
+      }
       dissolvedTopicIds.add(topicId);
       transitions.push({
         topicId,
@@ -455,6 +462,7 @@ export class CensusService {
       populationSize,
       unclassifiedCount,
       facetReadyQuestionCount: clusterable.length,
+      fullyFacetReady,
       topics: reportTopics,
       dissolvedTopicIds: fullyFacetReady ? [...dissolvedTopicIds] : [],
     };

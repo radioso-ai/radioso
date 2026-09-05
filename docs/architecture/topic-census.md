@@ -163,7 +163,8 @@ topic identity.
 `CensusService.run` (`backend/src/modules/audiencePulse/services/censusService.ts`)
 is the entry point: given a workspace and a window, it resolves the eligible
 question population, loads the facets already extracted for it and the
-workspace's active topics, clusters, matches identity, names, and persists
+workspace's matchable topics, including retained dissolved topics, clusters,
+matches identity, names, and persists
 the result in one transaction across:
 
 - `topic_census_runs` — one row per analysis: the window, the exact question
@@ -184,20 +185,33 @@ columns, matching the `chunk_embeddings` convention: facet and centroid width
 follow the workspace's active embedding profile. Neither table carries an
 HNSW or IVFFlat index, because the census never performs a nearest-neighbour
 search — a run reads its whole window into memory and clusters there.
+Run hydration groups memberships by the topic primary key, so Postgres never
+compares centroids from workspaces or historical profiles with different
+embedding widths.
 
 Each topic in a census run carries its recorded transition, including parent
-topic ids and the centroid-fallback signal, into the Audience Pulse report.
+topic ids and the centroid-fallback signal, into the Audience Pulse report. A
+dissolved topic stays available to identity matching, while only a topic that
+is active at the start of a run receives a new dissolved transition. Later
+runs that still find no counterpart leave its original dissolution unchanged.
 
 Audience Pulse reuses a saved summary and recommendations without a narrative
-model call when every current topic survives, no topic dissolves, each topic's
-membership count and share change by less than 20 percent, the population size
-and unclassified question count each change by less than 20 percent, a saved
-summary exists, and the current content-gap theme-id set matches the saved
-report. A saved report without an unclassified question count or a topic share
-regenerates the narrative. Every reused recommendation evidence id resolves in
-the current analysis window and remains content-gap eligible; an expired or
-ineligible reference regenerates the narrative. Themes, counts, shares, weekly
-pulse, grounding, and content gaps always derive from the fresh census.
+model call only for a fully facet-ready run with at least one topic. Every
+current topic survives through shared membership rather than centroid fallback,
+no active topic dissolves, each topic's membership count and share change by
+less than 20 percent, the population size and unclassified question count each
+change by less than 20 percent, a saved summary exists, and the current
+content-gap theme-id set matches the saved report. Every evidence id stored on
+a saved theme remains a member of that same topic. Every reused recommendation
+evidence id also remains a current, content-gap-eligible member of its own
+topic. Missing, expired, moved, or ineligible evidence regenerates the
+narrative. A saved report without an unclassified question count or a topic
+share also regenerates it. Themes, counts, shares, weekly pulse, grounding, and
+content gaps always derive from the fresh census.
+
+Census membership-integrity failures return the `census` unavailability reason
+and record the same outcome in refresh audit metadata. Model response failures
+use the separate `validation` reason.
 
 ## Backfill
 

@@ -295,5 +295,18 @@ describeIntegration("CensusService (Postgres)", () => {
 
     const activeAfterThirdRun = await topicRepository.listActiveTopics(workspaceId);
     expect(activeAfterThirdRun.map((topic) => topic.id)).toEqual([groupAResult.topicId]);
+
+    const fourthRun = await buildService({ namingPort: spyNamingPort }).run({ workspaceId, windowStart, windowEnd });
+    expect(fourthRun.dissolvedTopicIds).not.toContain(groupBResult.topicId);
+    const fourthGroupBTransitions = await database.query<{ kind: string }>(
+      "SELECT kind FROM topic_transitions WHERE run_id = $1 AND topic_id = $2",
+      [fourthRun.runId, groupBResult.topicId],
+    );
+    expect(fourthGroupBTransitions).toEqual([]);
+    const allGroupBDissolvedTransitions = await database.query<{ count: string }>(
+      "SELECT COUNT(*) AS count FROM topic_transitions WHERE topic_id = $1 AND kind = 'dissolved'",
+      [groupBResult.topicId],
+    );
+    expect(Number(allGroupBDissolvedTransitions[0]?.count)).toBe(1);
   });
 });

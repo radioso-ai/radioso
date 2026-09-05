@@ -7527,6 +7527,12 @@ export interface components {
             unknown: number;
             contentGapEligible: number;
         };
+        AudiencePulseTopicTransition: {
+            /** @enum {string} */
+            kind: "survived" | "split" | "merged" | "emerged" | "dissolved";
+            parentTopicIds: string[];
+            viaCentroidFallback: boolean;
+        };
         AudiencePulseCoverage: {
             populationSize: number;
             sampleSize: number;
@@ -7587,6 +7593,9 @@ export interface components {
             title: string;
             description: string;
             memberCount: number;
+            previousMemberCount: number | null;
+            previousShare: number | null;
+            transition: components["schemas"]["AudiencePulseTopicTransition"] | null;
             share: number;
             distinctQuestionCount: number;
             weeklyPulse: {
@@ -7657,7 +7666,7 @@ export interface components {
             /** @enum {string} */
             kind: "unavailable";
             /** @enum {string} */
-            reason: "provider" | "validation" | "cancelled";
+            reason: "provider" | "validation" | "census" | "cancelled";
         } | {
             /** @enum {string} */
             kind: "completed";

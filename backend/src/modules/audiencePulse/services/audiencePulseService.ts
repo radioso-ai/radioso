@@ -98,6 +98,7 @@ const errorStatusCode = (error: unknown): number | undefined => {
 type AudiencePulseRefreshFailureOutcome =
   | "provider"
   | "validation"
+  | "census"
   | "cancelled"
   | "rate_limited"
   | "rate_limit_unavailable"
@@ -134,10 +135,11 @@ type AudiencePulseThemeResponse = AudiencePulseHydratedReport["themes"][number];
 type AudiencePulseEvidenceResponse = AudiencePulseThemeResponse["evidence"][number];
 type LegacyAudiencePulseStoredTheme = Omit<
   AudiencePulseStoredReport["themes"][number],
-  "memberCount" | "previousMemberCount" | "transition" | "share"
+  "memberCount" | "previousMemberCount" | "previousShare" | "transition" | "share"
 > & {
   memberCount?: number;
   previousMemberCount?: number | null;
+  previousShare?: number | null;
   transition?: AudiencePulseStoredReport["themes"][number]["transition"];
   sampleCount?: number;
   share?: number;
@@ -229,6 +231,7 @@ const hydrateReport = (
         description: theme.description,
         memberCount,
         previousMemberCount: theme.previousMemberCount ?? null,
+        previousShare: theme.previousShare ?? null,
         transition: theme.transition ?? null,
         share,
         ...hydrateThemeEvidence(theme.evidenceIds, resolve),
@@ -375,7 +378,11 @@ const reusableNarrativeSnapshot = (input: {
   if (!snapshot || typeof snapshot.report.summary !== "string" || snapshot.report.summary.trim().length === 0) {
     return null;
   }
-  if (censusResult.topics.some((topic) => topic.transition?.kind !== "survived")) {
+  if (!censusResult.fullyFacetReady || censusResult.topics.length === 0) {
+    return null;
+  }
+  if (censusResult.topics.some((topic) =>
+    topic.transition?.kind !== "survived" || topic.transition.viaCentroidFallback)) {
     return null;
   }
   if (censusResult.dissolvedTopicIds.length > 0) {
@@ -402,6 +409,17 @@ const reusableNarrativeSnapshot = (input: {
       || shareDrift >= AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT;
   });
   if (hasMaterialTopicDrift) {
+    return null;
+  }
+
+  const currentMemberIdsByTopicId = new Map(
+    censusResult.topics.map((topic) => [topic.topicId, new Set(topic.memberIds)]),
+  );
+  if (snapshot.report.themes.some((theme) => {
+    const currentMemberIds = currentMemberIdsByTopicId.get(theme.id);
+    return currentMemberIds === undefined
+      || theme.evidenceIds.some((evidenceId) => !currentMemberIds.has(evidenceId));
+  })) {
     return null;
   }
 
@@ -434,8 +452,11 @@ const reusableNarrativeSnapshot = (input: {
     return null;
   }
 
-  if (snapshot.report.recommendations.some((recommendation) =>
-    recommendation.evidenceIds.some((evidenceId) => !currentEvidenceById.get(evidenceId)?.contentGapEligible))) {
+  if (snapshot.report.recommendations.some((recommendation) => {
+    const currentMemberIds = currentMemberIdsByTopicId.get(recommendation.themeId);
+    return currentMemberIds === undefined || recommendation.evidenceIds.some((evidenceId) =>
+      !currentMemberIds.has(evidenceId) || !currentEvidenceById.get(evidenceId)?.contentGapEligible);
+  })) {
     return null;
   }
 
@@ -590,6 +611,7 @@ export class AudiencePulseService implements AudiencePulsePort {
 
     let reservation: UsageLimitReservation | null = null;
     let reservationMustRemain = false;
+    let narrativeReused = false;
     let deferredFailureOutcome: AudiencePulseRefreshFailureOutcome | null = null;
     try {
       try {
@@ -726,6 +748,7 @@ export class AudiencePulseService implements AudiencePulsePort {
           population: history.evidence,
           topics: censusTopics,
           previousThemeMemberCounts: previousThemeMemberCounts(priorSnapshot),
+          previousThemeShares: previousThemeShares(priorSnapshot),
           model: {
             // The report builder validates model-shaped input even though this temporary
             // census-only report contributes no narrative fields to the final result.
@@ -736,8 +759,8 @@ export class AudiencePulseService implements AudiencePulsePort {
           },
         });
       } catch (error) {
-        if (!isAbortError(error) && !isModelValidationError(error)) throw error;
-        const reason = unavailableReason(error);
+        if (!isAbortError(error) && !(error instanceof AudiencePulseReportValidationError)) throw error;
+        const reason = isAbortError(error) ? "cancelled" : "census";
         deferredFailureOutcome = reason;
         return { kind: "unavailable", reason };
       }
@@ -749,7 +772,7 @@ export class AudiencePulseService implements AudiencePulsePort {
         unclassifiedQuestionCount: censusOnlyReport.unclassifiedQuestionCount,
         contentGapThemeIds: censusOnlyReport.contentGaps.map((gap) => gap.themeId),
       });
-      const narrativeReused = reusableSnapshot !== null;
+      narrativeReused = reusableSnapshot !== null;
 
       let generatedAt: Date;
       let report: AudiencePulseStoredReport;
@@ -836,6 +859,7 @@ export class AudiencePulseService implements AudiencePulsePort {
             population: history.evidence,
             topics: censusTopics,
             previousThemeMemberCounts: previousThemeMemberCounts(priorSnapshot),
+          previousThemeShares: previousThemeShares(priorSnapshot),
             model,
           });
           const shownQualifyingThemeIds = shownQualifyingTopicIndexes
@@ -911,13 +935,13 @@ export class AudiencePulseService implements AudiencePulsePort {
         }
       } catch (error) {
         // Releasing is accounting work, so surface failures while still cleaning up the lease.
-        await this.recordOutcome(input, "internal", startedAt, {}).catch(() => undefined);
+        await this.recordOutcome(input, "internal", startedAt, { narrativeReused }).catch(() => undefined);
         throw error;
       } finally {
         await lease.release().catch(() => undefined);
       }
       if (deferredFailureOutcome) {
-        await this.recordOutcome(input, deferredFailureOutcome, startedAt, {});
+        await this.recordOutcome(input, deferredFailureOutcome, startedAt, { narrativeReused });
       }
     }
   }
@@ -930,7 +954,8 @@ export class AudiencePulseService implements AudiencePulsePort {
   ): Promise<void> {
     const durationMs = Math.max(0, this.now().getTime() - startedAt.getTime());
     const eventStatus: "success" | "failure" = outcome === "completed" || outcome === "no_traffic" ? "success" : "failure";
-    const metadata = { userId: input.userId, outcome, durationMs, narrativeReused: false, ...counts };
+    const narrativeReused = counts.narrativeReused === true;
+    const metadata = { userId: input.userId, outcome, durationMs, ...counts, narrativeReused };
     await safeAudit(this.deps.auditService, {
       accountId: input.accountId,
       workspaceId: input.workspaceId,
@@ -940,7 +965,7 @@ export class AudiencePulseService implements AudiencePulsePort {
       eventStatus,
       metadata,
     });
-    const context = { workspaceId: input.workspaceId, outcome, durationMs, narrativeReused: false, ...counts };
+    const context = { workspaceId: input.workspaceId, outcome, durationMs, ...counts, narrativeReused };
     if (eventStatus === "success") {
       this.deps.logger?.info?.(context, "audience_pulse_refresh");
     } else {

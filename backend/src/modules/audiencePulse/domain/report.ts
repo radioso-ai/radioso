@@ -70,6 +70,8 @@ export interface AudiencePulseStoredTheme {
   memberCount: number;
   /** Exact count assigned to the same topic in the prior stored snapshot, if available. */
   previousMemberCount: number | null;
+  /** The same topic's share in the prior stored snapshot, if it was present there. */
+  previousShare: number | null;
   /** Identity classification persisted for this topic in this census run. */
   transition: TopicTransition | null;
   /** `memberCount / populationSize`, computed in code from the same membership. */
@@ -303,6 +305,7 @@ export const buildAudiencePulseReport = (input: {
   population: AudiencePulseEvidence[];
   topics: AudiencePulseCensusTopic[];
   previousThemeMemberCounts?: Map<string, number>;
+  previousThemeShares?: Map<string, number>;
   model: AudiencePulseModelOutput;
 }): AudiencePulseStoredReport => {
   const model = audiencePulseModelOutputSchema.parse(input.model);
@@ -335,6 +338,7 @@ export const buildAudiencePulseReport = (input: {
       evidenceIds: memberEvidenceIds.slice(0, AUDIENCE_PULSE_THEME_DISPLAY_EVIDENCE_MAX),
       memberCount,
       previousMemberCount: input.previousThemeMemberCounts?.get(topic.id) ?? null,
+      previousShare: input.previousThemeShares?.get(topic.id) ?? null,
       transition: topic.transition ?? null,
       share: populationSize === 0 ? 0 : memberCount / populationSize,
       weeklyPulse: createWeeklyPulse(items, input.weeklyVolume),

@@ -41,6 +41,7 @@ describe("Audience Pulse OpenAPI contract", () => {
         "narrativeGeneratedAt",
         "narrativeReuseCount",
         "narrativeReuseMaxDrift",
+        "isFirstCensus",
         "unclassifiedQuestionCount",
         "dissolvedTopics",
       ]),
@@ -48,6 +49,7 @@ describe("Audience Pulse OpenAPI contract", () => {
         narrativeGeneratedAt: { type: "string", format: "date-time" },
         narrativeReuseCount: { type: "integer", minimum: 0 },
         narrativeReuseMaxDrift: { type: "number", minimum: 0, maximum: 1 },
+        isFirstCensus: { type: "boolean" },
         unclassifiedQuestionCount: { type: "integer", minimum: 0 },
         dissolvedTopics: {
           type: "array",
@@ -59,6 +61,17 @@ describe("Audience Pulse OpenAPI contract", () => {
       type: "object",
       required: ["id", "title"],
       properties: { id: { type: "string" }, title: { type: "string" } },
+    });
+    expect(document.components?.schemas?.AudiencePulseTopicTransition).toMatchObject({
+      required: expect.arrayContaining(["membershipOverlap"]),
+      properties: {
+        membershipOverlap: {
+          anyOf: expect.arrayContaining([
+            { type: "number", minimum: 0, maximum: 1 },
+            { type: "null" },
+          ]),
+        },
+      },
     });
 
     expect(anchorPath?.post?.operationId).toBe("getAudiencePulseEvidenceAnchor");

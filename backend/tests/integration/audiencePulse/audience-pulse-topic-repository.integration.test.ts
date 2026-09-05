@@ -351,7 +351,12 @@ describeIntegration("TopicRepository (Postgres)", () => {
         { topicId: topicBId, messageId: messageIds[4]!, distance: 0.05 },
       ]);
       await trxRepository.saveTransitions(runId, [
-        { topicId: topicAId, kind: "emerged", parentTopicIds: [] },
+        {
+          topicId: topicAId,
+          kind: "survived",
+          parentTopicIds: [topicAId],
+          membershipOverlap: 0.85,
+        },
       ]);
     });
 
@@ -366,9 +371,10 @@ describeIntegration("TopicRepository (Postgres)", () => {
     expect(topicA?.title).toBe("Topic A");
     expect(topicA?.dissolvedAt).toBeNull();
     expect(topicA?.transition).toEqual({
-      kind: "emerged",
-      parentTopicIds: [],
+      kind: "survived",
+      parentTopicIds: [topicAId],
       viaCentroidFallback: false,
+      membershipOverlap: 0.85,
     });
     expect(topicB?.transition).toBeNull();
 
@@ -377,7 +383,7 @@ describeIntegration("TopicRepository (Postgres)", () => {
       [runId],
     );
     expect(transitionRows).toHaveLength(1);
-    expect(transitionRows.every((row) => row.kind === "emerged")).toBe(true);
+    expect(transitionRows.every((row) => row.kind === "survived")).toBe(true);
   });
 
   it("rejects a second transition for the same run and topic", async () => {
@@ -608,6 +614,17 @@ describeIntegration("TopicRepository (Postgres)", () => {
     const run = await repository.loadRun(runId);
     expect(run?.topics.map((topic) => topic.id)).toEqual([newTopicId]);
     expect(run?.dissolvedTopics).toEqual([{ id: oldTopicId, title: "Old topic" }]);
+
+    const reactivationRunId = await createRun(workspaceId, { seed: "reactivation-run" });
+    await repository.saveTopics(reactivationRunId, [{
+      id: oldTopicId,
+      workspaceId,
+      centroid: [0.1, 0.1, 0.1],
+      radius: 0.3,
+    }]);
+
+    const historicalRun = await repository.loadRun(runId);
+    expect(historicalRun?.dissolvedTopics).toEqual([{ id: oldTopicId, title: "Old topic" }]);
   });
 
   it("saveRun rolls back the run row when a later statement in the transaction fails", async () => {

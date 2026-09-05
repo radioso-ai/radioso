@@ -66,6 +66,12 @@ export interface TopicTransition {
   kind: TopicTransitionKind;
   parentTopicIds: string[];
   viaCentroidFallback: boolean;
+  /**
+   * Mutual containment over the prior and current topic's full memberships:
+   * `intersection / max(prior size, current size)`. Null when this is not a
+   * one-to-one containment-derived survival.
+   */
+  membershipOverlap: number | null;
 }
 
 export interface TopicTransitionInput {
@@ -80,6 +86,8 @@ export interface TopicTransitionInput {
    * doesn't have to supply it.
    */
   viaCentroidFallback?: boolean;
+  /** See {@link TopicTransition.membershipOverlap}. */
+  membershipOverlap?: number | null;
 }
 
 export interface TopicCensusRunTopicSummary {

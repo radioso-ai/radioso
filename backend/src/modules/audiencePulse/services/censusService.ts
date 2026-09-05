@@ -94,6 +94,8 @@ export interface CensusRunTopicResult {
 
 export interface CensusRunResult {
   runId: string;
+  /** Naming model calls issued during this run; reused labels do not count. */
+  namingCallsIssued: number;
   populationSize: number;
   unclassifiedCount: number;
   /**
@@ -217,6 +219,28 @@ const resolveClusterIdentity = (
 };
 
 /**
+ * Strongest symmetric retention score for a survived topic, computed over the full
+ * untruncated memberships. Taking the smaller directional containment is equivalent
+ * to intersection / max(size), so high churn on either side lowers the score.
+ */
+const fullMembershipOverlap = (
+  transition: TopicTransition,
+  cluster: CensusCluster,
+  priorTopicsById: ReadonlyMap<string, ActiveTopicRecord>,
+): number | null => {
+  if (transition.kind !== "survived" || transition.viaCentroidFallback) return null;
+  const priorTopic = priorTopicsById.get(transition.topicId!);
+  if (!priorTopic) return null;
+  const priorMembers = new Set(priorTopic.memberIds);
+  const overlap = cluster.memberIds.reduce(
+    (count, memberId) => count + (priorMembers.has(memberId) ? 1 : 0),
+    0,
+  );
+  const denominator = Math.max(priorMembers.size, new Set(cluster.memberIds).size);
+  return denominator === 0 ? null : overlap / denominator;
+};
+
+/**
  * Orchestrates one topic census run (spec 956, `algorithm.md`): resolves the exact
  * eligible-question population for a window, loads the facets already extracted for
  * it and the workspace's prior active topics, clusters the current facets via
@@ -320,6 +344,7 @@ export class CensusService {
         throw new Error(`census: identity matching produced no transition for cluster ${cluster.id}`);
       }
       const { topicId, parentTopicIds, survivedLabel } = resolveClusterIdentity(transition, priorTopicsById);
+      const membershipOverlap = fullMembershipOverlap(transition, cluster, priorTopicsById);
       const { exemplars, distanceByMessageId } = selectExemplars({ cluster, facetTextById, unitVectorById });
 
       if (survivedLabel) {
@@ -356,6 +381,7 @@ export class CensusService {
           kind: toPersistedTransitionKind(transition.kind),
           parentTopicIds,
           viaCentroidFallback: transition.viaCentroidFallback,
+          membershipOverlap,
         } : null,
       });
       transitions.push({
@@ -363,6 +389,7 @@ export class CensusService {
         kind: toPersistedTransitionKind(transition.kind),
         parentTopicIds,
         viaCentroidFallback: transition.viaCentroidFallback,
+        ...(transition.kind === "survived" ? { membershipOverlap } : {}),
       });
     }));
 
@@ -375,8 +402,14 @@ export class CensusService {
     for (const transition of clusterTransitions) {
       if (transition.kind === "split" || transition.kind === "merged") {
         for (const parentTopicId of transition.parentTopicIds) {
-          if (priorTopicsById.get(parentTopicId)?.dissolvedAt === null) {
+          if (priorTopicsById.get(parentTopicId)?.dissolvedAt === null && !dissolvedTopicIds.has(parentTopicId)) {
             dissolvedTopicIds.add(parentTopicId);
+            transitions.push({
+              topicId: parentTopicId,
+              kind: "dissolved",
+              parentTopicIds: [],
+              viaCentroidFallback: false,
+            });
           }
         }
         continue;
@@ -466,6 +499,7 @@ export class CensusService {
 
     return {
       runId,
+      namingCallsIssued,
       populationSize,
       unclassifiedCount,
       facetReadyQuestionCount: clusterable.length,

@@ -61,6 +61,12 @@ export { AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT };
 /** One or two questions are treated as integer noise even when their ratio is large. */
 export const AUDIENCE_PULSE_NARRATIVE_REUSE_MIN_ABSOLUTE_MOVEMENT = 3;
 export const AUDIENCE_PULSE_NARRATIVE_MAX_CONSECUTIVE_REUSES = 3;
+/**
+ * Reuse requires more than 80% mutual retention of full topic membership. This
+ * mirrors the existing 20% drift boundary while refusing equality at the boundary;
+ * display evidence is intentionally irrelevant to this decision.
+ */
+export const AUDIENCE_PULSE_NARRATIVE_REUSE_MIN_MEMBERSHIP_OVERLAP = 0.8;
 
 export interface AudiencePulseServiceDependencies {
   historySource: AudiencePulseHistorySource;
@@ -154,6 +160,7 @@ type LegacyAudiencePulseStoredReport = Omit<
   | "narrativeGeneratedAt"
   | "narrativeReuseCount"
   | "narrativeReuseMaxDrift"
+  | "isFirstCensus"
   | "unclassifiedQuestionCount"
   | "dissolvedTopics"
   | "coverage"
@@ -162,6 +169,7 @@ type LegacyAudiencePulseStoredReport = Omit<
   narrativeGeneratedAt?: string;
   narrativeReuseCount?: number;
   narrativeReuseMaxDrift?: number;
+  isFirstCensus?: boolean;
   unclassifiedQuestionCount?: number;
   dissolvedTopics?: AudiencePulseStoredReport["dissolvedTopics"];
   coverage: AudiencePulseStoredReport["coverage"] & { facetReadyQuestionCount?: number };
@@ -230,6 +238,7 @@ const hydrateReport = (
   return {
     period: report.period,
     generatedAt: report.generatedAt,
+    isFirstCensus: legacyReport.isFirstCensus ?? false,
     narrativeGeneratedAt: legacyReport.narrativeGeneratedAt ?? report.generatedAt,
     narrativeReuseCount: legacyReport.narrativeReuseCount ?? 0,
     narrativeReuseMaxDrift: legacyReport.narrativeReuseMaxDrift ?? AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT,
@@ -251,7 +260,10 @@ const hydrateReport = (
         memberCount,
         previousMemberCount: theme.previousMemberCount ?? null,
         previousShare: theme.previousShare ?? null,
-        transition: theme.transition ?? null,
+        transition: theme.transition ? {
+          ...theme.transition,
+          membershipOverlap: theme.transition.membershipOverlap ?? null,
+        } : null,
         share,
         ...hydrateThemeEvidence(theme.evidenceIds, resolve),
         weeklyPulse: theme.weeklyPulse,
@@ -389,6 +401,7 @@ const reusableNarrativeSnapshot = (input: {
   populationSize: number;
   unclassifiedQuestionCount: number;
   contentGapThemeIds: readonly string[];
+  recommendationEvidenceIdsByThemeId: ReadonlyMap<string, readonly string[]>;
 }): AudiencePulseNarrativeSnapshot | null => {
   const {
     snapshot,
@@ -397,6 +410,7 @@ const reusableNarrativeSnapshot = (input: {
     populationSize,
     unclassifiedQuestionCount,
     contentGapThemeIds,
+    recommendationEvidenceIdsByThemeId,
   } = input;
   if (!snapshot || typeof snapshot.report.summary !== "string" || snapshot.report.summary.trim().length === 0) {
     return null;
@@ -410,6 +424,12 @@ const reusableNarrativeSnapshot = (input: {
   }
   if (censusResult.topics.some((topic) =>
     topic.transition?.kind !== "survived" || topic.transition.viaCentroidFallback)) {
+    return null;
+  }
+  if (censusResult.topics.some((topic) =>
+    topic.transition?.membershipOverlap === null
+    || topic.transition?.membershipOverlap === undefined
+    || topic.transition.membershipOverlap <= AUDIENCE_PULSE_NARRATIVE_REUSE_MIN_MEMBERSHIP_OVERLAP)) {
     return null;
   }
   if (censusResult.dissolvedTopicIds.length > 0) {
@@ -429,14 +449,11 @@ const reusableNarrativeSnapshot = (input: {
 
   const priorCounts = previousThemeMemberCounts(snapshot);
   const priorShares = previousThemeShares(snapshot);
-  const hasMaterialTopicDrift = censusResult.topics.some((topic) => {
+  const topicDrifts = censusResult.topics.map((topic) => {
     const previousMemberCount = priorCounts.get(topic.topicId);
-    if (previousMemberCount === undefined) {
-      return true;
-    }
     const previousShare = priorShares.get(topic.topicId);
-    if (previousShare === undefined) {
-      return true;
+    if (previousMemberCount === undefined || previousShare === undefined) {
+      return null;
     }
     const countMovement = Math.abs(topic.memberCount - previousMemberCount);
     const countDrift = countMovement / Math.max(previousMemberCount, 1);
@@ -444,10 +461,14 @@ const reusableNarrativeSnapshot = (input: {
     const shareDrift = previousShare === 0
       ? currentShare === 0 ? 0 : Infinity
       : Math.abs(currentShare - previousShare) / previousShare;
-    return reachesNarrativeDriftGate(countMovement, countDrift)
-      || reachesNarrativeDriftGate(countMovement, shareDrift);
+    return { countMovement, countDrift, shareDrift };
   });
-  if (hasMaterialTopicDrift) {
+  if (topicDrifts.some((drift) => drift === null
+    || reachesNarrativeDriftGate(drift.countMovement, drift.countDrift))) {
+    return null;
+  }
+  if (topicDrifts.some((drift) => drift !== null
+    && reachesNarrativeDriftGate(drift.countMovement, drift.shareDrift))) {
     return null;
   }
 
@@ -503,8 +524,14 @@ const reusableNarrativeSnapshot = (input: {
 
   if (snapshot.report.recommendations.some((recommendation) => {
     const currentMemberIds = currentMemberIdsByTopicId.get(recommendation.themeId);
-    return currentMemberIds === undefined || recommendation.evidenceIds.some((evidenceId) =>
-      !currentMemberIds.has(evidenceId) || !currentEvidenceById.get(evidenceId)?.contentGapEligible);
+    const selectedEvidenceIds = recommendationEvidenceIdsByThemeId.get(recommendation.themeId);
+    return currentMemberIds === undefined
+      || selectedEvidenceIds === undefined
+      || recommendation.evidenceIds.length !== selectedEvidenceIds.length
+      || recommendation.evidenceIds.some((evidenceId, index) =>
+        evidenceId !== selectedEvidenceIds[index]
+        || !currentMemberIds.has(evidenceId)
+        || !currentEvidenceById.get(evidenceId)?.contentGapEligible);
   })) {
     return null;
   }
@@ -696,6 +723,23 @@ export class AudiencePulseService implements AudiencePulsePort {
         return { kind: "preparing" };
       }
 
+      try {
+        reservation = await this.deps.usageLimitPolicy.reserveAnswer({
+          accountId: input.accountId,
+          workspaceId: input.workspaceId,
+          surface: "audience_pulse",
+        });
+      } catch (error) {
+        if (isUsageLimitExceededError(error)) {
+          await this.recordOutcome(input, "usage_limited", startedAt, {
+            populationSize: history.coverage.populationSize,
+            sampleSize: history.coverage.sampleSize,
+          });
+          return { kind: "usage_limited" };
+        }
+        throw error;
+      }
+
       // The census clusters the exact eligible-question population for this same
       // window (spec 956 FR-003): it names and sizes every topic before any model
       // call writes a word of narrative about them.
@@ -727,6 +771,7 @@ export class AudiencePulseService implements AudiencePulsePort {
         ...history.coverage,
         facetReadyQuestionCount: censusResult.facetReadyQuestionCount,
       };
+      const priorSnapshot = await this.deps.snapshotStore.find(input.workspaceId);
 
       if (censusResult.facetReadyQuestionCount === 0) {
         // Every eligible question in this window is still missing a current, embedded
@@ -739,6 +784,7 @@ export class AudiencePulseService implements AudiencePulsePort {
         const report = buildAudiencePulseComputingReport({
           period: { start: analysisStart, end: analysisEnd },
           generatedAt,
+          isFirstCensus: priorSnapshot === null,
           coverage: reportCoverage,
           weeklyVolume: history.weeklyVolume,
         });
@@ -761,7 +807,6 @@ export class AudiencePulseService implements AudiencePulsePort {
       }
 
       const evidenceById = new Map(history.evidence.map((item) => [item.id, item]));
-      const priorSnapshot = await this.deps.snapshotStore.find(input.workspaceId);
       const censusTopics = censusTopicsFromRun({ topics: censusResult.topics });
       // This report supplies the current census-derived data to both branches. Reuse
       // carries over only model-authored narrative fields, never an old content-gap
@@ -773,6 +818,7 @@ export class AudiencePulseService implements AudiencePulsePort {
           // Final reports resample this timestamp when narrative reuse or generation
           // completes; the census-owned arrays themselves are built only here.
           generatedAt: startedAt,
+          isFirstCensus: priorSnapshot === null,
           coverage: reportCoverage,
           weeklyVolume: history.weeklyVolume,
           population: history.evidence,
@@ -794,6 +840,7 @@ export class AudiencePulseService implements AudiencePulsePort {
         populationSize: censusReport.report.coverage.populationSize,
         unclassifiedQuestionCount: censusReport.report.unclassifiedQuestionCount,
         contentGapThemeIds: censusReport.report.contentGaps.map((gap) => gap.themeId),
+        recommendationEvidenceIdsByThemeId: censusReport.recommendationEvidenceIdsByThemeId,
       });
       narrativeReused = reusableSnapshot !== null;
 
@@ -849,22 +896,6 @@ export class AudiencePulseService implements AudiencePulsePort {
           operation: "analysis",
           attemptKey: randomUUID(),
         };
-        try {
-          reservation = await this.deps.usageLimitPolicy.reserveAnswer({
-            accountId: input.accountId,
-            workspaceId: input.workspaceId,
-            surface: "audience_pulse",
-          });
-        } catch (error) {
-          if (isUsageLimitExceededError(error)) {
-            await this.recordOutcome(input, "usage_limited", startedAt, {
-              populationSize: history.coverage.populationSize,
-              sampleSize: history.coverage.sampleSize,
-            });
-            return { kind: "usage_limited" };
-          }
-          throw error;
-        }
         const inference = await this.deps.inferenceFactory.create({
           workspaceContext: { workspaceId: input.workspaceId, accountId: input.accountId },
           modelCallContext,
@@ -933,7 +964,7 @@ export class AudiencePulseService implements AudiencePulsePort {
 
       // A validated model completion is billable even when a later snapshot write or
       // accounting operation fails, so do not release its reservation afterward.
-      if (!narrativeReused) {
+      if (censusResult.namingCallsIssued > 0 || !narrativeReused) {
         if (!reservation) {
           throw new Error("audience_pulse: model completion has no usage reservation");
         }

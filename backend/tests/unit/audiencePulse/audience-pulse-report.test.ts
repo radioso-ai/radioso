@@ -55,6 +55,7 @@ const emptyModel: AudiencePulseModelOutput = {
 const baseInput = {
   period,
   generatedAt: new Date("2026-08-01T00:00:00.000Z"),
+  isFirstCensus: false,
   coverage: { populationSize: 3, sampleSize: 3, sampled: false, facetReadyQuestionCount: 3 },
   weeklyVolume: [{
     weekStart: "2026-06-29T00:00:00.000Z",
@@ -80,6 +81,7 @@ describe("Audience Pulse report domain", () => {
           kind: "survived",
           parentTopicIds: ["topic-before"],
           viaCentroidFallback: false,
+          membershipOverlap: 0.9,
         },
       }],
       previousThemeMemberCounts: new Map([["topic-survived", 9]]),
@@ -625,6 +627,7 @@ describe("buildAudiencePulseComputingReport (spec 956 follow-up)", () => {
     const report = buildAudiencePulseComputingReport({
       period,
       generatedAt: new Date("2026-08-01T00:00:00.000Z"),
+      isFirstCensus: true,
       coverage: { populationSize: 104, sampleSize: 104, sampled: false, facetReadyQuestionCount: 0 },
       weeklyVolume: [{
         weekStart: "2026-06-29T00:00:00.000Z",
@@ -638,6 +641,7 @@ describe("buildAudiencePulseComputingReport (spec 956 follow-up)", () => {
     expect(report.summary).toBeUndefined();
     expect(report).toMatchObject({
       generatedAt: "2026-08-01T00:00:00.000Z",
+      isFirstCensus: true,
       narrativeGeneratedAt: "2026-08-01T00:00:00.000Z",
       narrativeReuseCount: 0,
       narrativeReuseMaxDrift: 0.2,

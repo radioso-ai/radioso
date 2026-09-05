@@ -522,9 +522,6 @@ function ReportContent({
   const awaitingTopicAnalysis = populationSize > 0 && facetReadyQuestionCount === 0
   const partiallyAnalysed = !sampled && facetReadyQuestionCount > 0 && facetReadyQuestionCount < populationSize
   const maxThemeShare = Math.max(...report.themes.map((theme) => theme.share))
-  const isFirstCensus = report.themes.length > 0 && report.themes.every(
-    (theme) => theme.transition?.kind === 'emerged',
-  )
 
   return (
     <div className="flex flex-col gap-4">
@@ -669,7 +666,7 @@ function ReportContent({
                 gap={contentGapByTheme.get(theme.id) ?? null}
                 maxShare={maxThemeShare}
                 materialityThreshold={report.narrativeReuseMaxDrift}
-                showNewBadge={!isFirstCensus}
+                showNewBadge={!report.isFirstCensus}
                 onOpenConversation={onOpenConversation}
               />
             ))}

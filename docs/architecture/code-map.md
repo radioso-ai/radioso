@@ -157,6 +157,13 @@ the `Database` pool wrapper, the pgvector/full-text adapters, and the connector 
 the published `@radioso/connector-api` contract — enforced by `pnpm run lint:no-raw-sql`
 (`scripts/checkNoRawSql.mjs`). Migrations themselves stay raw `.sql`.
 
+`pnpm run lint:unbound-methods` (`scripts/checkUnboundMethods.mjs`) catches a class or
+interface method being passed or stored without its receiver, including first-party
+workspace packages. Bind the method or pass an arrow that calls it with its owner;
+reviewed structural-port exceptions use a path, member, and receiver fingerprint in
+the allowlist beside the script. Backend CI and `pnpm run ci:local` run the complete
+backend lint chain.
+
 Should not own product rules. Domain modules depend on a `*RepositoryPort` (a
 type) and never import `pg`, Kysely, the `Database` class, or a concrete repository.
 
@@ -1401,7 +1408,8 @@ Primary paths:
 - `backend/tests/fixtures/conversation-quality/` — the dataset (corpus, seed
   routines and directives, agent, cases, `baseline.json`) and its `README.md`
 - `backend/scripts/runEvals.ts` — headless CLI that seeds fixtures, drives turns
-  through `WorkbenchReplayRunner`, scores, and gates on the baseline
+  through `WorkbenchReplayRunner`, scores, and gates on the baseline; every selected
+  case must have a committed baseline entry
 - `.github/workflows/conversation-quality-evals.yml` — nightly live run
 
 Full-assistant runs use the same conversation turn assembly as production chat

@@ -12,6 +12,6 @@ export interface AgentSkillTurnRuntime {
 export interface AgentSkillTurnSkillProvider {
   forSession(
     session: PreparedSession,
-    coordination?: { throwIfCancelled(): void },
+    coordination?: { throwIfCancelled?: () => void },
   ): Promise<AgentSkillTurnRuntime>;
 }

@@ -11,7 +11,9 @@ export {
 export {
   buildBaselineFile,
   diffAgainstBaseline,
+  hasBaselineGateFailures,
   isBaselineInitialized,
+  mergeBaselineFile,
   type BaselineCaseEntry,
   type BaselineFile,
   type CaseOutcome,

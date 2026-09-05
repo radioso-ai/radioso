@@ -5,6 +5,7 @@ import { resolveContextForTurn, type ResolvedVariableInput } from "../../src/mod
 import { ChatAnswerSupport } from "../../src/modules/chat/services/chatAnswerSupport.js";
 import { buildAssistantReplyPrompt } from "../../src/modules/chat/services/assistantReplyPromptBuilder.js";
 import { ChatSessionPreparer } from "../../src/modules/chat/services/chatSessionPreparer.js";
+import { shouldSuppressRetrievalSenseClarification } from "../../src/modules/chat/services/chatTurnAssembly.js";
 import type { RetrievalTurnPort } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import {
   freezePageReadOutcome,
@@ -173,6 +174,9 @@ describe("page-read three-sink gate", () => {
     const support = new ChatAnswerSupport();
 
     expect(support.buildContextBlock(prepared)).toBe(renderContextBlock(expectedContext.renderFragments));
+    expect(support.buildContextBlock(prepared)).toContain(
+      "For a request about the current page, use the visible page excerpt as evidence and prioritize it over unrelated workspace findings.",
+    );
     expect(prepared.stagedContext.filter((entry) => entry.kind === "context_variable"))
       .toEqual(expectedContext.staged);
     expect(prepared.resolvedContext).toEqual(expectedContext);
@@ -263,5 +267,16 @@ describe("page-read three-sink gate", () => {
         resolvedRequest: "first request",
       },
     });
+  });
+
+  it("suppresses workspace-result clarification when admitted page evidence resolves the request", async () => {
+    const { session } = await harness();
+    freezePlannerDecision(session, {
+      required: true,
+      operation: "lookup",
+      resolvedRequest: "When does the rollout begin?",
+    });
+
+    expect(shouldSuppressRetrievalSenseClarification(session)).toBe(true);
   });
 });

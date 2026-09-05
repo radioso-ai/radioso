@@ -18,6 +18,13 @@ const isWithin = (parent, child) => {
   return path === "" || (!path.startsWith("..") && !path.startsWith("../") && !path.includes("/../"));
 };
 
+const realpath = (path) => ts.sys.realpath?.(path) ?? path;
+
+const isFirstPartyDeclaration = (repositoryDirectory, fileName) => {
+  const resolved = realpath(fileName);
+  return isWithin(realpath(repositoryDirectory), resolved) && !resolved.includes("/node_modules/");
+};
+
 const unwrapParenthesesAndNonNull = (node) => {
   let current = node;
   while (ts.isParenthesizedExpression(current.parent) || ts.isNonNullExpression(current.parent)) {
@@ -51,27 +58,34 @@ const isBooleanConstructorArgument = (node) =>
 
 const isExistenceCheck = (node) => {
   let current = unwrapParenthesesAndNonNull(node);
-  const parent = current.parent;
-
-  if (isBooleanConstructorArgument(current)) return true;
-  if (ts.isTypeOfExpression(parent) && parent.expression === current) return true;
-  if (ts.isPrefixUnaryExpression(parent) && parent.operator === ts.SyntaxKind.ExclamationToken) return true;
-  if (
-    (ts.isIfStatement(parent) || ts.isWhileStatement(parent) || ts.isDoStatement(parent))
-    && parent.expression === current
-  ) return true;
-  if (ts.isConditionalExpression(parent) && parent.condition === current) return true;
-  if (
-    ts.isBinaryExpression(parent)
-    && (parent.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken
-      || parent.operatorToken.kind === ts.SyntaxKind.BarBarToken
-      || parent.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken
-      || parent.operatorToken.kind === ts.SyntaxKind.EqualsEqualsToken
-      || parent.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsToken
-      || parent.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken
-      || parent.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsEqualsToken)
-  ) return true;
-  return false;
+  while (true) {
+    const parent = current.parent;
+    if (isBooleanConstructorArgument(current)) return true;
+    if (ts.isTypeOfExpression(parent) && parent.expression === current) return true;
+    if (ts.isPrefixUnaryExpression(parent) && parent.operator === ts.SyntaxKind.ExclamationToken) return true;
+    if (
+      (ts.isIfStatement(parent) || ts.isWhileStatement(parent) || ts.isDoStatement(parent))
+      && parent.expression === current
+    ) return true;
+    if (ts.isConditionalExpression(parent) && parent.condition === current) return true;
+    if (
+      ts.isBinaryExpression(parent)
+      && (parent.operatorToken.kind === ts.SyntaxKind.EqualsEqualsToken
+        || parent.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsToken
+        || parent.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken
+        || parent.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsEqualsToken)
+    ) return true;
+    if (
+      ts.isBinaryExpression(parent)
+      && (parent.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken
+        || parent.operatorToken.kind === ts.SyntaxKind.BarBarToken
+        || parent.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken)
+    ) {
+      current = unwrapParenthesesAndNonNull(parent);
+      continue;
+    }
+    return false;
+  }
 };
 
 const propertyName = (node) =>
@@ -89,12 +103,12 @@ const symbolAtPropertyName = (checker, node) =>
         ?? checker.getTypeAtLocation(node.expression).getProperty(node.argumentExpression.text)
       : undefined;
 
-const allowlistKey = (entry) => `${entry.file}\u0000${entry.member}`;
+const allowlistKey = (entry) => `${entry.file}\u0000${entry.member}\u0000${entry.receiver}`;
 
 /**
- * @typedef {{ file: string, member: string, reason: string }} UnboundMethodAllowlistEntry
- * @typedef {{ file: string, line: number, column: number, member: string }} UnboundMethodFinding
- * @typedef {{ sourceDirectory: string, allowlist: readonly UnboundMethodAllowlistEntry[] }} UnboundMethodScanOptions
+ * @typedef {{ file: string, member: string, receiver: string, reason: string }} UnboundMethodAllowlistEntry
+ * @typedef {{ file: string, line: number, column: number, member: string, receiver: string }} UnboundMethodFinding
+ * @typedef {{ sourceDirectory: string, repositoryDirectory: string, allowlist: readonly UnboundMethodAllowlistEntry[] }} UnboundMethodScanOptions
  */
 
 /**
@@ -106,7 +120,11 @@ export const findUnboundMethodReferences = (program, options) => {
   const checker = program.getTypeChecker();
   const findings = [];
   const usedAllowlistEntries = new Set();
-  const allowlistByKey = new Map(options.allowlist.map((entry) => [allowlistKey(entry), entry]));
+  const allowlistByKey = new Map();
+  options.allowlist.forEach((entry, index) => {
+    const key = allowlistKey(entry);
+    if (!allowlistByKey.has(key)) allowlistByKey.set(key, index);
+  });
 
   for (const sourceFile of program.getSourceFiles()) {
     if (sourceFile.isDeclarationFile || !isWithin(options.sourceDirectory, sourceFile.fileName)) continue;
@@ -123,17 +141,22 @@ export const findUnboundMethodReferences = (program, options) => {
         ) {
           const symbol = symbolAtPropertyName(checker, node);
           const declarations = symbol?.getDeclarations() ?? [];
-          const declaredInOwnSource = declarations.length > 0
-            && declarations.every((declaration) => isWithin(options.sourceDirectory, declaration.getSourceFile().fileName));
+          const declaredInFirstPartyCode = declarations.length > 0
+            && declarations.every((declaration) => isFirstPartyDeclaration(
+              options.repositoryDirectory,
+              declaration.getSourceFile().fileName,
+            ));
 
-          if (declaredInOwnSource && declarations.every(isMethodDeclaration)) {
+          if (declaredInFirstPartyCode && declarations.every(isMethodDeclaration)) {
             const file = relative(dirname(options.sourceDirectory), sourceFile.fileName).split("\\").join("/");
-            const key = allowlistKey({ file, member });
-            if (allowlistByKey.has(key)) {
-              usedAllowlistEntries.add(key);
+            const receiver = node.expression.getText(sourceFile);
+            const key = allowlistKey({ file, member, receiver });
+            const allowlistIndex = allowlistByKey.get(key);
+            if (allowlistIndex !== undefined) {
+              usedAllowlistEntries.add(allowlistIndex);
             } else {
               const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
-              findings.push({ file, line: position.line + 1, column: position.character + 1, member });
+              findings.push({ file, line: position.line + 1, column: position.character + 1, member, receiver });
             }
           }
         }
@@ -146,7 +169,7 @@ export const findUnboundMethodReferences = (program, options) => {
 
   return {
     findings,
-    staleAllowlistEntries: options.allowlist.filter((entry) => !usedAllowlistEntries.has(allowlistKey(entry))),
+    staleAllowlistEntries: options.allowlist.filter((_entry, index) => !usedAllowlistEntries.has(index)),
   };
 };
 
@@ -165,6 +188,7 @@ const run = () => {
   const backendDirectory = fileURLToPath(new URL("..", import.meta.url));
   const result = findUnboundMethodReferences(createRuntimeProgram(backendDirectory), {
     sourceDirectory: resolve(backendDirectory, "src"),
+    repositoryDirectory: resolve(backendDirectory, ".."),
     allowlist,
   });
 
@@ -176,13 +200,13 @@ const run = () => {
   if (result.findings.length > 0) {
     console.error("✖ Detached method references found:");
     for (const finding of result.findings) {
-      console.error(`  ${finding.file}:${finding.line}:${finding.column} ${finding.member}: detached method reference; bind it or pass an arrow`);
+      console.error(`  ${finding.file}:${finding.line}:${finding.column} ${finding.receiver}.${finding.member}: detached method reference; bind it or pass an arrow`);
     }
   }
   if (result.staleAllowlistEntries.length > 0) {
     console.error("✖ Stale unbound-method allowlist entries found:");
     for (const entry of result.staleAllowlistEntries) {
-      console.error(`  ${entry.file} ${entry.member}: ${entry.reason}`);
+      console.error(`  ${entry.file} ${entry.receiver}.${entry.member}: ${entry.reason}`);
     }
   }
   process.exitCode = 1;

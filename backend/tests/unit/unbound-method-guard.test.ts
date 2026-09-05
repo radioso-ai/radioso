@@ -1,6 +1,6 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import ts from "typescript";
 import { afterEach, describe, expect, it } from "vitest";
@@ -18,13 +18,33 @@ afterEach(() => {
   }
 });
 
-const scan = (source: string, allowlist: readonly UnboundMethodAllowlistEntry[] = []) => {
+const scan = (
+  source: string,
+  options: {
+    allowlist?: readonly UnboundMethodAllowlistEntry[];
+    workspacePackage?: { name: string; declaration: string };
+  } = {},
+) => {
   const directory = mkdtempSync(join(tmpdir(), "radioso-unbound-method-"));
   tempDirectories.push(directory);
   const sourceDirectory = join(directory, "src");
   const fileName = join(sourceDirectory, "fixture.ts");
-  ts.sys.createDirectory(sourceDirectory);
+  mkdirSync(sourceDirectory, { recursive: true });
   writeFileSync(fileName, source);
+  if (options.workspacePackage) {
+    const packageDirectory = join(directory, "packages", "first-party");
+    const declarationFile = join(packageDirectory, "index.d.ts");
+    const packageLink = join(directory, "node_modules", options.workspacePackage.name);
+    mkdirSync(packageDirectory, { recursive: true });
+    mkdirSync(dirname(packageLink), { recursive: true });
+    writeFileSync(declarationFile, options.workspacePackage.declaration);
+    writeFileSync(join(packageDirectory, "package.json"), JSON.stringify({
+      name: options.workspacePackage.name,
+      type: "module",
+      exports: "./index.d.ts",
+    }));
+    symlinkSync(packageDirectory, packageLink, "dir");
+  }
 
   const program = ts.createProgram([fileName], {
     target: ts.ScriptTarget.ES2022,
@@ -33,7 +53,11 @@ const scan = (source: string, allowlist: readonly UnboundMethodAllowlistEntry[] 
     strict: true,
   });
 
-  return findUnboundMethodReferences(program, { sourceDirectory, allowlist });
+  return findUnboundMethodReferences(program, {
+    sourceDirectory,
+    repositoryDirectory: directory,
+    allowlist: options.allowlist ?? [],
+  });
 };
 
 describe("unbound-method guard", () => {
@@ -81,6 +105,43 @@ describe("unbound-method guard", () => {
     expect(result.findings).toEqual([]);
   });
 
+  it("flags value-producing logical fallbacks", () => {
+    const result = scan(`
+      class Example {
+        method(): void {}
+
+        use(fallback: () => void): void {
+          const throughAnd = this.method && fallback;
+          const throughOr = this.method || fallback;
+          const throughNullish = this.method ?? fallback;
+          void throughAnd;
+          void throughOr;
+          void throughNullish;
+        }
+      }
+    `);
+
+    expect(result.findings).toHaveLength(3);
+    expect(result.findings.every((finding) => finding.member === "method")).toBe(true);
+  });
+
+  it("flags a method declared by a first-party workspace package", () => {
+    const result = scan(`
+      import type { FirstPartyPort } from "@fixture/first-party";
+
+      declare const port: FirstPartyPort;
+      const detached = port.method;
+      void detached;
+    `, {
+      workspacePackage: {
+        name: "@fixture/first-party",
+        declaration: "export interface FirstPartyPort { method(): void; arrow: () => void; }",
+      },
+    });
+
+    expect(result.findings).toMatchObject([{ file: "src/fixture.ts", member: "method" }]);
+  });
+
   it("accepts a non-null assertion call target", () => {
     const result = scan(`
       class Example {
@@ -97,21 +158,33 @@ describe("unbound-method guard", () => {
 
   it("allows reviewed findings and reports stale allowlist entries", () => {
     const allowlist = [
-      { file: "src/fixture.ts", member: "method", reason: "Fixture exercises the allowlist." },
-      { file: "src/fixture.ts", member: "removed", reason: "This entry is stale." },
+      {
+        file: "src/fixture.ts",
+        member: "method",
+        receiver: "primary",
+        reason: "Fixture exercises the allowlist.",
+      },
+      {
+        file: "src/fixture.ts",
+        member: "removed",
+        receiver: "primary",
+        reason: "This entry is stale.",
+      },
     ] satisfies readonly UnboundMethodAllowlistEntry[];
     const result = scan(`
       class Example {
         method(): void {}
-
-        use(): void {
-          const detached = this.method;
-          void detached;
-        }
       }
-    `, allowlist);
 
-    expect(result.findings).toEqual([]);
+      declare const primary: Example;
+      declare const secondary: Example;
+      const firstDetached = primary.method;
+      const secondDetached = secondary.method;
+      void firstDetached;
+      void secondDetached;
+    `, { allowlist });
+
+    expect(result.findings).toMatchObject([{ member: "method", receiver: "secondary" }]);
     expect(result.staleAllowlistEntries).toEqual([allowlist[1]]);
   });
 });

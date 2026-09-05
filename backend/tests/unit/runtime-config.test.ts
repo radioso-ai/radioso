@@ -99,6 +99,7 @@ describe("runtime configuration", () => {
       "./backend/src:/app/backend/src",
       "./backend/prompts:/app/backend/prompts",
       "./packages/conversation-engine/src:/app/packages/conversation-engine/src",
+      "./packages/operator-mcp-contract/src:/app/packages/operator-mcp-contract/src",
       "radioso_backend_node_modules:/app/backend/node_modules",
     ];
     for (const service of [backend, worker]) {
@@ -127,6 +128,7 @@ describe("runtime configuration", () => {
       "packages/crawler/package.json",
       "packages/document-parser/package.json",
       "packages/mcp-source-proof/package.json",
+      "packages/operator-mcp-contract/package.json",
       "packages/radioso-mcp-server/package.json",
       "packages/skill-contract/package.json",
       "packages/usage-contract/package.json",
@@ -139,6 +141,7 @@ describe("runtime configuration", () => {
     expect(entrypoint).toContain("zod/package.json");
     expect(dockerfile).toContain("COPY packages/conversation-defaults ./packages/conversation-defaults");
     expect(dockerfile).toContain("COPY packages/mcp-source-proof ./packages/mcp-source-proof");
+    expect(dockerfile).toContain("COPY packages/operator-mcp-contract ./packages/operator-mcp-contract");
     expect(dockerfile).toContain("@radioso/conversation-defaults...");
     expect(entrypoint).toContain("backend/node_modules/@radioso/conversation-engine");
     expect(entrypoint).toContain("backend/node_modules/@radioso/conversation-defaults");
@@ -163,6 +166,9 @@ describe("runtime configuration", () => {
       "COPY packages/mcp-source-proof/package.json ./packages/mcp-source-proof/package.json",
       "COPY packages/mcp-source-proof ./packages/mcp-source-proof",
       "COPY --chown=node:node --from=build /app/packages/mcp-source-proof/dist ./packages/mcp-source-proof/dist",
+      "COPY packages/operator-mcp-contract/package.json ./packages/operator-mcp-contract/package.json",
+      "COPY packages/operator-mcp-contract ./packages/operator-mcp-contract",
+      "COPY --chown=node:node --from=build /app/packages/operator-mcp-contract/dist ./packages/operator-mcp-contract/dist",
       "@radioso/conversation-tools...",
     ]) {
       expect(dockerfile).toContain(expected);
@@ -170,6 +176,7 @@ describe("runtime configuration", () => {
 
     expect(workflow).toContain("packages/conversation-tools/**");
     expect(workflow).toContain("packages/mcp-source-proof/**");
+    expect(workflow).toContain("packages/operator-mcp-contract/**");
     expect(workflow).toContain("packages/radioso-mcp-server/**");
     expect(workflow).toContain("mcp_service: radioso-staging-mcp");
     expect(sharedDeployWorkflow).toContain('--build-arg RADIOSO_EDITION="${RADIOSO_EDITION}"');

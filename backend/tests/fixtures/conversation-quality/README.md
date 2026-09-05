@@ -41,11 +41,14 @@ pnpm run evals                 # thereafter: run + gate against the baseline
 pnpm run evals -- --tag routine # only cases carrying a tag (repeatable)
 ```
 
-`baseline.json` ships empty. Regression gating keys off it: only a case that *used to
-pass and now doesn't* fails the run, so a case that was already failing (e.g. the flaky
-clarification case) does not fail CI until it's fixed and re-baselined. **Because an empty
-baseline can't gate, the runner fails loudly in run mode until you initialize it** — run
-`pnpm run evals:update-baseline` once against a known-good run first.
+`baseline.json` must cover every case selected for a normal run. The runner fails when a
+case is missing, rather than treating it as an informational addition, so add a case and
+record its observed outcome together. A case that was already failing does not fail merely
+because it remains failing, but sampled baselines also retain the observed pass rate: a
+case recorded at 4/5 and later falling to 0/5 is reported as a rate regression.
+
+**Because an empty baseline can't gate, the runner fails loudly in run mode until you
+initialize it** — run `pnpm run evals:update-baseline` once against a known-good run first.
 
 `--judge` (llm_judge grading) is not wired yet — it's a fast-follow (needs a judge seam).
 The runner rejects the flag and scores the deterministic layer only.
@@ -64,11 +67,12 @@ pnpm run evals:update-baseline -- --samples 5  # record a gate-worthy baseline
 ```
 
 Each case runs K times; its reduced status is `pass` only when the per-sample pass rate
-clears `--pass-threshold` (default `1.0`, unanimous). Because a flaky case can't clear the
-threshold, it's recorded as `fail` in the baseline and never gates until it's genuinely
-stable — so a `pass` baseline entry is one that reliably passes, and a real regression is
-unambiguous. The report marks cases whose samples disagreed as **flaky**. Record the
-baseline and run CI with the same `--samples`/`--pass-threshold`.
+clears `--pass-threshold` (default `1.0`, unanimous). The recorded baseline keeps that
+status alongside the measured pass rate, sample count, and threshold. Because a flaky case
+can't clear the threshold, it's recorded as `fail` in the baseline and never gates until
+it's genuinely stable — so a `pass` baseline entry is one that reliably passes, and a real
+regression is unambiguous. The report marks cases whose samples disagreed as **flaky**.
+Record the baseline and run CI with the same `--samples`/`--pass-threshold`.
 
 ## Adding a case
 

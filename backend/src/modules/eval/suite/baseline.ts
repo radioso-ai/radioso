@@ -94,6 +94,10 @@ const isRegression = (from: EvalRunStatus, to: EvalRunStatus): boolean =>
 const isFix = (from: EvalRunStatus, to: EvalRunStatus): boolean =>
   from !== "pass" && to === "pass";
 
+/** A run is ungated when any selected case has no committed expected outcome. */
+export const hasBaselineGateFailures = (diff: BaselineDiff): boolean =>
+  diff.regressions.length > 0 || diff.rateRegressions.length > 0 || diff.newCases.length > 0;
+
 export const diffAgainstBaseline = (
   current: CaseOutcome[],
   baseline: BaselineFile,
@@ -176,10 +180,17 @@ export const diffAgainstBaseline = (
 export const isBaselineInitialized = (baseline: BaselineFile): boolean =>
   Object.keys(baseline.cases).length > 0;
 
-export const buildBaselineFile = (current: CaseOutcome[], generatedAt: string): BaselineFile => {
+export const buildBaselineFile = (
+  current: CaseOutcome[],
+  generatedAt: string,
+  passThreshold?: number,
+): BaselineFile => {
   const cases: Record<string, BaselineCaseEntry> = {};
   for (const outcome of [...current].sort((left, right) => left.caseId.localeCompare(right.caseId))) {
-    cases[outcome.caseId] = outcome.status;
+    cases[outcome.caseId] =
+      outcome.passRate === undefined && outcome.samples === undefined
+        ? outcome.status
+        : { status: outcome.status, passRate: outcome.passRate, samples: outcome.samples };
   }
-  return { generatedAt, cases };
+  return { generatedAt, passThreshold, cases };
 };

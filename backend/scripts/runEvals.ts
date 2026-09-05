@@ -37,6 +37,7 @@ import {
   buildBaselineFile,
   diffAgainstBaseline,
   formatReport,
+  hasBaselineGateFailures,
   isBaselineInitialized,
   parseConversationQualityCases,
   runConversationQualitySuiteSampled,
@@ -113,7 +114,7 @@ const ensureTarget = async (
 const loadBaseline = (): BaselineFile => {
   try {
     const parsed = JSON.parse(readFileSync(BASELINE_PATH, "utf8")) as Partial<BaselineFile>;
-    return { generatedAt: parsed.generatedAt, cases: parsed.cases ?? {} };
+    return { generatedAt: parsed.generatedAt, passThreshold: parsed.passThreshold, cases: parsed.cases ?? {} };
   } catch {
     return { cases: {} };
   }
@@ -350,7 +351,10 @@ const main = async (): Promise<void> => {
 
     if (flags.updateBaseline) {
       const generatedAt = new Date().toISOString();
-      writeFileSync(BASELINE_PATH, `${JSON.stringify(buildBaselineFile(outcomes, generatedAt), null, 2)}\n`);
+      writeFileSync(
+        BASELINE_PATH,
+        `${JSON.stringify(buildBaselineFile(outcomes, generatedAt, flags.passThreshold), null, 2)}\n`,
+      );
       console.log(`Baseline updated: ${path.relative(process.cwd(), BASELINE_PATH)}`);
       return;
     }
@@ -365,8 +369,10 @@ const main = async (): Promise<void> => {
       process.exitCode = 1;
     }
 
-    if (diff.regressions.length > 0) {
-      console.error(`${diff.regressions.length} case(s) regressed against the baseline.`);
+    if (hasBaselineGateFailures(diff)) {
+      console.error(
+        `${diff.regressions.length + diff.rateRegressions.length + diff.newCases.length} case(s) failed baseline gating.`,
+      );
       process.exitCode = 1;
     }
   } finally {

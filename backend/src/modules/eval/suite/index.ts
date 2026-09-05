@@ -23,6 +23,7 @@ export {
   baselineCaseStatus,
   buildBaselineFile,
   diffAgainstBaseline,
+  hasBaselineGateFailures,
   isBaselineInitialized,
   type BaselineCaseEntry,
   type BaselineCaseRecord,

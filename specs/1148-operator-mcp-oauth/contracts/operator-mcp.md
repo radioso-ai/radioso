@@ -13,9 +13,8 @@
 
 ## Request profile
 
-- Protocol version: `2026-07-28` only.
-- Stateless JSON-RPC request over HTTP POST; no operator session ID and no
-  initialization handshake.
+- Primary protocol version: `2026-07-28`, using stateless JSON-RPC over HTTP
+  POST with no operator session ID and no initialization handshake.
 - Supported methods: `server/discover`, `ping`, `tools/list`, `tools/call`.
 - Every request mirrors the protocol version and method in
   `MCP-Protocol-Version` and `Mcp-Method` before an unrestricted body is parsed.
@@ -31,6 +30,11 @@
   list is marked grant-private with a zero TTL and rebuilt from current grant,
   client, tenure, role, and descriptor state. Every successful response carries
   `resultType: "complete"`.
+- A compatibility adapter accepts the standard `2025-06-18` initialize,
+  initialized-notification, ping, tool-list, and tool-call lifecycle used by
+  current MCP clients. It translates into the primary handler; credential
+  admission, scopes, limits, proofs, catalog policy, and invocation remain one
+  path. Standard responses omit Radioso-only descriptor and result fields.
 
 ## Tool mapping
 

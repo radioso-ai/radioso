@@ -13,9 +13,10 @@ import {
   type OperatorMcpScope,
 } from "@radioso/operator-mcp-contract";
 
-import type {
-  OperatorMcpCredentialValidationService,
-  OperatorMcpPrincipal,
+import {
+  OperatorMcpAccessError,
+  type OperatorMcpCredentialValidationService,
+  type OperatorMcpPrincipal,
 } from "../operatorMcpAuthorization/public.js";
 import type { AuditPort } from "../audit/contracts/index.js";
 import type { CopilotCurrentAuthorizationPort, CopilotToolInvocationContext } from "./contracts.js";
@@ -170,9 +171,15 @@ export class OperatorMcpApplicationService {
     if (proof.method !== expectedMethod || !verifyOperatorMcpProof({ proof, secret: this.dependencies.secret, now: now.getTime() })) {
       throw new OperatorMcpApplicationError("invalid_proof");
     }
-    const principal = await this.dependencies.credentialValidation.revalidateCredential({
-      credentialId: proof.credentialId, resource: proof.resource, now,
-    });
+    let principal: OperatorMcpPrincipal;
+    try {
+      principal = await this.dependencies.credentialValidation.revalidateCredential({
+        credentialId: proof.credentialId, resource: proof.resource, now,
+      });
+    } catch (error) {
+      if (error instanceof OperatorMcpAccessError) throw new OperatorMcpApplicationError("invalid_proof");
+      throw error;
+    }
     if (!proofMatchesPrincipal(proof, principal)) throw new OperatorMcpApplicationError("invalid_proof");
     const consumed = await this.dependencies.invocations.consumeProof(sha256Digest(proof.nonce), now);
     if (consumed !== "consumed") throw new OperatorMcpApplicationError(consumed === "replay" ? "proof_replay" : "invalid_proof");
@@ -181,7 +188,13 @@ export class OperatorMcpApplicationService {
 
   async admit(request: OperatorAdmissionRequest): Promise<OperatorAdmissionResponse> {
     const now = this.now();
-    const principal = await this.dependencies.credentialValidation.validate({ accessToken: request.accessToken, resource: request.resource, now });
+    let principal: OperatorMcpPrincipal;
+    try {
+      principal = await this.dependencies.credentialValidation.validate({ accessToken: request.accessToken, resource: request.resource, now });
+    } catch (error) {
+      if (error instanceof OperatorMcpAccessError) throw new OperatorMcpApplicationError("invalid_admission");
+      throw error;
+    }
     let requiredScope: OperatorMcpScope | undefined;
     let shape: "read" | "probe" | "act" | "propose" | null = null;
     if (request.method === "tools/call") {

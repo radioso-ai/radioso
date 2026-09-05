@@ -8,7 +8,8 @@ model their redirect responses.
 ## Discovery
 
 - `GET /.well-known/oauth-authorization-server`
-- Returns issuer, authorization/token/revocation endpoints and, only when the
+- Returns issuer, authorization/token/revocation endpoints,
+  `client_id_metadata_document_supported: true`, and, only when the
   evidence-gated bounded DCR profile is implemented and enabled, a registration endpoint,
   `authorization_code` and `refresh_token`, S256, supported client methods, the
   four tool scopes, and `offline_access`.

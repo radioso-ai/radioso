@@ -127,6 +127,33 @@ describe("operator MCP client metadata", () => {
     await expect(registered.resolve({ clientId: preregistered.clientId, redirectUri: "com.example.other:/callback" })).rejects.toThrow(/redirect/i);
   });
 
+  it("accepts a literal loopback callback when native metadata also advertises an unusable localhost fallback", async () => {
+    const callbackPath = "/callback/codex-session";
+    const native = {
+      ...metadata,
+      application_type: "native",
+      redirect_uris: [
+        `http://127.0.0.1${callbackPath}`,
+        `http://localhost${callbackPath}`,
+      ],
+    };
+    const service = createOperatorMcpClientMetadataService({
+      fetchImpl: vi.fn<typeof fetch>().mockImplementation(async () => response(native)),
+    });
+
+    await expect(service.resolve({
+      clientId,
+      redirectUri: `http://127.0.0.1:53192${callbackPath}`,
+    })).resolves.toMatchObject({
+      applicationType: "native",
+      redirectUris: [`http://127.0.0.1${callbackPath}`],
+    });
+    await expect(service.resolve({
+      clientId,
+      redirectUri: `http://localhost:53192${callbackPath}`,
+    })).rejects.toThrow(/redirect/i);
+  });
+
   it("keeps a validated snapshot stable when a later resolution returns mutated metadata", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(response(metadata)).mockResolvedValueOnce(response({ ...metadata, client_name: "Mutated client" }));
     const service = createOperatorMcpClientMetadataService({ fetchImpl });

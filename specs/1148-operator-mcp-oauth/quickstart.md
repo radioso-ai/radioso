@@ -3,8 +3,9 @@
 ## Recorded Phase 1 evidence
 
 - Frozen local build identities: Codex CLI `0.149.0`; Claude Code `2.1.149`.
-  Neither named client has completed an end-to-end discovery/callback journey,
-  so both fixtures remain `verified: false`; ChatGPT is also unverified.
+  Codex has partial exact-build evidence described below, but no named client
+  has completed every lifecycle gate, so all fixtures remain `verified: false`;
+  ChatGPT is also unverified.
 - The initial contract command failed operationally because the new workspace
   package had not yet been installed (`vitest: command not found`); this was not
   accepted as TDD evidence. The isolated handler then produced an assertion-level
@@ -51,6 +52,30 @@ workspace-setting proposal, realtime, and crawler changes):
 The named Codex CLI, Claude Code, and ChatGPT fixtures remain deliberately
 unverified and unavailable. This validation does not claim real-client or MCP
 SDK conformance, and no act capability is admitted.
+
+## Recorded Codex CLI compatibility evidence
+
+Validated locally on 2026-09-05 with Codex CLI `0.149.0` against separate
+Radioso backend and standalone MCP processes:
+
+- OAuth discovery succeeded through a Client ID Metadata Document after the
+  authorization server advertised CIMD support. Codex's literal
+  `127.0.0.1` callback was pinned; its additional `localhost` fallback was not
+  admitted as an authorization target.
+- Browser-bound consent, authorization-code exchange, standard MCP
+  `2025-06-18` initialization, tool listing, and one real
+  `workspace_settings` invocation succeeded. The result included the expected
+  workspace dashboard route.
+- Dashboard revocation immediately revoked the grant and refresh lineage.
+- After forced access-token expiry, Radioso returned a protected-resource
+  challenge with `error="invalid_token"`. Codex did not attempt its stored
+  refresh credential, and the lineage remained at generation 1. `codex mcp
+  logout` removed only the local credential and did not call Radioso's
+  revocation endpoint.
+
+Because the exact-build refresh gate did not pass, the Codex named setup
+artifact remains unavailable. These results support the generic, explicitly
+unverified connection path; they do not satisfy the named-client release gate.
 
 ## Prerequisites
 

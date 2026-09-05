@@ -91,6 +91,20 @@ const assertRedirect = (uri: string, applicationType: "web" | "native"): string 
   return uri;
 };
 
+const isUnsupportedNativeLocalhostRedirect = (uri: string, applicationType: "web" | "native"): boolean => {
+  if (applicationType !== "native" || CONTROL_CHARACTERS.test(uri)) return false;
+  try {
+    const url = new URL(uri);
+    return url.protocol === "http:"
+      && url.hostname === "localhost"
+      && !url.username
+      && !url.password
+      && !url.hash;
+  } catch {
+    return false;
+  }
+};
+
 const isLiteralLoopbackRedirect = (uri: string): boolean => {
   try {
     const url = new URL(uri);
@@ -226,7 +240,15 @@ export const createOperatorMcpClientMetadataService = (options: OperatorMcpClien
         if (uri.protocol !== "https:" || uri.hash || uri.search || uri.username || uri.password) throw new OperatorMcpClientMetadataError("invalid_client_metadata", "Invalid client URI");
         await assertPublicUrl(metadata.client_uri);
       }
-      const redirectUris = metadata.redirect_uris.map((uri) => assertRedirect(uri, metadata.application_type));
+      // Some native clients publish both the RFC 8252 literal-loopback callback they use and a
+      // localhost fallback. Keep the interoperable literal callback without admitting localhost
+      // as an authorization target: unsupported entries are absent from the immutable snapshot.
+      const redirectUris = metadata.redirect_uris
+        .filter((uri) => !isUnsupportedNativeLocalhostRedirect(uri, metadata.application_type))
+        .map((uri) => assertRedirect(uri, metadata.application_type));
+      if (redirectUris.length === 0) {
+        throw new OperatorMcpClientMetadataError("invalid_client_metadata", "Client metadata has no supported redirect URI");
+      }
       if (input.redirectUri) assertRequestedRedirect({
         applicationType: metadata.application_type,
         requested: input.redirectUri,

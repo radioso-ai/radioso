@@ -155,6 +155,7 @@ describe("copilot catalog contributions through the real factory", () => {
     } as never).invoke({}, { signal: new AbortController().signal, stepIndex: 0, callId: "call-1" } as never);
 
     expect(result).toMatchObject({ value: "extension", dashboardUrl: "/w/acme/settings" });
+    expect(contributed!.outputSchema.parse(result)).toMatchObject({ dashboardUrl: "/w/acme/settings" });
     expect(copilotResolvableToolPermissions(catalog)).toContain("workspace.settings.read");
   });
 

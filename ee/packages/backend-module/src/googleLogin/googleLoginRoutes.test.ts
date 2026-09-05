@@ -12,6 +12,45 @@ const config: GoogleOAuthConfig = {
 };
 
 const SUCCESS_REDIRECT = "https://app.example.com/";
+const STATE_COOKIE_NAME = "radioso_google_login_state";
+const RETURN_TO_COOKIE_NAME = "radioso_google_login_return_to";
+
+const MALICIOUS_RETURN_TARGETS = [
+  "https://evil.example.com/x",
+  "//evil.example.com/x",
+  "/\\evil.example.com",
+  "javascript:alert(1)",
+  // The URL parser strips ASCII tab, CR and LF before parsing, so each of these
+  // inspects as an ordinary path and then resolves to `//host`. A guard that
+  // reads raw characters cannot see it; only comparing the resolved origin can.
+  "/\t//evil.example.com",
+  "/\n//evil.example.com",
+  "/\r//evil.example.com",
+  "/\t/\\evil.example.com",
+  "/\r//evil.example.com/phish?a=1",
+  "/\t//user:password@evil.example.com",
+];
+
+// Stubs a token exchange and userinfo call that both succeed, so a callback
+// can run all the way through to `federatedLogin`.
+const createSuccessfulFetch = (): typeof fetch =>
+  vi.fn(async (input: string | URL | Request) => {
+    const url = String(input);
+    const body = url.includes("token")
+      ? { access_token: "access-token" }
+      : { sub: "google-sub", email: "person@example.com", email_verified: true, name: "Person" };
+    return { ok: true, status: 200, json: async () => body } as unknown as Response;
+  }) as unknown as typeof fetch;
+
+// Extracts just the `name=value` pair from a Set-Cookie header entry so it
+// can be replayed on a follow-up request's Cookie header.
+const cookiePair = (setCookieHeader: string[] | undefined, name: string): string => {
+  const found = (setCookieHeader ?? []).find((entry) => entry.startsWith(`${name}=`));
+  if (!found) {
+    throw new Error(`Expected a ${name} cookie in the response`);
+  }
+  return found.split(";")[0]!;
+};
 
 const federatedLoginResult = {
   userId: "user-1",
@@ -188,5 +227,133 @@ describe("google login routes", () => {
     expect(response.status).toBe(302);
     expect(response.headers.location).toContain("error=google_login_failed");
     expect(federatedLogin).not.toHaveBeenCalled();
+  });
+
+  it("stores a same-origin returnTo on start and redirects to it after a successful callback", async () => {
+    const federatedLogin = vi.fn(async () => federatedLoginResult);
+    const { app } = createApp({ fetchImpl: createSuccessfulFetch(), authService: { federatedLogin } });
+
+    const start = await request(app).get("/api/v1/ee/auth/google/start?returnTo=/invite/abc123");
+    const startCookies = start.headers["set-cookie"] as unknown as string[];
+    const stateCookie = cookiePair(startCookies, STATE_COOKIE_NAME);
+    const returnToCookie = cookiePair(startCookies, RETURN_TO_COOKIE_NAME);
+
+    const callback = await request(app)
+      .get("/api/v1/ee/auth/google/callback?code=auth-code&state=fixed-state")
+      .set("Cookie", [stateCookie, returnToCookie].join("; "));
+
+    expect(callback.status).toBe(302);
+    expect(callback.headers.location).toBe("https://app.example.com/invite/abc123");
+  });
+
+  it.each(MALICIOUS_RETURN_TARGETS)(
+    "rejects %s as a returnTo value on start and never redirects there from callback",
+    async (maliciousReturnTo) => {
+      const federatedLogin = vi.fn(async () => federatedLoginResult);
+      const { app } = createApp({ fetchImpl: createSuccessfulFetch(), authService: { federatedLogin } });
+
+      const start = await request(app).get(
+        `/api/v1/ee/auth/google/start?returnTo=${encodeURIComponent(maliciousReturnTo)}`,
+      );
+      const startCookies = start.headers["set-cookie"] as unknown as string[];
+      const returnToCookie = startCookies.find((entry) => entry.startsWith(`${RETURN_TO_COOKIE_NAME}=`));
+      expect(returnToCookie).toMatch(new RegExp(`^${RETURN_TO_COOKIE_NAME}=;`));
+      expect(returnToCookie).toContain("Max-Age=0");
+      const stateCookie = cookiePair(startCookies, STATE_COOKIE_NAME);
+
+      const callback = await request(app)
+        .get("/api/v1/ee/auth/google/callback?code=auth-code&state=fixed-state")
+        .set("Cookie", stateCookie);
+
+      expect(callback.status).toBe(302);
+      expect(callback.headers.location).toBe(SUCCESS_REDIRECT);
+    },
+  );
+
+  it("falls back to successRedirect when the return cookie is tampered to an off-origin value", async () => {
+    const federatedLogin = vi.fn(async () => federatedLoginResult);
+    const { app } = createApp({ fetchImpl: createSuccessfulFetch(), authService: { federatedLogin } });
+
+    const tamperedReturnToCookie = `${RETURN_TO_COOKIE_NAME}=${encodeURIComponent("https://evil.example.com/x")}`;
+
+    const callback = await request(app)
+      .get("/api/v1/ee/auth/google/callback?code=auth-code&state=fixed-state")
+      .set("Cookie", [`${STATE_COOKIE_NAME}=fixed-state`, tamperedReturnToCookie].join("; "));
+
+    expect(callback.status).toBe(302);
+    expect(callback.headers.location).toBe(SUCCESS_REDIRECT);
+  });
+
+  it("redirects a failed callback back to the stored returnTo path carrying the error param", async () => {
+    const { app } = createApp();
+
+    const start = await request(app).get("/api/v1/ee/auth/google/start?returnTo=/invite/xyz");
+    const startCookies = start.headers["set-cookie"] as unknown as string[];
+    const returnToCookie = cookiePair(startCookies, RETURN_TO_COOKIE_NAME);
+
+    const callback = await request(app)
+      .get("/api/v1/ee/auth/google/callback?error=access_denied")
+      .set("Cookie", returnToCookie);
+
+    expect(callback.status).toBe(302);
+    expect(callback.headers.location).toBe("https://app.example.com/invite/xyz?error=google_login_failed");
+  });
+
+  it("forwards loginHint to the Google authorization URL when provided", async () => {
+    const { app } = createApp();
+
+    const response = await request(app).get(
+      "/api/v1/ee/auth/google/start?loginHint=someone%40example.com",
+    );
+
+    const location = new URL(response.headers.location);
+    expect(location.searchParams.get("login_hint")).toBe("someone@example.com");
+  });
+
+  it("omits login_hint from the Google authorization URL when no loginHint is given", async () => {
+    const { app } = createApp();
+
+    const response = await request(app).get("/api/v1/ee/auth/google/start");
+
+    const location = new URL(response.headers.location);
+    expect(location.searchParams.has("login_hint")).toBe(false);
+  });
+
+  it("clears both handshake cookies on every callback outcome", async () => {
+    const expectBothCookiesCleared = (setCookieHeader: string[] | undefined) => {
+      const cookies = setCookieHeader ?? [];
+      expect(
+        cookies.some((entry) => entry.startsWith(`${STATE_COOKIE_NAME}=;`) && entry.includes("Max-Age=0")),
+      ).toBe(true);
+      expect(
+        cookies.some((entry) => entry.startsWith(`${RETURN_TO_COOKIE_NAME}=;`) && entry.includes("Max-Age=0")),
+      ).toBe(true);
+    };
+
+    const success = createApp({ fetchImpl: createSuccessfulFetch() });
+    const successResponse = await request(success.app)
+      .get("/api/v1/ee/auth/google/callback?code=auth-code&state=fixed-state")
+      .set("Cookie", `${STATE_COOKIE_NAME}=fixed-state`);
+    expectBothCookiesCleared(successResponse.headers["set-cookie"] as unknown as string[]);
+
+    const providerError = createApp();
+    const providerErrorResponse = await request(providerError.app)
+      .get("/api/v1/ee/auth/google/callback?error=access_denied")
+      .set("Cookie", `${STATE_COOKIE_NAME}=fixed-state`);
+    expectBothCookiesCleared(providerErrorResponse.headers["set-cookie"] as unknown as string[]);
+
+    const invalidState = createApp();
+    const invalidStateResponse = await request(invalidState.app)
+      .get("/api/v1/ee/auth/google/callback?code=auth-code&state=attacker-state")
+      .set("Cookie", `${STATE_COOKIE_NAME}=fixed-state`);
+    expectBothCookiesCleared(invalidStateResponse.headers["set-cookie"] as unknown as string[]);
+
+    const exchangeFailure = createApp({
+      fetchImpl: vi.fn(async () => ({ ok: false, status: 400, json: async () => ({}) }) as unknown as Response) as unknown as typeof fetch,
+    });
+    const exchangeFailureResponse = await request(exchangeFailure.app)
+      .get("/api/v1/ee/auth/google/callback?code=auth-code&state=fixed-state")
+      .set("Cookie", `${STATE_COOKIE_NAME}=fixed-state`);
+    expectBothCookiesCleared(exchangeFailureResponse.headers["set-cookie"] as unknown as string[]);
   });
 });

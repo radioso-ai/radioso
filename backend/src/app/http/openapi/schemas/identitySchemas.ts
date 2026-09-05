@@ -72,6 +72,13 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
     }),
   );
 
+  const SessionResponseSchema = registry.register(
+    "SessionResponse",
+    LoginResponseSchema.extend({
+      email: z.string().email(),
+    }),
+  );
+
   const EmailVerificationVerifyResponseSchema = registry.register(
     "EmailVerificationVerifyResponse",
     z.object({
@@ -224,6 +231,14 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
       email: z.string().email(),
       status: z.enum(["pending", "accepted", "revoked", "expired"]),
       expiresAt: z.string().datetime(),
+      requiresExistingPassword: z.boolean().openapi({
+        description:
+          "True when a login already exists for the invited email, so accepting with a password verifies the existing one instead of setting a new one.",
+      }),
+      federatedProviders: z.array(z.string()).openapi({
+        description:
+          "Identity providers the invited login can sign in with, such as \"google\". A login listed here can accept the invitation through that provider without a password.",
+      }),
     }),
   );
 
@@ -236,6 +251,7 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
     LoginResponseSchema,
     AcceptedResponseSchema,
     PasswordResetConfirmResponseSchema,
+    SessionResponseSchema,
     EmailVerificationVerifyResponseSchema,
     WorkspaceSchema,
     WorkspaceRouteResolutionResponseSchema,

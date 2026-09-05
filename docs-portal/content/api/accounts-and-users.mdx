@@ -1,7 +1,7 @@
 ---
 title: Accounts and users
-description: List accounts, invite users, manage organization roles, and switch account context.
-last_updated: 2026-08-07
+description: List accounts, invite users, accept invitations, manage organization roles, and switch account context.
+last_updated: 2026-09-05
 ---
 
 # Accounts and users
@@ -82,6 +82,46 @@ The invite request includes a `role` field. Use `member` by default. Use `admin`
 Radioso emails the invitation to the address you name, using the mail sender configured for the deployment. The response tells you what happened: `emailDelivered` is `true` when a mail provider accepted the message. It is `false` both when the provider rejected the message and when the deployment has no mail provider configured, because a server without `RESEND_MAIL_API_KEY` records outbound mail to its log rather than sending it. Either way the invitation is created and `acceptanceUrl` holds an origin-relative acceptance path — join it to your app origin and you have a link you can pass along yourself. That link is the only copy of the token, so save it if you plan to share it manually; the API never returns it again.
 
 If `emailDelivered` comes back `false`, check `MAIL_FROM_EMAIL` and `RESEND_MAIL_API_KEY` on the backend. The logs separate the two causes: a configured provider that rejects the message writes an `account_invitation_mail_delivery_failed` warning carrying the provider status code, while a deployment with no provider configured stays quiet, since recording mail to the log is what that configuration asks for. In both cases the `account.invitation.create` audit event carries `emailDelivered`, so you can tell an unsent invitation from an ignored one.
+
+## Accept an invitation
+
+The person you invited opens the acceptance link and joins from there. Two things decide what they see, and both come from one unauthenticated read:
+
+```text
+GET /api/v1/auth/invitations/{invitationToken}
+```
+
+It returns the invited `email`, the invitation `status`, its `expiresAt`, `requiresExistingPassword`, and `federatedProviders`.
+
+`requiresExistingPassword` shapes the password field. When it is `false`, nobody has a Radioso login for that address yet, so the invitee picks a password and it becomes their credential. When it is `true`, a login already exists, and the password they type is checked against the one they already have — a new password will be rejected as a bad credential, so ask for the existing one.
+
+`federatedProviders` lists the distinct identity providers that login can sign in with, such as `["google"]`. Someone who signed up through a provider has no password to type at all, so lead with the provider when this array is non-empty and keep the password field as the alternative. An empty array means password is the only credential.
+
+Offer a provider only when it appears here. Sending someone with no Radioso login through provider sign-in creates them a fresh organization rather than joining them to this one — the invitation is not part of that handshake.
+
+Either way the password path is the same call:
+
+```text
+POST /api/v1/auth/invitations/{invitationToken}/accept
+```
+
+The body carries `email` and `password`. The email has to match the address the invitation was sent to. A successful response sets the session cookie and returns the joined account and its workspace.
+
+Someone who is already signed in as the invited address does not need a password at all:
+
+```text
+POST /api/v1/auth/invitations/{invitationToken}/accept-as-current-user
+```
+
+This one takes no body and authenticates with the session cookie. It returns the same payload as the password path and switches the session to the joined account. It is also the only way in for a user who signs in with Google, because a federated login has no password to check.
+
+### Common failure modes
+
+`401 Invalid email or password` on the password path means a login already exists for that address and the password did not match it. Read `requiresExistingPassword` and `federatedProviders` before you build the form. If the invitee has forgotten the password, or `federatedProviders` names a provider your deployment does not offer, send them through `POST /api/v1/auth/password-reset/request` and have them retry with the new one.
+
+`401 Invitation email does not match` means the submitted email — or, on the session path, the signed-in user's email — is not the address the invitation was addressed to. Invitations are bound to one mailbox and cannot be redirected to another.
+
+`409 Invitation is no longer valid` means the invitation was revoked, already accepted, or past `expiresAt`. Issue a new one.
 
 ## Revoke an invitation
 

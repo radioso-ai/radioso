@@ -28,6 +28,7 @@ import { MessageRepository } from "../../../db/repositories/messageRepository.js
 import { PasswordResetTokenRepository } from "../../../db/repositories/passwordResetTokenRepository.js";
 import { RetrievalSettingsRepository } from "../../../db/repositories/retrievalSettingsRepository.js";
 import { SessionRepository } from "../../../db/repositories/sessionRepository.js";
+import { UserFederatedIdentityRepository } from "../../../db/repositories/userFederatedIdentityRepository.js";
 import { UserRepository } from "../../../db/repositories/userRepository.js";
 import { WebsiteCrawlJobRepository } from "../../../db/repositories/websiteCrawlJobRepository.js";
 import { WorkspaceGrantRepository } from "../../../db/repositories/workspaceGrantRepository.js";
@@ -186,6 +187,7 @@ export const buildRepositories = (
   retrievalSettingsRepository: new RetrievalSettingsRepository(database.kysely),
   routineDefinitionRepository: new RoutineDefinitionRepository(database.kysely),
   sessionRepository: new SessionRepository(database.kysely),
+  userFederatedIdentityRepository: new UserFederatedIdentityRepository(database.kysely),
   userRepository: new UserRepository(database.kysely),
   websiteCrawlJobRepository: new WebsiteCrawlJobRepository(database.kysely),
   workspaceGrantRepository: new WorkspaceGrantRepository(database.kysely),

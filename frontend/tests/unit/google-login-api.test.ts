@@ -46,17 +46,29 @@ describe('Google login API adapter', () => {
   })
 
   it('carries a same-origin relative return target into Google sign-in', () => {
-    expect(authApi.getGoogleLoginStartUrl('/oauth/operator-mcp/consent?transaction=tx-1')).toBe(
-      '/backend/api/v1/ee/auth/google/start?return_to=%2Foauth%2Foperator-mcp%2Fconsent%3Ftransaction%3Dtx-1',
+    expect(authApi.getGoogleLoginStartUrl({
+      returnTo: '/oauth/operator-mcp/consent?transaction=tx-1',
+    })).toBe(
+      '/backend/api/v1/ee/auth/google/start?returnTo=%2Foauth%2Foperator-mcp%2Fconsent%3Ftransaction%3Dtx-1',
     )
   })
 
   it.each(['https://attacker.example/steal', '//attacker.example/steal', '/\\attacker.example/steal'])(
     'does not put an external return target into the Google start URL: %s',
     (returnTo) => {
-      expect(authApi.getGoogleLoginStartUrl(returnTo)).toBe(
+      expect(authApi.getGoogleLoginStartUrl({ returnTo })).toBe(
         '/backend/api/v1/ee/auth/google/start',
       )
     },
   )
+
+  it('carries a return path and a login hint when the caller supplies them', () => {
+    expect(authApi.getGoogleLoginStartUrl({
+      returnTo: '/invite/token-123',
+      loginHint: 'invited+person@example.com',
+    })).toBe(
+      '/backend/api/v1/ee/auth/google/start'
+      + '?returnTo=%2Finvite%2Ftoken-123&loginHint=invited%2Bperson%40example.com',
+    )
+  })
 })

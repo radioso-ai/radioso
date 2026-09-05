@@ -282,6 +282,50 @@ describe("website crawl worker", () => {
     expect(publisher.enqueue).toHaveBeenCalledTimes(3);
   });
 
+  it("reports internal crawl faults with correlation and presents safe operator copy", async () => {
+    const job = { ...createJob(), sourceId: "source-1" };
+    const markFailed = vi.fn().mockResolvedValue(true);
+    const report = vi.fn().mockResolvedValue(undefined);
+    const internalError = new TypeError("token=crawler-secret at https://crawler.example");
+    const worker = new WebsiteCrawlWorker({
+      repository: {
+        claimNext: vi.fn().mockResolvedValue(job),
+        markCompleted: vi.fn(),
+        markFailed,
+        updateCheckpoint: vi.fn().mockResolvedValue(false),
+        releasePausedClaim: vi.fn().mockResolvedValue(false),
+      } as never,
+      provider: { name: "test-crawler", crawl: vi.fn() },
+      dispatcher: createDispatcher(),
+      documentIngestionService: {
+        ingest: vi.fn(),
+        resolveSource: vi.fn().mockRejectedValue(internalError),
+      } as never,
+      errorReporter: { report },
+      logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() } as never,
+    });
+
+    await expect(worker.runOnce()).resolves.toBe(true);
+
+    expect(markFailed).toHaveBeenCalledWith(
+      job.id,
+      job.attemptCount,
+      "An internal error interrupted the crawl. Try again later.",
+    );
+    expect(report).toHaveBeenCalledWith(expect.objectContaining({
+      errorType: "website_crawler.worker.internal_fault",
+      severity: "error",
+      correlation: { workspaceId: job.workspaceId, jobId: job.id },
+    }));
+    const reportInput = report.mock.calls[0]?.[0];
+    expect(reportInput?.error).toMatchObject({
+      name: "TypeError",
+      message: "Unexpected internal website crawl failure",
+    });
+    expect(reportInput?.error?.stack).not.toContain("crawler-secret");
+    expect(reportInput?.error?.stack).not.toContain("https://crawler.example");
+  });
+
   it("publishes bounded stale recovery once per workspace and immediately requests another tick", async () => {
     const publisher = { enqueue: vi.fn() };
     const logger = { info: vi.fn(), error: vi.fn(), warn: vi.fn() };

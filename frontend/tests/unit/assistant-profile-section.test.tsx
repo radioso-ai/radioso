@@ -129,12 +129,12 @@ describe('assistant profile section', () => {
   })
 
   it('updates the retrieval-miss handoff draft from its toggle', () => {
-    let updated: AssistantBehaviorSettings | null = null
+    const updates: AssistantBehaviorSettings[] = []
     renderSection({
       anonSettings: generalSettings(),
       assistantBehaviorSettings: behaviorSettings({ handoffOnRetrievalMiss: false }),
       onAssistantBehaviorDraft: (updater) => {
-        updated = updater(behaviorSettings({ handoffOnRetrievalMiss: false }))
+        updates.push(updater(behaviorSettings({ handoffOnRetrievalMiss: false })))
       },
     })
 
@@ -144,6 +144,6 @@ describe('assistant profile section', () => {
       toggle?.click()
     })
 
-    expect(updated?.handoffOnRetrievalMiss).toBe(true)
+    expect(updates.at(-1)?.handoffOnRetrievalMiss).toBe(true)
   })
 })

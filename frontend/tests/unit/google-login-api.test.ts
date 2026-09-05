@@ -44,4 +44,14 @@ describe('Google login API adapter', () => {
   it('points the sign-in button at the same-origin EE start endpoint', () => {
     expect(authApi.getGoogleLoginStartUrl()).toBe('/backend/api/v1/ee/auth/google/start')
   })
+
+  it('carries a return path and a login hint when the caller supplies them', () => {
+    expect(authApi.getGoogleLoginStartUrl({
+      returnTo: '/invite/token-123',
+      loginHint: 'invited+person@example.com',
+    })).toBe(
+      '/backend/api/v1/ee/auth/google/start'
+      + '?returnTo=%2Finvite%2Ftoken-123&loginHint=invited%2Bperson%40example.com',
+    )
+  })
 })

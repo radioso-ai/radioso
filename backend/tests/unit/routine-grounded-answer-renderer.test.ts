@@ -88,7 +88,7 @@ const turnWithRetrieval = (retrieval: RetrievalPipelineResult): TurnContext =>
       },
     }],
     steering: [],
-  } as TurnContext);
+  });
 
 const step: RoutineStep = {
   id: "answer",

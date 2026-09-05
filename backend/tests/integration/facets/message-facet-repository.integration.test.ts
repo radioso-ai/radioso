@@ -9,7 +9,7 @@ import { resolveIntegrationDatabase } from "../support/integrationDatabase.js";
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
 describeIntegration("MessageFacetRepository (Postgres)", () => {
-  const database = new Database(integrationDatabaseUrl as string);
+  const database = new Database(integrationDatabaseUrl);
   const repository = new MessageFacetRepository(database.kysely);
   const accountId = randomUUID();
   const workspaceId = randomUUID();
@@ -85,7 +85,7 @@ describeIntegration("MessageFacetRepository (Postgres)", () => {
       "SELECT count(*)::text AS count FROM message_facets WHERE message_id = $1",
       [messageId],
     );
-    expect(rows[0]!.count).toBe("1");
+    expect(rows[0].count).toBe("1");
 
     const [facet] = await repository.listForWindow({ workspaceId, messageIds: [messageId] });
     expect(facet).toEqual({
@@ -138,8 +138,8 @@ describeIntegration("MessageFacetRepository (Postgres)", () => {
     const [facet] = await repository.listForWindow({ workspaceId, messageIds: [messageId] });
     expect(facet?.embedding).not.toBeNull();
     expect(facet?.embedding).toHaveLength(3);
-    facet!.embedding!.forEach((value, index) => {
-      expect(Math.abs(value - embedding[index]!)).toBeLessThan(1e-4);
+    facet.embedding!.forEach((value, index) => {
+      expect(Math.abs(value - embedding[index])).toBeLessThan(1e-4);
     });
     expect(facet?.embeddingProfileId).toBe(embeddingProfileId);
 
@@ -147,7 +147,7 @@ describeIntegration("MessageFacetRepository (Postgres)", () => {
       "SELECT dimensions FROM message_facets WHERE message_id = $1",
       [messageId],
     );
-    expect(dimensionsRow[0]!.dimensions).toBe(3);
+    expect(dimensionsRow[0].dimensions).toBe(3);
   });
 
   it("rejects an embedding whose width does not match its embedding profile", async () => {
@@ -179,7 +179,7 @@ describeIntegration("MessageFacetRepository (Postgres)", () => {
     });
 
     expect(results).toHaveLength(1);
-    expect(results[0]!.messageId).toBe(messageIdWithFacet);
+    expect(results[0].messageId).toBe(messageIdWithFacet);
   });
 
   it("listForWindow returns an empty array for an empty messageIds list", async () => {

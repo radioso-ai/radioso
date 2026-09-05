@@ -11,7 +11,7 @@ const skillNamePattern = /^[a-z][a-z0-9_]*$/u;
 const slotBindingPattern = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 const trimmedText = (maxLength: number) => z.string().trim().min(1).max(maxLength);
 
-export const slackExposedInputSchema = z.object({
+const slackExposedInputSchema = z.object({
   description: trimmedText(1000).optional(),
   slotBinding: trimmedText(120).regex(slotBindingPattern).optional(),
   required: z.boolean().default(true),

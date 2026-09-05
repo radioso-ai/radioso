@@ -74,7 +74,7 @@ export const createQualityCopilotTools = (deps: QualityCopilotToolDependencies):
         deps.qualitySignalsService.getQualityStats(context.workspaceId, { range: "30d", ...(resolvedAgentId ? { agentId: resolvedAgentId } : {}) }),
         deps.qualitySignalsService.listLowQualityTurns(context.workspaceId, { limit: 20, ...(resolvedAgentId ? { agentId: resolvedAgentId } : {}) }),
       ]);
-      return boundPayload({ summary: asRecord(summary), needsAttention: needsAttention.items.map(asRecord) }) as { summary: Record<string, unknown>; needsAttention: Record<string, unknown>[] };
+      return boundPayload({ summary: asRecord(summary), needsAttention: needsAttention.items.map(asRecord) });
     } }),
     describeEntity: (input, context) => {
       const parsed = input as { agentId?: string; agentName?: string };

@@ -171,7 +171,7 @@ describe("mail service", () => {
 
     const init = fetchMock.mock.calls[0]?.[1];
     expect(init).toBeDefined();
-    const body = JSON.parse(String(init!.body));
+    const body = JSON.parse(init!.body as string);
     expect(body.reply_to).toBe("visitor@example.com");
     expect(init!.headers).toMatchObject({
       "Idempotency-Key": "routine-action:conv_1:contact.send:hash",

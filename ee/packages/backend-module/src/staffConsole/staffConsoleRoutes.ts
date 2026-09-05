@@ -2,6 +2,7 @@ import { Router, type RequestHandler } from "express";
 import { z } from "zod";
 
 import type { ApplicationRouteMount } from "../radiosoModuleTypes.js";
+import { HttpError } from "../shared/httpError.js";
 import { EnterpriseUsageLimitService } from "../usageLimits/usageLimitService.js";
 import type { AccountUsageSummary, UsageLimitProfile } from "../usageLimits/usageLimitService.js";
 import { OrganizationDirectoryService } from "./organizationDirectoryService.js";
@@ -78,17 +79,22 @@ const staffStatusBodySchema = z.object({
   status: z.enum(staffStatuses),
 });
 
+// Marks the 401 as already logged by the read-auth guard, so the catch block below it
+// does not emit a duplicate "invalid_session" warning for a request with no session cookie.
+class ReadAuthUnauthorizedError extends HttpError {
+  readonly readAuthLogged = true;
+
+  constructor() {
+    super(401, "unauthorized", "Unauthorized");
+  }
+}
+
 const parseRequest = <T>(schema: z.ZodType<T>, value: unknown, message: string): T => {
   const parsed = schema.safeParse(value);
   if (parsed.success) {
     return parsed.data;
   }
-  throw {
-    statusCode: 400,
-    code: "bad_request",
-    message,
-    details: parsed.error.flatten(),
-  };
+  throw new HttpError(400, "bad_request", message, parsed.error.flatten());
 };
 
 const requireAdminToken = (): RequestHandler => (req, res, next) => {
@@ -193,7 +199,7 @@ export const createStaffConsoleRoutes = (
           outcome: "failure",
           reason: "missing_session",
         }, "Staff console read authentication failed");
-        throw { statusCode: 401, code: "unauthorized", message: "Unauthorized", readAuthLogged: true };
+        throw new ReadAuthUnauthorizedError();
       }
       const { staff } = await authService.authenticateStaffSession(sessionToken);
       res.locals.staff = {
@@ -303,7 +309,7 @@ export const createStaffConsoleRoutes = (
       try {
         const { accountId } = parseRequest(accountIdParamsSchema, req.params, "Invalid organization identifier");
         const [usage, organizationName] = await Promise.all([
-          usageLimitService.getAccountUsage(accountId) as Promise<AccountUsageSummary>,
+          usageLimitService.getAccountUsage(accountId),
           organizationDirectoryService.getOrganizationName(accountId),
         ]);
         res.status(200).json({ ...usage, organizationName });
@@ -422,11 +428,7 @@ export const createStaffConsoleRoutes = (
         const body = parseRequest(staffCreateBodySchema, req.body, "Invalid staff create payload");
         const existing = await users.findByEmail(body.email);
         if (existing) {
-          throw {
-            statusCode: 409,
-            code: "conflict",
-            message: "Staff user already exists.",
-          };
+          throw new HttpError(409, "conflict", "Staff user already exists.");
         }
         const passwordHash = await hashStaffPassword(body.password);
         const staff = await users.create({
@@ -464,37 +466,21 @@ export const createStaffConsoleRoutes = (
         const body = parseRequest(staffRoleBodySchema, req.body, "Invalid staff role payload");
         const target = await users.findById(staffId);
         if (!target) {
-          throw {
-            statusCode: 404,
-            code: "not_found",
-            message: "Staff user not found.",
-          };
+          throw new HttpError(404, "not_found", "Staff user not found.");
         }
         if (target.id === res.locals.staff.id && target.role === "owner" && body.role !== "owner") {
-          throw {
-            statusCode: 409,
-            code: "conflict",
-            message: "Owners cannot demote their own account.",
-          };
+          throw new HttpError(409, "conflict", "Owners cannot demote their own account.");
         }
         if (target.role === "owner" && target.status === "active" && body.role !== "owner") {
           const activeOwners = await users.countActiveOwners();
           if (activeOwners <= 1) {
-            throw {
-              statusCode: 409,
-              code: "conflict",
-              message: "Cannot demote the last active owner.",
-            };
+            throw new HttpError(409, "conflict", "Cannot demote the last active owner.");
           }
         }
         const fromRole = target.role;
         const updated = await users.setRole(staffId, body.role);
         if (!updated) {
-          throw {
-            statusCode: 404,
-            code: "not_found",
-            message: "Staff user not found.",
-          };
+          throw new HttpError(404, "not_found", "Staff user not found.");
         }
         await dependencies.auditService.record({
           accountId: null,
@@ -525,37 +511,21 @@ export const createStaffConsoleRoutes = (
         const body = parseRequest(staffStatusBodySchema, req.body, "Invalid staff status payload");
         const target = await users.findById(staffId);
         if (!target) {
-          throw {
-            statusCode: 404,
-            code: "not_found",
-            message: "Staff user not found.",
-          };
+          throw new HttpError(404, "not_found", "Staff user not found.");
         }
         if (target.id === res.locals.staff.id && body.status === "disabled") {
-          throw {
-            statusCode: 409,
-            code: "conflict",
-            message: "Owners cannot disable their own account.",
-          };
+          throw new HttpError(409, "conflict", "Owners cannot disable their own account.");
         }
         if (target.role === "owner" && target.status === "active" && body.status === "disabled") {
           const activeOwners = await users.countActiveOwners();
           if (activeOwners <= 1) {
-            throw {
-              statusCode: 409,
-              code: "conflict",
-              message: "Cannot disable the last active owner.",
-            };
+            throw new HttpError(409, "conflict", "Cannot disable the last active owner.");
           }
         }
         const fromStatus = target.status;
         const updated = await users.setStatus(staffId, body.status);
         if (!updated) {
-          throw {
-            statusCode: 404,
-            code: "not_found",
-            message: "Staff user not found.",
-          };
+          throw new HttpError(404, "not_found", "Staff user not found.");
         }
         await dependencies.auditService.record({
           accountId: null,

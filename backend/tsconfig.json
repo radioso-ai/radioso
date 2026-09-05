@@ -13,5 +13,5 @@
     "types": ["node", "vitest/globals"]
   },
   "include": ["src/**/*.ts", "src/**/*.d.ts", "tests/**/*.ts",
-    "scripts/*.ts", "vitest.config.ts"]
+    "scripts/**/*.ts", "vitest.config.ts"]
 }

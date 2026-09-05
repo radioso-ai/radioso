@@ -162,7 +162,7 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
       .returning(workspaceColumns)
       .executeTakeFirstOrThrow();
 
-    return mapWorkspace(row as WorkspaceRow);
+    return mapWorkspace(row);
   }
 
   async findById(id: string): Promise<WorkspaceRecord | null> {
@@ -172,7 +172,7 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
       .where("id", "=", id)
       .executeTakeFirst();
 
-    return row ? mapWorkspace(row as WorkspaceRow) : null;
+    return row ? mapWorkspace(row) : null;
   }
 
   async findByIdAndAccountId(workspaceId: string, accountId: string): Promise<WorkspaceRecord | null> {
@@ -183,7 +183,7 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
       .where("account_id", "=", accountId)
       .executeTakeFirst();
 
-    return row ? mapWorkspace(row as WorkspaceRow) : null;
+    return row ? mapWorkspace(row) : null;
   }
 
   async findByPublicRouteKey(publicRouteKey: string): Promise<WorkspaceRecord | null> {
@@ -193,7 +193,7 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
       .where("public_route_key", "=", publicRouteKey)
       .executeTakeFirst();
 
-    return row ? mapWorkspace(row as WorkspaceRow) : null;
+    return row ? mapWorkspace(row) : null;
   }
 
   async listByAccountId(accountId: string): Promise<WorkspaceRecord[]> {
@@ -230,7 +230,7 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
       throw new Error(`Workspace ${workspaceId} not found`);
     }
 
-    return mapWorkspace(row as WorkspaceRow);
+    return mapWorkspace(row);
   }
 
   async findByAnonymousChatToken(token: string): Promise<WorkspaceRecord | null> {
@@ -240,7 +240,7 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
       .where("anonymous_chat_token", "=", token)
       .executeTakeFirst();
 
-    return row ? mapWorkspace(row as WorkspaceRow) : null;
+    return row ? mapWorkspace(row) : null;
   }
 
   async findByWebsiteEmbedToken(token: string): Promise<WorkspaceRecord | null> {
@@ -250,7 +250,7 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
       .where("website_embed_token", "=", token)
       .executeTakeFirst();
 
-    return row ? mapWorkspace(row as WorkspaceRow) : null;
+    return row ? mapWorkspace(row) : null;
   }
 
   async updateAnonymousChatSettings(
@@ -275,7 +275,7 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
       throw new Error(`Workspace ${workspaceId} not found`);
     }
 
-    return mapWorkspace(row as WorkspaceRow);
+    return mapWorkspace(row);
   }
 
   async updateAssistantBootstrapSettings(
@@ -303,7 +303,7 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
       throw new Error(`Workspace ${workspaceId} not found`);
     }
 
-    return mapWorkspace(row as WorkspaceRow);
+    return mapWorkspace(row);
   }
 
   async updateGeneralSettings(
@@ -346,7 +346,7 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
       throw new Error(`Workspace ${workspaceId} not found`);
     }
 
-    return mapWorkspace(row as WorkspaceRow);
+    return mapWorkspace(row);
   }
 
   async deleteByIdAndAccountId(workspaceId: string, accountId: string): Promise<boolean> {

@@ -466,7 +466,7 @@ describe("runtime entrypoints", () => {
 
     const settings = await request(runtime.server!)
       .get("/api/v1/settings/general")
-      .set("Cookie", login.headers["set-cookie"][0] as string)
+      .set("Cookie", login.headers["set-cookie"][0])
       .set("X-Workspace-Id", register.body.workspaceId as string);
 
     expect(settings.status).toBe(200);
@@ -509,7 +509,7 @@ describe("runtime entrypoints", () => {
 
     const response = await request(runtime.server!)
       .get("/api/v1/settings/general")
-      .set("Cookie", login.headers["set-cookie"][0] as string)
+      .set("Cookie", login.headers["set-cookie"][0])
       .set("X-Workspace-Id", register.body.workspaceId as string);
 
     expect(response.status).toBe(500);

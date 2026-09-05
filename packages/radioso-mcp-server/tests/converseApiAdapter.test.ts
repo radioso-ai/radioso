@@ -14,7 +14,7 @@ describe("converse backend API adapter", () => {
       baseUrl: "https://radioso.example",
       signingSecret: "0123456789abcdef0123456789abcdef",
       requestTimeoutMs: 1000,
-    }, fetchImpl as typeof fetch);
+    }, fetchImpl);
 
     const source = { sourceDigest: "D0GJ62ZQvM0QF23UXwB8Y6v6nTS26zrXbA_oYopE07g" };
     await adapter.exchange({ launchToken: "launch", client: { name: "vitest" } }, source);

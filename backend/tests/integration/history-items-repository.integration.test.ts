@@ -14,7 +14,7 @@ import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
 describeIntegration("HistoryItemsRepository source scope (Postgres)", () => {
-  const database = new Database(integrationDatabaseUrl as string);
+  const database = new Database(integrationDatabaseUrl);
   const repository = new HistoryItemsRepository(database.kysely);
   const accountId = randomUUID();
   const workspaceId = randomUUID();
@@ -89,7 +89,7 @@ describeIntegration("HistoryItemsRepository source scope (Postgres)", () => {
 // toolbar's search and filters server-side. All four compose with the existing
 // pagination/scope filters and stay workspace-scoped.
 describeIntegration("HistoryItemsRepository search and filters (Postgres)", () => {
-  const database = new Database(integrationDatabaseUrl as string);
+  const database = new Database(integrationDatabaseUrl);
   const repository = new HistoryItemsRepository(database.kysely);
   const accountId = randomUUID();
   const workspaceId = randomUUID();

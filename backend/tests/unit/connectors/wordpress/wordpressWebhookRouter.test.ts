@@ -25,7 +25,7 @@ const setupApp = (overrides?: {
 
   const router = createWordpressWebhookRouter({
     logger: { info: () => {}, warn: () => {}, error: () => {} },
-    state: { getConfig, setErrorStatus: async () => {}, ...overrides?.state } as ConnectorStatePort,
+    state: { getConfig, setErrorStatus: async () => {}, ...overrides?.state },
     ingestion: { ingest, deleteByExternalId, ...overrides?.ingestion } as ConnectorIngestionPort,
   });
 

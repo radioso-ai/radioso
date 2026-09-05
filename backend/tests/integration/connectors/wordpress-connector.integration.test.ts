@@ -29,7 +29,7 @@ const CONNECTOR_ID = "wordpress";
 const SITE_URL = "https://example.com/";
 
 describeIntegration("WordpressConnector orchestration (Postgres)", () => {
-  const database = new Database(integrationDatabaseUrl as string);
+  const database = new Database(integrationDatabaseUrl);
 
   const accountId = randomUUID();
 
@@ -78,7 +78,7 @@ describeIntegration("WordpressConnector orchestration (Postgres)", () => {
 
   // Builds an initialized connector wired to the real DB. State/ingestion/logger/http/chat
   // stay as spies/fakes so the orchestration assertions (setErrorStatus, ensureSource) hold.
-  const buildConnector = async (workspaceId: string): Promise<Built> => {
+  const buildConnector = async (_workspaceId: string): Promise<Built> => {
     const setErrorStatus = vi.fn(async () => {});
     const ensureSource = vi.fn(async () => ({ id: "src-1" }));
     const state: ConnectorStatePort = {
@@ -241,7 +241,7 @@ describeIntegration("WordpressConnector orchestration (Postgres)", () => {
     const built = await buildConnector(workspaceId);
     connector = built.connector;
 
-    await expect(built.connector.syncNow!({ workspaceId })).resolves.toEqual({ accepted: true });
+    await expect(built.connector.syncNow({ workspaceId })).resolves.toEqual({ accepted: true });
     expect(built.ensureSource).toHaveBeenCalledWith({
       workspaceId,
       source: expect.objectContaining({
@@ -271,7 +271,7 @@ describeIntegration("WordpressConnector orchestration (Postgres)", () => {
     const built = await buildConnector(workspaceId);
     connector = built.connector;
 
-    await expect(built.connector.syncNow!({ workspaceId })).resolves.toEqual({
+    await expect(built.connector.syncNow({ workspaceId })).resolves.toEqual({
       accepted: false,
       alreadyRunning: true,
     });

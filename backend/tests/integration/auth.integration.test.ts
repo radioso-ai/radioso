@@ -14,6 +14,7 @@ import type {
   OrganizationCreationRequest,
   OrganizationCreationReservation,
 } from "../../src/shared/domain/organizationCreationGuard.js";
+import { forbidden } from "../../src/shared/domain/errors.js";
 
 class RecordingOrganizationCreationGuard implements OrganizationCreationGuard {
   readonly requests: OrganizationCreationRequest[] = [];
@@ -31,11 +32,7 @@ class RecordingOrganizationCreationGuard implements OrganizationCreationGuard {
 class OssAdditionalOrganizationGuard implements OrganizationCreationGuard {
   async reserve(input: OrganizationCreationRequest): Promise<OrganizationCreationReservation> {
     if (input.intent === "additional") {
-      throw {
-        statusCode: 403,
-        code: "forbidden",
-        message: "Additional organizations require Enterprise Edition.",
-      };
+      throw forbidden("Additional organizations require Enterprise Edition.");
     }
     return { async commit() {}, async release() {} };
   }
@@ -135,7 +132,7 @@ describe("auth integration", () => {
       preferredWorkspaceId: created.body.id,
     });
 
-    const loginCookie = login.headers["set-cookie"]?.[0] as string;
+    const loginCookie = login.headers["set-cookie"]?.[0];
     const preferredSettings = await request(app)
       .get("/api/v1/settings/general")
       .set("Cookie", loginCookie)

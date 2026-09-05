@@ -182,7 +182,7 @@ export const createConversationKitServer = (
 ): ConversationKitServer => {
   const kit = options.kit ?? createConversationKit(options.kitOptions);
   const client = options.client ?? createConversationKitClient({ ...options.kitOptions, kit });
-  const server = http.createServer(async (request, response) => {
+  const handleRequest = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     try {
       const segments = parsePathSegments(request);
       if (request.method === "GET" && request.url === "/health") {
@@ -325,6 +325,12 @@ export const createConversationKitServer = (
     } catch (error) {
       sendError(response, error);
     }
+  };
+
+  // `http.createServer` expects a listener returning `void`; `handleRequest` already
+  // catches everything internally, so the returned promise is intentionally not awaited.
+  const server = http.createServer((request, response) => {
+    void handleRequest(request, response);
   });
 
   return {

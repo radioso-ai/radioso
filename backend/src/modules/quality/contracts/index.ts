@@ -217,8 +217,6 @@ export type SetTriageStateResult =
 
 export type QualityStatsRange = "7d" | "30d";
 
-export const QUALITY_STATS_RANGES: readonly QualityStatsRange[] = ["7d", "30d"];
-
 /**
  * A rate and the population it is defined over. The denominator ships with the count so
  * the caller can tell "no failures out of 500 turns" from "no failures out of 2".

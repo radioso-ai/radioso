@@ -10,8 +10,6 @@ import type {
   Routine,
   RoutineActivationPrefilter,
   RoutineActivationResult,
-  RoutineActivationTrigger,
-  RoutineCandidateSummary,
   RoutineRegistration,
   TurnContext,
 } from "@radioso/conversation-contract";

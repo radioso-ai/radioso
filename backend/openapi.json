@@ -9768,15 +9768,15 @@
             "default": {}
           },
           "enrichment": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/DocumentEnrichment"
               },
               {
-                "type": [
-                  "object",
-                  "null"
-                ]
+                "type": "null"
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -9788,15 +9788,15 @@
             "format": "uuid"
           },
           "source": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/DocumentSourceSummary"
               },
               {
-                "type": [
-                  "object",
-                  "null"
-                ]
+                "type": "null"
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -15107,15 +15107,15 @@
             ]
           },
           "skillStatus": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/QualitySkillStatus"
               },
               {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": "null"
+              },
+              {
+                "type": "null"
               }
             ]
           },

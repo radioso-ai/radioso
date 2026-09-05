@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
 import type { CrawledPageResult } from "../transport/crawler.js";
 import { canonicalizeUrlIdentity } from "../transport/url.js";
+import { describeError } from "./errorFormatting.js";
 import type {
   CrawlerPagesRepository,
   CrawlerPublicationAttemptsRepository
@@ -87,8 +88,7 @@ const publishRemoval = async (input: {
     });
     return true;
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message || error.name : String(error ?? "Unknown error");
+    const message = describeError(error);
     await input.publicationAttempts.create({
       pageRecordId: input.pageRecord.id,
       externalId,
@@ -266,8 +266,7 @@ export const processAttachedPage = async (input: {
       }
     };
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message || error.name : String(error ?? "Unknown error");
+    const message = describeError(error);
     await input.publicationAttempts.create({
       pageRecordId: pageRecord.id,
       externalId: document.externalId,

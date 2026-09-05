@@ -73,7 +73,7 @@ const snapshotMessageToTurn = (
   createdAt: message.createdAt,
   citations: message.citations,
   answerSegments: message.answerSegments,
-} as ChatConversationTurn)
+})
 
 export const buildSnapshotConversation = (snapshot: EvalSnapshot): ChatConversationDetail => ({
   conversationId: snapshot.sourceConversationId,

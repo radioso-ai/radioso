@@ -444,8 +444,8 @@ describe("routine definition compiler and validator", () => {
       ],
     })],
     ["declared-but-unused slot", (def: RoutineDefinition) => ({ ...def, slots: [...def.slots, { stableSlotId: "slot_unused", key: "unused", type: "text" as const, required: false, description: null, ordinal: 2 }] })],
-    ["referenced-but-undeclared slot", (def: RoutineDefinition) => ({ ...def, steps: [{ ...def.steps[0]!, instruction: "Ask for {{slot.missing}}." }, def.steps[1]!] })],
-    ["attempt-limit-without-fallback", (def: RoutineDefinition) => ({ ...def, steps: [{ ...def.steps[0]!, metadata: { attemptLimit: 2 } }, def.steps[1]!] })],
+    ["referenced-but-undeclared slot", (def: RoutineDefinition) => ({ ...def, steps: [{ ...def.steps[0], instruction: "Ask for {{slot.missing}}." }, def.steps[1]] })],
+    ["attempt-limit-without-fallback", (def: RoutineDefinition) => ({ ...def, steps: [{ ...def.steps[0], metadata: { attemptLimit: 2 } }, def.steps[1]] })],
   ])("reports %s in author terms", (label, mutate) => {
     const result = validateRoutineDefinition(mutate(baseDefinition()));
 

@@ -4,13 +4,13 @@ import { getEnv } from "../../src/app/config/env.js";
 import { Database } from "../../src/shared/infra/database.js";
 
 const stubPoolQuery = (database: Database, rows: unknown[], rowCount: number): void => {
-  database.pool.query = (async () => ({
+  database.pool.query = async () => ({
     rows,
     rowCount,
     command: "SELECT",
     oid: 0,
     fields: [],
-  })) as unknown as typeof database.pool.query;
+  });
 };
 
 describe("database configuration", () => {

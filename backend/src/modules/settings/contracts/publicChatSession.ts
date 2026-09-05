@@ -8,5 +8,4 @@ export {
   verifyPublicChatSession,
   type ConverseChatSessionPayload,
   type PublicChatResumePayload,
-  type PublicChatSessionPayload,
 } from "../domain/publicChatSession.js";

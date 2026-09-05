@@ -39,7 +39,7 @@ describe("ModelTopicLabelPrivacyAuditGateway", () => {
 
     await gateway.review(label);
 
-    const inference = await inferenceFactory.create.mock.results[0]!.value;
+    const inference = await inferenceFactory.create.mock.results[0].value;
     expect(inference.complete).toHaveBeenCalledWith(
       expect.objectContaining({ responseFormat: TOPIC_LABEL_AUDIT_RESPONSE_FORMAT }),
     );

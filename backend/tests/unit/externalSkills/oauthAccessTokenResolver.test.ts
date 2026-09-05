@@ -98,7 +98,7 @@ describe("resolveFreshAccessToken", () => {
     expect(token).toBe("at-2");
     expect(calls.setOauthTokens).toHaveLength(1);
     // Persisted ciphertext decrypts back to the refreshed token (and keeps the refresh token).
-    expect(decryptOauthTokens(calls.setOauthTokens[0]!, KEY)).toMatchObject({
+    expect(decryptOauthTokens(calls.setOauthTokens[0], KEY)).toMatchObject({
       accessToken: "at-2",
       refreshToken: "rt-1",
     });

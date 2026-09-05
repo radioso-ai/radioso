@@ -5,7 +5,6 @@ import type { QueryResultRow } from "pg";
 import { currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import type {
-  DocumentProcessingJobEnrichmentOverride,
   DocumentProcessingJobOptions,
 } from "../../modules/documents/contracts/documentContracts.js";
 import type {
@@ -264,7 +263,7 @@ export const insertEmbeddingProfileJobsForDocumentRevision = async (
   if (profile.rows.length === 0) {
     return 0;
   }
-  if (profile.rows[0]!.active_embedding_space_id !== input.activeEmbeddingSpaceId) {
+  if (profile.rows[0].active_embedding_space_id !== input.activeEmbeddingSpaceId) {
     throw new Error("Workspace embedding profile changed during canonical publication");
   }
   const result = await client.query(

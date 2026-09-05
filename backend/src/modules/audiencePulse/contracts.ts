@@ -12,7 +12,6 @@ import type {
   AudiencePulsePromptEvidenceReference,
 } from "./contracts/history.js";
 
-export type { AudiencePulseEvidence } from "./domain/report.js";
 export {
   AUDIENCE_PULSE_EVIDENCE_EXCERPT_MAX_CHARACTERS,
   type AudiencePulseHistorySnapshot,
@@ -21,25 +20,6 @@ export {
   type AudiencePulseHydratedEvidence,
   type AudiencePulsePromptEvidenceReference,
 } from "./contracts/history.js";
-export {
-  type ActiveTopicRecord,
-  type CreateTopicCensusRunInput,
-  type SaveTopicCensusRunInput,
-  type TopicCensusRunDetail,
-  type TopicCensusRunTopicSummary,
-  type TopicMembershipInput,
-  type TopicRepositoryPort,
-  type TopicSaveInput,
-  type TopicTransitionInput,
-  type TopicTransitionKind,
-} from "./contracts/topicCensus.js";
-export {
-  type TopicLabel,
-  type TopicLabelPrivacyAuditPort,
-  type TopicLabelPrivacyAuditResult,
-  type TopicNamingExemplars,
-  type TopicNamingPort,
-} from "./contracts/topicLabel.js";
 
 export const AUDIENCE_PULSE_ANALYSIS_DAYS = 30;
 

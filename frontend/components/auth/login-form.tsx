@@ -54,6 +54,8 @@ export function LoginForm({
       if (active) {
         setGoogleEnabled(status.enabled)
       }
+    }).catch(() => {
+      // Google sign-in stays hidden (its default state) when availability can't be determined.
     })
     return () => {
       active = false

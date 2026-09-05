@@ -417,7 +417,7 @@ describe("grounded miss response composer", () => {
       usageQuality: "actual",
       providerRequestId: "req-grounded-miss",
     });
-    expect(events[0]!.idempotencyKey).toContain("grounded_miss");
+    expect(events[0].idempotencyKey).toContain("grounded_miss");
   });
 
   it("records each retried no-context provider attempt separately", async () => {
@@ -461,10 +461,10 @@ describe("grounded miss response composer", () => {
 
     expect(events).toHaveLength(2);
     expect(events.map((event) => event.status)).toEqual(["failed", "succeeded"]);
-    expect(events[0]!.idempotencyKey).toContain("attempt:1");
-    expect(events[1]!.idempotencyKey).toContain("attempt:2");
-    expect(events[0]!.usageQuality).toBe("estimated");
-    expect(events[1]!.usageQuality).toBe("actual");
+    expect(events[0].idempotencyKey).toContain("attempt:1");
+    expect(events[1].idempotencyKey).toContain("attempt:2");
+    expect(events[0].usageQuality).toBe("estimated");
+    expect(events[1].usageQuality).toBe("actual");
   });
 
   it("falls back when the no-context model output is empty", async () => {
@@ -590,14 +590,14 @@ describe("grounded miss response composer", () => {
         model: "test-model",
       },
       async complete() {
-        throw {
+        throw Object.assign(new Error("Incorrect API key provided."), {
           status: 401,
           code: "invalid_api_key",
           error: {
             message: "Incorrect API key provided.",
             code: "invalid_api_key",
           },
-        };
+        });
       },
       stream() {
         return streamResult([""]);

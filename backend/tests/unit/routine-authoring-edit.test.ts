@@ -115,9 +115,9 @@ describe("routine authoring edits", () => {
 
   it("refuses to apply one addressed edit to duplicate stable ids or keys in an invalid draft", () => {
     const duplicated = routine({
-      steps: [routine().steps[0]!, { ...routine().steps[0]!, instruction: "A second instruction.", ordinal: 1 }],
-      terminals: [routine().terminals[0]!, { ...routine().terminals[0]!, instruction: "A second ending.", ordinal: 1 }],
-      slots: [routine().slots[0]!, { ...routine().slots[0]!, stableSlotId: "slot_order_copy", ordinal: 1 }],
+      steps: [routine().steps[0], { ...routine().steps[0], instruction: "A second instruction.", ordinal: 1 }],
+      terminals: [routine().terminals[0], { ...routine().terminals[0], instruction: "A second ending.", ordinal: 1 }],
+      slots: [routine().slots[0], { ...routine().slots[0], stableSlotId: "slot_order_copy", ordinal: 1 }],
     });
 
     expect(() => applyRoutineFieldPatch(duplicated, routineFieldPatchSchema.parse({
@@ -207,9 +207,9 @@ describe("routine authoring edits", () => {
 
   it("keeps duplicate step, ending, and information-field identities visible in review projections", () => {
     const source = routine({
-      steps: [routine().steps[0]!, { ...routine().steps[0]!, instruction: "A second instruction.", ordinal: 1 }],
-      terminals: [routine().terminals[0]!, { ...routine().terminals[0]!, instruction: "A second ending.", ordinal: 1 }],
-      slots: [routine().slots[0]!, { ...routine().slots[0]!, stableSlotId: "slot_order_copy", ordinal: 1 }],
+      steps: [routine().steps[0], { ...routine().steps[0], instruction: "A second instruction.", ordinal: 1 }],
+      terminals: [routine().terminals[0], { ...routine().terminals[0], instruction: "A second ending.", ordinal: 1 }],
+      slots: [routine().slots[0], { ...routine().slots[0], stableSlotId: "slot_order_copy", ordinal: 1 }],
     });
 
     const projected = projectRoutineForReview(draftInputFromRoutine(source)) as {

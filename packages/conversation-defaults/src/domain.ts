@@ -1,8 +1,5 @@
 import type {
-  Directive,
   DirectiveMatch,
-  DirectiveSelectionMode,
-  GenerationSurface,
   SteeringRule,
 } from "@radioso/conversation-contract";
 

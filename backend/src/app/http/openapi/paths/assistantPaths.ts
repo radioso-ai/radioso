@@ -22,7 +22,7 @@ const assistantChatSseSchema = (name: string) => z.string().openapi(name, {
 export const registerAssistantSessionPaths = (
   registry: OpenAPIRegistry,
   schemas: OpenApiSchemas,
-  security: OpenApiSecurity,
+  _security: OpenApiSecurity,
 ) => {
   registry.registerPath({
     method: "post",

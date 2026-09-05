@@ -185,7 +185,7 @@ describe("RadiosoCrawlerProvider", () => {
         return { pages: 0 };
       }
       await new Promise<void>((_resolve, reject) => {
-        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        signal.addEventListener("abort", () => reject(signal.reason as Error), { once: true });
       });
       return { pages: 0 };
     });

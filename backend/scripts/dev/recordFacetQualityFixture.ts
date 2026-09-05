@@ -82,7 +82,9 @@ const { type: _formatType, ...facetJsonSchema } = FACET_EXTRACTION_RESPONSE_FORM
 const extractFacet = async (question: string): Promise<string> => {
   const response = await client.chat.completions.create({
     model: extractionModel,
-    reasoning_effort: normalizeOpenAIReasoningEffort(extractionModel, "minimal"),
+    // The installed OpenAI SDK types predate "none" as a reasoning_effort value, though
+    // the API accepts it. Same coercion as toSdkSampling in openaiProvider.ts.
+    reasoning_effort: normalizeOpenAIReasoningEffort(extractionModel, "minimal") as OpenAI.Chat.Completions.ChatCompletionCreateParams["reasoning_effort"],
     max_completion_tokens: 600,
     response_format: { type: "json_schema", json_schema: facetJsonSchema },
     messages: [{ role: "user", content: buildFacetExtractionPrompt(question) }],
@@ -132,7 +134,7 @@ const mapWithConcurrency = async <Input, Output>(
     while (cursor < items.length) {
       const index = cursor;
       cursor += 1;
-      results[index] = await worker(items[index]!, index);
+      results[index] = await worker(items[index], index);
     }
   });
   await Promise.all(runners);
@@ -153,7 +155,7 @@ const main = async (): Promise<void> => {
     );
     facets = await mapWithConcurrency(questions, concurrency, async (question, index) => {
       const facet = await extractFacet(question);
-      process.stdout.write(`  [${index + 1}/${ids.length}] ${ids[index]!}: ${facet}\n`);
+      process.stdout.write(`  [${index + 1}/${ids.length}] ${ids[index]}: ${facet}\n`);
       return facet;
     });
     process.stdout.write(`Wrote facet sidecar to ${writeRecordedFacets(ids, facets)}\n`);
@@ -171,8 +173,8 @@ const main = async (): Promise<void> => {
     recordedAt: new Date().toISOString(),
     entries: ids.map((id, index) => ({
       id,
-      facetVector: facetVectors[index]!,
-      questionVector: questionVectors[index]!,
+      facetVector: facetVectors[index],
+      questionVector: questionVectors[index],
     })),
   };
 

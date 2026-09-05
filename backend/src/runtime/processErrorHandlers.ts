@@ -1,5 +1,6 @@
 import type { AppLogger } from "../shared/observability/logger.js";
 import type { ErrorReporter } from "../shared/errors/errorReporter.js";
+import { asError } from "../shared/errors/asError.js";
 
 type ListenerTarget = Pick<NodeJS.EventEmitter, "on" | "off">;
 
@@ -51,7 +52,7 @@ const flushWithTimeout = (flush: Promise<unknown>, timeoutMs: number): Promise<v
     }
     Promise.resolve(flush).then(
       () => finish(resolve),
-      (error) => finish(() => reject(error)),
+      (error) => finish(() => reject(asError(error))),
     );
   });
 

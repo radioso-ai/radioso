@@ -320,6 +320,10 @@ describe('getResumeDispatchWarning', () => {
 describe('runSourceCrawlAction', () => {
   it('returns an error result for rejected pause calls without throwing', async () => {
     await expect(runSourceCrawlAction({
+      // `request` isn't guaranteed to reject with an Error -- runSourceCrawlAction
+      // feeds the rejection through getApiErrorMessage, which duck-types this exact
+      // `{ error: string }` shape. This exercises that non-Error path.
+      // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- see above
       request: () => Promise.reject({ error: 'Pause is unavailable' }),
       fallbackMessage: 'Failed to pause crawl.',
     })).resolves.toEqual({

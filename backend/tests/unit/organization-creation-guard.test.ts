@@ -57,7 +57,7 @@ describe("OssOrganizationCreationGuard", () => {
   it("rejects closed signup and every additional organization request", async () => {
     const bootstrap = {
       provision: vi.fn(async () => {
-        throw { statusCode: 403, code: "forbidden" };
+        throw Object.assign(new Error("Registration is closed"), { statusCode: 403, code: "forbidden" });
       }),
       isAvailable: vi.fn(async () => false),
     };

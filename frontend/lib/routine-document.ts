@@ -24,7 +24,7 @@ export function documentTextToSegments(text: string): RoutineBlockInstructionSeg
 // back with the newline between them. Dropping either half loses every line but the first.
 export function instructionToProseParagraphs(segments: RoutineBlockInstructionSegment[]): ProseParagraph[] {
   const paragraphs: ProseParagraph[] = [{ segments: [] }]
-  const currentSegments = () => paragraphs[paragraphs.length - 1]!.segments
+  const currentSegments = () => paragraphs[paragraphs.length - 1].segments
   for (const segment of segments) {
     if (segment.kind !== 'text') {
       currentSegments().push({ kind: 'chip', chipKind: 'variable', refId: segment.key, label: segment.key })

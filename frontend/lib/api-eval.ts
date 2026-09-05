@@ -279,7 +279,7 @@ export interface AgentConfigOverrideInput {
   customInstruction?: string
   contactRequestsEnabled?: boolean
   contactRequestDelivery?: unknown
-  logo?: unknown | null
+  logo?: unknown
   theme?: Record<string, unknown>
   branding?: Record<string, unknown>
   greetingInstruction?: string

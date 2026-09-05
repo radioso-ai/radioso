@@ -59,7 +59,7 @@ describe("GeminiTextGenerationClient.complete", () => {
     await new GeminiTextGenerationClient(chatConfig).complete({ prompt: "Hi", responseFormat });
 
     const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
-    expect(JSON.parse(String(request.body))).toMatchObject({
+    expect(JSON.parse(request.body as string)).toMatchObject({
       generationConfig: {
         responseMimeType: "application/json",
         responseJsonSchema: responseFormat.schema,

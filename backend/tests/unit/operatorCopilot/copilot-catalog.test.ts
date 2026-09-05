@@ -171,7 +171,7 @@ describe("copilot capability governance", () => {
     };
 
     expect(() => assertCopilotCapabilityProvenanceRegistry([assembled], {
-      assembled_descriptor: assembled.capabilityProvenance!,
+      assembled_descriptor: assembled.capabilityProvenance,
       removed_descriptor: { rayOnly: { reason: "This descriptor was removed." } },
     })).toThrow("Stale copilot capability provenance");
     expect(() => assertCopilotCapabilityProvenanceRegistry([assembled], {}))

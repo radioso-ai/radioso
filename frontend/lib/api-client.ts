@@ -42,6 +42,25 @@ export interface ErrorResponse {
   }
 }
 
+/**
+ * Thrown by `request`/`requestLongRunning` (and other call sites that build an
+ * `ErrorResponse` by hand) so callers always catch a real `Error`. Keeps
+ * `status`/`error` as plain own properties so every existing duck-typed
+ * reader (`getApiErrorStatus`, `isCopilotApiErrorStatus`, `'status' in error`,
+ * `error as ErrorResponse`, ...) keeps working unchanged.
+ */
+export class ApiError extends Error implements ErrorResponse {
+  readonly status?: number
+  readonly error: ErrorResponse['error']
+
+  constructor(body: ErrorResponse) {
+    super(body.error?.message || `Request failed with status ${body.status ?? 'unknown'}`)
+    this.name = 'ApiError'
+    this.status = body.status
+    this.error = body.error
+  }
+}
+
 const isAbortError = (error: unknown): boolean =>
   typeof error === 'object' && error !== null && 'name' in error && error.name === 'AbortError'
 
@@ -51,7 +70,7 @@ const throwIfAborted = (signal: AbortSignal | undefined): void => {
   }
 }
 
-export const buildError = async (response: Response): Promise<ErrorResponse> => {
+export const buildError = async (response: Response): Promise<ApiError> => {
   try {
     const payload = await response.json();
     if (
@@ -61,7 +80,7 @@ export const buildError = async (response: Response): Promise<ErrorResponse> => 
       payload.error &&
       typeof payload.error === "object"
     ) {
-      return { ...(payload as ErrorResponse), status: response.status };
+      return new ApiError({ ...(payload as ErrorResponse), status: response.status });
     }
 
     if (
@@ -72,7 +91,7 @@ export const buildError = async (response: Response): Promise<ErrorResponse> => 
       "message" in payload &&
       typeof payload.message === "string"
     ) {
-      return {
+      return new ApiError({
         status: response.status,
         error: {
           code: payload.code,
@@ -82,25 +101,25 @@ export const buildError = async (response: Response): Promise<ErrorResponse> => 
               ? payload.retryAfterSeconds
               : undefined,
         },
-      };
+      });
     }
 
-    return {
+    return new ApiError({
       status: response.status,
       error: {
         code: "HTTP_ERROR",
         message: `Request failed with status ${response.status}`,
       },
-    };
+    });
   } catch (error) {
     if (isAbortError(error)) throw error
-    return {
+    return new ApiError({
       status: response.status,
       error: {
         code: "HTTP_ERROR",
         message: `Request failed with status ${response.status}`,
       },
-    };
+    });
   }
 };
 

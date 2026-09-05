@@ -100,24 +100,24 @@ describeIntegration("ActionRequestRepository (Postgres)", () => {
   it("markDispatched reports only a real matching-attempt transition", async () => {
     const a = await enqueue();
     const [claimed] = await repository.claimPending(10, 300);
-    await expect(repository.markDispatched(claimed!.id, 999)).resolves.toBe(false); // wrong attempt → no-op
+    await expect(repository.markDispatched(claimed.id, 999)).resolves.toBe(false); // wrong attempt → no-op
     let status = (await database.query<{ status: string }>(`SELECT status FROM routine_action_requests WHERE id = $1`, [a.id]))[0]?.status;
     expect(status).toBe("in_progress");
 
-    await expect(repository.markDispatched(claimed!.id, claimed!.attempts)).resolves.toBe(true);
+    await expect(repository.markDispatched(claimed.id, claimed.attempts)).resolves.toBe(true);
     status = (await database.query<{ status: string }>(`SELECT status FROM routine_action_requests WHERE id = $1`, [a.id]))[0]?.status;
     expect(status).toBe("dispatched");
 
     // A duplicate completion notification is not a second transition.
-    await expect(repository.markDispatched(claimed!.id, claimed!.attempts)).resolves.toBe(false);
+    await expect(repository.markDispatched(claimed.id, claimed.attempts)).resolves.toBe(false);
   });
 
   it("recordFailure retries within budget, fails at the cap (CASE), and is superseded on stale attempt", async () => {
     await enqueue();
     const [retryable] = await repository.claimPending(10, 300);
-    expect(await repository.recordFailure(retryable!.id, "boom", retryable!.attempts, 3, 60)).toBe("retry");
+    expect(await repository.recordFailure(retryable.id, "boom", retryable.attempts, 3, 60)).toBe("retry");
     // after a retry the row is 'pending' again, so a repeat with the same attempt no longer matches
-    expect(await repository.recordFailure(retryable!.id, "boom", 999, 3, 60)).toBe("superseded");
+    expect(await repository.recordFailure(retryable.id, "boom", 999, 3, 60)).toBe("superseded");
 
     await enqueue();
     const claimed = await repository.claimPending(10, 300);
@@ -154,6 +154,6 @@ describeIntegration("ActionRequestRepository (Postgres)", () => {
     ))[0];
     // third is not the actual oldest pending row (second is) — just proving the field
     // is a real timestamp read back from the table, not a hardcoded/derived value.
-    expect(snapshot.oldestPendingCreatedAt!.getTime()).toBeLessThanOrEqual(oldestRow!.created_at.getTime());
+    expect(snapshot.oldestPendingCreatedAt!.getTime()).toBeLessThanOrEqual(oldestRow.created_at.getTime());
   });
 });

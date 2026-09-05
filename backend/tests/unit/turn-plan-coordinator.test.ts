@@ -242,7 +242,7 @@ describe("createTurnPlanHandle", () => {
   });
 
   it("bypass after computation started is a no-op", async () => {
-    const handle = createTurnPlanHandle(async () => ({ status: "planned", plan: plan(), prepared: null }) as TurnPlanOutcome);
+    const handle = createTurnPlanHandle(async () => ({ status: "planned", plan: plan(), prepared: null }));
     const first = handle.resolve(null);
     handle.bypass("routine_claim");
     await expect(first).resolves.toMatchObject({ status: "planned" });

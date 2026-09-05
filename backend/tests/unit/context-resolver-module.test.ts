@@ -66,7 +66,7 @@ describe("SkillBackedContextResolver", () => {
       skillExecutorRegistry: registryWith(settledExecutor({
         status: "completed",
         outputs: { value: { state: "shipped" } },
-      } as SkillOutcome, (nextInvocation) => {
+      }, (nextInvocation) => {
         invocation = nextInvocation;
       })),
     });
@@ -101,7 +101,7 @@ describe("SkillBackedContextResolver", () => {
     const registry = registryWith(settledExecutor({
       status: "completed",
       outputs: { value: "ok" },
-    } as SkillOutcome));
+    }));
 
     await expect(new SkillBackedContextResolver({
       agentSkills: repositoryWith(null),
@@ -140,7 +140,7 @@ describe("SkillBackedContextResolver", () => {
       skillExecutorRegistry: registryWith(settledExecutor({
         status: "failed",
         outputs: { value: "nope" },
-      } as SkillOutcome)),
+      })),
     }).resolve({ workspaceId, agentId, resolverSkillId, variableName: "order_status", scope })).resolves.toBeNull();
   });
 });

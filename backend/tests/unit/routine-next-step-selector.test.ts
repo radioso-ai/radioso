@@ -57,7 +57,7 @@ describe("RoutineNextStepSelector", () => {
       nextStepId: "ask_message",
       variables: { name: "Alex", email: "alex@example.com" },
     });
-    const call = vi.mocked(gw.complete).mock.calls[0]![0];
+    const call = vi.mocked(gw.complete).mock.calls[0][0];
     expect(call.systemPrompt).toContain('"key":"name"');
     expect(call.systemPrompt).toContain('"type":"email"');
     expect(call.systemPrompt).toContain("Extract every declared slot present");
@@ -68,7 +68,7 @@ describe("RoutineNextStepSelector", () => {
 
     await new RoutineNextStepSelector(gw).select({ routine, state, currentStep, transitions, turn });
 
-    const call = vi.mocked(gw.complete).mock.calls[0]![0];
+    const call = vi.mocked(gw.complete).mock.calls[0][0];
     expect(call.systemPrompt).not.toContain("Declared slot schema");
     expect(call.systemPrompt).not.toContain("Extract every declared slot present");
   });
@@ -134,7 +134,7 @@ describe("RoutineNextStepSelector", () => {
       routine, state, currentStep, transitions, turn,
       skillResult: { status: "completed", outputs: { requestId: "r1" } },
     });
-    const call = vi.mocked(gw.complete).mock.calls[0]![0];
+    const call = vi.mocked(gw.complete).mock.calls[0][0];
     expect(call.systemPrompt).toContain("a valid email was provided");
     expect(call.systemPrompt).toContain("declined, cancelled, refused, or wants to stop");
     expect(call.systemPrompt).toContain("deserves its own answer");

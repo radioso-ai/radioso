@@ -265,7 +265,7 @@ const invokeTool = async (
 
   let output: unknown;
   try {
-    output = await tool.invoke(input as never, {
+    output = await tool.invoke(input, {
       signal: ctx.signal,
       stepIndex: state.stepIndex,
       callId: call.callId,
@@ -296,7 +296,7 @@ const invokeTool = async (
 
   const latencyMs = ctx.now() - invokedAt;
   const tokens = tool.estimatedResultTokens
-    ? tool.estimatedResultTokens(input as never)
+    ? tool.estimatedResultTokens(input)
     : estimateAgentResultTokens(output);
   state.toolResultTokensUsed += tokens;
   state.lastInvocationFailure = null;

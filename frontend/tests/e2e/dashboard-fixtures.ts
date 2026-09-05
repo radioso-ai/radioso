@@ -1310,7 +1310,9 @@ export const installDashboardApiMocks = async (
           return false;
         }
         if (q) {
-          const haystack = `${conversation.title ?? ""} ${conversation.preview ?? ""}`.toLowerCase();
+          const title = typeof conversation.title === "string" ? conversation.title : "";
+          const preview = typeof conversation.preview === "string" ? conversation.preview : "";
+          const haystack = `${title} ${preview}`.toLowerCase();
           if (!haystack.includes(q.toLowerCase())) {
             return false;
           }

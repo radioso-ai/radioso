@@ -54,7 +54,7 @@ const hasMetadataFlavor = (init?: RequestInit): boolean => {
   const headers = init?.headers;
   if (headers instanceof Headers) return headers.get("Metadata-Flavor") === "Google";
   if (Array.isArray(headers)) return headers.some(([key, value]) => key.toLowerCase() === "metadata-flavor" && value === "Google");
-  return typeof headers === "object" && headers !== null && (headers as Record<string, string>)["Metadata-Flavor"] === "Google";
+  return typeof headers === "object" && headers !== null && (headers)["Metadata-Flavor"] === "Google";
 };
 
 const makeClient = (options: FakeRedisOptions): FakeRedisClient => {
@@ -117,23 +117,23 @@ describe("realtime IAM composition", () => {
     const admissionClient = composition.dependencies.admissionClientFactory({});
     await subscriber.start();
     await admissionClient.start();
-    await redis.clients[0]!.reconnect();
-    await redis.clients[1]!.reconnect();
+    await redis.clients[0].reconnect();
+    await redis.clients[1].reconnect();
 
     expect(redis.clients).toHaveLength(2);
     const providers = redis.clients.map((client) => client.options.defaults?.credentialsProvider);
     expect(providers).toHaveLength(2);
     expect(providers[0]).toBeDefined();
     expect(providers[1]).toBeDefined();
-    expect((redis.clients[0]!.options.defaults?.credentialsProvider as FakeRedisCredentialProvider).type).toBe("async-credentials-provider");
-    expect((redis.clients[1]!.options.defaults?.credentialsProvider as FakeRedisCredentialProvider).type).toBe("async-credentials-provider");
-    expect(redis.clients[0]!.options.defaults?.socket).toEqual({ connectTimeout: 2_000, tls: true });
-    expect(redis.clients[1]!.options.defaults?.socket).toEqual({ connectTimeout: 2_000, tls: true });
+    expect((redis.clients[0].options.defaults?.credentialsProvider as FakeRedisCredentialProvider).type).toBe("async-credentials-provider");
+    expect((redis.clients[1].options.defaults?.credentialsProvider as FakeRedisCredentialProvider).type).toBe("async-credentials-provider");
+    expect(redis.clients[0].options.defaults?.socket).toEqual({ connectTimeout: 2_000, tls: true });
+    expect(redis.clients[1].options.defaults?.socket).toEqual({ connectTimeout: 2_000, tls: true });
     expect(metadataFetch).toHaveBeenCalledTimes(4);
     expect(await providers[0]!.credentials()).toEqual({ username: "default", password: "adc-token-5" });
     expect(await providers[1]!.credentials()).toEqual({ username: "default", password: "adc-token-6" });
     expect(metadataFetch).toHaveBeenCalledTimes(6);
-    expect(metadataFetch.mock.calls.every(([url, options]) => String(url) === metadataTokenEndpoint && hasMetadataFlavor(options))).toBe(true);
+    expect(metadataFetch.mock.calls.every(([url, options]) => url === metadataTokenEndpoint && hasMetadataFlavor(options))).toBe(true);
     expect(JSON.stringify(metadataFetch.mock.calls)).not.toContain("adc-token");
 
     await subscriber.close();
@@ -154,7 +154,7 @@ describe("realtime IAM composition", () => {
     await subscriber.start();
     await admissionClient.start();
 
-    await expect(redis.clients[roleIndex]!.reconnect()).rejects.toThrow();
+    await expect(redis.clients[roleIndex].reconnect()).rejects.toThrow();
     expect(metadataFetch).toHaveBeenCalled();
     expect(JSON.stringify(loggerSpies.error.mock.calls)).not.toContain("secret-token");
     await subscriber.close();

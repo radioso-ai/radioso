@@ -382,6 +382,11 @@ describe("ModelInferencePipelineService", () => {
             yield "PRIVATE PARTIAL OUTPUT";
             yield "unused";
           } finally {
+            // Intentional: streamWithUsage reads the generator's return value as the
+            // final usage payload (see providerStreaming.ts). Closing the iterator via
+            // `.return()` only runs code placed in `finally`, mirroring real provider
+            // adapters' close semantics -- not the accidental-swallow the rule guards.
+            // eslint-disable-next-line no-unsafe-finally -- see comment above
             return providerUsage;
           }
         });
@@ -419,7 +424,7 @@ describe("ModelInferencePipelineService", () => {
         return {
           textStream: (async function* () {
             const abortedSignal = new Promise<never>((_resolve, reject) => {
-              input.signal?.addEventListener("abort", () => reject(input.signal?.reason), { once: true });
+              input.signal?.addEventListener("abort", () => reject(input.signal?.reason as Error), { once: true });
             });
             yield "PRIVATE PARTIAL OUTPUT";
             await abortedSignal;

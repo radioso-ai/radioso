@@ -175,9 +175,29 @@ const SLOT_REFERENCE = /\{\{\s*slot\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/gu;
  * renders the real value rather than leaking the raw token to the user. A reference to
  * a slot not captured yet resolves to an empty string, not the literal token.
  */
+// Captured slot values come from LLM-extracted JSON and are typed as `unknown`; render
+// them with the same default stringification `String()` would use for any JS value
+// (including the "[object Object]" fallback for a plain object), just spelled out so the
+// static type of each branch is known rather than `unknown`.
+const stringifySlotValue = (value: unknown): string => {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return String(value);
+  }
+  if (typeof value === "function" || typeof value === "symbol") {
+    return value.toString();
+  }
+  if (value === null || value === undefined) {
+    return "";
+  }
+  return Array.isArray(value) ? value.toString() : Object.prototype.toString.call(value);
+};
+
 const interpolateSlots = (text: string, variables: Record<string, unknown>): string =>
   text.replace(SLOT_REFERENCE, (_match, key: string) =>
-    Object.prototype.hasOwnProperty.call(variables, key) ? String(variables[key] ?? "") : "");
+    Object.prototype.hasOwnProperty.call(variables, key) ? stringifySlotValue(variables[key]) : "");
 
 const assignOutputs = (
   outputAssignments: Record<string, string> | undefined,
@@ -571,7 +591,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       };
       let nextStepId: string;
       if (stepEdges.length === 1) {
-        nextStepId = stepEdges[0]!.to;
+        nextStepId = stepEdges[0].to;
       } else {
         const fastForwardState: RoutineState = { ...state, path, variables, attempts, status: "active" };
         const beforeFastForward = variables;
@@ -635,7 +655,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         // and auto-advance — there is no result to branch on.
         actions.push({ type: step.actionType, payload: { ...variables } });
         traceSteps.push({ stepId: step.id, kind: step.kind, event: "action_emitted" });
-        step = stepById(actionEdges[0]!.to);
+        step = stepById(actionEdges[0].to);
         enterStep(step, path);
         continue;
       }
@@ -672,9 +692,9 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         throw new Error(`routine_skill_step_no_follow_up:${routine.id}:${step.id}`);
       }
       let nextStepId: string;
-      if (skillEdges.length === 1 && isLlmTransition(skillEdges[0]!)) {
+      if (skillEdges.length === 1 && isLlmTransition(skillEdges[0])) {
         // Legacy single follow-up → deterministic auto-advance, no selector call.
-        nextStepId = skillEdges[0]!.to;
+        nextStepId = skillEdges[0].to;
       } else {
         const beforeSkill = variables;
         const skillDecision = await selectNext({
@@ -698,7 +718,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         // one rather than parking on (and re-dispatching) the skill step.
         if (chosen === step.id) {
           if (skillEdges.some(isLlmTransition)) {
-            nextStepId = skillEdges[0]!.to;
+            nextStepId = skillEdges[0].to;
           } else {
             throw new Error(`routine_skill_step_no_matching_follow_up:${routine.id}:${step.id}:${skillResult.status}`);
           }

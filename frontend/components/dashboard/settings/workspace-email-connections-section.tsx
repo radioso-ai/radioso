@@ -227,7 +227,7 @@ export function WorkspaceEmailConnectionsSection({ workspaceId }: { workspaceId:
       description="Authorize customer-owned mail and configure outbound connections for constrained email skills."
       headerEnd={
         emailConnections.length > 0 ? (
-          <Badge className={statusTone(emailConnections[0]!.status)} variant="secondary">
+          <Badge className={statusTone(emailConnections[0].status)} variant="secondary">
             {emailConnections.length} configured
           </Badge>
         ) : null

@@ -21,9 +21,19 @@ const DESCRIPTION = "Propose a change to the workspace's assistant wording or it
 export type WorkspaceSettingProposalCopilotToolDependencies = CopilotProposalToolDependencies;
 
 const stated = (value: unknown): string => {
-  if (value === null) return "none";
-  if (Array.isArray(value)) return value.length === 0 ? "none" : value.join(", ");
-  return String(value);
+  switch (typeof value) {
+    case "string":
+      return value;
+    case "undefined":
+      return "undefined";
+    case "object":
+      if (value === null) return "none";
+      if (Array.isArray(value)) return value.length === 0 ? "none" : value.join(", ");
+      // eslint-disable-next-line @typescript-eslint/no-base-to-string -- deliberate: falls back to default Object stringification for a non-null, non-array settings value
+      return String(value);
+    default:
+      return String(value);
+  }
 };
 
 const summarize = (payload: CopilotWorkspaceSettingPayload, changed: ReadonlyArray<string>): string => {
@@ -86,5 +96,5 @@ export const createWorkspaceSettingProposalCopilotTools = (
         };
       },
     }),
-  } as CopilotToolDescriptor];
+  }];
 };

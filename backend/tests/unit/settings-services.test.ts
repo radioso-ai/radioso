@@ -585,7 +585,7 @@ describe("settings services", () => {
     const auditService = {
       record: vi.fn().mockRejectedValue(new Error("audit down")),
     };
-    const service = new IngestionSettingsService(repository as never, auditService as never);
+    const service = new IngestionSettingsService(repository, auditService as never);
 
     await expect(service.updateForWorkspace("workspace-1", settings)).resolves.toEqual(settings);
     expect(auditService.record).toHaveBeenCalledWith({
@@ -603,7 +603,7 @@ describe("settings services", () => {
       findByWorkspaceId: vi.fn().mockResolvedValue(settings),
       upsert: vi.fn().mockResolvedValue(settings),
     };
-    const service = new IngestionSettingsService(repository as never, { record: vi.fn() } as never);
+    const service = new IngestionSettingsService(repository, { record: vi.fn() } as never);
     const expectedUpdatedAt = new Date("2026-08-30T10:00:00.000Z");
 
     await service.updateForWorkspace("workspace-1", settings, { expectedUpdatedAt });
@@ -699,7 +699,7 @@ describe("settings services", () => {
     };
     const auditService = { record: vi.fn() };
     const service = new IngestionSettingsService(
-      repository as never,
+      repository,
       auditService as never,
     );
 
@@ -744,7 +744,7 @@ describe("settings services", () => {
     };
     const transitions = transitionPort();
     const service = new IngestionSettingsService(
-      repository as never,
+      repository,
       auditService as never,
       undefined,
       transitions,
@@ -786,7 +786,7 @@ describe("settings services", () => {
       start: vi.fn().mockRejectedValue(startError),
     });
     const service = new IngestionSettingsService(
-      repository as never,
+      repository,
       auditService as never,
       undefined,
       transitions,
@@ -810,7 +810,7 @@ describe("settings services", () => {
       upsert: vi.fn(),
     };
     const service = new IngestionSettingsService(
-      repository as never,
+      repository,
       { record: vi.fn() } as never,
     );
 
@@ -840,7 +840,7 @@ describe("settings services", () => {
     const auditService = {
       record: vi.fn(),
     };
-    const service = new IngestionSettingsService(repository as never, auditService as never);
+    const service = new IngestionSettingsService(repository, auditService as never);
 
     await expect(service.updateForWorkspace("workspace-1", {
       chunkingStrategy: "fixed_window",
@@ -872,7 +872,7 @@ describe("settings services", () => {
       })),
     });
     const service = new IngestionSettingsService(
-      repository as never,
+      repository,
       auditService as never,
       undefined,
       transitions,
@@ -944,7 +944,7 @@ describe("settings services", () => {
       reconcile: vi.fn().mockResolvedValue(building),
     });
     const service = new IngestionSettingsService(
-      repository as never,
+      repository,
       { record: vi.fn() } as never,
       undefined,
       transitions,
@@ -1032,7 +1032,7 @@ describe("settings services", () => {
       reconcile: vi.fn().mockResolvedValue(building),
     });
     const service = new IngestionSettingsService(
-      repository as never,
+      repository,
       { record: vi.fn() } as never,
       undefined,
       transitions,
@@ -1094,7 +1094,7 @@ describe("settings services", () => {
         findVersionedByWorkspaceId,
         clearPendingEmbeddingModel,
         upsert: vi.fn(),
-      } as never,
+      },
       { record: vi.fn() } as never,
       undefined,
       transitionPort({
@@ -1127,7 +1127,7 @@ describe("settings services", () => {
     };
     const transitions = transitionPort();
     const service = new IngestionSettingsService(
-      repository as never,
+      repository,
       auditService as never,
       undefined,
       transitions,
@@ -1158,7 +1158,7 @@ describe("settings services", () => {
       })),
     });
     const service = new IngestionSettingsService(
-      repository as never,
+      repository,
       { record: vi.fn() } as never,
       undefined,
       transitions,
@@ -1189,7 +1189,7 @@ describe("settings services", () => {
       {
         findByWorkspaceId: vi.fn().mockResolvedValue(existing),
         upsert: vi.fn(),
-      } as never,
+      },
       { record: vi.fn() } as never,
       undefined,
       transitions,
@@ -1227,7 +1227,7 @@ describe("settings services", () => {
       })),
     });
     const service = new IngestionSettingsService(
-      repository as never,
+      repository,
       auditService as never,
       undefined,
       transitions,
@@ -1256,7 +1256,7 @@ describe("settings services", () => {
       record: vi.fn(),
     };
     const service = new IngestionSettingsService(
-      repository as never,
+      repository,
       auditService as never,
       ["text-embedding-3-small", "text-embedding-3-large", "text-embedding-ada-002"],
     );
@@ -1291,7 +1291,7 @@ describe("settings services", () => {
       })),
     });
     const service = new IngestionSettingsService(
-      repository as never,
+      repository,
       auditService as never,
       undefined,
       transitions,

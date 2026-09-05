@@ -18,7 +18,7 @@ const stubGateway = (
         calls.push(input);
         return responder(input);
       },
-    } as QueryRewriteGateway,
+    },
     { calls },
   );
 };
@@ -96,7 +96,7 @@ describe("GatewayQueryRewritePortAdapter", () => {
       workspaceContext: { workspaceId: "ws-1" },
     });
 
-    expect((gateway as ReturnType<typeof stubGateway>).calls[0]).toMatchObject({
+    expect((gateway).calls[0]).toMatchObject({
       query: "q",
       workspaceContext: { workspaceId: "ws-1" },
       contextMessages: [],

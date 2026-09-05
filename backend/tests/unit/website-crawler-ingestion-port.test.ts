@@ -23,7 +23,7 @@ class IngestionServiceStub {
     this.tag(input.sourceId);
   }
 
-  async reapMissingPages(input: { workspaceId: string; sourceId: string; keepExternalDocumentIds: string[] }) {
+  async reapMissingPages(_input: { workspaceId: string; sourceId: string; keepExternalDocumentIds: string[] }) {
     return { deletedCount: this.resolvedSources.length, deletedContentBytes: 0 };
   }
 

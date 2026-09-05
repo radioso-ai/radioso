@@ -81,7 +81,7 @@ describe("website crawl worker", () => {
       dispatcher: createDispatcher(),
       documentIngestionService: {
         ingest,
-      } as never,
+      },
       logger: {
         info: vi.fn(),
         error: vi.fn(),
@@ -131,7 +131,7 @@ describe("website crawl worker", () => {
         }),
       },
       dispatcher: createDispatcher(),
-      documentIngestionService: { ingest, resolveSource } as never,
+      documentIngestionService: { ingest, resolveSource },
       logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() } as never,
     });
 
@@ -162,7 +162,7 @@ describe("website crawl worker", () => {
         }),
       },
       dispatcher: createDispatcher(),
-      documentIngestionService: { ingest: vi.fn() } as never,
+      documentIngestionService: { ingest: vi.fn() },
       publisher,
       logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() } as never,
     });
@@ -199,7 +199,7 @@ describe("website crawl worker", () => {
       dispatcher: createDispatcher(),
       documentIngestionService: {
         ingest: vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" }),
-      } as never,
+      },
       publisher,
       logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() } as never,
     });
@@ -237,7 +237,7 @@ describe("website crawl worker", () => {
       dispatcher: createDispatcher(),
       documentIngestionService: {
         ingest: vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" }),
-      } as never,
+      },
       publisher,
       logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() } as never,
     });
@@ -268,7 +268,7 @@ describe("website crawl worker", () => {
       repository: repository as never,
       provider,
       dispatcher: createDispatcher(),
-      documentIngestionService: { ingest: vi.fn() } as never,
+      documentIngestionService: { ingest: vi.fn() },
       publisher,
       logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() } as never,
     });
@@ -280,6 +280,50 @@ describe("website crawl worker", () => {
 
     await expect(worker.runOnce()).resolves.toBe(true);
     expect(publisher.enqueue).toHaveBeenCalledTimes(3);
+  });
+
+  it("reports internal crawl faults with correlation and presents safe operator copy", async () => {
+    const job = { ...createJob(), sourceId: "source-1" };
+    const markFailed = vi.fn().mockResolvedValue(true);
+    const report = vi.fn().mockResolvedValue(undefined);
+    const internalError = new TypeError("token=crawler-secret at https://crawler.example");
+    const worker = new WebsiteCrawlWorker({
+      repository: {
+        claimNext: vi.fn().mockResolvedValue(job),
+        markCompleted: vi.fn(),
+        markFailed,
+        updateCheckpoint: vi.fn().mockResolvedValue(false),
+        releasePausedClaim: vi.fn().mockResolvedValue(false),
+      } as never,
+      provider: { name: "test-crawler", crawl: vi.fn() },
+      dispatcher: createDispatcher(),
+      documentIngestionService: {
+        ingest: vi.fn(),
+        resolveSource: vi.fn().mockRejectedValue(internalError),
+      },
+      errorReporter: { report },
+      logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() } as never,
+    });
+
+    await expect(worker.runOnce()).resolves.toBe(true);
+
+    expect(markFailed).toHaveBeenCalledWith(
+      job.id,
+      job.attemptCount,
+      "An internal error interrupted the crawl. Try again later.",
+    );
+    expect(report).toHaveBeenCalledWith(expect.objectContaining({
+      errorType: "website_crawler.worker.internal_fault",
+      severity: "error",
+      correlation: { workspaceId: job.workspaceId, jobId: job.id },
+    }));
+    const reportInput = report.mock.calls[0]?.[0];
+    expect(reportInput?.error).toMatchObject({
+      name: "TypeError",
+      message: "Unexpected internal website crawl failure",
+    });
+    expect(reportInput?.error?.stack).not.toContain("crawler-secret");
+    expect(reportInput?.error?.stack).not.toContain("https://crawler.example");
   });
 
   it("publishes bounded stale recovery once per workspace and immediately requests another tick", async () => {
@@ -365,7 +409,7 @@ describe("website crawl worker", () => {
       } as never,
       provider: { name: "test-crawler", crawl },
       dispatcher: { dispatch },
-      documentIngestionService: { ingest: vi.fn() } as never,
+      documentIngestionService: { ingest: vi.fn() },
       publisher,
       logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
       sliceDurationMs: 240_000,
@@ -412,7 +456,7 @@ describe("website crawl worker", () => {
         }),
       },
       dispatcher: { dispatch: vi.fn().mockRejectedValue(dispatchError) },
-      documentIngestionService: { ingest: vi.fn() } as never,
+      documentIngestionService: { ingest: vi.fn() },
       logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
       sliceDurationMs: 240_000,
     });
@@ -447,7 +491,7 @@ describe("website crawl worker", () => {
         }),
       },
       dispatcher: { dispatch },
-      documentIngestionService: { ingest: vi.fn() } as never,
+      documentIngestionService: { ingest: vi.fn() },
       logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
       sliceDurationMs: 240_000,
     });
@@ -489,7 +533,7 @@ describe("website crawl worker", () => {
         }),
       },
       dispatcher: createDispatcher(),
-      documentIngestionService: { ingest } as never,
+      documentIngestionService: { ingest },
       logger: { info: vi.fn(), error: vi.fn() } as never,
       pollIntervalMs: 10_000,
     });
@@ -543,7 +587,7 @@ describe("website crawl worker", () => {
         }),
       },
       dispatcher: createDispatcher(),
-      documentIngestionService: { ingest } as never,
+      documentIngestionService: { ingest },
       logger: { info: vi.fn(), error: vi.fn() } as never,
       pollIntervalMs: 10_000,
     });
@@ -607,7 +651,7 @@ describe("website crawl worker", () => {
       repository: repository as never,
       provider,
       dispatcher: createDispatcher(),
-      documentIngestionService: { ingest: vi.fn() } as never,
+      documentIngestionService: { ingest: vi.fn() },
       logger: logger as never,
       pollIntervalMs: 10_000,
       cancellationPollMs: 1,
@@ -653,7 +697,7 @@ describe("website crawl worker", () => {
       dispatcher: createDispatcher(),
       documentIngestionService: {
         ingest: vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" }),
-      } as never,
+      },
       publisher,
       logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() } as never,
       pollIntervalMs: 10_000,
@@ -702,7 +746,7 @@ describe("website crawl worker", () => {
       dispatcher: createDispatcher(),
       documentIngestionService: {
         ingest: vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" }),
-      } as never,
+      },
       logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() } as never,
       pollIntervalMs: 10_000,
       cancellationPollMs: 1,
@@ -760,7 +804,7 @@ describe("website crawl worker", () => {
         crawl: vi.fn().mockResolvedValue({ provider: "test-crawler", pages: [] }),
       },
       dispatcher: createDispatcher(),
-      documentIngestionService: { ingest: vi.fn() } as never,
+      documentIngestionService: { ingest: vi.fn() },
       publisher,
       logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() } as never,
       jobLeaseMs: 300_000,
@@ -798,7 +842,7 @@ describe("website crawl worker", () => {
         crawl: vi.fn().mockResolvedValue({ provider: "test-crawler", pages: [] }),
       },
       dispatcher: createDispatcher(),
-      documentIngestionService: { ingest: vi.fn() } as never,
+      documentIngestionService: { ingest: vi.fn() },
       logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() } as never,
     });
 
@@ -903,7 +947,7 @@ describe("website crawl worker", () => {
       } as never,
       provider: { name: "test-crawler", crawl },
       dispatcher: createDispatcher(),
-      documentIngestionService: { ingest: vi.fn() } as never,
+      documentIngestionService: { ingest: vi.fn() },
       logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() } as never,
     });
 
@@ -964,7 +1008,7 @@ describe("website crawl worker", () => {
       } as never,
       provider: { name: "test-crawler", crawl },
       dispatcher: createDispatcher(),
-      documentIngestionService: { ingest: vi.fn() } as never,
+      documentIngestionService: { ingest: vi.fn() },
       publisher,
       logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() } as never,
       cancellationPollMs: 1,

@@ -12,7 +12,7 @@ describe('runtime configuration route', () => {
     vi.stubEnv('RADIOSO_OPERATOR_MCP_PUBLIC_URL', 'https://radioso-mcp.example.com/operator/mcp')
     vi.stubEnv('RADIOSO_PUBLIC_API_URL', 'https://api.example.com')
 
-    const response = await GET()
+    const response = GET()
 
     expect(response.headers.get('cache-control')).toBe('no-store')
     await expect(response.json()).resolves.toEqual({
@@ -27,7 +27,7 @@ describe('runtime configuration route', () => {
     vi.stubEnv('RADIOSO_OPERATOR_MCP_PUBLIC_URL', '')
     vi.stubEnv('RADIOSO_PUBLIC_API_URL', '')
 
-    const response = await GET()
+    const response = GET()
 
     await expect(response.json()).resolves.toEqual({ mcpUrl: '', operatorMcpUrl: '', publicApiUrl: '' })
   })

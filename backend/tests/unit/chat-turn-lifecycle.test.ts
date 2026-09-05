@@ -817,7 +817,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
     expect(conversationRepository.touch).not.toHaveBeenCalled();
     expect(auditService.record).not.toHaveBeenCalled();
     expect(assistantTurnPersistence.completeAssistantTurn).toHaveBeenCalledOnce();
-    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0]![0];
+    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
     expect(persisted.assistantMessage.grounding).toEqual({
       verdict: "degraded",
       claimCount: 2,
@@ -996,7 +996,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
 
     expect(completed.assistantMessageId).toEqual(expect.any(String));
     expect(assistantTurnPersistence.completeAssistantTurn).toHaveBeenCalledOnce();
-    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0]![0];
+    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
     expect(persisted.actions).toBeUndefined();
     expect(persisted.assistantMessage.metadata).not.toHaveProperty("probeUserMessageId");
     // A safe-test conversation keeps state transitions for representative follow-up
@@ -1131,7 +1131,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
     });
 
     expect(assistantTurnPersistence.completeAssistantTurn).toHaveBeenCalledOnce();
-    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0]![0];
+    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
     expect(persisted.pendingDecisionTransition).toEqual(pendingDecisionTransition);
     expect(persisted.auditEvent.eventType).toBe("chat.suspended");
     expect(persisted.auditEvent.eventStatus).toBe("success");
@@ -1205,7 +1205,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
 
     expect(completed.response.answer).toBe("A person will help you from here.");
     expect(assistantTurnPersistence.completeAssistantTurn).toHaveBeenCalledOnce();
-    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0]![0];
+    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
     expect(persisted.ownershipHandoff).toEqual({
       reason: "routine_handoff",
       routineId: "routine_1",
@@ -1306,7 +1306,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       engineTrace: engineTrace(),
     });
 
-    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0]![0];
+    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
     expect(persisted.pendingDecisionTransition).toBeUndefined();
     expect(persisted.auditEvent.eventType).toBe("chat.answer");
     expect(persisted.auditEvent.eventStatus).toBe("success");

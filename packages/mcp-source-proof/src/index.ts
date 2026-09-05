@@ -42,7 +42,7 @@ export const resolveSourceDigest = (input: {
   if (entries.length < trustedProxyHops) return socketDigest;
   const trustedSuffix = entries.slice(-trustedProxyHops);
   if (trustedSuffix.some((entry) => isIP(entry) === 0)) return socketDigest;
-  return digestSourceAddress(trustedSuffix[0]!);
+  return digestSourceAddress(trustedSuffix[0]);
 };
 
 const canonicalPayload = (input: {

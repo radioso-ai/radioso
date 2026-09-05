@@ -86,7 +86,7 @@ const unreachableReadDependencies = (input: {
 });
 
 describeIntegration("Audience Pulse snapshot persistence", () => {
-  const database = new Database(integrationDatabaseUrl as string);
+  const database = new Database(integrationDatabaseUrl);
   const repository = new AudiencePulseSnapshotRepository(database.kysely);
   const accountId = randomUUID();
   const workspaceId = randomUUID();

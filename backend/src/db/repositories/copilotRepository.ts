@@ -266,7 +266,7 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
     return row?.workspace_id ?? null;
   }
   async attachProposalsToMessage(input: { proposalIds: ReadonlyArray<string>; messageId: string; conversationId: string }): Promise<void> { if (input.proposalIds.length === 0) return; await this.db.updateTable("copilot_proposals").set({ message_id: input.messageId, updated_at: new Date() }).where("id", "in", input.proposalIds).where("conversation_id", "=", input.conversationId).execute(); }
-  async updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposal["status"]; appliedRef?: unknown | null; reason?: string | null; applyClaimGuard: CopilotProposalApplyClaimGuard }): Promise<CopilotProposal | null> {
+  async updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposal["status"]; appliedRef?: unknown; reason?: string | null; applyClaimGuard: CopilotProposalApplyClaimGuard }): Promise<CopilotProposal | null> {
     let query = this.db.updateTable("copilot_proposals")
       .set({ status: input.status, failure_reason: input.reason ?? null, applied_ref: input.appliedRef === undefined ? null : JSON.stringify(input.appliedRef), updated_at: new Date() })
       .where("id", "=", input.id)

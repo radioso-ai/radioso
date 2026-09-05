@@ -71,7 +71,7 @@ describe("completed-instance slot-correction interceptor", () => {
     expect(result!.response.answer).toBe("Done — I updated your email.");
     expect(result!.decision.reason).toBe("routine_slot_correction");
     expect(save).toHaveBeenCalledTimes(1);
-    expect(save.mock.calls[0]![0]).toMatchObject({
+    expect(save.mock.calls[0][0]).toMatchObject({
       routineId: "routine_intake",
       status: "completed",
       variables: { email: "new@example.com" },

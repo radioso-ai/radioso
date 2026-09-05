@@ -9,9 +9,8 @@ const isoDateFromToday = (offsetDays: number): string =>
 
 describe("retrieval answer integration", () => {
   it("answers from retrieval without creating assistant conversation history", async () => {
-    const { app, dependencies } = createTestApp();
+    const { app } = createTestApp();
     const session = await issueTestSession(app, "retrieval-answer-integration@example.com");
-    const { workspaceId } = session;
     const headers = adminSessionHeaders(session);
 
     await request(app)
@@ -97,9 +96,8 @@ describe("retrieval answer integration", () => {
   });
 
   it("marks MCP capability diagnostics separately from direct retrieval answer clients", async () => {
-    const { app, dependencies } = createTestApp();
+    const { app } = createTestApp();
     const session = await issueTestSession(app, "retrieval-answer-mcp-integration@example.com");
-    const { workspaceId } = session;
     const headers = adminSessionHeaders(session);
 
     await request(app)

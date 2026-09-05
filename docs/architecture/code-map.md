@@ -157,6 +157,13 @@ the `Database` pool wrapper, the pgvector/full-text adapters, and the connector 
 the published `@radioso/connector-api` contract — enforced by `pnpm run lint:no-raw-sql`
 (`scripts/checkNoRawSql.mjs`). Migrations themselves stay raw `.sql`.
 
+`pnpm run lint:unbound-methods` (`scripts/checkUnboundMethods.mjs`) catches a class or
+interface method being passed or stored without its receiver, including first-party
+workspace packages. Bind the method or pass an arrow that calls it with its owner;
+reviewed structural-port exceptions use a path, member, and receiver fingerprint in
+the allowlist beside the script. Backend CI and `pnpm run ci:local` run the complete
+backend lint chain.
+
 Should not own product rules. Domain modules depend on a `*RepositoryPort` (a
 type) and never import `pg`, Kysely, the `Database` class, or a concrete repository.
 

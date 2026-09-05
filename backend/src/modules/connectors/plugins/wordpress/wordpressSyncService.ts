@@ -50,8 +50,8 @@ const defaultBuildClient = (
     siteUrl: config["site_url"] ?? "",
     username: config["wp_username"] || undefined,
     applicationPassword: config["wp_application_password"] || undefined,
-    assertPublicUrl: publicHttp.assertPublicUrl,
-    fetchImpl: publicHttp.fetch as typeof fetch,
+    assertPublicUrl: (url) => publicHttp.assertPublicUrl(url),
+    fetchImpl: (input, init) => publicHttp.fetch(input as string | URL, init),
   });
 
 const postTypesFromConfig = (config: Record<string, string>): string[] =>

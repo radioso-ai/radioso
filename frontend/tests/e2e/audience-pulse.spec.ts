@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import type { AudiencePulseHydratedReport } from "@/lib/api-audience-pulse";
+
 import {
   accountId,
   installDashboardApiMocks,
@@ -16,11 +18,12 @@ const conversationTwo = "aaaaaaaa-aaaa-4aaa-8aaa-000000000002";
 const evidenceMessageOne = "bbbbbbbb-bbbb-4bbb-8bbb-000000000001";
 const evidenceMessageTwo = "bbbbbbbb-bbbb-4bbb-8bbb-000000000002";
 
-const completedReport = {
+const completedReport: AudiencePulseHydratedReport = {
   period,
   generatedAt: nowIso,
   narrativeGeneratedAt: nowIso,
   narrativeReuseCount: 0,
+  narrativeReuseMaxDrift: 0.2,
   coverage: { populationSize: 240, sampleSize: 240, sampled: false, facetReadyQuestionCount: 240 },
   weeklyVolume: [
     { weekStart: "2026-04-01T00:00:00.000Z", visitorQuestionCount: 40, conversationCount: 22 },
@@ -29,6 +32,7 @@ const completedReport = {
     { weekStart: "2026-04-22T00:00:00.000Z", visitorQuestionCount: 75, conversationCount: 39 },
   ],
   summary: "Visitors mainly asked about refunds and shipping windows in the last 30 days.",
+  dissolvedTopics: [],
   themes: [
     {
       id: "theme-1",
@@ -99,7 +103,7 @@ interface AudiencePulseMocks {
     refreshOutcome: "completed" | "busy" | "capacity" | "provider_unavailable";
     getCount: number;
     postCount: number;
-    report: typeof completedReport;
+    report: AudiencePulseHydratedReport;
   };
 }
 
@@ -669,6 +673,7 @@ test.describe("Audience Pulse dashboard", () => {
       ...completedReport,
       contentGaps: [],
       recommendations: [],
+      dissolvedTopics: [{ id: "prior-shipping", title: "Shipping delays" }],
       themes: [
         {
           ...completedReport.themes[0],
@@ -786,10 +791,10 @@ test.describe("Audience Pulse dashboard", () => {
     await expect(newTopic.getByText("New", { exact: true })).toBeVisible();
 
     const splitTopic = topics.getByTestId("audience-pulse-topic-row").filter({ hasText: "Split interest" });
-    await expect(splitTopic.getByText("Split", { exact: true })).toBeVisible();
+    await expect(splitTopic.getByText("Split from prior topic", { exact: true })).toBeVisible();
 
     const mergedTopic = topics.getByTestId("audience-pulse-topic-row").filter({ hasText: "Merged interest" });
-    await expect(mergedTopic.getByText("Merged", { exact: true })).toBeVisible();
+    await expect(mergedTopic.getByText("Merged from 2 topics", { exact: true })).toBeVisible();
 
     // A direction renders only when the raw count and the topic's share moved the same way.
     for (const title of ["Growing interest", "Just above threshold"]) {
@@ -814,6 +819,50 @@ test.describe("Audience Pulse dashboard", () => {
 
     const estimatedTopic = topics.getByTestId("audience-pulse-topic-row").filter({ hasText: "Estimated interest" });
     await expect(estimatedTopic.getByText("Match estimate", { exact: true })).toBeVisible();
+
+    const unknownHistoryTopic = topics.getByTestId("audience-pulse-topic-row").filter({ hasText: "Unknown history" });
+    await expect(unknownHistoryTopic.getByText("Prior identity unknown", { exact: true })).toBeVisible();
+
+    const dissolvedTopics = page.locator('section[aria-label="Topics that stopped appearing"]');
+    await expect(dissolvedTopics.getByText("Stopped appearing: Shipping delays.", { exact: true })).toBeVisible();
+  });
+
+  test("a first census suppresses New badges", async ({ page }) => {
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+
+    const firstCensusReport: AudiencePulseHydratedReport = {
+      ...completedReport,
+      contentGaps: [],
+      recommendations: [],
+      themes: [
+        {
+          ...completedReport.themes[0],
+          id: "theme-first-census-refunds",
+          title: "Refund timing",
+          transition: { kind: "emerged", parentTopicIds: [], viaCentroidFallback: false },
+          previousMemberCount: null,
+          previousShare: null,
+        },
+        {
+          ...completedReport.themes[0],
+          id: "theme-first-census-shipping",
+          title: "Shipping updates",
+          transition: { kind: "emerged", parentTopicIds: [], viaCentroidFallback: false },
+          previousMemberCount: null,
+          previousShare: null,
+        },
+      ],
+    };
+
+    await installAudiencePulseMocks(page, { read: "completed", report: firstCensusReport });
+    await page.goto(`/w/${workspaceKey}/quality?view=audience-pulse`);
+
+    const topics = page.locator('section[aria-labelledby="audience-pulse-topics"]');
+    for (const title of ["Refund timing", "Shipping updates"]) {
+      const topic = topics.getByTestId("audience-pulse-topic-row").filter({ hasText: title });
+      await expect(topic.getByText("New", { exact: true })).toHaveCount(0);
+    }
   });
 
   test("topic sparkline announces every weekly value when the trend is non-monotonic", async ({ page }) => {

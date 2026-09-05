@@ -94,6 +94,11 @@ export interface TopicCensusRunTopicSummary {
   transition: TopicTransition | null;
 }
 
+export interface TopicCensusRunDissolvedTopic {
+  id: string;
+  title: string;
+}
+
 export interface TopicCensusRunDetail {
   id: string;
   workspaceId: string;
@@ -106,6 +111,8 @@ export interface TopicCensusRunDetail {
   createdAt: Date;
   /** Topics with at least one membership in this run, richest first. */
   topics: TopicCensusRunTopicSummary[];
+  /** Topics retired by this run. They have no current-run membership or member count. */
+  dissolvedTopics: TopicCensusRunDissolvedTopic[];
 }
 
 /**

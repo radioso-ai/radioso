@@ -579,6 +579,7 @@ describe("CensusService.run identity matching (T028+T029)", () => {
     const saved = topicRepository.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
     expect(saved.dissolvedTopicIds).toEqual([doomed.id]);
     expect(result.dissolvedTopicIds).toEqual([doomed.id]);
+    expect(result.dissolvedTopics).toEqual([{ id: doomed.id, title: doomed.title }]);
     expect(saved.topics.some((topic) => topic.id === doomed.id)).toBe(false);
     expect(saved.transitions).toContainEqual({
       topicId: doomed.id,
@@ -606,6 +607,7 @@ describe("CensusService.run identity matching (T028+T029)", () => {
     const saved = topicRepository.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
     expect(saved.dissolvedTopicIds).not.toContain(alreadyDissolved.id);
     expect(result.dissolvedTopicIds).not.toContain(alreadyDissolved.id);
+    expect(result.dissolvedTopics).not.toContainEqual(expect.objectContaining({ id: alreadyDissolved.id }));
     expect(saved.transitions).not.toContainEqual(expect.objectContaining({
       topicId: alreadyDissolved.id,
       kind: "dissolved",

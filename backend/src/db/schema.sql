@@ -6357,6 +6357,13 @@ CREATE INDEX idx_topic_transitions_run ON public.topic_transitions USING btree (
 
 
 --
+-- Name: idx_topic_transitions_run_topic_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_topic_transitions_run_topic_unique ON public.topic_transitions USING btree (run_id, topic_id);
+
+
+--
 -- Name: idx_topics_workspace_active; Type: INDEX; Schema: public; Owner: -
 --
 

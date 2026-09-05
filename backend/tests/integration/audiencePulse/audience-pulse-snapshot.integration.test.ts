@@ -33,6 +33,7 @@ const report = (summary: string): AudiencePulseStoredReport => ({
   generatedAt: "2026-08-01T00:00:00.000Z",
   narrativeGeneratedAt: "2026-08-01T00:00:00.000Z",
   narrativeReuseCount: 0,
+  narrativeReuseMaxDrift: 0.2,
   coverage: { populationSize: 2, sampleSize: 2, sampled: false, facetReadyQuestionCount: 2 },
   weeklyVolume: [{
     weekStart: "2026-06-29T00:00:00.000Z",
@@ -41,6 +42,7 @@ const report = (summary: string): AudiencePulseStoredReport => ({
   }],
   summary,
   unclassifiedQuestionCount: 0,
+  dissolvedTopics: [],
   themes: [],
   contentGaps: [],
   recommendations: [],

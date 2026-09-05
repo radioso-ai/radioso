@@ -12,9 +12,11 @@ import type {
   AudiencePulseStoredReport,
 } from "../domain/report.js";
 import {
+  applyAudiencePulseNarrative,
+  AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT,
   AudiencePulseReportValidationError,
+  buildAudiencePulseCensusReport,
   buildAudiencePulseComputingReport,
-  buildAudiencePulseReport,
   evaluateTopicContentGap,
   parseAudiencePulseModelOutput,
 } from "../domain/report.js";
@@ -55,7 +57,9 @@ interface SafeLogger {
   warn?(context: Record<string, unknown>, message: string): void;
 }
 
-export const AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT = 0.2;
+export { AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT };
+/** One or two questions are treated as integer noise even when their ratio is large. */
+export const AUDIENCE_PULSE_NARRATIVE_REUSE_MIN_ABSOLUTE_MOVEMENT = 3;
 export const AUDIENCE_PULSE_NARRATIVE_MAX_CONSECUTIVE_REUSES = 3;
 
 export interface AudiencePulseServiceDependencies {
@@ -147,11 +151,19 @@ type LegacyAudiencePulseStoredTheme = Omit<
 };
 type LegacyAudiencePulseStoredReport = Omit<
   AudiencePulseStoredReport,
-  "narrativeGeneratedAt" | "narrativeReuseCount" | "unclassifiedQuestionCount" | "coverage" | "themes"
+  | "narrativeGeneratedAt"
+  | "narrativeReuseCount"
+  | "narrativeReuseMaxDrift"
+  | "unclassifiedQuestionCount"
+  | "dissolvedTopics"
+  | "coverage"
+  | "themes"
 > & {
   narrativeGeneratedAt?: string;
   narrativeReuseCount?: number;
+  narrativeReuseMaxDrift?: number;
   unclassifiedQuestionCount?: number;
+  dissolvedTopics?: AudiencePulseStoredReport["dissolvedTopics"];
   coverage: AudiencePulseStoredReport["coverage"] & { facetReadyQuestionCount?: number };
   themes: LegacyAudiencePulseStoredTheme[];
 };
@@ -220,12 +232,14 @@ const hydrateReport = (
     generatedAt: report.generatedAt,
     narrativeGeneratedAt: legacyReport.narrativeGeneratedAt ?? report.generatedAt,
     narrativeReuseCount: legacyReport.narrativeReuseCount ?? 0,
+    narrativeReuseMaxDrift: legacyReport.narrativeReuseMaxDrift ?? AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT,
     coverage,
     weeklyVolume: report.weeklyVolume,
     summary: report.summary,
     // Computed once, in `buildAudiencePulseReport`, against the population -- not
     // reconstructed here from whichever evidence ids happened to rehydrate.
     unclassifiedQuestionCount,
+    dissolvedTopics: (legacyReport.dissolvedTopics ?? []).map((topic) => ({ ...topic })),
     themes: legacyReport.themes.map((theme) => {
       const legacyTheme: LegacyAudiencePulseStoredTheme = theme;
       const memberCount = legacyTheme.memberCount ?? legacyTheme.sampleCount ?? theme.evidenceIds.length;
@@ -360,6 +374,10 @@ const previousThemeShares = (snapshot: AudiencePulseSnapshotRecord | null): Map<
   return shares;
 };
 
+const reachesNarrativeDriftGate = (absoluteMovement: number, relativeMovement: number): boolean =>
+  absoluteMovement >= AUDIENCE_PULSE_NARRATIVE_REUSE_MIN_ABSOLUTE_MOVEMENT
+  && relativeMovement >= AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT;
+
 type AudiencePulseNarrativeSnapshot = AudiencePulseSnapshotRecord & {
   report: AudiencePulseStoredReport & { summary: string };
 };
@@ -398,6 +416,17 @@ const reusableNarrativeSnapshot = (input: {
     return null;
   }
 
+  const currentNarrativeTopicIds = richestFirst(censusResult.topics)
+    .slice(0, AUDIENCE_PULSE_SUMMARY_MAX_TOPICS)
+    .map((topic) => topic.topicId);
+  const priorNarrativeTopicIds = snapshot.report.themes
+    .slice(0, AUDIENCE_PULSE_SUMMARY_MAX_TOPICS)
+    .map((theme) => theme.id);
+  if (currentNarrativeTopicIds.length !== priorNarrativeTopicIds.length
+    || currentNarrativeTopicIds.some((topicId, index) => topicId !== priorNarrativeTopicIds[index])) {
+    return null;
+  }
+
   const priorCounts = previousThemeMemberCounts(snapshot);
   const priorShares = previousThemeShares(snapshot);
   const hasMaterialTopicDrift = censusResult.topics.some((topic) => {
@@ -409,13 +438,14 @@ const reusableNarrativeSnapshot = (input: {
     if (previousShare === undefined) {
       return true;
     }
-    const countDrift = Math.abs(topic.memberCount - previousMemberCount) / Math.max(previousMemberCount, 1);
+    const countMovement = Math.abs(topic.memberCount - previousMemberCount);
+    const countDrift = countMovement / Math.max(previousMemberCount, 1);
     const currentShare = topic.memberCount / populationSize;
     const shareDrift = previousShare === 0
       ? currentShare === 0 ? 0 : Infinity
       : Math.abs(currentShare - previousShare) / previousShare;
-    return countDrift >= AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT
-      || shareDrift >= AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT;
+    return reachesNarrativeDriftGate(countMovement, countDrift)
+      || reachesNarrativeDriftGate(countMovement, shareDrift);
   });
   if (hasMaterialTopicDrift) {
     return null;
@@ -433,18 +463,28 @@ const reusableNarrativeSnapshot = (input: {
   }
 
   const priorPopulationSize = snapshot.report.coverage.populationSize;
+  const populationMovement = typeof priorPopulationSize === "number"
+    ? Math.abs(populationSize - priorPopulationSize)
+    : Infinity;
   if (typeof priorPopulationSize !== "number"
-    || Math.abs(populationSize - priorPopulationSize) / Math.max(priorPopulationSize, 1)
-      >= AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT) {
+    || reachesNarrativeDriftGate(
+      populationMovement,
+      populationMovement / Math.max(priorPopulationSize, 1),
+    )) {
     return null;
   }
 
   // Snapshots written before this field exists cannot prove that unclassified demand
   // stayed stable, so their narratives are regenerated.
   const priorUnclassifiedQuestionCount = snapshot.report.unclassifiedQuestionCount;
+  const unclassifiedMovement = typeof priorUnclassifiedQuestionCount === "number"
+    ? Math.abs(unclassifiedQuestionCount - priorUnclassifiedQuestionCount)
+    : Infinity;
   if (typeof priorUnclassifiedQuestionCount !== "number"
-    || Math.abs(unclassifiedQuestionCount - priorUnclassifiedQuestionCount)
-      / Math.max(priorUnclassifiedQuestionCount, 1) >= AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT) {
+    || reachesNarrativeDriftGate(
+      unclassifiedMovement,
+      unclassifiedMovement / Math.max(priorUnclassifiedQuestionCount, 1),
+    )) {
     return null;
   }
 
@@ -656,23 +696,6 @@ export class AudiencePulseService implements AudiencePulsePort {
         return { kind: "preparing" };
       }
 
-      try {
-        reservation = await this.deps.usageLimitPolicy.reserveAnswer({
-          accountId: input.accountId,
-          workspaceId: input.workspaceId,
-          surface: "audience_pulse",
-        });
-      } catch (error) {
-        if (isUsageLimitExceededError(error)) {
-          await this.recordOutcome(input, "usage_limited", startedAt, {
-            populationSize: history.coverage.populationSize,
-            sampleSize: history.coverage.sampleSize,
-          });
-          return { kind: "usage_limited" };
-        }
-        throw error;
-      }
-
       // The census clusters the exact eligible-question population for this same
       // window (spec 956 FR-003): it names and sizes every topic before any model
       // call writes a word of narrative about them.
@@ -711,9 +734,7 @@ export class AudiencePulseService implements AudiencePulsePort {
         // backfill still draining (spec 956 follow-up). The census could not cluster
         // anything, so there is nothing for a narrative call to summarize; skip it
         // rather than ask a model to narrate zero computed data, the same precedent
-        // an empty population already sets for `no_traffic`. The early reservation
-        // above is released by the shared `finally` path because no billable model
-        // completion ran for the report.
+        // an empty population already sets for `no_traffic`.
         const generatedAt = this.now();
         const report = buildAudiencePulseComputingReport({
           period: { start: analysisStart, end: analysisEnd },
@@ -745,27 +766,20 @@ export class AudiencePulseService implements AudiencePulsePort {
       // This report supplies the current census-derived data to both branches. Reuse
       // carries over only model-authored narrative fields, never an old content-gap
       // decision or a recommendation that the domain no longer qualifies.
-      let censusOnlyReport: AudiencePulseStoredReport;
+      let censusReport: ReturnType<typeof buildAudiencePulseCensusReport>;
       try {
-        censusOnlyReport = buildAudiencePulseReport({
+        censusReport = buildAudiencePulseCensusReport({
           period: { start: analysisStart, end: analysisEnd },
-          // This timestamp is discarded. Final reports sample their timestamp only
-          // when their reuse or generated narrative is actually produced.
+          // Final reports resample this timestamp when narrative reuse or generation
+          // completes; the census-owned arrays themselves are built only here.
           generatedAt: startedAt,
           coverage: reportCoverage,
           weeklyVolume: history.weeklyVolume,
           population: history.evidence,
           topics: censusTopics,
+          dissolvedTopics: censusResult.dissolvedTopics,
           previousThemeMemberCounts: previousThemeMemberCounts(priorSnapshot),
           previousThemeShares: previousThemeShares(priorSnapshot),
-          model: {
-            // The report builder validates model-shaped input even though this temporary
-            // census-only report contributes no narrative fields to the final result.
-            summary: "Census-only report.",
-            themes: [],
-            recommendations: [],
-            caveats: [],
-          },
         });
       } catch (error) {
         if (!isAbortError(error) && !(error instanceof AudiencePulseReportValidationError)) throw error;
@@ -777,9 +791,9 @@ export class AudiencePulseService implements AudiencePulsePort {
         snapshot: priorSnapshot,
         censusResult,
         currentEvidenceById: evidenceById,
-        populationSize: censusOnlyReport.coverage.populationSize,
-        unclassifiedQuestionCount: censusOnlyReport.unclassifiedQuestionCount,
-        contentGapThemeIds: censusOnlyReport.contentGaps.map((gap) => gap.themeId),
+        populationSize: censusReport.report.coverage.populationSize,
+        unclassifiedQuestionCount: censusReport.report.unclassifiedQuestionCount,
+        contentGapThemeIds: censusReport.report.contentGaps.map((gap) => gap.themeId),
       });
       narrativeReused = reusableSnapshot !== null;
 
@@ -788,7 +802,7 @@ export class AudiencePulseService implements AudiencePulsePort {
       if (reusableSnapshot) {
         generatedAt = this.now();
         report = {
-          ...censusOnlyReport,
+          ...censusReport.report,
           generatedAt: generatedAt.toISOString(),
           narrativeGeneratedAt: reusableSnapshot.report.narrativeGeneratedAt
             ?? reusableSnapshot.report.generatedAt,
@@ -835,6 +849,22 @@ export class AudiencePulseService implements AudiencePulsePort {
           operation: "analysis",
           attemptKey: randomUUID(),
         };
+        try {
+          reservation = await this.deps.usageLimitPolicy.reserveAnswer({
+            accountId: input.accountId,
+            workspaceId: input.workspaceId,
+            surface: "audience_pulse",
+          });
+        } catch (error) {
+          if (isUsageLimitExceededError(error)) {
+            await this.recordOutcome(input, "usage_limited", startedAt, {
+              populationSize: history.coverage.populationSize,
+              sampleSize: history.coverage.sampleSize,
+            });
+            return { kind: "usage_limited" };
+          }
+          throw error;
+        }
         const inference = await this.deps.inferenceFactory.create({
           workspaceContext: { workspaceId: input.workspaceId, accountId: input.accountId },
           modelCallContext,
@@ -863,15 +893,9 @@ export class AudiencePulseService implements AudiencePulsePort {
         try {
           const model = parseModelResult(completion.text, shownQualifyingTopicIndexes);
           generatedAt = this.now();
-          report = buildAudiencePulseReport({
-            period: { start: analysisStart, end: analysisEnd },
+          report = applyAudiencePulseNarrative({
+            census: censusReport,
             generatedAt,
-            coverage: reportCoverage,
-            weeklyVolume: history.weeklyVolume,
-            population: history.evidence,
-            topics: censusTopics,
-            previousThemeMemberCounts: previousThemeMemberCounts(priorSnapshot),
-          previousThemeShares: previousThemeShares(priorSnapshot),
             model,
           });
           const shownQualifyingThemeIds = shownQualifyingTopicIndexes
@@ -910,6 +934,9 @@ export class AudiencePulseService implements AudiencePulsePort {
       // A validated model completion is billable even when a later snapshot write or
       // accounting operation fails, so do not release its reservation afterward.
       if (!narrativeReused) {
+        if (!reservation) {
+          throw new Error("audience_pulse: model completion has no usage reservation");
+        }
         reservationMustRemain = true;
         await reservation.commit();
       }

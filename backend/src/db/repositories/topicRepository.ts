@@ -4,6 +4,7 @@ import type {
   ActiveTopicRecord,
   CreateTopicCensusRunInput,
   SaveTopicCensusRunInput,
+  TopicCensusRunDissolvedTopic,
   TopicCensusRunDetail,
   TopicCensusRunTopicSummary,
   TopicMembershipInput,
@@ -390,11 +391,9 @@ export class TopicRepository implements TopicRepositoryPort {
       .groupBy("topics.id")
       .execute();
 
-    // Transitions are read in their own query rather than joined into the aggregate
-    // above: `topic_transitions` carries no unique constraint on (run_id, topic_id), so
-    // a second row for one topic would fan the membership rows out and inflate
-    // `member_count` -- silently reintroducing a count that does not match real
-    // membership, the defect class spec 956 removed.
+    // Transitions stay separate from the membership aggregate so counts remain
+    // structurally independent of identity metadata. The database guarantees one row
+    // per run/topic; ordering keeps the read deterministic across topics.
     const transitionRows = await this.db
       .selectFrom("topic_transitions")
       .select(["topic_id", "kind", "parent_topic_ids", "via_centroid_fallback", "created_at", "id"])
@@ -402,15 +401,17 @@ export class TopicRepository implements TopicRepositoryPort {
       .orderBy("created_at", "asc")
       .orderBy("id", "asc")
       .execute();
-    const transitionByTopicId = new Map<typeof transitionRows[number]["topic_id"], typeof transitionRows[number]>();
-    for (const transition of transitionRows) {
-      // Duplicate rows can exist for a run/topic. The stable query order and first-row
-      // selection make that data anomaly deterministic without joining transitions
-      // into the membership aggregate and inflating member counts.
-      if (!transitionByTopicId.has(transition.topic_id)) {
-        transitionByTopicId.set(transition.topic_id, transition);
-      }
-    }
+    const transitionByTopicId = new Map(transitionRows.map((transition) => [transition.topic_id, transition]));
+
+    const dissolvedTopics: TopicCensusRunDissolvedTopic[] = await this.db
+      .selectFrom("topics")
+      .select(["id", "title"])
+      .where("workspace_id", "=", run.workspace_id)
+      .where("last_seen_run_id", "=", run.id)
+      .where("dissolved_at", "is not", null)
+      .orderBy("dissolved_at", "asc")
+      .orderBy("id", "asc")
+      .execute();
 
     const topics: TopicCensusRunTopicSummary[] = topicRows
       .map((topic) => {
@@ -443,6 +444,7 @@ export class TopicRepository implements TopicRepositoryPort {
       params: run.params_json as Record<string, unknown>,
       createdAt: run.created_at,
       topics,
+      dissolvedTopics,
     };
   }
 }

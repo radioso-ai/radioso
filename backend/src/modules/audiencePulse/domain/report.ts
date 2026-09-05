@@ -105,11 +105,21 @@ export interface AudiencePulseStoredRecommendation {
   evidenceIds: string[];
 }
 
+export interface AudiencePulseDissolvedTopic {
+  id: string;
+  title: string;
+}
+
+/** Ratio used by the backend when deciding whether a prior narrative remains reusable. */
+export const AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT = 0.2;
+
 export interface AudiencePulseStoredReport {
   period: { start: string; end: string };
   generatedAt: string;
   narrativeGeneratedAt: string;
   narrativeReuseCount: number;
+  /** Exact relative-drift threshold used for this report's narrative reuse decision. */
+  narrativeReuseMaxDrift: number;
   coverage: AudiencePulseReportCoverage;
   weeklyVolume: AudiencePulseWeeklyVolume[];
   /**
@@ -121,6 +131,8 @@ export interface AudiencePulseStoredReport {
   summary?: string;
   /** Population questions claimed by no topic, measured against the population -- never the sample. */
   unclassifiedQuestionCount: number;
+  /** Topics retired by this census run. They have no current-run membership or member count. */
+  dissolvedTopics: AudiencePulseDissolvedTopic[];
   themes: AudiencePulseStoredTheme[];
   contentGaps: Array<{
     themeId: string;
@@ -289,28 +301,29 @@ const resolveEvidence = (
   });
 };
 
+export interface AudiencePulseCensusReport {
+  report: AudiencePulseStoredReport;
+  /** Current qualifying evidence, keyed by theme, retained only while applying narrative copy. */
+  recommendationEvidenceIdsByThemeId: ReadonlyMap<string, readonly string[]>;
+}
+
 /**
- * Builds the stored report from a topic census (spec 956): `topics` carries each
- * topic's exact real membership (`AudiencePulseCensusTopic.evidenceIds`), and
- * `population` is every eligible question in the window, not a sample. Every count,
- * share, weekly bucket, and content-gap decision below is computed here from that
- * membership -- never trusted from the model and never scaled from a subset. `model`
- * supplies narrative copy only; this function owns content-gap eligibility and
- * recommendation evidence. Its `themes` field is validated but unused (see
- * `audiencePulseModelOutputSchema`).
+ * Computes the report's census-owned data exactly once. `topics` carries exact real
+ * membership and `population` contains every eligible question in the window, so all
+ * counts, shares, weekly buckets, gaps, and recommendation evidence come from current
+ * data rather than model output.
  */
-export const buildAudiencePulseReport = (input: {
+export const buildAudiencePulseCensusReport = (input: {
   period: { start: Date; end: Date };
   generatedAt: Date;
   coverage: AudiencePulseReportCoverage;
   weeklyVolume: AudiencePulseWeeklyVolume[];
   population: AudiencePulseEvidence[];
   topics: AudiencePulseCensusTopic[];
+  dissolvedTopics?: AudiencePulseDissolvedTopic[];
   previousThemeMemberCounts?: Map<string, number>;
   previousThemeShares?: Map<string, number>;
-  model: AudiencePulseModelOutput;
-}): AudiencePulseStoredReport => {
-  const model = audiencePulseModelOutputSchema.parse(input.model);
+}): AudiencePulseCensusReport => {
   const evidenceById = new Map(input.population.map((item) => [item.id, item]));
   if (evidenceById.size !== input.population.length) {
     throw new AudiencePulseReportValidationError("Submitted population evidence ids must be unique");
@@ -360,10 +373,49 @@ export const buildAudiencePulseReport = (input: {
     }] : [];
   });
 
-  const qualifyingThemeIds = new Set(contentGaps.map((gap) => gap.themeId));
+  const recommendationEvidenceIdsByThemeId = new Map<string, readonly string[]>();
+  for (const gap of contentGaps) {
+    const parentTheme = themes.find((theme) => theme.id === gap.themeId)!;
+    const parentMemberEvidenceIds = memberEvidenceIdsByTopicId.get(parentTheme.id) ?? [];
+    const evidenceIds = pickRecurringContentGapEvidenceIds(parentMemberEvidenceIds, evidenceById);
+    if (evidenceIds.length >= CONTENT_GAP_MIN_ELIGIBLE_ABSOLUTE) {
+      recommendationEvidenceIdsByThemeId.set(parentTheme.id, evidenceIds);
+    }
+  }
+
+  return {
+    report: {
+      period: {
+        start: input.period.start.toISOString(),
+        end: input.period.end.toISOString(),
+      },
+      generatedAt: input.generatedAt.toISOString(),
+      narrativeGeneratedAt: input.generatedAt.toISOString(),
+      narrativeReuseCount: 0,
+      narrativeReuseMaxDrift: AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT,
+      coverage: input.coverage,
+      weeklyVolume: input.weeklyVolume.map((week) => ({ ...week })),
+      unclassifiedQuestionCount,
+      dissolvedTopics: (input.dissolvedTopics ?? []).map((topic) => ({ ...topic })),
+      themes,
+      contentGaps,
+      recommendations: [],
+      caveats: [],
+    },
+    recommendationEvidenceIdsByThemeId,
+  };
+};
+
+/** Applies model-authored copy to a previously computed census report. */
+export const applyAudiencePulseNarrative = (input: {
+  census: AudiencePulseCensusReport;
+  generatedAt: Date;
+  model: AudiencePulseModelOutput;
+}): AudiencePulseStoredReport => {
+  const model = audiencePulseModelOutputSchema.parse(input.model);
   const seenThemeIndexes = new Set<number>();
   const recommendations = model.recommendations.flatMap((recommendation, recommendationIndex): AudiencePulseStoredRecommendation[] => {
-    const parentTheme = themes[recommendation.themeIndex];
+    const parentTheme = input.census.report.themes[recommendation.themeIndex];
     if (!parentTheme) {
       throw new AudiencePulseReportValidationError("Recommendation references an unknown topic");
     }
@@ -371,38 +423,46 @@ export const buildAudiencePulseReport = (input: {
       throw new AudiencePulseReportValidationError("A recommendation topic may only be referenced once");
     }
     seenThemeIndexes.add(recommendation.themeIndex);
-    if (!qualifyingThemeIds.has(parentTheme.id)) return [];
-    const parentMemberEvidenceIds = memberEvidenceIdsByTopicId.get(parentTheme.id) ?? [];
-    const evidenceIds = pickRecurringContentGapEvidenceIds(parentMemberEvidenceIds, evidenceById);
-    if (evidenceIds.length < CONTENT_GAP_MIN_ELIGIBLE_ABSOLUTE) return [];
+    const evidenceIds = input.census.recommendationEvidenceIdsByThemeId.get(parentTheme.id);
+    if (!evidenceIds) return [];
     return [{
       id: `recommendation-${recommendationIndex + 1}`,
       themeId: parentTheme.id,
       title: recommendation.title,
       rationale: recommendation.rationale,
       questions: [...recommendation.questions],
-      evidenceIds,
+      evidenceIds: [...evidenceIds],
     }];
   });
 
   return {
-    period: {
-      start: input.period.start.toISOString(),
-      end: input.period.end.toISOString(),
-    },
+    ...input.census.report,
     generatedAt: input.generatedAt.toISOString(),
     narrativeGeneratedAt: input.generatedAt.toISOString(),
     narrativeReuseCount: 0,
-    coverage: input.coverage,
-    weeklyVolume: input.weeklyVolume.map((week) => ({ ...week })),
     summary: model.summary,
-    unclassifiedQuestionCount,
-    themes,
-    contentGaps,
     recommendations,
     caveats: [...model.caveats],
   };
 };
+
+/** Convenience composition for callers that do not need to reuse census computation. */
+export const buildAudiencePulseReport = (input: {
+  period: { start: Date; end: Date };
+  generatedAt: Date;
+  coverage: AudiencePulseReportCoverage;
+  weeklyVolume: AudiencePulseWeeklyVolume[];
+  population: AudiencePulseEvidence[];
+  topics: AudiencePulseCensusTopic[];
+  dissolvedTopics?: AudiencePulseDissolvedTopic[];
+  previousThemeMemberCounts?: Map<string, number>;
+  previousThemeShares?: Map<string, number>;
+  model: AudiencePulseModelOutput;
+}): AudiencePulseStoredReport => applyAudiencePulseNarrative({
+  census: buildAudiencePulseCensusReport(input),
+  generatedAt: input.generatedAt,
+  model: input.model,
+});
 
 /**
  * Builds the stored report for a window whose population has no facet-ready question
@@ -427,9 +487,11 @@ export const buildAudiencePulseComputingReport = (input: {
   generatedAt: input.generatedAt.toISOString(),
   narrativeGeneratedAt: input.generatedAt.toISOString(),
   narrativeReuseCount: 0,
+  narrativeReuseMaxDrift: AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT,
   coverage: input.coverage,
   weeklyVolume: input.weeklyVolume.map((week) => ({ ...week })),
   unclassifiedQuestionCount: input.coverage.populationSize,
+  dissolvedTopics: [],
   themes: [],
   contentGaps: [],
   recommendations: [],

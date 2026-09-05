@@ -86,6 +86,10 @@ export const registerAudiencePulseSchemas = (registry: OpenAPIRegistry, schemas:
     eligibleEvidenceCount: z.number().int().min(0),
     distinctConversationCount: z.number().int().min(0),
   }));
+  const AudiencePulseDissolvedTopicSchema = registry.register("AudiencePulseDissolvedTopic", z.object({
+    id: z.string(),
+    title: z.string(),
+  }));
   const AudiencePulseRecommendationSchema = registry.register("AudiencePulseRecommendation", z.object({
     id: z.string(),
     themeId: z.string(),
@@ -100,10 +104,12 @@ export const registerAudiencePulseSchemas = (registry: OpenAPIRegistry, schemas:
     generatedAt: z.string().datetime(),
     narrativeGeneratedAt: z.string().datetime(),
     narrativeReuseCount: z.number().int().min(0),
+    narrativeReuseMaxDrift: z.number().min(0).max(1),
     coverage: AudiencePulseCoverageSchema,
     weeklyVolume: z.array(AudiencePulseWeeklyVolumeSchema),
     summary: z.string().optional(),
     unclassifiedQuestionCount: z.number().int().min(0),
+    dissolvedTopics: z.array(AudiencePulseDissolvedTopicSchema),
     themes: z.array(AudiencePulseThemeSchema),
     contentGaps: z.array(AudiencePulseContentGapSchema),
     recommendations: z.array(AudiencePulseRecommendationSchema),

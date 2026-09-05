@@ -38,6 +38,11 @@ export interface AudiencePulseTopicTransition {
   viaCentroidFallback: boolean
 }
 
+export interface AudiencePulseDissolvedTopic {
+  id: string
+  title: string
+}
+
 export interface AudiencePulseThemeEvidence {
   reference: string
   conversationId: string
@@ -84,10 +89,12 @@ export interface AudiencePulseHydratedReport {
   generatedAt: string
   narrativeGeneratedAt: string
   narrativeReuseCount: number
+  narrativeReuseMaxDrift: number
   coverage: AudiencePulseCoverage
   weeklyVolume: AudiencePulseWeeklyVolume[]
   /** Absent when no narrative call ran because nothing in the window was facet-ready. */
   summary?: string
+  dissolvedTopics: AudiencePulseDissolvedTopic[]
   themes: AudiencePulseTheme[]
   contentGaps: AudiencePulseContentGap[]
   recommendations: AudiencePulseRecommendation[]

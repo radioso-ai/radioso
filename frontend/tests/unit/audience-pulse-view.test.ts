@@ -20,19 +20,26 @@ const theme = (overrides: Partial<AudiencePulseTheme>): AudiencePulseTheme => ({
 })
 
 describe('getMemberCountDelta', () => {
-  it('uses the 20% materiality boundary when count and share both grow', () => {
-    expect(getMemberCountDelta(theme({ memberCount: 47, share: 0.24 }), 0.2)).toBeNull()
-    expect(getMemberCountDelta(theme({ memberCount: 49, share: 0.24 }), 0.2)).toBe('up from 40')
+  it('uses the report materiality threshold when count and share both grow', () => {
+    expect(getMemberCountDelta(theme({ memberCount: 47, share: 0.24 }), 0.2, 0.2)).toBeNull()
+    expect(getMemberCountDelta(theme({ memberCount: 49, share: 0.24 }), 0.2, 0.2)).toBe('up from 40')
+  })
+
+  it('changes what renders when the report publishes a different threshold', () => {
+    const growingTheme = theme({ memberCount: 49, share: 0.24 })
+
+    expect(getMemberCountDelta(growingTheme, 0.2, 0.2)).toBe('up from 40')
+    expect(getMemberCountDelta(growingTheme, 0.2, 0.25)).toBeNull()
   })
 
   it('renders a decrease only when share also falls', () => {
-    expect(getMemberCountDelta(theme({ memberCount: 32, share: 0.12 }), 0.2)).toBe('down from 40')
+    expect(getMemberCountDelta(theme({ memberCount: 32, share: 0.12 }), 0.2, 0.2)).toBe('down from 40')
   })
 
   it('does not infer a direction from raw counts when share history is missing or disagrees', () => {
-    expect(getMemberCountDelta(theme({ memberCount: 48, share: 0.12 }), 0.4)).toBeNull()
-    expect(getMemberCountDelta(theme({ memberCount: 32, share: 0.8 }), 0.4)).toBeNull()
-    expect(getMemberCountDelta(theme({ memberCount: 96, share: 0.4 }), null)).toBeNull()
-    expect(getMemberCountDelta(theme({ memberCount: 96, share: 0.4, transition: null }), 0.2)).toBeNull()
+    expect(getMemberCountDelta(theme({ memberCount: 48, share: 0.12 }), 0.4, 0.2)).toBeNull()
+    expect(getMemberCountDelta(theme({ memberCount: 32, share: 0.8 }), 0.4, 0.2)).toBeNull()
+    expect(getMemberCountDelta(theme({ memberCount: 96, share: 0.4 }), null, 0.2)).toBeNull()
+    expect(getMemberCountDelta(theme({ memberCount: 96, share: 0.4, transition: null }), 0.2, 0.2)).toBeNull()
   })
 })

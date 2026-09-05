@@ -102,6 +102,7 @@ describeIntegration("TopicRepository (Postgres)", () => {
     expect(run?.seed).toBe("seed-abc");
     expect(run?.params).toEqual({ targetMembers: 20, k: 4 });
     expect(run?.topics).toEqual([]);
+    expect(run?.dissolvedTopics).toEqual([]);
   });
 
   it("loadRun returns null for an unknown run id", async () => {
@@ -379,10 +380,7 @@ describeIntegration("TopicRepository (Postgres)", () => {
     expect(transitionRows.every((row) => row.kind === "emerged")).toBe(true);
   });
 
-  it("keeps memberCount exact when a topic carries more than one transition row for the run", async () => {
-    // `topic_transitions` has no unique constraint on (run_id, topic_id), so reading
-    // transitions must not fan the membership rows out: a second row for one topic
-    // would otherwise double every count derived from the same query.
+  it("rejects a second transition for the same run and topic", async () => {
     const workspaceId = randomUUID();
     const runId = await createRun(workspaceId, { seed: "duplicate-transition" });
     const topicId = randomUUID();
@@ -397,27 +395,18 @@ describeIntegration("TopicRepository (Postgres)", () => {
       { topicId, messageId: messageIds[2]!, distance: 0.03 },
     ]);
     await repository.saveTransitions(runId, [{ topicId, kind: "emerged", parentTopicIds: [] }]);
-    await repository.saveTransitions(runId, [{ topicId, kind: "survived", parentTopicIds: [] }]);
-    await database.query(
-      `UPDATE topic_transitions
-       SET created_at = CASE kind
-         WHEN 'emerged' THEN '2026-07-01T00:00:00.000Z'::timestamptz
-         WHEN 'survived' THEN '2026-07-01T00:00:01.000Z'::timestamptz
-       END
-       WHERE run_id = $1 AND topic_id = $2`,
-      [runId, topicId],
-    );
+    await expect(repository.saveTransitions(runId, [{ topicId, kind: "survived", parentTopicIds: [] }]))
+      .rejects.toMatchObject({ code: "23505" });
 
     const transitionRows = await database.query<{ topic_id: string }>(
       "SELECT topic_id FROM topic_transitions WHERE run_id = $1",
       [runId],
     );
-    expect(transitionRows).toHaveLength(2);
+    expect(transitionRows).toHaveLength(1);
 
     const run = await repository.loadRun(runId);
 
     expect(run?.topics).toHaveLength(1);
-    expect(run?.topics[0]?.memberCount).toBe(3);
     expect(run?.topics[0]?.transition?.kind).toBe("emerged");
   });
 
@@ -615,6 +604,10 @@ describeIntegration("TopicRepository (Postgres)", () => {
 
     const active = await repository.listActiveTopics(workspaceId);
     expect(active.map((topic) => topic.id)).toEqual([newTopicId]);
+
+    const run = await repository.loadRun(runId);
+    expect(run?.topics.map((topic) => topic.id)).toEqual([newTopicId]);
+    expect(run?.dissolvedTopics).toEqual([{ id: oldTopicId, title: "Old topic" }]);
   });
 
   it("saveRun rolls back the run row when a later statement in the transaction fails", async () => {

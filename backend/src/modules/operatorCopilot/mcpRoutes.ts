@@ -52,8 +52,9 @@ const requireServiceAuthentication = (dependencies: Dependencies): RequestHandle
 const statusFor = (error: OperatorMcpApplicationError): number => {
   if (error.code === "insufficient_scope") return 403;
   if (error.code === "budget_exhausted") return 429;
-  if (error.code === "invalid_arguments" || error.code === "operation_required" || error.code === "operation_conflict") return 400;
-  return 401;
+  if (error.code === "invalid_proof" || error.code === "proof_replay" || error.code === "invalid_admission") return 401;
+  if (error.code === "invalid_arguments" || error.code === "operation_required" || error.code === "operation_conflict" || error.code === "unknown_tool") return 400;
+  return 500;
 };
 
 const handleError = (error: unknown, res: { status(code: number): { json(value: unknown): void }; setHeader(name: string, value: string): void }): void => {

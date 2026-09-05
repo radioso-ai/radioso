@@ -52,6 +52,7 @@ describe("operator MCP OAuth HTTP contract", () => {
       issuer: "https://app.example", grant_types_supported: ["authorization_code", "refresh_token"],
       code_challenge_methods_supported: ["S256"], token_endpoint_auth_methods_supported: ["none"],
       client_id_metadata_document_supported: true,
+      authorization_response_iss_parameter_supported: true,
     });
     expect(response.body).not.toHaveProperty("registration_endpoint");
   });
@@ -127,6 +128,22 @@ describe("operator MCP OAuth HTTP contract", () => {
     }).expect(400);
     expect(response.headers.location).toBeUndefined();
     expect(service.startAuthorization).not.toHaveBeenCalled();
+  });
+
+  it("includes issuer binding when redirecting a trusted authorization error", async () => {
+    const { app, service } = createHarness();
+    service.startAuthorization.mockRejectedValueOnce(new Error("invalid request") as never);
+
+    const response = await request(app).get("/api/v1/operator-mcp/oauth/authorize").query({
+      response_type: "code", client_id: "https://client.example/cimd", redirect_uri: "https://client.example/callback",
+      scope: "operator:read", state: "state", code_challenge: "a".repeat(43), code_challenge_method: "S256",
+      resource: env.OPERATOR_MCP_RESOURCE_URL,
+    }).expect(302);
+
+    const redirect = new URL(response.headers.location);
+    expect(redirect.searchParams.get("error")).toBe("invalid_request");
+    expect(redirect.searchParams.get("state")).toBe("state");
+    expect(redirect.searchParams.get("iss")).toBe(env.OPERATOR_MCP_ISSUER_URL);
   });
 
   it("accepts form token/revoke requests and never leaks revocation validity", async () => {

@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-09-03
+last_updated: 2026-09-06
 ---
 
 # Code Map
@@ -442,7 +442,7 @@ Public and tool surfaces:
 - `frontend/components/dashboard/copilot-proposal-card.tsx` (evidence section on the card)
 - `backend/src/modules/operatorCopilot/services/expensiveOperationGuard.ts` (shared rate limit for capabilities that spend model budget)
 - `backend/src/modules/operatorCopilot/probeBudget.ts` (per-turn verification budget, charged from each descriptor's declared cost)
-- `backend/src/modules/operatorCopilot/services/copilotRetentionWorker.ts` (conversation retention sweep, started by `startWorkerRuntime`)
+- `backend/src/modules/operatorCopilot/services/copilotRetentionWorker.ts` (independent conversation-retention and Operator MCP expiration sweeps, started by `startWorkerRuntime`)
 - `backend/src/modules/eval/services/evalRunService.ts` (one eval run reserves one answer, in either run mode and through either entry point)
 - `backend/tests/support/copilotEvalSuite.ts` and `copilotEvalRunner.ts` (Ray behaviour suite: assertions, sampling and reduction, the never-list adherence gate, the handoff-link report, turn observer)
 - `backend/src/modules/operatorCopilot/neverList.ts` (the boundaries Ray refuses, with the reason and deep link each refusal carries; a conversation-scoped boundary binds its link to the conversation the turn is on)

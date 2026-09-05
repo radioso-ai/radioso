@@ -99,6 +99,34 @@ describe("CopilotRetentionWorker", () => {
     expect(deleteConversationsUpdatedBefore).not.toHaveBeenCalled();
   });
 
+  it("still removes expired MCP records when conversation retention is switched off", async () => {
+    const deleteConversationsUpdatedBefore = vi.fn(async () => 0);
+    const deleteExpiredOperatorMcpRecords = vi.fn(async () => 2);
+    const record = vi.fn(async () => {});
+    const worker = new CopilotRetentionWorker({
+      retention: { deleteConversationsUpdatedBefore, deleteExpiredOperatorMcpRecords },
+      audit: { record },
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      retentionDays: 0,
+      batchSize: 10,
+      now: () => now,
+    });
+
+    await expect(worker.sweep()).resolves.toEqual({ status: "swept", deleted: 2 });
+    expect(deleteConversationsUpdatedBefore).not.toHaveBeenCalled();
+    expect(deleteExpiredOperatorMcpRecords).toHaveBeenCalledWith({ now, limit: 10 });
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "copilot.retention.enforced",
+      metadata: expect.objectContaining({
+        deleted: 2,
+        conversationDeleted: 0,
+        operatorMcpDeleted: 2,
+        retentionDays: 0,
+        cutoff: null,
+      }),
+    }));
+  });
+
   it("reports the sweep as done but logs loudly when the audit write fails after the delete", async () => {
     const deleteConversationsUpdatedBefore = vi.fn(async () => 3);
     const error = vi.fn();

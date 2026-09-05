@@ -9,7 +9,8 @@ model their redirect responses.
 
 - `GET /.well-known/oauth-authorization-server`
 - Returns issuer, authorization/token/revocation endpoints,
-  `client_id_metadata_document_supported: true`, and, only when the
+  `client_id_metadata_document_supported: true`,
+  `authorization_response_iss_parameter_supported: true`, and, only when the
   evidence-gated bounded DCR profile is implemented and enabled, a registration endpoint,
   `authorization_code` and `refresh_token`, S256, supported client methods, the
   four tool scopes, and `offline_access`.
@@ -25,8 +26,9 @@ model their redirect responses.
   to `/oauth/operator-mcp/consent?transaction=<opaque-handle>`.
 - The transaction records an immutable normalized client metadata snapshot ID
   and digest. Consent, code, grant, and credentials retain that same identity.
-- Errors with a trusted redirect use OAuth error parameters plus the original
-  state. Errors before redirect trust is established return a safe local error.
+- Success and errors with a trusted redirect include the issuer binding and
+  original state. Errors before redirect trust is established return a safe
+  local error.
 
 ## Consent transaction
 

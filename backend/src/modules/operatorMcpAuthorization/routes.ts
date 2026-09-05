@@ -57,6 +57,7 @@ export const createOperatorMcpDiscoveryRoutes = (dependencies: Pick<Dependencies
       code_challenge_methods_supported: ["S256"],
       token_endpoint_auth_methods_supported: ["none"],
       client_id_metadata_document_supported: true,
+      authorization_response_iss_parameter_supported: true,
       scopes_supported: [...OPERATOR_MCP_SCOPES, OPERATOR_MCP_LIFECYCLE_SCOPE],
     });
   });
@@ -115,6 +116,7 @@ export const createOperatorMcpOauthRoutes = (dependencies: Dependencies): Router
         const redirect = new URL(trustedRedirect);
         redirect.searchParams.set("error", oauthError(error));
         redirect.searchParams.set("state", state);
+        redirect.searchParams.set("iss", dependencies.env.OPERATOR_MCP_ISSUER_URL!);
         res.redirect(302, redirect.toString());
         return;
       }

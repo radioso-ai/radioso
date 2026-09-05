@@ -4,6 +4,7 @@ import {
   OperatorAdmissionResponseSchema,
   OperatorCatalogResponseSchema,
   OperatorInvocationRequestSchema,
+  OPERATOR_MCP_EXECUTION_TIMEOUT_MS,
   OPERATOR_MCP_PROTOCOL_VERSION,
   createOperatorMcpProof,
   canonicalizeOperatorResource,
@@ -39,6 +40,7 @@ const base = {
 describe("operator MCP contract", () => {
   it("pins the protocol revision and validates admission DTOs", () => {
     expect(OPERATOR_MCP_PROTOCOL_VERSION).toBe("2026-07-28");
+    expect(OPERATOR_MCP_EXECUTION_TIMEOUT_MS).toBe(60_000);
     expect(() => OperatorAdmissionRequestSchema.parse({
       accessToken: "opaque",
       invocationId: id,

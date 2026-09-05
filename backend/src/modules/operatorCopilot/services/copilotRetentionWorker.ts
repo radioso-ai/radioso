@@ -56,10 +56,10 @@ export interface CopilotRetentionWorkerOptions {
 }
 
 /**
- * Enforces the copilot conversation retention window on a timer in the worker process.
+ * Enforces copilot conversation retention and Operator MCP record expiration on a timer.
  *
- * Messages, proposals, and replay evidence all cascade from the conversation row, so deleting the
- * conversation is the whole policy — there is no second table to keep in step.
+ * Conversation children cascade from the conversation row. Operator MCP records carry their own
+ * expiry and are swept independently, including when an operator keeps conversations indefinitely.
  */
 export class CopilotRetentionWorker {
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -67,8 +67,13 @@ export class CopilotRetentionWorker {
 
   constructor(private readonly options: CopilotRetentionWorkerOptions) {}
 
-  get enabled(): boolean {
+  private get conversationRetentionEnabled(): boolean {
     return this.options.retentionDays > 0;
+  }
+
+  get enabled(): boolean {
+    return this.conversationRetentionEnabled
+      || this.options.retention.deleteExpiredOperatorMcpRecords !== undefined;
   }
 
   start(): void {
@@ -79,10 +84,13 @@ export class CopilotRetentionWorker {
       this.options.logger.warn({}, "Copilot conversation retention is disabled");
       return;
     }
-    this.options.logger.info(
-      { retentionDays: this.options.retentionDays },
-      "Copilot conversation retention enabled",
-    );
+    if (!this.conversationRetentionEnabled) {
+      this.options.logger.warn({}, "Copilot conversation retention is disabled");
+    }
+    this.options.logger.info({
+      conversationRetentionDays: this.options.retentionDays,
+      operatorMcpExpirationCleanup: this.options.retention.deleteExpiredOperatorMcpRecords !== undefined,
+    }, "Copilot retention worker enabled");
     this.timer = setInterval(() => {
       void this.sweep();
     }, this.options.intervalMs ?? SWEEP_INTERVAL_MS_DEFAULT);
@@ -106,26 +114,31 @@ export class CopilotRetentionWorker {
     this.sweeping = true;
     try {
       const batchSize = this.options.batchSize ?? COPILOT_RETENTION_BATCH_SIZE_DEFAULT;
-      const cutoff = new Date(
-        (this.options.now ?? (() => new Date()))().getTime() - this.options.retentionDays * 24 * 60 * 60 * 1_000,
-      );
-      let deleted = 0;
-      for (let batch = 0; batch < MAX_BATCHES_PER_SWEEP; batch += 1) {
-        const removed = await this.options.retention.deleteConversationsUpdatedBefore({ cutoff, limit: batchSize });
-        deleted += removed;
-        if (removed < batchSize) break;
-      }
-      if (this.options.retention.deleteExpiredOperatorMcpRecords) {
+      const now = (this.options.now ?? (() => new Date()))();
+      const cutoff = this.conversationRetentionEnabled
+        ? new Date(now.getTime() - this.options.retentionDays * 24 * 60 * 60 * 1_000)
+        : null;
+      let conversationDeleted = 0;
+      if (cutoff) {
         for (let batch = 0; batch < MAX_BATCHES_PER_SWEEP; batch += 1) {
-          const removed = await this.options.retention.deleteExpiredOperatorMcpRecords({
-            now: (this.options.now ?? (() => new Date()))(),
-            limit: batchSize,
-          });
-          deleted += removed;
+          const removed = await this.options.retention.deleteConversationsUpdatedBefore({ cutoff, limit: batchSize });
+          conversationDeleted += removed;
           if (removed < batchSize) break;
         }
       }
-      if (deleted > 0) await this.report(deleted, cutoff);
+      let operatorMcpDeleted = 0;
+      if (this.options.retention.deleteExpiredOperatorMcpRecords) {
+        for (let batch = 0; batch < MAX_BATCHES_PER_SWEEP; batch += 1) {
+          const removed = await this.options.retention.deleteExpiredOperatorMcpRecords({
+            now,
+            limit: batchSize,
+          });
+          operatorMcpDeleted += removed;
+          if (removed < batchSize) break;
+        }
+      }
+      const deleted = conversationDeleted + operatorMcpDeleted;
+      if (deleted > 0) await this.report({ conversationDeleted, operatorMcpDeleted, cutoff });
       return { status: "swept", deleted };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -140,15 +153,27 @@ export class CopilotRetentionWorker {
    * Only a sweep that removed something is recorded. A quiet tick every few hours would bury the
    * events that answer "where did this conversation go" under events that answer nothing.
    */
-  private async report(deleted: number, cutoff: Date): Promise<void> {
-    this.options.logger.info({ deleted, retentionDays: this.options.retentionDays }, "Copilot conversation retention swept");
+  private async report(input: {
+    conversationDeleted: number;
+    operatorMcpDeleted: number;
+    cutoff: Date | null;
+  }): Promise<void> {
+    const deleted = input.conversationDeleted + input.operatorMcpDeleted;
+    this.options.logger.info({
+      deleted,
+      conversationDeleted: input.conversationDeleted,
+      operatorMcpDeleted: input.operatorMcpDeleted,
+      retentionDays: this.options.retentionDays,
+    }, "Copilot retention swept");
     await this.options.audit.record({
       eventType: "copilot.retention.enforced",
       eventStatus: "success",
       metadata: {
         deleted,
+        conversationDeleted: input.conversationDeleted,
+        operatorMcpDeleted: input.operatorMcpDeleted,
         retentionDays: this.options.retentionDays,
-        cutoff: cutoff.toISOString(),
+        cutoff: input.cutoff?.toISOString() ?? null,
         // Every other copilot.* event names the operator and the surface they acted through. This
         // one has neither: the sweep is the schedule acting on its own, and inventing an operator
         // would be worse than saying so. Stated rather than left absent, so a reader of the audit

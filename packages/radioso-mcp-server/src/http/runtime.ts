@@ -16,7 +16,7 @@ import {
 
 import { createHttpServer, type RadiosoRemoteHttpServer } from "./createHttpServer.js";
 import { createFixedWindowPreAuthSourceBudget } from "./preAuthSourceBudget.js";
-import { createOperatorBackendAdapter } from "../operator/backendAdapter.js";
+import { createOperatorBackendAdapter, operatorBackendRequestTimeoutMs } from "../operator/backendAdapter.js";
 import { createOperatorMcpReadiness } from "../operator/runtimeReadiness.js";
 import { createOperatorMcpFloodLimiter, createOperatorMcpMetrics } from "../operator/observability.js";
 
@@ -73,7 +73,7 @@ export const createRemoteHttpRuntime = async ({
       adapter: createOperatorBackendAdapter({
         baseUrl: config.baseUrl,
         internalSecret: config.operatorMcp.internalSecret,
-        requestTimeoutMs: config.requestTimeoutMs,
+        requestTimeoutMs: operatorBackendRequestTimeoutMs(config.requestTimeoutMs),
       }),
       auditLogger: resolvedAuditLogger,
       metrics: createOperatorMcpMetrics(),

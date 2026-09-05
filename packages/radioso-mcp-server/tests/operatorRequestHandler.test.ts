@@ -386,6 +386,47 @@ describe("operator MCP stateless request handler", () => {
     await expect(response.json()).resolves.toMatchObject({ error: { code: -32602, message: "operation_required" } });
   });
 
+  it("returns a tool removed after admission as a safe invalid-params response", async () => {
+    const handler = createOperatorMcpRequestHandler({
+      ...dependencies,
+      call: vi.fn<OperatorMcpRequestHandlerDependencies["call"]>(async () => {
+        throw new OperatorBackendAdapterError("Unknown tool.", 400, "unknown_tool");
+      }),
+    });
+    dependencies.admit.mockResolvedValue({ proof: { ...proof, method: "tools/call" } });
+
+    const response = await handler(operatorRequest({
+      id: "unknown-tool",
+      jsonrpc: "2.0",
+      method: "tools/call",
+      params: { name: "removed_tool" },
+    }));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ error: { code: -32602, message: "unknown_tool" } });
+  });
+
+  it("reports bounded-result backend failures as runtime errors without an invalid-token challenge", async () => {
+    const handler = createOperatorMcpRequestHandler({
+      ...dependencies,
+      call: vi.fn<OperatorMcpRequestHandlerDependencies["call"]>(async () => {
+        throw new OperatorBackendAdapterError("Operator result exceeded its bound.", 500, "unavailable");
+      }),
+    });
+    dependencies.admit.mockResolvedValue({ proof: { ...proof, method: "tools/call" } });
+
+    const response = await handler(operatorRequest({
+      id: "large-result",
+      jsonrpc: "2.0",
+      method: "tools/call",
+      params: { name: "workspace_settings" },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("www-authenticate")).toBeNull();
+    await expect(response.json()).resolves.toMatchObject({ error: { code: -32002 } });
+  });
+
   it("returns backend budget exhaustion as a rate-limit response", async () => {
     const handler = createOperatorMcpRequestHandler({
       ...dependencies,

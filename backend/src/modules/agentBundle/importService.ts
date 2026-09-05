@@ -26,6 +26,7 @@ export interface AgentBundleImportServiceOptions {
   skills: AgentBundleSkillWriterPort;
   contextVariables: AgentBundleContextVariableWriterPort;
   routines: AgentBundleRoutineWriterPort;
+  /** Optional only for narrow module tests that exercise bundle projection without persistence. */
   imports?: AgentBundleImportRepositoryPort;
 }
 
@@ -49,36 +50,28 @@ export interface AgentBundleImportInput {
  * validation checks that name against the agent's skills).
  */
 export class AgentBundleImportService {
-  constructor(private readonly options: AgentBundleImportServiceOptions) {}
+  private readonly imports: AgentBundleImportRepositoryPort;
 
-  async get(workspaceId: string, importId: string) {
-    return this.options.imports?.findById(workspaceId, importId) ?? null;
+  constructor(private readonly options: AgentBundleImportServiceOptions) {
+    this.imports = options.imports ?? untrackedImports;
   }
 
-  async import(input: AgentBundleImportInput): Promise<AgentBundleImportResult>;
-  async import(workspaceId: string, bundle: AgentBundle): Promise<AgentBundleImportResult>;
-  async import(
-    inputOrWorkspaceId: AgentBundleImportInput | string,
-    legacyBundle?: AgentBundle,
-  ): Promise<AgentBundleImportResult> {
-    const input = typeof inputOrWorkspaceId === "string"
-      ? { workspaceId: inputOrWorkspaceId, actorAccountId: null, idempotencyKey: null, bundle: legacyBundle! }
-      : inputOrWorkspaceId;
+  async get(workspaceId: string, importId: string) {
+    return this.imports.findById(workspaceId, importId);
+  }
+
+  async import(input: AgentBundleImportInput): Promise<AgentBundleImportResult> {
     const { workspaceId, bundle } = input;
     assertSupportedVersions(bundle);
 
-    const job = this.options.imports
-      ? await this.options.imports.createOrGet({
-        workspaceId,
-        actorAccountId: input.actorAccountId,
-        idempotencyKey: input.idempotencyKey ?? null,
-      })
-      : null;
-    if (job?.status === "existing") {
+    const job = await this.imports.createOrGet({
+      workspaceId,
+      actorAccountId: input.actorAccountId,
+      idempotencyKey: input.idempotencyKey ?? null,
+    });
+    if (job.status === "existing") {
       if (job.job.state === "applied" && job.job.agentId) {
-        const result = { importId: job.job.id, agentId: job.job.agentId, unresolved: job.job.unresolved };
-        Object.defineProperty(result, "replayed", { value: true, enumerable: false });
-        return result;
+        return { importId: job.job.id, agentId: job.job.agentId, unresolved: job.job.unresolved, replayed: true };
       }
       throw new AppError(
         409,
@@ -87,17 +80,33 @@ export class AgentBundleImportService {
         { importId: job.job.id },
       );
     }
-    const importId = job?.job.id;
-    if (importId) await this.options.imports?.markApplying(importId);
+    const importId = job.job.id;
+    if (await this.imports.markApplying(importId) === false) {
+      throw importReclaimed(importId);
+    }
 
     let agentId: string | null = null;
+    let agentCreated = false;
+    let cleanupOwnsAgent = false;
 
     try {
       const projection = projectAgentConfigForImport(bundle.agent);
       const unresolved: AgentBundleUnresolvedReference[] = [...projection.unresolved];
-      const created = await this.options.agents.create(workspaceId, projection.input);
+      // Persist the ID before creation. If the process stops after `create` but
+      // before its next await, the stale job still names the exact agent the sweep
+      // must delete.
+      agentId = randomUUID();
+      if (await this.imports.setCreatedAgent(importId, agentId) === false) {
+        cleanupOwnsAgent = true;
+        throw importReclaimed(importId);
+      }
+      const created = await this.options.agents.create(workspaceId, projection.input, agentId);
+      agentCreated = true;
+      if (created.agentId !== agentId && await this.imports.setCreatedAgent(importId, created.agentId) === false) {
+        cleanupOwnsAgent = true;
+        throw importReclaimed(importId);
+      }
       agentId = created.agentId;
-      if (importId) await this.options.imports?.setCreatedAgent(importId, agentId);
       // Skills first: a directive's `binding.skillName` and a routine's `toolRef`
       // are both validated against the agent's skills, and an enablement's resolver
       // is one. Everything that names a skill has to come after the skills exist.
@@ -122,8 +131,11 @@ export class AgentBundleImportService {
       );
       await this.importRoutines(workspaceId, agentId, bundle.routines ?? [], unresolved);
 
-      const result: AgentBundleImportResult = { agentId, unresolved, ...(importId ? { importId } : {}) };
-      if (importId) await this.options.imports?.markApplied(importId, result);
+      const result: AgentBundleImportResult = { agentId, unresolved, importId, replayed: false };
+      if (await this.imports.markApplied(importId, result) === false) {
+        cleanupOwnsAgent = true;
+        throw importReclaimed(importId);
+      }
 
       // Counts only: a bundle holds the agent's instruction and every directive's
       // text, none of which belongs in a log line.
@@ -139,16 +151,15 @@ export class AgentBundleImportService {
       return result;
     } catch (error) {
       const failureCode = classifyFailure(error);
-      if (importId) {
-        await this.options.imports?.markFailed(importId, failureCode, { terminal: agentId === null });
-      }
-      if (agentId) {
+      const failed = await this.imports.markFailed(importId, failureCode, { terminal: !agentCreated });
+      if (failed === false) cleanupOwnsAgent = true;
+      if (agentId && agentCreated && !cleanupOwnsAgent) {
         // Compensation, not a transaction. A crash between the create and this
         // delete leaves a partial agent; the durable applying job is deliberately
         // left for the sweep if this delete fails.
         try {
           await this.options.agents.delete(workspaceId, agentId);
-          if (importId) await this.options.imports?.markCompensated(importId);
+          await this.imports.markCompensated(importId);
         } catch {
           this.options.logger?.error({
             workspaceId,
@@ -158,7 +169,7 @@ export class AgentBundleImportService {
           }, "agent bundle import compensation left an orphan for cleanup");
         }
       }
-      attachImportId(error, importId);
+      attachImportFailure(error, importId, failureCode);
       throw error;
     }
   }
@@ -397,9 +408,39 @@ const reportOmittedConfig = (
 const classifyFailure = (error: unknown): AgentBundleImportFailureCode =>
   error instanceof AppError && error.code === "bad_request" ? "invalid_bundle" : "apply_failed";
 
-const attachImportId = (error: unknown, importId: string | undefined): void => {
-  if (!importId || typeof error !== "object" || error === null) return;
-  Object.assign(error, { importId });
+const importReclaimed = (importId: string): AppError => new AppError(
+  409,
+  "agent_bundle_import_reclaimed",
+  "This import was reclaimed by orphan cleanup before it could complete",
+  { importId },
+);
+
+const attachImportFailure = (error: unknown, importId: string, failureCode: AgentBundleImportFailureCode): void => {
+  if (typeof error !== "object" || error === null) return;
+  Object.assign(error, { importId, failureCode });
+};
+
+// Production composition always supplies the durable repository. This test seam preserves the
+// projection module's focused unit tests without making their fixtures understand job storage.
+const untrackedImports: AgentBundleImportRepositoryPort = {
+  async createOrGet(input) {
+    const now = new Date();
+    return {
+      status: "created",
+      job: {
+        id: randomUUID(), workspaceId: input.workspaceId, actorAccountId: input.actorAccountId,
+        idempotencyKey: input.idempotencyKey, state: "queued", agentId: null, unresolved: [], failureCode: null,
+        createdAt: now, updatedAt: now, appliedAt: null, compensatedAt: null,
+      },
+    };
+  },
+  async findById() { return null; },
+  async markApplying() { return true; },
+  async setCreatedAgent() { return true; },
+  async markApplied() { return true; },
+  async markFailed() { return true; },
+  async claimStaleApplying() { return []; },
+  async markCompensated() { return true; },
 };
 
 /**
@@ -429,3 +470,4 @@ const assertSupportedVersions = (bundle: AgentBundle): void => {
     );
   }
 };
+import { randomUUID } from "node:crypto";

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { AppError } from "../../shared/domain/errors.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 import type { AgentBundleAgentWriterPort, AgentBundleImportRepositoryPort } from "./ports.js";
 
@@ -51,7 +52,7 @@ export class AgentBundleImportCleanupWorker {
     this.timer = null;
   }
 
-  async sweep(): Promise<{ status: "swept" | "skipped"; compensated: number; failed: number }> {
+  async sweep(): Promise<{ status: "swept" | "skipped" | "failed"; compensated: number; failed: number }> {
     if (this.sweeping) return { status: "skipped", compensated: 0, failed: 0 };
     this.sweeping = true;
     try {
@@ -65,10 +66,19 @@ export class AgentBundleImportCleanupWorker {
       let compensated = 0;
       let failed = 0;
       for (const job of jobs) {
-        if (!job.agentId) continue;
+        if (!job.agentId) {
+          await this.options.imports.markFailed(job.id, "apply_failed", { terminal: true, leaseToken });
+          this.options.metrics?.incrementCounter("agent_bundle_import_compensations_total", {
+            help: "Agent bundle import orphans compensated by the cleanup sweep",
+            labels: { outcome: "abandoned" },
+          });
+          this.options.logger.info({ workspaceId: job.workspaceId, importId: job.id }, "agent bundle import abandoned before agent creation");
+          continue;
+        }
         try {
           await this.options.agents.delete(job.workspaceId, job.agentId);
-          await this.options.imports.markCompensated(job.id, leaseToken);
+          const compensatedNow = await this.options.imports.markCompensated(job.id, leaseToken);
+          if (!compensatedNow) continue;
           compensated += 1;
           this.options.metrics?.incrementCounter("agent_bundle_import_compensations_total", {
             help: "Agent bundle import orphans compensated by the cleanup sweep",
@@ -82,7 +92,12 @@ export class AgentBundleImportCleanupWorker {
             eventStatus: "success",
             metadata: { importId: job.id, agentId: job.agentId, principalType: "system" },
           });
-        } catch {
+        } catch (error) {
+          if (isNotFound(error)) {
+            const compensatedNow = await this.options.imports.markCompensated(job.id, leaseToken);
+            if (compensatedNow) compensated += 1;
+            continue;
+          }
           failed += 1;
           this.options.metrics?.incrementCounter("agent_bundle_import_compensations_total", {
             help: "Agent bundle import orphans compensated by the cleanup sweep",
@@ -92,8 +107,18 @@ export class AgentBundleImportCleanupWorker {
         }
       }
       return { status: "swept", compensated, failed };
+    } catch {
+      this.options.logger.error({}, "agent bundle import cleanup sweep failed");
+      this.options.metrics?.incrementCounter("agent_bundle_import_compensations_total", {
+        help: "Agent bundle import orphans compensated by the cleanup sweep",
+        labels: { outcome: "sweep_failed" },
+      });
+      return { status: "failed", compensated: 0, failed: 0 };
     } finally {
       this.sweeping = false;
     }
   }
 }
+
+const isNotFound = (error: unknown): boolean =>
+  error instanceof AppError && error.code === "not_found";

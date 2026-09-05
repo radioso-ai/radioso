@@ -85,7 +85,7 @@ export interface AgentBundleSkillConfigPortabilityPort {
 // ─── Write side ──────────────────────────────────────────────────────────────
 
 export interface AgentBundleAgentWriterPort {
-  create(workspaceId: string, input: AgentInput): Promise<{ agentId: string }>;
+  create(workspaceId: string, input: AgentInput, agentId?: string): Promise<{ agentId: string }>;
   /**
    * Compensation for a part-way failure. Import spans four modules' services and
    * a single transaction across them would invert this module's dependency
@@ -152,15 +152,15 @@ export interface AgentBundleImportRepositoryPort {
     | { status: "existing"; job: AgentBundleImportRecord }
   >;
   findById(workspaceId: string, importId: string): Promise<AgentBundleImportRecord | null>;
-  markApplying(importId: string): Promise<void>;
-  setCreatedAgent(importId: string, agentId: string): Promise<void>;
-  markApplied(importId: string, result: AgentBundleImportResult): Promise<void>;
-  markFailed(importId: string, failureCode: AgentBundleImportFailureCode, options: { terminal: boolean }): Promise<void>;
+  markApplying(importId: string): Promise<boolean>;
+  setCreatedAgent(importId: string, agentId: string): Promise<boolean>;
+  markApplied(importId: string, result: AgentBundleImportResult): Promise<boolean>;
+  markFailed(importId: string, failureCode: AgentBundleImportFailureCode, options: { terminal: boolean; leaseToken?: string }): Promise<boolean>;
   claimStaleApplying(input: {
     ageSeconds: number;
     leaseSeconds: number;
     leaseToken: string;
     limit: number;
   }): Promise<AgentBundleImportRecord[]>;
-  markCompensated(importId: string, leaseToken?: string): Promise<void>;
+  markCompensated(importId: string, leaseToken?: string): Promise<boolean>;
 }

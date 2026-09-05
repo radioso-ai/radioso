@@ -328,6 +328,7 @@ A successful import returns `201` with an `importId`, a new `agentId`, and an `u
 {
   "importId": "a6e21c3e-2f6a-4d1a-9e3c-8f1a2c9a11de",
   "agentId": "b6e21c3e-2f6a-4d1a-9e3c-8f1a2c9a11de",
+  "replayed": false,
   "unresolved": [
     {
       "kind": "skill_target_unbound",
@@ -343,7 +344,7 @@ A successful import returns `201` with an `importId`, a new `agentId`, and an `u
 }
 ```
 
-For an automated retry, add an `idempotencyKey` to the posted bundle. The key is scoped to the destination workspace. Repeating a completed key returns `200` with that same `importId`, `agentId`, and unresolved report; a key that is still applying returns `409` with `agent_bundle_import_in_progress`. A failed or compensated attempt does not hold the key, so you can retry it as a fresh import.
+For an automated retry, add an `idempotencyKey` to the posted bundle. The key is scoped to the destination workspace. Repeating a completed key returns `200` with that same `importId`, `agentId`, unresolved report, and `replayed: true`; a key that is still applying returns `409` with `agent_bundle_import_in_progress`. A failed or compensated attempt does not hold the key, so you can retry it as a fresh import.
 
 Use the import id when an operator needs to inspect an attempt after the request:
 
@@ -352,7 +353,7 @@ curl -sS https://api.radioso.ai/api/v1/agents/bundle/imports/a6e21c3e-2f6a-4d1a-
   -H "Authorization: Bearer $RADIOSO_API_TOKEN"
 ```
 
-The job state moves from `queued` to `applying`, then to `applied`, `failed`, or `compensated`. `compensated` means the worker removed an agent left behind by an interrupted import; the response keeps the original agent id so support can correlate the cleanup. Set `AGENT_BUNDLE_IMPORT_ORPHAN_AGE_MS` to control how old an applying job must be before that worker sweep runs. The default is 15 minutes.
+The job state moves from `queued` to `applying`, then to `applied`, `failed`, or `compensated`. `compensated` means the worker removed an agent left behind by an interrupted import; the response keeps the original agent id so support can correlate the cleanup. Set `AGENT_BUNDLE_IMPORT_ORPHAN_AGE_MS` to control how old an active job must be before that worker sweep runs. The default is 15 minutes. Imports normally take seconds: if an import exceeds that age, cleanup fences the request, the request returns a retryable `409`, and the cleanup owns deleting its agent.
 
 Each `kind` names one thing to go fix, and where:
 

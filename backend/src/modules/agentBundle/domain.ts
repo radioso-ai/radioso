@@ -143,7 +143,9 @@ export interface AgentBundleUnresolvedReference {
 
 export interface AgentBundleImportResult {
   agentId: string;
-  importId?: string;
+  importId: string;
+  /** True only when this response reuses an already-applied idempotent import. */
+  replayed: boolean;
   unresolved: AgentBundleUnresolvedReference[];
 }
 

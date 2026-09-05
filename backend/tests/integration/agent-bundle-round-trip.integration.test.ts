@@ -199,7 +199,7 @@ describeIfDatabase("agent bundle round trip against Postgres", () => {
       expect(portable).not.toContain(id);
     }
 
-    const imported = await services.importService.import(workspace.id, bundle);
+    const imported = await services.importService.import({ workspaceId: workspace.id, actorAccountId: null, bundle });
 
     expect(imported.agentId).not.toBe(source.id);
     expect(imported.unresolved).toEqual([]);
@@ -252,7 +252,7 @@ describeIfDatabase("agent bundle round trip against Postgres", () => {
       agentSkills: [],
     } as never;
 
-    await expect(services.importService.import(workspace.id, bundle)).rejects.toThrow();
+    await expect(services.importService.import({ workspaceId: workspace.id, actorAccountId: null, bundle })).rejects.toThrow();
 
     // Nothing left behind, and no dangling workspace default pointing at it.
     expect(await agentRepository.listByWorkspaceId(workspace.id)).toHaveLength(0);
@@ -286,7 +286,7 @@ describeIfDatabase("agent bundle round trip against Postgres", () => {
     const services = buildServices();
     const bundle = await services.exportService.export(sourceWorkspace.id, source.id);
 
-    const imported = await services.importService.import(targetWorkspace.id, bundle);
+    const imported = await services.importService.import({ workspaceId: targetWorkspace.id, actorAccountId: null, bundle });
 
     expect(imported.agentId).toEqual(expect.any(String));
     expect(imported.unresolved).toContainEqual(expect.objectContaining({

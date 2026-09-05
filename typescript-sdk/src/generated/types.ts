@@ -5621,6 +5621,8 @@ export interface components {
             importId: string;
             /** Format: uuid */
             agentId: string;
+            /** @description True when this is the completed result of a prior request with the same idempotencyKey. */
+            replayed: boolean;
             unresolved: components["schemas"]["AgentBundleUnresolvedReference"][];
         };
         AgentBundleImportParams: {

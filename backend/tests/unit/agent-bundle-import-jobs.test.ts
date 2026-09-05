@@ -45,9 +45,9 @@ describe("AgentBundleImportService import jobs", () => {
     const imports = {
       createOrGet: vi.fn(async () => ({ status: "created", job: { id: "import-1" } })),
       markApplying: vi.fn(async () => undefined),
-      setCreatedAgent: vi.fn(async () => undefined),
-      markApplied: vi.fn(async () => undefined),
-      markFailed: vi.fn(async () => undefined),
+      setCreatedAgent: vi.fn(async () => true),
+      markApplied: vi.fn(async () => true),
+      markFailed: vi.fn(async () => true),
     };
     const service = new AgentBundleImportService({
       imports: imports as never,
@@ -64,14 +64,14 @@ describe("AgentBundleImportService import jobs", () => {
 
     const result = await service.import({ workspaceId: "workspace-1", actorAccountId: "account-1", idempotencyKey: "import-1", bundle: bundle() });
 
-    expect(result).toMatchObject({ agentId: "agent-1", importId: "import-1" });
+    expect(result).toMatchObject({ agentId: "agent-1", importId: "import-1", replayed: false });
     expect(imports.createOrGet).toHaveBeenCalledWith(expect.objectContaining({
       workspaceId: "workspace-1",
       actorAccountId: "account-1",
       idempotencyKey: "import-1",
     }));
     expect(imports.markApplying).toHaveBeenCalledWith("import-1");
-    expect(imports.setCreatedAgent).toHaveBeenCalledWith("import-1", "agent-1");
+    expect(imports.setCreatedAgent).toHaveBeenCalledWith("import-1", expect.any(String));
     expect(imports.markApplied).toHaveBeenCalledWith("import-1", expect.objectContaining({ agentId: "agent-1" }));
   });
 
@@ -92,7 +92,7 @@ describe("AgentBundleImportService import jobs", () => {
     } as never);
 
     await expect(service.import({ workspaceId: "workspace-1", actorAccountId: "account-1", idempotencyKey: "same-key", bundle: bundle() }))
-      .resolves.toMatchObject({ importId: "import-1", agentId: "agent-existing" });
+      .resolves.toMatchObject({ importId: "import-1", agentId: "agent-existing", replayed: true });
     expect(create).not.toHaveBeenCalled();
   });
 
@@ -114,8 +114,8 @@ describe("AgentBundleImportService import jobs", () => {
     const imports = {
       createOrGet: async () => ({ status: "created", job: { id: "import-1" } }),
       markApplying: async () => undefined,
-      setCreatedAgent: async () => undefined,
-      markFailed: vi.fn(async () => undefined),
+      setCreatedAgent: async () => true,
+      markFailed: vi.fn(async () => true),
     };
     const service = new AgentBundleImportService({
       imports: imports as never,
@@ -130,5 +130,27 @@ describe("AgentBundleImportService import jobs", () => {
     (invalidDirectiveBundle.agent as unknown as { authoredDirectives: unknown[] }).authoredDirectives = [{ name: "", action: "" }];
     await expect(service.import({ workspaceId: "workspace-1", actorAccountId: "account-1", bundle: invalidDirectiveBundle })).rejects.toThrow("invalid directive");
     expect(imports.markFailed).toHaveBeenCalledWith("import-1", "apply_failed", { terminal: false });
+  });
+
+  it("fails rather than reporting an agent when cleanup owns the applying job", async () => {
+    const deleteAgent = vi.fn(async () => undefined);
+    const service = new AgentBundleImportService({
+      imports: {
+        createOrGet: async () => ({ status: "created", job: { id: "import-1" } }),
+        markApplying: async () => true,
+        setCreatedAgent: async () => true,
+        markApplied: async () => false,
+        markFailed: async () => false,
+      } as never,
+      agents: { create: async () => ({ agentId: "agent-1" }), delete: deleteAgent },
+      directives: { create: async () => undefined },
+      skills: { hasCapability: () => true, create: async () => undefined },
+      contextVariables: { findVariableIdByName: async () => null, findSkillIdByName: async () => null, enable: async () => undefined },
+      routines: { createDraft: async () => ({ routineId: "routine-1" }), publish: async () => ({ published: true as const }) },
+    } as never);
+
+    await expect(service.import({ workspaceId: "workspace-1", actorAccountId: "account-1", bundle: bundle() }))
+      .rejects.toMatchObject({ statusCode: 409, code: "agent_bundle_import_reclaimed" });
+    expect(deleteAgent).not.toHaveBeenCalled();
   });
 });

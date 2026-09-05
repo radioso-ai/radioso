@@ -68,6 +68,21 @@ accepted only while every field it lacks defaults to the behaviour that version 
 
 ## Import rules worth keeping
 
+## Durable import jobs and cleanup
+
+Each import creates a durable job before it creates an agent. An idempotency key has
+one active job per workspace; an applied job replays its same result, while failed
+and compensated jobs permit a new attempt. The service reserves and records the
+agent ID before calling the agents module so a crash after creation remains
+recoverable without sharing a transaction across module boundaries.
+
+The cleanup worker leases stale `queued` or `applying` jobs. Its lease fences
+`markApplied`, `markFailed`, and compensation transitions: once cleanup owns a job,
+the request cannot report success. The default orphan age is 15 minutes through
+`AGENT_BUNDLE_IMPORT_ORPHAN_AGE_MS`; imports normally take seconds, so an import
+that runs longer receives a retryable conflict and cleanup removes its reserved
+agent. Cloud Run task deployments invoke the same sweep on a schedule.
+
 - **Never re-route.** `contactRequestDelivery` is redacted on export and cleared on
   import. The data exposure matters, but the sharper reason is behavioural: an agent
   that kept it would deliver contact requests to the *source* workspace's people from

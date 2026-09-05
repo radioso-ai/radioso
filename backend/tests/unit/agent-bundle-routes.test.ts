@@ -34,7 +34,7 @@ describe("agent bundle routes", () => {
       .send({ ...exported.body, idempotencyKey: "repeat-import" })
       .expect(200);
 
-    expect(replay.body).toEqual(first.body);
+    expect(replay.body).toEqual({ ...first.body, replayed: true });
   });
 
   it("exports an agent and imports it back as a behaviourally equivalent agent", async () => {

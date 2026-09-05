@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ExternalLink, KeyRound, ShieldAlert, ShieldCheck, X } from 'lucide-react'
+import { ExternalLink, KeyRound, ShieldCheck, X } from 'lucide-react'
 
 import { getApiErrorMessage } from '@/lib/api-error'
 import {
@@ -18,6 +18,7 @@ import { CopyValueField } from '@/components/ui/copy-value-field'
 import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
 import { SettingsCard } from './settings-card'
+import { EmptyRows } from './api-access-rows'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -249,10 +250,9 @@ export function OperatorMcpAccessCard({ workspaceId }: { workspaceId: string }) 
       {loading ? <div className="flex items-center gap-2 text-sm text-muted-foreground"><Spinner className="h-4 w-4" /> Checking deployment and grants…</div> : null}
       {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
       {!loading && setup && (!configured || setup.availability !== 'available' || !resource || !isOperatorMcpResource(resource)) ? (
-        <div className="space-y-2 rounded-xl border border-amber-300/50 bg-amber-50/50 p-4 text-sm dark:bg-amber-950/20">
-          <p className="font-medium text-foreground"><ShieldAlert className="mr-2 inline h-4 w-4" />Operator MCP is not ready for this deployment.</p>
-          <p className="text-muted-foreground">{setup.message ?? 'Ask an administrator to configure the canonical HTTPS operator MCP resource. No personal credential is needed as a workaround.'}</p>
-        </div>
+        <EmptyRows>
+          Operator MCP is not ready for this deployment. {setup.message ?? 'Ask an administrator to configure the canonical HTTPS operator MCP resource. No personal credential is needed as a workaround.'}
+        </EmptyRows>
       ) : null}
       {!loading && setup && configured && setup.availability === 'available' && resource && isOperatorMcpResource(resource) ? (
         <div className="space-y-5">

@@ -9,9 +9,9 @@ export const metadata: Metadata = {
 export default async function ResetPasswordPage({
   searchParams,
 }: {
-  searchParams: Promise<{ token?: string }>
+  searchParams: Promise<{ token?: string; email?: string }>
 }) {
   const params = await searchParams
 
-  return <ResetPasswordScreen token={params.token} />
+  return <ResetPasswordScreen token={params.token} email={params.email} />
 }

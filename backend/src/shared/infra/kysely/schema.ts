@@ -1124,6 +1124,16 @@ export interface UsageEvents {
   workspace_id: string | null;
 }
 
+export interface UserFederatedIdentities {
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  last_authenticated_at: Generated<Timestamp>;
+  provider: string;
+  provider_email: string;
+  subject: string;
+  user_id: string;
+}
+
 export interface Users {
   created_at: Generated<Timestamp>;
   email: string;
@@ -1358,6 +1368,7 @@ export interface DB {
   topics: Topics;
   usage_daily_rollups: UsageDailyRollups;
   usage_events: UsageEvents;
+  user_federated_identities: UserFederatedIdentities;
   users: Users;
   vector_index_checkpoints: VectorIndexCheckpoints;
   vector_index_work: VectorIndexWork;

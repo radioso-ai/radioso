@@ -250,7 +250,7 @@ export function OperatorMcpAccessCard({ workspaceId }: { workspaceId: string }) 
       {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
       {!loading && setup && (!configured || setup.availability !== 'available' || !resource || !isOperatorMcpResource(resource)) ? (
         <EmptyRows>
-          Operator MCP is not ready for this deployment. {setup.message ?? 'Ask an administrator to configure the canonical HTTPS operator MCP resource. No personal credential is needed as a workaround.'}
+          {setup.message ?? 'Ask an administrator to configure the canonical HTTPS operator MCP resource. No personal credential is needed as a workaround.'}
         </EmptyRows>
       ) : null}
       {!loading && setup && configured && setup.availability === 'available' && resource && isOperatorMcpResource(resource) ? (

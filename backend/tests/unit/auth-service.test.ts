@@ -6,6 +6,7 @@ import {
   InMemoryAccountInvitationRepository,
   InMemoryAccountMembershipRepository,
   InMemoryUserRepository,
+  InMemoryFederatedIdentityRepository,
   InMemoryWorkspaceRepository,
   RecordingAccountInvitationNotifier,
 } from "../support/fakes.js";
@@ -138,6 +139,13 @@ class WorkingSessionRepository implements SessionRepositoryPort {
   }
 }
 
+/** Lets the acceptance-claim step succeed while the verification step fails. */
+class MarkEmailVerifiedFailingUserRepository extends InMemoryUserRepository {
+  override async markEmailVerified(): Promise<never> {
+    throw new Error("mark email verified failed");
+  }
+}
+
 class RecordingOrganizationCreationGuard implements OrganizationCreationGuard {
   readonly reservations: RecordingOrganizationCreationReservation[] = [];
   readonly requests: OrganizationCreationRequest[] = [];
@@ -177,6 +185,7 @@ const createAuthService = (options: {
   accountRepository?: AccountRepositoryPort;
   userRepository?: InMemoryUserRepository;
   sessionRepository?: SessionRepositoryPort;
+  federatedIdentityRepository?: InMemoryFederatedIdentityRepository;
   workspaceService?: WorkspaceService;
   accountInvitationRepository?: InMemoryAccountInvitationRepository;
   onAccountCreated?: (input: { accountId: string }) => Promise<void>;
@@ -203,6 +212,7 @@ const createAuthService = (options: {
     new RecordingAccountInvitationNotifier(),
   );
   const workspaceService = options.workspaceService ?? new WorkspaceService(new InMemoryWorkspaceRepository(), auditService);
+  const federatedIdentityRepository = options.federatedIdentityRepository ?? new InMemoryFederatedIdentityRepository();
 
   return {
     authService: new AuthService({
@@ -211,6 +221,7 @@ const createAuthService = (options: {
       accountRepository,
       userRepository,
       sessionRepository: options.sessionRepository ?? new FailingSessionRepository(),
+      federatedIdentityRepository,
       workspaceService,
       accountAccessService,
       accountInvitationService,
@@ -228,6 +239,7 @@ const createAuthService = (options: {
     }),
     accountRepository,
     userRepository,
+    federatedIdentityRepository,
     accountMembershipRepository,
     accountInvitationRepository,
     auditService,
@@ -347,6 +359,89 @@ describe("AuthService rollback", () => {
         ? await accountMembershipRepository.findActiveByAccountAndUser(account.id, createdUser.id)
         : null,
     ).toBeNull();
+  });
+
+  it("reverts invitation acceptance for an already signed-in acceptor when marking the email verified fails", async () => {
+    const accountRepository = new TrackingAccountRepository();
+    const invitationRepository = new InMemoryAccountInvitationRepository();
+    const userRepository = new MarkEmailVerifiedFailingUserRepository();
+    const invitee = await userRepository.create({
+      email: "verify-fail-current-user@example.com",
+      passwordHash: "hash",
+    });
+    const { authService, accountMembershipRepository } = createAuthService({
+      accountRepository,
+      accountInvitationRepository: invitationRepository,
+      userRepository,
+    });
+
+    const account = await accountRepository.create({
+      name: "Verify Fail Org",
+      email: "owner-verify-fail@example.com",
+      passwordHash: "hash",
+    });
+    const invitationToken = "verify-fail-current-user-token";
+    await invitationRepository.create({
+      accountId: account.id,
+      email: "verify-fail-current-user@example.com",
+      invitedByMembershipId: "membership-owner",
+      tokenHash: sha256(invitationToken),
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+
+    await expect(
+      authService.acceptInvitationAsUser({
+        invitationToken,
+        userId: invitee.id,
+      }),
+    ).rejects.toThrow("mark email verified failed");
+
+    const invitation = await invitationRepository.findByTokenHash(sha256(invitationToken));
+
+    expect(invitation?.status).toBe("pending");
+    expect(invitation?.acceptedByUserId).toBeNull();
+    expect(
+      await accountMembershipRepository.findActiveByAccountAndUser(account.id, invitee.id),
+    ).toBeNull();
+  });
+
+  it("reverts invitation acceptance and deletes the newly created user when marking the email verified fails", async () => {
+    const accountRepository = new TrackingAccountRepository();
+    const invitationRepository = new InMemoryAccountInvitationRepository();
+    const userRepository = new MarkEmailVerifiedFailingUserRepository();
+    const { authService } = createAuthService({
+      accountRepository,
+      accountInvitationRepository: invitationRepository,
+      userRepository,
+    });
+
+    const account = await accountRepository.create({
+      name: "Verify Fail Password Org",
+      email: "owner-verify-fail-password@example.com",
+      passwordHash: "hash",
+    });
+    const invitationToken = "verify-fail-password-token";
+    await invitationRepository.create({
+      accountId: account.id,
+      email: "verify-fail-password-invitee@example.com",
+      invitedByMembershipId: "membership-owner",
+      tokenHash: sha256(invitationToken),
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+
+    await expect(
+      authService.acceptInvitation({
+        invitationToken,
+        email: "verify-fail-password-invitee@example.com",
+        password: "verysecurepassword",
+      }),
+    ).rejects.toThrow("mark email verified failed");
+
+    const invitation = await invitationRepository.findByTokenHash(sha256(invitationToken));
+
+    expect(invitation?.status).toBe("pending");
+    expect(invitation?.acceptedByUserId).toBeNull();
+    expect(await userRepository.findByEmail("verify-fail-password-invitee@example.com")).toBeNull();
   });
 
   it("calls the account-created hook when creating a new organization account", async () => {
@@ -813,6 +908,143 @@ describe("AuthService rollback", () => {
     ).resolves.toMatchObject({ userId: registered.userId });
   });
 
+  it("records a federated identity link when provisioning a new account", async () => {
+    const { authService, federatedIdentityRepository } = createAuthService({
+      sessionRepository: new WorkingSessionRepository(),
+    });
+
+    const result = await authService.federatedLogin({
+      provider: "google",
+      subject: "google-sub-link-1",
+      email: "link-new@example.com",
+      emailVerified: true,
+    });
+
+    expect(federatedIdentityRepository.items).toEqual([
+      expect.objectContaining({
+        userId: result.userId,
+        provider: "google",
+        subject: "google-sub-link-1",
+        providerEmail: "link-new@example.com",
+      }),
+    ]);
+  });
+
+  it("reuses the same user and does not add a second link row on a repeat federated sign-in", async () => {
+    const accountRepository = new TrackingAccountRepository();
+    const { authService, federatedIdentityRepository } = createAuthService({
+      accountRepository,
+      sessionRepository: new WorkingSessionRepository(),
+    });
+
+    const first = await authService.federatedLogin({
+      provider: "google",
+      subject: "google-sub-repeat",
+      email: "repeat@example.com",
+      emailVerified: true,
+    });
+    const second = await authService.federatedLogin({
+      provider: "google",
+      subject: "google-sub-repeat",
+      email: "repeat@example.com",
+      emailVerified: true,
+    });
+
+    expect(second.userId).toBe(first.userId);
+    expect(accountRepository.items.size).toBe(1);
+    expect(federatedIdentityRepository.items).toHaveLength(1);
+  });
+
+  it("logs in by subject even when the provider now asserts a different email, without rewriting the user's email", async () => {
+    const accountRepository = new TrackingAccountRepository();
+    const { authService, userRepository, federatedIdentityRepository, auditService } = createAuthService({
+      accountRepository,
+      sessionRepository: new WorkingSessionRepository(),
+    });
+    const registered = await authService.register({
+      email: "old@example.com",
+      password: "verysecurepassword",
+    });
+    await userRepository.markEmailVerified(registered.userId, new Date());
+    // A prior federated sign-in already linked this account to (google, sub-1).
+    await federatedIdentityRepository.link({
+      userId: registered.userId,
+      provider: "google",
+      subject: "sub-1",
+      providerEmail: "old@example.com",
+      authenticatedAt: new Date(),
+    });
+    const accountsBefore = accountRepository.items.size;
+
+    const result = await authService.federatedLogin({
+      provider: "google",
+      subject: "sub-1",
+      email: "new@example.com",
+      emailVerified: true,
+    });
+
+    expect(result.userId).toBe(registered.userId);
+    expect((await userRepository.findById(registered.userId))?.email).toBe("old@example.com");
+    expect((await federatedIdentityRepository.findByProviderSubject("google", "sub-1"))?.providerEmail)
+      .toBe("new@example.com");
+    expect(accountRepository.items.size).toBe(accountsBefore);
+    expect(auditService.events.at(-1)).toMatchObject({
+      eventType: "auth.federated_login",
+      eventStatus: "success",
+      metadata: { matchedBy: "subject", provisioned: false },
+    });
+  });
+
+  it("links a federated identity for a password-registered user who signs in via email fallback", async () => {
+    const { authService, userRepository, federatedIdentityRepository, auditService } = createAuthService({
+      sessionRepository: new WorkingSessionRepository(),
+    });
+    const registered = await authService.register({
+      email: "fallback@example.com",
+      password: "verysecurepassword",
+    });
+    await userRepository.markEmailVerified(registered.userId, new Date());
+
+    const result = await authService.federatedLogin({
+      provider: "google",
+      subject: "google-sub-fallback",
+      email: "fallback@example.com",
+      emailVerified: true,
+    });
+
+    expect(result.userId).toBe(registered.userId);
+    expect(federatedIdentityRepository.items).toEqual([
+      expect.objectContaining({
+        userId: registered.userId,
+        provider: "google",
+        subject: "google-sub-fallback",
+        providerEmail: "fallback@example.com",
+      }),
+    ]);
+    expect(auditService.events.at(-1)).toMatchObject({
+      eventType: "auth.federated_login",
+      eventStatus: "success",
+      metadata: { matchedBy: "email", provisioned: false },
+    });
+  });
+
+  it("does not create a federated identity link when the provider has not verified the email", async () => {
+    const { authService, federatedIdentityRepository } = createAuthService({
+      sessionRepository: new WorkingSessionRepository(),
+    });
+
+    await expect(
+      authService.federatedLogin({
+        provider: "google",
+        subject: "google-sub-unverified-guard",
+        email: "unverified-guard@example.com",
+        emailVerified: false,
+      }),
+    ).rejects.toMatchObject({ statusCode: 401 });
+
+    expect(federatedIdentityRepository.items).toHaveLength(0);
+  });
+
   it("rejects a federated sign-in whose email the provider did not verify", async () => {
     const { authService } = createAuthService({
       sessionRepository: new WorkingSessionRepository(),
@@ -909,6 +1141,44 @@ describe("AuthService rollback", () => {
       userId,
       sessionCookie: expect.stringContaining("radioso_session="),
     });
+  });
+});
+
+describe("AuthService describeSession", () => {
+  it("returns the account named by the session when that membership is active", async () => {
+    const { authService } = createAuthService({});
+
+    const registration = await authService.register({
+      email: "describe-session@example.com",
+      password: "verysecurepassword",
+      organizationName: "Describe Session Org",
+    });
+
+    await expect(
+      authService.describeSession({
+        userId: registration.userId,
+        accountId: registration.accountId,
+      }),
+    ).resolves.toEqual({
+      userId: registration.userId,
+      email: "describe-session@example.com",
+      accountId: registration.accountId,
+      organizationName: registration.organizationName,
+      workspaceId: registration.workspaceId,
+      workspaceName: registration.workspaceName,
+      workspacePublicRouteKey: registration.workspacePublicRouteKey,
+    });
+  });
+
+  it("throws unauthorized when the user id no longer resolves to a user", async () => {
+    const { authService } = createAuthService({});
+
+    await expect(
+      authService.describeSession({
+        userId: "missing-user",
+        accountId: "missing-account",
+      }),
+    ).rejects.toMatchObject({ statusCode: 401, code: "unauthorized" });
   });
 });
 

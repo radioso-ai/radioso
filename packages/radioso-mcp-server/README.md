@@ -87,7 +87,7 @@ Cursor can connect to a local config that points at `http://127.0.0.1:8787/mcp` 
 
 Claude, Claude Desktop remote connectors, ChatGPT apps, and OpenAI-hosted remote MCP flows require a public HTTPS deployment of this server. They do not connect to `localhost` from your laptop. See [`../../docs/mcp-client-setup.md`](../../docs/mcp-client-setup.md) for the agent-converse credential flow and deployment boundaries.
 
-Operator MCP setup starts under **Settings → API access**. Named client choices remain unavailable until the exact build has complete compatibility evidence; the generic remote HTTP option is labelled unverified. The dashboard supplies the canonical resource URL and browser consent flow.
+Operator MCP setup starts under **Settings → API access**. The dashboard has short copyable setup tabs for Codex, Claude, Cursor, and other MCP clients; each carries the canonical resource URL and opens browser consent through the client. The snippets are labelled **Not verified** until that client build has complete compatibility evidence.
 
 ## Operator OAuth Resource
 

@@ -14,27 +14,27 @@ const transactionId = "11111111-1111-4111-8111-111111111111";
 const setupArtifacts = [
   {
     id: "codex-cli",
-    displayName: "Codex CLI",
-    clientVersion: "0.149.0",
-    status: "unavailable",
-    description: "This exact client build has not completed the compatibility gate.",
-    setupInstructions: [],
-    command: null,
+    displayName: "Codex",
+    clientVersion: null,
+    status: "unverified",
+    description: "Paste this in your terminal.",
+    setupInstructions: ["Paste this in your terminal."],
+    command: `codex mcp add radioso --url ${resource} && codex mcp login radioso`,
     configuration: null,
     handoffUrl: null,
     permittedLaunchTarget: "codex CLI",
-    expectedClientId: "https://codex.example/client-metadata.json",
+    expectedClientId: null,
     redirectMechanism: "browser OAuth callback",
     failureRecovery: "Start the command again if the browser authorization expires.",
   },
   {
     id: "claude-code",
-    displayName: "Claude Code",
-    clientVersion: "2.1.149",
-    status: "unavailable",
-    description: "This build has no passing setup artifact.",
-    setupInstructions: [],
-    command: null,
+    displayName: "Claude",
+    clientVersion: null,
+    status: "unverified",
+    description: "Paste this in your terminal, then run /mcp in Claude to sign in.",
+    setupInstructions: ["Paste this in your terminal, then run /mcp in Claude to sign in."],
+    command: `claude mcp add --transport http radioso ${resource}`,
     configuration: null,
     handoffUrl: null,
     permittedLaunchTarget: "Claude Code",
@@ -43,14 +43,29 @@ const setupArtifacts = [
     failureRecovery: "Use another client or the generic route.",
   },
   {
-    id: "generic",
-    displayName: "Another MCP client",
+    id: "cursor",
+    displayName: "Cursor",
     clientVersion: null,
     status: "unverified",
-    description: "Manual standards-based setup for another MCP client.",
-    setupInstructions: ["Add the URL to your client's MCP settings.", "Complete OAuth when your client opens the authorization page."],
+    description: "Paste this into .cursor/mcp.json, then sign in when Cursor asks.",
+    setupInstructions: ["Paste this into .cursor/mcp.json, then sign in when Cursor asks."],
     command: null,
-    configuration: JSON.stringify({ mcpServers: { radioso: { url: resource } } }, null, 2),
+    configuration: JSON.stringify({ mcpServers: { radioso: { type: "http", url: resource } } }, null, 2),
+    handoffUrl: null,
+    permittedLaunchTarget: "Cursor MCP settings",
+    expectedClientId: null,
+    redirectMechanism: "browser OAuth callback",
+    failureRecovery: "Remove the server from Cursor and add it again.",
+  },
+  {
+    id: "generic",
+    displayName: "Other",
+    clientVersion: null,
+    status: "unverified",
+    description: "Paste this into your client's remote HTTP MCP setup.",
+    setupInstructions: ["Paste this into your client's remote HTTP MCP setup."],
+    command: null,
+    configuration: JSON.stringify({ transport: "http", url: resource }, null, 2),
     handoffUrl: null,
     permittedLaunchTarget: "your MCP client",
     expectedClientId: null,
@@ -152,7 +167,7 @@ const openApiAccess = async (page: Page) => {
   await expect(page.locator("#operator-mcp")).toBeVisible();
 };
 
-test("Operator MCP chooser shows exact-build gating and generic setup without inferring a connection", async ({ page }) => {
+test("Operator MCP setup uses compact client tabs with one copyable instruction", async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, { platformSettings: basePlatformSettings() });
   await installApiAccessMock(page);
@@ -161,16 +176,20 @@ test("Operator MCP chooser shows exact-build gating and generic setup without in
   await openApiAccess(page);
 
   const card = page.locator("#operator-mcp");
-  await expect(card.getByRole("heading", { name: "Radioso MCP for your favorite engine" })).toBeVisible();
+  await expect(card.getByRole("heading", { name: "Connect an MCP client" })).toBeVisible();
   await expect(card.getByText("Available", { exact: true })).toBeVisible();
-  await expect(card.getByRole("combobox", { name: "Choose MCP client" })).toHaveValue("generic");
-  await expect(card.getByText("Another MCP client", { exact: true })).toBeVisible();
-  await expect(card.getByText(resource, { exact: true })).toBeVisible();
-  await expect(card.getByRole("option", { name: /Codex CLI/ })).toBeDisabled();
-  await expect(card.getByRole("option", { name: /Claude Code/ })).toBeDisabled();
+  await expect(card.getByRole("tablist", { name: "MCP client" })).toBeVisible();
+  await expect(card.getByRole("tab", { name: "Codex", selected: true })).toBeVisible();
+  await expect(card.getByRole("tabpanel")).toContainText(`codex mcp add radioso --url ${resource}`);
+  await page.getByRole("tab", { name: "Claude" }).click();
+  await expect(card.getByRole("tabpanel")).toContainText(`claude mcp add --transport http radioso ${resource}`);
+  await page.getByRole("tab", { name: "Cursor" }).click();
+  await expect(card.getByRole("tabpanel")).toContainText('"type": "http"');
+  await page.getByRole("tab", { name: "Other" }).click();
+  await expect(card.getByRole("tabpanel")).toContainText('"transport": "http"');
+  await expect(card.getByRole("combobox", { name: "Choose MCP client" })).toHaveCount(0);
   await expect(card.getByText("No operator MCP grants yet.")).toBeVisible();
-  await expect(card.getByText("Unverified", { exact: true })).toBeVisible();
-  await expect(card.getByText(/selection only prepares setup/i)).toBeVisible();
+  await expect(card.getByText("Not verified", { exact: true })).toBeVisible();
 });
 
 test("Operator MCP setup is unavailable when the deployment has no canonical resource", async ({ page }) => {
@@ -187,7 +206,7 @@ test("Operator MCP setup is unavailable when the deployment has no canonical res
   const card = page.locator("#operator-mcp");
   await expect(card.getByText("Operator MCP access is disabled.", { exact: true })).toBeVisible();
   await expect(card.getByText("Operator MCP is not ready for this deployment.", { exact: true })).toHaveCount(0);
-  await expect(card.getByRole("combobox", { name: "Choose MCP client" })).toHaveCount(0);
+  await expect(card.getByRole("tablist", { name: "MCP client" })).toHaveCount(0);
 });
 
 const consentTransaction = (overrides: Record<string, unknown> = {}) => ({

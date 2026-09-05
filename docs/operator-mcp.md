@@ -13,12 +13,12 @@ This is separate from an agent's **Channels → MCP** connection. The agent conn
 ## Connect from the dashboard
 
 1. Open **Settings → API access** and find **Operator MCP**.
-2. Choose a client. A named client is selectable only when its exact build has a captured discovery, callback, list, call, refresh, and revoke transcript. The generic option shows the canonical remote HTTP URL for clients that implement the same OAuth profile.
-3. Add that URL to the MCP client. The client opens Radioso in your browser.
+2. Choose the **Codex**, **Claude**, **Cursor**, or **Other** tab and copy the setup it shows. The command or configuration includes the canonical Operator MCP URL for this deployment.
+3. Paste it into the client and complete the browser sign-in when it asks.
 4. Review the client identity, redirect host, workspace, requested scopes, and offline-access request. Approve only what the client needs.
 5. Return to **Settings → API access** to inspect or revoke the grant. Revocation invalidates its access and refresh lineage on the next request.
 
-The setup page currently marks the recorded Codex CLI, Claude Code, and ChatGPT developer-mode profiles unavailable because their exact builds do not have complete compatibility evidence. The generic setup path is labelled unverified and should be used only with a client whose remote HTTP OAuth behavior you can inspect.
+The setup snippets are labelled **Not verified** until Radioso has captured a full compatibility transcript for that client build. They contain no credential; a successful connection still requires the client's OAuth flow to complete.
 
 ## Tool boundary
 
@@ -94,7 +94,7 @@ Startup never advances a persisted epoch. A replica with an older epoch, a newer
 
 ## Failure recovery
 
-- **Client is unavailable:** use only a build with complete evidence, or inspect the generic client's OAuth behavior before connecting it.
+- **Client rejects the setup:** confirm that it supports remote HTTP MCP with OAuth, remove the server from the client, and add it again from the dashboard.
 - **Audience mismatch:** copy the canonical URL from **Settings → API access** without adding a slash, query, or fragment.
 - **Consent expired or account changed:** restart the connection from the client so Radioso creates a new browser-bound transaction.
 - **Permission or membership changed:** restore the required workspace access, then reconnect if the grant was revoked.

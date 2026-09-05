@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { buildOperatorMcpSetup } from "../../../src/modules/operatorMcpSetup/setupArtifacts.js";
 
 describe("buildOperatorMcpSetup", () => {
-  it("keeps named clients unavailable until exact-build evidence exists and emits no secret", () => {
+  it("returns short, credential-free setup snippets for the supported client choices", () => {
     const response = buildOperatorMcpSetup({
       enabled: true,
       resource: "https://mcp.example/operator/mcp",
@@ -13,11 +13,24 @@ describe("buildOperatorMcpSetup", () => {
     expect(response.availability).toBe("available");
     expect(response.resource).toBe("https://mcp.example/operator/mcp");
     expect(response.artifacts).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: "codex-cli", clientVersion: "0.149.0", status: "unavailable" }),
-      expect.objectContaining({ id: "claude-code", clientVersion: "2.1.149", status: "unavailable" }),
-      expect.objectContaining({ id: "chatgpt-developer-mode", status: "unavailable" }),
-      expect.objectContaining({ id: "generic", status: "unverified" }),
+      expect.objectContaining({
+        id: "codex-cli",
+        status: "unverified",
+        command: "codex mcp add radioso --url https://mcp.example/operator/mcp && codex mcp login radioso",
+      }),
+      expect.objectContaining({
+        id: "claude-code",
+        status: "unverified",
+        command: "claude mcp add --transport http radioso https://mcp.example/operator/mcp",
+      }),
+      expect.objectContaining({
+        id: "cursor",
+        status: "unverified",
+        configuration: expect.stringContaining('"url": "https://mcp.example/operator/mcp"'),
+      }),
+      expect.objectContaining({ id: "generic", displayName: "Other", status: "unverified" }),
     ]));
+    expect(response.artifacts).toHaveLength(4);
     expect(JSON.stringify(response)).not.toMatch(/(?:token|secret|password)\s*[:=]\s*[A-Za-z0-9_-]{8,}/iu);
   });
 

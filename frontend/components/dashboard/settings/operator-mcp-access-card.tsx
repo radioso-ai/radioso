@@ -1,7 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ExternalLink, KeyRound, ShieldCheck, X } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { KeyRound, ShieldCheck, X } from 'lucide-react'
 
 import { getApiErrorMessage } from '@/lib/api-error'
 import {
@@ -15,8 +15,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { CopyValueField } from '@/components/ui/copy-value-field'
-import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { SettingsCard } from './settings-card'
 import { EmptyRows } from './api-access-rows'
 import {
@@ -40,9 +40,6 @@ export const isOperatorMcpResource = (value: string): boolean => {
   }
 }
 
-const artifactLabel = (artifact: OperatorMcpClientSetupArtifact) =>
-  artifact.clientVersion ? `${artifact.displayName} (${artifact.clientVersion})` : artifact.displayName
-
 export const selectOperatorMcpArtifactId = (
   artifacts: ReadonlyArray<Pick<OperatorMcpClientSetupArtifact, 'id' | 'status'>>,
   currentId: string | null,
@@ -65,53 +62,16 @@ const statusVariant = (status: OperatorMcpGrantSummary['status']) =>
 const formatDate = (value: string | null) => value ? new Date(value).toLocaleString() : 'Never'
 
 function ArtifactSetup({ artifact, resource }: { artifact: OperatorMcpClientSetupArtifact; resource: string }) {
+  const value = artifact.command ?? artifact.configuration ?? resource
+  const label = artifact.command ? 'Command' : artifact.configuration ? 'Configuration' : 'MCP URL'
+
   return (
     <div className="space-y-3 rounded-xl border border-border bg-muted/30 p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="font-medium text-foreground">{artifactLabel(artifact)}</p>
-          <p className="text-sm text-muted-foreground">{artifact.description}</p>
-        </div>
-        <Badge variant={artifact.status === 'verified' ? 'secondary' : 'outline'}>
-          {artifact.status === 'verified' ? 'Verified setup' : artifact.status === 'unverified' ? 'Unverified' : 'Unavailable'}
-        </Badge>
+        <p className="text-sm text-muted-foreground">{artifact.description}</p>
+        <Badge variant={artifact.status === 'verified' ? 'secondary' : 'outline'}>{artifact.status === 'verified' ? 'Verified' : 'Not verified'}</Badge>
       </div>
-      {artifact.status !== 'unavailable' ? (
-        <>
-          <ol className="list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
-            {artifact.setupInstructions.map((step) => <li key={step}>{step}</li>)}
-          </ol>
-          <div className="space-y-2">
-            <Label>Canonical operator MCP URL</Label>
-            <CopyValueField value={resource} ariaLabel="Copy canonical operator MCP URL" className="w-full" />
-          </div>
-          {artifact.command ? (
-            <div className="space-y-2">
-              <Label>Client command</Label>
-              <CopyValueField value={artifact.command} ariaLabel={`Copy ${artifact.displayName} command`} className="w-full font-mono text-xs" />
-            </div>
-          ) : null}
-          {artifact.configuration ? (
-            <div className="space-y-2">
-              <Label>Configuration</Label>
-              <CopyValueField value={artifact.configuration} ariaLabel={`Copy ${artifact.displayName} configuration`} className="w-full font-mono text-xs" />
-            </div>
-          ) : null}
-          <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-            <span>Launch target: {artifact.permittedLaunchTarget}</span>
-            <span>Redirect: {artifact.redirectMechanism}</span>
-          </div>
-          {artifact.handoffUrl ? (
-            <Button type="button" size="sm" variant="outline" onClick={() => window.open(artifact.handoffUrl!, '_blank', 'noopener,noreferrer')}>
-              Continue in {artifact.displayName}
-              <ExternalLink className="ml-2 h-4 w-4" aria-hidden />
-            </Button>
-          ) : null}
-          <p className="text-xs text-muted-foreground">{artifact.failureRecovery}</p>
-        </>
-      ) : (
-        <p className="text-sm text-muted-foreground">This client build has no passing setup artifact yet. Choose a compatible client or use the unverified manual route.</p>
-      )}
+      <CopyValueField label={label} value={value} ariaLabel={`Copy ${artifact.displayName} setup`} className="w-full font-mono text-xs" wrap={Boolean(artifact.configuration)} />
     </div>
   )
 }
@@ -236,14 +196,12 @@ export function OperatorMcpAccessCard({ workspaceId }: { workspaceId: string }) 
   const configuredResource = runtime.operatorMcpUrl.trim()
   const resource = setup?.resource ?? configuredResource
   const configured = runtime.isResolved && runtime.status === 'resolved' && isOperatorMcpResource(configuredResource)
-  const artifact = useMemo(() => setup?.artifacts.find((item) => item.id === selectedArtifactId) ?? null, [selectedArtifactId, setup])
-
   return (
     <SettingsCard
       id="operator-mcp"
       icon={<KeyRound className="h-5 w-5 text-primary" />}
-      title="Radioso MCP for your favorite engine"
-      description="Connect an MCP client to Ray with OAuth consent."
+      title="Connect an MCP client"
+      description="Choose your client, paste the setup, and sign in."
       headerEnd={<Badge variant={configured && setup?.availability === 'available' ? 'secondary' : 'outline'}>{setup ? availabilityLabel[setup.availability] : 'Checking'}</Badge>}
     >
       {loading ? <div className="flex items-center gap-2 text-sm text-muted-foreground"><Spinner className="h-4 w-4" /> Checking deployment and grants…</div> : null}
@@ -255,13 +213,16 @@ export function OperatorMcpAccessCard({ workspaceId }: { workspaceId: string }) 
       ) : null}
       {!loading && setup && configured && setup.availability === 'available' && resource && isOperatorMcpResource(resource) ? (
         <div className="space-y-5">
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-muted/30 p-4">
-            <div><p className="text-sm font-medium text-foreground">Choose your client</p><p className="text-xs text-muted-foreground">A selection only prepares setup; it never means the client is connected.</p></div>
-            <select aria-label="Choose MCP client" className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={selectedArtifactId ?? ''} onChange={(event) => setSelectedArtifactId(event.target.value)}>
-              {setup.artifacts.map((item) => <option key={item.id} value={item.id} disabled={item.status === 'unavailable'}>{artifactLabel(item)}{item.status === 'unverified' ? ' — unverified' : item.status === 'unavailable' ? ' — unavailable' : ''}</option>)}
-            </select>
-          </div>
-          {artifact ? <ArtifactSetup artifact={artifact} resource={resource} /> : null}
+          <Tabs value={selectedArtifactId ?? undefined} onValueChange={setSelectedArtifactId}>
+            <TabsList aria-label="MCP client" className="w-full sm:w-fit">
+              {setup.artifacts.map((item) => <TabsTrigger key={item.id} value={item.id}>{item.displayName}</TabsTrigger>)}
+            </TabsList>
+            {setup.artifacts.map((item) => (
+              <TabsContent key={item.id} value={item.id}>
+                <ArtifactSetup artifact={item} resource={resource} />
+              </TabsContent>
+            ))}
+          </Tabs>
           <GrantInventory workspaceId={workspaceId} grants={grants} onRefresh={() => void load()} />
         </div>
       ) : null}

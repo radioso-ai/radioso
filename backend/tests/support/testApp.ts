@@ -1,4 +1,5 @@
 import { createAgentBundleServices } from "../../src/app/composition/agentBundleComposition.js";
+import { InMemoryAgentBundleImportRepository } from "./inMemoryAgentBundleImports.js";
 import { setTimeout as delay } from "node:timers/promises";
 
 import request from "supertest";
@@ -350,6 +351,7 @@ export const createTestEnv = (): Env => ({
   EXPENSIVE_AUTHENTICATED_RATE_LIMIT_MAX_ATTEMPTS: 60,
   COPILOT_PROBE_BUDGET_PER_TURN: 3,
   COPILOT_CONVERSATION_RETENTION_DAYS: 90,
+  AGENT_BUNDLE_IMPORT_ORPHAN_AGE_MS: 15 * 60 * 1_000,
   PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS: 60_000,
   PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 10,
   PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: 600,
@@ -2118,7 +2120,12 @@ export const createTestDependencies = (overrides: {
       workspaceService,
     ),
   });
+  const agentBundleImportRepository = new InMemoryAgentBundleImportRepository();
   const agentBundleServices = createAgentBundleServices({
+    auditService,
+    imports: agentBundleImportRepository,
+    importOrphanAgeMs: 15 * 60 * 1_000,
+    metrics: metricsRegistry,
     agentService,
     authoredDirectiveService,
     agentSkillsService,
@@ -2133,6 +2140,7 @@ export const createTestDependencies = (overrides: {
     env,
     agentBundleExportService: agentBundleServices.exportService,
     agentBundleImportService: agentBundleServices.importService,
+    agentBundleImportCleanupWorker: agentBundleServices.cleanupWorker,
     workspaceInvalidationPublisher: { enqueue: () => ({ accepted: false, reason: "disabled" }) },
     realtimePublisherLifecycle: { shutdown: async () => undefined },
     credentialExpiryWarningLifecycle,

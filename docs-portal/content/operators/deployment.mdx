@@ -123,6 +123,10 @@ Ray conversations hold operator questions, configuration detail, and excerpts of
 
 The sweep runs in the document worker, so retention happens only where that process runs. Under the Cloud Run task runtime the trigger is a scheduled push to `POST /internal/tasks/copilot-retention/sweep`, which the bundled Terraform provisions as a daily Cloud Scheduler job. A deployment that runs neither the worker poll loop nor that schedule keeps Ray conversations forever, whatever the window says.
 
+## Agent bundle import recovery
+
+An interrupted bundle import can leave the newly created agent behind before the request can compensate for a later failure. The document worker checks durable import jobs and removes agents from jobs that have stayed `applying` longer than `AGENT_BUNDLE_IMPORT_ORPHAN_AGE_MS`. The default is `900000` (15 minutes); raise it only when an import can legitimately take longer in your deployment. Each cleanup writes an audit event and a `agent_bundle_import_compensations_total` metric, with ids but never bundle content.
+
 ## Reverse proxy client IPs
 
 Express `trust proxy` stays off by default, and `TRUST_PROXY_HOPS=0` is the secure setting for a deployment with no proxy in front of the backend. When the backend runs behind reverse proxies you control and rate limits must see the real client IP from `X-Forwarded-For`, set `TRUST_PROXY_HOPS` to the exact number of trusted hops. On Cloud Run behind the frontend API proxy that is typically `1` or `2`, depending on the topology.

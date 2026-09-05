@@ -12,7 +12,7 @@ const setup = async () => {
 
 describe("agent bundle routes", () => {
   it("replays an applied idempotency key instead of creating another agent", async () => {
-    const { app, session } = await setup();
+    const { app, repositories, session } = await setup();
     const created = await request(app)
       .post("/api/v1/agents")
       .set(adminSessionHeaders(session))
@@ -35,6 +35,9 @@ describe("agent bundle routes", () => {
       .expect(200);
 
     expect(replay.body).toEqual({ ...first.body, replayed: true });
+    expect(repositories.auditEventRepository.items.filter((event) =>
+      event.eventType === "agent.bundle.imported" && event.eventStatus === "success",
+    )).toHaveLength(1);
   });
 
   it("exports an agent and imports it back as a behaviourally equivalent agent", async () => {

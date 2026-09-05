@@ -94,6 +94,15 @@ import { freezePageReadOutcome } from "./pageRead/pageReadSessionOutcome.js";
 
 const CLARIFICATION_TURN_SKILL = "clarification.answer";
 
+/**
+ * An admitted current-page excerpt makes a retrieval-sense question unnecessary.
+ * The evaluator still scopes workspace retrieval; only its visitor-facing question
+ * is suppressed.
+ */
+export const shouldSuppressRetrievalSenseClarification = (
+  session: Pick<PreparedSession, "pageReadOutcome">,
+): boolean => session.pageReadOutcome?.gate.kind === "capture";
+
 type PrepareRetrievalInput = Parameters<ChatSessionPreparer["prepareRetrieval"]>[0];
 
 export type RetrievalSenseClarificationTurn =
@@ -999,6 +1008,7 @@ export class ChatTurnAssembly {
     ) {
       return null;
     }
+    const suppressAskForPageCapture = shouldSuppressRetrievalSenseClarification(input.session);
     const effect = await evaluateRetrievalSenseClarification({
       detector: this.options.retrievalSenseDetector,
       workspaceId: input.session.conversation.workspaceId,
@@ -1018,7 +1028,10 @@ export class ChatTurnAssembly {
         ...input.session.usageAttribution,
       },
       policy: this.options.retrievalSenseClarificationPolicy,
-      suppressAsk: input.activeRoutineAtTurnStart,
+      suppressAsk: input.activeRoutineAtTurnStart || suppressAskForPageCapture,
+      ...(suppressAskForPageCapture
+        ? { suppressAskReason: "page_capture" as const }
+        : {}),
       suppressNewClarification: input.clarification.resolution?.suppressNewClarification,
       loopGuardCandidateIds: input.clarification.resolution?.kind === "normal"
         ? input.clarification.resolution.loopGuardCandidateIds

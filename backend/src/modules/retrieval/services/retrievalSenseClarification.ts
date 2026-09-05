@@ -63,6 +63,8 @@ export const evaluateRetrievalSenseClarification = async (input: {
   usageContext?: ModelCallUsageContext;
   policy: ClarificationPolicy;
   suppressAsk: boolean;
+  /** Bounded operational cause for suppressing only the user-facing question. */
+  suppressAskReason?: "page_capture";
   suppressNewClarification?: boolean;
   loopGuardCandidateIds?: string[];
   expiresAt: Date;
@@ -145,6 +147,7 @@ export const evaluateRetrievalSenseClarification = async (input: {
     surface: "retrieval_sense",
     decision,
     consideredCandidates: candidates,
+    ...(input.suppressAskReason ? { reason: input.suppressAskReason } : {}),
   });
   if (decision.kind === "soft_pick") {
     return {

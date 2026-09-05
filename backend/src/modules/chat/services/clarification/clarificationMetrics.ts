@@ -24,6 +24,7 @@ export type ClarificationMetricReason =
   | "loop_guard"
   | "priority"
   | "suppressed"
+  | "page_capture"
   | "label_fallback"
   | "compatible_facets"
   | "redundant_sources"
@@ -36,6 +37,7 @@ const METRIC_REASONS: ReadonlySet<ClarificationMetricReason> = new Set([
   "loop_guard",
   "priority",
   "suppressed",
+  "page_capture",
   "label_fallback",
   "compatible_facets",
   "redundant_sources",
@@ -68,7 +70,7 @@ export const clarificationDecisionMetric = (
     case "auto_picked":
       return { decision: "auto_picked", reason: asMetricReason(reason, "clear_margin") };
     case "suppressed":
-      return { decision: "suppressed", reason: "suppressed" };
+      return { decision: "suppressed", reason: asMetricReason(reason, "suppressed") };
     case "none":
       return reason === "compatible_facets" || reason === "redundant_sources"
         ? { decision: "not_clarified", reason }

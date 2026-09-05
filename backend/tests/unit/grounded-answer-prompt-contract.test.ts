@@ -197,11 +197,15 @@ describe("grounded answer prompt contract", () => {
     expect(inline).toMatch(/distress/i);
   });
 
-  it("decides answer support from retrieved findings rather than question wording or instructions", () => {
+  it("decides answer support from findings or an admitted page excerpt, never wording or instructions", () => {
     const prompt = loadPromptTemplate("retrieval/answer.md");
 
-    expect(prompt).toContain("The presence or absence of supporting findings decides whether the question can be answered");
-    expect(prompt).toContain("never infer support from the wording of the question or from configured answer instructions");
+    expect(prompt).toContain(
+      "The presence or absence of supporting findings or that admitted page excerpt decides whether the question can be answered; never infer support from the wording of the question or from configured answer instructions.",
+    );
+    expect(prompt).toContain(
+      "Answer only from the findings above, relevant conversation history, and an admitted current-page excerpt when it appears in the answer request.",
+    );
     expect(prompt).not.toContain("Outside-scope subrequests include");
   });
 

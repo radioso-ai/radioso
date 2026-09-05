@@ -91,7 +91,7 @@ const shuffled = <T>(items: readonly T[], seed: string): T[] => {
   const copy = [...items];
   for (let index = copy.length - 1; index > 0; index -= 1) {
     const swapWith = Math.floor(random() * (index + 1));
-    [copy[index], copy[swapWith]] = [copy[swapWith]!, copy[index]!];
+    [copy[index], copy[swapWith]] = [copy[swapWith], copy[index]];
   }
   return copy;
 };
@@ -104,7 +104,7 @@ const HTML_SENSITIVE_CHARACTERS: Record<string, string> = {
 
 /** Fences visitor text so adversarial/off-topic fixture content reads as data, not instructions. */
 const fenceUntrustedText = (value: string): string =>
-  JSON.stringify(value).replace(/[<>&]/g, (character) => HTML_SENSITIVE_CHARACTERS[character]!);
+  JSON.stringify(value).replace(/[<>&]/g, (character) => HTML_SENSITIVE_CHARACTERS[character]);
 
 const mapWithConcurrency = async <Input, Output>(
   items: readonly Input[],
@@ -117,7 +117,7 @@ const mapWithConcurrency = async <Input, Output>(
     while (cursor < items.length) {
       const index = cursor;
       cursor += 1;
-      results[index] = await worker(items[index]!, index);
+      results[index] = await worker(items[index], index);
     }
   });
   await Promise.all(runners);
@@ -176,7 +176,9 @@ const buildTaxonomyPrompt = (questions: readonly string[]): string => {
 const proposeTaxonomy = async (questions: readonly string[]): Promise<Topic[]> => {
   const response = await client.chat.completions.create({
     model: LABEL_MODEL,
-    reasoning_effort: normalizeOpenAIReasoningEffort(LABEL_MODEL, "medium"),
+    // The installed OpenAI SDK types predate "none" as a reasoning_effort value, though
+    // the API accepts it. Same coercion as toSdkSampling in openaiProvider.ts.
+    reasoning_effort: normalizeOpenAIReasoningEffort(LABEL_MODEL, "medium") as OpenAI.Chat.Completions.ChatCompletionCreateParams["reasoning_effort"],
     max_completion_tokens: 4000,
     response_format: { type: "json_schema", json_schema: TAXONOMY_JSON_SCHEMA },
     messages: [{ role: "user", content: buildTaxonomyPrompt(questions) }],
@@ -225,7 +227,9 @@ const buildAssignmentPrompt = (topics: readonly Topic[], question: string): stri
 const classifyOne = async (topics: readonly Topic[], question: string): Promise<string | null> => {
   const response = await client.chat.completions.create({
     model: LABEL_MODEL,
-    reasoning_effort: normalizeOpenAIReasoningEffort(LABEL_MODEL, "low"),
+    // The installed OpenAI SDK types predate "none" as a reasoning_effort value, though
+    // the API accepts it. Same coercion as toSdkSampling in openaiProvider.ts.
+    reasoning_effort: normalizeOpenAIReasoningEffort(LABEL_MODEL, "low") as OpenAI.Chat.Completions.ChatCompletionCreateParams["reasoning_effort"],
     max_completion_tokens: 600,
     response_format: { type: "json_schema", json_schema: buildAssignmentJsonSchema(topics) },
     messages: [{ role: "user", content: buildAssignmentPrompt(topics, question) }],
@@ -256,8 +260,8 @@ const main = async (): Promise<void> => {
   process.stdout.write(`Classifying ${ids.length} questions in isolation (concurrency ${CONCURRENCY})\n`);
   const assignments = await mapWithConcurrency(questions, CONCURRENCY, async (question, index) => {
     const topic = await classifyOne(topics, question);
-    process.stdout.write(`  [${index + 1}/${ids.length}] ${ids[index]!}: ${topic ?? "(none)"}\n`);
-    return { id: ids[index]!, topic };
+    process.stdout.write(`  [${index + 1}/${ids.length}] ${ids[index]}: ${topic ?? "(none)"}\n`);
+    return { id: ids[index], topic };
   });
 
   const counts = new Map<string, number>();

@@ -14,7 +14,7 @@ const chunking = RETRIEVAL_BEHAVIOR.chunking;
  * which the never-list keeps behind a typed confirmation in the dashboard. Leaving it off the port
  * and the payload means no adapter written against them can start one.
  */
-export const copilotIngestionSettingsFields = {
+const copilotIngestionSettingsFields = {
   chunkingStrategy: z.enum(chunkingStrategyIds),
   fixedWindowChunkSize: z.number().int().min(chunking.fixedWindowChunkSizeMin).max(chunking.fixedWindowChunkSizeMax),
   fixedWindowChunkOverlap: z.number().int().min(chunking.fixedWindowChunkOverlapMin).max(chunking.fixedWindowChunkOverlapMax),

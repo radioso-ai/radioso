@@ -398,7 +398,7 @@ describe("retrieval sense clarification", () => {
       matcher: {
         async match({ directives }) {
           return [{
-            directive: directives[0]!,
+            directive: directives[0],
             selectionMode: "deterministic" as const,
             selectionReason: "always",
           }];
@@ -415,7 +415,7 @@ describe("retrieval sense clarification", () => {
           rules: [],
           omissions: [],
           matches: [{
-            directive: directives[0]!,
+            directive: directives[0],
             selectionMode: "deterministic" as const,
             selectionReason: "always",
           }],
@@ -426,7 +426,7 @@ describe("retrieval sense clarification", () => {
           rules: [],
           omissions: [],
           matches: [{
-            directive: directives[0]!,
+            directive: directives[0],
             selectionMode: "deterministic" as const,
             selectionReason: "always",
           }],

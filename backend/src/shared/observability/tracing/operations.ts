@@ -28,7 +28,7 @@ export const traceOperation = async <T>(input: {
       }
     }
     return result;
-  }) as Promise<T>;
+  });
 
 export const traceAsyncIterable = <T>(input: {
   name: string;

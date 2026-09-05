@@ -109,7 +109,7 @@ describe("ReplyDraftRunner", () => {
   });
 
   it("says so when the conversation has no summary yet, rather than implying full grounding", async () => {
-    const { result } = draft({ summaries: { load: vi.fn(async () => null) } } as Partial<ReplyDraftRunnerOptions>);
+    const { result } = draft({ summaries: { load: vi.fn(async () => null) } });
 
     await expect(result).resolves.toMatchObject({ groundedOnSummary: false });
   });
@@ -119,8 +119,8 @@ describe("ReplyDraftRunner", () => {
     // question is still open — which is exactly why a person is being asked to step in. Requiring
     // the customer to have spoken last refused the queue's two commonest rows.
     const { opts, result } = draft({
-      messages: { listRecentByConversationId: vi.fn(async () => [transcript[0]!, transcript[1]!]) },
-    } as Partial<ReplyDraftRunnerOptions>);
+      messages: { listRecentByConversationId: vi.fn(async () => [transcript[0], transcript[1]]) },
+    });
 
     await result;
 
@@ -132,8 +132,8 @@ describe("ReplyDraftRunner", () => {
 
   it("refuses a conversation with no customer message at all", async () => {
     const { opts, reserve, result } = draft({
-      messages: { listRecentByConversationId: vi.fn(async () => [transcript[1]!]) },
-    } as Partial<ReplyDraftRunnerOptions>);
+      messages: { listRecentByConversationId: vi.fn(async () => [transcript[1]]) },
+    });
 
     await expect(result).rejects.toThrow(/customer message/i);
     expect(opts.replay.run).not.toHaveBeenCalled();
@@ -164,7 +164,7 @@ describe("ReplyDraftRunner", () => {
     const { opts, reserve, result } = draft({
       messages: {
         listRecentByConversationId: vi.fn(async () => [
-          transcript[2]!,
+          transcript[2],
           { ...message("assistant", "Sorted — refund is on its way.", 3), source: "human_agent" },
         ]),
       },
@@ -179,8 +179,8 @@ describe("ReplyDraftRunner", () => {
     // The agent's later turns are dropped from history, so counting the whole transcript would
     // claim a depth the replay never saw.
     const { result } = draft({
-      messages: { listRecentByConversationId: vi.fn(async () => [transcript[0]!, transcript[1]!]) },
-    } as Partial<ReplyDraftRunnerOptions>);
+      messages: { listRecentByConversationId: vi.fn(async () => [transcript[0], transcript[1]]) },
+    });
 
     await expect(result).resolves.toMatchObject({ groundedOnMessageCount: 1 });
   });
@@ -220,7 +220,7 @@ describe("ReplyDraftRunner", () => {
     const { result } = draft({
       summaries: { load: vi.fn(async () => { throw new Error("summary store unavailable"); }) },
       logger: { warn: vi.fn() },
-    } as Partial<ReplyDraftRunnerOptions>);
+    });
 
     await expect(result).resolves.toMatchObject({ groundedOnSummary: false });
   });
@@ -228,7 +228,7 @@ describe("ReplyDraftRunner", () => {
   it("treats a blank stored summary as no summary", async () => {
     const { opts, result } = draft({
       summaries: { load: vi.fn(async () => summaryRecord("   ")) },
-    } as Partial<ReplyDraftRunnerOptions>);
+    });
 
     await expect(result).resolves.toMatchObject({ groundedOnSummary: false });
     expect(opts.replay.run).toHaveBeenCalledWith(expect.objectContaining({ conversationSummary: null }));
@@ -237,7 +237,7 @@ describe("ReplyDraftRunner", () => {
   it("refuses a conversation outside the workspace", async () => {
     const { opts, result } = draft({
       conversations: { findByIdAndWorkspaceId: vi.fn(async () => null) },
-    } as Partial<ReplyDraftRunnerOptions>);
+    });
 
     await expect(result).rejects.toThrow(/not found/i);
     expect(opts.replay.run).not.toHaveBeenCalled();
@@ -248,7 +248,7 @@ describe("ReplyDraftRunner", () => {
       conversations: {
         findByIdAndWorkspaceId: vi.fn(async () => ({ id: CONVERSATION_ID, workspaceId: WORKSPACE_ID, agentId: null })),
       },
-    } as Partial<ReplyDraftRunnerOptions>);
+    });
 
     await expect(result).rejects.toThrow(/agent/i);
     expect(opts.replay.run).not.toHaveBeenCalled();
@@ -257,7 +257,7 @@ describe("ReplyDraftRunner", () => {
   it("refuses when the agent's configuration cannot be resolved", async () => {
     const { opts, result } = draft({
       agentConfig: { resolveConfig: vi.fn(async () => null) },
-    } as Partial<ReplyDraftRunnerOptions>);
+    });
 
     await expect(result).rejects.toThrow(/agent/i);
     expect(opts.replay.run).not.toHaveBeenCalled();

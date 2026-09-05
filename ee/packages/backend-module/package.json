@@ -15,7 +15,7 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json && node scripts/copy-prompts.mjs",
+    "build": "tsc -p tsconfig.build.json && node scripts/copy-prompts.mjs",
     "test": "vitest run --passWithNoTests --testTimeout 20000"
   },
   "files": [

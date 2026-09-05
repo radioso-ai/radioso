@@ -101,6 +101,7 @@ export function RoutineInstructionEditor({
   ariaLabel?: string
 }): JSX.Element {
   const reservedRefKinds = useMemo(
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- keeps the literal from widening to string, so fromEntries yields Record<string, RoutineChipKind>.
     () => Object.fromEntries(variables.map((variable) => [variable.id, 'variable' as RoutineChipKind])),
     [variables],
   )

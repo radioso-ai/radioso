@@ -129,7 +129,7 @@ describe("copilot agent readers", () => {
         : [],
       metadata: index === 40 ? { oversized: "m".repeat(5_000) } : {},
     }));
-    const selectedDirective = directives[40]!;
+    const selectedDirective = directives[40];
     const ports = dependencies(undefined, resolvedAgent(directives));
     const tool = ports.descriptors.find((descriptor) => descriptor.name === "agent_configuration")!;
 

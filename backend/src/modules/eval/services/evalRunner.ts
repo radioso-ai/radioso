@@ -123,7 +123,7 @@ export const buildReplayInputs = (snapshot: EvalSnapshot): ReplayInputs | null =
     return -1;
   })();
   if (lastUserIdx === -1) return null;
-  const queryMessage = snapshot.messages[lastUserIdx]!;
+  const queryMessage = snapshot.messages[lastUserIdx];
   const history = snapshot.messages
     .slice(0, lastUserIdx)
     .map((m) => toMessageRecord(m, snapshot.workspaceId, snapshot.sourceConversationId));

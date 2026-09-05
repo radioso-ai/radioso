@@ -543,36 +543,38 @@ export function WorkspaceAssistantChannelsTab({
     if (trimmed === '' || trimmed === savedOrganizationName) {
       return
     }
-    const timeout = window.setTimeout(async () => {
-      if (trimmed.length > 80) {
-        setOrganizationError('Organization name must be between 1 and 80 characters')
-        setSaveState('error')
-        setSaveError('Failed to save changes')
-        return
-      }
-      const draftVersionAtRequestStart = organizationDraftVersionRef.current
-      const saveId = saveSequenceRef.current + 1
-      saveSequenceRef.current = saveId
-      setSaveState('saving')
-      setSaveError(null)
-      setOrganizationError(null)
-      try {
-        const updated = await accountApi.renameOrganization(trimmed)
-        if (saveSequenceRef.current !== saveId) return
-        setSavedOrganizationName(updated.organizationName)
-        writeCachedOrganizationName(accountId, updated.organizationName)
-        storeAccountOrganizationName(window.localStorage, accountId, updated.organizationName)
-        if (organizationDraftVersionRef.current === draftVersionAtRequestStart) {
-          setOrganizationName(updated.organizationName)
-          setSaveState('saved')
+    const timeout = window.setTimeout(() => {
+      void (async () => {
+        if (trimmed.length > 80) {
+          setOrganizationError('Organization name must be between 1 and 80 characters')
+          setSaveState('error')
+          setSaveError('Failed to save changes')
+          return
         }
-        window.dispatchEvent(new Event('radioso:accounts-updated'))
-      } catch {
-        if (saveSequenceRef.current !== saveId) return
-        setOrganizationError('Failed to rename organization')
-        setSaveState('error')
-        setSaveError('Failed to save changes')
-      }
+        const draftVersionAtRequestStart = organizationDraftVersionRef.current
+        const saveId = saveSequenceRef.current + 1
+        saveSequenceRef.current = saveId
+        setSaveState('saving')
+        setSaveError(null)
+        setOrganizationError(null)
+        try {
+          const updated = await accountApi.renameOrganization(trimmed)
+          if (saveSequenceRef.current !== saveId) return
+          setSavedOrganizationName(updated.organizationName)
+          writeCachedOrganizationName(accountId, updated.organizationName)
+          storeAccountOrganizationName(window.localStorage, accountId, updated.organizationName)
+          if (organizationDraftVersionRef.current === draftVersionAtRequestStart) {
+            setOrganizationName(updated.organizationName)
+            setSaveState('saved')
+          }
+          window.dispatchEvent(new Event('radioso:accounts-updated'))
+        } catch {
+          if (saveSequenceRef.current !== saveId) return
+          setOrganizationError('Failed to rename organization')
+          setSaveState('error')
+          setSaveError('Failed to save changes')
+        }
+      })()
     }, 700)
     return () => window.clearTimeout(timeout)
   }, [accountId, canManageOrganization, isOrganizationLoading, organizationName, saveSequenceRef, savedOrganizationName, setSaveError, setSaveState])
@@ -582,32 +584,34 @@ export function WorkspaceAssistantChannelsTab({
       return
     }
     const trimmed = workspaceName.trim()
-    const timeout = window.setTimeout(async () => {
-      if (!trimmed || trimmed.length > 100) {
-        setRenameError('Name must be between 1 and 100 characters')
-        setSaveState('error')
-        setSaveError('Failed to save changes')
-        return
-      }
-      const draftVersionAtRequestStart = workspaceDraftVersionRef.current
-      const saveId = saveSequenceRef.current + 1
-      saveSequenceRef.current = saveId
-      setSaveState('saving')
-      setSaveError(null)
-      setRenameError(null)
-      try {
-        await renameWorkspace(activeWorkspace.id, trimmed)
-        if (saveSequenceRef.current !== saveId) return
-        if (workspaceDraftVersionRef.current === draftVersionAtRequestStart) {
-          setWorkspaceNameDraft(null)
-          setSaveState('saved')
+    const timeout = window.setTimeout(() => {
+      void (async () => {
+        if (!trimmed || trimmed.length > 100) {
+          setRenameError('Name must be between 1 and 100 characters')
+          setSaveState('error')
+          setSaveError('Failed to save changes')
+          return
         }
-      } catch {
-        if (saveSequenceRef.current !== saveId) return
-        setRenameError('Failed to rename workspace')
-        setSaveState('error')
-        setSaveError('Failed to save changes')
-      }
+        const draftVersionAtRequestStart = workspaceDraftVersionRef.current
+        const saveId = saveSequenceRef.current + 1
+        saveSequenceRef.current = saveId
+        setSaveState('saving')
+        setSaveError(null)
+        setRenameError(null)
+        try {
+          await renameWorkspace(activeWorkspace.id, trimmed)
+          if (saveSequenceRef.current !== saveId) return
+          if (workspaceDraftVersionRef.current === draftVersionAtRequestStart) {
+            setWorkspaceNameDraft(null)
+            setSaveState('saved')
+          }
+        } catch {
+          if (saveSequenceRef.current !== saveId) return
+          setRenameError('Failed to rename workspace')
+          setSaveState('error')
+          setSaveError('Failed to save changes')
+        }
+      })()
     }, 700)
     return () => window.clearTimeout(timeout)
   }, [activeWorkspace, hasNameChange, renameWorkspace, saveSequenceRef, setSaveError, setSaveState, workspaceName])
@@ -616,46 +620,48 @@ export function WorkspaceAssistantChannelsTab({
     if (!anonSettings || !savedAnonSettings || !hasAssistantChanges) {
       return
     }
-    const timeout = window.setTimeout(async () => {
-      const draftVersionAtRequestStart = anonDraftVersionRef.current
-      const saveId = saveSequenceRef.current + 1
-      saveSequenceRef.current = saveId
-      setIsAnonSaving(true)
-      setSaveState('saving')
-      setSaveError(null)
-      try {
-        const updated = await updateGeneralSettings({
-          assistantName: anonSettings.assistantName,
-          internalName: anonSettings.internalName,
-          assistantDefaultLocale: anonSettings.assistantDefaultLocale,
-          proactiveGreetingEnabled: anonSettings.proactiveGreetingEnabled,
-        })
-        if (saveSequenceRef.current !== saveId) return
-        const nameChanged = savedAnonSettings.assistantName !== updated.assistantName
-        const internalNameChanged = (savedAnonSettings.internalName ?? '') !== (updated.internalName ?? '')
-        setSavedAnonSettings(updated)
-        setAssistantSettingsError(null)
-        // Both feed the agent switcher's label; either change should refresh it.
-        if (nameChanged || internalNameChanged) {
-          window.dispatchEvent(new CustomEvent('radioso:assistant-name-updated', {
-            detail: { assistantName: updated.assistantName },
-          }))
+    const timeout = window.setTimeout(() => {
+      void (async () => {
+        const draftVersionAtRequestStart = anonDraftVersionRef.current
+        const saveId = saveSequenceRef.current + 1
+        saveSequenceRef.current = saveId
+        setIsAnonSaving(true)
+        setSaveState('saving')
+        setSaveError(null)
+        try {
+          const updated = await updateGeneralSettings({
+            assistantName: anonSettings.assistantName,
+            internalName: anonSettings.internalName,
+            assistantDefaultLocale: anonSettings.assistantDefaultLocale,
+            proactiveGreetingEnabled: anonSettings.proactiveGreetingEnabled,
+          })
+          if (saveSequenceRef.current !== saveId) return
+          const nameChanged = savedAnonSettings.assistantName !== updated.assistantName
+          const internalNameChanged = (savedAnonSettings.internalName ?? '') !== (updated.internalName ?? '')
+          setSavedAnonSettings(updated)
+          setAssistantSettingsError(null)
+          // Both feed the agent switcher's label; either change should refresh it.
+          if (nameChanged || internalNameChanged) {
+            window.dispatchEvent(new CustomEvent('radioso:assistant-name-updated', {
+              detail: { assistantName: updated.assistantName },
+            }))
+          }
+          if (anonDraftVersionRef.current === draftVersionAtRequestStart) {
+            setAnonSettings(updated)
+            setSaveState('saved')
+          }
+        } catch (error) {
+          if (saveSequenceRef.current !== saveId) return
+          console.error('Failed to update assistant settings:', error)
+          setAssistantSettingsError(getApiErrorMessage(error, 'Failed to update assistant settings.'))
+          setSaveState('error')
+          setSaveError('Failed to save changes')
+        } finally {
+          if (saveSequenceRef.current === saveId) {
+            setIsAnonSaving(false)
+          }
         }
-        if (anonDraftVersionRef.current === draftVersionAtRequestStart) {
-          setAnonSettings(updated)
-          setSaveState('saved')
-        }
-      } catch (error) {
-        if (saveSequenceRef.current !== saveId) return
-        console.error('Failed to update assistant settings:', error)
-        setAssistantSettingsError(getApiErrorMessage(error, 'Failed to update assistant settings.'))
-        setSaveState('error')
-        setSaveError('Failed to save changes')
-      } finally {
-        if (saveSequenceRef.current === saveId) {
-          setIsAnonSaving(false)
-        }
-      }
+      })()
     }, 700)
     return () => window.clearTimeout(timeout)
   }, [anonSettings, hasAssistantChanges, saveSequenceRef, savedAnonSettings, setSaveError, setSaveState, updateGeneralSettings])
@@ -665,31 +671,33 @@ export function WorkspaceAssistantChannelsTab({
       return
     }
 
-    const timeout = window.setTimeout(async () => {
-      const draftVersionAtRequestStart = assistantBehaviorDraftVersionRef.current
-      const saveId = saveSequenceRef.current + 1
-      saveSequenceRef.current = saveId
-      setSaveState('saving')
-      setSaveError(null)
-      try {
-        const updated = normalizeAssistantBehaviorSettingsByAgent(
-          agentId,
-          await updateAssistantBehaviorSettings(assistantBehaviorSettings, savedAssistantBehaviorSettings),
-        )
-        if (saveSequenceRef.current !== saveId) return
-        setSavedAssistantBehaviorSettings(updated)
-        setAssistantSettingsError(null)
-        if (assistantBehaviorDraftVersionRef.current === draftVersionAtRequestStart) {
-          setAssistantBehaviorSettings(updated)
-          setSaveState('saved')
+    const timeout = window.setTimeout(() => {
+      void (async () => {
+        const draftVersionAtRequestStart = assistantBehaviorDraftVersionRef.current
+        const saveId = saveSequenceRef.current + 1
+        saveSequenceRef.current = saveId
+        setSaveState('saving')
+        setSaveError(null)
+        try {
+          const updated = normalizeAssistantBehaviorSettingsByAgent(
+            agentId,
+            await updateAssistantBehaviorSettings(assistantBehaviorSettings, savedAssistantBehaviorSettings),
+          )
+          if (saveSequenceRef.current !== saveId) return
+          setSavedAssistantBehaviorSettings(updated)
+          setAssistantSettingsError(null)
+          if (assistantBehaviorDraftVersionRef.current === draftVersionAtRequestStart) {
+            setAssistantBehaviorSettings(updated)
+            setSaveState('saved')
+          }
+        } catch (error) {
+          if (saveSequenceRef.current !== saveId) return
+          console.error('Failed to update assistant behavior settings:', error)
+          setAssistantSettingsError(getApiErrorMessage(error, 'Failed to update assistant settings.'))
+          setSaveState('error')
+          setSaveError('Failed to save changes')
         }
-      } catch (error) {
-        if (saveSequenceRef.current !== saveId) return
-        console.error('Failed to update assistant behavior settings:', error)
-        setAssistantSettingsError(getApiErrorMessage(error, 'Failed to update assistant settings.'))
-        setSaveState('error')
-        setSaveError('Failed to save changes')
-      }
+      })()
     }, 700)
 
     return () => window.clearTimeout(timeout)

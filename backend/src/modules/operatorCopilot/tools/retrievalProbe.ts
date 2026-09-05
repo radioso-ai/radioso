@@ -103,7 +103,7 @@ export const createRetrievalProbeCopilotTools = (
     },
   }),
   describeEntity: (input, context) => describeNamedAgent(input, context, deps.agentLookup),
-  describeOutputEntity: (output) => ({ type: "agent", id: (output as RetrievalProbeOutput).probe.agentId }),
+  describeOutputEntity: (output) => ({ type: "agent", id: (output).probe.agentId }),
 }];
 
 const projectResults = (

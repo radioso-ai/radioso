@@ -330,7 +330,7 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
             agentInternalName: normalizeNullableText(row.conversation_agent_internal_name),
             sourceChannel: row.source_channel,
             sourceOrigin: row.source_origin,
-            channelContext: (row.channel_context as ConversationChannelContext | null) ?? null,
+            channelContext: (row.channel_context) ?? null,
             anonymousSessionId: row.anonymous_session_id,
             verifiedCustomerId: row.verified_customer_id,
             entryPageUrl: row.entry_page_url,

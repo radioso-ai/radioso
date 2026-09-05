@@ -2,6 +2,7 @@ import request from "supertest";
 import { describe, expect, it } from "vitest";
 
 import type { UsageLimitPolicy, UsageLimitReservation } from "../../src/shared/domain/usageLimitPolicy.js";
+import { AppError } from "../../src/shared/domain/errors.js";
 import { createTestApp, issueTestToken } from "../support/testApp.js";
 
 type BlockedResource =
@@ -47,28 +48,23 @@ const noopReservation: UsageLimitReservation = {
   async release() {},
 };
 
-const usageLimitExceeded = (resource: BlockedResource) => ({
-  statusCode: 429,
-  code: "usage_limit_exceeded",
-  message: "Usage limit exceeded",
-  details: {
-    profileKey: "starter_250",
-    resource,
-    limit:
-      resource === "stored_indexed_bytes" || resource === "monthly_indexed_bytes"
-        ? 1_000_000
-        : 250,
-    used:
-      resource === "stored_indexed_bytes" || resource === "monthly_indexed_bytes"
-        ? 1_000_000
-        : 250,
-    ...(resource === "monthly_answers"
-      ? {
-          periodStart: "2026-05-01",
-          resetAt: "2026-06-01T00:00:00.000Z",
-        }
-      : {}),
-  },
+const usageLimitExceeded = (resource: BlockedResource) => new AppError(429, "usage_limit_exceeded", "Usage limit exceeded", {
+  profileKey: "starter_250",
+  resource,
+  limit:
+    resource === "stored_indexed_bytes" || resource === "monthly_indexed_bytes"
+      ? 1_000_000
+      : 250,
+  used:
+    resource === "stored_indexed_bytes" || resource === "monthly_indexed_bytes"
+      ? 1_000_000
+      : 250,
+  ...(resource === "monthly_answers"
+    ? {
+        periodStart: "2026-05-01",
+        resetAt: "2026-06-01T00:00:00.000Z",
+      }
+    : {}),
 });
 
 describe("usage limit policy integration", () => {

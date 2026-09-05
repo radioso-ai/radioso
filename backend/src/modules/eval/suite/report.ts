@@ -1,6 +1,7 @@
 import type { EvalRunStatus } from "../domain/types.js";
 import type { BaselineDiff, CaseOutcome } from "./baseline.js";
 import type { SuiteAssertionVerdict } from "./scoring.js";
+import { stringifyUnknown } from "../../../shared/text/stringifyUnknown.js";
 
 export interface SuiteRunSummary {
   total: number;
@@ -50,7 +51,7 @@ const describeAssertion = (verdict: SuiteAssertionVerdict): string => {
     assertion.pattern ??
     assertion.stepId ??
     "";
-  return detail ? `${assertion.type}(${String(detail)})` : assertion.type;
+  return detail ? `${assertion.type}(${stringifyUnknown(detail)})` : assertion.type;
 };
 
 /**

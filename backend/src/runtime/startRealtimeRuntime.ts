@@ -1,4 +1,5 @@
 import { parseRealtimeConfig, type RealtimeConfig } from "../modules/realtime/infrastructure/config.js";
+import { asError } from "../shared/errors/asError.js";
 import type { RealtimeAdmissionController } from "../modules/realtime/domain/contracts.js";
 import type { WorkspaceGatewayAttachment, WorkspaceGatewayConnection } from "../modules/realtime/application/workspaceGateway.js";
 
@@ -121,11 +122,6 @@ export const startRealtimeRuntime = async (input: StartRealtimeRuntimeInput): Pr
   const dbHealthCacheMs = input.dbHealthCacheMs ?? 1_000;
   telemetry.healthTransition("starting");
 
-  let authDatabase: RealtimeAuthDatabase | undefined;
-  let subscriber: RealtimeSubscriberPort | undefined;
-  let admissionClient: RealtimeAdmissionCommandClientPort | undefined;
-  let admissionController: RealtimeAdmissionControllerPort | undefined;
-  let gateway: RealtimeGatewayPort | undefined;
   let constructionFailure: unknown;
   const construct = <T>(factory: () => T): T | undefined => {
     try {
@@ -136,8 +132,11 @@ export const startRealtimeRuntime = async (input: StartRealtimeRuntimeInput): Pr
     }
   };
 
-  authDatabase = construct(() => input.dependencies.authDatabaseFactory(
-    input.databaseConnectionString ?? String(input.rawConfig?.DATABASE_URL ?? process.env.DATABASE_URL ?? ""),
+  const authDatabase: RealtimeAuthDatabase | undefined = construct(() => input.dependencies.authDatabaseFactory(
+    input.databaseConnectionString
+      ?? (typeof input.rawConfig?.DATABASE_URL === "string" ? input.rawConfig.DATABASE_URL : undefined)
+      ?? process.env.DATABASE_URL
+      ?? "",
     {
       poolMax: config.gateway.dbPoolMax,
       connectionTimeoutMs: config.gateway.dbAcquireTimeoutMs,
@@ -145,14 +144,14 @@ export const startRealtimeRuntime = async (input: StartRealtimeRuntimeInput): Pr
       applicationName: config.gateway.dbApplicationName,
     },
   ));
-  subscriber = construct(() => input.dependencies.subscriberFactory({ config }));
-  admissionClient = construct(() => input.dependencies.admissionClientFactory({ config }));
-  admissionController = construct(() => input.dependencies.admissionControllerFactory({
+  const subscriber: RealtimeSubscriberPort | undefined = construct(() => input.dependencies.subscriberFactory({ config }));
+  const admissionClient: RealtimeAdmissionCommandClientPort | undefined = construct(() => input.dependencies.admissionClientFactory({ config }));
+  const admissionController: RealtimeAdmissionControllerPort | undefined = construct(() => input.dependencies.admissionControllerFactory({
     localProcessCap: config.gateway.maxConnections,
     client: admissionClient,
     config,
   }));
-  gateway = construct(() => input.dependencies.gatewayFactory({
+  const gateway: RealtimeGatewayPort | undefined = construct(() => input.dependencies.gatewayFactory({
     maxConnections: config.gateway.maxConnections,
     transportLossGraceMs: config.gateway.transportLossGraceMs,
     subscriber,
@@ -172,7 +171,9 @@ export const startRealtimeRuntime = async (input: StartRealtimeRuntimeInput): Pr
     telemetry.error("startup");
     await rollback();
     await telemetry.tracing("stop");
-    throw constructionFailure ?? new Error("Realtime runtime resource construction failed");
+    throw constructionFailure instanceof Error
+      ? constructionFailure
+      : new Error("Realtime runtime resource construction failed", { cause: constructionFailure });
   }
 
   let phase: HealthState = "starting";
@@ -373,10 +374,10 @@ const abortable = async <T>(run: () => Promise<T>, signal?: AbortSignal): Promis
     try {
       run().then(
         (value) => finish(() => resolve(value)),
-        (error) => finish(() => reject(error)),
+        (error) => finish(() => reject(asError(error))),
       );
     } catch (error) {
-      finish(() => reject(error));
+      finish(() => reject(asError(error)));
     }
   });
 };

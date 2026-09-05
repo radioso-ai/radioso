@@ -6,7 +6,6 @@ import {
   reprocessDocumentBodySchema,
   documentSearchHistoryParamsSchema,
   documentSearchSchema,
-  sourceParamsSchema,
   sourceUpdateSchema,
 } from "../../routes/documentRouteSchemas.js";
 import { crawlBodySchema } from "../../../../modules/websiteCrawler/routes.js";

@@ -709,16 +709,6 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     text: z.string(),
   });
 
-  const AgentBundleSourceScopeSchema = z.discriminatedUnion("mode", [
-    z.object({ mode: z.literal("all") }),
-    z.object({
-      mode: z.literal("selected"),
-      sourceIds: z.array(AgentConfigRefPlaceholderSchema).openapi({
-        description: "Placeheld: document source ids exist in one workspace only. Import starts with none selected.",
-      }),
-    }),
-  ]);
-
   const AgentBundleWebsiteEmbedSchema = z.object({
     enabled: z.boolean(),
     token: z.union([AgentConfigSecretPlaceholderSchema, z.null()]),

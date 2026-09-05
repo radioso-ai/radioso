@@ -25,7 +25,7 @@ describe("RoutineStepRenderer", () => {
     });
 
     expect(result.answer).toBe("What's your email address?");
-    const call = vi.mocked(gw.complete).mock.calls[0]![0];
+    const call = vi.mocked(gw.complete).mock.calls[0][0];
     expect(call.systemPrompt).toContain("Ask the user for their email address.");
     expect(call.messages.at(-1)).toEqual({ role: "user", content: "I'd like to contact a human" });
   });
@@ -37,7 +37,7 @@ describe("RoutineStepRenderer", () => {
       steering: [],
       turn,
     });
-    expect(vi.mocked(gw.complete).mock.calls[0]![0].systemPrompt).toContain("Confirm the request was sent.");
+    expect(vi.mocked(gw.complete).mock.calls[0][0].systemPrompt).toContain("Confirm the request was sent.");
   });
 
   it("injects the detected response language when provided", async () => {
@@ -48,7 +48,7 @@ describe("RoutineStepRenderer", () => {
       turn,
     });
 
-    const call = vi.mocked(gw.complete).mock.calls[0]![0];
+    const call = vi.mocked(gw.complete).mock.calls[0][0];
     expect(call.systemPrompt).toContain("Respond in English.");
     expect(call.systemPrompt).not.toContain("Always reply in the same language as the user's most recent message");
   });
@@ -61,7 +61,7 @@ describe("RoutineStepRenderer", () => {
       turn,
     });
 
-    const call = vi.mocked(gw.complete).mock.calls[0]![0];
+    const call = vi.mocked(gw.complete).mock.calls[0][0];
     expect(call.systemPrompt).toContain("Always reply in the same language as the user's most recent message");
     expect(call.systemPrompt).not.toContain("Respond in English.");
   });

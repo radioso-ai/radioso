@@ -13,7 +13,9 @@ const loadMockedTransport = async (
   headResponse: { ok: () => boolean } | null = { ok: () => true }
 ): Promise<MockTransport> => {
   const head = vi.fn(async () => headResponse);
-  let page: Record<string, unknown>;
+  // `context` and `page` mock each other (`newPage` returns `page`, `page.context`
+  // returns `context`); each reference is inside a closure invoked only later, so
+  // declaring `page` after `context` (both `const`) works without a TDZ violation.
   const context = {
     newPage: vi.fn(async () => page),
     close: vi.fn(async () => {}),
@@ -22,7 +24,7 @@ const loadMockedTransport = async (
       head
     }
   };
-  page = {
+  const page: Record<string, unknown> = {
     $$eval: vi.fn(async () => []),
     close: vi.fn(async () => {}),
     content: vi.fn(async () => "<html><body><main>Hello crawler</main></body></html>"),

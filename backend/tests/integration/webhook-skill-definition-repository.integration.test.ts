@@ -9,7 +9,7 @@ import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
 describeIntegration("WebhookSkillDefinitionRepository (Postgres)", () => {
-  const database = new Database(integrationDatabaseUrl as string);
+  const database = new Database(integrationDatabaseUrl);
   const repository = new WebhookSkillDefinitionRepository(database.kysely);
   const accountId = randomUUID();
   const workspaceId = randomUUID();
@@ -93,7 +93,7 @@ describeIntegration("WebhookSkillDefinitionRepository (Postgres)", () => {
     expect(await repository.countByDestination(workspaceId, destinationId)).toBe(2);
     expect(await repository.listSkillNamesByDestination(workspaceId, destinationId)).toEqual(["alpha", "zeta"]);
 
-    const target = (await repository.listByAgent(workspaceId, agentId))[0]!;
+    const target = (await repository.listByAgent(workspaceId, agentId))[0];
     expect(await repository.remove(workspaceId, agentId, target.id)).toBe(true);
     expect(await repository.remove(workspaceId, agentId, target.id)).toBe(false);
   });

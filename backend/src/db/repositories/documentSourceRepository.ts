@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import { currentTimestamp, jsonbConcat, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import type { DocumentSourceSummary } from "../../modules/documents/contracts/documentContracts.js";
-import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../modules/documents/domain/sourceConstants.js";
 
 export type DocumentOriginKind = "website" | "api" | "connector" | "upload";
 

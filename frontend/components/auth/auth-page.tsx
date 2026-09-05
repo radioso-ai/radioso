@@ -30,7 +30,9 @@ export function AuthPage() {
           setRegistrationAvailabilityFailed(true)
           if (automaticRetries < 2) {
             automaticRetries += 1
-            retryTimeout = setTimeout(loadAvailability, 1_500)
+            retryTimeout = setTimeout(() => {
+              void loadAvailability()
+            }, 1_500)
           }
         }
       }

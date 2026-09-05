@@ -168,7 +168,7 @@ export const observeCopilotTurn = async (
   // that supplied history any other way would exercise a path production never takes.
   let conversationId: string | null = null;
   if (evalCase.history?.length) {
-    const conversation = await repository.createConversation({ workspaceId, operatorUserId, title: evalCase.history[0]!.content.slice(0, 120) });
+    const conversation = await repository.createConversation({ workspaceId, operatorUserId, title: evalCase.history[0].content.slice(0, 120) });
     for (const message of evalCase.history) {
       await repository.createMessage({ conversationId: conversation.id, role: message.role, content: message.content });
     }

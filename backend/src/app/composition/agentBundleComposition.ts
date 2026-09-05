@@ -5,7 +5,7 @@ import {
   type AgentBundleContextVariableRecord,
 } from "../../modules/agentBundle/public.js";
 import { projectInternalAgentExternalSkills } from "../../modules/agents/public.js";
-import type { AgentInput, ConversationAgent } from "../../modules/agents/public.js";
+import type { ConversationAgent } from "../../modules/agents/public.js";
 import type { AgentService, AuthoredDirectiveService } from "../../modules/agents/public.js";
 import type { AgentSkillsService } from "../../modules/agentSkills/public.js";
 import type { ContextVariableService } from "../../modules/context-variables/public.js";
@@ -122,7 +122,7 @@ export const createAgentBundleServices = (deps: AgentBundleCompositionDependenci
     logger: deps.logger,
     agents: {
       create: async (workspaceId, input) => {
-        const agent = await deps.agentService.create(workspaceId, input as AgentInput);
+        const agent = await deps.agentService.create(workspaceId, input);
         return { agentId: agent.id };
       },
       delete: async (workspaceId, agentId) => {
@@ -169,7 +169,7 @@ export const createAgentBundleServices = (deps: AgentBundleCompositionDependenci
     },
     routines: {
       createDraft: async (workspaceId, agentId, definition) => {
-        const saved = await deps.routineDefinitionService.createDraft(workspaceId, agentId, definition as never);
+        const saved = await deps.routineDefinitionService.createDraft(workspaceId, agentId, definition);
         return { routineId: saved.routine.id };
       },
       publish: async (workspaceId, agentId, routineId) => {

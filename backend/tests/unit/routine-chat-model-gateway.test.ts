@@ -38,7 +38,7 @@ describe("RoutineChatModelGateway", () => {
 
     expect(result.text).toBe("  Sure — what is your email?  ");
     expect(calls).toHaveLength(1);
-    const input = calls[0]!;
+    const input = calls[0];
     expect(input.prompt).toBe("assistant: How can I help?\nuser: I want a human to call me");
     expect(input.query).toBe("I want a human to call me");
     expect(input.systemPrompt).toBe("ROUTINE STEP INSTRUCTIONS");

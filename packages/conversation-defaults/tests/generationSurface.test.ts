@@ -16,7 +16,7 @@ const match = (directive: Partial<Directive>): DirectiveMatch => ({
     condition: { kind: "always" },
     action: "Do the thing.",
     ...directive,
-  } as Directive,
+  },
   selectionMode: "deterministic",
   selectionReason: "test",
 });

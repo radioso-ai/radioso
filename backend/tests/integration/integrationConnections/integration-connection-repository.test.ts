@@ -220,6 +220,6 @@ const asPool = (client: PoolClient): pg.Pool =>
           const value = Reflect.get(target, property, receiver);
           return typeof value === "function" ? value.bind(target) : value;
         },
-      }) as PoolClient;
+      });
     },
   }) as unknown as pg.Pool;

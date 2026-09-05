@@ -50,7 +50,7 @@ describe("MCP-compatible copilot catalog", () => {
       resolveWorkspaceKey: async () => "acme",
     });
 
-    const result = await tool!.createTool(context(new Set())).invoke({ name: "Secret support agent" }, {} as never);
+    const result = await tool.createTool(context(new Set())).invoke({ name: "Secret support agent" }, {} as never);
 
     expect(resolve).not.toHaveBeenCalled();
     expect(result).toEqual({
@@ -69,7 +69,7 @@ describe("MCP-compatible copilot catalog", () => {
       resolveWorkspaceKey: async () => "acme",
     });
 
-    const result = await tool!.createTool(context(new Set(["workspace.agents.read"]))).invoke({ name: "Nonexistent" }, {} as never);
+    const result = await tool.createTool(context(new Set(["workspace.agents.read"]))).invoke({ name: "Nonexistent" }, {} as never);
 
     expect(result).toEqual({
       dashboardUrl: "/w/acme/agents",
@@ -88,7 +88,7 @@ describe("MCP-compatible copilot catalog", () => {
       resolveWorkspaceKey: async () => "acme",
     });
 
-    const result = await tool!.createTool(context(new Set(["workspace.agents.read"]))).invoke({ name: "Support" }, {} as never);
+    const result = await tool.createTool(context(new Set(["workspace.agents.read"]))).invoke({ name: "Support" }, {} as never);
 
     expect(result).toEqual({
       dashboardUrl: "/w/acme/agents",
@@ -112,11 +112,11 @@ describe("MCP-compatible copilot catalog", () => {
         resolve: vi.fn(),
       },
     });
-    const [tool] = enrichCopilotToolCatalog([agentConfiguration!], {
+    const [tool] = enrichCopilotToolCatalog([agentConfiguration], {
       resolveWorkspaceKey: async () => "acme",
     });
 
-    const result = await tool!.createTool(context(new Set(["workspace.agents.read"]))).invoke({ agentName: "Support" }, {} as never);
+    const result = await tool.createTool(context(new Set(["workspace.agents.read"]))).invoke({ agentName: "Support" }, {} as never);
 
     expect(result).toMatchObject({
       resolution: {
@@ -136,14 +136,14 @@ describe("dashboard handoff subject", () => {
     resolvedEntity: { type: string; id: string; agentId?: string },
   ): CopilotToolDescriptor<{ name: string }> => ({
     ...descriptor(async () => ({ kind: "resolved", entity: resolvedEntity, input: { name: "Support" } })),
-    dashboardSubject: dashboardSubject as never,
+    dashboardSubject: dashboardSubject,
   });
 
   const linkFor = async (dashboardSubject: { type: string }, resolvedEntity: { type: string; id: string; agentId?: string }) => {
     const [tool] = enrichCopilotToolCatalog([linkedDescriptor(dashboardSubject, resolvedEntity)], {
       resolveWorkspaceKey: async () => "acme",
     });
-    const result = await tool!.createTool(context(new Set(["workspace.agents.read"]))).invoke({ name: "Support" }, {} as never);
+    const result = await tool.createTool(context(new Set(["workspace.agents.read"]))).invoke({ name: "Support" }, {} as never);
     return (result as { dashboardUrl: string }).dashboardUrl;
   };
 

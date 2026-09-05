@@ -396,7 +396,7 @@ export const buildChatServices = (input: {
   const publicChatActionAdvertiser = publicChatActionAdvertisers.length === 0
     ? new NoopPublicChatActionAdvertiser()
     : publicChatActionAdvertisers.length === 1
-      ? publicChatActionAdvertisers[0]!
+      ? publicChatActionAdvertisers[0]
       : new ChainedPublicChatActionAdvertiser(publicChatActionAdvertisers);
   const contactHistoryProvider = !input.composition.contactHistoryProviderRegistration
     ? new NoopContactHistoryProvider()

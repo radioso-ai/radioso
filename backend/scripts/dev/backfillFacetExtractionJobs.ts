@@ -138,7 +138,7 @@ const mapWithConcurrency = async <Input, Output>(
     while (cursor < items.length) {
       const index = cursor;
       cursor += 1;
-      results[index] = await worker(items[index]!);
+      results[index] = await worker(items[index]);
     }
   });
   await Promise.all(runners);
@@ -197,7 +197,7 @@ const main = async (): Promise<void> => {
     let alreadyPresent = 0;
 
     for (let batchIndex = 0; batchIndex < batches.length; batchIndex += 1) {
-      const batch = batches[batchIndex]!;
+      const batch = batches[batchIndex];
 
       if (args.dryRun) {
         // Read-only equivalent of the version-aware enqueue below.

@@ -193,7 +193,7 @@ export class AnswerPresentationService {
       : undefined;
 
     for (let groupIndex = 0; groupIndex < anchorGroups.length; groupIndex += 1) {
-      const anchorGroup = anchorGroups[groupIndex]!;
+      const anchorGroup = anchorGroups[groupIndex];
       const { offset: splitOffset, relocatedPast } =
         splitBoundaries?.resolve(anchorGroup.start) ?? { offset: anchorGroup.start };
 
@@ -202,10 +202,10 @@ export class AnswerPresentationService {
       const absorbedGroups = [anchorGroup];
       while (
         groupIndex + 1 < anchorGroups.length &&
-        anchorGroups[groupIndex + 1]!.start < splitOffset
+        anchorGroups[groupIndex + 1].start < splitOffset
       ) {
         groupIndex += 1;
-        absorbedGroups.push(anchorGroups[groupIndex]!);
+        absorbedGroups.push(anchorGroups[groupIndex]);
       }
 
       const lastAbsorbedGroup = absorbedGroups.at(-1)!;

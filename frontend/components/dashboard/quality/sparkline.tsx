@@ -89,7 +89,7 @@ export function Sparkline({
           accessibilityLayer
           width={width}
           height={height}
-          data={points as SparklinePoint[]}
+          data={points}
           margin={{ top: 6, right: 6, bottom: 2, left: 6 }}
         >
           <Tooltip

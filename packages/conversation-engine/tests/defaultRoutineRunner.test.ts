@@ -471,7 +471,7 @@ describe("DefaultRoutineRunner", () => {
 
     expect(result.yielded).toBeFalsy();
     expect(render).toHaveBeenCalledTimes(1);
-    expect(render.mock.calls[0]![0]!.step.id).toBe("ask_email");
+    expect(render.mock.calls[0][0].step.id).toBe("ask_email");
     expect(result.response.answer).toContain("ask_email");
   });
 
@@ -513,7 +513,7 @@ describe("DefaultRoutineRunner", () => {
 
     expect(result.yielded).toBeFalsy();
     expect(render).toHaveBeenCalledTimes(1);
-    expect(render.mock.calls[0]![0]!.step.id).toBe("ask_name");
+    expect(render.mock.calls[0][0].step.id).toBe("ask_name");
   });
 
   it("resumes from the last step in a multi-element path, not the root", async () => {
@@ -716,7 +716,7 @@ describe("DefaultRoutineRunner", () => {
 
     // The turn settles on a chat step rather than throwing, and the routine continues.
     expect(render).toHaveBeenCalledTimes(1);
-    expect(["step_ask", "step_ack"]).toContain(render.mock.calls[0]![0]!.step.id);
+    expect(["step_ask", "step_ack"]).toContain(render.mock.calls[0][0].step.id);
     expect(result.nextState).not.toBeNull();
   });
 });

@@ -1673,10 +1673,10 @@ describe("document contract", () => {
 
   it("documents the metadata fields in the generated schema", () => {
     const spec = readFileSync(new URL("../../openapi.yaml", import.meta.url), "utf8");
-    const sourceListItemSchema = spec.match(/DocumentSourceListItem:\n([\s\S]*?)\n    [A-Z]/)?.[1] ?? "";
-    const sourceUpdateSchema = spec.match(/DocumentSourceUpdateRequest:\n([\s\S]*?)\n    [A-Z]/)?.[1] ?? "";
-    const retrievalUpdateSchema = spec.match(/DocumentRetrievalUpdateRequest:\n([\s\S]*?)\n    [A-Z]/)?.[1] ?? "";
-    const importRequestSchema = spec.match(/DocumentImportRequest:\n([\s\S]*?)\n    [A-Z]/)?.[1] ?? "";
+    const sourceListItemSchema = spec.match(/DocumentSourceListItem:\n([\s\S]*?)\n {4}[A-Z]/)?.[1] ?? "";
+    const sourceUpdateSchema = spec.match(/DocumentSourceUpdateRequest:\n([\s\S]*?)\n {4}[A-Z]/)?.[1] ?? "";
+    const retrievalUpdateSchema = spec.match(/DocumentRetrievalUpdateRequest:\n([\s\S]*?)\n {4}[A-Z]/)?.[1] ?? "";
+    const importRequestSchema = spec.match(/DocumentImportRequest:\n([\s\S]*?)\n {4}[A-Z]/)?.[1] ?? "";
 
     expect(sourceListItemSchema).toContain("documentMetadata:");
     expect(sourceUpdateSchema).toContain("documentMetadata:");

@@ -749,7 +749,7 @@ describe("the agent setting adapter's channel boundary", () => {
     // none of the channel audit events the settings service records.
     const get = vi.fn();
     const update = vi.fn();
-    const adapter = createAgentSettingCopilotProposalAdapter({ agentService: { get, update } as never });
+    const adapter = createAgentSettingCopilotProposalAdapter({ agentService: { get, update } });
 
     await expect(adapter.validatePayload("workspace-1", { agentId, settingKey: "surfaceSettings" }, {
       value: { anonymousChat: { enabled: true, token: "known-token" } },
@@ -764,7 +764,7 @@ describe("the agent setting adapter's channel boundary", () => {
     // channel. Both are the reason the guard cannot live on the draft alone.
     const get = vi.fn();
     const update = vi.fn();
-    const adapter = createAgentSettingCopilotProposalAdapter({ agentService: { get, update } as never });
+    const adapter = createAgentSettingCopilotProposalAdapter({ agentService: { get, update } });
     const targetRef = { agentId, settingKey: "surfaceSettings" };
 
     await expect(adapter.preview("workspace-1", targetRef, { value: {} })).rejects.toThrow(/propose_workspace_setting/);

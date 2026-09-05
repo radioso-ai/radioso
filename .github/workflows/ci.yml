@@ -143,6 +143,45 @@ jobs:
             echo "ee=${ee}"
           } >> "$GITHUB_OUTPUT"
 
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          # The dead-code ratchet diffs against the merge base to find the files this change
+          # touches, so it needs real history rather than a shallow clone.
+          fetch-depth: 0
+
+      - name: Enable pnpm for dependency cache
+        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace packages
+        # Type-aware rules resolve `@radioso/*` through each package's built .d.ts, so the
+        # packages have to exist before linting or those rules silently see `any`.
+        run: pnpm --filter "./packages/*" --filter "./ee/packages/*" run build
+
+      - name: Fetch base branch for the dead-code ratchet
+        run: git fetch --no-tags --depth=0 origin main:refs/remotes/origin/main
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Check for dead code
+        run: pnpm run lint:dead-code:ci
+
   backend-build-openapi:
     name: Backend Build and OpenAPI
     needs: changes
@@ -352,10 +391,6 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile --filter radioso-frontend...
 
-      - name: Lint frontend
-        working-directory: frontend
-        run: pnpm run lint
-
       - name: Test frontend unit suite
         working-directory: frontend
         run: pnpm test
@@ -405,10 +440,6 @@ jobs:
 
       - name: Install docs portal dependencies
         run: pnpm install --frozen-lockfile --filter radioso-docs-portal...
-
-      - name: Lint docs portal
-        working-directory: docs-portal
-        run: pnpm run lint
 
       - name: Build docs portal
         working-directory: docs-portal
@@ -651,6 +682,7 @@ jobs:
     name: CI Gate
     needs:
       - changes
+      - lint
       - backend
       - frontend
       - docs-portal
@@ -663,6 +695,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CHANGES_RESULT: ${{ needs.changes.result }}
+      LINT_RESULT: ${{ needs.lint.result }}
       BACKEND_SELECTED: ${{ needs.changes.outputs.backend }}
       BACKEND_RESULT: ${{ needs.backend.result }}
       FRONTEND_SELECTED: ${{ needs.changes.outputs.frontend }}
@@ -686,6 +719,12 @@ jobs:
 
           if [ "$CHANGES_RESULT" != "success" ]; then
             echo "::error::Change detection did not complete successfully: $CHANGES_RESULT"
+            exit 1
+          fi
+
+          # Lint and the dead-code ratchet are workspace-wide, so the job always runs.
+          if [ "$LINT_RESULT" != "success" ]; then
+            echo "::error::Lint completed with result: $LINT_RESULT"
             exit 1
           fi
 

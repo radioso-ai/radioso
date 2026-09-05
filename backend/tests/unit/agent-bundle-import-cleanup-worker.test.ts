@@ -81,6 +81,6 @@ describe("AgentBundleImportCleanupWorker", () => {
     });
 
     await expect(worker.sweep()).resolves.toEqual({ status: "failed", compensated: 0, failed: 0 });
-    expect(error).toHaveBeenCalledWith({}, "agent bundle import cleanup sweep failed");
+    expect(error).toHaveBeenCalledWith({ reason: "database unavailable" }, "agent bundle import cleanup sweep failed");
   });
 });

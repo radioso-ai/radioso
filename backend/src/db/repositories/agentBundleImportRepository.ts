@@ -1,9 +1,29 @@
 import type { AgentBundleImportRepositoryPort } from "../../modules/agentBundle/public.js";
+import { AppError } from "../../shared/domain/errors.js";
 import { currentTimestamp, nowMinusSeconds, nowPlusSeconds, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import { agentBundleImportColumns, mapAgentBundleImport, type AgentBundleImportRow } from "./agentBundleImportRowMapper.js";
 
 const activeStates = ["queued", "applying", "applied"] as const;
+const CREATE_OR_GET_ATTEMPTS = 3;
+
+export const createOrGetWithRetries = async <Row>(
+  insert: () => Promise<Row | undefined | null>,
+  findExisting: () => Promise<Row | undefined | null>,
+): Promise<{ status: "created" | "existing"; row: Row }> => {
+  for (let attempt = 0; attempt < CREATE_OR_GET_ATTEMPTS; attempt += 1) {
+    const inserted = await insert();
+    if (inserted) return { status: "created", row: inserted };
+
+    const existing = await findExisting();
+    if (existing) return { status: "existing", row: existing };
+  }
+  throw new AppError(
+    409,
+    "agent_bundle_import_contended",
+    "The import idempotency key changed state repeatedly; retry the request",
+  );
+};
 
 export class AgentBundleImportRepository implements AgentBundleImportRepositoryPort {
   constructor(private readonly db: Db) {}
@@ -17,8 +37,8 @@ export class AgentBundleImportRepository implements AgentBundleImportRepositoryP
     // A conflicting row can become terminal after `DO NOTHING` and before the
     // lookup. In that case it no longer participates in the partial unique index,
     // so retry the insert rather than turning a valid retry into a 500.
-    for (;;) {
-      const inserted = await this.db
+    const result = await createOrGetWithRetries(
+      async () => this.db
         .insertInto("agent_bundle_imports")
         .values({
           workspace_id: input.workspaceId,
@@ -30,18 +50,16 @@ export class AgentBundleImportRepository implements AgentBundleImportRepositoryP
           .where("state", "in", activeStates)
           .doNothing())
         .returning(agentBundleImportColumns)
-        .executeTakeFirst();
-      if (inserted) return { status: "created" as const, job: mapAgentBundleImport(inserted as AgentBundleImportRow) };
-
-      const existing = await this.db
+        .executeTakeFirst(),
+      async () => this.db
         .selectFrom("agent_bundle_imports")
         .select(agentBundleImportColumns)
         .where("workspace_id", "=", input.workspaceId)
         .where("idempotency_key", "=", input.idempotencyKey)
         .where("state", "in", activeStates)
-        .executeTakeFirst();
-      if (existing) return { status: "existing" as const, job: mapAgentBundleImport(existing as AgentBundleImportRow) };
-    }
+        .executeTakeFirst(),
+    );
+    return { status: result.status, job: mapAgentBundleImport(result.row as AgentBundleImportRow) };
   }
 
   async findById(workspaceId: string, importId: string) {

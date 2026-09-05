@@ -107,8 +107,8 @@ export class AgentBundleImportCleanupWorker {
         }
       }
       return { status: "swept", compensated, failed };
-    } catch {
-      this.options.logger.error({}, "agent bundle import cleanup sweep failed");
+    } catch (error) {
+      this.options.logger.error({ reason: errorReason(error) }, "agent bundle import cleanup sweep failed");
       this.options.metrics?.incrementCounter("agent_bundle_import_compensations_total", {
         help: "Agent bundle import orphans compensated by the cleanup sweep",
         labels: { outcome: "sweep_failed" },
@@ -122,3 +122,10 @@ export class AgentBundleImportCleanupWorker {
 
 const isNotFound = (error: unknown): boolean =>
   error instanceof AppError && error.code === "not_found";
+
+const errorReason = (error: unknown): string =>
+  error instanceof AppError
+    ? error.code
+    : error instanceof Error
+      ? error.message
+      : "unknown";

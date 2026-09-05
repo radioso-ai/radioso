@@ -226,7 +226,7 @@ describe("createCopilotRoutes", () => {
       });
 
     expect(hasPermission.mock.calls.map(([input]) => input.permission)).toContain("workspace.token.read");
-    expect([...runTurn.mock.calls[0]![0].permissions]).toContain("workspace.token.read");
+    expect([...runTurn.mock.calls[0][0].permissions]).toContain("workspace.token.read");
   });
 });
 

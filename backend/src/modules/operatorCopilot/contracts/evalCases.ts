@@ -36,7 +36,7 @@ export interface CopilotEvalResultsPort {
   listWithLatestRun(workspaceId: string): Promise<ReadonlyArray<CopilotEvalCaseSummary>>;
 }
 
-export interface CopilotEvalOperatorSubject {
+interface CopilotEvalOperatorSubject {
   workspaceId: string;
   accountId: string;
   operatorUserId: string;

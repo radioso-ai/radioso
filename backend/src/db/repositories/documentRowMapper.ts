@@ -252,7 +252,7 @@ const mapDocumentEnrichmentFieldCounts = (value: unknown): DocumentEnrichmentFie
     return null;
   }
   const record = value as Record<string, unknown>;
-  const count = (key: string): number => (typeof record[key] === "number" ? (record[key] as number) : 0);
+  const count = (key: string): number => (typeof record[key] === "number" ? (record[key]) : 0);
   return {
     applied: count("applied"),
     droppedInvalid: count("droppedInvalid"),

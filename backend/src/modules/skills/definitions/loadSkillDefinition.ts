@@ -50,7 +50,7 @@ const validateGeneratedContractReferences = (definition: SkillDefinition, defini
  * `definitions/<skill>.ts` so each skill is a data file, not code.
  */
 export const loadSkillDefinition = (definitionRootUrl: URL): SkillDefinition => {
-  const parsed = skillDefinitionSchema.parse(readJson(new URL("skill.json", definitionRootUrl))) as SkillDefinition;
+  const parsed = skillDefinitionSchema.parse(readJson(new URL("skill.json", definitionRootUrl)));
   validateGeneratedContractReferences(parsed, definitionRootUrl);
   return parsed;
 };

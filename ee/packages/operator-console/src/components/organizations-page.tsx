@@ -45,8 +45,9 @@ export function OrganizationsPage() {
   const submitSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
+    const rawSearch = data.get("search");
     setOffset(0);
-    setSearch(String(data.get("search") ?? ""));
+    setSearch(typeof rawSearch === "string" ? rawSearch : "");
   };
 
   return (

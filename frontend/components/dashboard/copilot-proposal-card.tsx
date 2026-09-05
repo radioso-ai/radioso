@@ -117,7 +117,7 @@ const formatValue = (value: unknown) => {
   try {
     return JSON.stringify(value)
   } catch {
-    return String(value)
+    return '[unserializable value]'
   }
 }
 
@@ -129,7 +129,8 @@ export const targetReference = (
 ): { entity: CopilotEntityReference; agentId?: string } | null => {
   const ref = detail?.targetRef ?? detail?.target ?? {}
   const applied = appliedRef ?? {}
-  const agentId = typeof (applied.agentId ?? ref.agentId ?? defaultAgentId) === 'string' ? String(applied.agentId ?? ref.agentId ?? defaultAgentId) : undefined
+  const rawAgentId = applied.agentId ?? ref.agentId ?? defaultAgentId
+  const agentId = typeof rawAgentId === 'string' ? rawAgentId : undefined
   if (summary.targetType === 'agent_setting' || summary.targetType === 'context_variable') {
     const id = agentId
     return id ? { entity: { type: 'agent', id }, agentId: id } : null

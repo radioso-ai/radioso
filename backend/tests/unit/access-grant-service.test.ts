@@ -235,7 +235,7 @@ describe("AccessGrantService", () => {
       auditService,
     });
 
-    await service.recordAgentChannelChatSucceeded({
+    service.recordAgentChannelChatSucceeded({
       grant: {
         id: "grant-1",
         workspaceId: "workspace-1",

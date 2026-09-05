@@ -135,7 +135,7 @@ describe("SlackOperatorNotificationSink", () => {
         conversationRef: "conv_1",
       },
     });
-    const payload = enqueued[0]!.payload as { blocks: Array<Record<string, unknown>> };
+    const payload = enqueued[0].payload as { blocks: Array<Record<string, unknown>> };
     const actions = payload.blocks.find((block) => block.type === "actions") as { elements: Array<Record<string, unknown>> };
     expect(actions.elements).toHaveLength(2);
     expect(actions.elements.map((element) => (element.text as { text: string }).text)).toEqual(["Ship it", "Hold"]);
@@ -194,14 +194,14 @@ describe("SlackOperatorNotificationSink", () => {
         text: "Customer asked for a human",
       },
     });
-    const payload = enqueued[0]!.payload as { blocks: Array<Record<string, unknown>> };
+    const payload = enqueued[0].payload as { blocks: Array<Record<string, unknown>> };
     const actions = payload.blocks.find((block) => block.type === "actions") as { elements: Array<Record<string, unknown>> };
     expect(actions.elements).toHaveLength(1);
     expect(actions.elements[0]).toMatchObject({
       action_id: "ownership_takeover",
       text: { text: "Take over" },
     });
-    expect(JSON.parse(actions.elements[0]!.value as string)).toEqual({
+    expect(JSON.parse(actions.elements[0].value as string)).toEqual({
       conversationId: "conv_1",
       workspaceId: "ws_1",
     });

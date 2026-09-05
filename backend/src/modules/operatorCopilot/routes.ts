@@ -7,7 +7,7 @@ import type { WorkspaceSessionDependencies } from "../../app/http/middleware/req
 import { requireWorkspacePermission } from "../../app/http/middleware/requirePermission.js";
 import { createRateLimitMiddleware, type RateLimitAbuseControlPort, type RateLimitAuditPort } from "../../app/http/middleware/rateLimit.js";
 import { validateBody } from "../../app/http/middleware/validate.js";
-import { forbidden, notFound, serviceUnavailable } from "../../shared/domain/errors.js";
+import { forbidden, notFound } from "../../shared/domain/errors.js";
 import { copilotProposalPermissions, copilotProposalTargetTypes, type CopilotProposalTargetType } from "./contracts.js";
 import { summarizeProposalEvidence } from "./proposalEvidence.js";
 import type { LlmCapabilityResolveInput } from "../../shared/infra/llm/workspaceContext.js";

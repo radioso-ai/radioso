@@ -73,7 +73,7 @@ const buildConnectorError = async (response: Response): Promise<Error> => {
     payload &&
     typeof payload === 'object' &&
     'fields' in payload &&
-    Array.isArray((payload as { fields: unknown }).fields)
+    Array.isArray((payload).fields)
   ) {
     const body = payload as { error?: string; fields: ConnectorValidationIssue[] }
     return new ConnectorValidationError(body.error ?? 'Validation failed', body.fields)
@@ -92,7 +92,7 @@ const buildConnectorError = async (response: Response): Promise<Error> => {
     payload &&
     typeof payload === 'object' &&
     'error' in payload &&
-    typeof (payload as { error: unknown }).error === 'string'
+    typeof (payload).error === 'string'
       ? ((payload as { error: string }).error)
       : `Request failed with status ${response.status}`
   return new Error(message)

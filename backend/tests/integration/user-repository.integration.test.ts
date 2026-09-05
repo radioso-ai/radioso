@@ -9,7 +9,7 @@ import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
 describeIntegration("UserRepository (Postgres)", () => {
-  const database = new Database(integrationDatabaseUrl as string);
+  const database = new Database(integrationDatabaseUrl);
   const repository = new UserRepository(database.kysely);
   const created: string[] = [];
 

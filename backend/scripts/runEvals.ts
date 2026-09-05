@@ -77,7 +77,7 @@ const parseFlags = (argv: string[]): Flags => {
     migrate: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index]!;
+    const arg = argv[index];
     if (arg === "--update-baseline") flags.updateBaseline = true;
     else if (arg === "--judge") flags.judge = true;
     else if (arg === "--migrate") flags.migrate = true;

@@ -114,7 +114,7 @@ describe("DefaultAgentRuntime", () => {
 
       await runWith(gateway, [echoTool()]);
 
-      const secondRequest = (gateway as ReturnType<typeof makeGateway>).calls[1];
+      const secondRequest = (gateway).calls[1];
       expect(secondRequest).toBeDefined();
       const toolEntry = secondRequest.transcript.find((entry) => entry.role === "tool");
       expect(toolEntry).toMatchObject({ role: "tool", callId: "c1", toolName: "echo", isError: false });
@@ -552,7 +552,7 @@ describe("DefaultAgentRuntime", () => {
         description: "Throws on first call",
         inputSchema: z.object({ text: z.string() }),
         outputSchema: z.object({ ok: z.boolean() }),
-        async invoke(input) {
+        async invoke(_input) {
           invocations += 1;
           if (invocations === 1) {
             throw new Error("boom");

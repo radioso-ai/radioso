@@ -280,8 +280,8 @@ describe("retrieval pipeline stages", () => {
           return { space: embeddingSpace, vectors: [[0.1, 0.2]] };
         },
       },
-      { async search() { return []; } } as never,
-      { async search() { return []; } } as never,
+      { async search() { return []; } },
+      { async search() { return []; } },
       emptyChunkHydrator,
       {
         async findUpcoming(input) {
@@ -334,8 +334,8 @@ describe("retrieval pipeline stages", () => {
           return { space: embeddingSpace, vectors: [[0.1, 0.2]] };
         },
       },
-      { async search() { return []; } } as never,
-      { async search() { return []; } } as never,
+      { async search() { return []; } },
+      { async search() { return []; } },
       emptyChunkHydrator,
       {
         async findUpcoming() {
@@ -495,7 +495,7 @@ describe("retrieval pipeline stages", () => {
       temporalDeterministicSortApplied: true,
       temporalDeterministicSortDatedContextCount: 2,
       contexts: new Array(1).fill({}),
-    } as never)).toMatchObject({
+    })).toMatchObject({
       "retrieval.rerank.status": "skipped",
       "retrieval.candidates.reranked.count": 2,
       "retrieval.temporal.deterministic_sort.enabled": true,
@@ -1658,7 +1658,7 @@ describe("retrieval pipeline stages", () => {
             updatedAt: new Date(),
           };
         },
-      } as never,
+      },
       new ConversationContextService(),
     );
     const interpretationStage = new QueryInterpretationStageService(

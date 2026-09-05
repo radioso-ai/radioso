@@ -1989,7 +1989,7 @@ export class InMemoryConnectorDatabase {
         originalAgentConfig,
         sourceAgentId,
         capturedBy,
-      ] = params as unknown[];
+      ] = params;
       const row = {
         id,
         workspace_id: workspaceId,
@@ -2035,7 +2035,7 @@ export class InMemoryConnectorDatabase {
         status,
         outcomeReason,
         completedAt,
-      ] = params as unknown[];
+      ] = params;
       const row = {
         id,
         workspace_id: workspaceId,
@@ -3420,7 +3420,7 @@ export class InMemoryChunkRepository implements ChunkRepositoryPort {
         embeddingDimensions: chunk.embedding.length || null,
       })),
       totalChunks: matchingChunks.length,
-      nextChunkIndex: rows.length > input.limit ? rows[input.limit]!.chunkIndex : null,
+      nextChunkIndex: rows.length > input.limit ? rows[input.limit].chunkIndex : null,
     };
   }
 

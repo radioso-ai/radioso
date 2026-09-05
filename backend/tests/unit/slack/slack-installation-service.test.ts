@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import {
   SlackInstallationService,
@@ -326,7 +326,7 @@ describe("SlackInstallationService", () => {
     const ciphertext = oauthConnections.tokenWrites[0]?.credentialCiphertext;
     expect(ciphertext).toBeTypeOf("string");
     expect(JSON.stringify(oauthConnections.rows)).not.toContain("xoxb-token");
-    expect(decryptOauthTokens(ciphertext!, encryptionKey)).toMatchObject({ accessToken: "xoxb-token" });
+    expect(decryptOauthTokens(ciphertext, encryptionKey)).toMatchObject({ accessToken: "xoxb-token" });
   });
 
   it("reinstalls by team id by refreshing the existing credential and binding", async () => {

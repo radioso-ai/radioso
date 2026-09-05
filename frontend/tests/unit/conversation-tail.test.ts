@@ -57,7 +57,7 @@ describe('mergeTailMessages', () => {
           citationCount: 1,
           turnTrace: { version: 1, spine: { traceId: 'spine-1', startedAt: '2026-06-18T10:00:00.000Z', stages: [] } },
         },
-      } as ChatConversationMessage,
+      },
     ]
     // The tail returns the same message without debug/citations.
     const incoming = [message('message-1', '2026-06-18T10:00:00.000Z', 'answer')]

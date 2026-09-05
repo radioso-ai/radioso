@@ -9,7 +9,6 @@
     "dev": "pnpm run sync && next dev --webpack --port 3001",
     "build": "pnpm run sync && next build --webpack",
     "preview": "serve out --listen 3000",
-    "lint": "eslint .",
     "sync": "pnpm run sync:openapi && pnpm run sync:stoplight",
     "sync:openapi": "node ./scripts/sync-openapi.mjs",
     "sync:stoplight": "node ./scripts/sync-stoplight.mjs"
@@ -31,14 +30,11 @@
     "tailwind-merge": "^3.3.1"
   },
   "devDependencies": {
-    "@eslint/eslintrc": "^3.3.1",
     "@tailwindcss/postcss": "^4.2.0",
     "@types/mdx": "^2.0.13",
     "@types/node": "^24.3.0",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.3",
-    "eslint": "^9.39.1",
-    "eslint-config-next": "16.2.6",
     "firebase-tools": "15.28.2",
     "postcss": "^8.5.18",
     "serve": "^14.2.4",

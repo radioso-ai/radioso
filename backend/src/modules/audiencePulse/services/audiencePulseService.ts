@@ -32,7 +32,6 @@ import type {
   AudiencePulseReadResult,
   AudiencePulseRefreshResult,
   AudiencePulseRunGate,
-  AudiencePulseSnapshotRecord,
   AudiencePulseSnapshotStore,
 } from "../contracts.js";
 import { AUDIENCE_PULSE_ANALYSIS_DAYS } from "../contracts.js";
@@ -250,7 +249,7 @@ const parseModelResult = (
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
-  } catch (error) {
+  } catch {
     throw new AudiencePulseReportValidationError("Audience Pulse model response was not valid JSON");
   }
 
@@ -716,8 +715,11 @@ export class AudiencePulseService implements AudiencePulsePort {
           await reservation.release();
         }
       } catch (error) {
-        // Releasing is accounting work, so surface failures while still cleaning up the lease.
+        // A usage reservation that cannot be released is a billing-integrity problem, so it
+        // deliberately wins over whatever error was already propagating: callers see the
+        // accounting failure. `audience_pulse_service.test.ts` pins this precedence.
         await this.recordOutcome(input, "internal", startedAt, {}).catch(() => undefined);
+        // eslint-disable-next-line no-unsafe-finally -- deliberate precedence, see above
         throw error;
       } finally {
         await lease.release().catch(() => undefined);

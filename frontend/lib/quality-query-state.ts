@@ -28,13 +28,13 @@ const normalizeActions = (actions: readonly QualityActionFilter[] | undefined) =
 /** One request-equivalent shape feeds both the transport and canonical key. */
 export const normalizeQualityTurnsRequest = (input: QualityTurnsRequest): QualityTurnsRequest => ({
   ...input,
-  signal: normalizeSet(typeof input.signal === 'string' ? [input.signal] : input.signal) as QualityTurnsRequest['signal'],
+  signal: normalizeSet(typeof input.signal === 'string' ? [input.signal] : input.signal),
   actions: normalizeActions(input.actions),
   statuses: normalizeSet(input.statuses),
   feedback: normalizeSet(input.feedback),
   triageStates: normalizeSet(input.triageStates),
   resolutionReasons: normalizeSet(input.resolutionReasons),
-  groundingVerdict: normalizeSet(typeof input.groundingVerdict === 'string' ? [input.groundingVerdict] : input.groundingVerdict) as QualityTurnsRequest['groundingVerdict'],
+  groundingVerdict: normalizeSet(typeof input.groundingVerdict === 'string' ? [input.groundingVerdict] : input.groundingVerdict),
   sort: input.sort === 'turn_created_at' ? undefined : input.sort,
   activeNegativeFeedbackOnly: input.activeNegativeFeedbackOnly || undefined,
   hasComment: input.hasComment || undefined,

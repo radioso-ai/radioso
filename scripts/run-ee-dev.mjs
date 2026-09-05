@@ -188,7 +188,6 @@ const main = async () => {
   }
 
   const backendDir = path.join(repoRoot, "backend");
-  const crawlerDir = path.join(repoRoot, "packages/crawler");
   const frontendDir = path.join(repoRoot, "frontend");
   const envPath = path.join(repoRoot, ".env");
   const enterpriseAuthFrontendPackage = path.join(eeRoot, "packages/auth-frontend");

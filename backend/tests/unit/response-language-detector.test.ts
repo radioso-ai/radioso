@@ -41,7 +41,7 @@ describe("response language detector", () => {
     });
 
     expect(result.responseLanguage).toBe("English");
-    const call = vi.mocked(model.complete).mock.calls[0]![0];
+    const call = vi.mocked(model.complete).mock.calls[0][0];
     expect(call.operation.operation).toBe("response_language_detection");
     expect(call.prompt).toContain("Please keep answering in English.");
     expect(call.prompt).toContain("Rispondi in italiano da ora in poi.");

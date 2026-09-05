@@ -489,12 +489,12 @@ function PublicChatCenteredIntro({
               </div>
             ) : (
               <AssistantMessageContent
-                content={greetingMessage!.content}
-                citations={greetingMessage!.citations}
-                answerSegments={greetingMessage!.answerSegments}
+                content={greetingMessage.content}
+                citations={greetingMessage.citations}
+                answerSegments={greetingMessage.answerSegments}
                 onOpenDocument={async () => 'unavailable'}
                 theme={theme}
-                isStreaming={greetingMessage!.status === 'streaming'}
+                isStreaming={greetingMessage.status === 'streaming'}
                 showCitations={citationDisplayEnabled}
                 documentInteractivity="link-only"
               />
@@ -690,7 +690,7 @@ function PublicChatContent({
   const handleKeyDown = (event: ReactKeyboardEvent) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault()
-      handleSubmit(event)
+      void handleSubmit(event)
     }
   }
 

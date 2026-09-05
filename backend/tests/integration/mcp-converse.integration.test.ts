@@ -162,7 +162,7 @@ describe("MCP converse session and ask flow", () => {
     expect(conversation).toBeDefined();
     const messages = await ctx.repositories.messageRepository.listByConversationId(
       agent.workspaceId,
-      conversation!.id,
+      conversation.id,
     );
     expect(messages.map(({ role, content }) => ({ role, content }))).toEqual([
       { role: "user", content: "first" },

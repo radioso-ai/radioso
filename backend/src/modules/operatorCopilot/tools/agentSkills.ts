@@ -1,7 +1,6 @@
 import { z } from "zod";
 
 import type {
-  CopilotAgentSkillProposalAdapter,
   CopilotToolDescriptor,
 } from "../contracts.js";
 import { boundPayload } from "../payloadCompaction.js";
@@ -132,7 +131,7 @@ export const createAgentSkillsCopilotTools = (deps: AgentSkillsCopilotToolDepend
             settings: declaredSettingsValues(skill.config, settingsFields),
           };
         });
-        return boundPayload({ skills, capabilities: capabilities.map(({ targets, available, ...capability }) => ({ ...capability, targetCount: targets.length, available, unavailableReason: available ? null : "no_connection" })) }) as z.infer<typeof outputSchema>;
+        return boundPayload({ skills, capabilities: capabilities.map(({ targets, available, ...capability }) => ({ ...capability, targetCount: targets.length, available, unavailableReason: available ? null : "no_connection" })) });
       },
     }),
     describeEntity: (input, context) => {

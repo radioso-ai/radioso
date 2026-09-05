@@ -35,12 +35,12 @@ const MALICIOUS_RETURN_TARGETS = [
 // can run all the way through to `federatedLogin`.
 const createSuccessfulFetch = (): typeof fetch =>
   vi.fn(async (input: string | URL | Request) => {
-    const url = String(input);
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     const body = url.includes("token")
       ? { access_token: "access-token" }
       : { sub: "google-sub", email: "person@example.com", email_verified: true, name: "Person" };
     return { ok: true, status: 200, json: async () => body } as unknown as Response;
-  }) as unknown as typeof fetch;
+  });
 
 // Extracts just the `name=value` pair from a Set-Cookie header entry so it
 // can be replayed on a follow-up request's Cookie header.
@@ -49,8 +49,13 @@ const cookiePair = (setCookieHeader: string[] | undefined, name: string): string
   if (!found) {
     throw new Error(`Expected a ${name} cookie in the response`);
   }
-  return found.split(";")[0]!;
+  return found.split(";")[0];
 };
+
+// `fetch`'s RequestInfo union includes `Request`, which has no meaningful `toString`;
+// read its `.url` explicitly instead of relying on base Object stringification.
+const toUrlString = (input: string | URL | Request): string =>
+  typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
 
 const federatedLoginResult = {
   userId: "user-1",
@@ -108,7 +113,7 @@ describe("google login routes", () => {
 
   it("completes the callback, issues a session cookie, and redirects to the app", async () => {
     const fetchImpl = vi.fn(async (input: string | URL | Request) => {
-      const url = String(input);
+      const url = toUrlString(input);
       const body = url.includes("token")
         ? { access_token: "access-token" }
         : { sub: "google-sub", email: "person@example.com", email_verified: true, name: "Person" };

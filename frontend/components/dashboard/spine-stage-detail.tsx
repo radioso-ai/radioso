@@ -12,7 +12,7 @@ import { spineStageLabel, spineStageTelemetry, type CapabilityLeafView } from '@
  */
 export interface ConversationMessageRecord {
   id?: string
-  role: 'user' | 'assistant' | 'system' | 'tool' | string
+  role: 'user' | 'assistant' | 'system' | 'tool' | (string & {})
   content: string
   createdAt?: string
 }
@@ -1078,8 +1078,8 @@ export function SpineStageDetail({
     case 'gather':
       return <GatherStageDetail stage={stage} ctx={ctx} />
     case 'directive_match':
-    // Routine turns trace co-composed directives under `directive_steering`; the
-    // payload is the same directive summary, so it renders through the same view.
+    // Routine turns trace co-composed directives under `directive_steering` with
+    // the same directive summary payload, so it falls through to the same view.
     case 'directive_steering':
       return <DirectiveMatchStageDetail stage={stage} ctx={ctx} />
     case 'skill_selection':

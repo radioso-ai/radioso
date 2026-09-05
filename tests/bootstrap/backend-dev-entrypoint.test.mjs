@@ -83,8 +83,8 @@ test("backend dev image stamps the install state it seeds into the Compose volum
 
 test("development Compose installs the complete workspace before runtime services start", async () => {
   const compose = await readFile(path.join(repoRoot, "docker-compose.dev.yml"), "utf8");
-  const dependencyService = compose.match(/  workspace-deps:\n[\s\S]*?(?=\n  backend:)/)?.[0] ?? "";
-  const backendService = compose.match(/  backend:\n[\s\S]*?(?=\n  backend-worker:)/)?.[0] ?? "";
+  const dependencyService = compose.match(/ {2}workspace-deps:\n[\s\S]*?(?=\n {2}backend:)/)?.[0] ?? "";
+  const backendService = compose.match(/ {2}backend:\n[\s\S]*?(?=\n {2}backend-worker:)/)?.[0] ?? "";
 
   assert.match(dependencyService, /pnpm install --force --frozen-lockfile/);
   assert.match(dependencyService, /backend-dev-install-state\.sh write/);

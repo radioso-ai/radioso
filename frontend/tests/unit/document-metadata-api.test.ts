@@ -58,7 +58,7 @@ describe('document metadata API adapters', () => {
     })
 
     const formData = formDataOf(fetchMock)
-    expect(JSON.parse(String(formData.get('metadata')))).toMatchObject({
+    expect(JSON.parse(formData.get('metadata') as string)).toMatchObject({
       region: 'emea',
       capacity: 42,
       archived: true,
@@ -86,7 +86,7 @@ describe('document metadata API adapters', () => {
 
     const formData = formDataOf(fetchMock)
     expect(formData.get('documentEnrichmentOverride')).toBe('off')
-    expect(JSON.parse(String(formData.get('metadata')))).toMatchObject({ region: 'emea' })
+    expect(JSON.parse(formData.get('metadata') as string)).toMatchObject({ region: 'emea' })
   })
 
   it('patches a document with the full replacement tag set', async () => {

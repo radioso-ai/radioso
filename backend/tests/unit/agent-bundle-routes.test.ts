@@ -499,7 +499,7 @@ describe("agent bundle routes", () => {
           allowedOrigins: ["https://example.com"],
         },
       },
-    } as never);
+    });
 
     const exported = await request(app)
       .get(`/api/v1/agents/${created.body.id}/bundle`)

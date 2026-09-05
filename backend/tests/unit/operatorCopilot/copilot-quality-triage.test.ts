@@ -25,18 +25,18 @@ const record = (overrides: Record<string, unknown> = {}) => ({
 
 const dependencies = (
   setTriageState: CopilotQualityTriagePort["setTriageState"] = vi.fn(async () => ({ kind: "updated" as const, record: record() })),
-): QualityTriageCopilotToolDependencies => ({
+): QualityTriageCopilotToolDependencies => (({
   auditService: { record: vi.fn(async () => undefined) },
   qualityTriageService: {
     triageStates: ["open", "acknowledged", "resolved", "dismissed"] as const,
     resolutionReasons: ["knowledge_gap", "retrieval_issue", "expected_behavior"] as const,
     setTriageState,
   },
-} as unknown as QualityTriageCopilotToolDependencies);
+}));
 
 const invoke = (deps: QualityTriageCopilotToolDependencies, input: Record<string, unknown>) => {
   const [descriptor] = createQualityTriageCopilotTools(deps);
-  return descriptor!.createTool(context).invoke(input as never, {} as never) as Promise<Record<string, unknown>>;
+  return descriptor.createTool(context).invoke(input, {} as never) as Promise<Record<string, unknown>>;
 };
 
 describe("set_triage_state", () => {
@@ -128,14 +128,14 @@ describe("set_triage_state", () => {
   it("accepts only the resolution vocabulary the quality module declares", () => {
     const [descriptor] = createQualityTriageCopilotTools(dependencies());
 
-    expect(descriptor!.inputSchema.safeParse({
+    expect(descriptor.inputSchema.safeParse({
       assistantMessageId: MESSAGE_ID,
       state: "resolved",
       expectedVersion: 1,
       resolution: { reason: "knowledge_gap" },
     }).success).toBe(true);
     // The vocabulary reaches the schema through the port, so the catalog never keeps its own copy.
-    expect(descriptor!.inputSchema.safeParse({
+    expect(descriptor.inputSchema.safeParse({
       assistantMessageId: MESSAGE_ID,
       state: "resolved",
       expectedVersion: 1,
@@ -148,7 +148,7 @@ describe("set_triage_state", () => {
 
     // Made optional with a zero default, every stale transition would win against an untriaged row
     // and no other test in this file would notice.
-    expect(descriptor!.inputSchema.safeParse({
+    expect(descriptor.inputSchema.safeParse({
       assistantMessageId: MESSAGE_ID,
       state: "acknowledged",
     }).success).toBe(false);
@@ -161,10 +161,10 @@ describe("set_triage_state", () => {
     (deps.qualityTriageService as { triageStates: readonly string[] }).triageStates = ["open", "escalated"];
     const [descriptor] = createQualityTriageCopilotTools(deps);
 
-    expect(descriptor!.inputSchema.safeParse({
+    expect(descriptor.inputSchema.safeParse({
       assistantMessageId: MESSAGE_ID, state: "escalated", expectedVersion: 1,
     }).success).toBe(true);
-    expect(descriptor!.inputSchema.safeParse({
+    expect(descriptor.inputSchema.safeParse({
       assistantMessageId: MESSAGE_ID, state: "acknowledged", expectedVersion: 1,
     }).success).toBe(false);
   });

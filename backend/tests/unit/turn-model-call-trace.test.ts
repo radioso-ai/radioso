@@ -82,7 +82,7 @@ describe("model call trace capture", () => {
       })),
     });
     const collector = createModelCallTraceCollector();
-    const result = await inference.stream({
+    const result = inference.stream({
       operation: {
         workspaceId: "workspace-1",
         surface: "assistant",

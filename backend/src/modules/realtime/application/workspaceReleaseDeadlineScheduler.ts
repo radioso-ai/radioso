@@ -74,9 +74,9 @@ export class WorkspaceReleaseDeadlineScheduler<T> {
     let index = this.heap.length - 1;
     while (index > 0) {
       const parent = Math.floor((index - 1) / 2);
-      if (this.heap[parent]!.dueAtMs <= value.dueAtMs) break;
+      if (this.heap[parent].dueAtMs <= value.dueAtMs) break;
       this.heap[index] = this.heap[parent]!;
-      this.indices.set(this.heap[index]!.key, index);
+      this.indices.set(this.heap[index].key, index);
       index = parent;
     }
     this.heap[index] = value;
@@ -96,9 +96,9 @@ export class WorkspaceReleaseDeadlineScheduler<T> {
   }
 
   private rebalance(index: number): void {
-    const value = this.heap[index]!;
+    const value = this.heap[index];
     const parent = Math.floor((index - 1) / 2);
-    if (index > 0 && this.heap[parent]!.dueAtMs > value.dueAtMs) {
+    if (index > 0 && this.heap[parent].dueAtMs > value.dueAtMs) {
       this.siftUp(index, value);
       return;
     }
@@ -108,9 +108,9 @@ export class WorkspaceReleaseDeadlineScheduler<T> {
   private siftUp(index: number, value: Deadline<T>): void {
     while (index > 0) {
       const parent = Math.floor((index - 1) / 2);
-      if (this.heap[parent]!.dueAtMs <= value.dueAtMs) break;
+      if (this.heap[parent].dueAtMs <= value.dueAtMs) break;
       this.heap[index] = this.heap[parent]!;
-      this.indices.set(this.heap[index]!.key, index);
+      this.indices.set(this.heap[index].key, index);
       index = parent;
     }
     this.heap[index] = value;
@@ -122,10 +122,10 @@ export class WorkspaceReleaseDeadlineScheduler<T> {
       const left = index * 2 + 1;
       const right = left + 1;
       if (left >= this.heap.length) break;
-      const child = right < this.heap.length && this.heap[right]!.dueAtMs < this.heap[left]!.dueAtMs ? right : left;
-      if (this.heap[child]!.dueAtMs >= value.dueAtMs) break;
+      const child = right < this.heap.length && this.heap[right].dueAtMs < this.heap[left].dueAtMs ? right : left;
+      if (this.heap[child].dueAtMs >= value.dueAtMs) break;
       this.heap[index] = this.heap[child]!;
-      this.indices.set(this.heap[index]!.key, index);
+      this.indices.set(this.heap[index].key, index);
       index = child;
     }
     this.heap[index] = value;

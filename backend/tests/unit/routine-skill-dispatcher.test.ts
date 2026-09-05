@@ -47,7 +47,7 @@ const routineState = (variables: Record<string, unknown>): RoutineState =>
 const turn = { agent: { id: "agent-1" }, stagedContext: [], sessionId: "session-1" } as unknown as TurnContext;
 
 const turnWithStagedContext = (stagedContext: StagedContext[]): TurnContext =>
-  ({ ...turn, stagedContext }) as TurnContext;
+  ({ ...turn, stagedContext });
 
 const settledExecutor = (
   outcome: SkillOutcome,

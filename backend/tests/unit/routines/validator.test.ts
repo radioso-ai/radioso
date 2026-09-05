@@ -121,7 +121,7 @@ describe("validateRoutineDefinition authoring catalog context", () => {
     }));
     const transitions = steps.slice(0, -1).map((step, index) => ({
       fromStep: step.stableStepId,
-      toRef: steps[index + 1]!.stableStepId,
+      toRef: steps[index + 1].stableStepId,
       guardKind: "default" as const,
       guardText: null,
       ordinal: index,
@@ -228,7 +228,7 @@ describe("validateRoutineDefinition authoring catalog context", () => {
     const result = validateRoutineDefinition({
       ...definitionWithTool("order.lookup"),
       steps: [{
-        ...definitionWithTool("order.lookup").steps[0]!,
+        ...definitionWithTool("order.lookup").steps[0],
         metadata: {
           inputBindings: {
             retryCount: { kind: "literal", value: "three" },
@@ -253,7 +253,7 @@ describe("validateRoutineDefinition authoring catalog context", () => {
     const result = validateRoutineDefinition({
       ...definitionWithTool("order.lookup"),
       steps: [{
-        ...definitionWithTool("order.lookup").steps[0]!,
+        ...definitionWithTool("order.lookup").steps[0],
         metadata: {
           inputBindings: {
             extra: { kind: "literal", value: "unused" },
@@ -276,7 +276,7 @@ describe("validateRoutineDefinition authoring catalog context", () => {
     const result = validateRoutineDefinition({
       ...definitionWithTool("order.lookup"),
       steps: [{
-        ...definitionWithTool("order.lookup").steps[0]!,
+        ...definitionWithTool("order.lookup").steps[0],
         metadata: {
           inputBindings: {
             orderId: { kind: "variableRef", ref: "typoVariable" },
@@ -301,7 +301,7 @@ describe("validateRoutineDefinition authoring catalog context", () => {
     const result = validateRoutineDefinition({
       ...definitionWithTool("order.lookup"),
       steps: [{
-        ...definitionWithTool("order.lookup").steps[0]!,
+        ...definitionWithTool("order.lookup").steps[0],
         metadata: {
           inputBindings: {
             orderId: { kind: "variableRef", ref: "typoVariable" },
@@ -326,7 +326,7 @@ describe("validateRoutineDefinition authoring catalog context", () => {
     const result = validateRoutineDefinition({
       ...definitionWithTool("order.lookup"),
       steps: [{
-        ...definitionWithTool("order.lookup").steps[0]!,
+        ...definitionWithTool("order.lookup").steps[0],
         metadata: {
           inputBindings: {
             cart: { kind: "contextVariableRef", contextVariable: "missing_cart" },
@@ -350,7 +350,7 @@ describe("validateRoutineDefinition authoring catalog context", () => {
     const result = validateRoutineDefinition({
       ...definitionWithTool("order.lookup"),
       steps: [{
-        ...definitionWithTool("order.lookup").steps[0]!,
+        ...definitionWithTool("order.lookup").steps[0],
         metadata: {
           inputBindings: {
             cart: { kind: "contextVariableRef", contextVariable: "cart" },
@@ -370,7 +370,7 @@ describe("validateRoutineDefinition authoring catalog context", () => {
     const result = validateRoutineDefinition({
       ...definitionWithTool("order.lookup"),
       steps: [{
-        ...definitionWithTool("order.lookup").steps[0]!,
+        ...definitionWithTool("order.lookup").steps[0],
         metadata: {
           inputBindings: {
             jsonToString: { kind: "contextVariableRef", contextVariable: "cart" },
@@ -403,7 +403,7 @@ describe("validateRoutineDefinition authoring catalog context", () => {
     const result = validateRoutineDefinition({
       ...definitionWithTool("order.lookup"),
       steps: [{
-        ...definitionWithTool("order.lookup").steps[0]!,
+        ...definitionWithTool("order.lookup").steps[0],
         metadata: {
           inputBindings: {
             cart: { kind: "contextVariableRef", contextVariable: "cart" },

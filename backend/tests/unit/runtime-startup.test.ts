@@ -560,7 +560,7 @@ describe("runtime startup", () => {
           "utf8",
         );
         const startedKeys = new Set(
-          [...runtimeSource.matchAll(/dependencies\.(\w+)\??\.start\(/g)].map((match) => match[1]!),
+          [...runtimeSource.matchAll(/dependencies\.(\w+)\??\.start\(/g)].map((match) => match[1]),
         );
         expect(startedKeys.size).toBeGreaterThan(0);
 

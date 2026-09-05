@@ -159,7 +159,7 @@ export function OrganizationDetailPage({ accountId }: { accountId: string }) {
                     Warn only: selected tier is below current usage for {overLimitResources.map((key) => resourceLabels[key]).join(", ")}.
                   </div>
                 ) : null}
-                <Button onClick={changeTier} disabled={saving || targetTier === (usage.profile?.key ?? "")}>
+                <Button onClick={() => { void changeTier(); }} disabled={saving || targetTier === (usage.profile?.key ?? "")}>
                   Change tier
                 </Button>
               </div>

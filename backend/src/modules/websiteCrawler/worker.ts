@@ -143,17 +143,19 @@ export class WebsiteCrawlWorker {
     if (!this.running) {
       return;
     }
-    this.timer = setTimeout(async () => {
-      try {
-        const processed = await this.runOnce();
-        this.scheduleNextTick(processed ? 0 : this.dependencies.pollIntervalMs ?? 5_000);
-      } catch (error) {
-        this.dependencies.logger.error(
-          { role: "website-crawl-worker", error: error instanceof Error ? error.message : String(error) },
-          "Website crawl worker tick failed",
-        );
-        this.scheduleNextTick();
-      }
+    this.timer = setTimeout(() => {
+      void (async () => {
+        try {
+          const processed = await this.runOnce();
+          this.scheduleNextTick(processed ? 0 : this.dependencies.pollIntervalMs ?? 5_000);
+        } catch (error) {
+          this.dependencies.logger.error(
+            { role: "website-crawl-worker", error: error instanceof Error ? error.message : String(error) },
+            "Website crawl worker tick failed",
+          );
+          this.scheduleNextTick();
+        }
+      })();
     }, delayMs);
   }
 
@@ -386,24 +388,26 @@ export class WebsiteCrawlWorker {
     job: WebsiteCrawlJobRecord,
     cancel: () => void,
   ): NodeJS.Timeout {
-    const timer = setInterval(async () => {
-      try {
-        const current = await this.dependencies.repository.findById(job.id);
-        if (
-          !current
-          || current.workspaceId !== job.workspaceId
-          || current.status !== "processing"
-          || !current.claimedAt
-          || current.attemptCount !== job.attemptCount
-        ) {
-          cancel();
+    const timer = setInterval(() => {
+      void (async () => {
+        try {
+          const current = await this.dependencies.repository.findById(job.id);
+          if (
+            !current
+            || current.workspaceId !== job.workspaceId
+            || current.status !== "processing"
+            || !current.claimedAt
+            || current.attemptCount !== job.attemptCount
+          ) {
+            cancel();
+          }
+        } catch (error) {
+          this.dependencies.logger.warn(
+            { role: "website-crawl-worker", jobId: job.id, error: error instanceof Error ? error.message : String(error) },
+            "Failed to check website crawl job cancellation state",
+          );
         }
-      } catch (error) {
-        this.dependencies.logger.warn(
-          { role: "website-crawl-worker", jobId: job.id, error: error instanceof Error ? error.message : String(error) },
-          "Failed to check website crawl job cancellation state",
-        );
-      }
+      })();
     }, this.dependencies.cancellationPollMs ?? 1_000);
     timer.unref?.();
     return timer;

@@ -83,7 +83,7 @@ describe("ServiceAccountService", () => {
       },
     });
     const service = new ServiceAccountService({
-      repository: observedRepository as never,
+      repository: observedRepository,
       accountAccess: { requirePermission: async () => undefined, resolveWorkspaceRole: async () => "admin" } as never,
       audit,
       now: () => now,

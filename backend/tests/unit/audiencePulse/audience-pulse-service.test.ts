@@ -180,12 +180,12 @@ const createService = (overrides: Partial<AudiencePulseServiceDependencies> = {}
 describe("AudiencePulseService", () => {
   it("weights shown exemplars toward eligible questions from distinct conversations", () => {
     const evidenceById = new Map([
-      ["evidence-1", { ...history().evidence[0]!, id: "evidence-1", reference: { messageId: "message-1", conversationId: "conversation-1" }, contentGapEligible: true }],
-      ["evidence-2", { ...history().evidence[1]!, id: "evidence-2", contentGapEligible: false }],
-      ["evidence-3", { ...history().evidence[0]!, id: "evidence-3", reference: { messageId: "message-3", conversationId: "conversation-1" }, contentGapEligible: true }],
-      ["evidence-4", { ...history().evidence[0]!, id: "evidence-4", reference: { messageId: "message-4", conversationId: "conversation-2" }, contentGapEligible: true }],
-      ["evidence-5", { ...history().evidence[0]!, id: "evidence-5", reference: { messageId: "message-5", conversationId: "conversation-3" }, contentGapEligible: true }],
-      ["evidence-6", { ...history().evidence[1]!, id: "evidence-6", reference: { messageId: "message-6", conversationId: "conversation-4" }, contentGapEligible: false }],
+      ["evidence-1", { ...history().evidence[0], id: "evidence-1", reference: { messageId: "message-1", conversationId: "conversation-1" }, contentGapEligible: true }],
+      ["evidence-2", { ...history().evidence[1], id: "evidence-2", contentGapEligible: false }],
+      ["evidence-3", { ...history().evidence[0], id: "evidence-3", reference: { messageId: "message-3", conversationId: "conversation-1" }, contentGapEligible: true }],
+      ["evidence-4", { ...history().evidence[0], id: "evidence-4", reference: { messageId: "message-4", conversationId: "conversation-2" }, contentGapEligible: true }],
+      ["evidence-5", { ...history().evidence[0], id: "evidence-5", reference: { messageId: "message-5", conversationId: "conversation-3" }, contentGapEligible: true }],
+      ["evidence-6", { ...history().evidence[1], id: "evidence-6", reference: { messageId: "message-6", conversationId: "conversation-4" }, contentGapEligible: false }],
     ]);
 
     const { shown } = buildSummaryTopics({
@@ -726,7 +726,7 @@ describe("AudiencePulseService", () => {
             populationSize: topicEvidence.length,
             facetReadyQuestionCount: topicEvidence.length,
             topics: [{
-              ...censusResult().topics[0]!,
+              ...censusResult().topics[0],
               memberIds: topicEvidence.map((item) => item.id),
               memberCount: topicEvidence.length,
               share: 1,
@@ -767,7 +767,7 @@ describe("AudiencePulseService", () => {
     expect(result.kind).toBe("completed");
     if (result.kind !== "completed") throw new Error("expected a completed refresh");
     expect(result.report.themes[0]).toMatchObject({ memberCount: 20, share: 1 });
-    expect(result.report.themes[0]!.evidence).toHaveLength(12);
+    expect(result.report.themes[0].evidence).toHaveLength(12);
     expect(savedRefs).toHaveLength(12);
     expect(savedRefs?.map((ref) => ref.evidenceId)).not.toContain("evidence-20");
   });
@@ -1065,7 +1065,7 @@ describe("AudiencePulseService", () => {
 
     const usageLimited = createService({
       usageLimitPolicy: {
-        async reserveAnswer() { throw { code: "usage_limit_exceeded" }; },
+        async reserveAnswer() { throw Object.assign(new Error("Usage limit exceeded"), { code: "usage_limit_exceeded" }); },
         async reserveDocument() { throw new Error("not used"); },
         async reserveIndexedStorage() { throw new Error("not used"); },
         async reserveMonthlyIndexedContent() { throw new Error("not used"); },

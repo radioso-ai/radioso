@@ -26,7 +26,7 @@ const exemplarsFor = (prototypicalCount: number, peripheralCount: number, text =
 const payloadFrom = (prompt: string): { prototypical: string[]; peripheral: string[] } => {
   const match = prompt.match(/<topic-naming-input>\n([\s\S]*)\n<\/topic-naming-input>$/);
   if (!match) throw new Error("prompt did not contain a topic-naming-input envelope");
-  return JSON.parse(match[1]!);
+  return JSON.parse(match[1]);
 };
 
 describe("Topic naming: response schema (T021)", () => {

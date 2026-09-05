@@ -58,7 +58,9 @@ export const useConversationTail = ({
     }
 
     const scheduleNextPoll = () => {
-      timeoutId = setTimeout(poll, intervalMs)
+      timeoutId = setTimeout(() => {
+        void poll()
+      }, intervalMs)
     }
 
     const poll = async () => {

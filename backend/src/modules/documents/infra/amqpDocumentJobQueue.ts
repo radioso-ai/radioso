@@ -43,7 +43,7 @@ const assertQueuesWithDlq = async (
   await channel.assertQueue(queueName, buildMainQueueOptions(deadLetterQueueName));
 };
 
-export interface AmqpDocumentJobDispatcherOptions extends AmqpDocumentJobQueueOptions {}
+export type AmqpDocumentJobDispatcherOptions = AmqpDocumentJobQueueOptions;
 
 export class AmqpDocumentJobDispatcher implements DocumentJobDispatcherPort {
   private readonly connect: AmqpConnect;
@@ -208,9 +208,12 @@ export class AmqpDocumentJobConsumer implements DocumentJobConsumerPort {
       this.bindLifecycleHandlers(connection, channel);
       await assertQueuesWithDlq(channel, this.options.queueName, this.options.deadLetterQueueName);
       await channel.prefetch(this.options.prefetch ?? 1);
+      // amqplib's consume callback type is void-returning, but returning the in-flight promise
+      // below is intentional: it lets tests (and any future caller) await message handling
+      // directly instead of only observing it via the internal `inFlight` set.
+      // eslint-disable-next-line @typescript-eslint/no-misused-promises -- see comment above
       const consumer = await channel.consume(this.options.queueName, (message) => {
-        let processing: Promise<void>;
-        processing = this.handleMessage(channel!, message)
+        const processing: Promise<void> = this.handleMessage(channel!, message)
           .catch((error) => {
             this.options.logger.error(
               {

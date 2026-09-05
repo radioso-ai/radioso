@@ -153,7 +153,7 @@ describe("Topic label privacy audit: resolution flow (T021a)", () => {
       telemetryService,
     });
 
-    const [payload] = telemetryService.emit.mock.calls[0]!;
+    const [payload] = telemetryService.emit.mock.calls[0];
     const serialized = JSON.stringify(payload);
     expect(serialized).not.toContain(candidate.title);
     expect(serialized).not.toContain(candidate.description);

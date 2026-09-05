@@ -32,8 +32,8 @@ const buildContingencyTable = (
   const referenceTotals = new Map<string, number>();
 
   for (let index = 0; index < predicted.length; index += 1) {
-    const predictedLabel = predicted[index]!;
-    const referenceLabel = reference[index]!;
+    const predictedLabel = predicted[index];
+    const referenceLabel = reference[index];
     const row = joint.get(predictedLabel) ?? new Map<string, number>();
     row.set(referenceLabel, (row.get(referenceLabel) ?? 0) + 1);
     joint.set(predictedLabel, row);

@@ -137,7 +137,9 @@ export const isDashboardQueryFamily = (
 }
 
 export const isDashboardQueryKey = (key: DashboardQueryKey, workspaceId: string) => {
-  const family = `${key[2]}/${key[3]}` as DashboardQueryFamily
+  const [area, variant] = [key[2], key[3]]
+  if (typeof area !== 'string' || typeof variant !== 'string') return false
+  const family = `${area}/${variant}` as DashboardQueryFamily
   return knownFamilies.has(family) && isDashboardQueryFamily(key, workspaceId, family)
 }
 

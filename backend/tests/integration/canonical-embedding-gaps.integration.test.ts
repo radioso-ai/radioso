@@ -14,7 +14,7 @@ const { describeIntegration, integrationDatabaseUrl } = await resolveIntegration
 // before running the one-time backfill.
 
 describeIntegration("canonical embedding coverage gaps (Postgres)", () => {
-  const database = new Database(integrationDatabaseUrl as string);
+  const database = new Database(integrationDatabaseUrl);
   const repository = new DocumentProcessingJobRepository(database.kysely);
 
   const accountId = randomUUID();

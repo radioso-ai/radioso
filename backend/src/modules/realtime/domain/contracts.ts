@@ -1,6 +1,6 @@
-import type { WorkspaceInvalidationEnvelope, WorkspaceInvalidationKind, WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
+import type { WorkspaceInvalidationEnvelope, WorkspaceInvalidationKind } from "@radioso/workspace-invalidation-contract";
 
-export type { WorkspaceInvalidationKind, WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
+export type { WorkspaceInvalidationKind } from "@radioso/workspace-invalidation-contract";
 
 export interface WorkspaceInvalidationTransport {
   publish(envelope: WorkspaceInvalidationEnvelope, options: { signal: AbortSignal }): Promise<void>;

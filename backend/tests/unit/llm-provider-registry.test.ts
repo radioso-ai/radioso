@@ -341,7 +341,7 @@ describe("LlmProviderRegistry", () => {
     vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
       requests.push({
         url,
-        body: JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>,
+        body: JSON.parse((init?.body as string | undefined) ?? "{}") as Record<string, unknown>,
         signal: init?.signal,
       });
       return Response.json({
@@ -386,7 +386,7 @@ describe("LlmProviderRegistry", () => {
     });
     let requestBody: Record<string, unknown> | undefined;
     vi.stubGlobal("fetch", async (_url: string, init?: RequestInit) => {
-      requestBody = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      requestBody = JSON.parse((init?.body as string | undefined) ?? "{}") as Record<string, unknown>;
       return Response.json({
         embedding: {
           values: [2, ...new Array(1535).fill(0)],
@@ -448,7 +448,7 @@ describe("LlmProviderRegistry", () => {
     vi.stubGlobal("fetch", async (input: string | URL | Request, init?: RequestInit) => {
       requests.push({
         url: input instanceof Request ? input.url : String(input),
-        body: JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>,
+        body: JSON.parse((init?.body as string | undefined) ?? "{}") as Record<string, unknown>,
       });
       return Response.json({
         data: [{
@@ -518,7 +518,7 @@ describe("LlmProviderRegistry", () => {
     });
     let requestBody: Record<string, unknown> | undefined;
     vi.stubGlobal("fetch", async (_url: string, init?: RequestInit) => {
-      requestBody = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      requestBody = JSON.parse((init?.body as string | undefined) ?? "{}") as Record<string, unknown>;
       return Response.json({
         embedding: {
           values: [2, ...new Array(1535).fill(0)],
@@ -728,7 +728,7 @@ describe("LlmProviderRegistry", () => {
     });
     let requestBody: Record<string, unknown> | undefined;
     vi.stubGlobal("fetch", async (_url: string, init?: RequestInit) => {
-      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      requestBody = JSON.parse(init?.body as string) as Record<string, unknown>;
       return Response.json({
         embedding: { values: [1, ...new Array(3071).fill(0)] },
       });

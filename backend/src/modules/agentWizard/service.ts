@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { ModelCallUsageContext } from "../../shared/domain/modelCallUsageContext.js";
 import { normalizeLocaleTag } from "../../shared/domain/locale.js";
 import { renderPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
+import { stringifyUnknown } from "../../shared/text/stringifyUnknown.js";
 
 export interface AgentWizardAgentServicePort {
   create(workspaceId: string, input: {
@@ -240,7 +241,7 @@ const classifyFetchError = (error: unknown): AgentWizardError => {
   const code = typeof (error as { code?: unknown })?.code === "string"
     ? (error as { code: string }).code
     : "";
-  const message = error instanceof Error ? error.message : String(error ?? "");
+  const message = error instanceof Error ? error.message : stringifyUnknown(error);
   const normalized = `${code} ${message}`.toLowerCase();
 
   if (statusCode === 401 || statusCode === 403 || normalized.includes("401") || normalized.includes("403")) {

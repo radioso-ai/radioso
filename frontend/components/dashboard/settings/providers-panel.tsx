@@ -807,7 +807,7 @@ function EmbeddingModelRow({
   }
 
   const handleModelChange = (nextModel: string) => {
-    const typed = nextModel as IngestionSettings['embeddingModel']
+    const typed = nextModel
     setModel(typed)
     setDialogError(null)
     openConfirmation(typed)

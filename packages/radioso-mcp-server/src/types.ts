@@ -1,4 +1,4 @@
-import type { ServerContext } from "@modelcontextprotocol/server";
+import type { ServerContext, StandardSchemaWithJSON } from "@modelcontextprotocol/server";
 
 import type { ConverseApiAdapter } from "./converseApiAdapter.js";
 
@@ -28,6 +28,6 @@ export interface ToolExecutionContext {
 export interface ToolDefinition<TArgs = Record<string, unknown>> {
   name: string;
   description: string;
-  inputSchema: any;
+  inputSchema: StandardSchemaWithJSON;
   execute: (args: TArgs, context: ToolExecutionContext) => Promise<ToolExecutionResult>;
 }

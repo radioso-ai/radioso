@@ -202,7 +202,7 @@ export class VectorIndexWorkRepository implements VectorIndexWorkRepositoryPort 
       const order = new Map(rows.map((row, index) => [row.id, index]));
       return claimed
         .sort((left, right) => order.get(left.id)! - order.get(right.id)!)
-        .map((row) => mapVectorIndexWork(row as VectorIndexWorkRow));
+        .map((row) => mapVectorIndexWork(row));
     });
   }
 
@@ -265,7 +265,7 @@ export class VectorIndexWorkRepository implements VectorIndexWorkRepositoryPort 
           disposition: "superseded",
           checkpoint: await completeWorkAndAdvanceCheckpoint(
             trx,
-            work as VectorIndexWorkRow,
+            work,
             {
               backendKey: input.backendKey,
               caughtUpReadiness: input.caughtUpReadiness,
@@ -321,7 +321,7 @@ export class VectorIndexWorkRepository implements VectorIndexWorkRepositoryPort 
       if (work.status !== "processing" && work.status !== "completed") {
         throw new Error("Vector index work cannot be acknowledged from its current state");
       }
-      return completeWorkAndAdvanceCheckpoint(trx, work as VectorIndexWorkRow, {
+      return completeWorkAndAdvanceCheckpoint(trx, work, {
         backendKey: input.backendKey,
         caughtUpReadiness: input.caughtUpReadiness,
       });
@@ -370,7 +370,7 @@ export class VectorIndexWorkRepository implements VectorIndexWorkRepositoryPort 
       if (!superseding) {
         return null;
       }
-      return completeWorkAndAdvanceCheckpoint(trx, work as VectorIndexWorkRow, {
+      return completeWorkAndAdvanceCheckpoint(trx, work, {
         backendKey: input.backendKey,
         caughtUpReadiness: input.caughtUpReadiness,
       });
@@ -435,7 +435,7 @@ export class VectorIndexWorkRepository implements VectorIndexWorkRepositoryPort 
             .returning(vectorIndexCheckpointColumns)
             .executeTakeFirstOrThrow();
 
-      return mapCheckpoint(row as VectorIndexCheckpointRow);
+      return mapCheckpoint(row);
     });
   }
 
@@ -462,7 +462,7 @@ export class VectorIndexWorkRepository implements VectorIndexWorkRepositoryPort 
       .returning(vectorIndexCheckpointColumns)
       .executeTakeFirst();
     if (inserted) {
-      return mapCheckpoint(inserted as VectorIndexCheckpointRow);
+      return mapCheckpoint(inserted);
     }
 
     const existing = await this.findCheckpoint(input);
@@ -484,7 +484,7 @@ export class VectorIndexWorkRepository implements VectorIndexWorkRepositoryPort 
       .where("workspace_id", "=", input.workspaceId)
       .where("embedding_space_id", "=", input.embeddingSpaceId)
       .executeTakeFirst();
-    return row ? mapCheckpoint(row as VectorIndexCheckpointRow) : null;
+    return row ? mapCheckpoint(row) : null;
   }
 
   async getLag(input: {
@@ -643,7 +643,7 @@ const completeWorkAndAdvanceCheckpoint = async (
       }))
     .returning(vectorIndexCheckpointColumns)
     .executeTakeFirstOrThrow();
-  return mapCheckpoint(checkpoint as VectorIndexCheckpointRow);
+  return mapCheckpoint(checkpoint);
 };
 
 export const appendVectorIndexWorkInTransaction = async (
@@ -679,7 +679,7 @@ export const appendVectorIndexWorkInTransaction = async (
 
   if (latest && BigInt(latest.canonical_version) >= BigInt(input.canonicalVersion)) {
     return {
-      work: mapVectorIndexWork(latest as VectorIndexWorkRow),
+      work: mapVectorIndexWork(latest),
       accepted: false,
     };
   }
@@ -698,10 +698,10 @@ export const appendVectorIndexWorkInTransaction = async (
     })
     .returning(vectorIndexWorkColumns)
     .executeTakeFirstOrThrow();
-  await retireOlderDeadLetterWork(db, row as VectorIndexWorkRow);
+  await retireOlderDeadLetterWork(db, row);
 
   return {
-    work: mapVectorIndexWork(row as VectorIndexWorkRow),
+    work: mapVectorIndexWork(row),
     accepted: true,
   };
 };
@@ -795,7 +795,7 @@ export const appendVectorFilterUpdatesForDocument = async (
         distanceMetric: row.distance_metric,
         vector: parseVectorLiteral(row.embedding),
         sourceId: row.source_id,
-        metadata: (row.metadata ?? {}) as Record<string, unknown>,
+        metadata: (row.metadata ?? {}),
         retrievalEnabled: row.retrieval_enabled,
         retrievalExpiresAt: row.retrieval_expires_at
           ? new Date(row.retrieval_expires_at).toISOString()

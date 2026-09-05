@@ -6,6 +6,7 @@ import {
 import type { StaffSessionRepository } from "./staffSessionRepository.js";
 import type { StaffUserRepository } from "./staffRepository.js";
 import type { StaffUser } from "./staffTypes.js";
+import { HttpError } from "../shared/httpError.js";
 
 const DEFAULT_STAFF_SESSION_TTL_HOURS = 8;
 
@@ -25,10 +26,10 @@ export class StaffAuthService {
   async login(input: { email: string; password: string }): Promise<StaffAuthResult> {
     const staff = await this.users.findByEmail(input.email);
     if (!staff || !(await verifyStaffPassword(input.password, staff.passwordHash))) {
-      throw { statusCode: 401, code: "unauthorized", message: "Unauthorized" };
+      throw new HttpError(401, "unauthorized", "Unauthorized");
     }
     if (staff.status !== "active") {
-      throw { statusCode: 403, code: "forbidden", message: "Staff user is disabled." };
+      throw new HttpError(403, "forbidden", "Staff user is disabled.");
     }
 
     const sessionToken = generateStaffSessionToken();
@@ -47,12 +48,12 @@ export class StaffAuthService {
     const tokenHash = hashStaffSessionToken(sessionToken);
     const session = await this.sessions.findActiveByTokenHash(tokenHash);
     if (!session) {
-      throw { statusCode: 401, code: "unauthorized", message: "Unauthorized" };
+      throw new HttpError(401, "unauthorized", "Unauthorized");
     }
 
     const staff = await this.users.findById(session.staffId);
     if (!staff || staff.status !== "active") {
-      throw { statusCode: 401, code: "unauthorized", message: "Unauthorized" };
+      throw new HttpError(401, "unauthorized", "Unauthorized");
     }
 
     await this.sessions.touch(tokenHash);

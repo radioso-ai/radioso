@@ -2,6 +2,7 @@ import { Router, type RequestHandler } from "express";
 import { z } from "zod";
 
 import type { ApplicationRouteMount, UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
+import { HttpError } from "../shared/httpError.js";
 import { EnterpriseOrganizationCreationGuard } from "../orgCreation/organizationCreationGuard.js";
 import { EnterpriseUsageLimitService, normalizePeriodStart } from "./usageLimitService.js";
 
@@ -41,12 +42,7 @@ const parseRequest = <T>(schema: z.ZodType<T>, value: unknown, message: string):
     return parsed.data;
   }
 
-  throw {
-    statusCode: 400,
-    code: "bad_request",
-    message,
-    details: parsed.error.flatten(),
-  };
+  throw new HttpError(400, "bad_request", message, parsed.error.flatten());
 };
 
 const requireAdminToken = (
@@ -94,11 +90,7 @@ const requireAccountSession = (dependencies: RouteDependencies): RequestHandler 
     try {
       const sessionToken = req.cookies?.[dependencies.env.SESSION_COOKIE_NAME];
       if (typeof sessionToken !== "string" || !sessionToken) {
-        throw {
-          statusCode: 401,
-          code: "unauthorized",
-          message: "Unauthorized",
-        };
+        throw new HttpError(401, "unauthorized", "Unauthorized");
       }
 
       const session = await dependencies.authService.authenticateSession(sessionToken);

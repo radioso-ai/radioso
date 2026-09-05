@@ -50,7 +50,7 @@ describe("realtime producer mutation isolation", () => {
         upload: vi.fn(),
         read: vi.fn(),
         delete: vi.fn(),
-      } as never,
+      },
       { record: auditRecord } as never,
       undefined,
       composition.publisher,

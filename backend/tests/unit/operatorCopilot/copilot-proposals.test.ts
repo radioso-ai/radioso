@@ -402,7 +402,7 @@ describe("US3 copilot proposals", () => {
       pageContext: { view: "agent" as const, agentId, conversationId: null, selection: null, entities: [] },
     };
 
-    await expect(descriptor!.createTool(context).invoke({ intent: "Do not recommend competitors" }, {} as never))
+    await expect(descriptor.createTool(context).invoke({ intent: "Do not recommend competitors" }, {} as never))
       .rejects.toThrow(/authorization/i);
 
     expect(draft).toHaveBeenCalledOnce();
@@ -424,7 +424,7 @@ describe("US3 copilot proposals", () => {
       .mockResolvedValueOnce(true)
       .mockResolvedValueOnce(false);
 
-    await expect(descriptor!.createTool({
+    await expect(descriptor.createTool({
       workspaceId,
       accountId,
       operatorUserId,
@@ -648,7 +648,7 @@ class MemoryProposalRepository implements CopilotRepositoryPort {
   async createProposal(input: Omit<CopilotProposal, "id" | "messageId" | "status" | "appliedRef" | "createdAt" | "updatedAt">): Promise<CopilotProposal> { const createdAt = new Date(); const proposal = { ...input, id: randomUUID(), messageId: null, status: "pending" as const, reason: null, appliedRef: null, createdAt, updatedAt: createdAt }; this.proposals.push(proposal); return proposal; }
   async findProposal(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null> { return this.proposals.find((item) => item.id === input.id && item.workspaceId === input.workspaceId && item.operatorUserId === input.operatorUserId) ?? null; }
   async attachProposalsToMessage(input: { proposalIds: ReadonlyArray<string>; messageId: string; conversationId: string }): Promise<void> { this.proposals = this.proposals.map((proposal) => input.proposalIds.includes(proposal.id) && proposal.conversationId === input.conversationId ? { ...proposal, messageId: input.messageId } : proposal); }
-  async updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposal["status"]; appliedRef?: unknown | null; reason?: string | null; applyClaimGuard: CopilotProposalApplyClaimGuard }): Promise<CopilotProposal | null> {
+  async updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposal["status"]; appliedRef?: unknown; reason?: string | null; applyClaimGuard: CopilotProposalApplyClaimGuard }): Promise<CopilotProposal | null> {
     const proposal = await this.findProposal(input);
     if (!proposal || proposal.status !== "pending") return null;
     if (!this.satisfiesClaimGuard(proposal.id, input.applyClaimGuard)) return null;
@@ -686,7 +686,7 @@ class MemoryProposalRepository implements CopilotRepositoryPort {
   }
 }
 
-const presentProposal = (proposal: CopilotProposal) => ({ id: proposal.id, targetType: proposal.targetType, targetLabel: proposal.targetType === "directive" || proposal.targetType === "routine" ? String((proposal.payload as { name?: unknown }).name ?? "Routine") : String((proposal.targetRef as { settingKey: string }).settingKey), summary: proposal.targetType === "directive" ? "Draft directive" : proposal.targetType === "routine" ? "Draft routine" : "Draft setting change", status: proposal.status, reason: proposal.reason ?? null });
+const presentProposal = (proposal: CopilotProposal) => ({ id: proposal.id, targetType: proposal.targetType, targetLabel: proposal.targetType === "directive" || proposal.targetType === "routine" ? ((proposal.payload as { name?: string }).name ?? "Routine") : String((proposal.targetRef as { settingKey: string }).settingKey), summary: proposal.targetType === "directive" ? "Draft directive" : proposal.targetType === "routine" ? "Draft routine" : "Draft setting change", status: proposal.status, reason: proposal.reason ?? null });
 
 describe("directive proposal adapter payload mapping", () => {
   it("strips draft-only presentation fields before calling directive management", async () => {
@@ -694,7 +694,7 @@ describe("directive proposal adapter payload mapping", () => {
     const create = vi.fn(async () => ({ directive: { id: "directive-1" }, coherence: null }));
     const adapter = createDirectiveCopilotProposalAdapter({
       authoredDirectiveService: { list: vi.fn(async () => []), create, update: vi.fn() } as never,
-      directiveAuthorService: { draft: vi.fn() } as never,
+      directiveAuthorService: { draft: vi.fn() },
       agentService: { get: vi.fn(async () => ({ updatedAt: new Date(0) })) } as never,
     });
 
@@ -727,7 +727,7 @@ describe("directive proposal adapter payload mapping", () => {
     const deleteDirective = vi.fn();
     const adapter = createDirectiveCopilotProposalAdapter({
       authoredDirectiveService: { list: vi.fn(async () => [existing]), create: vi.fn(), update, delete: deleteDirective } as never,
-      directiveAuthorService: { draft: vi.fn() } as never,
+      directiveAuthorService: { draft: vi.fn() },
       agentService: { get: vi.fn(async () => ({ updatedAt: new Date(0) })) } as never,
     });
 
@@ -754,8 +754,8 @@ describe("directive proposal adapter payload mapping", () => {
       }
     });
     const adapter = createDirectiveCopilotProposalAdapter({
-      authoredDirectiveService: { list: vi.fn(async () => []), create: vi.fn(), update: vi.fn(), delete: deleteDirective } as never,
-      directiveAuthorService: { draft: vi.fn() } as never,
+      authoredDirectiveService: { list: vi.fn(async () => []), create: vi.fn(), update: vi.fn(), delete: deleteDirective },
+      directiveAuthorService: { draft: vi.fn() },
       agentService: { get: vi.fn(async () => ({ updatedAt: currentUpdatedAt })) } as never,
     });
     const targetRef = { agentId: "6a6a6a6a-1111-2222-3333-444444444444", directiveId: "6a6a6a6a-1111-2222-3333-444444444445" };
@@ -773,8 +773,8 @@ describe("directive proposal adapter payload mapping", () => {
     const existing = { id: "6a6a6a6a-1111-2222-3333-444444444445", agentId: "6a6a6a6a-1111-2222-3333-444444444444", name: "Avoid competitors", condition: { kind: "always" }, action: "Say nothing about rivals.", priority: null, requiredCapabilities: [], dependsOn: [], excludes: [], routes: [], tags: [], description: null, binding: null, lifecycle: null, metadata: {}, createdAt: new Date(0), updatedAt: new Date(0) };
     const adapter = createDirectiveCopilotProposalAdapter({
       authoredDirectiveService: { list: vi.fn(async () => [existing]), create: vi.fn(), update: vi.fn(), delete: vi.fn() } as never,
-      directiveAuthorService: { draft: vi.fn() } as never,
-      agentService: { get: vi.fn() } as never,
+      directiveAuthorService: { draft: vi.fn() },
+      agentService: { get: vi.fn() },
     });
 
     const preview = await adapter.preview("workspace-1", { agentId: "6a6a6a6a-1111-2222-3333-444444444444", directiveId: "6a6a6a6a-1111-2222-3333-444444444445" }, { op: "remove" });
@@ -799,8 +799,8 @@ describe("directive proposal adapter payload mapping", () => {
     const update = vi.fn(async () => ({ directive: { ...existing, enabled: false }, coherence: null }));
     const adapter = createDirectiveCopilotProposalAdapter({
       authoredDirectiveService: { list: vi.fn(async () => [existing]), create: vi.fn(), update, delete: vi.fn() } as never,
-      directiveAuthorService: { draft: vi.fn() } as never,
-      agentService: { get: vi.fn() } as never,
+      directiveAuthorService: { draft: vi.fn() },
+      agentService: { get: vi.fn() },
     });
     const targetRef = { agentId: existing.agentId, directiveId: existing.id };
 
@@ -817,9 +817,9 @@ describe("directive proposal adapter payload mapping", () => {
   it("previews a set_enabled proposal for a deleted directive as a stale notice", async () => {
     const { createDirectiveCopilotProposalAdapter } = await import("../../../src/modules/operatorCopilot/proposalAdapters.js");
     const adapter = createDirectiveCopilotProposalAdapter({
-      authoredDirectiveService: { list: vi.fn(async () => []), create: vi.fn(), update: vi.fn(), delete: vi.fn() } as never,
-      directiveAuthorService: { draft: vi.fn() } as never,
-      agentService: { get: vi.fn() } as never,
+      authoredDirectiveService: { list: vi.fn(async () => []), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
+      directiveAuthorService: { draft: vi.fn() },
+      agentService: { get: vi.fn() },
     });
 
     await expect(adapter.preview(
@@ -841,9 +841,9 @@ describe("directive proposal adapter payload mapping", () => {
       .mockResolvedValueOnce({ directive: { id: targetRef.directiveId, enabled: false }, coherence: null })
       .mockRejectedValueOnce(new Error('Directive binding skill "order.lookup" is disabled'));
     const adapter = createDirectiveCopilotProposalAdapter({
-      authoredDirectiveService: { list: vi.fn(async () => []), create: vi.fn(), update, delete: vi.fn() } as never,
-      directiveAuthorService: { draft: vi.fn() } as never,
-      agentService: { get: vi.fn() } as never,
+      authoredDirectiveService: { list: vi.fn(async () => []), create: vi.fn(), update, delete: vi.fn() },
+      directiveAuthorService: { draft: vi.fn() },
+      agentService: { get: vi.fn() },
     });
 
     await expect(adapter.applyIfVersionMatches("workspace-1", targetRef, { op: "set_enabled", enabled: false }, new Date(0).toISOString()))
@@ -882,7 +882,7 @@ describe("routine proposal adapter", () => {
     expect(preview.current).toBeNull();
     // A new routine previews element by element too, so the card shows one row per step rather
     // than one row holding the whole graph.
-    expect(preview.proposed.steps.step_collect_reason!.instruction).toBe("Ask for {{slot.reason}}.");
+    expect(preview.proposed.steps.step_collect_reason.instruction).toBe("Ask for {{slot.reason}}.");
 
     // The token was minted against the agent's updatedAt at draft time, and something unrelated
     // to this routine (a different agent-setting proposal, say) has since touched the agent row -
@@ -953,9 +953,9 @@ describe("routine proposal adapter", () => {
     const payload = routineDraftPayload();
     const duplicated = {
       ...payload,
-      slots: [...payload.slots, { ...payload.slots[0]!, stableSlotId: "slot_reason_copy", ordinal: 1 }],
-      steps: [...payload.steps, { ...payload.steps[0]!, instruction: "Ask a second time.", ordinal: 1 }],
-      terminals: [...payload.terminals, { ...payload.terminals[0]!, instruction: "A second ending.", ordinal: 2 }],
+      slots: [...payload.slots, { ...payload.slots[0], stableSlotId: "slot_reason_copy", ordinal: 1 }],
+      steps: [...payload.steps, { ...payload.steps[0], instruction: "Ask a second time.", ordinal: 1 }],
+      terminals: [...payload.terminals, { ...payload.terminals[0], instruction: "A second ending.", ordinal: 2 }],
     };
     const adapter = createRoutineCopilotProposalAdapter({
       agentService: {} as never,
@@ -1849,7 +1849,7 @@ const routineAdapter = async (
   const { createRoutineCopilotProposalAdapter } = await import("../../../src/modules/operatorCopilot/proposalAdapters.js");
   return createRoutineCopilotProposalAdapter({
     agentService: { get: vi.fn(async () => ({ updatedAt: new Date("2026-08-01T10:00:00.000Z") })) } as never,
-    routineDraftAssistService: { draft: vi.fn() } as never,
+    routineDraftAssistService: { draft: vi.fn() },
     routineDefinitionService: ports as never,
     logger,
   });
@@ -1944,7 +1944,7 @@ describe("routine proposal adapter edits", () => {
   it("edits a draft routine in place, changing only the step it names", async () => {
     const ports = routineAdapterPorts();
     const adapter = await routineAdapter(ports);
-    const draft = await adapter.draftEdit!(workspaceId, targetRef, { steps: [{ stableStepId: "confirm", instruction: "Read the order number back." }] });
+    const draft = await adapter.draftEdit(workspaceId, targetRef, { steps: [{ stableStepId: "confirm", instruction: "Read the order number back." }] });
 
     expect(draft.summary).toContain("step confirm");
     expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
@@ -1963,7 +1963,7 @@ describe("routine proposal adapter edits", () => {
   it("revises a published routine into a draft and edits that, leaving the live version serving", async () => {
     const ports = routineAdapterPorts(storedRoutine({ status: "published" }));
     const adapter = await routineAdapter(ports);
-    const draft = await adapter.draftEdit!(workspaceId, targetRef, { steps: [{ stableStepId: "confirm", instruction: "Read it back." }] });
+    const draft = await adapter.draftEdit(workspaceId, targetRef, { steps: [{ stableStepId: "confirm", instruction: "Read it back." }] });
 
     expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
       outcome: "applied",
@@ -1976,7 +1976,7 @@ describe("routine proposal adapter edits", () => {
   it("declines to write when the routine moved under the proposal", async () => {
     const ports = routineAdapterPorts();
     const adapter = await routineAdapter(ports);
-    const draft = await adapter.draftEdit!(workspaceId, targetRef, { name: "support-intake-v2" });
+    const draft = await adapter.draftEdit(workspaceId, targetRef, { name: "support-intake-v2" });
     ports.current.value = storedRoutine({ updatedAt: new Date("2026-08-03T10:00:00.000Z") });
 
     expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({ outcome: "stale" });
@@ -1990,7 +1990,7 @@ describe("routine proposal adapter edits", () => {
       .mockResolvedValueOnce({ ok: false, diagnostics: [{ code: "unknown_slot_reference", location: "steps.confirm", message: "No such information field: order_number." }] });
     const adapter = await routineAdapter(ports);
 
-    await expect(adapter.draftEdit!(workspaceId, targetRef, { steps: [{ stableStepId: "confirm", instruction: "Confirm {{slot.order_number}}." }] }))
+    await expect(adapter.draftEdit(workspaceId, targetRef, { steps: [{ stableStepId: "confirm", instruction: "Confirm {{slot.order_number}}." }] }))
       .rejects.toThrow(/order_number/);
   });
 
@@ -2003,7 +2003,7 @@ describe("routine proposal adapter edits", () => {
       .mockResolvedValueOnce({ ok: false, diagnostics: [{ code: "missing_terminal", location: "routine:support-intake-v2", message: "No ending is reachable." }] });
     const adapter = await routineAdapter(ports);
 
-    const draft = await adapter.draftEdit!(workspaceId, targetRef, { name: "support-intake-v2" });
+    const draft = await adapter.draftEdit(workspaceId, targetRef, { name: "support-intake-v2" });
 
     expect(draft.summary).toContain("name");
   });
@@ -2014,7 +2014,7 @@ describe("routine proposal adapter edits", () => {
     ports.validate.mockResolvedValueOnce(existing).mockResolvedValueOnce(existing);
     const adapter = await routineAdapter(ports);
 
-    const draft = await adapter.draftEdit!(workspaceId, targetRef, { name: "support-intake-v2" });
+    const draft = await adapter.draftEdit(workspaceId, targetRef, { name: "support-intake-v2" });
 
     expect(draft.diagnostics).toEqual(existing.diagnostics);
   });
@@ -2022,7 +2022,7 @@ describe("routine proposal adapter edits", () => {
   it("previews an edit element by element so a reviewer sees the changed step", async () => {
     const ports = routineAdapterPorts();
     const adapter = await routineAdapter(ports);
-    const draft = await adapter.draftEdit!(workspaceId, targetRef, { steps: [{ stableStepId: "confirm", instruction: "Read it back." }] });
+    const draft = await adapter.draftEdit(workspaceId, targetRef, { steps: [{ stableStepId: "confirm", instruction: "Read it back." }] });
 
     const preview = await adapter.preview(workspaceId, targetRef, draft.payload) as {
       targetLabel: string;
@@ -2031,15 +2031,15 @@ describe("routine proposal adapter edits", () => {
     };
 
     expect(preview.targetLabel).toBe("support-intake");
-    expect(preview.current.steps.confirm!.instruction).toBe("Confirm it.");
-    expect(preview.proposed.steps.confirm!.instruction).toBe("Read it back.");
+    expect(preview.current.steps.confirm.instruction).toBe("Confirm it.");
+    expect(preview.proposed.steps.confirm.instruction).toBe("Read it back.");
     expect(preview.proposed.steps.collect_topic).toEqual(preview.current.steps.collect_topic);
   });
 
   it("says so on the card when an edit no longer applies to the routine", async () => {
     const ports = routineAdapterPorts();
     const adapter = await routineAdapter(ports);
-    const draft = await adapter.draftEdit!(workspaceId, targetRef, { steps: [{ stableStepId: "confirm", instruction: "Read it back." }] });
+    const draft = await adapter.draftEdit(workspaceId, targetRef, { steps: [{ stableStepId: "confirm", instruction: "Read it back." }] });
     ports.current.value = storedRoutine({ steps: [storedRoutine().steps[0]] });
 
     expect(await adapter.preview(workspaceId, targetRef, draft.payload)).toEqual({
@@ -2054,11 +2054,11 @@ describe("routine proposal adapter edits", () => {
     // computed against the published content would overwrite whatever that draft already changed.
     const pending = storedRoutine({
       id: pendingRevisionId, status: "draft", version: 2, name: "support-intake",
-      steps: [storedRoutine().steps[0]!, { ...storedRoutine().steps[1]!, instruction: "Half-finished wording." }],
+      steps: [storedRoutine().steps[0], { ...storedRoutine().steps[1], instruction: "Half-finished wording." }],
     });
     const adapter = await routineAdapter(routineAdapterPorts(storedRoutine({ status: "published" }), [pending]));
 
-    await expect(adapter.draftEdit!(workspaceId, targetRef, { steps: [{ stableStepId: "confirm", instruction: "Read it back." }] }))
+    await expect(adapter.draftEdit(workspaceId, targetRef, { steps: [{ stableStepId: "confirm", instruction: "Read it back." }] }))
       .rejects.toThrow(/draft revision/i);
   });
 
@@ -2071,7 +2071,7 @@ describe("routine proposal adapter edits", () => {
     const adapter = await routineAdapter(ports);
 
     const proposalToken = await adapter.readVersionToken(workspaceId, targetRef);
-    const draft = await adapter.draftEdit!(workspaceId, targetRef, { steps: [{ stableStepId: "confirm", instruction: "Read it back." }] });
+    const draft = await adapter.draftEdit(workspaceId, targetRef, { steps: [{ stableStepId: "confirm", instruction: "Read it back." }] });
 
     expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, proposalToken)).toEqual({
       outcome: "applied",
@@ -2082,10 +2082,10 @@ describe("routine proposal adapter edits", () => {
   it("declines to write when a draft revision appeared after the card was drafted", async () => {
     const ports = routineAdapterPorts(storedRoutine({ status: "published" }));
     const adapter = await routineAdapter(ports);
-    const draft = await adapter.draftEdit!(workspaceId, targetRef, { steps: [{ stableStepId: "confirm", instruction: "Read it back." }] });
+    const draft = await adapter.draftEdit(workspaceId, targetRef, { steps: [{ stableStepId: "confirm", instruction: "Read it back." }] });
     ports.lineage.siblings = [storedRoutine({
       id: pendingRevisionId, status: "draft", version: 2,
-      steps: [storedRoutine().steps[0]!, { ...storedRoutine().steps[1]!, instruction: "Someone else's wording." }],
+      steps: [storedRoutine().steps[0], { ...storedRoutine().steps[1], instruction: "Someone else's wording." }],
     })];
 
     expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({ outcome: "stale" });
@@ -2095,7 +2095,7 @@ describe("routine proposal adapter edits", () => {
   it("states the version it decided against when it writes", async () => {
     const ports = routineAdapterPorts();
     const adapter = await routineAdapter(ports);
-    const draft = await adapter.draftEdit!(workspaceId, targetRef, { name: "support-intake-v2" });
+    const draft = await adapter.draftEdit(workspaceId, targetRef, { name: "support-intake-v2" });
 
     await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token);
 
@@ -2110,7 +2110,7 @@ describe("routine proposal adapter edits", () => {
     // whoever else may hold that draft to clean it up costs more than the copy does.
     const ports = routineAdapterPorts(storedRoutine({ status: "published" }));
     const adapter = await routineAdapter(ports);
-    const draft = await adapter.draftEdit!(workspaceId, targetRef, { name: "support-intake-v2" });
+    const draft = await adapter.draftEdit(workspaceId, targetRef, { name: "support-intake-v2" });
     ports.updateDraft.mockRejectedValueOnce(new Error("name already taken"));
 
     expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
@@ -2123,7 +2123,7 @@ describe("routine proposal adapter edits", () => {
   it("refuses to edit an archived routine instead of quietly failing at apply time", async () => {
     const adapter = await routineAdapter(routineAdapterPorts(storedRoutine({ status: "archived" })));
 
-    await expect(adapter.draftEdit!(workspaceId, targetRef, { name: "support-intake-v2" })).rejects.toThrow(/archived/i);
+    await expect(adapter.draftEdit(workspaceId, targetRef, { name: "support-intake-v2" })).rejects.toThrow(/archived/i);
   });
 });
 
@@ -2136,7 +2136,7 @@ describe("routine lifecycle proposal adapter", () => {
     const ports = routineAdapterPorts(storedRoutine({ status: "published" }), [disclosed]);
     const adapter = await routineAdapter(ports);
     const versionToken = await adapter.readVersionToken(workspaceId, targetRef);
-    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "archive");
+    const draft = await adapter.draftLifecycle(workspaceId, targetRef, "archive");
     const repository = new MemoryProposalRepository();
     const proposal = await repository.createProposal({
       workspaceId,
@@ -2180,7 +2180,7 @@ describe("routine lifecycle proposal adapter", () => {
   it("publishes the draft and points the card at the version that went live", async () => {
     const ports = routineAdapterPorts();
     const adapter = await routineAdapter(ports);
-    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "publish");
+    const draft = await adapter.draftLifecycle(workspaceId, targetRef, "publish");
 
     expect(draft.summary).toContain("Publish");
     expect(await adapter.preview(workspaceId, targetRef, draft.payload)).toEqual({
@@ -2197,7 +2197,7 @@ describe("routine lifecycle proposal adapter", () => {
   it("publishes only the version the operator reviewed", async () => {
     const ports = routineAdapterPorts();
     const adapter = await routineAdapter(ports);
-    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "publish");
+    const draft = await adapter.draftLifecycle(workspaceId, targetRef, "publish");
 
     await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token);
 
@@ -2213,7 +2213,7 @@ describe("routine lifecycle proposal adapter", () => {
     const ports = routineAdapterPorts(storedRoutine({ status: "published" }), [pending]);
     const adapter = await routineAdapter(ports);
 
-    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "archive");
+    const draft = await adapter.draftLifecycle(workspaceId, targetRef, "archive");
 
     expect(draft.summary).toContain("draft revision");
     expect(await adapter.preview(workspaceId, targetRef, draft.payload)).toMatchObject({
@@ -2228,7 +2228,7 @@ describe("routine lifecycle proposal adapter", () => {
     const ports = routineAdapterPorts(storedRoutine({ status: "published" }), [disclosed]);
     const adapter = await routineAdapter(ports);
     const proposalToken = await adapter.readVersionToken(workspaceId, targetRef);
-    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "archive");
+    const draft = await adapter.draftLifecycle(workspaceId, targetRef, "archive");
     ports.lineage.siblings = [storedRoutine({ id: pendingRevisionId, status: "draft", version: 3, updatedAt: new Date("2026-08-04T10:00:00.000Z") })];
 
     expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, proposalToken)).toEqual({ outcome: "stale" });
@@ -2239,7 +2239,7 @@ describe("routine lifecycle proposal adapter", () => {
     const ports = routineAdapterPorts(storedRoutine({ status: "published" }));
     const adapter = await routineAdapter(ports);
     const proposalToken = await adapter.readVersionToken(workspaceId, targetRef);
-    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "archive");
+    const draft = await adapter.draftLifecycle(workspaceId, targetRef, "archive");
     ports.lineage.siblings = [storedRoutine({ id: pendingRevisionId, status: "draft", version: 3 })];
 
     expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, proposalToken)).toEqual({ outcome: "stale" });
@@ -2251,14 +2251,14 @@ describe("routine lifecycle proposal adapter", () => {
     ports.validate.mockResolvedValueOnce({ ok: false, diagnostics: [{ code: "missing_terminal", location: "terminals", message: "No ending." }] });
     const adapter = await routineAdapter(ports);
 
-    await expect(adapter.draftLifecycle!(workspaceId, targetRef, "publish")).rejects.toThrow(/No ending/);
+    await expect(adapter.draftLifecycle(workspaceId, targetRef, "publish")).rejects.toThrow(/No ending/);
   });
 
   it("reports a publish the service rejects as a failure carrying its diagnostics", async () => {
     const ports = routineAdapterPorts();
     ports.publish.mockResolvedValueOnce({ rejected: true, validation: { ok: false, diagnostics: [{ code: "missing_terminal", location: "terminals", message: "No ending." }] } } as never);
     const adapter = await routineAdapter(ports);
-    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "publish");
+    const draft = await adapter.draftLifecycle(workspaceId, targetRef, "publish");
 
     expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
       outcome: "failed",
@@ -2273,13 +2273,13 @@ describe("routine lifecycle proposal adapter", () => {
     ports.validate.mockResolvedValueOnce({ ok: false, diagnostics: [{ code: "unknown_skill", location: "step:confirm", message: "billing.lookup is not available to this agent." }] });
     const adapter = await routineAdapter(ports);
 
-    await expect(adapter.draftLifecycle!(workspaceId, targetRef, "restore")).rejects.toThrow(/billing\.lookup/);
+    await expect(adapter.draftLifecycle(workspaceId, targetRef, "restore")).rejects.toThrow(/billing\.lookup/);
   });
 
   it("stops a restore that went invalid between the card and the click", async () => {
     const ports = routineAdapterPorts(storedRoutine({ status: "archived" }));
     const adapter = await routineAdapter(ports);
-    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "restore");
+    const draft = await adapter.draftLifecycle(workspaceId, targetRef, "restore");
     ports.validate.mockResolvedValueOnce({ ok: false, diagnostics: [{ code: "unknown_skill", location: "step:confirm", message: "billing.lookup is not available to this agent." }] });
 
     expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
@@ -2296,7 +2296,7 @@ describe("routine lifecycle proposal adapter", () => {
     const ports = routineAdapterPorts();
     const logger = { warn: vi.fn() };
     const adapter = await routineAdapter(ports, logger);
-    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "publish");
+    const draft = await adapter.draftLifecycle(workspaceId, targetRef, "publish");
     const { RoutineDefinitionLifecycleCommittedError } = await import("../../../src/modules/routines/public.js");
     ports.publish.mockRejectedValueOnce(new RoutineDefinitionLifecycleCommittedError(
       "publish",
@@ -2328,7 +2328,7 @@ describe("routine lifecycle proposal adapter", () => {
     const { conflict } = await import("../../../src/shared/domain/errors.js");
     const ports = routineAdapterPorts();
     const adapter = await routineAdapter(ports);
-    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "publish");
+    const draft = await adapter.draftLifecycle(workspaceId, targetRef, "publish");
     ports.publish.mockRejectedValueOnce(conflict("Routine changed while it was being published"));
     ports.current.value = storedRoutine({ status: "published" });
 
@@ -2339,7 +2339,7 @@ describe("routine lifecycle proposal adapter", () => {
     const { badRequest } = await import("../../../src/shared/domain/errors.js");
     const ports = routineAdapterPorts();
     const adapter = await routineAdapter(ports);
-    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "publish");
+    const draft = await adapter.draftLifecycle(workspaceId, targetRef, "publish");
     ports.publish.mockRejectedValueOnce(badRequest("Only draft routine definitions can be published"));
     ports.current.value = storedRoutine({ status: "published" });
 
@@ -2353,7 +2353,7 @@ describe("routine lifecycle proposal adapter", () => {
     const { badRequest } = await import("../../../src/shared/domain/errors.js");
     const ports = routineAdapterPorts(storedRoutine({ status: "archived" }));
     const adapter = await routineAdapter(ports);
-    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "restore");
+    const draft = await adapter.draftLifecycle(workspaceId, targetRef, "restore");
     ports.restore.mockRejectedValueOnce(badRequest("Only archived routine definitions can be restored"));
     ports.current.value = storedRoutine({ status: "published" });
 
@@ -2368,7 +2368,7 @@ describe("routine lifecycle proposal adapter", () => {
     // any published member of the lineage would mark a failed publish applied and link the old one.
     const ports = routineAdapterPorts();
     const adapter = await routineAdapter(ports);
-    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "publish");
+    const draft = await adapter.draftLifecycle(workspaceId, targetRef, "publish");
     ports.publish.mockRejectedValueOnce(new Error("routine changed while it was being published"));
     ports.lineage.siblings = [storedRoutine({ id: "previous-version", status: "published", version: 1 })];
 
@@ -2381,7 +2381,7 @@ describe("routine lifecycle proposal adapter", () => {
   it("still fails when the lifecycle change never landed", async () => {
     const ports = routineAdapterPorts();
     const adapter = await routineAdapter(ports);
-    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "publish");
+    const draft = await adapter.draftLifecycle(workspaceId, targetRef, "publish");
     ports.publish.mockRejectedValueOnce(new Error("connection reset"));
 
     expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
@@ -2393,14 +2393,14 @@ describe("routine lifecycle proposal adapter", () => {
   it("refuses a lifecycle move the routine's status cannot take", async () => {
     const adapter = await routineAdapter(routineAdapterPorts());
 
-    await expect(adapter.draftLifecycle!(workspaceId, targetRef, "restore")).rejects.toThrow(/archived/i);
-    await expect(adapter.draftLifecycle!(workspaceId, targetRef, "archive")).rejects.toThrow(/published/i);
+    await expect(adapter.draftLifecycle(workspaceId, targetRef, "restore")).rejects.toThrow(/archived/i);
+    await expect(adapter.draftLifecycle(workspaceId, targetRef, "archive")).rejects.toThrow(/published/i);
   });
 
   it("archives and restores through the service, keeping the card on the same routine", async () => {
     const archivedPorts = routineAdapterPorts(storedRoutine({ status: "published" }));
     const archiveAdapter = await routineAdapter(archivedPorts);
-    const archiveDraft = await archiveAdapter.draftLifecycle!(workspaceId, targetRef, "archive");
+    const archiveDraft = await archiveAdapter.draftLifecycle(workspaceId, targetRef, "archive");
 
     expect(await archiveAdapter.applyIfVersionMatches(workspaceId, targetRef, archiveDraft.payload, token)).toEqual({
       outcome: "applied", appliedRef: { agentId, routineId: targetRef.routineId },
@@ -2411,7 +2411,7 @@ describe("routine lifecycle proposal adapter", () => {
 
     const restorePorts = routineAdapterPorts(storedRoutine({ status: "archived" }));
     const restoreAdapter = await routineAdapter(restorePorts);
-    const restoreDraft = await restoreAdapter.draftLifecycle!(workspaceId, targetRef, "restore");
+    const restoreDraft = await restoreAdapter.draftLifecycle(workspaceId, targetRef, "restore");
 
     expect(await restoreAdapter.applyIfVersionMatches(workspaceId, targetRef, restoreDraft.payload, token)).toEqual({
       outcome: "applied", appliedRef: { agentId, routineId: targetRef.routineId },

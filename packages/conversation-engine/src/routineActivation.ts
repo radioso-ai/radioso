@@ -1,12 +1,9 @@
 import type {
   AttemptRoutineInput,
-  ConversationMessage,
-  ConversationRoutineDecisionResult,
   ConversationTraceStage,
   ProcessTurnResult,
   RenderableTurn,
   RoutineState,
-  SteeringRule,
   TurnContext,
 } from "@radioso/conversation-contract";
 import { clarificationStage } from "./clarification.js";
@@ -166,7 +163,7 @@ export const attemptRoutine = async (input: AttemptRoutineInput): Promise<Proces
     stagedContext: [],
     steering: [],
   };
-  let state = resuming ? active! : null;
+  let state = resuming ? active : null;
   let activationClarificationStage: ConversationTraceStage | null = null;
   const completedStates = state ? [] : ((await input.routineStore.loadCompleted?.({ sessionId: input.sessionId })) ?? []);
   if (!state) {

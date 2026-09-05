@@ -315,7 +315,7 @@ function DocumentOrderAssertionFields({
       return
     }
     const next = [...assertion.documentIds]
-    ;[next[index], next[target]] = [next[target]!, next[index]!]
+    ;[next[index], next[target]] = [next[target], next[index]]
     onChange({ ...assertion, documentIds: next })
   }
 
@@ -550,7 +550,7 @@ function RetrievalAssertionFields({
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => onChange({ ...assertion, documentId: '' } as EvalAssertion)}
+              onClick={() => onChange({ ...assertion, documentId: '' })}
               disabled={disabled}
             >
               Change
@@ -560,7 +560,7 @@ function RetrievalAssertionFields({
           <DocumentPicker
             selectedId={null}
             disabled={disabled}
-            onChange={(id) => onChange({ ...assertion, documentId: id } as EvalAssertion)}
+            onChange={(id) => onChange({ ...assertion, documentId: id })}
           />
         )}
       </div>

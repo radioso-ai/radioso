@@ -2,7 +2,7 @@ import type {
   PendingDecisionRecord,
 } from "../../db/repositories/pendingDecisionRepository.js";
 
-export type ApprovalDecisionFailureReason =
+type ApprovalDecisionFailureReason =
   | "already_resolved"
   | "forbidden_decider"
   | "invalid_option"
@@ -82,7 +82,7 @@ export const satisfiesDeciderScope = (input: {
   return !accountIds || accountIds.includes(input.caller.accountId);
 };
 
-export const assertPendingDecisionOpen = (record: PendingDecisionRecord): void => {
+const assertPendingDecisionOpen = (record: PendingDecisionRecord): void => {
   if (record.status !== "pending") {
     throw new ApprovalDecisionDomainError("already_resolved");
   }

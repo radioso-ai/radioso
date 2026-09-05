@@ -15,7 +15,7 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.build.json",
     "pretest": "pnpm --dir ../conversation-engine run build",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json"

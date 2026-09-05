@@ -116,7 +116,7 @@ export class ReplyDraftRunner {
     if (waitingIndex < 0) {
       throw badRequest("The conversation has no customer message to reply to");
     }
-    const waiting = transcript[waitingIndex]!;
+    const waiting = transcript[waitingIndex];
     // Everything after that message is dropped from history, which is right for an agent answer the
     // customer complained about — the point is to answer it again, better. It is wrong for an
     // operator's own reply: that message *did* answer the customer, so drafting another would hand

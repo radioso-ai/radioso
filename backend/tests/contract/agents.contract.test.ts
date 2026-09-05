@@ -95,6 +95,36 @@ const invalidRoutineDraft = (): RoutineDefinitionDraftInput =>
   });
 
 describe("agents contract", () => {
+  it("round-trips retrieval-miss handoff settings without resetting an omitted update", async () => {
+    const { app } = createTestApp();
+    const { token } = await issueTestToken(app, "agents-retrieval-miss-handoff@example.com");
+    const authorization = `Bearer ${token}`;
+
+    const created = await request(app)
+      .post("/api/v1/agents")
+      .set("Authorization", authorization)
+      .send({ name: "Escalation agent", handoffOnRetrievalMiss: true })
+      .expect(201);
+
+    expect(created.body.handoffOnRetrievalMiss).toBe(true);
+
+    const preserved = await request(app)
+      .put(`/api/v1/agents/${created.body.id}`)
+      .set("Authorization", authorization)
+      .send({ name: "Renamed escalation agent" })
+      .expect(200);
+
+    expect(preserved.body.handoffOnRetrievalMiss).toBe(true);
+
+    const updated = await request(app)
+      .put(`/api/v1/agents/${created.body.id}`)
+      .set("Authorization", authorization)
+      .send({ handoffOnRetrievalMiss: false })
+      .expect(200);
+
+    expect(updated.body.handoffOnRetrievalMiss).toBe(false);
+  });
+
   it("allows a read-only operator to validate a routine but not mutate it", async () => {
     const { app, dependencies } = createTestApp();
     const { token } = await issueTestToken(app, "agents-routine-validation-read-only@example.com");

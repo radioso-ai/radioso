@@ -25,7 +25,9 @@ import {
   type MachineAwareRoutePrincipal,
 } from "../shared/machinePublicSurfacePolicy.js";
 import {
-  agentSurfacePositions,
+  agentInputChatModelOverrideSchema,
+  agentInputFieldSchemas,
+  agentInputLlmProviderNames,
   authoredDirectiveInputSchema,
   directiveAuthorDraftInputSchema,
 } from "../../../modules/agents/public.js";
@@ -37,7 +39,6 @@ import type { AgentInput, AgentSettingsResource } from "../../../modules/agents/
 import { builtInAnswerDirectiveViews } from "../../../modules/directives/public.js";
 import {
   ASSISTANT_LOGO_MIME_TYPES,
-  assistantThemeSchema,
   createAssistantLogoUploadHandler,
 } from "../shared/assistantIdentity.js";
 import { resolvePublicLaunchLifecycle } from "../../../modules/accessGrants/public.js";
@@ -62,82 +63,30 @@ const authoredDirectiveBodySchema = authoredDirectiveInputSchema.omit({ routes: 
 const authoredDirectivePatchBodySchema = authoredDirectiveBodySchema.partial().strict();
 const routineDefinitionBodySchema = routineDefinitionDraftInputSchema;
 
-const surfaceSettingsSchema = z.object({
-  authenticatedChat: z.object({
-    enabled: z.boolean().optional(),
-  }).optional(),
-  anonymousChat: z.object({
-    enabled: z.boolean().optional(),
-  }).optional(),
-  websiteEmbed: z.object({
-    enabled: z.boolean().optional(),
-    allowedOrigins: z.array(z.string().max(200)).max(20).optional(),
-    launcherLabel: z.string().max(80).optional(),
-    launcherPosition: z.enum(agentSurfacePositions).optional(),
-    theme: assistantThemeSchema.optional(),
-    copy: z.record(z.record(z.string().max(500))).optional(),
-    expertOverrides: z.record(z.string().max(500)).optional(),
-  }).optional(),
-}).optional();
-
-const sourceScopeSchema = z.discriminatedUnion("mode", [
-  z.object({
-    mode: z.literal("all"),
-  }),
-  z.object({
-    mode: z.literal("selected"),
-    sourceIds: z.array(z.string().uuid()).max(200),
-  }),
-]).optional();
-
-const brandingSchema = z.object({
-  hidePoweredBy: z.boolean().optional(),
-  privacyPolicyUrl: z.string().max(2048).nullable().optional(),
-}).optional();
-
-const llmProviderNames = ["openai", "openai-compatible", "gemini", "claude"] as const;
-
-const chatModelOverrideSchema = z.union([
-  z.null(),
-  z.object({
-    provider: z.enum(llmProviderNames),
-    model: z.string().min(1).max(200),
-  }),
-]);
-
-const contactRequestDeliverySchema = z.object({
-  recipientEmails: z.array(z.string().max(320)).max(5).optional(),
-  webhook: z.union([
-    z.null(),
-    z.object({
-      url: z.string().max(2048),
-    }),
-  ]).optional(),
-}).optional();
-
 export const agentBodySchema = z.object({
-  name: z.string().max(200).optional(),
-  internalName: z.string().max(200).optional(),
-  customInstruction: z.string().max(2000).optional(),
-  suggestedQuestionsEnabled: z.boolean().optional(),
-  assistantLinkUtmEnabled: z.boolean().optional(),
-  citationDisplayEnabled: z.boolean().optional(),
-  contactRequestsEnabled: z.boolean().optional(),
-  webhookExportsEnabled: z.boolean().optional(),
-  contactRequestDelivery: contactRequestDeliverySchema,
-  theme: assistantThemeSchema.optional(),
-  branding: brandingSchema,
-  retrievalEnabled: z.boolean().optional(),
-  sourceScope: sourceScopeSchema,
-  greetingInstruction: z.string().max(200).optional(),
-  assistantDefaultLocale: z.string().max(35).nullable().optional(),
-  proactiveGreetingEnabled: z.boolean().optional(),
-  chatModelOverride: chatModelOverrideSchema.optional(),
-  skillSettings: z.record(z.unknown()).optional(),
-  surfaceSettings: surfaceSettingsSchema,
+  name: agentInputFieldSchemas.name.optional(),
+  internalName: agentInputFieldSchemas.internalName.optional(),
+  customInstruction: agentInputFieldSchemas.customInstruction.optional(),
+  suggestedQuestionsEnabled: agentInputFieldSchemas.suggestedQuestionsEnabled.optional(),
+  assistantLinkUtmEnabled: agentInputFieldSchemas.assistantLinkUtmEnabled.optional(),
+  citationDisplayEnabled: agentInputFieldSchemas.citationDisplayEnabled.optional(),
+  contactRequestsEnabled: agentInputFieldSchemas.contactRequestsEnabled.optional(),
+  webhookExportsEnabled: agentInputFieldSchemas.webhookExportsEnabled.optional(),
+  handoffOnRetrievalMiss: agentInputFieldSchemas.handoffOnRetrievalMiss.optional(),
+  contactRequestDelivery: agentInputFieldSchemas.contactRequestDelivery.optional(),
+  theme: agentInputFieldSchemas.theme.optional(),
+  branding: agentInputFieldSchemas.branding.optional(),
+  retrievalEnabled: agentInputFieldSchemas.retrievalEnabled.optional(),
+  sourceScope: agentInputFieldSchemas.sourceScope.optional(),
+  greetingInstruction: agentInputFieldSchemas.greetingInstruction.optional(),
+  assistantDefaultLocale: agentInputFieldSchemas.assistantDefaultLocale.optional(),
+  proactiveGreetingEnabled: agentInputFieldSchemas.proactiveGreetingEnabled.optional(),
+  chatModelOverride: agentInputFieldSchemas.chatModelOverride.optional(),
+  skillSettings: agentInputFieldSchemas.skillSettings.optional(),
+  surfaceSettings: agentInputFieldSchemas.surfaceSettings.omit({ extensions: true }).optional(),
 });
 
-export { llmProviderNames as agentLlmProviderNames, chatModelOverrideSchema as agentChatModelOverrideSchema };
+export { agentInputLlmProviderNames as agentLlmProviderNames, agentInputChatModelOverrideSchema as agentChatModelOverrideSchema };
 
 type AgentRouteDependencies = WorkspaceSessionDependencies & Pick<AppDependencies, "accountAccessService" | "accessGrantService" | "agentRepository" | "agentService" | "assistantChatService" | "authoredDirectiveService" | "directiveAuthorService" | "skillAuthoringCatalog" | "routineDefinitionService" | "routineDraftAssistService" | "agentSurfaceExtensions" | "documentStorage" | "logger" | "metricsRegistry" | "abuseControlService" | "auditService">;
 

@@ -344,7 +344,7 @@ export class CensusService {
     let namingCallsReused = 0;
     const namingStartedAtMs = Date.now();
 
-    await Promise.all(census.clusters.map(async (cluster) => {
+    const namingResults = await Promise.allSettled(census.clusters.map(async (cluster) => {
       const transition = transitionByClusterId.get(cluster.id);
       if (!transition) {
         throw new Error(`census: identity matching produced no transition for cluster ${cluster.id}`);
@@ -404,6 +404,12 @@ export class CensusService {
         ...(transition.kind === "survived" ? { membershipOverlap } : {}),
       });
     }));
+    const namingFailure = namingResults.find(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    );
+    if (namingFailure) {
+      throw namingFailure.reason;
+    }
 
     const namingDurationMs = Date.now() - namingStartedAtMs;
 

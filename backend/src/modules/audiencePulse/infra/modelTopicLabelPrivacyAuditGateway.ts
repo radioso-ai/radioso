@@ -73,7 +73,9 @@ export class ModelTopicLabelPrivacyAuditGateway implements TopicLabelPrivacyAudi
       workspaceContext: this.deps.workspaceContext,
       modelCallContext,
     });
-    onModelCallIssued?.();
+    if (!signal?.aborted) {
+      onModelCallIssued?.();
+    }
     const completion = await inference.complete({
       prompt: buildTopicLabelPrivacyAuditPrompt(label),
       maxInputTokens: TOPIC_LABEL_AUDIT_MAX_TOTAL_TOKENS,

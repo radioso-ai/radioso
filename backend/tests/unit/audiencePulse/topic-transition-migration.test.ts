@@ -56,7 +56,7 @@ describe("topic transition membership overlap migration", () => {
 });
 
 describe("topic transition title migration", () => {
-  it("captures and backfills an immutable title for every transition", async () => {
+  it("adds a nullable title without rewriting or scanning historical transitions", async () => {
     const sql = await readFile(titleMigrationUrl, "utf8");
     const lockTimeout = sql.search(/SET LOCAL lock_timeout\s*=\s*'10s'/i);
     const statementTimeout = sql.search(/SET LOCAL statement_timeout\s*=\s*'25s'/i);
@@ -67,7 +67,7 @@ describe("topic transition title migration", () => {
     expect(firstAlter).toBeGreaterThan(lockTimeout);
     expect(firstAlter).toBeGreaterThan(statementTimeout);
     expect(sql).toMatch(/ADD COLUMN topic_title TEXT/i);
-    expect(sql).toMatch(/UPDATE topic_transitions[\s\S]*FROM topics/i);
-    expect(sql).toMatch(/ALTER COLUMN topic_title SET NOT NULL/i);
+    expect(sql).not.toMatch(/UPDATE topic_transitions/i);
+    expect(sql).not.toMatch(/ALTER COLUMN topic_title SET NOT NULL/i);
   });
 });

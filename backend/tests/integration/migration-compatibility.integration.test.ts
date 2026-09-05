@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { TopicRepository } from "../../src/db/repositories/topicRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { applyTestMigration, runTestMigrationsBefore } from "../support/databaseMigrations.js";
 
@@ -315,7 +316,7 @@ describeIfDatabase("topic transition title migration", () => {
     }
   });
 
-  it("backfills the current title once and keeps it immutable after topic renaming", async () => {
+  it("leaves an unknown historical title nullable and falls back to the topic's current title", async () => {
     const accountId = randomUUID();
     const workspaceId = randomUUID();
     const runId = randomUUID();
@@ -350,10 +351,13 @@ describeIfDatabase("topic transition title migration", () => {
     await applyTestMigration(database, topicTransitionTitleMigration);
     await database.execute("UPDATE topics SET title = 'Renamed topic' WHERE id = $1", [topicId]);
 
-    const transitions = await database.query<{ topic_title: string }>(
+    const transitions = await database.query<{ topic_title: string | null }>(
       "SELECT topic_title FROM topic_transitions WHERE run_id = $1 AND topic_id = $2",
       [runId, topicId],
     );
-    expect(transitions).toEqual([{ topic_title: "Original title" }]);
+    expect(transitions).toEqual([{ topic_title: null }]);
+
+    const historicalRun = await new TopicRepository(database.kysely).loadRun(runId);
+    expect(historicalRun?.dissolvedTopics).toEqual([{ id: topicId, title: "Renamed topic" }]);
   });
 });

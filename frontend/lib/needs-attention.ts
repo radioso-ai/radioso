@@ -449,7 +449,7 @@ export const ownershipLabel = (ownership: ConversationOwnership): string => {
 // ── Queue filters (FR-017) ──────────────────────────────────────────────────
 
 /** `'anyone' | 'unclaimed' | 'me'`, or a specific operator's account id. */
-export type TakenByFilter = 'anyone' | 'unclaimed' | 'me' | string
+export type TakenByFilter = 'anyone' | 'unclaimed' | 'me' | (string & {})
 
 export const TAKEN_BY_ANYONE: TakenByFilter = 'anyone'
 export const TAKEN_BY_UNCLAIMED: TakenByFilter = 'unclaimed'
@@ -458,7 +458,7 @@ export const TAKEN_BY_ME: TakenByFilter = 'me'
 export interface InboxFilters {
   search: string
   type: EscalationType | 'all'
-  agentId: string | 'all'
+  agentId: 'all' | (string & {})
   takenBy: TakenByFilter
 }
 

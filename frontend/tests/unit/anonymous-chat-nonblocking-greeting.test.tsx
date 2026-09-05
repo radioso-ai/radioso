@@ -204,7 +204,7 @@ describe('anonymous chat non-blocking greeting', () => {
       payload: null,
     }
     publicChatApiMock.streamMessage.mockImplementation(async (_token, data, handlers) => {
-      captured.payload = data as { conversationId?: string; bootstrapGreetingId?: string }
+      captured.payload = data
       const completion = {
         conversationId: 'conversation-1',
         assistantMessageId: 'assistant-2',

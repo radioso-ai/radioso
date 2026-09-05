@@ -16,7 +16,7 @@ describe("DrainTriggeringActionOutbox", () => {
     );
     const calls: string[] = [];
     const inner = {
-      enqueue: vi.fn(async (input: unknown) => {
+      enqueue: vi.fn(async (_input: unknown) => {
         calls.push("enqueue");
         return { id: "row_1", duplicate: false };
       }),

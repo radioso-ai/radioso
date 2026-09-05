@@ -13,7 +13,7 @@ import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
 describeIntegration("ContextVariableService resolver skill validation (Postgres)", () => {
-  const database = new Database(integrationDatabaseUrl as string);
+  const database = new Database(integrationDatabaseUrl);
   const contextVariableRepository = new ContextVariableRepository(database.kysely);
   const agentRepository = new AgentRepository(database.kysely);
   const agentSkillRepository = new AgentSkillRepository(database.kysely);

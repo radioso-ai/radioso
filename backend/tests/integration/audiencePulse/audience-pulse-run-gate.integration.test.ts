@@ -9,8 +9,8 @@ import { resolveIntegrationDatabase } from "../support/integrationDatabase.js";
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
 describeIntegration("PostgresAudiencePulseRunGate", () => {
-  const firstDatabase = new Database(integrationDatabaseUrl as string);
-  const secondDatabase = new Database(integrationDatabaseUrl as string);
+  const firstDatabase = new Database(integrationDatabaseUrl);
+  const secondDatabase = new Database(integrationDatabaseUrl);
   const firstGate = new PostgresAudiencePulseRunGate(firstDatabase.kysely);
   const secondGate = new PostgresAudiencePulseRunGate(secondDatabase.kysely);
 

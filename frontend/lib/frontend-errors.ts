@@ -70,6 +70,21 @@ export const sanitizeFrontendErrorPath = (path: string | undefined): string | un
     .slice(0, 256)
 }
 
+// `error` here is whatever a caller threw, so it may be an object with no meaningful
+// `toString` (default stringification renders "[object Object]" into the telemetry
+// beacon). Serialize object-like throwables as JSON instead of relying on
+// `String()`'s default coercion, keeping this a useful diagnostic message.
+const stringifyThrowable = (value: unknown): string => {
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') return String(value)
+  if (typeof value === 'symbol' || typeof value === 'function') return value.toString()
+  try {
+    return JSON.stringify(value) ?? '[unserializable error]'
+  } catch {
+    return '[unserializable error]'
+  }
+}
+
 export const serializeFrontendThrowable = (
   error: unknown,
 ): Pick<FrontendErrorEvent, 'errorClass' | 'message' | 'stack'> => {
@@ -89,7 +104,7 @@ export const serializeFrontendThrowable = (
 
   return {
     errorClass: typeof error,
-    message: String(error),
+    message: stringifyThrowable(error),
   }
 }
 

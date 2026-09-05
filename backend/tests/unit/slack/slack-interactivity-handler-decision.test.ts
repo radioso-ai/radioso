@@ -117,9 +117,9 @@ describe("SlackInteractivityHandler decision branch", () => {
       slackUserId: "U1",
     });
     expect(responsePosts).toHaveLength(1);
-    expect(responsePosts[0]!.url).toBe("https://hooks.slack.com/actions/1");
-    expect(responsePosts[0]!.body).toMatchObject({ replace_original: true });
-    expect(JSON.stringify(responsePosts[0]!.body.blocks)).toContain("Ship it");
+    expect(responsePosts[0].url).toBe("https://hooks.slack.com/actions/1");
+    expect(responsePosts[0].body).toMatchObject({ replace_original: true });
+    expect(JSON.stringify(responsePosts[0].body.blocks)).toContain("Ship it");
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
       accountId: "acct_1",
       workspaceId: "ws_conversation",
@@ -138,7 +138,7 @@ describe("SlackInteractivityHandler decision branch", () => {
 
     expect(resolve).not.toHaveBeenCalled();
     expect(responsePosts).toHaveLength(1);
-    expect(responsePosts[0]!.body).toMatchObject({
+    expect(responsePosts[0].body).toMatchObject({
       response_type: "ephemeral",
       text: "You're not a Radioso operator on this workspace.",
     });
@@ -155,7 +155,7 @@ describe("SlackInteractivityHandler decision branch", () => {
     await expect(handler.handleBlockActions(blockPayload)).resolves.toBeUndefined();
 
     expect(responsePosts).toHaveLength(1);
-    expect(responsePosts[0]!.body).toMatchObject({
+    expect(responsePosts[0].body).toMatchObject({
       response_type: "ephemeral",
       text: "This decision is already resolved or out of date. Refreshing.",
     });

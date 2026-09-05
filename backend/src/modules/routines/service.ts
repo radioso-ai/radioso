@@ -115,7 +115,7 @@ export class RoutineDefinitionLifecycleCommittedError extends Error {
 
 export interface RoutineDefinitionServiceOptions {
   agentRepository: {
-    findByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<unknown | null>;
+    findByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<unknown>;
   };
   repository: RoutineDefinitionRepositoryPort;
   actionCapabilities?: ActionCapabilityMap;

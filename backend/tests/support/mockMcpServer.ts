@@ -41,7 +41,7 @@ export const createMockMcpServer = (tools: MockTool[]): Server => {
     if (!tool) {
       return { content: [{ type: "text", text: `unknown tool: ${request.params.name}` }], isError: true };
     }
-    const result = await tool.respond((request.params.arguments ?? {}) as Record<string, unknown>);
+    const result = await tool.respond((request.params.arguments ?? {}));
     return {
       content: result.content ?? [],
       ...(result.structuredContent !== undefined ? { structuredContent: result.structuredContent } : {}),

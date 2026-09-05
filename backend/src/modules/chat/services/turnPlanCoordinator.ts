@@ -112,7 +112,7 @@ export const lazyPromise = <T>(compute: () => Promise<T>): Promise<T> => {
     finally: (onfinally?: (() => void) | null) => ensure().finally(onfinally),
     [Symbol.toStringTag]: "Promise",
   };
-  return thenable as Promise<T>;
+  return thenable;
 };
 
 export interface TurnPlanInputs {
@@ -348,7 +348,7 @@ export const contextualDirectiveCandidates = (input: {
   const candidates: TurnPlanDirectiveCandidate[] = [];
   for (const [name, entries] of entriesByName) {
     if (new Set(entries.map((entry) => entry.condition)).size === 1) {
-      candidates.push({ name, condition: entries[0]!.condition });
+      candidates.push({ name, condition: entries[0].condition });
       continue;
     }
     const byIdentity = new Map<string, TurnPlanDirectiveCandidate>();

@@ -19,7 +19,7 @@ const wordpressContext = (metadata: Record<string, unknown>): FinalPromptContext
     rerankPosition: 0,
     promptPosition: 0,
     estimatedTokenCost: 20,
-  }) as FinalPromptContext;
+  });
 
 describe("PromptBuilder context metadata", () => {
   it("keeps a WordPress author and publish date available to the grounded answer", () => {

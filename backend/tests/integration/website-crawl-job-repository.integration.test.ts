@@ -9,7 +9,7 @@ import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
 describeIntegration("WebsiteCrawlJobRepository (Postgres)", () => {
-  const database = new Database(integrationDatabaseUrl as string);
+  const database = new Database(integrationDatabaseUrl);
   const repository = new WebsiteCrawlJobRepository(database.kysely);
 
   const accountId = randomUUID();

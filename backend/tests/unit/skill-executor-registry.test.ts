@@ -86,7 +86,7 @@ describe("skill-invocation port shape", () => {
     };
 
     const result = await executor.dispatch({
-      skill: { name: "demo" } as never,
+      skill: { name: "demo" },
       collected: {},
       emit: {
         async emitStatus() {},
@@ -112,7 +112,7 @@ describe("skill-invocation port shape", () => {
     };
 
     const result = await deferredExecutor.dispatch({
-      skill: { name: "order_status" } as never,
+      skill: { name: "order_status" },
       collected: {},
       emit: {
         async emitStatus() {},

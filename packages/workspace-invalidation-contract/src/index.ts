@@ -108,7 +108,7 @@ export const mergePostCommitInvalidationReceipts = (
 ): PostCommitInvalidationReceipt | undefined => {
   const present = receipts.filter((receipt): receipt is PostCommitInvalidationReceipt => receipt !== null && receipt !== undefined);
   if (present.length === 0) return undefined;
-  const workspaceId = present[0]!.workspaceId;
+  const workspaceId = present[0].workspaceId;
   if (present.some((receipt) => receipt.workspaceId !== workspaceId)) {
     throw new Error("Cannot merge post-commit invalidation receipts across workspaces");
   }

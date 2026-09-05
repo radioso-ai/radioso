@@ -8,21 +8,11 @@ export {
 export { OperatorReplyService } from "./operatorReplyService.js";
 export { ConversationOwnershipRepository } from "../../db/repositories/conversationOwnershipRepository.js";
 export type {
-  CanResumeInput,
-  CanResumeResult,
   ConversationOwnershipRecord,
   ConversationOwnershipScope,
-  ConversationOwnershipState,
-  ResolvedOwnership,
-  ResumeClassification,
 } from "./ownershipState.js";
 export type {
-  ConversationOwnershipHandBackInput,
   ConversationOwnershipMutationResult,
-  ConversationOwnershipReason,
-  ConversationOwnershipRequestHandoffInput,
-  ConversationOwnershipTakeOverInput,
-  ConversationOwnershipTransferInput,
 } from "../../db/repositories/conversationOwnershipRepository.js";
 
 export interface ConversationOwnershipReader {

@@ -571,7 +571,7 @@ export function useHistoryDetailState({
   const effectiveConversationMessages = useMemo<ChatConversationTurn[]>(
     () =>
       conversationDetail
-        ? (mergeTailMessages(conversationDetail.messages, additionalConversationMessages) as ChatConversationTurn[])
+        ? (mergeTailMessages(conversationDetail.messages, additionalConversationMessages))
         : [],
     [additionalConversationMessages, conversationDetail],
   )
@@ -733,7 +733,7 @@ export function useHistoryDetailState({
     detailError,
     selectedThreadMessage,
     selectedThreadMessageId,
-    selectedDiagnosticsAssistantMessage: selectedDiagnosticsAssistantMessage as ChatConversationTurn | null,
+    selectedDiagnosticsAssistantMessage: selectedDiagnosticsAssistantMessage,
     selectedDiagnosticsTrace,
     activeTrace,
     activeEnvelope,

@@ -93,7 +93,7 @@ export function instructionToBlockSegments(instruction: string): RoutineBlockIns
   for (const match of instruction.matchAll(SLOT_REFERENCE)) {
     const start = match.index ?? 0
     if (start > cursor) segments.push({ kind: 'text', text: instruction.slice(cursor, start) })
-    segments.push({ kind: 'slotReference', key: match[1]!, source: match[0] })
+    segments.push({ kind: 'slotReference', key: match[1], source: match[0] })
     cursor = start + match[0].length
   }
   if (cursor < instruction.length || segments.length === 0) segments.push({ kind: 'text', text: instruction.slice(cursor) })
@@ -118,7 +118,7 @@ const diagnostic = (code: RoutineBlockStructuralDiagnosticCode, message: string)
 
 const slotKeysFromGuardText = (guardText: string | null): string[] => {
   const slotKeys = new Set<string>()
-  for (const match of (guardText ?? '').matchAll(SLOT_REFERENCE)) slotKeys.add(match[1]!)
+  for (const match of (guardText ?? '').matchAll(SLOT_REFERENCE)) slotKeys.add(match[1])
   return [...slotKeys]
 }
 

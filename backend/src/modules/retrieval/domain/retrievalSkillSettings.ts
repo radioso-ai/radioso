@@ -135,7 +135,7 @@ export const parsePersistedRetrievalSkillSettingsOverride = (input: unknown): Re
     parsed.metadataRules = normalizeMetadataRules(record.metadataRules);
   }
 
-  return parsed as RetrievalSkillSettingsOverride;
+  return parsed;
 };
 
 export const parseRetrieveSkillConfig = (input: unknown): RetrieveSkillConfig =>

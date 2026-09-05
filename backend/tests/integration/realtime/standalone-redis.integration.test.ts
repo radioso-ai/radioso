@@ -234,7 +234,7 @@ const createStack = async (prefix: string, input: StackInput = {}): Promise<Stac
   try {
     await Promise.all([subscriber.start(), admissionClient.start()]);
   } catch (error) {
-    gateway.shutdown();
+    await gateway.shutdown();
     admission.close();
     await Promise.allSettled([subscriber.close(), publisher.close(), admissionClient.close()]);
     throw error;

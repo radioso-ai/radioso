@@ -26,7 +26,7 @@ import type { ActionCapabilityMap } from "../../../shared/domain/actionCapabilit
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
-import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
+import type { MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { BootstrapGreetingCacheRepositoryPort } from "../../../db/repositories/bootstrapGreetingCacheRepository.js";
 import type { ConversationOwnershipRepository } from "../../../db/repositories/conversationOwnershipRepository.js";
@@ -96,7 +96,6 @@ import {
   type AssistantTurnPersistencePort,
   type ChatActionOutboxPort,
 } from "./chatTurnLifecycle.js";
-import { BlankChatAnswerError } from "./chatAnswerErrors.js";
 import { ChatAnswerSupport } from "./chatAnswerSupport.js";
 import {
   ApprovalResumeTurn,
@@ -116,7 +115,6 @@ import {
   lazyPromise,
   planAwareResponseLanguage,
   startTurnPlan,
-  type ChatTurnPlanHandle,
   type TurnPlanCoordinator,
 } from "./turnPlanCoordinator.js";
 import type { TurnPlanDirectiveCandidate } from "./turnPlanService.js";
@@ -148,7 +146,6 @@ import {
   type ConversationTurnRegistry,
   type ConversationTurnStage,
 } from "./conversationTurnRegistry.js";
-import { GENERATION_SURFACE } from "../../../shared/domain/generationSurface.js";
 
 export type { ChatGateway } from "../contracts/chatGateway.js";
 export type { ChatStreamEvent } from "../contracts/streamEvents.js";
@@ -1599,7 +1596,7 @@ export class ChatService {
       await releaseUsageReservation();
     }
 
-    if (!lazySuggestionsPromise || !session) {
+    if (lazySuggestionsPromise === undefined || !session) {
       return;
     }
     const conversationId = session.conversation.id;

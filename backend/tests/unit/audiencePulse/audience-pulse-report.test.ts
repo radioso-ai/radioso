@@ -269,8 +269,8 @@ describe("Audience Pulse report domain", () => {
 
     for (const output of [
       { ...validOutput, summary: "s".repeat(301) },
-      { ...validOutput, themes: [{ ...validOutput.themes[0]!, description: "d".repeat(251) }] },
-      { ...validOutput, recommendations: [{ ...validOutput.recommendations[0]!, rationale: "r".repeat(251) }] },
+      { ...validOutput, themes: [{ ...validOutput.themes[0], description: "d".repeat(251) }] },
+      { ...validOutput, recommendations: [{ ...validOutput.recommendations[0], rationale: "r".repeat(251) }] },
       { ...validOutput, caveats: ["c".repeat(161)] },
     ]) {
       expect(() => parseAudiencePulseModelOutput(output)).toThrow();
@@ -377,9 +377,9 @@ describe("Audience Pulse report domain", () => {
     ]);
     // An equal-allocation sampler would have flattened this to roughly one third per
     // week; real membership keeps the busy week's true weight.
-    const [busy, quiet1, quiet2] = report.themes[0]!.weeklyPulse;
-    expect(busy!.count).toBeGreaterThan(quiet1!.count * 2);
-    expect(busy!.count).toBeGreaterThan(quiet2!.count * 2);
+    const [busy, quiet1, quiet2] = report.themes[0].weeklyPulse;
+    expect(busy.count).toBeGreaterThan(quiet1.count * 2);
+    expect(busy.count).toBeGreaterThan(quiet2.count * 2);
   });
 
   it("scales content-gap eligibility to a topic's real size instead of a flat sample-sized threshold", () => {

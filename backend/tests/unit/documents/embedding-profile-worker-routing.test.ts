@@ -57,9 +57,9 @@ describe("embedding profile worker routing", () => {
       undefined,
       undefined,
       undefined,
-      { process: processProfile } as never,
+      { process: processProfile },
       undefined,
-      { run: runMaintenance } as never,
+      { run: runMaintenance },
     );
 
     await expect(worker.runOnce()).resolves.toBe(true);
@@ -113,7 +113,7 @@ describe("embedding profile worker routing", () => {
       undefined,
       undefined,
       undefined,
-      { process: vi.fn().mockRejectedValue(new Error("temporary")) } as never,
+      { process: vi.fn().mockRejectedValue(new Error("temporary")) },
       undefined,
       undefined,
       { recordFailure: vi.fn() },
@@ -169,7 +169,7 @@ describe("embedding profile worker routing", () => {
       undefined,
       { emit } as never,
       undefined,
-      { process: vi.fn().mockRejectedValue(new Error("provider unavailable")) } as never,
+      { process: vi.fn().mockRejectedValue(new Error("provider unavailable")) },
       undefined,
       undefined,
       { recordFailure },
@@ -249,7 +249,7 @@ describe("embedding profile worker routing", () => {
         process: vi.fn().mockRejectedValue(
           new EmbeddingVectorContractError("wrong dimensions"),
         ),
-      } as never,
+      },
       undefined,
       undefined,
       { recordFailure },
@@ -304,7 +304,7 @@ describe("embedding profile worker routing", () => {
       undefined,
       undefined,
       undefined,
-      { process: vi.fn().mockRejectedValue(new Error("provider unavailable")) } as never,
+      { process: vi.fn().mockRejectedValue(new Error("provider unavailable")) },
       undefined,
       undefined,
       {
@@ -361,7 +361,7 @@ describe("embedding profile worker routing", () => {
       undefined,
       undefined,
       undefined,
-      { process: vi.fn() } as never,
+      { process: vi.fn() },
     );
 
     await worker.start();

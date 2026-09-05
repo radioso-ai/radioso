@@ -119,7 +119,7 @@ export class RetrievalPipelineActivityTraceBuilder {
 
   buildNonActivityTrace(
     stages: NonActivityTraceSourceStages,
-    diagnostics: RetrievalExecutionDiagnostics,
+    _diagnostics: RetrievalExecutionDiagnostics,
   ): ActivityTrace {
     const traceCompletedAtMs = Date.now();
 

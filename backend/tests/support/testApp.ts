@@ -169,12 +169,8 @@ import {
   EvalSuiteProbeService,
   OperatorCopilotService,
   RetrievalProbeService,
-  type CopilotConversation,
-  type CopilotMessage,
-  type CopilotProposal,
   type CopilotReplayEvidenceRecord,
   type CopilotReplayEvidenceRepositoryPort,
-  type CopilotRepositoryPort,
 } from "../../src/modules/operatorCopilot/public.js";
 import {
   AgenticCapabilityRunner,
@@ -1601,7 +1597,7 @@ export const createTestDependencies = (overrides: {
   const publicChatActionAdvertiser = publicChatActionAdvertisers.length === 0
     ? new NoopPublicChatActionAdvertiser()
     : publicChatActionAdvertisers.length === 1
-      ? publicChatActionAdvertisers[0]!
+      ? publicChatActionAdvertisers[0]
       : new ChainedPublicChatActionAdvertiser(publicChatActionAdvertisers);
   const fallbackReplyComposer = overrides.fallbackReplyComposer ?? new TestFallbackReplyComposer();
   const publishedRoutineSource = createPublishedRoutineRegistrationSource(routineDefinitionRepository, {
@@ -1850,13 +1846,13 @@ export const createTestDependencies = (overrides: {
       async answer(_input: { history: unknown[]; runId: string }) {
         return { chunks: [], answer: "" };
       },
-    } as any,
+    },
     {
       async judge({ assertion }) {
         return { assertion, status: "error" as const, reason: "Judge is not configured in test app." };
       },
     },
-    workbenchReplayRunner as any,
+    workbenchReplayRunner,
     logger,
   );
   const evalCaseService = new EvalCaseService(evalRepository);
@@ -2298,7 +2294,7 @@ export const createTestDependencies = (overrides: {
     messageRepository,
     connectorRegistry,
     connectorManagementService: new ConnectorManagementService({
-      database: connectorDb as any,
+      database: connectorDb,
       registry: connectorRegistry,
     }),
     connectorIngestionPort: {
@@ -2315,7 +2311,7 @@ export const createTestDependencies = (overrides: {
   };
 
   void connectorRegistry.initializeAll({
-    db: connectorDb as any,
+    db: connectorDb,
     logger: dependencies.logger,
     chat: createConnectorChatPort(dependencies.chatService),
     ingestion: dependencies.connectorIngestionPort,
@@ -2476,18 +2472,6 @@ const keywordAllTermsMatch = (content: string, query: string): boolean => {
   return normalizedTerms.length > 0 && normalizedTerms.every((term) => lowerContent.includes(term));
 };
 
-const keywordEmbedding = (text: string): number[] => {
-  const vector = new Array<number>(8).fill(0);
-  const terms = normalizeTerms(text);
-
-  for (const term of terms) {
-    const bucket = hashTerm(term) % vector.length;
-    vector[bucket] += 1;
-  }
-
-  return vector;
-};
-
 const wordSegmenter = new Intl.Segmenter(undefined, { granularity: "word" });
 
 const normalizeTerms = (text: string): string[] =>
@@ -2501,16 +2485,6 @@ const normalizeRewriteContext = (text: string): string =>
     .trim()
     .replace(/[?.!]+$/g, "")
     .trim();
-
-const hashTerm = (term: string): number => {
-  let hash = 0;
-
-  for (let index = 0; index < term.length; index += 1) {
-    hash = (hash * 31 + term.charCodeAt(index)) >>> 0;
-  }
-
-  return hash;
-};
 
 class InMemoryCopilotReplayEvidenceRepository implements CopilotReplayEvidenceRepositoryPort {
   private records: CopilotReplayEvidenceRecord[] = [];

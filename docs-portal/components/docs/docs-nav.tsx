@@ -68,7 +68,7 @@ function toLink(item: DocsDirectory | ActivePathItem): NavLink | null {
 
 function childrenOf(item: DocsDirectory): DocsDirectory[] | undefined {
   return 'children' in item && Array.isArray(item.children) && item.children.length > 0
-    ? (item.children as DocsDirectory[])
+    ? (item.children)
     : undefined
 }
 
@@ -161,7 +161,7 @@ export function useDocsNav(): DocsNav | null {
 
     return {
       ...normalized,
-      groups: buildGroups(normalized.docsDirectories as DocsDirectory[]),
+      groups: buildGroups(normalized.docsDirectories),
       breadcrumbs,
       previous: siblingAt(activeIndex - 1),
       next: siblingAt(activeIndex + 1),

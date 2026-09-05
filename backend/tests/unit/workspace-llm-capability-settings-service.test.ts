@@ -58,7 +58,7 @@ const createAudit = (): AuditPort & { events: AuditEvent[] } => {
       events.push({
         eventType: input.eventType,
         eventStatus: input.eventStatus,
-        metadata: input.metadata as Record<string, unknown> | undefined,
+        metadata: input.metadata,
       });
     },
     async getLatestSuccessfulChatAnswerMetadata() {

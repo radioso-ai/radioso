@@ -110,7 +110,7 @@ export class SlackMessageHandler {
       return;
     }
     await this.handleSlackTurn({
-      envelope: input as SlackInboundEventEnvelope & { event: SlackMessageImEvent },
+      envelope: input,
       // DMs have no routable channel; resolve straight to the installation default answerer.
       routingChannelId: null,
       getSlackKey: (installation) => dmSlackKey(installation.teamId, input.event.user),

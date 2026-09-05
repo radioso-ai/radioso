@@ -68,7 +68,7 @@ describe("slackBlockKitBuilder", () => {
     });
 
     expect(readMrkdwnTexts(message.blocks).every((text) => text.length <= 3_000)).toBe(true);
-    const actions = readActionBlocks(message.blocks)[0]!;
+    const actions = readActionBlocks(message.blocks)[0];
     expect(actions.elements).toHaveLength(25);
     expect(actions.elements.every((element) => (element.text as { text: string }).text.length <= 75)).toBe(true);
     expect(JSON.stringify(message.blocks)).toContain("…");
@@ -115,7 +115,7 @@ describe("slackBlockKitBuilder", () => {
     expect(JSON.stringify(message.blocks)).toContain("/conversations/conv_1");
     const actions = message.blocks.find((block) => block.type === "actions") as { elements: Array<Record<string, unknown>> };
     expect(actions.elements.map((element) => element.action_id)).toEqual(["ownership_takeover"]);
-    expect(JSON.parse(actions.elements[0]!.value as string)).toEqual({
+    expect(JSON.parse(actions.elements[0].value as string)).toEqual({
       conversationId: "conv_1",
       workspaceId: "ws_1",
     });
@@ -181,7 +181,7 @@ describe("slackBlockKitBuilder", () => {
     expect((modal.title as { text: string }).text.length).toBeLessThanOrEqual(24);
     expect((modal.submit as { text: string }).text.length).toBeLessThanOrEqual(24);
     expect((modal.close as { text: string }).text.length).toBeLessThanOrEqual(24);
-    const block = (modal.blocks as Array<{ label: { text: string } }>)[0]!;
+    const block = (modal.blocks as Array<{ label: { text: string } }>)[0];
     expect(block.label.text.length).toBeLessThanOrEqual(2_000);
   });
 });

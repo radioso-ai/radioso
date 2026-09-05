@@ -150,9 +150,9 @@ describe("SlackInteractivityHandler ownership branch", () => {
       slackUserId: "U1",
     });
     expect(publisher.enqueue).toHaveBeenCalledWith("ws_conversation", ["conversation.ownership_changed"]);
-    expect(responsePosts[0]!.body).toMatchObject({ replace_original: true });
-    expect(JSON.stringify(responsePosts[0]!.body.blocks)).toContain("ownership_talk");
-    const actions = (responsePosts[0]!.body.blocks as Array<Record<string, unknown>>)
+    expect(responsePosts[0].body).toMatchObject({ replace_original: true });
+    expect(JSON.stringify(responsePosts[0].body.blocks)).toContain("ownership_talk");
+    const actions = (responsePosts[0].body.blocks as Array<Record<string, unknown>>)
       .find((block) => block.type === "actions") as { elements: Array<Record<string, unknown>> };
     expect(actions.elements.map((element) => JSON.parse(element.value as string))).toEqual([
       { conversationId: "conv_1", workspaceId: "ws_conversation", version: 2 },
@@ -170,7 +170,7 @@ describe("SlackInteractivityHandler ownership branch", () => {
 
     expect(ownership.takeOver).not.toHaveBeenCalled();
     expect(audit.record).not.toHaveBeenCalled();
-    expect(responsePosts[0]!.body).toMatchObject({
+    expect(responsePosts[0].body).toMatchObject({
       response_type: "ephemeral",
       text: "You're not a Radioso operator on this workspace.",
     });
@@ -187,7 +187,7 @@ describe("SlackInteractivityHandler ownership branch", () => {
     }));
 
     expect(audit.record).not.toHaveBeenCalled();
-    expect(responsePosts[0]!.body).toMatchObject({
+    expect(responsePosts[0].body).toMatchObject({
       response_type: "ephemeral",
       text: "Conversation ownership changed. Refreshing.",
     });
@@ -219,9 +219,9 @@ describe("SlackInteractivityHandler ownership branch", () => {
       metadata: expect.objectContaining({ action: "handed_back", conversationId: "conv_1" }),
     }));
     expect(publisher.enqueue).toHaveBeenCalledWith("ws_conversation", ["conversation.ownership_changed"]);
-    expect(responsePosts[0]!.body).toMatchObject({ replace_original: true });
-    expect(JSON.stringify(responsePosts[0]!.body.blocks)).toContain("ownership_takeover");
-    expect(JSON.stringify(responsePosts[0]!.body.blocks)).not.toContain("ownership_talk");
+    expect(responsePosts[0].body).toMatchObject({ replace_original: true });
+    expect(JSON.stringify(responsePosts[0].body.blocks)).toContain("ownership_takeover");
+    expect(JSON.stringify(responsePosts[0].body.blocks)).not.toContain("ownership_talk");
   });
 
   it("posts an ephemeral refresh when handback loses the ownership race", async () => {
@@ -235,7 +235,7 @@ describe("SlackInteractivityHandler ownership branch", () => {
     }));
 
     expect(audit.record).not.toHaveBeenCalled();
-    expect(responsePosts[0]!.body).toMatchObject({
+    expect(responsePosts[0].body).toMatchObject({
       response_type: "ephemeral",
       text: "Conversation ownership changed. Refreshing.",
     });
@@ -278,7 +278,7 @@ describe("SlackInteractivityHandler ownership branch", () => {
     }));
 
     expect(viewsOpen).not.toHaveBeenCalled();
-    expect(responsePosts[0]!.body).toMatchObject({
+    expect(responsePosts[0].body).toMatchObject({
       response_type: "ephemeral",
     });
   });

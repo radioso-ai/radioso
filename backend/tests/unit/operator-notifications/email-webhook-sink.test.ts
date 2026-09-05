@@ -61,12 +61,12 @@ describe("EmailWebhookOperatorNotificationSink", () => {
     await sink.deliver(notification, context);
 
     expect(sent).toHaveLength(1);
-    expect(sent[0]!.to).toBe("owner@business.example");
-    expect(sent[0]!.subject).toBe("Conversation needs an approval");
-    expect(sent[0]!.idempotencyKey).toBe("routine-action:conv_1:approval.request:email:owner%40business.example");
-    expect(sent[0]!.text).toContain("Conversation: conv_1");
-    expect(sent[0]!.text).toContain("Decision: pd_abc");
-    expect(sent[0]!.text).toContain("Open: /conversations/conv_1");
+    expect(sent[0].to).toBe("owner@business.example");
+    expect(sent[0].subject).toBe("Conversation needs an approval");
+    expect(sent[0].idempotencyKey).toBe("routine-action:conv_1:approval.request:email:owner%40business.example");
+    expect(sent[0].text).toContain("Conversation: conv_1");
+    expect(sent[0].text).toContain("Decision: pd_abc");
+    expect(sent[0].text).toContain("Open: /conversations/conv_1");
   });
 
   it("preserves approval webhook delivery", async () => {
@@ -88,9 +88,9 @@ describe("EmailWebhookOperatorNotificationSink", () => {
 
     expect(sent).toHaveLength(0);
     expect(requests).toHaveLength(1);
-    expect(requests[0]!.url).toBe("https://hooks.example.com/approval");
-    expect(requests[0]!.headers["Idempotency-Key"]).toBe("routine-action:conv_1:approval.request:webhook");
-    expect(JSON.parse(requests[0]!.rawBody)).toEqual({
+    expect(requests[0].url).toBe("https://hooks.example.com/approval");
+    expect(requests[0].headers["Idempotency-Key"]).toBe("routine-action:conv_1:approval.request:webhook");
+    expect(JSON.parse(requests[0].rawBody)).toEqual({
       conversationId: "conv_1",
       workspaceId: "ws_1",
       agentId: "agent_1",
@@ -112,14 +112,14 @@ describe("EmailWebhookOperatorNotificationSink", () => {
     });
 
     expect(sent).toHaveLength(1);
-    expect(sent[0]!.to).toBe("owner@business.example");
-    expect(sent[0]!.subject).toBe("Conversation needs a human");
-    expect(sent[0]!.idempotencyKey).toBe("routine-action:conv_1:handoff.notify:email:owner%40business.example");
-    expect(sent[0]!.text).toContain("Conversation: conv_1");
-    expect(sent[0]!.text).toContain("Workspace: ws_1");
-    expect(sent[0]!.text).toContain("Agent: agent_1");
-    expect(sent[0]!.text).toContain("Reason: routine_handoff");
-    expect(sent[0]!.text).toContain("Open: /conversations/conv_1");
+    expect(sent[0].to).toBe("owner@business.example");
+    expect(sent[0].subject).toBe("Conversation needs a human");
+    expect(sent[0].idempotencyKey).toBe("routine-action:conv_1:handoff.notify:email:owner%40business.example");
+    expect(sent[0].text).toContain("Conversation: conv_1");
+    expect(sent[0].text).toContain("Workspace: ws_1");
+    expect(sent[0].text).toContain("Agent: agent_1");
+    expect(sent[0].text).toContain("Reason: routine_handoff");
+    expect(sent[0].text).toContain("Open: /conversations/conv_1");
   });
 
   it("preserves handoff webhook delivery", async () => {
@@ -144,9 +144,9 @@ describe("EmailWebhookOperatorNotificationSink", () => {
 
     expect(sent).toHaveLength(0);
     expect(requests).toHaveLength(1);
-    expect(requests[0]!.url).toBe("https://hooks.example.com/handoff");
-    expect(requests[0]!.headers["Idempotency-Key"]).toBe("routine-action:conv_1:handoff.notify:webhook");
-    expect(JSON.parse(requests[0]!.rawBody)).toEqual({
+    expect(requests[0].url).toBe("https://hooks.example.com/handoff");
+    expect(requests[0].headers["Idempotency-Key"]).toBe("routine-action:conv_1:handoff.notify:webhook");
+    expect(JSON.parse(requests[0].rawBody)).toEqual({
       conversationId: "conv_1",
       workspaceId: "ws_1",
       agentId: "agent_1",

@@ -28,7 +28,7 @@ import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
 describeIntegration("ContextVariableRepository.applyProposal conflict translation (Postgres)", () => {
-  const database = new Database(integrationDatabaseUrl as string);
+  const database = new Database(integrationDatabaseUrl);
   const contextVariableRepository = new ContextVariableRepository(database.kysely);
   const agentRepository = new AgentRepository(database.kysely);
 

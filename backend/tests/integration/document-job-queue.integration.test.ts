@@ -15,7 +15,7 @@ const { describeIntegration, integrationDatabaseUrl } = await resolveIntegration
 const claimableNow = () => new Date(Date.now() + 1_000);
 
 describeIntegration("document job queue embedding profiles (Postgres)", () => {
-  const database = new Database(integrationDatabaseUrl as string);
+  const database = new Database(integrationDatabaseUrl);
   const profiles = new EmbeddingProfileRepository(database.kysely);
   const jobs = new DocumentProcessingJobRepository(database.kysely);
   const persistence = new EmbeddingProfileJobRepository(database.kysely);
@@ -151,7 +151,7 @@ describeIntegration("document job queue embedding profiles (Postgres)", () => {
          WHERE document_id = $1 AND embedding_space_id = $2`,
         [documentId, pending.id],
       )).rows[0];
-      return profileJob!;
+      return profileJob;
     });
 
     await expect(persistence.load({
@@ -220,7 +220,7 @@ describeIntegration("document job queue embedding profiles (Postgres)", () => {
     const row = (await database.query<{ id: string }>(
       "SELECT id FROM document_processing_jobs WHERE document_id = $1",
       [documentId],
-    ))[0]!;
+    ))[0];
 
     const [first, second] = await Promise.all([
       jobs.claimById(row.id, claimableNow()),

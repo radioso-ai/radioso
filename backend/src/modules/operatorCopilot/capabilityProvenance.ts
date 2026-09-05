@@ -131,7 +131,7 @@ export const assertCopilotCapabilityProvenance = (
     // Supplementary owner primitives and Ray-only safety may explain composition, but never
     // weaken a descriptor's ordinary authorization when it represents one public operation.
     if (operationIds.length === 1) {
-      const requiredByOperation = operationPermissions[operationIds[0]!];
+      const requiredByOperation = operationPermissions[operationIds[0]];
       if (!requiredByOperation) throw new Error(`Missing HTTP permission requirement for one-to-one operation: ${operationIds[0]}`);
       if (!requiredByOperation.every((permission) => descriptor.requiredPermissions.includes(permission as never))) {
         throw new Error(`Copilot descriptor ${descriptor.name} weakens permission parity for ${operationIds[0]}`);

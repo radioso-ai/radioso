@@ -144,8 +144,8 @@ describe("SkillRunResolver", () => {
       shapeName: "lexical",
       fallbackShapeName: "default",
     });
-    resolved.resolvedSteps[0]!.clauses.ranking = { rerankMode: "mutated" };
-    resolved.resolvedSteps[0]!.appliedOverride = { ranking: { rerankMode: "mutated" } };
+    resolved.resolvedSteps[0].clauses.ranking = { rerankMode: "mutated" };
+    resolved.resolvedSteps[0].appliedOverride = { ranking: { rerankMode: "mutated" } };
 
     expect(JSON.stringify(skill)).toBe(snapshot);
   });

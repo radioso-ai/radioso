@@ -226,7 +226,7 @@ describe("RepositoryAgentSkillTurnSkillProvider", () => {
       snippetChars: 48,
     }));
 
-    const output = await tools[0]!.invoke(
+    const output = await tools[0].invoke(
       { query: "query" },
       { signal: new AbortController().signal, stepIndex: 0, callId: "call-1" },
     );
@@ -379,7 +379,7 @@ describe("RepositoryAgentSkillTurnSkillProvider", () => {
     );
 
     expect(tools.map((tool) => tool.name)).toEqual(["skill_grounded_search"]);
-    const output = await tools[0]!.invoke(
+    const output = await tools[0].invoke(
       { query: "What is the refund policy?" },
       { signal: new AbortController().signal, stepIndex: 0, callId: "call-1" },
     );

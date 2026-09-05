@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 
 import { ChunkEmbeddingRepository } from "../../src/db/repositories/chunkEmbeddingRepository.js";
 import { EmbeddingProfileRepository } from "../../src/db/repositories/embeddingProfileRepository.js";
@@ -12,7 +12,7 @@ const { describeIntegration, integrationDatabaseUrl } = await resolveIntegration
 const dimensionsUnderTest = [768, 1536, 3072, 16_000] as const;
 
 describeIntegration("chunk embedding repository (Postgres)", () => {
-  const database = new Database(integrationDatabaseUrl as string);
+  const database = new Database(integrationDatabaseUrl);
   const profileRepository = new EmbeddingProfileRepository(database.kysely);
   const repository = new ChunkEmbeddingRepository(database.kysely);
 

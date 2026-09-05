@@ -17,7 +17,6 @@ import {
   type CaseReport,
   type ConversationQualityCase,
   type ConversationQualityRunnerPort,
-  type SuiteTraceAssertion,
 } from "../../../src/modules/eval/suite/index.js";
 import type { EvalLlmJudgePort } from "../../../src/modules/eval/services/evalJudge.js";
 import {
@@ -128,7 +127,7 @@ describe("scoreObservedOutput", () => {
   it("passes a case mixing product, trace, and judge assertions", async () => {
     const score = await scoreObservedOutput(
       [
-        { type: "turn_route", route: "retrieval" } as SuiteTraceAssertion,
+        { type: "turn_route", route: "retrieval" },
         { type: "retrieval_includes_document", documentId: "doc-a" },
         { type: "answer_contains", pattern: "49", matchMode: "substring" },
         { type: "llm_judge", expectedAnswer: "$49/mo" },
@@ -151,7 +150,7 @@ describe("scoreObservedOutput", () => {
 
   it("propagates a runner error to every assertion", async () => {
     const score = await scoreObservedOutput(
-      [{ type: "turn_route", route: "retrieval" } as SuiteTraceAssertion],
+      [{ type: "turn_route", route: "retrieval" }],
       observed({ error: { message: "boom" } }),
       { workspaceId: "ws", question: "q", runId: "r" },
     );

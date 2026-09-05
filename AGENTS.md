@@ -69,6 +69,17 @@ Full local stack:
 ./run-dev.sh
 ```
 
+Workspace checks. Lint and the dead-code ratchet cover every area from one config, so run them
+from the repo root, not inside a package. See `docs/code-quality-gates.md`.
+
+```bash
+pnpm run lint
+pnpm run lint:fix
+pnpm run lint:dead-code             # full report
+pnpm run lint:dead-code:ci          # the gate: no new dead code, and none left in files you touched
+pnpm run lint:dead-code:baseline    # re-record knip-baseline.json after deleting some
+```
+
 Backend:
 
 ```bash
@@ -106,7 +117,6 @@ Frontend:
 cd frontend
 pnpm run dev
 pnpm run build
-pnpm run lint
 pnpm test
 pnpm run test:e2e       # production server, matching CI
 pnpm run test:e2e:dev   # development server for rapid iteration
@@ -118,7 +128,6 @@ Docs portal:
 cd docs-portal
 pnpm run dev
 pnpm run build
-pnpm run lint
 ```
 
 MCP server package:
@@ -192,6 +201,8 @@ Orchestrate on the strong tier and fan work out on cheaper ones. A subagent runn
 - Prefer pure helper modules for mapping, normalization, formatting, and trace or audit payload construction.
 - Do not encode product meaning, routing, retrieval strategy, intent classification, or user-facing behavior with English regexes or hard-coded keyword lists in code. Radioso is multilingual; use structured metadata, typed configuration, settings-owned rules, or prompt-returned enum fields instead. Structural regexes for format parsing, identifiers, or protocol syntax are acceptable when they do not encode English product vocabulary.
 - Keep comments for non-obvious constraints, safety decisions, or business rules. Do not narrate straightforward code.
+- `pnpm run lint` is the shared style gate; `eslint.config.mjs` at the repo root is its single source of truth. Prefer fixing a finding over suppressing it, and when a suppression is right, give it a `-- <reason>`.
+- `@typescript-eslint/no-unnecessary-type-assertion` autofix removes assertions whose job is to stop a literal from widening. Run `tsc` after `pnpm run lint:fix`, not just the tests.
 - Preserve behavior during refactors. Make extraction-only changes separately from behavior changes when practical, and verify with focused tests.
 - Use Test-driven-development TDD approach for backend. First write failing tests, then complete the functionality for the tests to pass.
 - For frontend, choose the most appropriate testing method between TDD for logic, React component tests or Playwright test where appropriate. Never write unit tests for CSS or layout.
@@ -206,6 +217,8 @@ Orchestrate on the strong tier and fan work out on cheaper ones. A subagent runn
 ## Documentation
 
 Before editing `readme.md`, files under `docs/`, files under `docs-portal/content/`, or settings docs used by the product UI, read `docs/document-writer-prompt.md` and follow it.
+
+`docs/code-quality-gates.md` covers the lint and dead-code gates: what each catches, the rules that are deliberately scoped, and what to do when the ratchet fails.
 
 For context-efficient feature work, start with `docs/agent-context-workflow.md`, then use `docs/architecture/code-map.md` to find the owning area, public entry points, focused tests, and related specs before reading broad directories.
 

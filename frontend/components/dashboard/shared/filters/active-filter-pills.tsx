@@ -20,7 +20,7 @@ interface ActiveFilterPillsProps {
 
 const formatList = (entries: string[]): string => {
   if (entries.length === 0) return ''
-  if (entries.length === 1) return entries[0]!
+  if (entries.length === 1) return entries[0]
   if (entries.length === 2) return `${entries[0]} or ${entries[1]}`
   return `${entries.slice(0, 2).join(', ')}, +${entries.length - 2} more`
 }

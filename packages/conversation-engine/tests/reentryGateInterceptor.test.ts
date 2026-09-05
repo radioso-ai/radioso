@@ -56,7 +56,7 @@ describe("completed-instance reentry gate interceptor", () => {
 
     expect(result).not.toBeNull();
     expect(resume).toHaveBeenCalledTimes(1);
-    expect(resume.mock.calls[0]![0]).toMatchObject({
+    expect(resume.mock.calls[0][0]).toMatchObject({
       state: { routineId: "routine_qualify", path: [], variables: { budget: "10k", name: "Sam" }, status: "active" },
     });
   });
@@ -68,7 +68,7 @@ describe("completed-instance reentry gate interceptor", () => {
 
     expect(result).not.toBeNull();
     expect(resume).toHaveBeenCalledTimes(1);
-    expect(resume.mock.calls[0]![0]).toMatchObject({
+    expect(resume.mock.calls[0][0]).toMatchObject({
       state: { routineId: "routine_qualify", path: [], variables: {}, status: "active" },
     });
   });

@@ -245,6 +245,13 @@ echo "  census=$census"
 echo "  ee=$ee"
 echo "  bootstrap=$bootstrap"
 
+# Lint and the dead-code ratchet are workspace-wide, so they run on every invocation
+# rather than behind a path filter, matching the CI job of the same name.
+run pnpm install --frozen-lockfile
+run_sh "pnpm --filter './packages/*' --filter './ee/packages/*' run build"
+run_sh "pnpm run lint"
+run_sh "pnpm run lint:dead-code:ci"
+
 if [ "$bootstrap" = true ]; then
   run_sh "node --test tests/bootstrap/*.test.mjs"
 fi
@@ -264,7 +271,6 @@ fi
 
 if [ "$frontend" = true ]; then
   run pnpm install --frozen-lockfile --filter radioso-frontend...
-  run_sh "cd frontend && pnpm run lint"
   run_sh "cd frontend && pnpm test"
   if [ "$(uname -s)" = "Linux" ]; then
     run_sh "cd frontend && pnpm exec playwright install --with-deps chromium"
@@ -276,7 +282,6 @@ fi
 
 if [ "$docs" = true ]; then
   run pnpm install --frozen-lockfile --filter radioso-docs-portal...
-  run_sh "cd docs-portal && pnpm run lint"
   run_sh "cd docs-portal && NODE_ENV=production pnpm run build"
 fi
 

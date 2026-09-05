@@ -32,7 +32,7 @@ import { connectorKyselyDb } from "../../services/connectorKyselyDb.js";
 import { PostgresSlackPersistence } from "./slackPersistence.js";
 import { createSlackWebhookRouter } from "./slackWebhook.js";
 
-export interface SlackPluginOptions {
+interface SlackPluginOptions {
   signingSecret: string;
   encryptionKey?: string;
   clientFactory?: SlackWebApiClientFactory;

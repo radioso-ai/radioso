@@ -202,7 +202,9 @@ that still find no counterpart leave its original dissolution unchanged.
 Audience Pulse compares a fresh census with the latest saved report when it
 decides whether to reuse summary and recommendation copy. The comparison uses
 the prior snapshot regardless of where the previous and current analysis-window
-boundaries fall. Reuse requires a fully facet-ready run with at least one topic,
+boundaries fall. The snapshot's stored census run id also matches the single
+prior run whose memberships supply the current overlap measurement. Reuse
+requires a fully facet-ready run with at least one topic,
 a saved summary, and shared-membership survival for every current topic. No
 topic dissolves or relies on centroid fallback. The ordered ids of the eight
 richest topics shown to the narrative model are identical to the prior report's
@@ -218,11 +220,13 @@ rule instead of maintaining another constant.
 
 The current content-gap theme-id set also matches the saved report. Every
 evidence id stored on a saved theme remains a member of that same topic, and
-every reused recommendation evidence id remains a current,
-content-gap-eligible member of its topic. Missing, expired, moved, or ineligible
-evidence regenerates the narrative. A saved report without an unclassified
-question count or topic share also regenerates it. A narrative is reused for at
-most three consecutive refreshes; the following refresh regenerates it.
+the stored recommendation evidence exactly matches the current selector's
+ordered output for its topic. Every selected id remains a current,
+content-gap-eligible member of that topic. Missing, expired, moved, ineligible,
+reordered, or newly selected evidence regenerates the narrative. A saved report
+without an unclassified question count or topic share also regenerates it. A
+narrative is reused for at most three consecutive refreshes; the following
+refresh regenerates it.
 `narrativeGeneratedAt` records when the current prose is generated, and
 `narrativeReuseCount` records how many consecutive refreshes reuse it. Reports
 without a persisted `dissolvedTopics` field read it as an empty collection, and
@@ -235,12 +239,13 @@ source of recommendation membership. Reuse applies saved narrative copy to the
 same fresh computation. Themes, counts, shares, weekly pulse, grounding, and
 content gaps therefore always derive from the fresh census.
 
-Usage accounting reserves an answer only on the regeneration path, immediately
-before model setup and completion. Reuse and facet-not-ready reports make no
-reservation, so a workspace at its usage limit can still complete a free
-refresh. A validated model result commits its reservation before snapshot
-persistence. Failures before a validated completion release it; completed reuse
-has no accounting cleanup that can replace its completion with a failure audit.
+Usage accounting reserves an answer before the census because naming can call a
+model before the narrative reuse decision exists. Reuse releases that reservation
+when no model call is issued. A facet-not-ready refresh also releases its
+reservation when no model call is issued. Once naming or narrative work is
+dispatched, the refresh commits the reservation even when later model,
+validation, or persistence work fails. Successful billable work commits before
+snapshot persistence.
 
 Census membership-integrity failures return the `census` unavailability reason
 and record the same outcome in refresh audit metadata. Model response failures

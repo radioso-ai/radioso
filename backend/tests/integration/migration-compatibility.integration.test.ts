@@ -9,6 +9,7 @@ const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
 const fieldGuardMigration = "107_routine_field_guards.sql";
 const topicCensusRepairMigration = "156_repair_topic_census_workspace_scope.sql";
 const topicTransitionUniquenessMigration = "166_topic_transitions_run_topic_unique.sql";
+const topicTransitionTitleMigration = "168_topic_transition_title.sql";
 
 const canCreateIsolatedDatabase = async (databaseUrl?: string): Promise<boolean> => {
   if (!databaseUrl) return false;
@@ -291,5 +292,68 @@ describeIfDatabase("topic transition uniqueness migration", () => {
        VALUES ($1, $2, $3, 'survived')`,
       [workspaceId, runId, topicId],
     )).rejects.toMatchObject({ code: "23505" });
+  });
+});
+
+describeIfDatabase("topic transition title migration", () => {
+  const isolatedName = `mig168_topic_transition_${randomUUID().replace(/-/g, "")}`;
+  let admin: Database;
+  let database: Database;
+
+  beforeAll(async () => {
+    admin = new Database(integrationDatabaseUrl!);
+    await admin.execute(`CREATE DATABASE "${isolatedName}"`);
+    database = new Database(isolatedDatabaseUrl(integrationDatabaseUrl!, isolatedName));
+    await runTestMigrationsBefore(database, topicTransitionTitleMigration);
+  });
+
+  afterAll(async () => {
+    await database?.close().catch(() => undefined);
+    if (admin) {
+      await admin.execute(`DROP DATABASE IF EXISTS "${isolatedName}"`);
+      await admin.close().catch(() => undefined);
+    }
+  });
+
+  it("backfills the current title once and keeps it immutable after topic renaming", async () => {
+    const accountId = randomUUID();
+    const workspaceId = randomUUID();
+    const runId = randomUUID();
+    const topicId = randomUUID();
+    await database.execute(
+      "INSERT INTO accounts(id, name, email, password_hash) VALUES ($1, 'Acct', $2, 'hash')",
+      [accountId, `mig168-${accountId}@example.com`],
+    );
+    await database.execute(
+      "INSERT INTO workspaces(id, account_id, name, public_route_key) VALUES ($1, $2, 'WS', $3)",
+      [workspaceId, accountId, `rk-${workspaceId}`],
+    );
+    await database.execute(
+      `INSERT INTO topic_census_runs(
+         id, workspace_id, window_start, window_end, question_count, seed, params_json
+       ) VALUES ($1, $2, now() - interval '1 day', now(), 1, 'seed', '{}'::jsonb)`,
+      [runId, workspaceId],
+    );
+    await database.execute(
+      `INSERT INTO topics(
+         id, workspace_id, centroid, dimensions, radius, title, description,
+         created_run_id, last_seen_run_id
+       ) VALUES ($1, $2, '[1,0,0]'::vector, 3, 0.1, 'Original title', 'Description', $3, $3)`,
+      [topicId, workspaceId, runId],
+    );
+    await database.execute(
+      `INSERT INTO topic_transitions(workspace_id, run_id, topic_id, kind)
+       VALUES ($1, $2, $3, 'dissolved')`,
+      [workspaceId, runId, topicId],
+    );
+
+    await applyTestMigration(database, topicTransitionTitleMigration);
+    await database.execute("UPDATE topics SET title = 'Renamed topic' WHERE id = $1", [topicId]);
+
+    const transitions = await database.query<{ topic_title: string }>(
+      "SELECT topic_title FROM topic_transitions WHERE run_id = $1 AND topic_id = $2",
+      [runId, topicId],
+    );
+    expect(transitions).toEqual([{ topic_title: "Original title" }]);
   });
 });

@@ -2704,6 +2704,7 @@ CREATE TABLE public.topic_transitions (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     via_centroid_fallback boolean DEFAULT false NOT NULL,
     membership_overlap double precision,
+    topic_title text NOT NULL,
     CONSTRAINT topic_transitions_kind_check CHECK ((kind = ANY (ARRAY['survived'::text, 'split'::text, 'merged'::text, 'emerged'::text, 'dissolved'::text]))),
     CONSTRAINT topic_transitions_membership_overlap_check CHECK (((membership_overlap IS NULL) OR ((membership_overlap >= (0)::double precision) AND (membership_overlap <= (1)::double precision))))
 );

@@ -75,18 +75,31 @@ const buildNamingPort = (): TopicNamingPort & {
   name: ReturnType<typeof vi.fn>;
   nameFallback: ReturnType<typeof vi.fn>;
 } => ({
-  name: vi.fn(async (exemplars: TopicNamingExemplars): Promise<TopicLabel> => ({
-    title: `Topic for ${exemplars.prototypical[0] ?? "unknown"}`,
-    description: "A generated topic description",
-  })),
-  nameFallback: vi.fn(async (): Promise<TopicLabel> => ({
-    title: "General inquiries",
-    description: "A neutral fallback label",
-  })),
+  name: vi.fn(async (
+    exemplars: TopicNamingExemplars,
+    _signal?: AbortSignal,
+    onModelCallIssued?: () => void,
+  ): Promise<TopicLabel> => {
+    onModelCallIssued?.();
+    return {
+      title: `Topic for ${exemplars.prototypical[0] ?? "unknown"}`,
+      description: "A generated topic description",
+    };
+  }),
+  nameFallback: vi.fn(async (_signal?: AbortSignal, onModelCallIssued?: () => void): Promise<TopicLabel> => {
+    onModelCallIssued?.();
+    return {
+      title: "General inquiries",
+      description: "A neutral fallback label",
+    };
+  }),
 });
 
 const buildPrivacyAuditPort = (): TopicLabelPrivacyAuditPort & { review: ReturnType<typeof vi.fn> } => ({
-  review: vi.fn(async () => ({ flagged: false })),
+  review: vi.fn(async (_label: TopicLabel, _signal?: AbortSignal, onModelCallIssued?: () => void) => {
+    onModelCallIssued?.();
+    return { flagged: false };
+  }),
 });
 
 const buildTopicRepository = (
@@ -128,6 +141,22 @@ const buildDependencies = (input: {
 };
 
 describe("CensusService.run (T020)", () => {
+  it("reports a naming call before a later persistence failure", async () => {
+    const topicRepository = buildTopicRepository();
+    topicRepository.saveRun.mockRejectedValueOnce(new Error("save failed"));
+    const service = new CensusService(buildDependencies({
+      eligibleIds: groupAIds,
+      facets: buildClusterableFacets().slice(0, groupAIds.length),
+      topicRepository,
+    }));
+    const onModelCallIssued = vi.fn();
+
+    await expect(service.run({ workspaceId, windowStart, windowEnd, onModelCallIssued }))
+      .rejects.toThrow("save failed");
+
+    expect(onModelCallIssued).toHaveBeenCalledTimes(2);
+  });
+
   it("reports every eligible question as a topic member or unclassified, summing to the population", async () => {
     const clusterableFacets = buildClusterableFacets();
     const missingFacetId = randomUUID();
@@ -162,6 +191,8 @@ describe("CensusService.run (T020)", () => {
 
     const result = await service.run({ workspaceId, windowStart, windowEnd });
 
+    expect(result.isFirstCensus).toBe(true);
+    expect(result.membershipBaselineRunId).toBeNull();
     expect(result.populationSize).toBe(11);
     const totalTopicMembers = result.topics.reduce((sum, topic) => sum + topic.memberCount, 0);
     expect(totalTopicMembers + result.unclassifiedCount).toBe(result.populationSize);
@@ -562,6 +593,8 @@ describe("CensusService.run identity matching (T028+T029)", () => {
     expect(reportedTopic?.title).toBe("Existing title");
     expect(reportedTopic?.description).toBe("Existing description");
     expect(reportedTopic?.transition?.membershipOverlap).toBe(0.8);
+    expect(result.isFirstCensus).toBe(false);
+    expect(result.membershipBaselineRunId).toBe(priorTopic.lastSeenRunId);
     expect(result.namingCallsIssued).toBe(1);
   });
 

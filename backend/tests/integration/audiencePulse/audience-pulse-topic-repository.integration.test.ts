@@ -621,6 +621,8 @@ describeIntegration("TopicRepository (Postgres)", () => {
       workspaceId,
       centroid: [0.1, 0.1, 0.1],
       radius: 0.3,
+      title: "Renamed after reactivation",
+      description: "A new description after reactivation",
     }]);
 
     const historicalRun = await repository.loadRun(runId);

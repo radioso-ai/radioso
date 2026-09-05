@@ -116,7 +116,9 @@ export const AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT = 0.2;
 export interface AudiencePulseStoredReport {
   period: { start: string; end: string };
   generatedAt: string;
-  /** True only when the service found no prior saved census snapshot. */
+  /** Internal persistence link to the census run whose data this report renders. */
+  censusRunId?: string;
+  /** True only when the census found no prior topics to match against. */
   isFirstCensus: boolean;
   narrativeGeneratedAt: string;
   narrativeReuseCount: number;

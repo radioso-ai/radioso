@@ -94,6 +94,10 @@ export interface CensusRunTopicResult {
 
 export interface CensusRunResult {
   runId: string;
+  /** True when the workspace had no prior topics available for identity matching. */
+  isFirstCensus: boolean;
+  /** The single prior run whose memberships supplied survived-topic overlap, when provable. */
+  membershipBaselineRunId: string | null;
   /** Naming model calls issued during this run; reused labels do not count. */
   namingCallsIssued: number;
   populationSize: number;
@@ -258,8 +262,10 @@ export class CensusService {
     windowStart: Date;
     windowEnd: Date;
     signal?: AbortSignal;
+    /** Reports billable model work before awaiting it, so failures cannot erase issued usage. */
+    onModelCallIssued?: () => void;
   }): Promise<CensusRunResult> {
-    const { workspaceId, windowStart, windowEnd, signal } = input;
+    const { workspaceId, windowStart, windowEnd, signal, onModelCallIssued } = input;
 
     // Loaded alongside the eligible-question fetch so it is ready by the time
     // clustering completes and identity matching needs it.
@@ -355,7 +361,13 @@ export class CensusService {
       // A survived topic keeps the label already on file -- no naming call, so an
       // operator watching a digest never sees a topic reworded on a refresh where
       // nothing about it changed (spec 956 US3).
-      const label = survivedLabel ?? await this.nameCluster({ workspaceId, topicId, exemplars, signal });
+      const label = survivedLabel ?? await this.nameCluster({
+        workspaceId,
+        topicId,
+        exemplars,
+        signal,
+        onModelCallIssued,
+      });
 
       topics.push({
         id: topicId,
@@ -491,6 +503,11 @@ export class CensusService {
     }).catch(() => undefined);
 
     reportTopics.sort((a, b) => b.memberCount - a.memberCount || a.topicId.localeCompare(b.topicId));
+    const membershipBaselineRunIds = new Set(reportTopics.flatMap((topic) => {
+      if (topic.transition?.kind !== "survived" || topic.transition.viaCentroidFallback) return [];
+      const baselineRunId = priorTopicsById.get(topic.topicId)?.lastSeenRunId;
+      return baselineRunId ? [baselineRunId] : [];
+    }));
     const dissolvedTopics = fullyFacetReady
       ? [...dissolvedTopicIds]
         .sort((left, right) => left.localeCompare(right))
@@ -499,6 +516,10 @@ export class CensusService {
 
     return {
       runId,
+      isFirstCensus: priorTopics.length === 0,
+      membershipBaselineRunId: membershipBaselineRunIds.size === 1
+        ? [...membershipBaselineRunIds][0]!
+        : null,
       namingCallsIssued,
       populationSize,
       unclassifiedCount,
@@ -516,8 +537,13 @@ export class CensusService {
     topicId: string;
     exemplars: TopicNamingExemplars;
     signal?: AbortSignal;
+    onModelCallIssued?: () => void;
   }): Promise<TopicLabel> {
-    const candidate = await this.dependencies.namingPort.name(input.exemplars, input.signal);
+    const candidate = await this.dependencies.namingPort.name(
+      input.exemplars,
+      input.signal,
+      input.onModelCallIssued,
+    );
     return resolveAuditedTopicLabel({
       workspaceId: input.workspaceId,
       topicId: input.topicId,
@@ -527,6 +553,7 @@ export class CensusService {
       privacyAuditPort: this.dependencies.privacyAuditPort,
       telemetryService: this.dependencies.telemetryService,
       signal: input.signal,
+      onModelCallIssued: input.onModelCallIssued,
     });
   }
 }

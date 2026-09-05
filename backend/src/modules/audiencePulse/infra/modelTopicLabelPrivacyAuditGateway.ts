@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
 import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInferencePipeline.js";
 import type {
+  ModelCallIssuedReporter,
   TopicLabel,
   TopicLabelPrivacyAuditPort,
   TopicLabelPrivacyAuditResult,
@@ -56,7 +57,11 @@ const parseAuditResult = (text: string): TopicLabelPrivacyAuditResult => {
 export class ModelTopicLabelPrivacyAuditGateway implements TopicLabelPrivacyAuditPort {
   constructor(private readonly deps: ModelTopicLabelPrivacyAuditGatewayDependencies) {}
 
-  async review(label: TopicLabel, signal?: AbortSignal): Promise<TopicLabelPrivacyAuditResult> {
+  async review(
+    label: TopicLabel,
+    signal?: AbortSignal,
+    onModelCallIssued?: ModelCallIssuedReporter,
+  ): Promise<TopicLabelPrivacyAuditResult> {
     const { workspaceId } = this.deps.workspaceContext;
     const modelCallContext: ModelCallUsageContext = {
       workspaceId,
@@ -68,6 +73,7 @@ export class ModelTopicLabelPrivacyAuditGateway implements TopicLabelPrivacyAudi
       workspaceContext: this.deps.workspaceContext,
       modelCallContext,
     });
+    onModelCallIssued?.();
     const completion = await inference.complete({
       prompt: buildTopicLabelPrivacyAuditPrompt(label),
       maxInputTokens: TOPIC_LABEL_AUDIT_MAX_TOTAL_TOKENS,

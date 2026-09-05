@@ -27,6 +27,32 @@ const buildInferenceFactory = (text: string): TopicNamingInferenceFactory & {
 };
 
 describe("ModelTopicNamingGateway", () => {
+  it("reports a model call only when completion dispatch begins", async () => {
+    const inferenceFactory = buildInferenceFactory(
+      JSON.stringify({ title: "Pricing questions", description: "Visitors asking about plan pricing." }),
+    );
+    const onModelCallIssued = vi.fn();
+    const gateway = new ModelTopicNamingGateway({ inferenceFactory, workspaceContext: { workspaceId } });
+
+    await gateway.name({ prototypical: ["how much does it cost"], peripheral: [] }, undefined, onModelCallIssued);
+
+    expect(onModelCallIssued).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not report a model call when inference setup fails before dispatch", async () => {
+    const inferenceFactory = { create: vi.fn(async () => { throw new Error("setup failed"); }) };
+    const onModelCallIssued = vi.fn();
+    const gateway = new ModelTopicNamingGateway({ inferenceFactory, workspaceContext: { workspaceId } });
+
+    await expect(gateway.name(
+      { prototypical: ["how much does it cost"], peripheral: [] },
+      undefined,
+      onModelCallIssued,
+    )).rejects.toThrow("setup failed");
+
+    expect(onModelCallIssued).not.toHaveBeenCalled();
+  });
+
   it("returns the parsed label from a well-formed completion", async () => {
     const inferenceFactory = buildInferenceFactory(
       JSON.stringify({ title: "Pricing questions", description: "Visitors asking about plan pricing." }),

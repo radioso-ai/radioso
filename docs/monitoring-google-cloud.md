@@ -1,7 +1,7 @@
 ---
 title: "Monitoring On Google Cloud"
 description: "Terraform-managed Cloud Monitoring alerting for a Radioso deployment on Google Cloud: uptime check, alert policies, log-based error metric, and Cloud Run health probes."
-last_updated: 2026-09-03
+last_updated: 2026-09-06
 ---
 
 # Monitoring On Google Cloud
@@ -20,7 +20,14 @@ monitoring_enabled             = true
 monitoring_notification_emails = ["ops@your-domain.example"]
 ```
 
-Apply, and Terraform creates one email notification channel per address, an uptime check, a log-based metric, and the alert policies below. Every resource is named from the stack prefix (`radioso-live-…`), so two stacks sharing one project alert independently.
+Deploying through the repository's Terraform workflow instead of a local `terraform apply`? It reads the same two settings from the GitHub environment, as comma-separated strings:
+
+```
+MONITORING_ENABLED=true
+MONITORING_NOTIFICATION_EMAILS=ops@your-domain.example,oncall@your-domain.example
+```
+
+Either way, Terraform creates one email notification channel per address, an uptime check, a log-based metric, and the alert policies below. Every resource is named from the stack prefix (`radioso-live-…`), so two stacks sharing one project alert independently.
 
 A `precondition` fails the plan if you enable alerting with no notification target, because alerting that applies cleanly and stays silent is worse than none.
 
@@ -37,6 +44,8 @@ monitoring_extra_notification_channel_ids = [
   "projects/radioso-494120/notificationChannels/1234567890123456789",
 ]
 ```
+
+Through the Terraform workflow, the same IDs go in `MONITORING_EXTRA_NOTIFICATION_CHANNEL_IDS`, comma-separated.
 
 Every policy delivers to the union of the email channels and this list.
 

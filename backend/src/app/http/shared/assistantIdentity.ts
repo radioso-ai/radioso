@@ -7,7 +7,7 @@ import { asError } from "../../../shared/errors/asError.js";
 
 export const assistantThemeSchema = agentInputThemeSchema;
 
-export const ASSISTANT_LOGO_MAX_BYTES = 1024 * 1024;
+const ASSISTANT_LOGO_MAX_BYTES = 1024 * 1024;
 export const ASSISTANT_LOGO_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
 
 export const createAssistantLogoUploadHandler = () => {

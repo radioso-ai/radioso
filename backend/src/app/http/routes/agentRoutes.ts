@@ -25,9 +25,7 @@ import {
   type MachineAwareRoutePrincipal,
 } from "../shared/machinePublicSurfacePolicy.js";
 import {
-  agentInputChatModelOverrideSchema,
   agentInputFieldSchemas,
-  agentInputLlmProviderNames,
   authoredDirectiveInputSchema,
   directiveAuthorDraftInputSchema,
 } from "../../../modules/agents/public.js";
@@ -85,8 +83,6 @@ export const agentBodySchema = z.object({
   skillSettings: agentInputFieldSchemas.skillSettings.optional(),
   surfaceSettings: agentInputFieldSchemas.surfaceSettings.omit({ extensions: true }).optional(),
 });
-
-export { agentInputLlmProviderNames as agentLlmProviderNames, agentInputChatModelOverrideSchema as agentChatModelOverrideSchema };
 
 type AgentRouteDependencies = WorkspaceSessionDependencies & Pick<AppDependencies, "accountAccessService" | "accessGrantService" | "agentRepository" | "agentService" | "assistantChatService" | "authoredDirectiveService" | "directiveAuthorService" | "skillAuthoringCatalog" | "routineDefinitionService" | "routineDraftAssistService" | "agentSurfaceExtensions" | "documentStorage" | "logger" | "metricsRegistry" | "abuseControlService" | "auditService">;
 

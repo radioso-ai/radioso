@@ -31,12 +31,12 @@ type ChannelLifecycle = {
   lastUsedAt: string | null
 }
 
-export type ChannelsLifecycle = {
+type ChannelsLifecycle = {
   anonymousChat: ChannelLifecycle
   websiteEmbed: ChannelLifecycle
 }
 
-export const mergeChannelsLifecycle = (
+const mergeChannelsLifecycle = (
   general: GeneralSettings,
   lifecycle: ChannelsLifecycle,
 ): GeneralSettings => ({

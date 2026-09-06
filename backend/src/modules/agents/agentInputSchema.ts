@@ -9,9 +9,9 @@ export const agentInputThemeSchema = z.object({
   text: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
 });
 
-export const agentInputLlmProviderNames = ["openai", "openai-compatible", "gemini", "claude"] as const;
+const agentInputLlmProviderNames = ["openai", "openai-compatible", "gemini", "claude"] as const;
 
-export const agentInputChatModelOverrideSchema = z.union([
+const agentInputChatModelOverrideSchema = z.union([
   z.null(),
   z.object({
     provider: z.enum(agentInputLlmProviderNames),

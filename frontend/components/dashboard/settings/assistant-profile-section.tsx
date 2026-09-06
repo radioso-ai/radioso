@@ -176,7 +176,7 @@ function ChatModelOverrideBlock({
   )
 }
 
-export interface AssistantProfileSectionProps {
+interface AssistantProfileSectionProps {
   anonSettings: GeneralSettings
   assistantBehaviorSettings: AssistantBehaviorSettings
   assistantLocaleInput: string

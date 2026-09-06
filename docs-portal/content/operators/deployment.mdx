@@ -1,7 +1,7 @@
 ---
 title: "Deployment"
 description: "Production deployment expectations for Radioso and the standalone docs portal."
-last_updated: 2026-09-04
+last_updated: 2026-09-06
 ---
 
 import { Callout } from 'nextra/components'
@@ -106,6 +106,33 @@ The Terraform workflow expects these GitHub environment secrets for each deploye
 Set `MAIL_FROM_EMAIL` to a verified sender address. `MAIL_FROM_NAME` is optional and defaults to `Radioso`. Without `RESEND_MAIL_API_KEY`, the backend writes outbound mail to the log instead of sending it, so password resets, email verification, and [user invitations](/api/accounts-and-users#invite-a-user) reach nobody.
 
 The included staging and live Terraform environments enable PostHog error reporting with `ERROR_SINKS=audit,posthog`. Staging also sends product analytics to PostHog with `PRODUCT_ANALYTICS_SINKS=audit,posthog`. Set `POSTHOG_API_KEY` for each environment. `POSTHOG_HOST` defaults to the US ingestion host and can be overridden for another PostHog region or a self-hosted instance.
+
+## Alerting
+
+Cloud Monitoring alerting is off until an environment asks for it. Set these on the GitHub environment and the next Terraform apply builds an uptime check on the backend `/health` route, a log-based error metric, and alert policies for Cloud Run 5xx rate, backend p95 latency, error-log volume, Cloud SQL saturation, Cloud Tasks backlog, and Cloud Scheduler failures.
+
+| Value | What it does |
+|---|---|
+| `MONITORING_ENABLED` | `true` creates the alerting resources for this environment |
+| `MONITORING_NOTIFICATION_EMAILS` | Comma-separated addresses, one email channel each |
+| `MONITORING_EXTRA_NOTIFICATION_CHANNEL_IDS` | Comma-separated IDs of channels you created in the Cloud Monitoring console |
+
+Give it at least one of the two destinations. When `MONITORING_ENABLED` is `true` and both are empty the workflow stops and names the value to set, because alerting that applies cleanly and delivers nowhere is worse than none.
+
+Slack is a console channel rather than a Terraform one, because it holds an OAuth token that would otherwise sit in Terraform state. Create it once under **Monitoring → Alerting → Edit notification channels**, copy the `projects/<project>/notificationChannels/<id>` value, and put it in `MONITORING_EXTRA_NOTIFICATION_CHANNEL_IDS`. Every policy delivers to the union of the email channels and that list.
+
+## Ops event feed
+
+Signups, chat turns, and errors reach an HTTP endpoint of your choosing — a Slack workflow trigger, n8n, or your own handler — when you add `ops_webhook` to a sink list:
+
+| Value | What it does |
+|---|---|
+| `PRODUCT_ANALYTICS_SINKS` / `ERROR_SINKS` | Add `ops_webhook`, for example `audit,posthog,ops_webhook` |
+| `OPS_EVENT_WEBHOOK_URL` | Where each signed JSON delivery is posted |
+| `OPS_EVENT_WEBHOOK_SECRET` | Environment secret the delivery signature is computed with |
+| `OPS_EVENT_WEBHOOK_EVENTS` | Comma-separated event names to forward; every product event goes out when unset |
+
+The backend refuses to start when a sink list names `ops_webhook` without both a URL and a secret, so the workflow checks for them first and stops the deploy rather than rolling out a revision that crash-loops. `chat.started` and `chat.completed` fire on every conversation, so name the events you want before pointing this at a channel someone reads.
 
 ## Public chat rate limits
 

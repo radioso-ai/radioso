@@ -34,7 +34,7 @@ export interface TopicNamingInferenceFactory {
   }): Promise<ModelInferencePipeline>;
 }
 
-export interface ModelTopicNamingGatewayDependencies {
+interface ModelTopicNamingGatewayDependencies {
   inferenceFactory: TopicNamingInferenceFactory;
   workspaceContext: { workspaceId: string };
   telemetryService?: Pick<TelemetryService, "emit">;

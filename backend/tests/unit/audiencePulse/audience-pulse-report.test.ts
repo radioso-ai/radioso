@@ -104,7 +104,7 @@ describe("Audience Pulse report domain", () => {
       narrativeReuseMaxDrift: 0.2,
       dissolvedTopics: [],
     });
-    expect(report.themes[0]!.evidenceIds).toHaveLength(12);
+    expect(report.themes[0].evidenceIds).toHaveLength(12);
   });
 
   it("qualifies only the two typed retrieval outcomes with matching diagnostics", () => {

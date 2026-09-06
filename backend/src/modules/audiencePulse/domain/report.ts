@@ -2,12 +2,10 @@ import { z } from "zod";
 
 import type { TopicTransition } from "../contracts/topicCensus.js";
 import {
-  AUDIENCE_PULSE_GROUNDING_SIGNALS,
   audiencePulseContentGapEligible,
   type AudiencePulseGroundingSignal,
 } from "../../../shared/domain/audiencePulseContentGap.js";
 
-export { AUDIENCE_PULSE_GROUNDING_SIGNALS };
 export type { AudiencePulseGroundingSignal };
 
 export interface AudiencePulseEvidenceReference {
@@ -53,7 +51,7 @@ export interface AudiencePulseReportCoverage extends AudiencePulseCoverage {
   facetReadyQuestionCount: number;
 }
 
-export interface AudiencePulseGroundingSummary {
+interface AudiencePulseGroundingSummary {
   grounded: number;
   degraded: number;
   noSupport: number;
@@ -305,7 +303,7 @@ const resolveEvidence = (
   });
 };
 
-export interface AudiencePulseCensusReport {
+interface AudiencePulseCensusReport {
   report: AudiencePulseStoredReport;
   /** Current qualifying evidence, keyed by theme, retained only while applying narrative copy. */
   recommendationEvidenceIdsByThemeId: ReadonlyMap<string, readonly string[]>;

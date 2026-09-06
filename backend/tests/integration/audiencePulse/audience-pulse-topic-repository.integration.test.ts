@@ -206,8 +206,8 @@ describeIntegration("TopicRepository (Postgres)", () => {
       },
     ]);
     await repository.saveMemberships(runId, [
-      { topicId: firstTopicId, messageId: firstMessageId!, distance: 0.1 },
-      { topicId: secondTopicId, messageId: secondMessageId!, distance: 0.2 },
+      { topicId: firstTopicId, messageId: firstMessageId, distance: 0.1 },
+      { topicId: secondTopicId, messageId: secondMessageId, distance: 0.2 },
     ]);
 
     const run = await repository.loadRun(runId);
@@ -396,9 +396,9 @@ describeIntegration("TopicRepository (Postgres)", () => {
       { id: topicId, workspaceId, centroid: [0.2, 0.2, 0.2], radius: 0.3, title: "Topic", description: "Only topic" },
     ]);
     await repository.saveMemberships(runId, [
-      { topicId, messageId: messageIds[0]!, distance: 0.01 },
-      { topicId, messageId: messageIds[1]!, distance: 0.02 },
-      { topicId, messageId: messageIds[2]!, distance: 0.03 },
+      { topicId, messageId: messageIds[0], distance: 0.01 },
+      { topicId, messageId: messageIds[1], distance: 0.02 },
+      { topicId, messageId: messageIds[2], distance: 0.03 },
     ]);
     await repository.saveTransitions(runId, [{ topicId, kind: "emerged", parentTopicIds: [] }]);
     await expect(repository.saveTransitions(runId, [{ topicId, kind: "survived", parentTopicIds: [] }]))

@@ -195,11 +195,6 @@ export const audiencePulseApi = {
   },
 }
 
-export type AudiencePulseErrorCode =
-  | 'AUDIENCE_PULSE_REFRESH_IN_PROGRESS'
-  | 'AUDIENCE_PULSE_USAGE_LIMITED'
-  | 'AUDIENCE_PULSE_RATE_LIMITED'
-
 export function getAudiencePulseErrorCode(error: unknown): string | undefined {
   if (
     error

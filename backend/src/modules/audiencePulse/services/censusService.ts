@@ -528,7 +528,7 @@ export class CensusService {
       runId,
       isFirstCensus: priorTopics.length === 0,
       membershipBaselineRunId: membershipBaselineRunIds.size === 1
-        ? [...membershipBaselineRunIds][0]!
+        ? [...membershipBaselineRunIds][0]
         : null,
       namingCallsIssued,
       populationSize,

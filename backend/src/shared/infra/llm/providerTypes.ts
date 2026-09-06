@@ -135,7 +135,7 @@ export interface ResolvedLlmConfig {
 
 import { AppError } from "../../domain/errors.js";
 
-export type ProviderMisconfigurationKind =
+type ProviderMisconfigurationKind =
   | "missing_api_key"
   | "missing_base_url"
   | "unsupported_provider"
@@ -143,7 +143,7 @@ export type ProviderMisconfigurationKind =
   | "credential_unreadable"
   | "missing_required_setting";
 
-export interface ProviderMisconfigurationDetails {
+interface ProviderMisconfigurationDetails {
   providerIssue: "configuration_invalid";
   kind: ProviderMisconfigurationKind;
   provider?: LlmProviderName;

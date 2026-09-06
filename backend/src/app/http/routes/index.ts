@@ -1,5 +1,6 @@
 import { Router } from "express";
 
+import { readBuildIdentity } from "../../config/buildIdentity.js";
 import type { AppDependencies } from "../../server/types.js";
 import { createAccountRoutes } from "./accountRoutes.js";
 import { createAccountUserRoutes } from "./accountUserRoutes.js";
@@ -107,7 +108,7 @@ export const createApiRouter = (dependencies: AppDependencies): Router => {
   const router = Router();
 
   router.get("/health", (_req, res) => {
-    res.status(200).json({ status: "ok" });
+    res.status(200).json({ status: "ok", ...readBuildIdentity(dependencies.env) });
   });
   if (dependencies.env.METRICS_ENABLED) {
     if (!dependencies.metricsRegistry || !dependencies.env.METRICS_AUTH_TOKEN) {

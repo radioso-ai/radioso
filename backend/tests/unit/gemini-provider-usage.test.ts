@@ -51,7 +51,7 @@ afterEach(() => {
 });
 
 describe("GeminiTextGenerationClient.complete", () => {
-  it("reports one logical call immediately before transport dispatch", async () => {
+  it("reports one logical call only after the transport has been invoked", async () => {
     const events: string[] = [];
     vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
       events.push("fetch");
@@ -63,7 +63,22 @@ describe("GeminiTextGenerationClient.complete", () => {
       onProviderRequestDispatched: () => events.push("issued"),
     });
 
-    expect(events).toEqual(["issued", "fetch"]);
+    // Accounting follows dispatch: a request the transport never received must not
+    // be charged for.
+    expect(events).toEqual(["fetch", "issued"]);
+  });
+
+  it("survives a reporter that throws, because accounting must not break the call", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse({ candidates: [{ content: { parts: [{ text: "Hi" }] } }] }),
+    );
+
+    const result = await new GeminiTextGenerationClient(chatConfig).complete({
+      prompt: "Hi",
+      onProviderRequestDispatched: () => { throw new Error("accounting sink is down"); },
+    });
+
+    expect(result.text).toBe("Hi");
   });
 
   it("forwards JSON schema output through generationConfig", async () => {

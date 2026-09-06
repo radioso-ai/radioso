@@ -14,6 +14,7 @@ import {
   type TextGenerationRequest,
   type TextGenerationResult,
   type TextGenerationStreamResult,
+  reportProviderRequestDispatched,
 } from "./providerTypes.js";
 import { streamWithUsage } from "./providerStreaming.js";
 import { EMBEDDING_REQUEST_TIMEOUT_MS, runProviderRequestWithTimeout } from "./providerTimeouts.js";
@@ -355,11 +356,15 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
     const client = input.onProviderRequestDispatched
       ? this.client.withOptions({
           fetch: async (url, init) => {
+            // Invoking the transport is the dispatch, so report after handing it the
+            // request. A throwing observer must not look like a connection failure and
+            // burn an SDK retry, so reporting is isolated from this call.
+            const response = globalThis.fetch(url, init);
             if (!dispatchReported && !input.signal?.aborted && !init?.signal?.aborted) {
               dispatchReported = true;
-              input.onProviderRequestDispatched?.();
+              reportProviderRequestDispatched(input.onProviderRequestDispatched);
             }
-            return globalThis.fetch(url, init);
+            return response;
           },
         })
       : this.client;

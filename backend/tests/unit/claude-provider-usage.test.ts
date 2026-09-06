@@ -44,7 +44,7 @@ afterEach(() => {
 });
 
 describe("ClaudeTextGenerationClient.complete", () => {
-  it("reports one logical call immediately before transport dispatch", async () => {
+  it("reports one logical call only after the transport has been invoked", async () => {
     const events: string[] = [];
     vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
       events.push("fetch");
@@ -56,7 +56,22 @@ describe("ClaudeTextGenerationClient.complete", () => {
       onProviderRequestDispatched: () => events.push("issued"),
     });
 
-    expect(events).toEqual(["issued", "fetch"]);
+    // Accounting follows dispatch: a request the transport never received must not
+    // be charged for.
+    expect(events).toEqual(["fetch", "issued"]);
+  });
+
+  it("survives a reporter that throws, because accounting must not break the call", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse({ content: [{ type: "text", text: "Hi" }] }),
+    );
+
+    const result = await new ClaudeTextGenerationClient(chatConfig).complete({
+      prompt: "Hi",
+      onProviderRequestDispatched: () => { throw new Error("accounting sink is down"); },
+    });
+
+    expect(result.text).toBe("Hi");
   });
 
   it("forces a schema-backed tool and returns its input as structured JSON", async () => {

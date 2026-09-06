@@ -18,19 +18,8 @@ const scopeLabels: Record<OperatorMcpToolScope, string> = {
   'operator:propose': 'Draft changes for review',
 }
 
-const isSensitiveRedirect = (redirectUri: string): boolean => {
-  try {
-    const parsed = new URL(redirectUri)
-    return parsed.protocol !== 'https:' || ['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname)
-  } catch {
-    return true
-  }
-}
-
 export const consentWarnings = (transaction: OperatorMcpTransactionResponse): string[] => {
-  const warnings = [`${transaction.client.displayName} receives only the permissions you select.`]
-  if (isSensitiveRedirect(transaction.redirectUri)) warnings.push(`This connection returns approval to this app on your computer (${transaction.redirectHost}).`)
-  return warnings
+  return [`${transaction.client.displayName} receives only the permissions you select.`]
 }
 
 type ConsentState =
@@ -126,7 +115,6 @@ export function OperatorMcpConsent({ transactionId }: { transactionId: string })
       <Card className="w-full max-w-2xl">
         <CardHeader className="space-y-3">
           <div className="flex items-start justify-between gap-4"><div><CardTitle>Authorize Radioso MCP</CardTitle><CardDescription className="mt-1">Choose what {transaction.client.displayName} can do.</CardDescription></div><LockKeyhole className="h-5 w-5 text-primary" aria-hidden /></div>
-          <p className="text-sm text-muted-foreground"><span className="font-medium text-foreground">{transaction.client.displayName}{transaction.client.clientVersion ? ` · ${transaction.client.clientVersion}` : ''}</span> · Approval returns to <span className="font-medium text-foreground">{transaction.redirectHost}</span></p>
         </CardHeader>
         <CardContent className="space-y-5">
           <div className="space-y-2"><label htmlFor="operator-mcp-workspace" className="text-sm font-medium">Workspace</label><select id="operator-mcp-workspace" className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={workspaceId} onChange={(event) => setWorkspaceId(event.target.value)}>{transaction.workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name} · {workspace.role}</option>)}</select></div>

@@ -4,6 +4,7 @@ import {
   AuthoredDirectiveService,
   DirectiveAuthorService,
   AgentService,
+  agentInputFieldSchemas,
   mergeAgentSurfaceSettings,
   validateAgentInput,
   type AgentInput,
@@ -411,7 +412,7 @@ export const createAgentSkillCopilotProposalAdapter = (deps: {
     const validatedConfig = await deps.agentSkillsService.dryRunValidate(
       workspaceId,
       targetRef.agentId,
-      { name, capability: descriptor.id, target, config, invocationMode: invocationMode, enabled },
+      { name, capability: descriptor.id, target, config, invocationMode, enabled },
       existing?.id,
     );
 
@@ -966,7 +967,13 @@ const routinePayload = (value: unknown) => {
   return routineDefinitionDraftInputSchema.parse(value);
 };
 
-const settingPatch = (settingKey: string, value: unknown): AgentInput => ({ [settingKey]: value });
+const settingPatch = (settingKey: string, value: unknown): AgentInput => {
+  const schema = agentInputFieldSchemas[settingKey as keyof typeof agentInputFieldSchemas];
+  if (!schema) throw badRequest(`Unknown agent setting: ${settingKey}`);
+  const parsed = schema.safeParse(value);
+  if (!parsed.success) throw badRequest(`Invalid ${settingKey} setting value`);
+  return { [settingKey]: parsed.data };
+};
 const settingValue = (settings: object, settingKey: string): unknown => Object.hasOwn(settings, settingKey) ? (settings as Record<string, unknown>)[settingKey] : undefined;
 
 /**

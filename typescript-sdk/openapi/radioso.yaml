@@ -2152,6 +2152,8 @@ components:
               type: boolean
             webhookExportsEnabled:
               type: boolean
+            handoffOnRetrievalMiss:
+              type: boolean
             contactRequestDelivery:
               $ref: "#/components/schemas/AgentContactRequestDelivery"
             theme:
@@ -2251,6 +2253,7 @@ components:
             - citationDisplayEnabled
             - contactRequestsEnabled
             - webhookExportsEnabled
+            - handoffOnRetrievalMiss
             - contactRequestDelivery
             - theme
             - branding
@@ -2294,6 +2297,8 @@ components:
         contactRequestsEnabled:
           type: boolean
         webhookExportsEnabled:
+          type: boolean
+        handoffOnRetrievalMiss:
           type: boolean
         contactRequestDelivery:
           $ref: "#/components/schemas/AgentContactRequestDeliveryRequest"

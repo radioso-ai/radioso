@@ -24,6 +24,10 @@ export {
   type WebsiteEmbedSurfaceSettings,
 } from "./domain.js";
 export {
+  agentInputFieldSchemas,
+  agentInputThemeSchema,
+} from "./agentInputSchema.js";
+export {
   DEFAULT_CONTACT_REQUEST_DELIVERY,
   hasConfiguredContactDestination,
   readNotifyContactDelivery,
@@ -68,7 +72,7 @@ export {
   type AgentConfigRefPlaceholder,
   type InternalAgentConfig,
 } from "./agentConfig.js";
-export { refPlaceholder, secretPlaceholder } from "./agentConfigPlaceholders.js";
+export { refPlaceholder } from "./agentConfigPlaceholders.js";
 export {
   projectInternalAgentExternalSkills,
   type InternalAgentExternalSkillsConfig,

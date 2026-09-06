@@ -41,7 +41,7 @@ import type {
 import type { ContextVariable, AgentContextVariableEnablement } from "../context-variables/public.js";
 import type { ContextVariableService } from "../context-variables/public.js";
 import { isStale, versionDate, versionToken } from "./proposalVersioning.js";
-import { badRequest, conflict, notFound, AppError } from "../../shared/domain/errors.js";
+import { badRequest, conflict, notFound } from "../../shared/domain/errors.js";
 
 const directiveTargetRefSchema = z.object({ agentId: z.string().uuid(), directiveId: z.string().uuid().nullable() }).strict();
 const settingTargetRefSchema = z.object({ agentId: z.string().uuid(), settingKey: z.string().min(1).max(200) }).strict();
@@ -412,7 +412,7 @@ export const createAgentSkillCopilotProposalAdapter = (deps: {
     const validatedConfig = await deps.agentSkillsService.dryRunValidate(
       workspaceId,
       targetRef.agentId,
-      { name, capability: descriptor.id, target, config, invocationMode: invocationMode as string, enabled },
+      { name, capability: descriptor.id, target, config, invocationMode, enabled },
       existing?.id,
     );
 
@@ -424,7 +424,7 @@ export const createAgentSkillCopilotProposalAdapter = (deps: {
     // see the comment on createSkillVersionToken for why this isn't the agent's updatedAt either.
     const proposalVersionToken = existing
       ? versionToken(new Date(existing.updatedAt))
-      : await createSkillVersionToken(workspaceId, targetRef.agentId, name, invocationMode as string);
+      : await createSkillVersionToken(workspaceId, targetRef.agentId, name, invocationMode);
 
     return {
       existing,
@@ -972,7 +972,7 @@ const settingPatch = (settingKey: string, value: unknown): AgentInput => {
   if (!schema) throw badRequest(`Unknown agent setting: ${settingKey}`);
   const parsed = schema.safeParse(value);
   if (!parsed.success) throw badRequest(`Invalid ${settingKey} setting value`);
-  return { [settingKey]: parsed.data } as AgentInput;
+  return { [settingKey]: parsed.data };
 };
 const settingValue = (settings: object, settingKey: string): unknown => Object.hasOwn(settings, settingKey) ? (settings as Record<string, unknown>)[settingKey] : undefined;
 
@@ -1239,13 +1239,13 @@ export const createContextVariableCopilotProposalAdapter = (deps: {
       const carriesResolverFields = mergedSource === "resolver" && existingEnablement?.source === "resolver";
       const mergedResolverSkillId = "resolverSkillId" in rawEnablement
         ? rawEnablement.resolverSkillId ?? null
-        : (carriesResolverFields ? existingEnablement!.resolverSkillId : null);
+        : (carriesResolverFields ? existingEnablement.resolverSkillId : null);
       const mergedMaxAgeSeconds = "maxAgeSeconds" in rawEnablement
         ? rawEnablement.maxAgeSeconds ?? null
-        : (carriesResolverFields ? existingEnablement!.maxAgeSeconds : null);
+        : (carriesResolverFields ? existingEnablement.maxAgeSeconds : null);
       const mergedResolverTimeoutMs = "resolverTimeoutMs" in rawEnablement
         ? rawEnablement.resolverTimeoutMs ?? null
-        : (carriesResolverFields ? existingEnablement!.resolverTimeoutMs : null);
+        : (carriesResolverFields ? existingEnablement.resolverTimeoutMs : null);
       // `enabled` carries forward regardless of source (it is not resolver-only), and only
       // defaults to `true` when there is no stored enablement at all - this is the headline fix:
       // a deliberately-disabled variable must never come back on just because an unrelated field

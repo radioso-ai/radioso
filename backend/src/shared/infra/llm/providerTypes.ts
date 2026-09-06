@@ -23,6 +23,15 @@ export interface JsonSchemaResponseFormat {
   schema: Record<string, unknown>;
 }
 
+/**
+ * A provider sets this once it has handed a request to its transport. Callers read
+ * it after the call to decide whether the attempt is billable. It is deliberately
+ * data rather than a callback: no caller code runs inside a provider.
+ */
+export interface ProviderDispatchRecord {
+  dispatched: boolean;
+}
+
 export interface TextGenerationRequest {
   prompt: string;
   systemPrompt?: string;
@@ -38,6 +47,7 @@ export interface TextGenerationRequest {
    * strict JSON-schema output (or an equivalent forced schema tool). */
   responseFormat?: JsonSchemaResponseFormat;
   signal?: AbortSignal;
+  dispatchRecord?: ProviderDispatchRecord;
 }
 
 export type UsageQuality = "actual" | "estimated";
@@ -125,7 +135,7 @@ export interface ResolvedLlmConfig {
 
 import { AppError } from "../../domain/errors.js";
 
-export type ProviderMisconfigurationKind =
+type ProviderMisconfigurationKind =
   | "missing_api_key"
   | "missing_base_url"
   | "unsupported_provider"
@@ -133,7 +143,7 @@ export type ProviderMisconfigurationKind =
   | "credential_unreadable"
   | "missing_required_setting";
 
-export interface ProviderMisconfigurationDetails {
+interface ProviderMisconfigurationDetails {
   providerIssue: "configuration_invalid";
   kind: ProviderMisconfigurationKind;
   provider?: LlmProviderName;

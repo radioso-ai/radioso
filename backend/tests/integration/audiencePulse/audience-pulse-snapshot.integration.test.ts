@@ -31,6 +31,10 @@ const period = {
 const report = (summary: string): AudiencePulseStoredReport => ({
   period: { start: period.start.toISOString(), end: period.end.toISOString() },
   generatedAt: "2026-08-01T00:00:00.000Z",
+  isFirstCensus: false,
+  narrativeGeneratedAt: "2026-08-01T00:00:00.000Z",
+  narrativeReuseCount: 0,
+  narrativeReuseMaxDrift: 0.2,
   coverage: { populationSize: 2, sampleSize: 2, sampled: false, facetReadyQuestionCount: 2 },
   weeklyVolume: [{
     weekStart: "2026-06-29T00:00:00.000Z",
@@ -39,6 +43,7 @@ const report = (summary: string): AudiencePulseStoredReport => ({
   }],
   summary,
   unclassifiedQuestionCount: 0,
+  dissolvedTopics: [],
   themes: [],
   contentGaps: [],
   recommendations: [],
@@ -54,6 +59,9 @@ const reportWithEvidence = (summary: string, evidenceId: string): AudiencePulseS
     description: "Evidence-backed discussion theme.",
     evidenceIds: [evidenceId],
     memberCount: 1,
+    previousMemberCount: null,
+    previousShare: null,
+    transition: null,
     share: 0.5,
     weeklyPulse: [],
     grounding: { grounded: 0, degraded: 0, noSupport: 0, unknown: 1, contentGapEligible: 0 },

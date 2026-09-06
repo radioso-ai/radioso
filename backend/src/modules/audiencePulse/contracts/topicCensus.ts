@@ -32,6 +32,8 @@ export interface ActiveTopicRecord {
   description: string;
   createdRunId: string;
   lastSeenRunId: string;
+  /** Null while active; set when a prior run dissolved the topic. */
+  dissolvedAt: Date | null;
   memberIds: string[];
 }
 
@@ -60,6 +62,18 @@ export interface TopicMembershipInput {
 
 export type TopicTransitionKind = "survived" | "split" | "merged" | "emerged" | "dissolved";
 
+export interface TopicTransition {
+  kind: TopicTransitionKind;
+  parentTopicIds: string[];
+  viaCentroidFallback: boolean;
+  /**
+   * Mutual containment over the prior and current topic's full memberships:
+   * `intersection / max(prior size, current size)`. Null when this is not a
+   * one-to-one containment-derived survival.
+   */
+  membershipOverlap: number | null;
+}
+
 export interface TopicTransitionInput {
   topicId: string;
   kind: TopicTransitionKind;
@@ -72,6 +86,8 @@ export interface TopicTransitionInput {
    * doesn't have to supply it.
    */
   viaCentroidFallback?: boolean;
+  /** See {@link TopicTransition.membershipOverlap}. */
+  membershipOverlap?: number | null;
 }
 
 export interface TopicCensusRunTopicSummary {
@@ -82,6 +98,13 @@ export interface TopicCensusRunTopicSummary {
   radius: number;
   dissolvedAt: Date | null;
   memberCount: number;
+  /** The identity classification recorded for this topic in this run, if one exists. */
+  transition: TopicTransition | null;
+}
+
+export interface TopicCensusRunDissolvedTopic {
+  id: string;
+  title: string;
 }
 
 export interface TopicCensusRunDetail {
@@ -96,6 +119,8 @@ export interface TopicCensusRunDetail {
   createdAt: Date;
   /** Topics with at least one membership in this run, richest first. */
   topics: TopicCensusRunTopicSummary[];
+  /** Topics retired by this run. They have no current-run membership or member count. */
+  dissolvedTopics: TopicCensusRunDissolvedTopic[];
 }
 
 /**

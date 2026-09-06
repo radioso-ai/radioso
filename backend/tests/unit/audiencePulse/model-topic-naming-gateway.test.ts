@@ -3,7 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 import { ModelTopicNamingGateway, type TopicNamingInferenceFactory } from "../../../src/modules/audiencePulse/infra/modelTopicNamingGateway.js";
 import { TOPIC_NAMING_RESPONSE_FORMAT } from "../../../src/modules/audiencePulse/services/topicNamingPrompt.js";
 import { TopicLabelValidationError } from "../../../src/modules/audiencePulse/domain/topicLabel.js";
-import type { ModelInferenceRequest } from "../../../src/shared/infra/llm/modelInferencePipeline.js";
+import type {
+  ModelInferencePipeline,
+  ModelInferenceRequest,
+} from "../../../src/shared/infra/llm/modelInferencePipeline.js";
 
 const workspaceId = "11111111-1111-1111-1111-111111111111";
 
@@ -11,6 +14,9 @@ const buildInferenceFactory = (text: string): TopicNamingInferenceFactory & {
   create: ReturnType<typeof vi.fn>;
 } => {
   const complete = vi.fn(async (request: ModelInferenceRequest) => {
+    if (request.dispatchRecord) {
+      request.dispatchRecord.dispatched = true;
+    }
     const result = { text };
     // Mirrors `ModelInferencePipelineService.complete`: `validateResult` runs
     // against the raw completion and its rejection propagates as a thrown error.
@@ -27,6 +33,131 @@ const buildInferenceFactory = (text: string): TopicNamingInferenceFactory & {
 };
 
 describe("ModelTopicNamingGateway", () => {
+  it("reports a model call only when the completion was dispatched", async () => {
+    const inferenceFactory = buildInferenceFactory(
+      JSON.stringify({ title: "Pricing questions", description: "Visitors asking about plan pricing." }),
+    );
+    const onModelCallIssued = vi.fn();
+    const gateway = new ModelTopicNamingGateway({ inferenceFactory, workspaceContext: { workspaceId } });
+
+    await gateway.name({ prototypical: ["how much does it cost"], peripheral: [] }, undefined, onModelCallIssued);
+
+    expect(onModelCallIssued).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a model call when completion fails after dispatch", async () => {
+    const inferenceFactory: TopicNamingInferenceFactory = {
+      create: vi.fn(async (): Promise<ModelInferencePipeline> => ({
+        metadata: { capability: "chat", provider: "openai", model: "test-model" },
+        async complete(request: ModelInferenceRequest) {
+          if (request.dispatchRecord) {
+            request.dispatchRecord.dispatched = true;
+          }
+          throw new Error("provider failed after dispatch");
+        },
+        stream: vi.fn(),
+      })),
+    };
+    const onModelCallIssued = vi.fn();
+    const gateway = new ModelTopicNamingGateway({ inferenceFactory, workspaceContext: { workspaceId } });
+
+    await expect(gateway.name(
+      { prototypical: ["how much does it cost"], peripheral: [] },
+      undefined,
+      onModelCallIssued,
+    )).rejects.toThrow("provider failed after dispatch");
+
+    expect(onModelCallIssued).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not report a model call when inference setup fails before dispatch", async () => {
+    const inferenceFactory = { create: vi.fn(async () => { throw new Error("setup failed"); }) };
+    const onModelCallIssued = vi.fn();
+    const gateway = new ModelTopicNamingGateway({ inferenceFactory, workspaceContext: { workspaceId } });
+
+    await expect(gateway.name(
+      { prototypical: ["how much does it cost"], peripheral: [] },
+      undefined,
+      onModelCallIssued,
+    )).rejects.toThrow("setup failed");
+
+    expect(onModelCallIssued).not.toHaveBeenCalled();
+  });
+
+  it("does not report a model call when the signal aborts during inference setup", async () => {
+    let resolveCreate!: (inference: ModelInferencePipeline) => void;
+    const complete = vi.fn(async (request: ModelInferenceRequest) => {
+      if (request.signal?.aborted) {
+        throw Object.assign(new Error("aborted before provider dispatch"), { name: "AbortError" });
+      }
+      return { text: JSON.stringify({ title: "Pricing", description: "Pricing questions." }) };
+    });
+    const inferenceFactory: TopicNamingInferenceFactory = {
+      create: vi.fn(() => new Promise<ModelInferencePipeline>((resolve) => {
+        resolveCreate = resolve;
+      })),
+    };
+    const controller = new AbortController();
+    const onModelCallIssued = vi.fn();
+    const gateway = new ModelTopicNamingGateway({ inferenceFactory, workspaceContext: { workspaceId } });
+
+    const naming = gateway.name(
+      { prototypical: ["how much does it cost"], peripheral: [] },
+      controller.signal,
+      onModelCallIssued,
+    );
+    const observedError = naming.catch((error: unknown) => error);
+    controller.abort();
+    resolveCreate({
+      metadata: { capability: "chat", provider: "openai", model: "test-model" },
+      complete,
+      stream: vi.fn(),
+    });
+
+    await expect(observedError).resolves.toMatchObject({ name: "AbortError" });
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(onModelCallIssued).not.toHaveBeenCalled();
+  });
+
+  it("does not report a model call when cancellation wins during provider request preparation", async () => {
+    let finishPreparation!: () => void;
+    const preparation = new Promise<void>((resolve) => {
+      finishPreparation = resolve;
+    });
+    const complete = vi.fn(async (request: ModelInferenceRequest) => {
+      await preparation;
+      if (request.signal?.aborted) {
+        throw Object.assign(new Error("aborted during provider request preparation"), { name: "AbortError" });
+      }
+      if (request.dispatchRecord) {
+        request.dispatchRecord.dispatched = true;
+      }
+      return { text: JSON.stringify({ title: "Pricing", description: "Pricing questions." }) };
+    });
+    const inferenceFactory: TopicNamingInferenceFactory = {
+      create: vi.fn(async () => ({
+        metadata: { capability: "chat" as const, provider: "openai" as const, model: "test-model" },
+        complete,
+        stream: vi.fn(),
+      })),
+    };
+    const controller = new AbortController();
+    const onModelCallIssued = vi.fn();
+    const gateway = new ModelTopicNamingGateway({ inferenceFactory, workspaceContext: { workspaceId } });
+
+    const naming = gateway.name(
+      { prototypical: ["how much does it cost"], peripheral: [] },
+      controller.signal,
+      onModelCallIssued,
+    );
+    await vi.waitFor(() => expect(complete).toHaveBeenCalledTimes(1));
+    controller.abort();
+    finishPreparation();
+
+    await expect(naming).rejects.toMatchObject({ name: "AbortError" });
+    expect(onModelCallIssued).not.toHaveBeenCalled();
+  });
+
   it("returns the parsed label from a well-formed completion", async () => {
     const inferenceFactory = buildInferenceFactory(
       JSON.stringify({ title: "Pricing questions", description: "Visitors asking about plan pricing." }),

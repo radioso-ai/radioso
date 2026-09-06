@@ -60,7 +60,7 @@ fi
 # client_min_messages=warning silences the IF [NOT] EXISTS drift NOTICEs migrations emit.
 psql_db() {
   docker exec -i -e PGOPTIONS="-c client_min_messages=warning" \
-    "$CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$DB" "$@"
+    "$CONTAINER" psql -v ON_ERROR_STOP=1 --single-transaction -U postgres -d "$DB" "$@"
 }
 
 echo "Applying migrations ..." >&2

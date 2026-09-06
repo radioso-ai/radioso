@@ -457,7 +457,7 @@ describe("copilot eval case replay evidence", () => {
     expect(record).toHaveBeenCalledWith({
       workspaceId: ids.workspace,
       operatorUserId: ids.operator,
-      conversationId: ids.conversation,
+      origin: { type: "conversation", conversationId: ids.conversation },
       agentId: ids.agent,
       caseId: ids.case,
       caseName: "Refund window",

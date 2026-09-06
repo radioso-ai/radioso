@@ -18,6 +18,7 @@ describe('settings tab metadata', () => {
       'provider-models',
     ])
     expect(settingsTabMetadata['api-access'].sections.map((section) => section.id)).toEqual([
+      'operator-mcp',
       'personal-tokens',
       'service-accounts',
       'member-personal-tokens',

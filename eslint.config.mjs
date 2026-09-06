@@ -57,12 +57,15 @@ export default tseslint.config(
       '**/*.min.js',
       '**/test-results/**',
       '**/playwright-report/**',
+      '.context/**',
       '.specify/**',
       'infra/**',
       // Static assets, including vendored third-party bundles we do not author.
       '**/public/**',
       // Generated from the committed OpenAPI snapshot by `pnpm run sync`.
       'typescript-sdk/src/generated/**',
+      // Generated from the committed backend OpenAPI snapshot by `pnpm run sync:openapi`.
+      'packages/radioso-mcp-server/src/generated/**',
       // Generated into the frontend by the EE build.
       'frontend/app/{api/embed,embed,embed-test,radioso-embed.js,operator}/**',
     ],
@@ -74,7 +77,9 @@ export default tseslint.config(
   {
     languageOptions: {
       parserOptions: {
-        projectService: true,
+        projectService: {
+          allowDefaultProject: ['packages/operator-mcp-contract/tests/operatorMcpContract.test.ts'],
+        },
         tsconfigRootDir: import.meta.dirname,
       },
     },

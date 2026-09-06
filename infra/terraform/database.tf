@@ -13,6 +13,11 @@ resource "random_password" "radioso_mcp_signing_secret" {
   special = false
 }
 
+resource "random_password" "operator_mcp_internal_secret" {
+  length  = 48
+  special = false
+}
+
 resource "google_sql_database_instance" "postgres" {
   name                = "${local.resource_name_prefix}-db"
   database_version    = "POSTGRES_16"

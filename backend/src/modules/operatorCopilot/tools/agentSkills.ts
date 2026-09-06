@@ -13,7 +13,7 @@ import {
   proposalEvidenceOutput,
   proposalOutputSchema,
   recordProposalCreated,
-  requiredCopilotConversation,
+  copilotProposalOrigin,
   requiredPageAgent,
   type CopilotAgentLookupPort,
   type CopilotProposalEvidenceDependencies,
@@ -194,7 +194,7 @@ export const createAgentSkillConfigProposalCopilotTools = (
           const proposal = await deps.proposalRepository.createProposal({
             workspaceId: context.workspaceId,
             operatorUserId: context.operatorUserId,
-            conversationId: requiredCopilotConversation(context),
+            origin: copilotProposalOrigin(context),
             targetType: "agent_skill",
             targetRef: validated.targetRef,
             payload: validated.payload,

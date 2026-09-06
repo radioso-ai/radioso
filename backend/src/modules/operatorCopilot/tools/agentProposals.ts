@@ -14,7 +14,7 @@ import {
   proposalAdapterFor,
   proposalOutputSchema,
   recordProposalCreated,
-  requiredCopilotConversation,
+  copilotProposalOrigin,
   type CopilotProposalToolDependencies,
 } from "./shared.js";
 
@@ -186,7 +186,7 @@ export const createAgentProposalCopilotTools = (
         const proposal = await deps.proposalRepository.createProposal({
           workspaceId: context.workspaceId,
           operatorUserId: context.operatorUserId,
-          conversationId: requiredCopilotConversation(context),
+          origin: copilotProposalOrigin(context),
           targetType: "agent",
           targetRef: validated.targetRef,
           payload: copilotAgentPayloadSchema.parse({ ...payload, summary }),

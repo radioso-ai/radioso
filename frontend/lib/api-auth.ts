@@ -1,4 +1,5 @@
 import { API_BASE, request } from './api-client'
+import { normalizeSameOriginReturnPath } from './auth-return-url'
 import type {
   AcceptedResponse,
   EmailVerificationResendRequest,
@@ -67,8 +68,9 @@ export const authApi = {
   // default landing page; `loginHint` preselects an address in the chooser.
   getGoogleLoginStartUrl(options: { returnTo?: string; loginHint?: string } = {}): string {
     const query = new URLSearchParams()
-    if (options.returnTo) {
-      query.set('returnTo', options.returnTo)
+    const returnTo = normalizeSameOriginReturnPath(options.returnTo)
+    if (returnTo) {
+      query.set('returnTo', returnTo)
     }
     if (options.loginHint) {
       query.set('loginHint', options.loginHint)

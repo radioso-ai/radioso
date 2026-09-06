@@ -264,6 +264,7 @@ describe('CopilotProposalCard', () => {
     const proposed = { ...current, enabled: false }
     const getProposal = vi.spyOn(copilotApi, 'getProposal').mockResolvedValue({
       ...proposal,
+      workspaceId: 'workspace-1',
       targetRef: { agentId: 'agent-1', directiveId: 'directive-1' },
       preview: { current, proposed },
       currentVersionMatches: true,

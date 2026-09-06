@@ -30,6 +30,7 @@ x-backend-dev-volumes: &backend-dev-volumes
   - ./packages/document-parser/index.js:/app/packages/document-parser/index.js:ro
   - ./packages/document-parser/parsers:/app/packages/document-parser/parsers
   - ./packages/mcp-source-proof/src:/app/packages/mcp-source-proof/src
+  - ./packages/operator-mcp-contract/src:/app/packages/operator-mcp-contract/src
   - ./packages/radioso-mcp-server/src:/app/packages/radioso-mcp-server/src
   - ./packages/routine-definition/src:/app/packages/routine-definition/src
   - ./packages/routine-document/src:/app/packages/routine-document/src

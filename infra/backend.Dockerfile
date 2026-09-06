@@ -153,4 +153,14 @@ USER node
 WORKDIR /app/backend
 EXPOSE 8080
 
+# Last, because both change on every build and would otherwise invalidate the layers above.
+# The deploy passes the release it is shipping; a build without one says so on /health rather
+# than borrowing the previous release's number. OBSERVABILITY_VERSION follows the same value
+# so spans and metrics carry it too, and a runtime env var still overrides it.
+ARG RADIOSO_RELEASE=development
+ARG RADIOSO_COMMIT=unknown
+ENV RADIOSO_RELEASE=${RADIOSO_RELEASE} \
+    RADIOSO_COMMIT=${RADIOSO_COMMIT} \
+    OBSERVABILITY_VERSION=${RADIOSO_RELEASE}
+
 CMD ["node", "./dist/src/httpServer.js"]

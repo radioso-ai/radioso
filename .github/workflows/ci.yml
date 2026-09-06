@@ -191,6 +191,9 @@ jobs:
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version: 24
+          # This job installs nothing, so there is no package manager for setup-node to
+          # detect a cache for. Left on, it looks for pnpm and fails before the tests run.
+          package-manager-cache: false
 
       - name: Test the changelog generator
         run: node --test tests/release/*.test.mjs

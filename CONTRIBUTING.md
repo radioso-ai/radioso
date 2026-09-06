@@ -118,6 +118,7 @@ Use `pnpm run ci:local -- --all` for changes that touch many areas, and paste th
 ## Commit and pull request format
 
 - Use [Conventional Commits](https://www.conventionalcommits.org/) for messages, such as `feat: add retrieval setting` or `fix: handle empty uploads`.
+- **The pull request title is checked by CI**, because `main` is squash-merged and the title becomes the squashed commit subject — and from there, the line an operator reads in the release notes. Write it as `<type>[(scope)][!]: <description>`, in lower case, with no trailing period and no `(#123)` suffix. Mark a change that breaks an API, SDK, connector, or worker contract with `!`; it leads the release notes and forces a major version. Run `PR_TITLE='feat: your title' node scripts/release/check-pr-title.mjs` to check one before you open the pull request. See [docs/releases.md](docs/releases.md) for how the notes are built.
 - Keep a pull request focused on one change. Extraction-only refactors are easier to review when they are separate from behavior changes.
 - Fill in the pull request template: what changed, why, how you tested it, and the `ci:local` result.
 

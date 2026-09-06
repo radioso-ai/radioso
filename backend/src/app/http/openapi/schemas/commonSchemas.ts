@@ -26,6 +26,8 @@ export const registerCommonSchemas = (registry: OpenAPIRegistry, schemas: OpenAp
     "HealthResponse",
     z.object({
       status: z.literal("ok"),
+      version: z.string(),
+      commit: z.string(),
     }),
   );
 

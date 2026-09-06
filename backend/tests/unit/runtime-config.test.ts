@@ -187,10 +187,61 @@ describe("runtime configuration", () => {
     expect(sharedDeployWorkflow).toContain('gcloud run services describe "${MCP_SERVICE}"');
     expect(sharedDeployWorkflow).toContain('gcloud run services update "${MCP_SERVICE}" --image "${BACKEND_IMAGE}"');
     expect(sharedDeployWorkflow).toContain('echo "mcp_url=disabled"');
-    expect(sharedDeployWorkflow.match(/--update-env-vars "RADIOSO_EDITION=\$\{RADIOSO_EDITION\}"/g)).toHaveLength(4);
+    expect(
+      sharedDeployWorkflow.match(
+        /--update-env-vars "RADIOSO_EDITION=\$\{RADIOSO_EDITION\},RADIOSO_RELEASE=\$\{RADIOSO_RELEASE\},RADIOSO_COMMIT=\$\{RELEASE_COMMIT\}"/g,
+      ),
+    ).toHaveLength(4);
     expect(sharedDeployWorkflow).toContain(
       '--update-env-vars "RADIOSO_EDITION=${RADIOSO_EDITION},NEXT_PUBLIC_RADIOSO_EDITION=${RADIOSO_EDITION}"',
     );
+  });
+
+  it("stamps the release it ships into the image it builds", async () => {
+    const dockerfile = await readFile(new URL("../../../infra/backend.Dockerfile", import.meta.url), "utf8");
+    const sharedDeployWorkflow = await readFile(
+      new URL("../../../.github/workflows/_deploy-cloud-run.yml", import.meta.url),
+      "utf8",
+    );
+    const liveWorkflow = await readFile(
+      new URL("../../../.github/workflows/deploy-live.yml", import.meta.url),
+      "utf8",
+    );
+
+    // A release deploy builds the tag, which is not necessarily the commit the workflow was
+    // dispatched from, so both the ancestry check and the image tag read the checked-out commit.
+    expect(sharedDeployWorkflow).toContain("ref: ${{ inputs.release }}");
+    expect(sharedDeployWorkflow).toContain("git merge-base --is-ancestor HEAD refs/remotes/origin/main");
+    expect(sharedDeployWorkflow).toContain("backend:${RELEASE_COMMIT}");
+    expect(sharedDeployWorkflow).not.toContain("backend:${GITHUB_SHA}");
+    expect(sharedDeployWorkflow).toContain('--build-arg RADIOSO_RELEASE="${RADIOSO_RELEASE}"');
+    expect(sharedDeployWorkflow).toContain('--build-arg RADIOSO_COMMIT="${RELEASE_COMMIT}"');
+
+    expect(dockerfile).toContain("ARG RADIOSO_RELEASE=development");
+    expect(dockerfile).toContain("ENV RADIOSO_RELEASE=${RADIOSO_RELEASE}");
+    expect(dockerfile).toContain("OBSERVABILITY_VERSION=${RADIOSO_RELEASE}");
+
+    // Production ships a release someone named, never whatever main happened to be.
+    expect(liveWorkflow).toContain("required: true");
+    expect(liveWorkflow).toContain("release: ${{ inputs.release }}");
+  });
+
+  it("refuses a release input that is not an existing release tag", async () => {
+    const sharedDeployWorkflow = await readFile(
+      new URL("../../../.github/workflows/_deploy-cloud-run.yml", import.meta.url),
+      "utf8",
+    );
+
+    // A workflow_dispatch input is free text, so "main" or a bare SHA would otherwise satisfy
+    // the ancestry check and ship as a release, stamping images and /health with a non-version.
+    expect(sharedDeployWorkflow).toContain("grep -Eq '^v[0-9]+\\.[0-9]+\\.[0-9]+$'");
+    expect(sharedDeployWorkflow).toContain(
+      'git ls-remote --exit-code --tags origin "refs/tags/${RELEASE}"',
+    );
+    // A branch sharing the tag's name wins the checkout, so the tag's commit is compared to
+    // what was actually checked out rather than the name being trusted.
+    expect(sharedDeployWorkflow).toContain('git rev-parse "refs/tags/${RELEASE}^{commit}"');
+    expect(sharedDeployWorkflow).toContain('if [ "${tag_commit}" != "${commit}" ]; then');
   });
 
   it("clears incomplete frontend Next dev caches with missing manifests or vendor chunks", async () => {
@@ -214,6 +265,21 @@ describe("runtime configuration", () => {
         /\.github\/workflows\/\*\|infra\/\*\|\.dockerignore\|\*\/\.dockerignore\|Dockerfile\|\*\/Dockerfile\|\*\.Dockerfile\)[\s\S]+mark_all[\s\S]+;;/,
       );
     }
+  });
+
+  it("boots an unstamped build rather than demanding a release it was not given", () => {
+    const unstamped = getEnv({ ...baseEnv });
+    expect(unstamped.RADIOSO_RELEASE).toBe("development");
+    expect(unstamped.RADIOSO_COMMIT).toBe("unknown");
+
+    // An empty value is what a compose file or a Cloud Run variable left blank actually sends.
+    const blank = getEnv({ ...baseEnv, RADIOSO_RELEASE: "", RADIOSO_COMMIT: "" });
+    expect(blank.RADIOSO_RELEASE).toBe("development");
+    expect(blank.RADIOSO_COMMIT).toBe("unknown");
+
+    const stamped = getEnv({ ...baseEnv, RADIOSO_RELEASE: "1.4.0", RADIOSO_COMMIT: "5434e0e" });
+    expect(stamped.RADIOSO_RELEASE).toBe("1.4.0");
+    expect(stamped.RADIOSO_COMMIT).toBe("5434e0e");
   });
 
   it("provides default observability configuration without extra vendor settings", () => {

@@ -279,7 +279,7 @@ describe("OperatorMcpApplicationService", () => {
         summary: "Change ingestion settings.",
       },
     });
-    const enriched = enrichCopilotToolCatalog([rawProposalDescriptor], { resolveWorkspaceKey: async () => "workspace-key" })[0]!;
+    const enriched = enrichCopilotToolCatalog([rawProposalDescriptor], { resolveWorkspaceKey: async () => "workspace-key" })[0];
     const { service, invocations, invocation } = build(enriched);
     const proposalId = uuid("14");
     const operationId = "recover-proposal";
@@ -328,7 +328,7 @@ describe("OperatorMcpApplicationService", () => {
     proposalReconciliation.mockReset();
     proposalInvoke.mockClear();
     proposalReconciliation.mockResolvedValueOnce({ status: "retry_prepare" });
-    const enriched = enrichCopilotToolCatalog([rawProposalDescriptor], { resolveWorkspaceKey: async () => "workspace-key" })[0]!;
+    const enriched = enrichCopilotToolCatalog([rawProposalDescriptor], { resolveWorkspaceKey: async () => "workspace-key" })[0];
     const { service, invocations, invocation } = build(enriched);
     const operationId = "retry-released-proposal";
     const argumentsValue = { section: "retrieval" };
@@ -361,7 +361,7 @@ describe("OperatorMcpApplicationService", () => {
     proposalReconciliation.mockReset();
     proposalInvoke.mockClear();
     proposalReconciliation.mockResolvedValueOnce({ status: "retry_prepare" });
-    const enriched = enrichCopilotToolCatalog([rawProposalDescriptor], { resolveWorkspaceKey: async () => "workspace-key" })[0]!;
+    const enriched = enrichCopilotToolCatalog([rawProposalDescriptor], { resolveWorkspaceKey: async () => "workspace-key" })[0];
     const { service, invocations, invocation } = build(enriched);
     const operationId = "failed-before-proposal";
     const argumentsValue = { section: "retrieval" };

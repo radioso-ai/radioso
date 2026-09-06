@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { OperatorMcpInvocationRepository } from "../../../src/db/repositories/operatorMcpInvocationRepository.js";
 import { CopilotRepository } from "../../../src/db/repositories/copilotRepository.js";
@@ -10,7 +10,7 @@ import { resolveIntegrationDatabase } from "../support/integrationDatabase.js";
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
 describeIntegration("OperatorMcpInvocationRepository", () => {
-  const database = new Database(integrationDatabaseUrl as string);
+  const database = new Database(integrationDatabaseUrl);
   const repository = new OperatorMcpInvocationRepository(database.kysely);
   const copilotRepository = new CopilotRepository(database.kysely);
   const accountId = randomUUID();

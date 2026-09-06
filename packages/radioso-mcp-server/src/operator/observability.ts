@@ -41,7 +41,7 @@ export const createOperatorAuditObserver = (auditLogger: Pick<AuditLogger, "emit
   });
 };
 
-export interface OperatorMcpMetricObservation extends OperatorMcpAuditObservation {}
+export type OperatorMcpMetricObservation = OperatorMcpAuditObservation;
 
 export interface OperatorMcpMetrics {
   observe(input: OperatorMcpMetricObservation): void;

@@ -132,7 +132,7 @@ describe("operator MCP OAuth HTTP contract", () => {
 
   it("includes issuer binding when redirecting a trusted authorization error", async () => {
     const { app, service } = createHarness();
-    service.startAuthorization.mockRejectedValueOnce(new Error("invalid request") as never);
+    service.startAuthorization.mockRejectedValueOnce(new Error("invalid request"));
 
     const response = await request(app).get("/api/v1/operator-mcp/oauth/authorize").query({
       response_type: "code", client_id: "https://client.example/cimd", redirect_uri: "https://client.example/callback",

@@ -196,7 +196,7 @@ const createModernOperatorMcpRequestHandler = (dependencies: OperatorMcpRequestH
   const parsed = OperatorMcpRequestSchema.safeParse(parsedBody);
   if (!parsed.success) return rpcError(id, -32600, "Invalid Request");
 
-  const { method, params } = parsed.data;
+  const { method } = parsed.data;
   if (method === "server/discover") {
     return Response.json({
       id,

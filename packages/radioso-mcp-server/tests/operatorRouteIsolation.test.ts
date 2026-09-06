@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import { createHttpServer } from "../src/http/createHttpServer.js";
-import { createInMemorySessionStore } from "../src/auth/sessionStore.js";
 
 describe("operator route isolation", () => {
   it("returns 404 when disabled and does not require or alter the agent route", async () => {
@@ -22,7 +21,7 @@ describe("operator route isolation", () => {
       authService: { getRequestAuthInfo: vi.fn(), getSession: vi.fn(), resolveBearerSession: vi.fn(), recordSuccessfulUse: vi.fn() },
       config: { baseUrl: "http://app.example", bindHost: "127.0.0.1", bindPort: 0, redisKeyPrefix: "test", requestTimeoutMs: 1000, serverName: "test", trustedProxyHops: 0 },
       operatorMcp: {
-        adapter: { admit: vi.fn(), catalog: vi.fn(), invoke: vi.fn() } as never,
+        adapter: { admit: vi.fn(), catalog: vi.fn(), invoke: vi.fn() },
         readiness,
         resource: {
           authorizationServerUrl: "https://app.example",
@@ -47,7 +46,7 @@ describe("operator route isolation", () => {
       authService: { getRequestAuthInfo: vi.fn(), getSession: vi.fn(), resolveBearerSession: vi.fn(), recordSuccessfulUse: vi.fn() },
       config: { baseUrl: "http://app.example", bindHost: "127.0.0.1", bindPort: 0, redisKeyPrefix: "test", requestTimeoutMs: 1000, serverName: "test", trustedProxyHops: 0 },
       operatorMcp: {
-        adapter: { admit: vi.fn(), catalog: vi.fn(), invoke: vi.fn() } as never,
+        adapter: { admit: vi.fn(), catalog: vi.fn(), invoke: vi.fn() },
         readiness: { isReady: () => false },
         resource: { authorizationServerUrl: "https://app.example", metadataUrl: "https://mcp.example/.well-known/oauth-protected-resource/operator/mcp", resource: "https://mcp.example/operator/mcp" },
       },

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { CopilotRepository } from "../../../src/db/repositories/copilotRepository.js";
 import { Database } from "../../../src/shared/infra/database.js";
@@ -8,7 +8,7 @@ import { resolveIntegrationDatabase } from "../support/integrationDatabase.js";
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
 describeIntegration("operator MCP proposal origin", () => {
-  const database = new Database(integrationDatabaseUrl as string);
+  const database = new Database(integrationDatabaseUrl);
   const proposals = new CopilotRepository(database.kysely);
   const resource = `https://mcp.example/${randomUUID()}/operator/mcp`;
   const accountId = randomUUID(); const workspaceId = randomUUID(); const userId = randomUUID(); const membershipId = randomUUID();

@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { OperatorMcpAuthorizationRepository } from "../../../src/db/repositories/operatorMcpAuthorizationRepository.js";
 import { Database } from "../../../src/shared/infra/database.js";
@@ -8,7 +8,7 @@ import { resolveIntegrationDatabase } from "../support/integrationDatabase.js";
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
 describeIntegration("OperatorMcpAuthorizationRepository", () => {
-  const database = new Database(integrationDatabaseUrl as string);
+  const database = new Database(integrationDatabaseUrl);
   const repository = new OperatorMcpAuthorizationRepository(database.kysely);
   const accountId = randomUUID();
   const workspaceId = randomUUID();

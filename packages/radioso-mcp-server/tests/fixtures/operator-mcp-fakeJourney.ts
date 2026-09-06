@@ -109,7 +109,7 @@ export const runFakeOperatorJourney = async (): Promise<{ status: string }> => {
       };
       return { proof: createOperatorMcpProof({ ...proofInput, secret: SECRET }) };
     },
-    call: async ({ name, arguments: args }) => ({ content: [{ type: "text", text: `${name}:${String(args.query ?? "ok")}` }] }),
+    call: async ({ name, arguments: args }) => ({ content: [{ type: "text", text: `${name}:${typeof args.query === "string" ? args.query : "ok"}` }] }),
     list: async () => ({ tools: [{ description: "Read current workspace settings", inputSchema: {}, name: "workspace_settings", requiredScope: "operator:read", shape: "read" }] }),
     resourceMetadataUrl: METADATA_URL,
   });

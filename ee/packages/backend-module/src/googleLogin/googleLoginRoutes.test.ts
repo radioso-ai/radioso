@@ -107,7 +107,7 @@ describe("google login routes", () => {
 
   it("keeps a validated same-origin return path through the Google callback", async () => {
     const fetchImpl = vi.fn(async (input: string | URL | Request) => {
-      const url = String(input);
+      const url = toUrlString(input);
       const body = url.includes("token")
         ? { access_token: "access-token" }
         : { sub: "google-sub", email: "person@example.com", email_verified: true, name: "Person" };
@@ -140,7 +140,7 @@ describe("google login routes", () => {
 
   it("revalidates a tampered return cookie and keeps the configured fallback", async () => {
     const fetchImpl = vi.fn(async (input: string | URL | Request) => {
-      const url = String(input);
+      const url = toUrlString(input);
       const body = url.includes("token")
         ? { access_token: "access-token" }
         : { sub: "google-sub", email: "person@example.com", email_verified: true, name: "Person" };

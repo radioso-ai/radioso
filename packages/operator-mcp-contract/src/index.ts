@@ -234,7 +234,7 @@ export const digestOperatorMcpInput = (input: {
 
 export const createOperatorInvocationId = (): string => randomUUID();
 
-export const operatorScopeForShape = (value: OperatorMcpShape): OperatorMcpScope => `operator:${value}` as OperatorMcpScope;
+export const operatorScopeForShape = (value: OperatorMcpShape): OperatorMcpScope => `operator:${value}`;
 export const isOperatorMcpScope = (value: string): value is OperatorMcpScope => (OPERATOR_MCP_SCOPES as readonly string[]).includes(value);
 export const isOperatorMcpMethod = (value: string): value is OperatorMcpMethod => ["ping", "tools/list", "tools/call"].includes(value);
 

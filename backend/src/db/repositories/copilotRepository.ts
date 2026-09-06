@@ -9,7 +9,7 @@ import { copilotProposalTargetTypes, summarizeProposalEvidence } from "../../mod
 
 interface CopilotConversationRow { id: string; workspace_id: string; operator_user_id: string; title: string | null; status: string; created_at: Date; updated_at: Date; }
 interface CopilotMessageRow { id: string; conversation_id: string; role: string; content: string; outcome: string | null; activity: unknown; created_at: Date; }
-interface CopilotProposalRow { id: string; workspace_id: string; operator_user_id: string; conversation_id: string | null; operator_mcp_invocation_id: string | null; message_id: string | null; target_type: string; target_ref: unknown; payload: unknown; version_token: string; evidence: unknown; status: string; failure_reason: string | null; applied_ref: unknown | null; created_at: Date; updated_at: Date; }
+interface CopilotProposalRow { id: string; workspace_id: string; operator_user_id: string; conversation_id: string | null; operator_mcp_invocation_id: string | null; message_id: string | null; target_type: string; target_ref: unknown; payload: unknown; version_token: string; evidence: unknown; status: string; failure_reason: string | null; applied_ref: unknown; created_at: Date; updated_at: Date; }
 interface RecoverableOperatorMcpInvocationRow { id: string; grant_id: string; workspace_id: string; user_id: string; operation_id: string | null; descriptor_name: string | null; input_digest: string; proof_consumed_at: Date | null; status: string; }
 const conversationColumns = ["id", "workspace_id", "operator_user_id", "title", "status", "created_at", "updated_at"] as const;
 const messageColumns = ["id", "conversation_id", "role", "content", "outcome", "activity", "created_at"] as const;
@@ -200,7 +200,7 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
       version_token: input.versionToken,
       evidence: input.evidence ? JSON.stringify(input.evidence) : null,
     }).returning(proposalColumns).executeTakeFirstOrThrow();
-    return mapProposal(row as CopilotProposalRow);
+    return mapProposal(row);
   }
   async recoverOperatorMcpProposal(input: Parameters<CopilotMcpProposalRecoveryPort["recoverOperatorMcpProposal"]>[0]): ReturnType<CopilotMcpProposalRecoveryPort["recoverOperatorMcpProposal"]> {
     return this.db.transaction().execute(async (trx) => {
@@ -233,7 +233,7 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
         LIMIT 2
       `.execute(trx);
       if (proposals.rows.length === 1) {
-        return { status: "recovered" as const, proposal: mapProposal(proposals.rows[0]!) };
+        return { status: "recovered" as const, proposal: mapProposal(proposals.rows[0]) };
       }
       if (proposals.rows.length > 1) return { status: "conflict" as const };
       if (invocation.status !== "admitted" && invocation.status !== "running") {

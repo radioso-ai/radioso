@@ -174,7 +174,7 @@ describe("dashboard handoff subject", () => {
     } satisfies CopilotToolDescriptor<{ name: string }>;
     const [tool] = enrichCopilotToolCatalog([proposalDescriptor], { resolveWorkspaceKey: async () => "acme" });
 
-    const result = await tool!.createTool(context(new Set(["workspace.agents.read"]), "mcp"))
+    const result = await tool.createTool(context(new Set(["workspace.agents.read"]), "mcp"))
       .invoke({ name: "Support" }, {} as never);
 
     expect(result).toMatchObject({

@@ -257,10 +257,10 @@ test("consent uses clear capability names and one explicit deny action", async (
   expect(response?.headers()["cache-control"]).toContain("no-store");
 
   await expect(page.getByText("Authorize Radioso MCP", { exact: true })).toBeVisible();
-  await expect(page.getByText("Codex CLI · 0.149.0")).toBeVisible();
-  await expect(page.getByText("127.0.0.1:3210", { exact: true })).toBeVisible();
+  await expect(page.getByText("Codex CLI · 0.149.0")).toHaveCount(0);
+  await expect(page.getByText("127.0.0.1:3210", { exact: true })).toHaveCount(0);
   await expect(page.getByText(/permissions you select/i)).toBeVisible();
-  await expect(page.getByText(/returns approval to this app on your computer/i)).toBeVisible();
+  await expect(page.getByText(/returns approval to this app on your computer/i)).toHaveCount(0);
   await expect(page.getByLabel("Workspace", { exact: true })).toHaveValue(workspaceId);
   await expect(page.getByText("operator:read", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Cancel" })).toHaveCount(0);

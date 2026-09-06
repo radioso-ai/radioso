@@ -51,11 +51,11 @@ describe('operator MCP consent warnings', () => {
     expect(consentWarnings(transaction('https://client.example/callback'))[0]).toContain('permissions you select')
   })
 
-  it('adds a warning for loopback redirects', () => {
-    expect(consentWarnings(transaction('http://127.0.0.1:3210/callback'))[1]).toContain('returns approval to')
+  it('does not add callback implementation details for a loopback redirect', () => {
+    expect(consentWarnings(transaction('http://127.0.0.1:3210/callback'))).toHaveLength(1)
   })
 
-  it('does not classify an ordinary HTTPS redirect as loopback', () => {
+  it('does not add callback implementation details for an HTTPS redirect', () => {
     expect(consentWarnings(transaction('https://client.example/callback'))).toHaveLength(1)
   })
 })

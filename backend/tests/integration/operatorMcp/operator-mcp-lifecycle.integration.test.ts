@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { SessionRepository } from "../../../src/db/repositories/sessionRepository.js";
 import { Database } from "../../../src/shared/infra/database.js";
@@ -8,7 +8,7 @@ import { resolveIntegrationDatabase } from "../support/integrationDatabase.js";
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
 describeIntegration("operator MCP lifecycle", () => {
-  const database = new Database(integrationDatabaseUrl as string);
+  const database = new Database(integrationDatabaseUrl);
   const sessions = new SessionRepository(database.kysely);
   const accountId = randomUUID();
   const userId = randomUUID();

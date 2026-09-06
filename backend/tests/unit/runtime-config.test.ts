@@ -542,7 +542,7 @@ describe("runtime configuration", () => {
     expect(terraformWorkflow).not.toContain('RADIOSO_MCP_SIGNING_SECRET');
     expect(terraformVariables).toContain('variable "operator_mcp_rollout_workspace_ids"');
     expect(terraformVariables).toContain('variable "operator_mcp_verification_budget_per_minute"');
-    expect(computeTf.match(/name  = "OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS"/g)).toHaveLength(2);
+    expect(computeTf.match(/name {2}= "OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS"/g)).toHaveLength(2);
     expect(computeTf.match(/value = join\(",", var\.operator_mcp_rollout_workspace_ids\)/g)).toHaveLength(2);
     expect(computeTf).toContain('name  = "OPERATOR_MCP_VERIFICATION_BUDGET_PER_MINUTE"');
     expect(computeTf).toContain('value = tostring(var.operator_mcp_verification_budget_per_minute)');

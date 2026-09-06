@@ -53,7 +53,7 @@ describe("operator MCP internal service contract", () => {
 
   it("returns the exact missing descriptor scope to the protected resource", async () => {
     const { app, service } = harness();
-    service.admit.mockRejectedValueOnce(new OperatorMcpApplicationError("insufficient_scope", "operator:probe") as never);
+    service.admit.mockRejectedValueOnce(new OperatorMcpApplicationError("insufficient_scope", "operator:probe"));
 
     await request(app).post(path).set(signedHeaders(body)).send(body)
       .expect(403)
@@ -62,7 +62,7 @@ describe("operator MCP internal service contract", () => {
 
   it("reports bounded-result failures as runtime errors rather than invalid credentials", async () => {
     const { app, service } = harness();
-    service.admit.mockRejectedValueOnce(new OperatorMcpApplicationError("result_too_large") as never);
+    service.admit.mockRejectedValueOnce(new OperatorMcpApplicationError("result_too_large"));
 
     const response = await request(app).post(path).set(signedHeaders(body)).send(body).expect(500);
 

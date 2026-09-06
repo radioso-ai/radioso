@@ -109,7 +109,9 @@ describe("operator backend adapter", () => {
 
     await adapter.invoke({ proof: callProof, ...call, bodyDigest });
 
-    const payload = JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body)) as Record<string, unknown>;
+    const requestBody = fetchImpl.mock.calls[0]?.[1]?.body;
+    if (typeof requestBody !== "string") throw new Error("Expected an invocation request body");
+    const payload = JSON.parse(requestBody) as Record<string, unknown>;
     expect(payload.bodyDigest).toBe(bodyDigest);
   });
 });

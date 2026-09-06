@@ -17,7 +17,7 @@ const eligible = (descriptor: CopilotToolDescriptor) => {
 };
 
 const jsonSchema = (schema: CopilotToolDescriptor["inputSchema"]): Record<string, unknown> =>
-  zodToJsonSchema(schema, { target: "openApi3", $refStrategy: "none" }) as Record<string, unknown>;
+  zodToJsonSchema(schema, { target: "openApi3", $refStrategy: "none" });
 
 export class OperatorMcpCatalogService {
   private readonly descriptors: ReadonlyMap<string, CopilotToolDescriptor>;

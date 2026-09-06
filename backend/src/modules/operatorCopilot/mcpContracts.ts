@@ -1,10 +1,10 @@
-export const operatorMcpInvocationMethods = ["ping", "tools/list", "tools/call"] as const;
+const operatorMcpInvocationMethods = ["ping", "tools/list", "tools/call"] as const;
 export type OperatorMcpInvocationMethod = (typeof operatorMcpInvocationMethods)[number];
 
 export const operatorMcpInvocationShapes = ["read", "probe", "act", "propose"] as const;
 export type OperatorMcpInvocationShape = (typeof operatorMcpInvocationShapes)[number];
 
-export const operatorMcpInvocationStatuses = ["admitted", "running", "completed", "refused", "failed"] as const;
+const operatorMcpInvocationStatuses = ["admitted", "running", "completed", "refused", "failed"] as const;
 export type OperatorMcpInvocationStatus = (typeof operatorMcpInvocationStatuses)[number];
 
 export interface OperatorMcpInvocationRecord {

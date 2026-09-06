@@ -20,7 +20,7 @@ import { createOperatorBackendAdapter, operatorBackendRequestTimeoutMs } from ".
 import { createOperatorMcpReadiness } from "../operator/runtimeReadiness.js";
 import { createOperatorMcpFloodLimiter, createOperatorMcpMetrics } from "../operator/observability.js";
 
-export interface CreateRemoteHttpRuntimeOptions {
+interface CreateRemoteHttpRuntimeOptions {
   auditLogger?: AuditLogger;
   auditSinks?: AuditSink[];
   config: RadiosoMcpConfig;
@@ -28,7 +28,7 @@ export interface CreateRemoteHttpRuntimeOptions {
   runtimeStores?: RuntimeStoreHandle;
 }
 
-export interface RemoteHttpRuntime {
+interface RemoteHttpRuntime {
   auditLogger: AuditLogger;
   close(): Promise<void>;
   listen(): Promise<void>;

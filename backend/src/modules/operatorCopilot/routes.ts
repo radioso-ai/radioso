@@ -46,7 +46,7 @@ export const copilotResolvableToolPermissions = (
   ...catalog.flatMap((descriptor) => descriptor.requiredPermissions),
 ])];
 
-export interface CopilotRouteDependencies extends WorkspaceSessionDependencies {
+interface CopilotRouteDependencies extends WorkspaceSessionDependencies {
   env: Env;
   abuseControlService: RateLimitAbuseControlPort;
   auditService: RateLimitAuditPort;

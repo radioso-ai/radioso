@@ -246,7 +246,7 @@ const projectRoutineDetail = (routine: RoutineDefinition): Record<string, unknow
  * name collapses to one routine per lineage. Names stay ambiguous across *different* lineages,
  * which is the ambiguity an operator can actually resolve.
  */
-export type RoutineVersionPreference = ReadonlyArray<RoutineDefinition["status"]>;
+type RoutineVersionPreference = ReadonlyArray<RoutineDefinition["status"]>;
 const liveFirst: RoutineVersionPreference = ["published", "draft", "archived"];
 const draftFirst: RoutineVersionPreference = ["draft", "published", "archived"];
 const archivedFirst: RoutineVersionPreference = ["archived", "published", "draft"];

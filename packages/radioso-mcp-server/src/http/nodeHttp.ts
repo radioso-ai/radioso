@@ -1,9 +1,9 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { Readable, Transform } from "node:stream";
 
-export const DEFAULT_MAX_REQUEST_BODY_BYTES = 1024 * 1024;
+const DEFAULT_MAX_REQUEST_BODY_BYTES = 1024 * 1024;
 
-export class RequestBodyTooLargeError extends Error {
+class RequestBodyTooLargeError extends Error {
   readonly code = "payload_too_large";
   readonly maxBytes: number;
 
@@ -17,7 +17,7 @@ export class RequestBodyTooLargeError extends Error {
 export const isRequestBodyTooLargeError = (error: unknown): error is RequestBodyTooLargeError =>
   error instanceof RequestBodyTooLargeError;
 
-export const readRequestBody = async (
+const readRequestBody = async (
   req: IncomingMessage,
   options: { maxBytes?: number } = {},
 ): Promise<Buffer> => {
@@ -42,7 +42,7 @@ export const readRequestBody = async (
   return Buffer.concat(chunks);
 };
 
-export const readJsonBody = async (req: IncomingMessage): Promise<unknown> => {
+const readJsonBody = async (req: IncomingMessage): Promise<unknown> => {
   const body = await readRequestBody(req);
   if (body.length === 0) {
     return {};

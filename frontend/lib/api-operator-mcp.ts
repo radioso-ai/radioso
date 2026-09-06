@@ -55,14 +55,14 @@ export interface OperatorMcpGrantSummary {
   isOwner: boolean
 }
 
-export interface OperatorMcpGrantDetail extends OperatorMcpGrantSummary {
+interface OperatorMcpGrantDetail extends OperatorMcpGrantSummary {
   redirectHost: string
   resource: string
   credentialCount: number
   recentInvocationCount: number
 }
 
-export interface OperatorMcpGrantInventoryResponse {
+interface OperatorMcpGrantInventoryResponse {
   grants: OperatorMcpGrantSummary[]
   canViewWorkspace: boolean
   isLoadingWorkspaceInventory?: boolean
@@ -89,7 +89,7 @@ export interface OperatorMcpTransactionResponse {
   expiresAt: string
 }
 
-export interface OperatorMcpDecisionResponse {
+interface OperatorMcpDecisionResponse {
   redirectUrl: string
 }
 

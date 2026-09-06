@@ -1,12 +1,12 @@
 import type { SettingsTab } from '@/lib/dashboard-routes'
 
-export interface SettingsSectionDescriptor {
+interface SettingsSectionDescriptor {
   id: string
   label: string
   summary: string
 }
 
-export interface SettingsTabDescriptor {
+interface SettingsTabDescriptor {
   id: SettingsTab
   title: string
   summary: string

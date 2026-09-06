@@ -1,6 +1,6 @@
 import type { OperatorRequestReadiness } from "./requestHandler.js";
 
-export interface OperatorMcpReadiness extends OperatorRequestReadiness {
+interface OperatorMcpReadiness extends OperatorRequestReadiness {
   setReady(ready: boolean): void;
 }
 
@@ -11,4 +11,3 @@ export const createOperatorMcpReadiness = (initialReady = true): OperatorMcpRead
     setReady(value) { ready = value; },
   };
 };
-

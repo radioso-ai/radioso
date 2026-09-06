@@ -19,7 +19,7 @@ import {
   validateRedirectUri,
 } from "./domain.js";
 
-export type ResolvedOperatorMcpClient = PersistedOperatorMcpClient;
+type ResolvedOperatorMcpClient = PersistedOperatorMcpClient;
 
 interface AuthorizationConfig {
   resource: string;

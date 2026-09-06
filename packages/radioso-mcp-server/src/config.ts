@@ -164,4 +164,6 @@ export const loadRemoteConfig = (
   return buildConfig(parsed);
 };
 
-export const loadConfig = loadRemoteConfig;
+export const loadConfig = (
+  env: NodeJS.ProcessEnv | Record<string, string | undefined>,
+): RadiosoMcpConfig => loadRemoteConfig(env);

@@ -42,15 +42,6 @@ const readRequestBody = async (
   return Buffer.concat(chunks);
 };
 
-const readJsonBody = async (req: IncomingMessage): Promise<unknown> => {
-  const body = await readRequestBody(req);
-  if (body.length === 0) {
-    return {};
-  }
-
-  return JSON.parse(body.toString("utf8"));
-};
-
 export const toWebRequest = async (req: IncomingMessage, fallbackHost: string, options: { maxBytes?: number } = {}): Promise<Request> => {
   const headers = new Headers();
 

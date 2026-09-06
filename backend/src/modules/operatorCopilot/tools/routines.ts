@@ -13,7 +13,7 @@ import {
   entity,
   normalizeEntityName,
   recordProposalCreated,
-  requiredCopilotConversation,
+  copilotProposalOrigin,
   requiredPageAgent,
   type CopilotAgentLookupPort,
   citedEvidenceSchema,
@@ -246,7 +246,7 @@ const projectRoutineDetail = (routine: RoutineDefinition): Record<string, unknow
  * name collapses to one routine per lineage. Names stay ambiguous across *different* lineages,
  * which is the ambiguity an operator can actually resolve.
  */
-export type RoutineVersionPreference = ReadonlyArray<RoutineDefinition["status"]>;
+type RoutineVersionPreference = ReadonlyArray<RoutineDefinition["status"]>;
 const liveFirst: RoutineVersionPreference = ["published", "draft", "archived"];
 const draftFirst: RoutineVersionPreference = ["draft", "published", "archived"];
 const archivedFirst: RoutineVersionPreference = ["archived", "published", "draft"];
@@ -369,7 +369,7 @@ export const createRoutineProposalCopilotTools = (deps: RoutineProposalCopilotTo
           const proposal = await deps.proposalRepository.createProposal({
             workspaceId: context.workspaceId,
             operatorUserId: context.operatorUserId,
-            conversationId: requiredCopilotConversation(context),
+            origin: copilotProposalOrigin(context),
             targetType: "routine",
             targetRef,
             payload: draft.payload,
@@ -462,7 +462,7 @@ const proposeRoutineChange = async (
   const proposal = await deps.proposalRepository.createProposal({
     workspaceId: context.workspaceId,
     operatorUserId: context.operatorUserId,
-    conversationId: requiredCopilotConversation(context),
+    origin: copilotProposalOrigin(context),
     targetType: "routine",
     targetRef,
     payload: draft.payload,

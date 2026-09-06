@@ -188,6 +188,15 @@ const liveEvalEffects = permanent("Permanent exclusion: Ray may replay and evalu
 export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   ...catalogToolCoverage,
 
+  ...coverage([
+    "decideOperatorMcpConsentTransaction",
+    "getOperatorMcpConsentTransaction",
+    "getOperatorMcpGrant",
+    "getOperatorMcpSetup",
+    "listOperatorMcpGrants",
+    "revokeOperatorMcpGrant",
+  ], neverListExclusion("machine_access")),
+
   streamWorkspaceEvents: ambientOperatorRuntime,
 
   ...coverage([

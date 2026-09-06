@@ -33,7 +33,7 @@ const readDirectiveName = (config: Record<string, unknown>): string | null => {
 const withDirectiveDefaults = (config: Record<string, unknown>): Record<string, unknown> =>
   Object.prototype.hasOwnProperty.call(config, "enabled") ? config : { ...config, enabled: true };
 
-export interface EvalCaseReplayServiceDependencies extends CopilotExpensiveOperationGuardDependencies {
+interface EvalCaseReplayServiceDependencies extends CopilotExpensiveOperationGuardDependencies {
   cases: CopilotEvalCaseReaderPort;
   runs: CopilotEvalCaseReplayRunnerPort;
   evidence: CopilotReplayEvidenceRepositoryPort;
@@ -87,7 +87,7 @@ export class EvalCaseReplayService implements CopilotEvalCaseReplayPort {
     const evidenceId = evalCase.sourceAgentId === null || evalCase.snapshotCapturedAt === null ? null : (await this.dependencies.evidence.record({
       workspaceId: input.workspaceId,
       operatorUserId: input.operatorUserId,
-      conversationId: input.copilotConversationId,
+      origin: { type: "conversation", conversationId: input.copilotConversationId },
       agentId: evalCase.sourceAgentId,
       caseId: evalCase.id,
       caseName: evalCase.name,

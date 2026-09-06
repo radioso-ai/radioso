@@ -1,12 +1,14 @@
 ---
 title: "MCP Client Setup"
-description: "Connect an MCP client to one Radioso agent with an audience-bound credential."
-last_updated: 2026-09-01
+description: "Connect an MCP client either to one Radioso agent or to Ray's governed operator tools."
+last_updated: 2026-09-04
 ---
 
 # MCP Client Setup
 
 Radioso exposes an MCP surface for clients that need to talk to one configured agent. It publishes one tool, `ask_agent`, which runs the same persona, directives, routines, and retrieval behavior as the agent's other chat channels.
+
+For Ray's workspace-level read, probe, and proposal tools, use the separate [Operator MCP OAuth flow](./operator-mcp.md) under **Settings → API access**. Its `/operator/mcp` resource uses browser consent and never accepts an agent-channel credential.
 
 - **Agent chat over MCP** uses a role-free MCP credential bound to exactly one agent.
 - **Workspace document work** uses the REST document routes with a personal token or service-account credential.
@@ -114,7 +116,7 @@ clients do not need to serialize the first ask.
 
 ### Authentication limits
 
-The converse surface uses the credential-for-session exchange described above. Operator-minted credentials are static bearer secrets, so Radioso does not require an OAuth flow. Personal and service-account credentials do not authorize MCP.
+The converse surface uses the agent credential-for-session exchange described above. Agent MCP credentials are static bearer secrets. Personal and service-account credentials do not authorize this surface.
 
 The exchange is rate limited before credential lookup. A source bucket runs first, followed by a bucket keyed by a one-way launch-token digest; this bounds durable work when a caller sends many different invalid tokens. Rejected and unavailable checks are counted in a low-cardinality metric. Individual pre-auth failures are not written as audit events because an invalid-token flood must not turn into an unbounded audit-write workload.
 

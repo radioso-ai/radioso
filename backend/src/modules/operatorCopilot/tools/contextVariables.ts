@@ -13,7 +13,7 @@ import {
   proposalEvidenceOutput,
   proposalOutputSchema,
   recordProposalCreated,
-  requiredCopilotConversation,
+  copilotProposalOrigin,
   requiredPageAgent,
   type CopilotAgentLookupPort,
   type CopilotProposalEvidenceDependencies,
@@ -189,7 +189,7 @@ export const createContextVariableProposalCopilotTools = (
           const proposal = await deps.proposalRepository.createProposal({
             workspaceId: context.workspaceId,
             operatorUserId: context.operatorUserId,
-            conversationId: requiredCopilotConversation(context),
+            origin: copilotProposalOrigin(context),
             targetType: "context_variable",
             targetRef: validated.targetRef,
             payload: validated.payload,

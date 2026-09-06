@@ -1,10 +1,14 @@
+import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 
 import type { RemoteHttpDependencies } from "./types.js";
 import { createMcpRouteHandler } from "./mcpRoutes.js";
 import { createSessionMcpServerManager } from "./sessionServerManager.js";
-import { isRequestBodyTooLargeError, writeJson, writeJsonRpcError } from "./nodeHttp.js";
+import { isRequestBodyTooLargeError, toWebRequest, writeJson, writeJsonRpcError, writeWebResponse } from "./nodeHttp.js";
 import { createFixedWindowPreAuthSourceBudget, digestPeerSource } from "./preAuthSourceBudget.js";
+import { createOperatorMcpRequestHandler } from "../operator/requestHandler.js";
+import { createOperatorProtectedResourceMetadata } from "../operator/protectedResource.js";
+import { createOperatorAuditObserver } from "../operator/observability.js";
 
 export interface RadiosoRemoteHttpServer {
   close(): Promise<void>;
@@ -12,7 +16,7 @@ export interface RadiosoRemoteHttpServer {
   server: Server;
 }
 
-export const createHttpServer = ({ authService, auditLogger, config, readiness, preAuthSourceBudget }: RemoteHttpDependencies): RadiosoRemoteHttpServer => {
+export const createHttpServer = ({ authService, auditLogger, config, operatorMcp, readiness, preAuthSourceBudget }: RemoteHttpDependencies): RadiosoRemoteHttpServer => {
   const sourceBudget = preAuthSourceBudget ?? createFixedWindowPreAuthSourceBudget({
     maxAttempts: 60,
     windowMs: 60_000,
@@ -28,6 +32,28 @@ export const createHttpServer = ({ authService, auditLogger, config, readiness, 
     readiness,
     serverManager: sessionServerManager,
   });
+  const operatorHandler = operatorMcp ? createOperatorMcpRequestHandler({
+    admit: async (input) => operatorMcp.adapter.admit({
+      accessToken: input.accessToken,
+      bodyDigest: input.bodyDigest,
+      invocationId: input.invocationId,
+      method: input.method,
+      descriptorName: input.descriptorName,
+      nonce: randomUUID(),
+      resource: operatorMcp.resource.resource,
+      timestamp: Math.floor(Date.now() / 1000).toString(),
+    }),
+    call: (input) => operatorMcp.adapter.invoke({ proof: input.proof, name: input.name, arguments: input.arguments, operationId: input.operationId, bodyDigest: input.bodyDigest }),
+    list: (input) => operatorMcp.adapter.catalog(input.proof),
+    onOutcome: (observation) => {
+      try { operatorMcp.metrics?.observe(observation); } catch { /* metrics cannot affect protocol */ }
+      if (operatorMcp.auditLogger) return createOperatorAuditObserver(operatorMcp.auditLogger)(observation);
+    },
+    principalRateLimit: operatorMcp.principalRateLimit,
+    readiness: operatorMcp.readiness,
+    resourceMetadataUrl: operatorMcp.resource.metadataUrl,
+    rolloutWorkspaceIds: operatorMcp.rolloutWorkspaceIds,
+  }) : undefined;
 
   const writeUnhandledError = (req: IncomingMessage, res: ServerResponse, error: unknown) => {
     if (isRequestBodyTooLargeError(error)) {
@@ -83,6 +109,27 @@ export const createHttpServer = ({ authService, auditLogger, config, readiness, 
           return;
         }
         await handleMcp(req, res);
+        return;
+      }
+
+      if (operatorMcp && req.method === "GET" && url.pathname === operatorMcp.resource.metadataUrl.replace(/^https?:\/\/[^/]+/u, "")) {
+        writeJson(res, 200, createOperatorProtectedResourceMetadata(operatorMcp.resource));
+        return;
+      }
+
+      if (url.pathname === "/operator/mcp") {
+        if (!operatorMcp || !operatorHandler) {
+          writeJson(res, 404, { error: { code: "not_found", message: "Route not found." } });
+          return;
+        }
+        const sourceDigest = digestPeerSource(req, config.trustedProxyHops);
+        if (operatorMcp.rateLimit && !await operatorMcp.rateLimit.consume({ sourceDigest })) {
+          writeJson(res, 429, { error: { code: "rate_limit_exceeded", message: "Too many requests." } });
+          return;
+        }
+        const request = await toWebRequest(req, `${config.bindHost}:${config.bindPort}`, { maxBytes: 256 * 1024 });
+        const response = await operatorHandler(request);
+        await writeWebResponse(res, response);
         return;
       }
 

@@ -43,6 +43,23 @@ export interface TextGenerationRequest {
   onProviderRequestDispatched?: () => void;
 }
 
+/**
+ * Reports a dispatch without letting the observer affect the call it observes: a
+ * throwing or rejecting reporter must never fail, retry, or alter a request the
+ * transport has already sent.
+ */
+export const reportProviderRequestDispatched = (report: (() => void) | undefined): void => {
+  if (!report) return;
+  try {
+    const result = report() as unknown;
+    if (result && typeof (result as PromiseLike<unknown>).then === "function") {
+      void Promise.resolve(result).catch(() => undefined);
+    }
+  } catch {
+    // Accounting is observational; a failure to record must not change the completion.
+  }
+}
+
 export type UsageQuality = "actual" | "estimated";
 
 /**

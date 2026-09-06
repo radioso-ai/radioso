@@ -8,6 +8,7 @@ import {
   type TextGenerationRequest,
   type TextGenerationResult,
   type TextGenerationStreamResult,
+  reportProviderRequestDispatched,
 } from "./providerTypes.js";
 import { readProviderErrorBody } from "./providerErrors.js";
 import { streamWithUsage } from "./providerStreaming.js";
@@ -95,10 +96,13 @@ export class GeminiTextGenerationClient implements TextGenerationClient {
       signal: input.signal,
       body: JSON.stringify(buildGenerateBody(input)),
     };
+    // Invoking fetch is the dispatch. Report only after the transport has been handed
+    // the request, and not at all when an aborted signal makes it reject unsent.
+    const responsePromise = fetch(url, request);
     if (!input.signal?.aborted) {
-      input.onProviderRequestDispatched?.();
+      reportProviderRequestDispatched(input.onProviderRequestDispatched);
     }
-    const response = await fetch(url, request);
+    const response = await responsePromise;
 
     if (!response.ok) {
       throw await readProviderErrorBody("Gemini", "generate", response);

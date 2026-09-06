@@ -3,14 +3,14 @@ import {
   copilotIngestionSettingsPayloadSchema,
   type CopilotIngestionSettingsPayload,
 } from "../contracts/ingestionSettingsAuthoring.js";
-import type { CopilotToolDescriptor } from "../contracts.js";
+import type { CopilotMcpProposalRecoveryPort, CopilotToolDescriptor } from "../contracts.js";
 import { requireCurrentCopilotPermissions } from "../authorization.js";
 import {
   boundedSummary,
   proposalAdapterFor,
   proposalOutputSchema,
   recordProposalCreated,
-  requiredCopilotConversation,
+  copilotProposalOrigin,
   type CopilotProposalToolDependencies,
 } from "./shared.js";
 
@@ -18,7 +18,9 @@ const MANAGE_SETTINGS = ["workspace.settings.manage"] as const;
 const NAME = "propose_ingestion_settings";
 const DESCRIPTION = "Propose a change to how documents are chunked and enriched when they are processed, for the operator to review and apply. Name only the fields you want changed; the rest are carried over from the stored settings. Applying it re-chunks nothing on its own — reprocess a document or a source afterwards for the change to reach what is already indexed.";
 
-export type IngestionSettingsProposalCopilotToolDependencies = CopilotProposalToolDependencies;
+export type IngestionSettingsProposalCopilotToolDependencies = CopilotProposalToolDependencies & {
+  readonly proposalRecovery: CopilotMcpProposalRecoveryPort;
+};
 
 const summarize = (payload: CopilotIngestionSettingsPayload, changed: ReadonlyArray<string>): string => {
   const fields = changed.map((key) => `${key} to ${String((payload as Record<string, unknown>)[key])}`).join(", ");
@@ -44,6 +46,33 @@ export const createIngestionSettingsProposalCopilotTools = (
     contributingModule: "settings",
     dashboardSubject: { type: "proposal" },
     requiredPermissions: [...MANAGE_SETTINGS] as unknown as CopilotToolDescriptor["requiredPermissions"],
+    reconcileMcpInvocation: async ({ invocation, context, staleBefore, now }) => {
+      if (!invocation.operationId) return { status: "conflict" };
+      const recovery = await deps.proposalRecovery.recoverOperatorMcpProposal({
+        invocationId: invocation.id,
+        grantId: invocation.grantId,
+        workspaceId: context.workspaceId,
+        operatorUserId: context.operatorUserId,
+        operationId: invocation.operationId,
+        descriptorName: NAME,
+        inputDigest: invocation.inputDigest,
+        staleBefore,
+        now,
+      });
+      if (recovery.status !== "recovered") return recovery;
+      if (recovery.proposal.targetType !== "ingestion_settings") return { status: "conflict" };
+      const payload = copilotIngestionSettingsPayloadSchema.safeParse(recovery.proposal.payload);
+      if (!payload.success || !payload.data.summary) return { status: "conflict" };
+      return {
+        status: "recovered",
+        output: {
+          proposalId: recovery.proposal.id,
+          targetType: "ingestion_settings" as const,
+          targetLabel: "Ingestion settings",
+          summary: payload.data.summary,
+        },
+      };
+    },
     createTool: (context) => ({
       ...shared,
       invoke: async (rawChange) => {
@@ -59,7 +88,7 @@ export const createIngestionSettingsProposalCopilotTools = (
         const proposal = await deps.proposalRepository.createProposal({
           workspaceId: context.workspaceId,
           operatorUserId: context.operatorUserId,
-          conversationId: requiredCopilotConversation(context),
+          origin: copilotProposalOrigin(context),
           targetType: "ingestion_settings",
           targetRef: validated.targetRef,
           payload: copilotIngestionSettingsPayloadSchema.parse({ ...payload, summary }),

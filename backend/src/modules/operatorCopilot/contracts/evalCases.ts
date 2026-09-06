@@ -280,7 +280,11 @@ export interface CopilotReplayEvidenceRecord {
   id: string;
   workspaceId: string;
   operatorUserId: string;
-  conversationId: string;
+  origin:
+    | { type: "conversation"; conversationId: string }
+    | { type: "operator_mcp_invocation"; invocationId: string };
+  conversationId: string | null;
+  operatorMcpInvocationId: string | null;
   agentId: string;
   caseId: string;
   caseName: string;
@@ -308,7 +312,7 @@ export interface CopilotReplayEvidenceRecord {
 }
 
 export interface CopilotReplayEvidenceRepositoryPort {
-  record(input: Omit<CopilotReplayEvidenceRecord, "id" | "createdAt">): Promise<CopilotReplayEvidenceRecord>;
+  record(input: Omit<CopilotReplayEvidenceRecord, "id" | "createdAt" | "conversationId" | "operatorMcpInvocationId">): Promise<CopilotReplayEvidenceRecord>;
   /** Scoped to the operator who measured it; evidence is never citable across operators. */
   findMany(input: {
     workspaceId: string;

@@ -79,6 +79,72 @@ describe("createCopilotRoutes", () => {
     });
   });
 
+  it("resolves a proposal from its owning workspace instead of dashboard workspace state", async () => {
+    const resolveProposalWorkspace = vi.fn(async () => WORKSPACE_ID);
+    const getProposal = vi.fn(async () => ({
+      proposal: {
+        id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+        targetType: "ingestion_settings",
+        targetRef: {},
+        status: "pending",
+        reason: null,
+        appliedRef: null,
+        evidence: null,
+      },
+      preview: { targetLabel: "Ingestion settings", current: {}, proposed: { chunkOverlap: 240 } },
+      currentVersionMatches: true,
+    }));
+    const resolveDashboardWorkspace = vi.fn(async () => ({ accountId: ACCOUNT_ID, workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }));
+    const requirePermission = vi.fn(async () => {});
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => {
+      req.cookies = Object.fromEntries(
+        (req.header("cookie") ?? "").split(";").map((part) => part.trim().split("=")).filter(
+          (part): part is [string, string] => part.length === 2,
+        ),
+      );
+      next();
+    });
+    app.use("/api/v1/copilot", createCopilotRoutes({
+      env: { SESSION_COOKIE_NAME: "radioso_session" },
+      authService: {
+        async authenticateSession() { return { accountId: ACCOUNT_ID, userId: USER_ID, sessionId: "session-id" }; },
+      },
+      workspaceSessionService: { resolve: resolveDashboardWorkspace },
+      accountAccessService: {
+        async requireActiveMembership() {},
+        requirePermission,
+        hasPermission: vi.fn(async () => true),
+      },
+      llmCapabilityResolver: { async resolve() { return {}; } },
+      operatorCopilotService: { resolveProposalWorkspace, getProposal },
+      copilotToolCatalog: [],
+      abuseControlService: { enforce: vi.fn(async () => {}) },
+      auditService: { record: vi.fn(async () => {}) },
+    } as never));
+
+    const response = await request(app)
+      .get("/api/v1/copilot/proposals/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee")
+      .set("Cookie", "radioso_session=valid-session")
+      .set("X-Workspace-Id", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+
+    expect(response.status).toBe(200);
+    expect(response.body.workspaceId).toBe(WORKSPACE_ID);
+    expect(resolveProposalWorkspace).toHaveBeenCalledWith({
+      accountId: ACCOUNT_ID,
+      operatorUserId: USER_ID,
+      proposalId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+    });
+    expect(getProposal).toHaveBeenCalledWith({
+      workspaceId: WORKSPACE_ID,
+      operatorUserId: USER_ID,
+      proposalId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+    });
+    expect(requirePermission).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: WORKSPACE_ID }));
+    expect(resolveDashboardWorkspace).not.toHaveBeenCalled();
+  });
+
   it("lets a document manager apply a document proposal, without agent management", async () => {
     // Route middleware cannot decide this: which permission Apply needs depends on what the stored
     // proposal changes, so the check belongs in the service. A blanket agents.manage gate here

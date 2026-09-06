@@ -1,0 +1,26 @@
+{
+  "name": "@radioso/operator-mcp-contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "pnpm run build && pnpm test",
+    "test": "vitest run"
+  },
+  "dependencies": { "zod": "^4.1.12" },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "typescript": "^5.9.2",
+    "vitest": "^4.1.8"
+  }
+}

@@ -53,6 +53,10 @@ export const resolveBootstrapWorkspaceId = (
   return workspaces.at(-1)?.id ?? null
 }
 
+export const shouldLogoutAfterWorkspaceBootstrapError = (error: unknown): boolean => (
+  Boolean(error && typeof error === 'object' && 'status' in error && error.status === 401)
+)
+
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const { user, isBootstrapping, logout } = useAuth()
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
@@ -117,8 +121,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           activateWorkspaceSession(targetId, targetWorkspace?.publicRouteKey)
           setActiveWorkspaceId(targetId)
         }
-      } catch {
-        if (!cancelled) logout()
+      } catch (error) {
+        if (!cancelled && shouldLogoutAfterWorkspaceBootstrapError(error)) logout()
       } finally {
         if (!cancelled) setIsLoading(false)
       }

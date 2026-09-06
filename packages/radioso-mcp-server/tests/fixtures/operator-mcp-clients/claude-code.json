@@ -1,0 +1,12 @@
+{
+  "displayName": "Claude Code",
+  "clientSurface": "claude-code",
+  "supportedBuild": "2.1.149",
+  "handoff": "remote-http-oauth-discovery",
+  "resourceInsertion": "explicit-canonical-resource",
+  "clientIdentification": "client-id-metadata-document",
+  "redirectMechanism": "native-loopback",
+  "availability": "unavailable",
+  "verified": false,
+  "failureRecovery": "Only use a literal loopback callback selected by the named build; do not substitute localhost or paste values."
+}

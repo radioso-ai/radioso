@@ -88,8 +88,14 @@ components:
           type: string
           enum:
             - ok
+        version:
+          type: string
+        commit:
+          type: string
       required:
         - status
+        - version
+        - commit
     ChatStatusStage:
       type: string
       enum:

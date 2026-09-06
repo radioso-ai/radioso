@@ -52,6 +52,10 @@ const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(8080),
   TRUST_PROXY_HOPS: z.coerce.number().int().nonnegative().default(0),
+  // The deploy stamps the release it ships onto the image. An unstamped build says so
+  // rather than borrowing the last release's number and reporting a version it is not.
+  RADIOSO_RELEASE: emptyStringToDefault(z.string().min(1), "development"),
+  RADIOSO_COMMIT: emptyStringToDefault(z.string().min(1), "unknown"),
   OBSERVABILITY_ENABLED: booleanish(true),
   OBSERVABILITY_SERVICE_NAME: z.string().min(1).default("radioso-api"),
   OBSERVABILITY_ENVIRONMENT: emptyStringToUndefined(z.string().min(1)),

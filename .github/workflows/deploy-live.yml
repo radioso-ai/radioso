@@ -2,6 +2,11 @@ name: Deploy Live (EU)
 
 on:
   workflow_dispatch:
+    inputs:
+      release:
+        description: Release tag to ship, such as v1.4.0. Cut it first with the Cut Release workflow.
+        required: true
+        type: string
 
 jobs:
   deploy:
@@ -19,3 +24,4 @@ jobs:
       worker_service: radioso-live-eu-worker
       require_main_branch: true
       radioso_edition: enterprise
+      release: ${{ inputs.release }}

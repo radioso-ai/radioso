@@ -3649,6 +3649,8 @@ export interface components {
         HealthResponse: {
             /** @enum {string} */
             status: "ok";
+            version: string;
+            commit: string;
         };
         /** @enum {string} */
         ChatStatusStage: "interpreting" | "searching" | "composing";

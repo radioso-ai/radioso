@@ -78,6 +78,13 @@ export const nextVersion = (current, bump) => {
   throw new Error(`Unknown bump: ${bump}`)
 }
 
+export const assertPlainSemver = (version) => {
+  if (!/^\d+\.\d+\.\d+$/.test(version)) {
+    throw new Error(`Release version must be plain semver, such as 1.4.0. Got: ${version}`)
+  }
+  return version
+}
+
 /** A breaking commit appears only under "Breaking changes". Listing it twice would let a
  *  reader skim past the section that exists to stop them. */
 const sectionFor = (commit) => {

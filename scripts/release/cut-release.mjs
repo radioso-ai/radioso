@@ -21,6 +21,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 
 import {
+  assertPlainSemver,
   classifyBump,
   isReleaseCommit,
   nextVersion,
@@ -118,6 +119,11 @@ const main = () => {
   const version =
     flag('version') ??
     nextVersion(readWorkspaceVersion(), bump === 'auto' ? classifyBump(commits) : bump)
+  try {
+    assertPlainSemver(version)
+  } catch (error) {
+    fail(error.message)
+  }
 
   const entry = renderEntry({
     version,

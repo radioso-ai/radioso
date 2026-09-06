@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { AlertTriangle, CheckCircle2, ExternalLink, LockKeyhole } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, LockKeyhole } from 'lucide-react'
 
 import { getApiErrorMessage } from '@/lib/api-error'
 import { operatorMcpApi, type OperatorMcpToolScope, type OperatorMcpTransactionResponse } from '@/lib/api-operator-mcp'
@@ -38,7 +38,6 @@ export function OperatorMcpConsent({ transactionId }: { transactionId: string })
   const [state, setState] = useState<ConsentState>({ kind: 'loading' })
   const [workspaceId, setWorkspaceId] = useState('')
   const [scopes, setScopes] = useState<OperatorMcpToolScope[]>([])
-  const [offlineAccess, setOfflineAccess] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -50,9 +49,6 @@ export function OperatorMcpConsent({ transactionId }: { transactionId: string })
         setState({ kind: 'ready', transaction })
         setWorkspaceId(transaction.workspaces[0]?.id ?? '')
         setScopes(transaction.requestedScopes)
-        // A client may request refresh authority, but the operator must opt in to
-        // that lifecycle scope independently from the tool scopes.
-        setOfflineAccess(false)
       })
       .catch((loadError) => {
         if (controller.signal.aborted) return
@@ -87,7 +83,7 @@ export function OperatorMcpConsent({ transactionId }: { transactionId: string })
     try {
       const result = await operatorMcpApi.decideTransaction(transaction.transactionId, {
         decision,
-        ...(decision === 'approve' ? { workspaceId, approvedToolScopes: scopes, offlineAccess } : { offlineAccess: false }),
+        ...(decision === 'approve' ? { workspaceId, approvedToolScopes: scopes, offlineAccess: transaction.requestedOfflineAccess } : { offlineAccess: false }),
       })
       setState({ kind: 'decided', message: decision === 'approve' ? 'Authorization approved. Returning to the client…' : 'Authorization denied.' })
       window.location.assign(result.redirectUrl)
@@ -119,10 +115,9 @@ export function OperatorMcpConsent({ transactionId }: { transactionId: string })
         <CardContent className="space-y-5">
           <div className="space-y-2"><label htmlFor="operator-mcp-workspace" className="text-sm font-medium">Workspace</label><select id="operator-mcp-workspace" className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={workspaceId} onChange={(event) => setWorkspaceId(event.target.value)}>{transaction.workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name} · {workspace.role}</option>)}</select></div>
           <fieldset className="space-y-0"><legend className="mb-1 text-sm font-medium">Allow {transaction.client.displayName} to</legend>{transaction.requestedScopes.map((scope) => <label key={scope} className="flex items-center gap-3 border-b border-border py-3 text-sm first:border-t"><input type="checkbox" checked={scopes.includes(scope)} onChange={(event) => setScopes((current) => event.target.checked ? [...current, scope] : current.filter((item) => item !== scope))} /><span className="font-medium">{scopeLabels[scope]}</span></label>)}</fieldset>
-          {transaction.requestedOfflineAccess ? <label className="flex items-start gap-3 border-t border-border pt-4 text-sm"><input type="checkbox" checked={offlineAccess} onChange={(event) => setOfflineAccess(event.target.checked)} /><span><span className="font-medium">Stay signed in</span><span className="block text-xs text-muted-foreground">Keep access until you revoke it.</span></span></label> : null}
           <div className="space-y-1 text-sm">{warnings.map((warning) => <p key={warning} className="flex gap-2 text-muted-foreground"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" aria-hidden />{warning}</p>)}</div>
           {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
-          <div className="flex justify-end gap-2"><Button type="button" variant="outline" onClick={() => void decide('deny')} disabled={submitting}>Don't allow</Button><Button type="button" onClick={() => void decide('approve')} disabled={submitting || decisionUnavailable}>{submitting ? <Spinner className="mr-2 h-4 w-4" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}Approve access</Button></div>
+          <div className="flex justify-end gap-2"><Button type="button" variant="outline" onClick={() => void decide('deny')} disabled={submitting}>Don't approve</Button><Button type="button" onClick={() => void decide('approve')} disabled={submitting || decisionUnavailable}>{submitting ? <Spinner className="mr-2 h-4 w-4" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}Approve access</Button></div>
         </CardContent>
       </Card>
     </ConsentShell>
@@ -134,5 +129,5 @@ function ConsentShell({ children }: { children: ReactNode }) {
 }
 
 function StatePanel({ title, message }: { title: string; message: string }) {
-  return <Card className="w-full max-w-md"><CardHeader><CardTitle>{title}</CardTitle><CardDescription>{message}</CardDescription></CardHeader><CardContent><Button type="button" variant="outline" onClick={() => window.close()}><ExternalLink className="mr-2 h-4 w-4" />Close</Button></CardContent></Card>
+  return <Card className="w-full max-w-md"><CardHeader><CardTitle>{title}</CardTitle><CardDescription>{message}</CardDescription></CardHeader><CardContent><Button type="button" variant="outline" onClick={() => window.close()}>Close</Button></CardContent></Card>
 }

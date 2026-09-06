@@ -1,7 +1,7 @@
 ---
 title: "MCP server"
 description: "Connect an MCP client to one Radioso agent or to Ray through delegated Operator MCP access."
-last_updated: 2026-09-04
+last_updated: 2026-09-06
 ---
 
 import { Callout, Steps } from 'nextra/components'
@@ -48,7 +48,7 @@ Open **Settings → API access → Radioso MCP**. Choose Codex, Claude Code, Cha
 
 The current Operator MCP boundary exposes three capabilities: `operator:read` for workspace and agent state, `operator:probe` for bounded diagnostics such as retrieval probes, and `operator:propose` for reviewable ingestion-setting changes. `operator:act` is not part of the current tool catalog. A successful consent decision creates a grant tied to one user, workspace, client, and resource; the grant appears in the same API access card and can be revoked there.
 
-The browser consent page identifies the actual client, redirect host, workspace, requested scopes, and signed-in user. It warns that the client may receive accessible workspace data. `offline_access` is a separate choice for a refresh credential, and can be denied while approving tool access.
+The browser consent page lets you choose a workspace and the capabilities the client receives. If a client requests refresh access, approving the connection keeps it connected until that access expires or you revoke the grant.
 
 For a self-hosted deployment, the frontend reads `RADIOSO_OPERATOR_MCP_PUBLIC_URL` at request time. Point it at the exact public resource, for example `https://mcp.example.com/operator/mcp`. A deployment must also enable and configure the Operator MCP backend values described in [Deployment](/operators/deployment#operator-mcp).
 

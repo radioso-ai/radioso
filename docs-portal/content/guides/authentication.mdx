@@ -1,7 +1,7 @@
 ---
 title: "Authentication"
 description: "Session, workspace automation, Operator MCP, agent chat, public-chat, and Enterprise embed access patterns in Radioso."
-last_updated: 2026-09-05
+last_updated: 2026-09-06
 ---
 
 import { Steps } from 'nextra/components'
@@ -75,7 +75,7 @@ If a credential is exposed, revoke or immediately rotate it from its settings pa
 
 Use Operator MCP when an external engine should work with Ray's governed operator tools in a workspace. Start in **Settings → API access → Radioso MCP**, select a client surface, and follow its setup artifact. The setup contains the canonical `/operator/mcp` resource and client-specific instructions; authorization happens in the browser and the client receives OAuth tokens after you approve the request.
 
-Consent is tied to the client identity, redirect host, signed-in user, selected workspace, and requested capability categories. The current tool boundary is `operator:read`, `operator:probe`, and `operator:propose`. `operator:act` is not exposed by the current catalog. You can approve a subset of requested categories and make an independent `offline_access` decision for refresh credentials.
+Consent is tied to the client identity, signed-in user, selected workspace, and requested capability categories. The current tool boundary is `operator:read`, `operator:probe`, and `operator:propose`. `operator:act` is not exposed by the current catalog. You can approve a subset of requested categories; when the client requests refresh access, approving the connection includes it.
 
 The API access card shows safe grant metadata—client, workspace, scopes, status, creation time, and recent use. Revoke your own grant there; an owner or administrator can revoke another user's grant without viewing credentials or approving consent for them. The client chooser is setup state only: it never labels a client connected until a validated OAuth grant exists.
 

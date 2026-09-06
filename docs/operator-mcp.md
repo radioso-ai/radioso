@@ -15,7 +15,7 @@ This is separate from an agent's **Channels → MCP** connection. The agent conn
 1. Open **Settings → API access** and find **Operator MCP**.
 2. Choose the **Codex**, **Claude**, **Cursor**, or **Other** tab and copy the setup it shows. The command or configuration includes the canonical Operator MCP URL for this deployment.
 3. Paste it into the client and complete the browser sign-in when it asks.
-4. Review the client identity, redirect host, workspace, requested scopes, and offline-access request. Approve only what the client needs.
+4. Choose the workspace and requested scopes, then approve the connection. If the client requests refresh access, it stays connected until that access expires or you revoke the grant.
 5. Return to **Settings → API access** to inspect or revoke the grant. Revocation invalidates its access and refresh lineage on the next request.
 
 The setup snippets are labelled **Not verified** until Radioso has captured a full compatibility transcript for that client build. They contain no credential; a successful connection still requires the client's OAuth flow to complete.
@@ -32,7 +32,7 @@ The `operator:act` scope is part of the authorization vocabulary, but this rollo
 
 ## OAuth profile
 
-Operator MCP uses an authorization-code flow with S256 PKCE, an exact RFC 8707 resource value, RFC 9207 issuer binding on authorization responses, immutable client metadata snapshots, and public clients. Access credentials last at most 15 minutes. Refresh access is shown separately in consent and can only narrow the approved tool scopes. The resource supports Radioso's stateless `2026-07-28` profile and a standard `2025-06-18` initialize/list/call compatibility path; both use the same authorization, catalog, rate-limit, proof, and audit boundaries.
+Operator MCP uses an authorization-code flow with S256 PKCE, an exact RFC 8707 resource value, RFC 9207 issuer binding on authorization responses, immutable client metadata snapshots, and public clients. Access credentials last at most 15 minutes. When a client requests refresh access, approving the connection includes it; refresh access can only narrow the approved tool scopes. The resource supports Radioso's stateless `2026-07-28` profile and a standard `2025-06-18` initialize/list/call compatibility path; both use the same authorization, catalog, rate-limit, proof, and audit boundaries.
 
 The standalone protected resource is:
 

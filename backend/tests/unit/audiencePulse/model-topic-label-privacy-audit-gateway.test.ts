@@ -15,6 +15,7 @@ const buildInferenceFactory = (text: string): TopicLabelPrivacyAuditInferenceFac
   create: ReturnType<typeof vi.fn>;
 } => {
   const complete = vi.fn(async (request: ModelInferenceRequest) => {
+    request.onProviderRequestDispatched?.();
     const result = { text };
     request.validateResult?.(result);
     return result;
@@ -67,6 +68,39 @@ describe("ModelTopicLabelPrivacyAuditGateway", () => {
 
     await expect(observedError).resolves.toMatchObject({ name: "AbortError" });
     expect(complete).toHaveBeenCalledTimes(1);
+    expect(onModelCallIssued).not.toHaveBeenCalled();
+  });
+
+  it("does not report a model call when cancellation wins during provider request preparation", async () => {
+    let finishPreparation!: () => void;
+    const preparation = new Promise<void>((resolve) => {
+      finishPreparation = resolve;
+    });
+    const complete = vi.fn(async (request: ModelInferenceRequest) => {
+      await preparation;
+      if (request.signal?.aborted) {
+        throw Object.assign(new Error("aborted during provider request preparation"), { name: "AbortError" });
+      }
+      request.onProviderRequestDispatched?.();
+      return { text: JSON.stringify({ flagged: false }) };
+    });
+    const inferenceFactory: TopicLabelPrivacyAuditInferenceFactory = {
+      create: vi.fn(async () => ({
+        metadata: { capability: "rewrite" as const, provider: "openai" as const, model: "test-model" },
+        complete,
+        stream: vi.fn(),
+      })),
+    };
+    const controller = new AbortController();
+    const onModelCallIssued = vi.fn();
+    const gateway = new ModelTopicLabelPrivacyAuditGateway({ inferenceFactory, workspaceContext: { workspaceId } });
+
+    const review = gateway.review(label, controller.signal, onModelCallIssued);
+    await vi.waitFor(() => expect(complete).toHaveBeenCalledTimes(1));
+    controller.abort();
+    finishPreparation();
+
+    await expect(review).rejects.toMatchObject({ name: "AbortError" });
     expect(onModelCallIssued).not.toHaveBeenCalled();
   });
 

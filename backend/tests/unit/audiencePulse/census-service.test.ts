@@ -169,6 +169,29 @@ describe("CensusService.run (T020)", () => {
     expect(outcomeBeforeSiblingSettles).toBe("pending");
   });
 
+  it("surfaces the first naming failure in time even when an earlier cluster rejects later", async () => {
+    const namingPort = buildNamingPort();
+    const providerFailure = new Error("provider failed first");
+    const laterAbort = Object.assign(new Error("earlier cluster aborted later"), { name: "AbortError" });
+    let rejectEarlierCluster!: (error: unknown) => void;
+    namingPort.name
+      .mockImplementationOnce(() => new Promise<TopicLabel>((_resolve, reject) => {
+        rejectEarlierCluster = reject;
+      }))
+      .mockRejectedValueOnce(providerFailure);
+    const service = new CensusService(buildDependencies({
+      eligibleIds: [...groupAIds, ...groupBIds],
+      facets: buildClusterableFacets(),
+      namingPort,
+    }));
+
+    const run = service.run({ workspaceId, windowStart, windowEnd });
+    await vi.waitFor(() => expect(namingPort.name).toHaveBeenCalledTimes(2));
+    rejectEarlierCluster(laterAbort);
+
+    await expect(run).rejects.toBe(providerFailure);
+  });
+
   it("reports a naming call before a later persistence failure", async () => {
     const topicRepository = buildTopicRepository();
     topicRepository.saveRun.mockRejectedValueOnce(new Error("save failed"));

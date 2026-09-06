@@ -918,7 +918,6 @@ export class AudiencePulseService implements AudiencePulsePort {
 
         let completion: Awaited<ReturnType<typeof inference.complete>>;
         try {
-          modelCallsIssued += 1;
           completion = await inference.complete({
             prompt,
             maxInputTokens: AUDIENCE_PULSE_MAX_TOTAL_TOKENS,
@@ -926,6 +925,9 @@ export class AudiencePulseService implements AudiencePulsePort {
             responseFormat,
             signal: input.signal,
             operation: modelCallContext,
+            onProviderRequestDispatched: () => {
+              modelCallsIssued += 1;
+            },
             validateResult(result) {
               parseModelResult(result.text, shownQualifyingTopicIndexes);
             },

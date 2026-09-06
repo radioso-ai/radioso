@@ -351,6 +351,18 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
   }
 
   async complete(input: TextGenerationRequest): Promise<TextGenerationResult> {
+    let dispatchReported = false;
+    const client = input.onProviderRequestDispatched
+      ? this.client.withOptions({
+          fetch: async (url, init) => {
+            if (!dispatchReported && !input.signal?.aborted && !init?.signal?.aborted) {
+              dispatchReported = true;
+              input.onProviderRequestDispatched?.();
+            }
+            return globalThis.fetch(url, init);
+          },
+        })
+      : this.client;
     const messages = buildMessages(input);
     const sampling = buildChatSamplingParams(this.config.provider, input, this.config.model);
     const createCompletion = (samplingParams: ChatSamplingParams) => {
@@ -361,8 +373,8 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
         messages,
       };
       return (input.signal
-        ? this.client.chat.completions.create(request, { signal: input.signal })
-        : this.client.chat.completions.create(request)) as Promise<OpenAIChatCompletionResponse>;
+        ? client.chat.completions.create(request, { signal: input.signal })
+        : client.chat.completions.create(request)) as Promise<OpenAIChatCompletionResponse>;
     };
     let response = await createChatCompletionWithSamplingFallback(
       samplingSupportCacheKey(this.config),

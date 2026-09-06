@@ -14,6 +14,7 @@ const buildInferenceFactory = (text: string): TopicNamingInferenceFactory & {
   create: ReturnType<typeof vi.fn>;
 } => {
   const complete = vi.fn(async (request: ModelInferenceRequest) => {
+    request.onProviderRequestDispatched?.();
     const result = { text };
     // Mirrors `ModelInferencePipelineService.complete`: `validateResult` runs
     // against the raw completion and its rejection propagates as a thrown error.
@@ -88,6 +89,43 @@ describe("ModelTopicNamingGateway", () => {
 
     await expect(observedError).resolves.toMatchObject({ name: "AbortError" });
     expect(complete).toHaveBeenCalledTimes(1);
+    expect(onModelCallIssued).not.toHaveBeenCalled();
+  });
+
+  it("does not report a model call when cancellation wins during provider request preparation", async () => {
+    let finishPreparation!: () => void;
+    const preparation = new Promise<void>((resolve) => {
+      finishPreparation = resolve;
+    });
+    const complete = vi.fn(async (request: ModelInferenceRequest) => {
+      await preparation;
+      if (request.signal?.aborted) {
+        throw Object.assign(new Error("aborted during provider request preparation"), { name: "AbortError" });
+      }
+      request.onProviderRequestDispatched?.();
+      return { text: JSON.stringify({ title: "Pricing", description: "Pricing questions." }) };
+    });
+    const inferenceFactory: TopicNamingInferenceFactory = {
+      create: vi.fn(async () => ({
+        metadata: { capability: "chat" as const, provider: "openai" as const, model: "test-model" },
+        complete,
+        stream: vi.fn(),
+      })),
+    };
+    const controller = new AbortController();
+    const onModelCallIssued = vi.fn();
+    const gateway = new ModelTopicNamingGateway({ inferenceFactory, workspaceContext: { workspaceId } });
+
+    const naming = gateway.name(
+      { prototypical: ["how much does it cost"], peripheral: [] },
+      controller.signal,
+      onModelCallIssued,
+    );
+    await vi.waitFor(() => expect(complete).toHaveBeenCalledTimes(1));
+    controller.abort();
+    finishPreparation();
+
+    await expect(naming).rejects.toMatchObject({ name: "AbortError" });
     expect(onModelCallIssued).not.toHaveBeenCalled();
   });
 

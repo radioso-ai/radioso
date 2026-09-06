@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const createMock = vi.fn();
 
@@ -6,6 +6,25 @@ vi.mock("openai", () => ({
   default: class {
     chat = { completions: { create: createMock } };
     embeddings = { create: vi.fn() };
+
+    withOptions(options: { fetch?: typeof fetch }) {
+      return {
+        chat: {
+          completions: {
+            create: async (...args: unknown[]) => {
+              const requestOptions = args[1] as { signal?: AbortSignal } | undefined;
+              if (requestOptions?.signal?.aborted) {
+                throw requestOptions.signal.reason;
+              }
+              await options.fetch?.("https://api.openai.test/v1/chat/completions", {
+                signal: requestOptions?.signal,
+              });
+              return createMock(...args);
+            },
+          },
+        },
+      };
+    }
   },
 }));
 
@@ -86,6 +105,10 @@ const drain = async (stream: AsyncIterable<string>): Promise<string[]> => {
 
 beforeEach(() => {
   createMock.mockReset();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 describe("buildChatSamplingParams", () => {
@@ -204,6 +227,41 @@ describe("createChatCompletionWithSamplingFallback", () => {
 });
 
 describe("OpenAITextGenerationClient.complete sampling reconciliation", () => {
+  it("reports one logical call when provider transport dispatch retries", async () => {
+    const onProviderRequestDispatched = vi.fn();
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response());
+    createMock
+      .mockRejectedValueOnce(unsupportedTemperatureError())
+      .mockResolvedValueOnce(completion("Hello"));
+
+    await new OpenAITextGenerationClient(chatConfig("complete-dispatch-retry")).complete({
+      prompt: "Hi",
+      temperature: 0,
+      onProviderRequestDispatched,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(createMock).toHaveBeenCalledTimes(2);
+    expect(onProviderRequestDispatched).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not report a call when cancellation stops SDK preparation before transport dispatch", async () => {
+    const onProviderRequestDispatched = vi.fn();
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response());
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(new OpenAITextGenerationClient(chatConfig("complete-pre-dispatch-abort")).complete({
+      prompt: "Hi",
+      signal: controller.signal,
+      onProviderRequestDispatched,
+    })).rejects.toMatchObject({ name: "AbortError" });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(createMock).not.toHaveBeenCalled();
+    expect(onProviderRequestDispatched).not.toHaveBeenCalled();
+  });
+
   it("retries without temperature when the model rejects the requested value", async () => {
     createMock
       .mockRejectedValueOnce(unsupportedTemperatureError())

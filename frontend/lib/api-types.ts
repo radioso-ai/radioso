@@ -208,7 +208,6 @@ export type EmbeddingCoverage = ApiSchemas['EmbeddingCoverage']
 export type WorkspaceIngestionReprocessResponse = ApiSchemas['WorkspaceIngestionReprocessResponse']
 export type DocumentCreateRequest = ApiSchemas['DocumentCreateRequest']
 export type DocumentCreateResponse = ApiSchemas['DocumentOperationResponse']
-type DocumentSourceSummary = ApiSchemas['DocumentSourceSummary']
 export type AgentSourceScope = ApiSchemas['AgentSourceScope']
 /** Hand-authored tag values. The write contract accepts flat JSON scalars only. */
 export type DocumentMetadataRecord = Record<string, string | number | boolean | null>

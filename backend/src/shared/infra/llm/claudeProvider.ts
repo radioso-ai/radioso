@@ -100,7 +100,7 @@ export class ClaudeTextGenerationClient implements TextGenerationClient {
   }
 
   async complete(input: TextGenerationRequest): Promise<TextGenerationResult> {
-    const response = await fetch(CLAUDE_API_URL, {
+    const request: RequestInit = {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -109,7 +109,14 @@ export class ClaudeTextGenerationClient implements TextGenerationClient {
       },
       signal: input.signal,
       body: JSON.stringify(buildClaudeBody(this.config, input)),
-    });
+    };
+    // Invoking fetch is the dispatch. Record only after the transport has been handed
+    // the request, and not at all when an aborted signal makes it reject unsent.
+    const responsePromise = fetch(CLAUDE_API_URL, request);
+    if (input.dispatchRecord && !input.dispatchRecord.dispatched && !input.signal?.aborted) {
+      input.dispatchRecord.dispatched = true;
+    }
+    const response = await responsePromise;
 
     if (!response.ok) {
       throw await readProviderErrorBody("Claude", "messages", response);
@@ -128,7 +135,7 @@ export class ClaudeTextGenerationClient implements TextGenerationClient {
   stream(input: TextGenerationRequest): TextGenerationStreamResult {
     const config = this.config;
     return streamWithUsage(async function* () {
-      const response = await fetch(CLAUDE_API_URL, {
+      const responsePromise = fetch(CLAUDE_API_URL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -138,6 +145,10 @@ export class ClaudeTextGenerationClient implements TextGenerationClient {
         signal: input.signal,
         body: JSON.stringify(buildClaudeBody(config, { ...input, stream: true })),
       });
+      if (input.dispatchRecord && !input.dispatchRecord.dispatched && !input.signal?.aborted) {
+        input.dispatchRecord.dispatched = true;
+      }
+      const response = await responsePromise;
 
       if (!response.ok) {
         throw await readProviderErrorBody("Claude", "messages.stream", response);

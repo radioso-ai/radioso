@@ -337,6 +337,23 @@ export const createOpenAIClient = (config: LlmCapabilityConfig): OpenAI =>
     baseURL: config.baseUrl,
   });
 
+const withDispatchRecording = (client: OpenAI, input: TextGenerationRequest): OpenAI => {
+  const dispatchRecord = input.dispatchRecord;
+  if (!dispatchRecord) return client;
+
+  let dispatchRecorded = dispatchRecord.dispatched;
+  return client.withOptions({
+    fetch: async (url, init) => {
+      const response = globalThis.fetch(url, init);
+      if (!dispatchRecorded && !input.signal?.aborted && !init?.signal?.aborted) {
+        dispatchRecorded = true;
+        dispatchRecord.dispatched = true;
+      }
+      return response;
+    },
+  });
+};
+
 export class OpenAITextGenerationClient implements TextGenerationClient {
   readonly metadata;
   private readonly client: OpenAI;
@@ -351,6 +368,7 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
   }
 
   async complete(input: TextGenerationRequest): Promise<TextGenerationResult> {
+    const client = withDispatchRecording(this.client, input);
     const messages = buildMessages(input);
     const sampling = buildChatSamplingParams(this.config.provider, input, this.config.model);
     const createCompletion = (samplingParams: ChatSamplingParams) => {
@@ -361,8 +379,8 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
         messages,
       };
       return (input.signal
-        ? this.client.chat.completions.create(request, { signal: input.signal })
-        : this.client.chat.completions.create(request)) as Promise<OpenAIChatCompletionResponse>;
+        ? client.chat.completions.create(request, { signal: input.signal })
+        : client.chat.completions.create(request)) as Promise<OpenAIChatCompletionResponse>;
     };
     let response = await createChatCompletionWithSamplingFallback(
       samplingSupportCacheKey(this.config),
@@ -389,7 +407,7 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
   }
 
   stream(input: TextGenerationRequest): TextGenerationStreamResult {
-    const client = this.client;
+    const client = withDispatchRecording(this.client, input);
     const config = this.config;
     const messages = buildMessages(input);
     const sampling = buildChatSamplingParams(config.provider, input, config.model);

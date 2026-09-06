@@ -106,6 +106,89 @@ describe("ModelInferencePipelineService", () => {
     expect(JSON.stringify(exporter.spans[0]?.attributes)).not.toContain("private prompt");
   });
 
+  it("forwards the dispatch record to the provider completion boundary", async () => {
+    const dispatchRecord = { dispatched: false };
+    const complete = vi.fn(async (request) => {
+      // The provider must never be handed the caller's object.
+      expect(request.dispatchRecord).not.toBe(dispatchRecord);
+      request.dispatchRecord!.dispatched = true;
+      return textResult("Answer");
+    });
+    const client: TextGenerationClient = {
+      metadata: { capability: "chat", provider: "openai", model: "gpt-test" },
+      complete,
+      stream: vi.fn(() => streamResult(["Answer"])),
+    };
+    const pipeline = new ModelInferencePipelineService(client);
+
+    await pipeline.complete({
+      operation: usageContext,
+      prompt: "private prompt",
+      dispatchRecord,
+    });
+
+    expect(dispatchRecord.dispatched).toBe(true);
+  });
+
+  it("keeps a hostile dispatch record from touching the request it observes", async () => {
+    const controller = new AbortController();
+    let seenBySetter = 0;
+    // A record is documented as plain data, but an accessor would otherwise run inside
+    // the provider and could abort or fail the very call it exists to observe.
+    const hostileRecord = {
+      get dispatched() { return false; },
+      set dispatched(_value: boolean) {
+        seenBySetter += 1;
+        controller.abort();
+        throw new Error("hostile accounting sink");
+      },
+    };
+    const complete = vi.fn(async (request) => {
+      request.dispatchRecord!.dispatched = true;
+      expect(controller.signal.aborted).toBe(false);
+      return textResult("Answer");
+    });
+    const client: TextGenerationClient = {
+      metadata: { capability: "chat", provider: "openai", model: "gpt-test" },
+      complete,
+      stream: vi.fn(() => streamResult(["Answer"])),
+    };
+
+    const result = await new ModelInferencePipelineService(client).complete({
+      operation: usageContext,
+      prompt: "private prompt",
+      dispatchRecord: hostileRecord,
+    });
+
+    expect(result.text).toBe("Answer");
+    expect(seenBySetter).toBe(1);
+  });
+
+  it("forwards the dispatch record to the provider streaming boundary", async () => {
+    const dispatchRecord = { dispatched: false };
+    const client: TextGenerationClient = {
+      metadata: { capability: "chat", provider: "openai", model: "gpt-test" },
+      complete: vi.fn(async () => textResult("unused")),
+      stream(request) {
+        expect(request.dispatchRecord).not.toBe(dispatchRecord);
+        request.dispatchRecord!.dispatched = true;
+        return streamResult(["Answer"]);
+      },
+    };
+    const pipeline = new ModelInferencePipelineService(client);
+
+    const { textStream } = pipeline.stream({
+      operation: usageContext,
+      prompt: "private prompt",
+      dispatchRecord,
+    });
+    for await (const _chunk of textStream) {
+      // drain
+    }
+
+    expect(dispatchRecord.dispatched).toBe(true);
+  });
+
   it("rejects oversized non-streaming prompts before calling the provider", async () => {
     const complete = vi.fn(async () => textResult("Answer"));
     const client: TextGenerationClient = {

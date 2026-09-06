@@ -86,9 +86,20 @@ const groundingSchema = z.object({
   contentGapEligible: z.number().int().min(0),
 });
 
+const topicTransitionSchema = z.object({
+  kind: z.enum(["survived", "split", "merged", "emerged", "dissolved"]),
+  parentTopicIds: z.array(z.string()),
+  viaCentroidFallback: z.boolean(),
+  membershipOverlap: z.number().min(0).max(1).nullable(),
+});
+
 export const audiencePulseReportResponseSchema = z.object({
   period: z.object({ start: dateTime, end: dateTime }),
   generatedAt: dateTime,
+  isFirstCensus: z.boolean(),
+  narrativeGeneratedAt: dateTime,
+  narrativeReuseCount: z.number().int().min(0),
+  narrativeReuseMaxDrift: z.number().min(0).max(1),
   coverage: z.object({
     populationSize: z.number().int().min(0),
     sampleSize: z.number().int().min(0),
@@ -105,11 +116,15 @@ export const audiencePulseReportResponseSchema = z.object({
   // that state apart from a computed window that simply found no recurring pattern.
   summary: z.string().optional(),
   unclassifiedQuestionCount: z.number().int().min(0),
+  dissolvedTopics: z.array(z.object({ id: z.string(), title: z.string() })),
   themes: z.array(z.object({
     id: z.string(),
     title: z.string(),
     description: z.string(),
     memberCount: z.number().int().min(0),
+    previousMemberCount: z.number().int().min(0).nullable(),
+    previousShare: z.number().min(0).max(1).nullable(),
+    transition: topicTransitionSchema.nullable(),
     share: z.number().min(0).max(1),
     distinctQuestionCount: z.number().int().min(0),
     weeklyPulse: z.array(z.object({ weekStart: dateTime, count: z.number().int().min(0) })),
@@ -148,7 +163,7 @@ export type AudiencePulseReadResult =
 export type AudiencePulseRefreshResult =
   | { kind: "no_traffic"; period: { start: string; end: string }; weeklyVolume: AudiencePulseWeeklyVolume[] }
   | { kind: "preparing" }
-  | { kind: "unavailable"; reason: "provider" | "validation" | "cancelled" }
+  | { kind: "unavailable"; reason: "provider" | "validation" | "census" | "cancelled" }
   | { kind: "busy" }
   | { kind: "usage_limited" }
   | { kind: "completed"; report: AudiencePulseHydratedReport };

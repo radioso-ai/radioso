@@ -14,6 +14,7 @@ import type {
   TextGenerationRequest,
   TextGenerationResult,
   TextGenerationStreamResult,
+  ProviderDispatchRecord,
 } from "./providerTypes.js";
 import { recordModelCallTrace } from "../../observability/tracing/modelCallTraceContext.js";
 
@@ -102,7 +103,16 @@ const buildUsageIdempotencyKey = (
   status,
 ].join(":");
 
-const stripOperation = (input: ModelInferenceRequest): TextGenerationRequest => {
+/**
+ * Providers only ever write to a record this pipeline owns. A caller's record is a
+ * plain-data contract, but nothing stops one arriving with an accessor, and an
+ * accessor would run inside the provider -- able to abort or fail the very request
+ * it exists to observe. Substituting our own object keeps observation inert.
+ */
+const stripOperation = (
+  input: ModelInferenceRequest,
+  dispatchRecord?: ProviderDispatchRecord,
+): TextGenerationRequest => {
   return {
     prompt: input.prompt,
     systemPrompt: input.systemPrompt,
@@ -111,7 +121,23 @@ const stripOperation = (input: ModelInferenceRequest): TextGenerationRequest => 
     reasoningEffort: input.reasoningEffort,
     responseFormat: input.responseFormat,
     signal: input.signal,
+    dispatchRecord,
   };
+};
+
+/** Publishes a dispatch back to the caller's record once the provider is done with
+ * it. A hostile accessor here can no longer reach an in-flight request, and must not
+ * be able to mask the call's own outcome either. */
+const publishDispatch = (
+  callerRecord: ProviderDispatchRecord | undefined,
+  ownRecord: ProviderDispatchRecord,
+): void => {
+  if (!callerRecord) return;
+  try {
+    callerRecord.dispatched = ownRecord.dispatched;
+  } catch {
+    // Accounting is observational; recording it must not change the call.
+  }
 };
 
 const providerTraceAttributes = (
@@ -150,12 +176,15 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
 
   private async completeWithinTrace(input: ModelInferenceRequest): Promise<TextGenerationResult> {
     const startedAtMs = Date.now();
-    const request = stripOperation(input);
+    const dispatchRecord: ProviderDispatchRecord = { dispatched: false };
+    const request = stripOperation(input, input.dispatchRecord ? dispatchRecord : undefined);
     this.enforceInputBudget(input, request);
     let result: TextGenerationResult;
     try {
       result = await this.delegate.complete(request);
+      publishDispatch(input.dispatchRecord, dispatchRecord);
     } catch (error) {
+      publishDispatch(input.dispatchRecord, dispatchRecord);
       const completedAtMs = Date.now();
       const usage = await this.recordUsage({
         operation: input.operation,
@@ -201,7 +230,8 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
 
   stream(input: ModelInferenceRequest): TextGenerationStreamResult {
     const startedAtMs = Date.now();
-    const request = stripOperation(input);
+    const dispatchRecord: ProviderDispatchRecord = { dispatched: false };
+    const request = stripOperation(input, input.dispatchRecord ? dispatchRecord : undefined);
     this.enforceInputBudget(input, request);
     const result = this.delegate.stream(request);
     let outputText = "";
@@ -209,7 +239,13 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
       try {
         return await result.usage;
       } catch {
+        // Usage is best-effort telemetry: a provider that breaks the resolve-only
+        // contract must not fail a stream the consumer already read successfully.
         return undefined;
+      } finally {
+        // A stream dispatches lazily, so the caller's record is published once the
+        // provider has finished with the pipeline's own copy.
+        publishDispatch(input.dispatchRecord, dispatchRecord);
       }
     };
     const textStream = traceAsyncIterable({

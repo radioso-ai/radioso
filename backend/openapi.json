@@ -3223,6 +3223,9 @@
               "webhookExportsEnabled": {
                 "type": "boolean"
               },
+              "handoffOnRetrievalMiss": {
+                "type": "boolean"
+              },
               "contactRequestDelivery": {
                 "$ref": "#/components/schemas/AgentContactRequestDelivery"
               },
@@ -3364,6 +3367,7 @@
               "citationDisplayEnabled",
               "contactRequestsEnabled",
               "webhookExportsEnabled",
+              "handoffOnRetrievalMiss",
               "contactRequestDelivery",
               "theme",
               "branding",
@@ -3423,6 +3427,9 @@
             "type": "boolean"
           },
           "webhookExportsEnabled": {
+            "type": "boolean"
+          },
+          "handoffOnRetrievalMiss": {
             "type": "boolean"
           },
           "contactRequestDelivery": {

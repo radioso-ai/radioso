@@ -4344,6 +4344,7 @@ export interface components {
             citationDisplayEnabled: boolean;
             contactRequestsEnabled: boolean;
             webhookExportsEnabled: boolean;
+            handoffOnRetrievalMiss: boolean;
             contactRequestDelivery: components["schemas"]["AgentContactRequestDelivery"];
             theme: {
                 brand: string;
@@ -4391,6 +4392,7 @@ export interface components {
             citationDisplayEnabled?: boolean;
             contactRequestsEnabled?: boolean;
             webhookExportsEnabled?: boolean;
+            handoffOnRetrievalMiss?: boolean;
             contactRequestDelivery?: components["schemas"]["AgentContactRequestDeliveryRequest"];
             theme?: {
                 brand?: string;

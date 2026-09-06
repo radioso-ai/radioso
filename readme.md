@@ -214,7 +214,7 @@ Start with [Getting started](https://docs.radioso.ai/sdk/typescript-getting-star
 
 The standalone HTTP server has two separate MCP surfaces. `/mcp` exposes `ask_agent`, which talks to exactly one agent through its full turn loop. A signed-in user with permission to manage that agent creates its audience-bound credential from **Channels → MCP** and sends the one-time secret to standalone.
 
-`/operator/mcp` lets the signed-in person connect an OAuth-capable client to Ray's governed read, probe, and proposal tools. Start under **Settings → API access**, review the client, workspace, scopes, redirect host, and offline access in browser consent, then manage the grant from the same page. See [Operator MCP OAuth access](./docs/operator-mcp.md) for the current tool boundary and exact-build compatibility gate.
+`/operator/mcp` lets the signed-in person connect an OAuth-capable client to Ray's governed read, probe, and proposal tools. Start under **Settings → API access**, choose a workspace and scopes in browser consent, then manage the grant from the same page. See [Operator MCP OAuth access](./docs/operator-mcp.md) for the current tool boundary and exact-build compatibility gate.
 
 The package has no stdio MCP entrypoint. Hosted clients require a public HTTPS deployment; local clients can use the standalone HTTP URL supported by their connection profile.
 

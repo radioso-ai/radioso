@@ -265,10 +265,10 @@ test("consent uses clear capability names and one explicit deny action", async (
   await expect(page.getByText("operator:read", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Cancel" })).toHaveCount(0);
   await page.getByLabel("Run document searches").uncheck();
-  await expect(page.getByLabel("Stay signed in")).not.toBeChecked();
+  await expect(page.getByText("Stay signed in", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Approve access" }).click();
   await expect.poll(() => decisions).toHaveLength(1);
-  expect(decisions[0]).toEqual({ decision: "approve", workspaceId, approvedToolScopes: ["operator:read", "operator:propose"], offlineAccess: false });
+  expect(decisions[0]).toEqual({ decision: "approve", workspaceId, approvedToolScopes: ["operator:read", "operator:propose"], offlineAccess: true });
 });
 
 test("consent supports a clear denial and safe no-access, expired, decided, and account-swap states", async ({ page }) => {
@@ -277,7 +277,7 @@ test("consent supports a clear denial and safe no-access, expired, decided, and 
   const decisions: unknown[] = [];
   await installConsentRoutes(page, consentTransaction(), decisions);
   await page.goto(`/oauth/operator-mcp/consent?transaction=${transactionId}`);
-  await page.getByRole("button", { name: "Don't allow" }).click();
+  await page.getByRole("button", { name: "Don't approve" }).click();
   await expect.poll(() => decisions).toHaveLength(1);
   expect(decisions[0]).toEqual({ decision: "deny", offlineAccess: false });
   await expect(page).toHaveURL("about:blank");

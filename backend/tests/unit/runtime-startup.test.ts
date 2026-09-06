@@ -67,6 +67,7 @@ const createEnv = (): Env => ({
   EXPENSIVE_AUTHENTICATED_RATE_LIMIT_MAX_ATTEMPTS: 60,
   COPILOT_PROBE_BUDGET_PER_TURN: 3,
   COPILOT_CONVERSATION_RETENTION_DAYS: 90,
+  AGENT_BUNDLE_IMPORT_ORPHAN_AGE_MS: 15 * 60 * 1_000,
   PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS: 60_000,
   PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 10,
   PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: 600,
@@ -155,6 +156,10 @@ const createDependencies = () =>
       stop: vi.fn().mockResolvedValue(undefined),
     },
     copilotRetentionWorker: {
+      start: vi.fn(),
+      stop: vi.fn(async () => {}),
+    },
+    agentBundleImportCleanupWorker: {
       start: vi.fn(),
       stop: vi.fn(async () => {}),
     },
@@ -535,6 +540,9 @@ describe("runtime startup", () => {
       },
       copilotRetentionWorker: {
         route: "POST /internal/tasks/copilot-retention/sweep",
+      },
+      agentBundleImportCleanupWorker: {
+        route: "POST /internal/tasks/agent-bundle-imports/sweep",
       },
     };
 

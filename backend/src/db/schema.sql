@@ -517,6 +517,30 @@ CREATE TABLE public.agent_access_grants (
 
 
 --
+-- Name: agent_bundle_imports; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_bundle_imports (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workspace_id uuid NOT NULL,
+    actor_account_id uuid,
+    idempotency_key text,
+    state text DEFAULT 'queued'::text NOT NULL,
+    agent_id uuid,
+    unresolved jsonb DEFAULT '[]'::jsonb NOT NULL,
+    failure_code text,
+    cleanup_lease_token uuid,
+    cleanup_lease_expires_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    applied_at timestamp with time zone,
+    compensated_at timestamp with time zone,
+    CONSTRAINT agent_bundle_imports_failure_code_check CHECK ((failure_code = ANY (ARRAY['invalid_bundle'::text, 'apply_failed'::text]))),
+    CONSTRAINT agent_bundle_imports_state_check CHECK ((state = ANY (ARRAY['queued'::text, 'applying'::text, 'applied'::text, 'failed'::text, 'compensated'::text])))
+);
+
+
+--
 -- Name: agent_context_variables; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3346,6 +3370,14 @@ ALTER TABLE ONLY public.agent_access_grants
 
 
 --
+-- Name: agent_bundle_imports agent_bundle_imports_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_bundle_imports
+    ADD CONSTRAINT agent_bundle_imports_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: agent_context_variables agent_context_variables_agent_id_variable_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4719,6 +4751,20 @@ ALTER TABLE ONLY public.workspaces
 
 ALTER TABLE ONLY public.workspaces
     ADD CONSTRAINT workspaces_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: agent_bundle_imports_stale_applying_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX agent_bundle_imports_stale_applying_idx ON public.agent_bundle_imports USING btree (updated_at) WHERE ((state = 'applying'::text) AND (agent_id IS NOT NULL));
+
+
+--
+-- Name: agent_bundle_imports_workspace_idempotency_active_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX agent_bundle_imports_workspace_idempotency_active_idx ON public.agent_bundle_imports USING btree (workspace_id, idempotency_key) WHERE ((idempotency_key IS NOT NULL) AND (state = ANY (ARRAY['queued'::text, 'applying'::text, 'applied'::text])));
 
 
 --
@@ -7918,6 +7964,22 @@ ALTER TABLE ONLY public.agent_access_grants
 
 ALTER TABLE ONLY public.agent_access_grants
     ADD CONSTRAINT agent_access_grants_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_bundle_imports agent_bundle_imports_actor_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_bundle_imports
+    ADD CONSTRAINT agent_bundle_imports_actor_account_id_fkey FOREIGN KEY (actor_account_id) REFERENCES public.accounts(id) ON DELETE SET NULL;
+
+
+--
+-- Name: agent_bundle_imports agent_bundle_imports_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_bundle_imports
+    ADD CONSTRAINT agent_bundle_imports_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

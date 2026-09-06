@@ -9112,6 +9112,12 @@
             "items": {
               "$ref": "#/components/schemas/AgentBundleImportSkill"
             }
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Caller-supplied key that replays a completed import in this workspace instead of creating another agent. A key whose import is still applying returns 409."
           }
         },
         "required": [
@@ -9123,9 +9129,17 @@
       "AgentBundleImportResponse": {
         "type": "object",
         "properties": {
+          "importId": {
+            "type": "string",
+            "format": "uuid"
+          },
           "agentId": {
             "type": "string",
             "format": "uuid"
+          },
+          "replayed": {
+            "type": "boolean",
+            "description": "True when this is the completed result of a prior request with the same idempotencyKey."
           },
           "unresolved": {
             "type": "array",
@@ -9135,8 +9149,97 @@
           }
         },
         "required": [
+          "importId",
           "agentId",
+          "replayed",
           "unresolved"
+        ]
+      },
+      "AgentBundleImportParams": {
+        "type": "object",
+        "properties": {
+          "importId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "importId"
+        ]
+      },
+      "AgentBundleImportStatus": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "applying",
+              "applied",
+              "failed",
+              "compensated"
+            ]
+          },
+          "agentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "unresolved": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentBundleUnresolvedReference"
+            }
+          },
+          "failureCode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "invalid_bundle",
+              "apply_failed"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "appliedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "compensatedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "state",
+          "agentId",
+          "unresolved",
+          "failureCode",
+          "createdAt",
+          "updatedAt",
+          "appliedAt",
+          "compensatedAt"
         ]
       },
       "DocumentCreateRequest": {
@@ -26562,6 +26665,64 @@
         }
       }
     },
+    "/api/v1/agents/bundle/imports/{importId}": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Get an agent bundle import job",
+        "description": "Returns the durable state of an import attempt, including any compensated orphan cleanup.",
+        "operationId": "getAgentBundleImport",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "importId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Import job returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBundleImportStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Import job not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/agents": {
       "get": {
         "tags": [
@@ -28832,6 +28993,16 @@
           }
         },
         "responses": {
+          "200": {
+            "description": "Existing completed import replayed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBundleImportResponse"
+                }
+              }
+            }
+          },
           "201": {
             "description": "Agent created from bundle",
             "content": {
@@ -28854,6 +29025,16 @@
           },
           "401": {
             "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "An import with this idempotency key is still applying",
             "content": {
               "application/json": {
                 "schema": {

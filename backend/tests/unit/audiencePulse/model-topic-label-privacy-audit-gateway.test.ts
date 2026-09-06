@@ -15,7 +15,9 @@ const buildInferenceFactory = (text: string): TopicLabelPrivacyAuditInferenceFac
   create: ReturnType<typeof vi.fn>;
 } => {
   const complete = vi.fn(async (request: ModelInferenceRequest) => {
-    request.onProviderRequestDispatched?.();
+    if (request.dispatchRecord) {
+      request.dispatchRecord.dispatched = true;
+    }
     const result = { text };
     request.validateResult?.(result);
     return result;
@@ -30,12 +32,34 @@ const buildInferenceFactory = (text: string): TopicLabelPrivacyAuditInferenceFac
 };
 
 describe("ModelTopicLabelPrivacyAuditGateway", () => {
-  it("reports a model call when completion dispatch begins", async () => {
+  it("reports a model call when the completion was dispatched", async () => {
     const inferenceFactory = buildInferenceFactory(JSON.stringify({ flagged: false }));
     const onModelCallIssued = vi.fn();
     const gateway = new ModelTopicLabelPrivacyAuditGateway({ inferenceFactory, workspaceContext: { workspaceId } });
 
     await gateway.review(label, undefined, onModelCallIssued);
+
+    expect(onModelCallIssued).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a model call when completion fails after dispatch", async () => {
+    const inferenceFactory: TopicLabelPrivacyAuditInferenceFactory = {
+      create: vi.fn(async (): Promise<ModelInferencePipeline> => ({
+        metadata: { capability: "rewrite", provider: "openai", model: "test-model" },
+        async complete(request: ModelInferenceRequest) {
+          if (request.dispatchRecord) {
+            request.dispatchRecord.dispatched = true;
+          }
+          throw new Error("provider failed after dispatch");
+        },
+        stream: vi.fn(),
+      })),
+    };
+    const onModelCallIssued = vi.fn();
+    const gateway = new ModelTopicLabelPrivacyAuditGateway({ inferenceFactory, workspaceContext: { workspaceId } });
+
+    await expect(gateway.review(label, undefined, onModelCallIssued))
+      .rejects.toThrow("provider failed after dispatch");
 
     expect(onModelCallIssued).toHaveBeenCalledTimes(1);
   });
@@ -81,7 +105,9 @@ describe("ModelTopicLabelPrivacyAuditGateway", () => {
       if (request.signal?.aborted) {
         throw Object.assign(new Error("aborted during provider request preparation"), { name: "AbortError" });
       }
-      request.onProviderRequestDispatched?.();
+      if (request.dispatchRecord) {
+        request.dispatchRecord.dispatched = true;
+      }
       return { text: JSON.stringify({ flagged: false }) };
     });
     const inferenceFactory: TopicLabelPrivacyAuditInferenceFactory = {

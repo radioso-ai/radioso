@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
 import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInferencePipeline.js";
+import type { ProviderDispatchRecord } from "../../../shared/infra/llm/providerTypes.js";
 import type { TelemetryService } from "../../../shared/observability/telemetry/telemetryService.js";
 import type {
   ModelCallIssuedReporter,
@@ -103,18 +104,26 @@ export class ModelTopicNamingGateway implements TopicNamingPort {
       workspaceContext: this.deps.workspaceContext,
       modelCallContext,
     });
-    const completion = await inference.complete({
-      prompt: input.prompt,
-      maxInputTokens: TOPIC_NAMING_MAX_TOTAL_TOKENS,
-      maxOutputTokens: TOPIC_NAMING_MAX_OUTPUT_TOKENS,
-      responseFormat: TOPIC_NAMING_RESPONSE_FORMAT,
-      signal: input.signal,
-      operation: modelCallContext,
-      onProviderRequestDispatched: input.onModelCallIssued,
-      validateResult(result) {
-        parseLabel(result.text);
-      },
-    });
+    const dispatchRecord: ProviderDispatchRecord = { dispatched: false };
+    let completion: Awaited<ReturnType<typeof inference.complete>>;
+    try {
+      completion = await inference.complete({
+        prompt: input.prompt,
+        maxInputTokens: TOPIC_NAMING_MAX_TOTAL_TOKENS,
+        maxOutputTokens: TOPIC_NAMING_MAX_OUTPUT_TOKENS,
+        responseFormat: TOPIC_NAMING_RESPONSE_FORMAT,
+        signal: input.signal,
+        operation: modelCallContext,
+        dispatchRecord,
+        validateResult(result) {
+          parseLabel(result.text);
+        },
+      });
+    } finally {
+      if (dispatchRecord.dispatched) {
+        input.onModelCallIssued?.();
+      }
+    }
     const label = parseLabel(completion.text);
 
     // Counts a naming call as issued (as opposed to reused, which never calls this

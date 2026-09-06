@@ -14,7 +14,9 @@ const buildInferenceFactory = (text: string): TopicNamingInferenceFactory & {
   create: ReturnType<typeof vi.fn>;
 } => {
   const complete = vi.fn(async (request: ModelInferenceRequest) => {
-    request.onProviderRequestDispatched?.();
+    if (request.dispatchRecord) {
+      request.dispatchRecord.dispatched = true;
+    }
     const result = { text };
     // Mirrors `ModelInferencePipelineService.complete`: `validateResult` runs
     // against the raw completion and its rejection propagates as a thrown error.
@@ -31,7 +33,7 @@ const buildInferenceFactory = (text: string): TopicNamingInferenceFactory & {
 };
 
 describe("ModelTopicNamingGateway", () => {
-  it("reports a model call only when completion dispatch begins", async () => {
+  it("reports a model call only when the completion was dispatched", async () => {
     const inferenceFactory = buildInferenceFactory(
       JSON.stringify({ title: "Pricing questions", description: "Visitors asking about plan pricing." }),
     );
@@ -39,6 +41,31 @@ describe("ModelTopicNamingGateway", () => {
     const gateway = new ModelTopicNamingGateway({ inferenceFactory, workspaceContext: { workspaceId } });
 
     await gateway.name({ prototypical: ["how much does it cost"], peripheral: [] }, undefined, onModelCallIssued);
+
+    expect(onModelCallIssued).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a model call when completion fails after dispatch", async () => {
+    const inferenceFactory: TopicNamingInferenceFactory = {
+      create: vi.fn(async (): Promise<ModelInferencePipeline> => ({
+        metadata: { capability: "chat", provider: "openai", model: "test-model" },
+        async complete(request: ModelInferenceRequest) {
+          if (request.dispatchRecord) {
+            request.dispatchRecord.dispatched = true;
+          }
+          throw new Error("provider failed after dispatch");
+        },
+        stream: vi.fn(),
+      })),
+    };
+    const onModelCallIssued = vi.fn();
+    const gateway = new ModelTopicNamingGateway({ inferenceFactory, workspaceContext: { workspaceId } });
+
+    await expect(gateway.name(
+      { prototypical: ["how much does it cost"], peripheral: [] },
+      undefined,
+      onModelCallIssued,
+    )).rejects.toThrow("provider failed after dispatch");
 
     expect(onModelCallIssued).toHaveBeenCalledTimes(1);
   });
@@ -102,7 +129,9 @@ describe("ModelTopicNamingGateway", () => {
       if (request.signal?.aborted) {
         throw Object.assign(new Error("aborted during provider request preparation"), { name: "AbortError" });
       }
-      request.onProviderRequestDispatched?.();
+      if (request.dispatchRecord) {
+        request.dispatchRecord.dispatched = true;
+      }
       return { text: JSON.stringify({ title: "Pricing", description: "Pricing questions." }) };
     });
     const inferenceFactory: TopicNamingInferenceFactory = {

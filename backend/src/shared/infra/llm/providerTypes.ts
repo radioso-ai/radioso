@@ -23,6 +23,15 @@ export interface JsonSchemaResponseFormat {
   schema: Record<string, unknown>;
 }
 
+/**
+ * A provider sets this once it has handed a request to its transport. Callers read
+ * it after the call to decide whether the attempt is billable. It is deliberately
+ * data rather than a callback: no caller code runs inside a provider.
+ */
+export interface ProviderDispatchRecord {
+  dispatched: boolean;
+}
+
 export interface TextGenerationRequest {
   prompt: string;
   systemPrompt?: string;
@@ -38,26 +47,7 @@ export interface TextGenerationRequest {
    * strict JSON-schema output (or an equivalent forced schema tool). */
   responseFormat?: JsonSchemaResponseFormat;
   signal?: AbortSignal;
-  /** Reports the first provider transport dispatch for this logical completion.
-   * Provider-side retries must not report additional calls. */
-  onProviderRequestDispatched?: () => void;
-}
-
-/**
- * Reports a dispatch without letting the observer affect the call it observes: a
- * throwing or rejecting reporter must never fail, retry, or alter a request the
- * transport has already sent.
- */
-export const reportProviderRequestDispatched = (report: (() => void) | undefined): void => {
-  if (!report) return;
-  try {
-    const result = report() as unknown;
-    if (result && typeof (result as PromiseLike<unknown>).then === "function") {
-      void Promise.resolve(result).catch(() => undefined);
-    }
-  } catch {
-    // Accounting is observational; a failure to record must not change the completion.
-  }
+  dispatchRecord?: ProviderDispatchRecord;
 }
 
 export type UsageQuality = "actual" | "estimated";

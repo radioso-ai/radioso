@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
 import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInferencePipeline.js";
+import type { ProviderDispatchRecord } from "../../../shared/infra/llm/providerTypes.js";
 import type {
   ModelCallIssuedReporter,
   TopicLabel,
@@ -73,18 +74,26 @@ export class ModelTopicLabelPrivacyAuditGateway implements TopicLabelPrivacyAudi
       workspaceContext: this.deps.workspaceContext,
       modelCallContext,
     });
-    const completion = await inference.complete({
-      prompt: buildTopicLabelPrivacyAuditPrompt(label),
-      maxInputTokens: TOPIC_LABEL_AUDIT_MAX_TOTAL_TOKENS,
-      maxOutputTokens: TOPIC_LABEL_AUDIT_MAX_OUTPUT_TOKENS,
-      responseFormat: TOPIC_LABEL_AUDIT_RESPONSE_FORMAT,
-      signal,
-      operation: modelCallContext,
-      onProviderRequestDispatched: onModelCallIssued,
-      validateResult(result) {
-        parseAuditResult(result.text);
-      },
-    });
+    const dispatchRecord: ProviderDispatchRecord = { dispatched: false };
+    let completion: Awaited<ReturnType<typeof inference.complete>>;
+    try {
+      completion = await inference.complete({
+        prompt: buildTopicLabelPrivacyAuditPrompt(label),
+        maxInputTokens: TOPIC_LABEL_AUDIT_MAX_TOTAL_TOKENS,
+        maxOutputTokens: TOPIC_LABEL_AUDIT_MAX_OUTPUT_TOKENS,
+        responseFormat: TOPIC_LABEL_AUDIT_RESPONSE_FORMAT,
+        signal,
+        operation: modelCallContext,
+        dispatchRecord,
+        validateResult(result) {
+          parseAuditResult(result.text);
+        },
+      });
+    } finally {
+      if (dispatchRecord.dispatched) {
+        onModelCallIssued?.();
+      }
+    }
     return parseAuditResult(completion.text);
   }
 }

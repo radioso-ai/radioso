@@ -66,7 +66,6 @@ export type AgentContextVariableEnablementListResponse = ApiSchemas['AgentContex
 export type RoutineDefinitionStatus = ApiSchemas['RoutineDefinition']['status']
 export type RoutineSlotType = 'text' | 'number' | 'boolean' | 'email' | 'date'
 export type RoutineStepKind = 'chat' | 'tool' | 'action' | 'approval'
-type ApprovalOption = NonNullable<ApiSchemas['RoutineDefinition']['steps'][number]['options']>[number]
 export type RoutineGuardKind = 'llm' | 'default' | 'slot_filled' | 'outcome' | 'counter' | 'field'
 export type RoutineReentryMode = 'once_per_conversation' | 'always' | 'semantic'
 export type RoutineFieldGuardOp =
@@ -196,8 +195,6 @@ export type RetrievalMetadataRule = Omit<ApiSchemas['RetrievalMetadataRule'], 'c
 export type RetrievalMetadataValueType = RetrievalMetadataRule['valueType']
 export type MetadataFieldSuggestion = ApiSchemas['RetrievalDefaultsResponse']['metadataFieldSuggestions'][number]
 export type RetrievalMetadataRuleOperator = RetrievalMetadataRule['operator']
-type RetrievalMetadataRuleEffect = RetrievalMetadataRule['effect']
-type RetrievalMetadataRuleCombinator = NonNullable<RetrievalMetadataRule['combinator']>
 export type RetrievalMetadataCondition = NonNullable<RetrievalMetadataRule['conditions']>[number]
 
 export type IngestionSettings = ApiSchemas['IngestionSettings']
@@ -212,12 +209,10 @@ export type WorkspaceIngestionReprocessResponse = ApiSchemas['WorkspaceIngestion
 export type DocumentCreateRequest = ApiSchemas['DocumentCreateRequest']
 export type DocumentCreateResponse = ApiSchemas['DocumentOperationResponse']
 type DocumentSourceSummary = ApiSchemas['DocumentSourceSummary']
-type DocumentSourceKind = DocumentSourceSummary['kind']
 export type AgentSourceScope = ApiSchemas['AgentSourceScope']
 /** Hand-authored tag values. The write contract accepts flat JSON scalars only. */
 export type DocumentMetadataRecord = Record<string, string | number | boolean | null>
 /** What the read contract returns: the same scalars, plus null. */
-type DocumentMetadataReadRecord = ApiSchemas['DocumentSourceListItem']['documentMetadata']
 
 export type DocumentSourceListItem = ApiSchemas['DocumentSourceListItem']
 export type DocumentSourceListResponse = ApiSchemas['DocumentSourceListResponse']
@@ -258,8 +253,6 @@ export interface DocumentChunkDetail {
   embeddingDimensions: number | null
 }
 
-type DocumentSearchAction = ApiSchemas['DocumentSearchAction']
-type DocumentSearchResult = ApiSchemas['DocumentSearchResult']
 export type DocumentSearchResponse = ApiSchemas['DocumentSearchResponse'] & {
   activityTrace?: ActivityTrace
 }
@@ -349,13 +342,7 @@ export type ChatSuggestion = Omit<ApiSchemas['ChatSuggestion'], 'kind'> & {
 }
 
 export type ActivitySummary = ApiSchemas['ActivitySummary']
-type SkillDiagnostic = NonNullable<ApiSchemas['ActivitySummary']['skillDiagnostic']>
-type ParsedQueryInfo = ApiSchemas['ParsedQuery']
-type RetrievalSubqueryInfo = ApiSchemas['RetrievalSubquery']
-type CandidateCounts = ApiSchemas['CandidateCounts']
-type AppliedConstraintInfo = ApiSchemas['AppliedConstraint']
 export type ActivityStage = ApiSchemas['ActivityStage']
-type ActivityLink = ApiSchemas['ActivityLink']
 export type ActivityTrace = ApiSchemas['ActivityTrace']
 export type TurnTraceEnvelope = ApiSchemas['TurnTraceEnvelope']
 export type ConversationTrace = ApiSchemas['ConversationTrace']

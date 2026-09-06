@@ -588,37 +588,6 @@ const baseBuiltInDirectives = (): BuiltInDirectiveFixture[] => [
   },
 ];
 
-const baseDocumentSources = (): ApiSchemas["DocumentSourceListResponse"] => ({
-  sources: [
-    {
-      id: "11111111-1111-4111-8111-111111111111",
-      kind: "upload",
-      name: "Course guide",
-      externalId: null,
-      lastSyncStatus: null,
-      lastSyncedAt: null,
-      documentCount: 1,
-      documentEnrichmentOverride: "inherit",
-      documentMetadata: {},
-      createdAt: nowIso,
-      updatedAt: nowIso,
-    },
-    {
-      id: "22222222-2222-4222-8222-222222222222",
-      kind: "website",
-      name: "Release notes",
-      externalId: "https://example.com/releases",
-      lastSyncStatus: "completed",
-      lastSyncedAt: nowIso,
-      documentCount: 3,
-      documentEnrichmentOverride: "inherit",
-      documentMetadata: { department: "engineering" },
-      createdAt: nowIso,
-      updatedAt: nowIso,
-    },
-  ],
-});
-
 export const baseSkillCapabilities = (): SkillCapabilityFixture[] => [
   {
     id: "retrieve",

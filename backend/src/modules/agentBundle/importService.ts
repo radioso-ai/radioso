@@ -21,7 +21,7 @@ import type {
   AgentBundleImportRepositoryPort,
 } from "./ports.js";
 
-export interface AgentBundleImportServiceOptions {
+interface AgentBundleImportServiceOptions {
   agents: AgentBundleAgentWriterPort;
   logger?: AppLogger;
   directives: AgentBundleDirectiveWriterPort;
@@ -32,7 +32,7 @@ export interface AgentBundleImportServiceOptions {
   imports?: AgentBundleImportRepositoryPort;
 }
 
-export interface AgentBundleImportInput {
+interface AgentBundleImportInput {
   workspaceId: string;
   actorAccountId: string | null;
   idempotencyKey?: string | null;

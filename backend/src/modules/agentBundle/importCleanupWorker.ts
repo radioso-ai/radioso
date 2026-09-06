@@ -5,11 +5,11 @@ import type { MetricsRegistry } from "../../shared/observability/metrics/metrics
 import type { AgentBundleAgentWriterPort, AgentBundleImportRepositoryPort } from "./ports.js";
 
 export const AGENT_BUNDLE_IMPORT_ORPHAN_AGE_MS_DEFAULT = 15 * 60 * 1_000;
-export const AGENT_BUNDLE_IMPORT_CLEANUP_LEASE_MS_DEFAULT = 5 * 60 * 1_000;
+const AGENT_BUNDLE_IMPORT_CLEANUP_LEASE_MS_DEFAULT = 5 * 60 * 1_000;
 const SWEEP_INTERVAL_MS_DEFAULT = 5 * 60 * 1_000;
 const SWEEP_BATCH_SIZE_DEFAULT = 20;
 
-export interface AgentBundleImportCleanupAuditPort {
+interface AgentBundleImportCleanupAuditPort {
   record(event: {
     workspaceId: string;
     accountId?: string | null;
@@ -19,12 +19,12 @@ export interface AgentBundleImportCleanupAuditPort {
   }): Promise<unknown>;
 }
 
-export interface AgentBundleImportCleanupLoggerPort {
+interface AgentBundleImportCleanupLoggerPort {
   info(payload: Record<string, unknown>, message: string): void;
   error(payload: Record<string, unknown>, message: string): void;
 }
 
-export interface AgentBundleImportCleanupWorkerOptions {
+interface AgentBundleImportCleanupWorkerOptions {
   imports: AgentBundleImportRepositoryPort;
   agents: AgentBundleAgentWriterPort;
   audit: AgentBundleImportCleanupAuditPort;

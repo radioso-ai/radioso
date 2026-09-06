@@ -49,7 +49,7 @@ export const apiPrincipalRouteInventory: ApiPrincipalRouteInventory = {
   markRouteMount: markApiPrincipalRouteMount,
 };
 
-export type ApiPrincipalRouteEligibility = {
+type ApiPrincipalRouteEligibility = {
   allowedPrincipalKinds: readonly AuthenticatedPrincipal["type"][];
   permission: string;
   sessionOnly: boolean;

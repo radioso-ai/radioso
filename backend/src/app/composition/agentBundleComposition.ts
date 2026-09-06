@@ -27,7 +27,7 @@ import type { AuditService } from "../../modules/audit/contracts/index.js";
 /** The rows `projectInternalAgentExternalSkills` reads, named from its own signature. */
 type ExternalSkillSources = Parameters<typeof projectInternalAgentExternalSkills>[0];
 
-export interface AgentBundleCompositionDependencies {
+interface AgentBundleCompositionDependencies {
   logger?: AppLogger;
   metrics?: Pick<MetricsRegistry, "incrementCounter"> | null;
   auditService: AuditService;

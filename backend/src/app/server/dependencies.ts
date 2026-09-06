@@ -90,7 +90,7 @@ import { ConversationSummaryRepository } from "../../db/repositories/conversatio
 import { RoutineStateRepository } from "../../db/repositories/routineStateRepository.js";
 import { QUALITY_RESOLUTION_REASONS } from "../../modules/quality/domain/resolution.js";
 
-export interface BuildDependenciesOptions {
+interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
   realtimePublisherComposition?: RealtimePublisherComposition;
 }

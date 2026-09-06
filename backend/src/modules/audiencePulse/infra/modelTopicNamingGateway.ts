@@ -121,7 +121,12 @@ export class ModelTopicNamingGateway implements TopicNamingPort {
       });
     } finally {
       if (dispatchRecord.dispatched) {
-        input.onModelCallIssued?.();
+        try {
+          input.onModelCallIssued?.();
+        } catch {
+          // Reporting runs in a finally, so a throwing counter would replace the
+          // call's own outcome. Accounting must not decide what the caller sees.
+        }
       }
     }
     const label = parseLabel(completion.text);

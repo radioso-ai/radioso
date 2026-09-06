@@ -91,7 +91,12 @@ export class ModelTopicLabelPrivacyAuditGateway implements TopicLabelPrivacyAudi
       });
     } finally {
       if (dispatchRecord.dispatched) {
-        onModelCallIssued?.();
+        try {
+          onModelCallIssued?.();
+        } catch {
+          // Reporting runs in a finally, so a throwing counter would replace the
+          // call's own outcome. Accounting must not decide what the caller sees.
+        }
       }
     }
     return parseAuditResult(completion.text);

@@ -238,6 +238,10 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
     const readUsage = async (): Promise<ProviderUsage | undefined> => {
       try {
         return await result.usage;
+      } catch {
+        // Usage is best-effort telemetry: a provider that breaks the resolve-only
+        // contract must not fail a stream the consumer already read successfully.
+        return undefined;
       } finally {
         // A stream dispatches lazily, so the caller's record is published once the
         // provider has finished with the pipeline's own copy.

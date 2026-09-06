@@ -1,0 +1,198 @@
+/**
+ * `@radioso/app-contract` is the provider-neutral vocabulary for Hosted Apps:
+ * what a manifest may declare, what an invocation looks like on the wire, and
+ * what a host admits. It is schemas and pure functions only, so the same rules
+ * hold in the API process, in a worker, in an App, and in a conformance run.
+ */
+export {
+  appIdSchema,
+  assetIdSchema,
+  collectionIdSchema,
+  connectionSlotIdSchema,
+  contributionIdSchema,
+  descriptionSchema,
+  destinationIdSchema,
+  digestSchema,
+  displayNameSchema,
+  fieldKeySchema,
+  fixtureIdSchema,
+  indexIdSchema,
+  semanticVersionRangeSchema,
+  semanticVersionSchema,
+  timestampSchema,
+  type AppId,
+  type CollectionId,
+  type ContributionId,
+  type ConnectionSlotId,
+  type DestinationId,
+  type Digest,
+  type FieldKey,
+  type SemanticVersion,
+  type SemanticVersionRange,
+} from "./identifiers.js";
+
+export {
+  appConfigurationSchema,
+  configurationFieldSchema,
+  configurationFieldTypeSchema,
+  configurationFieldTypes,
+  configurationSelectOptionSchema,
+  type AppConfiguration,
+  type ConfigurationField,
+  type ConfigurationFieldType,
+} from "./configuration.js";
+
+export {
+  appConnectionsSchema,
+  connectionSecretFieldSchema,
+  connectionSlotKindSchema,
+  connectionSlotKinds,
+  connectionSlotSchema,
+  generatedSecretSlotSchema,
+  oauth2SlotSchema,
+  secretFieldsSlotSchema,
+  type AppConnections,
+  type ConnectionSlot,
+  type ConnectionSlotKind,
+} from "./connections.js";
+
+export {
+  destinationDataClassSchema,
+  destinationDataClasses,
+  destinationHostSchema,
+  destinationProtocolSchema,
+  destinationProtocols,
+  destinationSchema,
+  type Destination,
+  type DestinationDataClass,
+  type DestinationHost,
+  type DestinationProtocol,
+} from "./destinations.js";
+
+export {
+  isScalarStorageFieldType,
+  jsonRecordSchema,
+  scalarStorageFieldTypes,
+  storageCollectionSchema,
+  storageDeleteRequestSchema,
+  storageFieldTypeSchema,
+  storageFieldTypes,
+  storageGetRequestSchema,
+  storageIndexSchema,
+  storageKeySchema,
+  storageOperationSchema,
+  storageOperations,
+  storagePutRequestSchema,
+  storageQueryRequestSchema,
+  storageQueryResultSchema,
+  storageRecordFieldSchema,
+  storageRecordSchema,
+  storageRetentionSchema,
+  storageScalarValueSchema,
+  storageVersionSchema,
+  type StorageCollection,
+  type StorageDeleteRequest,
+  type StorageFieldType,
+  type StorageGetRequest,
+  type StorageOperation,
+  type StoragePutRequest,
+  type StorageQueryRequest,
+  type StorageQueryResult,
+  type StorageRecord,
+} from "./storage.js";
+
+export {
+  contributionKindSchema,
+  contributionKinds,
+  contributionSchema,
+  documentSourceContributionSchema,
+  executionClassForContributionKind,
+  executionClassSchema,
+  executionClasses,
+  externalWebhookHandlerContributionSchema,
+  hostPermissionSchema,
+  hostPermissions,
+  releaseAContributionKinds,
+  reservedContributionKinds,
+  scheduleSchema,
+  scheduledTaskContributionSchema,
+  type Contribution,
+  type ContributionKind,
+  type DocumentSourceContribution,
+  type ExecutionClass,
+  type ExternalWebhookHandlerContribution,
+  type HostPermission,
+  type ScheduledTaskContribution,
+} from "./contributions.js";
+
+export {
+  companionAssetSchema,
+  setupGuideSchema,
+  setupGuideSectionSchema,
+  type CompanionAsset,
+  type SetupGuide,
+} from "./setup.js";
+
+export {
+  MANIFEST_SCHEMA_VERSION,
+  appArtifactSchema,
+  appManifestSchema,
+  artifactMediaTypeSchema,
+  artifactMediaTypes,
+  conformanceFixtureSchema,
+  resourceProfileSchema,
+  type AppArtifact,
+  type AppManifest,
+  type ConformanceFixture,
+  type ResourceProfile,
+} from "./manifest.js";
+
+export {
+  MAX_ERROR_MESSAGE_LENGTH,
+  RUNTIME_PROTOCOL_VERSION,
+  appErrorCodeSchema,
+  appErrorCodes,
+  appErrorSchema,
+  backfillInvocationInputSchema,
+  base64BodySchema,
+  documentContentFormatSchema,
+  documentIngestInputSchema,
+  egressFetchRequestSchema,
+  egressFetchResultSchema,
+  hostCapabilityRequestSchema,
+  hostCapabilityResponseSchema,
+  invocationIdentitySchema,
+  invocationInputSchema,
+  invocationOutcomeSchema,
+  invocationOutcomes,
+  invocationOutputSchema,
+  invocationRequestSchema,
+  invocationResponseSchema,
+  scheduledInvocationInputSchema,
+  webhookInvocationInputSchema,
+  type AppError,
+  type AppErrorCode,
+  type DocumentIngestInput,
+  type EgressFetchRequest,
+  type EgressFetchResult,
+  type HostCapabilityRequest,
+  type HostCapabilityResponse,
+  type InvocationInput,
+  type InvocationOutcome,
+  type InvocationRequest,
+  type InvocationResponse,
+} from "./runtime.js";
+
+export {
+  APP_JOB_ENVELOPE_VERSION,
+  appJobWakeUpEnvelopeSchema,
+  type AppJobWakeUpEnvelope,
+} from "./jobs.js";
+
+export {
+  releaseAValidationPolicy,
+  validateManifest,
+  type ManifestValidationIssue,
+  type ManifestValidationPolicy,
+  type ManifestValidationResult,
+} from "./validate.js";

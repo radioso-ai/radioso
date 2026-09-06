@@ -7,14 +7,20 @@
     "skipLibCheck": true,
     "noEmit": true,
     "esModuleInterop": true,
-    "lib": ["ES2022"],
-    "types": ["node", "vitest/globals"]
+    "lib": [
+      "ES2022"
+    ],
+    "types": [
+      "node",
+      "vitest/globals"
+    ]
   },
   "include": [
     "src/**/*.ts",
     "src/**/*.d.ts",
     "tests/**/*.ts",
-    "tests/**/*.d.ts"
+    "tests/**/*.d.ts",
+    "scripts/**/*.ts"
   ],
   "exclude": [
     "dist"

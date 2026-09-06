@@ -9,8 +9,8 @@ import { applyTestMigration, runTestMigrationsBefore } from "../support/database
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
 const fieldGuardMigration = "107_routine_field_guards.sql";
 const topicCensusRepairMigration = "156_repair_topic_census_workspace_scope.sql";
-const topicTransitionUniquenessMigration = "166_topic_transitions_run_topic_unique.sql";
-const topicTransitionTitleMigration = "168_topic_transition_title.sql";
+const topicTransitionUniquenessMigration = "168_topic_transitions_run_topic_unique.sql";
+const topicTransitionTitleMigration = "170_topic_transition_title.sql";
 
 const canCreateIsolatedDatabase = async (databaseUrl?: string): Promise<boolean> => {
   if (!databaseUrl) return false;
@@ -223,7 +223,7 @@ describeIfDatabase("topic census workspace-scope repair migration", () => {
 });
 
 describeIfDatabase("topic transition uniqueness migration", () => {
-  const isolatedName = `mig166_topic_transition_${randomUUID().replace(/-/g, "")}`;
+  const isolatedName = `mig168_topic_transition_${randomUUID().replace(/-/g, "")}`;
   let admin: Database;
   let database: Database;
 
@@ -297,7 +297,7 @@ describeIfDatabase("topic transition uniqueness migration", () => {
 });
 
 describeIfDatabase("topic transition title migration", () => {
-  const isolatedName = `mig168_topic_transition_${randomUUID().replace(/-/g, "")}`;
+  const isolatedName = `mig170_topic_transition_${randomUUID().replace(/-/g, "")}`;
   let admin: Database;
   let database: Database;
 

@@ -1,4 +1,4 @@
-import { copilotNeverList, neverListExclusion, type CopilotNeverListEntry } from "../../../src/modules/operatorCopilot/neverList.js";
+import { neverListExclusion, type CopilotNeverListEntry } from "../../../src/modules/operatorCopilot/neverList.js";
 
 interface CatalogCoverageExclusion {
   readonly disposition: "deferred" | "permanent";
@@ -202,6 +202,8 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "resendEmailVerification",
     "getAccountInvitation",
     "acceptAccountInvitation",
+    "acceptAccountInvitationAsCurrentUser",
+    "getCurrentSession",
   ], authOrRegistration),
   ...coverage([
     "getAgentContextVariableSigningKey",
@@ -456,6 +458,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   // propose that the operator has not already decided.
   exportAgentBundle: permanent("Bulk read of configuration Ray already reads field by field through get_agent; a tool would widen reach without giving the operator a new outcome."),
   importAgentBundle: permanent("Creates a whole agent from an operator-supplied file. The operator choosing the file is the decision; Ray has no bundle to propose and no way to review one it did not author."),
+  getAgentBundleImport: permanent("Import-job status only explains an operator-supplied bulk import. Ray cannot start or review that file import, so surfacing its recovery trail would add a detached operational read without an action Ray may take."),
   getCopilotAvailability: copilotUiOnly,
   listCopilotConversations: copilotUiOnly,
   getCopilotConversation: copilotUiOnly,

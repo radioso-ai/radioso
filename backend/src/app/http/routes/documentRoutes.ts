@@ -8,6 +8,7 @@ import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { createRateLimitMiddleware } from "../middleware/rateLimit.js";
 import { validateBody } from "../middleware/validate.js";
 import { badRequest, notFound, payloadTooLarge } from "../../../shared/domain/errors.js";
+import { asError } from "../../../shared/errors/asError.js";
 import { createWebsiteCrawlerRoutes } from "../../../modules/websiteCrawler/routes.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../../modules/documents/domain/sourceConstants.js";
 import { includeDebugQuerySchema, presentDocumentSearchResponse } from "../presenters/documentSearchPresenter.js";
@@ -113,7 +114,7 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
           return;
         }
 
-        reject(error);
+        reject(asError(error));
       });
     });
 

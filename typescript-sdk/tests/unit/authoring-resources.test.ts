@@ -13,7 +13,7 @@ const makeClient = (impl: () => Promise<Response>) => {
   const client = createRadiosoClient({
     baseUrl: "https://api.example.com",
     apiToken: "token-123",
-    fetch: fetchMock as typeof fetch,
+    fetch: fetchMock,
   });
   return { client, fetchMock };
 };

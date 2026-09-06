@@ -2,6 +2,7 @@ import { z } from "zod";
 import { isProductAnalyticsEventName } from "../../shared/analytics/productAnalyticsTypes.js";
 import { hasConfiguredSink, parseConfiguredSinks } from "../../shared/observability/configuredSinks.js";
 import { parseRealtimeConfig, realtimeEnvShape } from "../../modules/realtime/infrastructure/config.js";
+import { AGENT_BUNDLE_IMPORT_ORPHAN_AGE_MS_DEFAULT } from "../../modules/agentBundle/public.js";
 import {
   COPILOT_CONVERSATION_RETENTION_DAYS_DEFAULT,
   COPILOT_PROBE_BUDGET_PER_TURN_DEFAULT,
@@ -144,6 +145,8 @@ const envSchema = z.object({
   COPILOT_PROBE_BUDGET_PER_TURN: z.coerce.number().int().positive().default(COPILOT_PROBE_BUDGET_PER_TURN_DEFAULT),
   // Days a copilot conversation is kept after its last activity. 0 keeps them indefinitely.
   COPILOT_CONVERSATION_RETENTION_DAYS: z.coerce.number().int().nonnegative().default(COPILOT_CONVERSATION_RETENTION_DAYS_DEFAULT),
+  // Applying imports older than this are treated as crashed work and compensated by the worker.
+  AGENT_BUNDLE_IMPORT_ORPHAN_AGE_MS: z.coerce.number().int().positive().default(AGENT_BUNDLE_IMPORT_ORPHAN_AGE_MS_DEFAULT),
   PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(10),
   PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(600),

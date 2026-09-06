@@ -264,7 +264,7 @@ describe("document and settings integration", () => {
 });
 
 describeIntegration("IngestionSettingsRepository document enrichment settings (Postgres)", () => {
-  const database = new Database(integrationDatabaseUrl as string);
+  const database = new Database(integrationDatabaseUrl);
   const repository = new IngestionSettingsRepository(database.kysely);
 
   const accountId = randomUUID();

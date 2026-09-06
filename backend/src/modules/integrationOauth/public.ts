@@ -4,17 +4,12 @@ export {
   oauthConfigInputSchema,
   oauthHttpsUrlSchema,
   type OauthAuthorizationStartResult,
-  type OauthCompleteInput,
-  type OauthConfigInput,
   type OauthConnectionCreateInput,
   type OauthConnectionStatus,
   type OauthConnectionSummary,
   type OauthCredentialRecord,
-  type OauthReauthStatus,
   type StoredOauthClientConfig,
-  type StoredOauthFlow,
   type StoredOauthTokens,
-  oauthConnectionStatuses,
 } from "./domain.js";
 export {
   __setOauthClock,
@@ -22,7 +17,6 @@ export {
   createOauthState,
   createPkcePair,
   exchangeAuthorizationCode,
-  exchangeAuthorizationCodeWithMetadata,
   isAccessTokenExpired,
   OauthClientError,
   refreshAccessToken,
@@ -31,7 +25,6 @@ export {
   type FetchLike,
   type NormalizedOauthTokenResponse,
   type OauthClientErrorCode,
-  type OauthTokenResponseNormalizer,
   type PkcePair,
   type RefreshTokensInput,
 } from "./services/oauthClient.js";
@@ -50,14 +43,7 @@ export {
   type ResolveFreshAccessTokenInput,
 } from "./services/oauthAccessTokenResolver.js";
 export {
-  InProcessOauthRefreshCoordinator,
-  defaultOauthRefreshCoordinator,
-  type OauthRefreshCoordinator,
-} from "./services/oauthRefreshCoordinator.js";
-export {
   OauthConnectionService,
   StaticOauthProviderRegistry,
-  type OauthConnectionServiceOptions,
   type OauthProviderDefinition,
-  type OauthProviderRegistryPort,
 } from "./services/oauthConnectionService.js";

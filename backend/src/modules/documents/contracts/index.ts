@@ -3,7 +3,6 @@ import type { DocumentSourceResolverInput, IndexedFieldValue } from "./documentC
 export type {
   ChunkDetail,
   ChunkMetadataRevisionPatch,
-  ChunkPage,
   ChunkRecord,
   ChunkRepositoryPort,
   ChunkSummary,
@@ -12,30 +11,21 @@ export type {
   DocumentDerivedContentUpdateInput,
   DocumentEnrichmentMetadataUpdateInput,
   DocumentRetrievalSettingsInput,
-  DocumentDetails,
-  DocumentListPage,
   DocumentQueueUpdateInput,
   DocumentRecord,
   DocumentRepositoryPort,
-  DocumentProcessingJobEnrichmentOverride,
   DocumentProcessingJobOptions,
   DocumentRetrievalSettingsResult,
-  DocumentSourceInput,
-  DocumentSourceKind,
-  DocumentSourceRecord,
   DocumentSourceResolverInput,
   DocumentSourceSummary,
   WorkspaceDocumentSourceStatus,
-  WorkspaceDocumentSourceStatusSummary,
-  DocumentSummary,
   DocumentSummaryRecord,
   DocumentUpdateInput,
   DocumentWorkspaceSummaryRecord,
   IndexedFieldValue,
 } from "./documentContracts.js";
-export type { DocumentSearchHistoryEntry, DocumentSearchHistoryPage } from "./historyTypes.js";
-export type { DocumentJobConsumerPort } from "../services/documentJobConsumer.js";
-export type { DocumentJobDispatchRequest, DocumentJobDispatcherPort } from "../services/documentJobDispatcher.js";
+export type { DocumentSearchHistoryEntry } from "./historyTypes.js";
+export type { DocumentJobDispatcherPort } from "../services/documentJobDispatcher.js";
 export type {
   EmbeddingProfileJobCommitInput,
   EmbeddingProfileJobLoadInput,
@@ -45,11 +35,7 @@ export type {
   EmbeddingProfileTerminalFailurePort,
 } from "../services/embeddingProfileJobService.js";
 export type {
-  DocumentStorageDeleteInput,
   DocumentStoragePort,
-  DocumentStorageReadInput,
-  DocumentStorageUploadInput,
-  StoredDocumentObject,
 } from "./storage.js";
 export { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../domain/sourceConstants.js";
 

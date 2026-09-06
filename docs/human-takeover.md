@@ -1,7 +1,7 @@
 ---
 title: "Human Takeover"
 description: "Operator API and contract for taking over conversations and suppressing AI while handling manual responses."
-last_updated: 2026-08-30
+last_updated: 2026-09-05
 ---
 
 # Human Takeover
@@ -47,6 +47,9 @@ There are two request triggers:
 - An agent has `handoffOnRetrievalMiss` enabled and a turn produces a
   no-context grounded miss. This behavior is opt-in per agent and is off by
   default.
+
+In the agent's **Profile → Answers** settings, turn on **Hand off on retrieval
+miss** to enable this trigger.
 
 Both triggers request human ownership and notify an operator through the existing
 contact-delivery transport with a `handoff.notify` action. They also record

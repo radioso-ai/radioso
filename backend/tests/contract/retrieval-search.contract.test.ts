@@ -224,7 +224,7 @@ describe("retrieval search contract", () => {
     ) as { paths: Record<string, Record<string, { responses: Record<string, unknown> }>> };
 
     for (const path of ["/api/v1/retrieval/search", "/api/v1/retrieval/answer"]) {
-      expect(Object.keys(spec.paths[path]!.post!.responses).sort())
+      expect(Object.keys(spec.paths[path].post.responses).sort())
         .toEqual(["200", "400", "401", "403", "404", "429"]);
     }
   });

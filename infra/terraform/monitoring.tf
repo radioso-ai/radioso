@@ -34,6 +34,7 @@ locals {
     "${local.resource_name_prefix}-crawler-worker-recovery",
     "${local.resource_name_prefix}-action-dispatch-recovery",
     "${local.resource_name_prefix}-copilot-retention",
+    "${local.resource_name_prefix}-agent-bundle-import-cleanup",
   ] : []
 
   # Cloud Monitoring filters use one_of(); Cloud Logging filters use (a OR b). The two

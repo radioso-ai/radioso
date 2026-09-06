@@ -3,7 +3,6 @@ import { z } from "zod";
 import { serializeAgentConfig, type AgentConfig, type ConversationAgent } from "../../agents/public.js";
 import { builtInAnswerDirectiveViews, type BuiltInDirectiveView } from "../../directives/public.js";
 import type {
-  CopilotProposal,
   CopilotToolDescriptor,
 } from "../contracts.js";
 import { requireCurrentCopilotPermissions } from "../authorization.js";
@@ -28,7 +27,6 @@ import {
 const idSchema = z.string().uuid();
 const entityNameSchema = z.string().trim().min(1).max(160);
 const unknownRecord = z.record(z.unknown());
-const optionalAgentInput = z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional() });
 const agentConfigurationInputSchema = z.object({
   mode: z.enum(["auto", "list", "detail"]).optional(),
   agentId: idSchema.optional(),
@@ -162,23 +160,23 @@ const projectAgentConfiguration = (
     id: agent.id,
     ...boundPayload(portableAgent as unknown as Record<string, unknown>),
     authoredDirectives: visibleIndexes.map((index) => ({
-      id: directives[index]!.id,
-      name: directives[index]!.name,
-      priority: directives[index]!.priority,
-      enabled: directives[index]!.enabled,
-      actionChars: directives[index]!.action.length,
+      id: directives[index].id,
+      name: directives[index].name,
+      priority: directives[index].priority,
+      enabled: directives[index].enabled,
+      actionChars: directives[index].action.length,
     })),
     directiveCount: directives.length,
     directivesTruncated: directives.length > copilotDirectiveListLimit,
     directiveRefs: visibleIndexes.map((index) => ({
-      id: directives[index]!.id,
-      name: directives[index]!.name,
+      id: directives[index].id,
+      name: directives[index].name,
     })),
     builtInDirectiveCount: builtInAnswerDirectiveViews.length,
     builtInsTruncated: builtInAnswerDirectiveViews.length > copilotBuiltInDirectiveListLimit,
     builtIns: projectBuiltInDirectives(builtInAnswerDirectiveViews),
     directive: selectedIndex >= 0
-      ? projectDirectiveDetail(directives[selectedIndex]!.id, portableDirectives[selectedIndex]!)
+      ? projectDirectiveDetail(directives[selectedIndex].id, portableDirectives[selectedIndex])
       : null,
   };
 };

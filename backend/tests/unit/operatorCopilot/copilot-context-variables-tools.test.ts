@@ -56,7 +56,7 @@ describe("context_variables reader", () => {
     const ports = contextVariablePorts();
     const [descriptor] = createContextVariablesCopilotTools({ agentService: { get: ports.get }, contextVariables: ports });
 
-    const result = await descriptor!.createTool(context).invoke({}, {} as never) as {
+    const result = await descriptor.createTool(context).invoke({}, {} as never) as {
       variables: Array<Record<string, unknown>>;
       enablements: Array<Record<string, unknown>>;
     };
@@ -77,7 +77,7 @@ describe("context_variables reader", () => {
     ports.get.mockRejectedValueOnce(new Error("Agent not found"));
     const [descriptor] = createContextVariablesCopilotTools({ agentService: { get: ports.get }, contextVariables: ports });
 
-    await expect(descriptor!.createTool(context).invoke({ agentId: "agent-9" }, {} as never)).rejects.toThrow("Agent not found");
+    await expect(descriptor.createTool(context).invoke({ agentId: "agent-9" }, {} as never)).rejects.toThrow("Agent not found");
 
     expect(ports.get).toHaveBeenCalledWith("workspace-1", "agent-9");
     expect(ports.listByAgent).not.toHaveBeenCalled();
@@ -87,11 +87,11 @@ describe("context_variables reader", () => {
     const ports = contextVariablePorts();
     const [descriptor] = createContextVariablesCopilotTools({ agentService: { get: ports.get }, contextVariables: ports });
 
-    await descriptor!.createTool(context).invoke({}, {} as never);
+    await descriptor.createTool(context).invoke({}, {} as never);
 
     expect(ports.listByAgent).toHaveBeenCalledWith("workspace-1", "agent-1");
-    expect(descriptor!.describeEntity?.({}, context)).toEqual({ type: "agent", id: "agent-1" });
-    expect(descriptor!.describeEntity?.({ agentId: "agent-7" }, context)).toEqual({ type: "agent", id: "agent-7" });
+    expect(descriptor.describeEntity?.({}, context)).toEqual({ type: "agent", id: "agent-1" });
+    expect(descriptor.describeEntity?.({ agentId: "agent-7" }, context)).toEqual({ type: "agent", id: "agent-7" });
   });
 });
 

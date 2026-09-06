@@ -19,7 +19,7 @@ const deferred = () => {
 };
 
 describeIntegration("MachineAccessRepository", () => {
-  const database = new Database(integrationDatabaseUrl as string);
+  const database = new Database(integrationDatabaseUrl);
   const repository = new MachineAccessRepository(database.kysely);
   const accountId = randomUUID();
   const workspaceId = randomUUID();
@@ -655,7 +655,7 @@ describeIntegration("MachineAccessRepository", () => {
 });
 
 const installArchiveRotationRaceTriggers = async (input: { credentialId: string; serviceAccountId: string }): Promise<() => Promise<void>> => {
-  const raceDatabase = new Database(integrationDatabaseUrl as string);
+  const raceDatabase = new Database(integrationDatabaseUrl);
   try {
     await raceDatabase.execute(`
       CREATE OR REPLACE FUNCTION machine_access_archive_race_pause_account()
@@ -688,7 +688,7 @@ const installArchiveRotationRaceTriggers = async (input: { credentialId: string;
   }
 
   return async () => {
-    const cleanupDatabase = new Database(integrationDatabaseUrl as string);
+    const cleanupDatabase = new Database(integrationDatabaseUrl);
     try {
       await cleanupDatabase.execute("DROP TRIGGER IF EXISTS machine_access_archive_race_pause_account ON workspace_service_accounts");
       await cleanupDatabase.execute("DROP TRIGGER IF EXISTS machine_access_archive_race_pause_credential ON api_credentials");
@@ -701,7 +701,7 @@ const installArchiveRotationRaceTriggers = async (input: { credentialId: string;
 };
 
 const installLastUseFailureTrigger = async (serviceAccountId: string): Promise<() => Promise<void>> => {
-  const triggerDatabase = new Database(integrationDatabaseUrl as string);
+  const triggerDatabase = new Database(integrationDatabaseUrl);
   try {
     await triggerDatabase.execute(`
       CREATE OR REPLACE FUNCTION machine_access_last_use_failure()
@@ -721,7 +721,7 @@ const installLastUseFailureTrigger = async (serviceAccountId: string): Promise<(
   }
 
   return async () => {
-    const cleanupDatabase = new Database(integrationDatabaseUrl as string);
+    const cleanupDatabase = new Database(integrationDatabaseUrl);
     try {
       await cleanupDatabase.execute("DROP TRIGGER IF EXISTS machine_access_last_use_failure ON workspace_service_accounts");
       await cleanupDatabase.execute("DROP FUNCTION IF EXISTS machine_access_last_use_failure()");

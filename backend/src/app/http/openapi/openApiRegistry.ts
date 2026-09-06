@@ -67,6 +67,8 @@ export interface OpenApiSchemaCatalog {
   AgentBundleImportSkillSchema: z.ZodTypeAny;
   AgentBundleImportRequestSchema: z.ZodTypeAny;
   AgentBundleImportResponseSchema: z.ZodTypeAny;
+  AgentBundleImportParamsSchema: RouteParameterSchema;
+  AgentBundleImportStatusSchema: z.ZodTypeAny;
   AuthoredDirectiveConditionSchema: z.ZodTypeAny;
   AuthoredDirectiveCreateRequestSchema: z.ZodTypeAny;
   AuthoredDirectiveListResponseSchema: z.ZodTypeAny;
@@ -245,6 +247,7 @@ export interface OpenApiSchemaCatalog {
   RegistrationAvailabilityResponseSchema: z.ZodTypeAny;
   PasswordResetConfirmRequestSchema: z.ZodTypeAny;
   PasswordResetConfirmResponseSchema: z.ZodTypeAny;
+  SessionResponseSchema: z.ZodTypeAny;
   PasswordResetRequestSchema: z.ZodTypeAny;
   ParsedQuerySchema: z.ZodTypeAny;
   PlatformChannelsSettingsSectionSchema: z.ZodTypeAny;

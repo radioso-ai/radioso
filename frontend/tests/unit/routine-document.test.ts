@@ -130,21 +130,21 @@ describe('sanitizeDraftContentForSave', () => {
   }
 
   it('turns still-empty optional text back into absent values', () => {
-    const saved = sanitizeDraftContentForSave(draft as never)
-    expect(saved.terminals[0]!.instruction).toBeNull()
+    const saved = sanitizeDraftContentForSave(draft)
+    expect(saved.terminals[0].instruction).toBeNull()
     expect(saved.transitions[0]).toMatchObject({ guardText: null, outcomeStatus: null, fieldValue: null, fieldValues: null })
-    expect(saved.slots[0]!.description).toBeNull()
+    expect(saved.slots[0].description).toBeNull()
     expect(saved.steps[0]).toMatchObject({ toolRef: null, actionType: null, captureKey: null })
-    expect(saved.steps[0]!.options![0]!.description).toBeNull()
+    expect(saved.steps[0].options![0].description).toBeNull()
   })
 
   it('keeps written content untouched', () => {
     const saved = sanitizeDraftContentForSave({
       ...draft,
-      terminals: [{ ...draft.terminals[0]!, instruction: 'Done.' }],
+      terminals: [{ ...draft.terminals[0], instruction: 'Done.' }],
       transitions: [{ ...transition, guardText: 'judge this', fieldValue: 50, fieldValues: ['a'] }],
-    } as never)
-    expect(saved.terminals[0]!.instruction).toBe('Done.')
+    })
+    expect(saved.terminals[0].instruction).toBe('Done.')
     expect(saved.transitions[0]).toMatchObject({ guardText: 'judge this', fieldValue: 50, fieldValues: ['a'] })
   })
 })

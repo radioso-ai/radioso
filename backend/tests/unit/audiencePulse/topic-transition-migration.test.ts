@@ -3,15 +3,15 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
 const migrationUrl = new URL(
-  "../../../src/db/migrations/166_topic_transitions_run_topic_unique.sql",
+  "../../../src/db/migrations/168_topic_transitions_run_topic_unique.sql",
   import.meta.url,
 );
 const overlapMigrationUrl = new URL(
-  "../../../src/db/migrations/167_topic_transition_membership_overlap.sql",
+  "../../../src/db/migrations/169_topic_transition_membership_overlap.sql",
   import.meta.url,
 );
 const titleMigrationUrl = new URL(
-  "../../../src/db/migrations/168_topic_transition_title.sql",
+  "../../../src/db/migrations/170_topic_transition_title.sql",
   import.meta.url,
 );
 

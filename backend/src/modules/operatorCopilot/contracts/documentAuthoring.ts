@@ -24,7 +24,7 @@ const titleSchema = z.string().trim().min(1).max(300);
  * "create" — and Ray has no way to know what it was replacing. Documents that carry an external
  * identity are written by the integration that owns it.
  */
-export const copilotDocumentCreatePayloadSchema = z.object({
+const copilotDocumentCreatePayloadSchema = z.object({
   op: z.literal("create"),
   /** The document's title. Named `name` because that is what every proposal card reads a target's
    * label from, whatever the target is. */
@@ -48,13 +48,13 @@ const retrievalChangeFields = {
   metadata: documentMetadataRecordSchema.optional(),
 };
 
-export const copilotDocumentRetrievalChangeSchema = z.object({
+const copilotDocumentRetrievalChangeSchema = z.object({
   op: z.literal("update_retrieval"),
   ...retrievalChangeFields,
   rationale: rationaleSchema.optional(),
 }).strict();
 
-export const copilotDocumentDeleteChangeSchema = z.object({
+const copilotDocumentDeleteChangeSchema = z.object({
   op: z.literal("delete"),
   removesTarget: z.literal(true),
   rationale: rationaleSchema.optional(),
@@ -72,7 +72,7 @@ export const copilotDocumentChangeSchema = z.discriminatedUnion("op", [
   copilotDocumentDeleteChangeSchema,
 ]);
 
-export const copilotDocumentRetrievalPayloadSchema = z.object({
+const copilotDocumentRetrievalPayloadSchema = z.object({
   op: z.literal("update_retrieval"),
   /** The document's title when the draft was made, so the card can name its target. */
   name: titleSchema,
@@ -82,7 +82,7 @@ export const copilotDocumentRetrievalPayloadSchema = z.object({
   summary: z.string().min(1).max(MAX_COPILOT_PROPOSAL_SUMMARY).optional(),
 }).strict();
 
-export const copilotDocumentDeletePayloadSchema = z.object({
+const copilotDocumentDeletePayloadSchema = z.object({
   op: z.literal("delete"),
   name: titleSchema,
   /** Applying this deletes the target. Stated on the payload so a reloaded card can warn about it
@@ -102,7 +102,6 @@ export const copilotDocumentPayloadSchema = z.discriminatedUnion("op", [
 
 export type CopilotDocumentChange = z.infer<typeof copilotDocumentChangeSchema>;
 export type CopilotDocumentPayload = z.infer<typeof copilotDocumentPayloadSchema>;
-export type CopilotDocumentTargetRef = z.infer<typeof copilotDocumentTargetRefSchema>;
 
 /**
  * A document as the copilot may see it. The stored body is absent by construction rather than by

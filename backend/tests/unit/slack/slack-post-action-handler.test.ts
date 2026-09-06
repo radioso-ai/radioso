@@ -290,7 +290,7 @@ describe("SlackPostActionHandler", () => {
 
     expect(postMessage).toHaveBeenCalledTimes(2);
     const calls = postMessage.mock.calls as unknown as Array<[{ text: string }]>;
-    expect(calls[0]![0].text).toHaveLength(SLACK_MAX_MESSAGE_TEXT_LENGTH);
-    expect(calls[1]![0].text).toBe("tail");
+    expect(calls[0][0].text).toHaveLength(SLACK_MAX_MESSAGE_TEXT_LENGTH);
+    expect(calls[1][0].text).toBe("tail");
   });
 });

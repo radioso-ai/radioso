@@ -29,7 +29,7 @@ const settledDocument = async (
 };
 
 describeIntegration("DocumentRepository (Postgres)", () => {
-  const database = new Database(integrationDatabaseUrl as string);
+  const database = new Database(integrationDatabaseUrl);
   const repository = new DocumentRepository(database.kysely);
 
   const accountId = randomUUID();

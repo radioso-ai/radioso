@@ -41,6 +41,10 @@ describe("provider streaming adapter", () => {
         yield "first";
         yield "second";
       } finally {
+        // Intentional: this is the exact contract under test -- provider cleanup
+        // (closing the iterator via `.return()`) reports usage through the
+        // generator's return value, which only `finally` can reach here.
+        // eslint-disable-next-line no-unsafe-finally -- see comment above
         return providerUsage;
       }
     });

@@ -12,7 +12,7 @@ import { websiteEmbedLauncherPositions } from "../../settings/public.js";
  * overrides, which are visual design rather than configuration Ray can reason about. Leaving them
  * off the payload means no adapter written against it can touch them.
  */
-export const copilotWorkspaceSettingFields = {
+const copilotWorkspaceSettingFields = {
   assistantName: z.string().trim().min(1).max(200),
   greetingInstruction: z.string().max(200),
   assistantDefaultLocale: z.string().max(35).nullable(),

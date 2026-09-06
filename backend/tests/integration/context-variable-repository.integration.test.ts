@@ -11,7 +11,7 @@ import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
 describeIntegration("ContextVariableRepository (Postgres)", () => {
-  const database = new Database(integrationDatabaseUrl as string);
+  const database = new Database(integrationDatabaseUrl);
   const repository = new ContextVariableRepository(database.kysely);
   const agentSkillRepository = new AgentSkillRepository(database.kysely);
   const accountId = randomUUID();

@@ -14,13 +14,11 @@ import {
   type EvalSnapshotExternalSkillsPort,
 } from "../../src/modules/eval/services/evalSnapshotService.js";
 import type {
-  CreateCaseInput,
   CreateRunInput,
   CreateSnapshotInput,
   EvalRepositoryPort,
 } from "../../src/modules/eval/services/evalRepository.js";
 import type {
-  EvalAssertion,
   EvalCase,
   EvalCaseStatus,
   EvalRun,

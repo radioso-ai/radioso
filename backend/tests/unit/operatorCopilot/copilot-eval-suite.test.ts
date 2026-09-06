@@ -509,9 +509,9 @@ describe("copilot eval sampling", () => {
     );
 
     expect(reports[0]).toMatchObject({ status: "fail", samples: 3, passCount: 2, flaky: true });
-    expect(reports[0]!.passRate).toBeCloseTo(2 / 3);
-    expect(reports[0]!.sampleVerdicts).toHaveLength(3);
-    expect(outcomes).toEqual([{ caseId: "sometimes", name: "Case one", status: "fail", passRate: reports[0]!.passRate, samples: 3 }]);
+    expect(reports[0].passRate).toBeCloseTo(2 / 3);
+    expect(reports[0].sampleVerdicts).toHaveLength(3);
+    expect(outcomes).toEqual([{ caseId: "sometimes", name: "Case one", status: "fail", passRate: reports[0].passRate, samples: 3 }]);
   });
 
   it("does not let a missing handoff link fail a boundary case's recorded status", async () => {

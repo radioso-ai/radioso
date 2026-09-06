@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-09-03
+last_updated: 2026-09-05
 ---
 
 # Code Map
@@ -156,6 +156,13 @@ typed query builder) on the shared `pg.Pool`; Postgres-specific fragments live i
 the `Database` pool wrapper, the pgvector/full-text adapters, and the connector files bound to
 the published `@radioso/connector-api` contract — enforced by `pnpm run lint:no-raw-sql`
 (`scripts/checkNoRawSql.mjs`). Migrations themselves stay raw `.sql`.
+
+`pnpm run lint:unbound-methods` (`scripts/checkUnboundMethods.mjs`) catches a class or
+interface method being passed or stored without its receiver, including first-party
+workspace packages. Bind the method or pass an arrow that calls it with its owner;
+reviewed structural-port exceptions use a path, member, and receiver fingerprint in
+the allowlist beside the script. Backend CI and `pnpm run ci:local` run the complete
+backend lint chain.
 
 Should not own product rules. Domain modules depend on a `*RepositoryPort` (a
 type) and never import `pg`, Kysely, the `Database` class, or a concrete repository.
@@ -494,9 +501,11 @@ Public surfaces and key files:
 - `backend/src/modules/agentBundle/domain.ts` (bundle shape, `unresolved` kinds)
 - `backend/src/modules/agentBundle/exportService.ts`
 - `backend/src/modules/agentBundle/importService.ts`
+- `backend/src/modules/agentBundle/importCleanupWorker.ts` (stale applying-job compensation)
 - `backend/src/modules/agentBundle/importProjection.ts` (placeholder handling)
 - `backend/src/app/composition/agentBundleComposition.ts` (port adapting)
 - `backend/src/app/http/routes/agentBundleRoutes.ts`
+- `backend/src/db/repositories/agentBundleImportRepository.ts` (durable import lifecycle and idempotency)
 - `backend/src/modules/skills/capabilityRegistry.ts` (`portable` settings flag)
 - `frontend/lib/agent-bundle.ts` (file reading, filename, unresolved grouping)
 - `frontend/lib/api-agent-bundle.ts`
@@ -506,6 +515,8 @@ Public surfaces and key files:
 Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/agent-bundle-export.test.ts tests/unit/agent-bundle-import.test.ts tests/unit/agent-bundle-routes.test.ts tests/unit/skill-capability-portability.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/agent-bundle-import-jobs.test.ts tests/unit/agent-bundle-import-cleanup-worker.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/agent-bundle-import-jobs.integration.test.ts --no-file-parallelism`
 - `cd frontend && pnpm exec vitest run tests/unit/agent-bundle.test.ts`
 - `cd frontend && pnpm exec playwright test tests/e2e/agent-bundle.spec.ts`
 
@@ -1400,7 +1411,8 @@ Primary paths:
 - `backend/tests/fixtures/conversation-quality/` — the dataset (corpus, seed
   routines and directives, agent, cases, `baseline.json`) and its `README.md`
 - `backend/scripts/runEvals.ts` — headless CLI that seeds fixtures, drives turns
-  through `WorkbenchReplayRunner`, scores, and gates on the baseline
+  through `WorkbenchReplayRunner`, scores, and gates on the baseline; every selected
+  case must have a committed baseline entry
 - `.github/workflows/conversation-quality-evals.yml` — nightly live run
 
 Full-assistant runs use the same conversation turn assembly as production chat

@@ -52,7 +52,7 @@ const createPrefilter = (overrides: {
             ),
           };
         },
-      } as never,
+      },
       embeddingModelForWorkspace: vi.fn().mockResolvedValue("text-embedding-3-small"),
       logger: { debug: vi.fn(), warn: vi.fn() } as never,
       routineDefinitionRepository: { searchActivationTriggerEmbeddings: search } as never,

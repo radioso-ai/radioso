@@ -16,17 +16,6 @@ import type {
 const workspaceId = "4d7293c8-d241-4f8f-a4db-3df5b88da44c";
 type ProviderNeutralCloseReason = "superseded" | "shutdown" | "transport_lost";
 
-type Deferred<T> = {
-  promise: Promise<T>;
-  resolve(value: T): void;
-};
-
-const deferred = <T>(): Deferred<T> => {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((onResolve) => { resolve = onResolve; });
-  return { promise, resolve };
-};
-
 class TestClock implements MonotonicClock {
   private currentMs = 0;
   private readonly timers = new Map<ReturnType<typeof setTimeout>, { at: number; callback: () => void }>();
@@ -161,8 +150,8 @@ describe("WorkspaceGateway transport continuity RED contract", () => {
     expect(f.restorationFence).toHaveBeenCalledOnce();
     expect(f.transport.subscribe).toHaveBeenCalledOnce();
     expect(f.connection.enqueueResync).toHaveBeenCalledOnce();
-    expect(f.restorationFence.mock.invocationCallOrder[0]!)
-      .toBeLessThan(f.connection.enqueueResync.mock.invocationCallOrder[0]!);
+    expect(f.restorationFence.mock.invocationCallOrder[0])
+      .toBeLessThan(f.connection.enqueueResync.mock.invocationCallOrder[0]);
 
     await attachment.release();
     await f.gateway.shutdown();

@@ -37,7 +37,7 @@ export const createSessionMcpServerManager = ({
   const toToolCatalogKey = () => "ask_agent";
 
   const createSessionHandle = async (
-    session: AccessSessionRecord,
+    _session: AccessSessionRecord,
   ): Promise<SessionMcpServerHandle> => {
     const toolCatalogKey = toToolCatalogKey();
     const serverHandle = createRadiosoMcpServer({

@@ -49,7 +49,7 @@ export const apiPrincipalRouteInventory: ApiPrincipalRouteInventory = {
   markRouteMount: markApiPrincipalRouteMount,
 };
 
-export type ApiPrincipalRouteEligibility = {
+type ApiPrincipalRouteEligibility = {
   allowedPrincipalKinds: readonly AuthenticatedPrincipal["type"][];
   permission: string;
   sessionOnly: boolean;
@@ -86,6 +86,8 @@ const declarations: readonly PolicyDeclaration[] = [
   sessionOnly("POST", "/api/v1/account/invitations", "account.users.manage"),
   sessionOnly("DELETE", "/api/v1/account/invitations/:invitationId", "account.users.manage"),
   sessionOnly("POST", "/api/v1/account/switch", "account.membership.read"),
+  sessionOnly("GET", "/api/v1/auth/session"),
+  sessionOnly("POST", "/api/v1/auth/invitations/:invitationToken/accept-as-current-user"),
   sessionOnly("DELETE", "/api/v1/account", "account.organization.delete"),
   sessionOnly("PATCH", "/api/v1/account", "account.organization.rename"),
   sessionOnly("PATCH", "/api/v1/account/users/:membershipId", "account.membership.role.update"),
@@ -134,6 +136,7 @@ const declarations: readonly PolicyDeclaration[] = [
     .map((path) => allow("GET", `/api/v1/agents${path}`, "workspace.agents.read")),
   ...["/:agentId/channels/lifecycle", "/:agentId/directives", "/:agentId/routine-skill-catalog", "/:agentId/routines", "/:agentId/routines/:routineId", "/:agentId/bundle"]
     .map((path) => allow("GET", `/api/v1/agents${path}`, "workspace.agents.read")),
+  allow("GET", "/api/v1/agents/bundle/imports/:importId", "workspace.agents.read"),
   allow("POST", "/api/v1/agents", "workspace.agents.manage"),
   // Importing a bundle creates an agent, so it sits with agent creation rather than
   // with the per-agent authoring routes below.

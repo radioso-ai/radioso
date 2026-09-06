@@ -134,7 +134,7 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
   async dispatch(
     input: Parameters<ConversationRoutineSkillDispatcher["dispatch"]>[0],
   ): Promise<RoutineSkillResult> {
-    const { skillName, state, turn } = input;
+    const { skillName, state } = input;
 
     return traceOperation({
       name: "routine.skill.dispatch",

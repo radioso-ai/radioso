@@ -75,7 +75,7 @@ const change = {
 describe("propose_agent", () => {
   it("drafts an agent for review rather than creating one", async () => {
     const { adapter, creation } = adapterFor();
-    const { descriptor, createProposal, record } = toolFor(adapter);
+    const { descriptor, createProposal } = toolFor(adapter);
 
     const result = await descriptor.createTool(context).invoke(change, {} as never) as {
       targetType: string; targetLabel: string; summary: string;
@@ -253,7 +253,7 @@ describe("analyze_website", () => {
       record,
       analyzeWebsite,
       service: new WebsiteAnalysisProbeService({
-        abuseControl: { enforce } as never,
+        abuseControl: { enforce },
         audit: { record },
         abusePolicy: { limit: 5, windowMs: 3_600_000 },
         agentWizardAnalysis: { analyzeWebsite },

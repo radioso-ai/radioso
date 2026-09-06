@@ -58,22 +58,22 @@ const buildClusterableFacets = (): FacetFixture[] => [
   ...groupAIds.map((messageId, index) => ({
     messageId,
     facetText: `group a facet ${index}`,
-    embedding: groupAVectors[index]!,
+    embedding: groupAVectors[index],
     promptVersion: CURRENT_PROMPT_VERSION,
     embeddingProfileId: CURRENT_EMBEDDING_PROFILE_ID,
   })),
   ...groupBIds.map((messageId, index) => ({
     messageId,
     facetText: `group b facet ${index}`,
-    embedding: groupBVectors[index]!,
+    embedding: groupBVectors[index],
     promptVersion: CURRENT_PROMPT_VERSION,
     embeddingProfileId: CURRENT_EMBEDDING_PROFILE_ID,
   })),
 ];
 
 const buildNamingPort = (): TopicNamingPort & {
-  name: ReturnType<typeof vi.fn>;
-  nameFallback: ReturnType<typeof vi.fn>;
+  name: ReturnType<typeof vi.fn<TopicNamingPort["name"]>>;
+  nameFallback: ReturnType<typeof vi.fn<TopicNamingPort["nameFallback"]>>;
 } => ({
   name: vi.fn(async (
     exemplars: TopicNamingExemplars,
@@ -249,7 +249,7 @@ describe("CensusService.run (T020)", () => {
     expect(totalTopicMembers + result.unclassifiedCount).toBe(result.populationSize);
     expect(result.unclassifiedCount).toBeGreaterThanOrEqual(3);
 
-    const saved = topicRepository.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
+    const saved = topicRepository.saveRun.mock.calls[0][0] as SaveTopicCensusRunInput;
     expect(saved.run.questionCount).toBe(11);
     expect(saved.run.unclassifiedCount).toBe(result.unclassifiedCount);
     const savedMessageIds = saved.memberships.map((membership) => membership.messageId);
@@ -291,7 +291,7 @@ describe("CensusService.run (T020)", () => {
 
     expect(result.populationSize).toBe(9);
     expect(result.unclassifiedCount).toBeGreaterThanOrEqual(1);
-    const saved = topicRepository.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
+    const saved = topicRepository.saveRun.mock.calls[0][0] as SaveTopicCensusRunInput;
     expect(saved.memberships.map((membership) => membership.messageId)).not.toContain(staleId);
   });
 
@@ -316,7 +316,7 @@ describe("CensusService.run (T020)", () => {
 
     expect(result.populationSize).toBe(9);
     expect(result.unclassifiedCount).toBeGreaterThanOrEqual(1);
-    const saved = topicRepository.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
+    const saved = topicRepository.saveRun.mock.calls[0][0] as SaveTopicCensusRunInput;
     expect(saved.memberships.map((membership) => membership.messageId)).not.toContain(nullEmbeddingId);
   });
 
@@ -332,7 +332,7 @@ describe("CensusService.run (T020)", () => {
 
     const result = await service.run({ workspaceId, windowStart, windowEnd });
 
-    const saved = topicRepository.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
+    const saved = topicRepository.saveRun.mock.calls[0][0] as SaveTopicCensusRunInput;
     for (const topic of result.topics) {
       const actualMemberCount = saved.memberships.filter((membership) => membership.topicId === topic.topicId).length;
       expect(topic.memberCount).toBe(actualMemberCount);
@@ -347,7 +347,7 @@ describe("CensusService.run (T020)", () => {
     const topicRepository = buildTopicRepository();
     const result = await new CensusService(buildDependencies({ eligibleIds, facets: clusterableFacets, topicRepository }))
       .run({ workspaceId, windowStart, windowEnd });
-    const saved = topicRepository.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
+    const saved = topicRepository.saveRun.mock.calls[0][0] as SaveTopicCensusRunInput;
 
     for (const topic of result.topics) {
       const expected = saved.memberships
@@ -375,8 +375,8 @@ describe("CensusService.run (T020)", () => {
       topicRepository: withoutExcludedId,
     })).run({ workspaceId, windowStart, windowEnd });
 
-    const savedWith = withExcludedId.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
-    const savedWithout = withoutExcludedId.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
+    const savedWith = withExcludedId.saveRun.mock.calls[0][0] as SaveTopicCensusRunInput;
+    const savedWithout = withoutExcludedId.saveRun.mock.calls[0][0] as SaveTopicCensusRunInput;
     expect(savedWith.run.seed).toBe(savedWithout.run.seed);
   });
 
@@ -405,8 +405,8 @@ describe("CensusService.run (T020)", () => {
       topicRepository: withExtra,
     })).run({ workspaceId, windowStart, windowEnd });
 
-    const savedBase = base.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
-    const savedWithExtra = withExtra.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
+    const savedBase = base.saveRun.mock.calls[0][0] as SaveTopicCensusRunInput;
+    const savedWithExtra = withExtra.saveRun.mock.calls[0][0] as SaveTopicCensusRunInput;
     expect(savedBase.run.seed).not.toBe(savedWithExtra.run.seed);
   });
 
@@ -421,8 +421,8 @@ describe("CensusService.run (T020)", () => {
     const secondResult = await new CensusService(buildDependencies({ eligibleIds, facets: clusterableFacets, topicRepository: second }))
       .run({ workspaceId, windowStart, windowEnd });
 
-    const savedFirst = first.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
-    const savedSecond = second.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
+    const savedFirst = first.saveRun.mock.calls[0][0] as SaveTopicCensusRunInput;
+    const savedSecond = second.saveRun.mock.calls[0][0] as SaveTopicCensusRunInput;
     expect(savedFirst.run.seed).toBe(savedSecond.run.seed);
 
     const groupsById = (input: SaveTopicCensusRunInput) => {
@@ -486,7 +486,7 @@ describe("CensusService.run facet readiness (spec 956 follow-up)", () => {
     const clusterableFacets = buildClusterableFacets();
     const staleSpaceId = randomUUID();
     const staleFacet = {
-      ...clusterableFacets[0]!,
+      ...clusterableFacets[0],
       embeddingProfileId: staleSpaceId,
     };
     const facets = [staleFacet, ...clusterableFacets.slice(1)];
@@ -498,7 +498,7 @@ describe("CensusService.run facet readiness (spec 956 follow-up)", () => {
 
     expect(result.populationSize).toBe(8);
     expect(result.facetReadyQuestionCount).toBe(7);
-    const saved = topicRepository.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
+    const saved = topicRepository.saveRun.mock.calls[0][0] as SaveTopicCensusRunInput;
     expect(saved.memberships.map((membership) => membership.messageId)).not.toContain(staleFacet.messageId);
   });
 
@@ -566,7 +566,7 @@ describe("CensusService.run identity matching (T028+T029)", () => {
 
     expect(topicRepository.listMatchableTopics).toHaveBeenCalledWith(workspaceId);
     expect(namingPort.name).toHaveBeenCalledTimes(2);
-    const saved = topicRepository.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
+    const saved = topicRepository.saveRun.mock.calls[0][0] as SaveTopicCensusRunInput;
     expect(saved.transitions).toHaveLength(2);
     for (const transition of saved.transitions!) {
       expect(transition.kind).toBe("emerged");
@@ -591,7 +591,7 @@ describe("CensusService.run identity matching (T028+T029)", () => {
 
     await service.run({ workspaceId, windowStart, windowEnd });
 
-    const saved = topicRepository.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
+    const saved = topicRepository.saveRun.mock.calls[0][0] as SaveTopicCensusRunInput;
     expect(saved.topics).toEqual([]);
     expect(saved.memberships).toEqual([]);
     expect(saved.dissolvedTopicIds).toEqual([]);
@@ -619,7 +619,7 @@ describe("CensusService.run identity matching (T028+T029)", () => {
     // `priorTopic` and must not trigger a second naming call.
     expect(namingPort.name).toHaveBeenCalledTimes(1);
 
-    const saved = topicRepository.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
+    const saved = topicRepository.saveRun.mock.calls[0][0] as SaveTopicCensusRunInput;
     const survivedTopic = saved.topics.find((topic) => topic.id === priorTopic.id);
     expect(survivedTopic).toBeDefined();
     expect(survivedTopic!.title).toBeUndefined();
@@ -663,7 +663,7 @@ describe("CensusService.run identity matching (T028+T029)", () => {
 
     const result = await service.run({ workspaceId, windowStart, windowEnd });
 
-    const saved = topicRepository.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
+    const saved = topicRepository.saveRun.mock.calls[0][0] as SaveTopicCensusRunInput;
     expect(saved.dissolvedTopicIds).toEqual([doomed.id]);
     expect(result.dissolvedTopicIds).toEqual([doomed.id]);
     expect(result.dissolvedTopics).toEqual([{ id: doomed.id, title: doomed.title }]);
@@ -716,7 +716,7 @@ describe("CensusService.run identity matching (T028+T029)", () => {
     await service.run({ workspaceId, windowStart, windowEnd });
 
     expect(namingPort.name).toHaveBeenCalledTimes(2);
-    const saved = topicRepository.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
+    const saved = topicRepository.saveRun.mock.calls[0][0] as SaveTopicCensusRunInput;
     const splitTransitions = saved.transitions!.filter((transition) => transition.kind === "split");
     expect(splitTransitions).toHaveLength(2);
     for (const transition of splitTransitions) {
@@ -745,10 +745,10 @@ describe("CensusService.run identity matching (T028+T029)", () => {
 
     await service.run({ workspaceId, windowStart, windowEnd });
 
-    const saved = topicRepository.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
+    const saved = topicRepository.saveRun.mock.calls[0][0] as SaveTopicCensusRunInput;
     const mergedTransitions = saved.transitions!.filter((transition) => transition.kind === "merged");
     expect(mergedTransitions).toHaveLength(1);
-    expect(new Set(mergedTransitions[0]!.parentTopicIds)).toEqual(new Set([parentOne.id, parentTwo.id]));
+    expect(new Set(mergedTransitions[0].parentTopicIds)).toEqual(new Set([parentOne.id, parentTwo.id]));
     expect(new Set(saved.dissolvedTopicIds)).toEqual(new Set([parentOne.id, parentTwo.id]));
     expect(saved.transitions!.filter((transition) => transition.kind === "dissolved").map((transition) => transition.topicId).sort())
       .toEqual([parentOne.id, parentTwo.id].sort());
@@ -769,7 +769,7 @@ describe("CensusService.run identity matching (T028+T029)", () => {
 
     await service.run({ workspaceId, windowStart, windowEnd });
 
-    const saved = topicRepository.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
+    const saved = topicRepository.saveRun.mock.calls[0][0] as SaveTopicCensusRunInput;
     const survivedTransition = saved.transitions!.find((transition) => transition.topicId === priorTopic.id);
     expect(survivedTransition?.kind).toBe("survived");
     expect(survivedTransition?.viaCentroidFallback).toBe(true);
@@ -803,7 +803,7 @@ describe("CensusService.run observability (T033)", () => {
 
     const completedCalls = emit.mock.calls.filter(([event]) => event.eventType === "audience_pulse.census_run_completed");
     expect(completedCalls).toHaveLength(1);
-    const event = completedCalls[0]![0];
+    const event = completedCalls[0][0];
 
     expect(event.metrics).toEqual(expect.objectContaining({
       populationSize: 8,
@@ -845,7 +845,7 @@ describe("CensusService.run observability (T033)", () => {
 
     const completedCalls = emit.mock.calls.filter(([event]) => event.eventType === "audience_pulse.census_run_completed");
     expect(completedCalls).toHaveLength(1);
-    expect(completedCalls[0]![0].metrics).toEqual(expect.objectContaining({
+    expect(completedCalls[0][0].metrics).toEqual(expect.objectContaining({
       facetReadyQuestionCount: 0,
       namingCallsIssued: 0,
       namingCallsReused: 0,

@@ -517,6 +517,30 @@ CREATE TABLE public.agent_access_grants (
 
 
 --
+-- Name: agent_bundle_imports; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_bundle_imports (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workspace_id uuid NOT NULL,
+    actor_account_id uuid,
+    idempotency_key text,
+    state text DEFAULT 'queued'::text NOT NULL,
+    agent_id uuid,
+    unresolved jsonb DEFAULT '[]'::jsonb NOT NULL,
+    failure_code text,
+    cleanup_lease_token uuid,
+    cleanup_lease_expires_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    applied_at timestamp with time zone,
+    compensated_at timestamp with time zone,
+    CONSTRAINT agent_bundle_imports_failure_code_check CHECK ((failure_code = ANY (ARRAY['invalid_bundle'::text, 'apply_failed'::text]))),
+    CONSTRAINT agent_bundle_imports_state_check CHECK ((state = ANY (ARRAY['queued'::text, 'applying'::text, 'applied'::text, 'failed'::text, 'compensated'::text])))
+);
+
+
+--
 -- Name: agent_context_variables; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2789,6 +2813,21 @@ CREATE TABLE public.usage_events (
 
 
 --
+-- Name: user_federated_identities; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.user_federated_identities (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid NOT NULL,
+    provider text NOT NULL,
+    subject text NOT NULL,
+    provider_email text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_authenticated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: users; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3331,6 +3370,14 @@ ALTER TABLE ONLY public.agent_access_grants
 
 ALTER TABLE ONLY public.agent_access_grants
     ADD CONSTRAINT agent_access_grants_token_hash_key UNIQUE (token_hash);
+
+
+--
+-- Name: agent_bundle_imports agent_bundle_imports_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_bundle_imports
+    ADD CONSTRAINT agent_bundle_imports_pkey PRIMARY KEY (id);
 
 
 --
@@ -4558,6 +4605,22 @@ ALTER TABLE ONLY public.usage_events
 
 
 --
+-- Name: user_federated_identities user_federated_identities_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_federated_identities
+    ADD CONSTRAINT user_federated_identities_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: user_federated_identities user_federated_identities_provider_subject_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_federated_identities
+    ADD CONSTRAINT user_federated_identities_provider_subject_key UNIQUE (provider, subject);
+
+
+--
 -- Name: users users_email_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4691,6 +4754,20 @@ ALTER TABLE ONLY public.workspaces
 
 ALTER TABLE ONLY public.workspaces
     ADD CONSTRAINT workspaces_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: agent_bundle_imports_stale_applying_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX agent_bundle_imports_stale_applying_idx ON public.agent_bundle_imports USING btree (updated_at) WHERE ((state = 'applying'::text) AND (agent_id IS NOT NULL));
+
+
+--
+-- Name: agent_bundle_imports_workspace_idempotency_active_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX agent_bundle_imports_workspace_idempotency_active_idx ON public.agent_bundle_imports USING btree (workspace_id, idempotency_key) WHERE ((idempotency_key IS NOT NULL) AND (state = ANY (ARRAY['queued'::text, 'applying'::text, 'applied'::text])));
 
 
 --
@@ -6409,6 +6486,13 @@ CREATE INDEX idx_usage_events_workspace_occurred_at ON public.usage_events USING
 
 
 --
+-- Name: idx_user_federated_identities_user; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_user_federated_identities_user ON public.user_federated_identities USING btree (user_id);
+
+
+--
 -- Name: idx_vector_index_checkpoints_space; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7893,6 +7977,22 @@ ALTER TABLE ONLY public.agent_access_grants
 
 
 --
+-- Name: agent_bundle_imports agent_bundle_imports_actor_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_bundle_imports
+    ADD CONSTRAINT agent_bundle_imports_actor_account_id_fkey FOREIGN KEY (actor_account_id) REFERENCES public.accounts(id) ON DELETE SET NULL;
+
+
+--
+-- Name: agent_bundle_imports agent_bundle_imports_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_bundle_imports
+    ADD CONSTRAINT agent_bundle_imports_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: agent_context_variables agent_context_variables_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9058,6 +9158,14 @@ ALTER TABLE ONLY public.usage_events
 
 ALTER TABLE ONLY public.usage_events
     ADD CONSTRAINT usage_events_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: user_federated_identities user_federated_identities_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_federated_identities
+    ADD CONSTRAINT user_federated_identities_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 
 --

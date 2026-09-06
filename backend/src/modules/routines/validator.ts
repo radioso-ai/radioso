@@ -31,7 +31,7 @@ const slotReferencePattern = /\{\{\s*slot\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/gu;
 
 const collectSlotReferences = (text: string | null | undefined): string[] =>
   text
-    ? [...text.matchAll(slotReferencePattern)].map((match) => match[1]!).filter(Boolean)
+    ? [...text.matchAll(slotReferencePattern)].map((match) => match[1]).filter(Boolean)
     : [];
 
 const metadataAttemptLimit = (metadata: Record<string, unknown>): number | null =>

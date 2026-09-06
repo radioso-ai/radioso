@@ -425,11 +425,10 @@ export class LlmProviderRegistry {
   }
 
   private createInferencePipeline(config: LlmCapabilityDefault, usageEventRecorder?: UsageEventRecorder): ModelInferencePipeline {
-    const registry = this;
     const create = async (workspaceId?: string) => {
-      const credentialed = await registry.resolveCredentialedConfig(config, workspaceId, true);
+      const credentialed = await this.resolveCredentialedConfig(config, workspaceId, true);
       return new ModelInferencePipelineService(
-        registry.clientCache.getOrCreate(credentialed),
+        this.clientCache.getOrCreate(credentialed),
         usageEventRecorder,
       );
     };

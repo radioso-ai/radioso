@@ -30,6 +30,7 @@ export type AcceptedResponse = ApiSchemas['AcceptedResponse']
 export type PasswordResetRequest = ApiSchemas['PasswordResetRequest']
 export type PasswordResetConfirmRequest = ApiSchemas['PasswordResetConfirmRequest']
 export type PasswordResetConfirmResponse = ApiSchemas['PasswordResetConfirmResponse']
+export type SessionResponse = ApiSchemas['SessionResponse']
 export type EmailVerificationVerifyRequest = ApiSchemas['EmailVerificationVerifyRequest']
 export type EmailVerificationVerifyResponse = ApiSchemas['EmailVerificationVerifyResponse']
 export type EmailVerificationResendRequest = ApiSchemas['EmailVerificationResendRequest']
@@ -65,7 +66,6 @@ export type AgentContextVariableEnablementListResponse = ApiSchemas['AgentContex
 export type RoutineDefinitionStatus = ApiSchemas['RoutineDefinition']['status']
 export type RoutineSlotType = 'text' | 'number' | 'boolean' | 'email' | 'date'
 export type RoutineStepKind = 'chat' | 'tool' | 'action' | 'approval'
-export type ApprovalOption = NonNullable<ApiSchemas['RoutineDefinition']['steps'][number]['options']>[number]
 export type RoutineGuardKind = 'llm' | 'default' | 'slot_filled' | 'outcome' | 'counter' | 'field'
 export type RoutineReentryMode = 'once_per_conversation' | 'always' | 'semantic'
 export type RoutineFieldGuardOp =
@@ -76,7 +76,7 @@ export type RoutineTerminalKind = 'complete' | 'handoff'
 // Binding kinds come from the shared definition package so the frontend dialect
 // cannot drift from the wire contract again (this type was stale after spec 097
 // added contextVariableRef, which silently excluded context-bound routines).
-export type RoutineStepMetadata = {
+type RoutineStepMetadata = {
   inputBindings?: Record<string, RoutineInputBinding>
   outputAssignments?: Record<string, string>
   mode?: 'typed' | 'untyped'
@@ -164,6 +164,7 @@ export type AssistantBehaviorSettings = Pick<
   // (assistant) settings; the workspace-level mapping leaves it undefined.
   contactRequestsEnabled?: boolean
   webhookExportsEnabled?: boolean
+  handoffOnRetrievalMiss?: boolean
   contactRequestDelivery?: AgentContactRequestDelivery
   theme: WebsiteEmbedThemeSettings
   branding?: AgentBrandingSettings
@@ -194,8 +195,6 @@ export type RetrievalMetadataRule = Omit<ApiSchemas['RetrievalMetadataRule'], 'c
 export type RetrievalMetadataValueType = RetrievalMetadataRule['valueType']
 export type MetadataFieldSuggestion = ApiSchemas['RetrievalDefaultsResponse']['metadataFieldSuggestions'][number]
 export type RetrievalMetadataRuleOperator = RetrievalMetadataRule['operator']
-export type RetrievalMetadataRuleEffect = RetrievalMetadataRule['effect']
-export type RetrievalMetadataRuleCombinator = NonNullable<RetrievalMetadataRule['combinator']>
 export type RetrievalMetadataCondition = NonNullable<RetrievalMetadataRule['conditions']>[number]
 
 export type IngestionSettings = ApiSchemas['IngestionSettings']
@@ -209,13 +208,10 @@ export type EmbeddingCoverage = ApiSchemas['EmbeddingCoverage']
 export type WorkspaceIngestionReprocessResponse = ApiSchemas['WorkspaceIngestionReprocessResponse']
 export type DocumentCreateRequest = ApiSchemas['DocumentCreateRequest']
 export type DocumentCreateResponse = ApiSchemas['DocumentOperationResponse']
-export type DocumentSourceSummary = ApiSchemas['DocumentSourceSummary']
-export type DocumentSourceKind = DocumentSourceSummary['kind']
 export type AgentSourceScope = ApiSchemas['AgentSourceScope']
 /** Hand-authored tag values. The write contract accepts flat JSON scalars only. */
 export type DocumentMetadataRecord = Record<string, string | number | boolean | null>
 /** What the read contract returns: the same scalars, plus null. */
-export type DocumentMetadataReadRecord = ApiSchemas['DocumentSourceListItem']['documentMetadata']
 
 export type DocumentSourceListItem = ApiSchemas['DocumentSourceListItem']
 export type DocumentSourceListResponse = ApiSchemas['DocumentSourceListResponse']
@@ -256,8 +252,6 @@ export interface DocumentChunkDetail {
   embeddingDimensions: number | null
 }
 
-export type DocumentSearchAction = ApiSchemas['DocumentSearchAction']
-export type DocumentSearchResult = ApiSchemas['DocumentSearchResult']
 export type DocumentSearchResponse = ApiSchemas['DocumentSearchResponse'] & {
   activityTrace?: ActivityTrace
 }
@@ -347,13 +341,7 @@ export type ChatSuggestion = Omit<ApiSchemas['ChatSuggestion'], 'kind'> & {
 }
 
 export type ActivitySummary = ApiSchemas['ActivitySummary']
-export type SkillDiagnostic = NonNullable<ApiSchemas['ActivitySummary']['skillDiagnostic']>
-export type ParsedQueryInfo = ApiSchemas['ParsedQuery']
-export type RetrievalSubqueryInfo = ApiSchemas['RetrievalSubquery']
-export type CandidateCounts = ApiSchemas['CandidateCounts']
-export type AppliedConstraintInfo = ApiSchemas['AppliedConstraint']
 export type ActivityStage = ApiSchemas['ActivityStage']
-export type ActivityLink = ApiSchemas['ActivityLink']
 export type ActivityTrace = ApiSchemas['ActivityTrace']
 export type TurnTraceEnvelope = ApiSchemas['TurnTraceEnvelope']
 export type ConversationTrace = ApiSchemas['ConversationTrace']
@@ -402,7 +390,7 @@ export interface ChatStreamSuggestions {
 
 export type SkillStreamPhase = 'active' | 'completed' | 'failed'
 
-export interface SkillReceiptField {
+interface SkillReceiptField {
   name: string
   displayName: string
   value: string
@@ -724,6 +712,7 @@ export const agentToAssistantBehaviorSettings = (agent: AgentSettings): Assistan
   citationDisplayEnabled: agent.citationDisplayEnabled,
   contactRequestsEnabled: agent.contactRequestsEnabled,
   webhookExportsEnabled: agent.webhookExportsEnabled,
+  handoffOnRetrievalMiss: agent.handoffOnRetrievalMiss,
   contactRequestDelivery: agent.contactRequestDelivery,
   theme: agent.theme,
   branding: agent.branding,

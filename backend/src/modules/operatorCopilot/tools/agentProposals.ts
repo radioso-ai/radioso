@@ -204,5 +204,5 @@ export const createAgentProposalCopilotTools = (
         };
       },
     }),
-  } as CopilotToolDescriptor];
+  }];
 };

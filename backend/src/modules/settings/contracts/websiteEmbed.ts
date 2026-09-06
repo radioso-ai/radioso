@@ -1,17 +1,7 @@
 export {
-  DEFAULT_WEBSITE_EMBED_LAUNCHER_LABEL,
-  DEFAULT_WEBSITE_EMBED_LAUNCHER_POSITION,
-  DEFAULT_WEBSITE_EMBED_SCRIPT_PATH,
-  defaultWebsiteEmbedTheme,
   defaultWebsiteEmbedSettings,
   coerceWebsiteEmbedSettings,
-  isAllowedWebsiteEmbedOrigin,
-  validateWebsiteEmbedSettings,
   websiteEmbedLauncherPositions,
-  type WebsiteEmbedCopyPacks,
-  type WebsiteEmbedExpertOverrides,
   type WebsiteEmbedLauncherPosition,
-  type WebsiteEmbedSettingsInput,
   type WebsiteEmbedSettingsRecord,
-  type WebsiteEmbedThemeSettings,
 } from "../domain/websiteEmbedSettings.js";

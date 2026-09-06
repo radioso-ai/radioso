@@ -299,7 +299,7 @@ const parseModelResult = (
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
-  } catch (error) {
+  } catch {
     throw new AudiencePulseReportValidationError("Audience Pulse model response was not valid JSON");
   }
 
@@ -1031,8 +1031,13 @@ export class AudiencePulseService implements AudiencePulsePort {
           }
         }
       } catch (error) {
-        // Settling usage is accounting work, so surface failures while still cleaning up the lease.
+        // A usage reservation that cannot be released is a billing-integrity problem, so it
+        // deliberately wins over whatever error was already propagating: callers see the
+        // accounting failure. `audience_pulse_service.test.ts` pins this precedence.
+        // `narrativeReused` is carried even here: a run that reused its narrative and then
+        // failed to settle must not report itself as having paid for one.
         await this.recordOutcome(input, "internal", startedAt, { narrativeReused }).catch(() => undefined);
+        // eslint-disable-next-line no-unsafe-finally -- deliberate precedence, see above
         throw error;
       } finally {
         await lease.release().catch(() => undefined);

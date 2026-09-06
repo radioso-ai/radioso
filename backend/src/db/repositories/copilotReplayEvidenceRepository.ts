@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 
 import type { Db } from "../../shared/infra/kysely/types.js";
 import type {
-  CopilotEvalCaseReplayOverrides,
   CopilotEvalCaseStatus,
   CopilotEvalRunStatus,
   CopilotReplayEvidenceRecord,
@@ -44,7 +43,7 @@ const mapRecord = (row: CopilotReplayEvidenceRow): CopilotReplayEvidenceRecord =
   baselineCapturedAt: row.baseline_captured_at,
   recordedStatus: row.recorded_status as CopilotEvalCaseStatus,
   verdict: row.verdict as CopilotEvalRunStatus,
-  overrides: (row.overrides ?? {}) as CopilotEvalCaseReplayOverrides,
+  overrides: (row.overrides ?? {}),
   directivesExcluded: (row.directives_excluded ?? []) as ReadonlyArray<string>,
   createdAt: row.created_at,
 });
@@ -74,7 +73,7 @@ export class CopilotReplayEvidenceRepository implements CopilotReplayEvidenceRep
       })
       .returning(columns)
       .executeTakeFirstOrThrow();
-    return mapRecord(row as CopilotReplayEvidenceRow);
+    return mapRecord(row);
   }
 
   async findMany(input: {

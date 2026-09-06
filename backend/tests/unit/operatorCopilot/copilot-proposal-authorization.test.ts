@@ -108,7 +108,7 @@ describe("proposal authorization by target type", () => {
 
 describe("reloaded proposal cards", () => {
   it("keeps a document removal's irreversible warning and its label across a reload", () => {
-    const card = presentProposalCard(proposalRow() as never);
+    const card = presentProposalCard(proposalRow());
 
     expect(card.targetLabel).toBe("Refund policy");
     expect(card.removal).toBe(true);
@@ -119,7 +119,7 @@ describe("reloaded proposal cards", () => {
       targetType: "ingestion_settings",
       targetRef: {},
       payload: { name: "Ingestion settings", chunkingStrategy: "fixed_window", fixedWindowChunkSize: 1_500 },
-    }) as never);
+    }));
 
     expect(card.targetLabel).not.toBe("");
     expect(card.removal).toBeUndefined();
@@ -130,7 +130,7 @@ describe("reloaded proposal cards", () => {
       targetType: "website_crawl",
       targetRef: { url: "https://help.example.com" },
       payload: { name: "https://help.example.com", url: "https://help.example.com", limit: 25 },
-    }) as never);
+    }));
 
     expect(card.targetLabel).toBe("https://help.example.com");
   });
@@ -140,7 +140,7 @@ describe("reloaded proposal cards", () => {
       targetType: "directive",
       targetRef: { agentId: "agent-1", directiveId: "directive-1" },
       payload: { op: "remove", name: "Do not guess", rationale: "Superseded." },
-    }) as never);
+    }));
 
     expect(card.targetLabel).toBe("Do not guess");
     expect(card.removal).toBe(true);
@@ -173,7 +173,7 @@ describe("live and reloaded cards state the same thing", () => {
     const descriptor = descriptors.find((candidate) => candidate.name === name);
     if (!descriptor) throw new Error(`No descriptor named ${name}`);
     const live = await descriptor.createTool(toolContext as never).invoke(input, {} as never) as { targetLabel: string; summary: string; removal?: boolean; reach?: boolean };
-    const persisted = createProposal.mock.calls[0]![0] as Record<string, unknown>;
+    const persisted = createProposal.mock.calls[0][0] as Record<string, unknown>;
     const reloaded = presentProposalCard({ ...persisted, id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", status: "pending", reason: null, appliedRef: null, messageId: null, createdAt: new Date(), updatedAt: new Date(), evidence: null } as never);
     return { live, reloaded };
   };
@@ -194,7 +194,7 @@ describe("live and reloaded cards state the same thing", () => {
   it("agrees for a document removal", async () => {
     const { createProposal, deps } = recorder();
     const adapter = createDocumentCopilotProposalAdapter({ documentAuthoring: documentPorts(), documentDeletion: { delete: vi.fn() }, workspaceAccount: { resolveAccountId: vi.fn(async () => "account-1") } });
-    const { live, reloaded } = await drafted(createDocumentProposalCopilotTools({ ...deps, proposalAdapters: [adapter] }) as never, "propose_document_removal", { documentId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd" }, createProposal);
+    const { live, reloaded } = await drafted(createDocumentProposalCopilotTools({ ...deps, proposalAdapters: [adapter] }), "propose_document_removal", { documentId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd" }, createProposal);
 
     expect(reloaded.summary).toBe(live.summary);
     expect(reloaded.targetLabel).toBe(live.targetLabel);
@@ -212,7 +212,7 @@ describe("live and reloaded cards state the same thing", () => {
         updateForWorkspace: vi.fn(),
       },
     });
-    const { live, reloaded } = await drafted(createIngestionSettingsProposalCopilotTools({ ...deps, proposalAdapters: [adapter] }) as never, "propose_ingestion_settings", { fixedWindowChunkSize: 1_500 }, createProposal);
+    const { live, reloaded } = await drafted(createIngestionSettingsProposalCopilotTools({ ...deps, proposalAdapters: [adapter] }), "propose_ingestion_settings", { fixedWindowChunkSize: 1_500 }, createProposal);
 
     expect(reloaded.summary).toBe(live.summary);
     expect(reloaded.targetLabel).toBe(live.targetLabel);
@@ -234,7 +234,7 @@ describe("live and reloaded cards state the same thing", () => {
         updateForWorkspace: vi.fn(),
       },
     });
-    const { live, reloaded } = await drafted(createWorkspaceSettingProposalCopilotTools({ ...deps, proposalAdapters: [adapter] }) as never, "propose_workspace_setting", { anonymousChatEnabled: true }, createProposal);
+    const { live, reloaded } = await drafted(createWorkspaceSettingProposalCopilotTools({ ...deps, proposalAdapters: [adapter] }), "propose_workspace_setting", { anonymousChatEnabled: true }, createProposal);
 
     expect(live.reach).toBe(true);
     expect(reloaded.reach).toBe(true);
@@ -256,7 +256,7 @@ describe("live and reloaded cards state the same thing", () => {
         updateForWorkspace: vi.fn(),
       },
     });
-    const { live, reloaded } = await drafted(createWorkspaceSettingProposalCopilotTools({ ...deps, proposalAdapters: [adapter] }) as never, "propose_workspace_setting", { websiteEmbedLauncherLabel: "Chat with us" }, createProposal);
+    const { live, reloaded } = await drafted(createWorkspaceSettingProposalCopilotTools({ ...deps, proposalAdapters: [adapter] }), "propose_workspace_setting", { websiteEmbedLauncherLabel: "Chat with us" }, createProposal);
 
     expect(live.reach).toBeUndefined();
     expect(reloaded.reach).toBeUndefined();
@@ -269,7 +269,7 @@ describe("live and reloaded cards state the same thing", () => {
       workspaceAccount: { resolveAccountId: vi.fn(async () => "account-1") },
       crawlPolicy: () => ({ enabled: true, defaultLimit: 50, maxLimit: 200 }),
     });
-    const { live, reloaded } = await drafted(createWebsiteCrawlProposalCopilotTools({ ...deps, proposalAdapters: [adapter] }) as never, "start_crawl", { url: "https://help.example.com" }, createProposal);
+    const { live, reloaded } = await drafted(createWebsiteCrawlProposalCopilotTools({ ...deps, proposalAdapters: [adapter] }), "start_crawl", { url: "https://help.example.com" }, createProposal);
 
     expect(reloaded.summary).toBe(live.summary);
     expect(reloaded.targetLabel).toBe(live.targetLabel);
@@ -465,16 +465,16 @@ describe("a maximal draft still produces a storable card", () => {
     });
     const [descriptor] = createWebsiteCrawlProposalCopilotTools({ ...deps, proposalAdapters: [adapter] });
 
-    await descriptor!.createTool(toolContext as never).invoke({
+    await descriptor.createTool(toolContext as never).invoke({
       url: `https://help.example.com/${"p".repeat(600)}`,
       limit: 1_000,
       includeUrlPatterns: Array.from({ length: 50 }, (_, index) => `/${String(index).padStart(3, "0")}${"x".repeat(190)}`),
       excludeUrlPatterns: Array.from({ length: 50 }, (_, index) => `/${String(index).padStart(3, "0")}${"z".repeat(190)}`),
       rationale: longestRationale,
-    } as never, {} as never);
+    }, {} as never);
 
-    const persisted = (createProposal.mock.calls[0]![0] as { payload: Record<string, unknown> }).payload;
-    await expect(adapter.preview("workspace-1", (createProposal.mock.calls[0]![0] as { targetRef: unknown }).targetRef, persisted)).resolves.toBeDefined();
+    const persisted = (createProposal.mock.calls[0][0] as { payload: Record<string, unknown> }).payload;
+    await expect(adapter.preview("workspace-1", (createProposal.mock.calls[0][0] as { targetRef: unknown }).targetRef, persisted)).resolves.toBeDefined();
   });
 
   it("for a document retrieval change whose expiry carries maximal fractional precision", async () => {
@@ -496,9 +496,9 @@ describe("a maximal draft still produces a storable card", () => {
       // Zod's datetime accepts arbitrary fractional-second precision, so this is a valid input.
       retrievalExpiresAt: `2026-08-31T10:00:00.${"0".repeat(900)}Z`,
       rationale: longestRationale,
-    } as never, {} as never);
+    }, {} as never);
 
-    const persisted = (createProposal.mock.calls[0]![0] as { payload: Record<string, unknown> }).payload;
+    const persisted = (createProposal.mock.calls[0][0] as { payload: Record<string, unknown> }).payload;
     await expect(adapter.preview("workspace-1", { documentId: storedDocument.id }, persisted)).resolves.toBeDefined();
   });
 });

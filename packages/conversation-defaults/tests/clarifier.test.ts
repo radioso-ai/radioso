@@ -52,7 +52,7 @@ describe("DefaultClarifier", () => {
     ].join("\n"));
     // The model authors only the lead-in; it is never handed the option labels, so it
     // cannot echo one back as the whole answer.
-    const request = vi.mocked(modelGateway.complete).mock.calls[0]![0];
+    const request = vi.mocked(modelGateway.complete).mock.calls[0][0];
     expect(request.systemPrompt).toContain("es");
     expect(request.systemPrompt).not.toContain("Facturacion");
     expect(request.systemPrompt).not.toContain("payload_billing");
@@ -132,7 +132,7 @@ describe("DefaultClarifier", () => {
       },
     });
 
-    const systemPrompt = vi.mocked(modelGateway.complete).mock.calls[0]![0].systemPrompt
+    const systemPrompt = vi.mocked(modelGateway.complete).mock.calls[0][0].systemPrompt
     expect(systemPrompt).toContain("Use a warm, friendly tone.")
     expect(systemPrompt).toContain("Keep it to one sentence.")
     expect(systemPrompt).toContain("the user seems rushed")
@@ -156,7 +156,7 @@ describe("DefaultClarifier", () => {
       },
     });
 
-    const systemPrompt = vi.mocked(modelGateway.complete).mock.calls[0]![0].systemPrompt;
+    const systemPrompt = vi.mocked(modelGateway.complete).mock.calls[0][0].systemPrompt;
     expect(systemPrompt.indexOf("Higher priority phrasing.")).toBeLessThan(
       systemPrompt.indexOf("Lower priority phrasing."),
     );
@@ -185,7 +185,7 @@ describe("DefaultClarifier", () => {
       },
     });
 
-    const systemPrompt = vi.mocked(modelGateway.complete).mock.calls[0]![0].systemPrompt;
+    const systemPrompt = vi.mocked(modelGateway.complete).mock.calls[0][0].systemPrompt;
     expect(systemPrompt).toContain("Use a warm tone.");
     expect(systemPrompt).not.toContain("Never suggest a question about price.");
   });
@@ -199,7 +199,7 @@ describe("DefaultClarifier", () => {
 
     await clarifier.phraseQuestion({ candidates, turn: turn("Necesito ayuda") });
 
-    const systemPrompt = vi.mocked(modelGateway.complete).mock.calls[0]![0].systemPrompt
+    const systemPrompt = vi.mocked(modelGateway.complete).mock.calls[0][0].systemPrompt
     expect(systemPrompt).toBe("Lead-in in es")
   });
 

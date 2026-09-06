@@ -8,7 +8,6 @@ import type {
   AssertionVerdict,
   EvalAssertion,
   EvalRunObservedOutput,
-  EvalRunOverrides,
   EvalRunResolvedConfig,
 } from "../../src/modules/eval/domain/types.js";
 import { Database } from "../../src/shared/infra/database.js";
@@ -22,7 +21,7 @@ import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
 describeIntegration("EvalRepository (Postgres)", () => {
-  const database = new Database(integrationDatabaseUrl as string);
+  const database = new Database(integrationDatabaseUrl);
   const repository = new EvalRepository(database.kysely);
   const messageCaseRepository = new EvalMessageCaseRepository(database.kysely);
 
@@ -154,17 +153,17 @@ describeIntegration("EvalRepository (Postgres)", () => {
         snapshotId: snapshot.id,
         caseId: scored.id,
         mode: "full_assistant",
-        overrides: {} as EvalRunOverrides,
+        overrides: {},
         resolvedConfig,
-        observedOutput: { retrievedChunks: [] } as EvalRunObservedOutput,
+        observedOutput: { retrievedChunks: [] },
         assertionVerdicts: [] as AssertionVerdict[],
         status,
         outcomeReason: status === "fail" ? "Did not match" : null,
         completedAt,
       });
 
-    await makeRun("fail", {} as EvalRunResolvedConfig, new Date(Date.now() - 60_000));
-    const latest = await makeRun("pass", { modelId: "gpt-5-mini" } as EvalRunResolvedConfig, new Date());
+    await makeRun("fail", {}, new Date(Date.now() - 60_000));
+    const latest = await makeRun("pass", { modelId: "gpt-5-mini" }, new Date());
 
     const items = await repository.listCasesWithLatestRun(workspaceId);
     const byId = new Map(items.map((item) => [item.id, item]));
@@ -259,9 +258,9 @@ describeIntegration("EvalRepository (Postgres)", () => {
       snapshotId: snapshot.id,
       caseId: created.id,
       mode: "retrieval_only",
-      overrides: {} as EvalRunOverrides,
-      resolvedConfig: {} as EvalRunResolvedConfig,
-      observedOutput: { retrievedChunks: [] } as EvalRunObservedOutput,
+      overrides: {},
+      resolvedConfig: {},
+      observedOutput: { retrievedChunks: [] },
       assertionVerdicts: [] as AssertionVerdict[],
       status: "pass",
       outcomeReason: null,
@@ -290,9 +289,9 @@ describeIntegration("EvalRepository (Postgres)", () => {
       snapshotId: snapshot.id,
       caseId: missingCaseId,
       mode: "retrieval_only",
-      overrides: {} as EvalRunOverrides,
-      resolvedConfig: {} as EvalRunResolvedConfig,
-      observedOutput: { retrievedChunks: [] } as EvalRunObservedOutput,
+      overrides: {},
+      resolvedConfig: {},
+      observedOutput: { retrievedChunks: [] },
       assertionVerdicts: [] as AssertionVerdict[],
       status: "recorded",
       outcomeReason: null,
@@ -315,9 +314,9 @@ describeIntegration("EvalRepository (Postgres)", () => {
       snapshotId: snapshot.id,
       caseId: created.id,
       mode: "retrieval_only",
-      overrides: {} as EvalRunOverrides,
-      resolvedConfig: {} as EvalRunResolvedConfig,
-      observedOutput: { retrievedChunks: [] } as EvalRunObservedOutput,
+      overrides: {},
+      resolvedConfig: {},
+      observedOutput: { retrievedChunks: [] },
       assertionVerdicts: [] as AssertionVerdict[],
       status: "recorded",
       outcomeReason: null,
@@ -361,9 +360,9 @@ describeIntegration("EvalRepository (Postgres)", () => {
       snapshotId: snapshot.id,
       caseId: created.id,
       mode: "full_assistant",
-      overrides: {} as EvalRunOverrides,
-      resolvedConfig: {} as EvalRunResolvedConfig,
-      observedOutput: { retrievedChunks: [] } as EvalRunObservedOutput,
+      overrides: {},
+      resolvedConfig: {},
+      observedOutput: { retrievedChunks: [] },
       assertionVerdicts: [] as AssertionVerdict[],
       status: "pass",
       outcomeReason: null,
@@ -396,9 +395,9 @@ describeIntegration("EvalRepository (Postgres)", () => {
       snapshotId: snapshot.id,
       caseId: created.id,
       mode: "retrieval_only",
-      overrides: {} as EvalRunOverrides,
-      resolvedConfig: {} as EvalRunResolvedConfig,
-      observedOutput: { retrievedChunks: [] } as EvalRunObservedOutput,
+      overrides: {},
+      resolvedConfig: {},
+      observedOutput: { retrievedChunks: [] },
       assertionVerdicts: [] as AssertionVerdict[],
       status: "recorded",
       outcomeReason: null,
@@ -445,8 +444,8 @@ describeIntegration("EvalRepository (Postgres)", () => {
       snapshotId: snapshot.id,
       caseId: created.id,
       mode: "full_assistant",
-      overrides: { assistantInstructionsOverride: { customInstruction: "Be terse." } } as EvalRunOverrides,
-      resolvedConfig: { modelId: "test-model" } as EvalRunResolvedConfig,
+      overrides: { assistantInstructionsOverride: { customInstruction: "Be terse." } },
+      resolvedConfig: { modelId: "test-model" },
       observedOutput: observed,
       assertionVerdicts: verdicts,
       status: "pass",
@@ -465,8 +464,8 @@ describeIntegration("EvalRepository (Postgres)", () => {
       snapshotId: snapshot.id,
       caseId: created.id,
       mode: "retrieval_only",
-      overrides: {} as EvalRunOverrides,
-      resolvedConfig: {} as EvalRunResolvedConfig,
+      overrides: {},
+      resolvedConfig: {},
       observedOutput: { retrievedChunks: [] },
       assertionVerdicts: [],
       status: "recorded",

@@ -36,6 +36,12 @@ export class GoogleOAuthError extends Error {
 export const buildGoogleAuthorizationUrl = (input: {
   config: GoogleOAuthConfig;
   state: string;
+  /**
+   * Address to preselect in the account chooser. Invitations are addressed to
+   * one mailbox, so hinting it keeps someone from signing in with an unrelated
+   * Google account and provisioning a stray organization instead of joining.
+   */
+  loginHint?: string;
 }): string => {
   const url = new URL(AUTHORIZATION_ENDPOINT);
   url.searchParams.set("client_id", input.config.clientId);
@@ -45,6 +51,9 @@ export const buildGoogleAuthorizationUrl = (input: {
   url.searchParams.set("state", input.state);
   url.searchParams.set("access_type", "online");
   url.searchParams.set("prompt", "select_account");
+  if (input.loginHint) {
+    url.searchParams.set("login_hint", input.loginHint);
+  }
   return url.toString();
 };
 

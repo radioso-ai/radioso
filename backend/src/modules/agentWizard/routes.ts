@@ -105,7 +105,7 @@ export const createAgentWizardRoutes = (
   const workspaceSession = requireWorkspaceSession(dependencies);
   const agentManage = requireWorkspacePermission(dependencies, "workspace.agents.manage");
 
-  router.post("/analyze-website", workspaceSession, agentManage, async (req, res, next) => {
+  router.post("/analyze-website", workspaceSession, agentManage, async (req, res) => {
     const controller = new AbortController();
     const abort = () => controller.abort();
     req.on("aborted", abort);

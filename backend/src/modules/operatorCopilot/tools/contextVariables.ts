@@ -1,7 +1,6 @@
 import { z } from "zod";
 
 import type {
-  CopilotContextVariableProposalAdapter,
   CopilotToolDescriptor,
 } from "../contracts.js";
 import { boundPayload } from "../payloadCompaction.js";
@@ -146,7 +145,7 @@ export const createContextVariablesCopilotTools = (
           return boundPayload({
             variables: variables.map(projectDefinition),
             enablements: enablements.map(projectEnablement),
-          }) as z.infer<typeof readerOutputSchema>;
+          });
         },
       }),
       describeEntity: (input, context) => describeContextVariableAgent(deps, input as { agentId?: string; agentName?: string }, context),

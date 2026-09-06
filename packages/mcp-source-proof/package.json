@@ -15,7 +15,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.build.json",
     "check": "pnpm run build && pnpm test",
     "test": "vitest run"
   },

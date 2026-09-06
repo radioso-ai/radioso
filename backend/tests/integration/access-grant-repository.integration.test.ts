@@ -16,7 +16,7 @@ import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
 describeIntegration("AccessGrantRepository (Postgres)", () => {
-  const database = new Database(integrationDatabaseUrl as string);
+  const database = new Database(integrationDatabaseUrl);
   const repository = new AccessGrantRepository(database.kysely);
   const lifecycleUnitOfWork = new AccessGrantLifecycleUnitOfWork(database.kysely);
 

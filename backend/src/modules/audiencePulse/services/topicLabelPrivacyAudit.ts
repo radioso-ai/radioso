@@ -7,7 +7,7 @@ import type {
   TopicNamingPort,
 } from "../contracts/topicLabel.js";
 
-export interface ResolveAuditedTopicLabelInput {
+interface ResolveAuditedTopicLabelInput {
   workspaceId: string;
   /** The cluster/topic identifier the label is for -- an id, never label text. */
   topicId: string;

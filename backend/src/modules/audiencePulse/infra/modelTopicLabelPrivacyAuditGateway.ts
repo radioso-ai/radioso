@@ -30,7 +30,7 @@ export interface TopicLabelPrivacyAuditInferenceFactory {
   }): Promise<ModelInferencePipeline>;
 }
 
-export interface ModelTopicLabelPrivacyAuditGatewayDependencies {
+interface ModelTopicLabelPrivacyAuditGatewayDependencies {
   inferenceFactory: TopicLabelPrivacyAuditInferenceFactory;
   workspaceContext: { workspaceId: string };
 }

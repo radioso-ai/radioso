@@ -691,7 +691,7 @@ describe("CensusService.run identity matching (T028+T029)", () => {
 
     const result = await service.run({ workspaceId, windowStart, windowEnd });
 
-    const saved = topicRepository.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
+    const saved = topicRepository.saveRun.mock.calls[0][0] as SaveTopicCensusRunInput;
     expect(saved.dissolvedTopicIds).not.toContain(alreadyDissolved.id);
     expect(result.dissolvedTopicIds).not.toContain(alreadyDissolved.id);
     expect(result.dissolvedTopics).not.toContainEqual(expect.objectContaining({ id: alreadyDissolved.id }));

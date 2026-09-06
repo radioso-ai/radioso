@@ -491,7 +491,11 @@ describe("AudiencePulseService", () => {
     const { service, calls } = createService({
       snapshotStore: snapshotStoreFor(priorNarrativeSnapshot()),
       usageLimitPolicy: {
-        async reserveAnswer() { throw { code: "usage_limit_exceeded" }; },
+        async reserveAnswer() {
+          // Mirrors the real policy, which throws an Error carrying the code rather
+          // than a bare object (see `CopilotUsageLimitReachedError`).
+          throw Object.assign(new Error("usage limit reached"), { code: "usage_limit_exceeded" });
+        },
         async reserveDocument() { throw new Error("not used"); },
         async reserveIndexedStorage() { throw new Error("not used"); },
         async reserveMonthlyIndexedContent() { throw new Error("not used"); },
@@ -606,7 +610,7 @@ describe("AudiencePulseService", () => {
 
   it("regenerates when a current topic did not survive", async () => {
     const changedCensus = censusResultWithDissolved([]);
-    changedCensus.topics[0]!.transition = {
+    changedCensus.topics[0].transition = {
       kind: "emerged",
       parentTopicIds: [],
       viaCentroidFallback: false,
@@ -626,7 +630,7 @@ describe("AudiencePulseService", () => {
 
   it("regenerates when a survived topic was matched only by centroid fallback", async () => {
     const changedCensus = censusResultWithDissolved([]);
-    changedCensus.topics[0]!.transition = {
+    changedCensus.topics[0].transition = {
       kind: "survived",
       parentTopicIds: ["topic-1"],
       viaCentroidFallback: true,
@@ -646,7 +650,7 @@ describe("AudiencePulseService", () => {
 
   it("regenerates when prior theme evidence is no longer in the same topic", async () => {
     const replacementEvidence = [3, 4].map((ordinal) => ({
-      ...history().evidence[0]!,
+      ...history().evidence[0],
       id: `evidence-${ordinal}`,
       reference: {
         messageId: `aaaaaaaa-aaaa-aaaa-aaaa-${String(ordinal).padStart(12, "0")}`,
@@ -662,13 +666,13 @@ describe("AudiencePulseService", () => {
     const snapshot = priorNarrativeSnapshot({ recommendations: [] });
     snapshot.report.coverage = { populationSize: 4, sampleSize: 4, sampled: false, facetReadyQuestionCount: 4 };
     snapshot.report.unclassifiedQuestionCount = 2;
-    snapshot.report.themes[0]!.share = 0.5;
+    snapshot.report.themes[0].share = 0.5;
     const changedCensus = censusResultWithDissolved([]);
     changedCensus.populationSize = 4;
     changedCensus.unclassifiedCount = 2;
     changedCensus.facetReadyQuestionCount = 4;
     changedCensus.topics[0] = {
-      ...changedCensus.topics[0]!,
+      ...changedCensus.topics[0],
       memberIds: replacementEvidence.map((item) => item.id),
       share: 0.5,
     };
@@ -692,14 +696,14 @@ describe("AudiencePulseService", () => {
 
   it("regenerates when full topic membership overlap falls below the reuse threshold", async () => {
     const retained = Array.from({ length: 12 }, (_unused, index) => ({
-      ...history().evidence[index % 2]!,
+      ...history().evidence[index % 2],
       id: `retained-${index + 1}`,
       reference: { messageId: `retained-message-${index + 1}`, conversationId: `retained-conversation-${index + 1}` },
       question: `Retained question ${index + 1}`,
       contentGapEligible: false,
     }));
     const replacements = Array.from({ length: 88 }, (_unused, index) => ({
-      ...history().evidence[index % 2]!,
+      ...history().evidence[index % 2],
       id: `replacement-${index + 1}`,
       reference: { messageId: `replacement-message-${index + 1}`, conversationId: `replacement-conversation-${index + 1}` },
       question: `Unrelated replacement ${index + 1}`,
@@ -709,7 +713,7 @@ describe("AudiencePulseService", () => {
     const snapshot = priorNarrativeSnapshot({ memberCount: 100, recommendations: [] });
     snapshot.report.coverage = { populationSize: 100, sampleSize: 100, sampled: false, facetReadyQuestionCount: 100 };
     snapshot.report.themes[0] = {
-      ...snapshot.report.themes[0]!,
+      ...snapshot.report.themes[0],
       evidenceIds: retained.map((item) => item.id),
       memberCount: 100,
       share: 1,
@@ -735,7 +739,7 @@ describe("AudiencePulseService", () => {
           populationSize: 100,
           facetReadyQuestionCount: 100,
           topics: [{
-            ...censusResult().topics[0]!,
+            ...censusResult().topics[0],
             memberIds: evidence.map((item) => item.id),
             memberCount: 100,
             transition: {
@@ -769,7 +773,7 @@ describe("AudiencePulseService", () => {
 
   it("regenerates when recommendation evidence moved to another topic", async () => {
     const evidence = Array.from({ length: 26 }, (_unused, index) => ({
-      ...history().evidence[index % 2]!,
+      ...history().evidence[index % 2],
       id: `evidence-${index + 1}`,
       reference: {
         messageId: `aaaaaaaa-aaaa-aaaa-aaaa-${String(index + 1).padStart(12, "0")}`,
@@ -785,15 +789,15 @@ describe("AudiencePulseService", () => {
     const snapshot = priorNarrativeSnapshot({
       memberCount: 13,
       recommendations: [{
-        ...priorNarrativeSnapshot().report.recommendations[0]!,
+        ...priorNarrativeSnapshot().report.recommendations[0],
         evidenceIds: ["evidence-12", "evidence-13"],
       }],
     });
     snapshot.report.coverage = { populationSize: 26, sampleSize: 26, sampled: false, facetReadyQuestionCount: 26 };
-    snapshot.report.themes[0]!.evidenceIds = evidence.slice(0, 12).map((item) => item.id);
-    snapshot.report.themes[0]!.share = 0.5;
+    snapshot.report.themes[0].evidenceIds = evidence.slice(0, 12).map((item) => item.id);
+    snapshot.report.themes[0].share = 0.5;
     snapshot.report.themes.push({
-      ...snapshot.report.themes[0]!,
+      ...snapshot.report.themes[0],
       id: "topic-2",
       title: "Billing questions",
       evidenceIds: evidence.slice(13, 25).map((item) => item.id),
@@ -809,13 +813,13 @@ describe("AudiencePulseService", () => {
       facetReadyQuestionCount: 26,
       topics: [
         {
-          ...censusResult().topics[0]!,
+          ...censusResult().topics[0],
           memberIds: [...evidence.slice(0, 12).map((item) => item.id), "evidence-26"],
           memberCount: 13,
           share: 0.5,
         },
         {
-          ...censusResult().topics[0]!,
+          ...censusResult().topics[0],
           topicId: "topic-2",
           title: "Billing questions",
           memberIds: [...evidence.slice(13, 25).map((item) => item.id), "evidence-13"],
@@ -868,7 +872,7 @@ describe("AudiencePulseService", () => {
 
   it("regenerates when stored recommendation evidence differs from the current selector output", async () => {
     const snapshot = priorNarrativeSnapshot({ recommendations: [{
-      ...priorNarrativeSnapshot().report.recommendations[0]!,
+      ...priorNarrativeSnapshot().report.recommendations[0],
       evidenceIds: ["evidence-2", "evidence-1"],
     }] });
     const { service, calls } = createService({
@@ -1016,8 +1020,8 @@ describe("AudiencePulseService", () => {
     }));
     snapshot.report.contentGaps = priorCounts.map((_count, index) => ({
       themeId: `topic-${index + 1}`,
-      eligibleEvidenceCount: priorCounts[index]!,
-      distinctConversationCount: priorCounts[index]!,
+      eligibleEvidenceCount: priorCounts[index],
+      distinctConversationCount: priorCounts[index],
     }));
     snapshot.report.recommendations = priorCounts.slice(0, AUDIENCE_PULSE_SUMMARY_MAX_TOPICS).map((_count, index) => ({
       id: `recommendation-${index + 1}`,
@@ -1132,7 +1136,7 @@ describe("AudiencePulseService", () => {
     snapshot.report.unclassifiedQuestionCount = 100;
     snapshot.report.themes = [
       {
-        ...snapshot.report.themes[0]!,
+        ...snapshot.report.themes[0],
         id: "topic-2",
         title: "Billing questions",
         evidenceIds: evidence.slice(119, 131).map((item) => item.id),
@@ -1140,7 +1144,7 @@ describe("AudiencePulseService", () => {
         share: 0.8,
       },
       {
-        ...snapshot.report.themes[0]!,
+        ...snapshot.report.themes[0],
         evidenceIds: evidence.slice(0, 12).map((item) => item.id),
         memberCount: 100,
         share: 0.1,
@@ -1150,7 +1154,7 @@ describe("AudiencePulseService", () => {
       { themeId: "topic-1", eligibleEvidenceCount: 100, distinctConversationCount: 100 },
       { themeId: "topic-2", eligibleEvidenceCount: 800, distinctConversationCount: 800 },
     ];
-    snapshot.report.recommendations[0]!.evidenceIds = evidence.slice(0, 6).map((item) => item.id);
+    snapshot.report.recommendations[0].evidenceIds = evidence.slice(0, 6).map((item) => item.id);
     const { service, calls } = createService({
       historySource: {
         async read() { return currentHistory; },
@@ -1166,9 +1170,9 @@ describe("AudiencePulseService", () => {
           unclassifiedCount: 81,
           facetReadyQuestionCount: 848,
           topics: [
-            { ...censusResult().topics[0]!, memberIds: evidence.slice(0, 119).map((item) => item.id), memberCount: 119, share: 119 / 848 },
+            { ...censusResult().topics[0], memberIds: evidence.slice(0, 119).map((item) => item.id), memberCount: 119, share: 119 / 848 },
             {
-              ...censusResult().topics[0]!,
+              ...censusResult().topics[0],
               topicId: "topic-2",
               title: "Billing questions",
               memberIds: evidence.slice(119, 767).map((item) => item.id),
@@ -1214,7 +1218,7 @@ describe("AudiencePulseService", () => {
 
   it("regenerates when population drift reaches both floors while topic and unclassified drift do not", async () => {
     const evidence = Array.from({ length: 14 }, (_unused, index) => ({
-      ...history().evidence[index % 2]!,
+      ...history().evidence[index % 2],
       id: `population-${index + 1}`,
       reference: {
         messageId: `population-message-${index + 1}`,
@@ -1227,7 +1231,7 @@ describe("AudiencePulseService", () => {
     snapshot.report.coverage = { populationSize: 10, sampleSize: 10, sampled: false, facetReadyQuestionCount: 10 };
     snapshot.report.unclassifiedQuestionCount = 8;
     snapshot.report.themes[0] = {
-      ...snapshot.report.themes[0]!,
+      ...snapshot.report.themes[0],
       evidenceIds: evidence.slice(0, 2).map((item) => item.id),
       memberCount: 2,
       share: 0.2,
@@ -1254,7 +1258,7 @@ describe("AudiencePulseService", () => {
           unclassifiedCount: 10,
           facetReadyQuestionCount: 14,
           topics: [{
-            ...censusResult().topics[0]!,
+            ...censusResult().topics[0],
             memberIds: evidence.slice(0, 4).map((item) => item.id),
             memberCount: 4,
             share: 4 / 14,
@@ -1298,7 +1302,7 @@ describe("AudiencePulseService", () => {
     const snapshot = priorNarrativeSnapshot();
     snapshot.report.coverage.populationSize = 2;
     snapshot.report.unclassifiedQuestionCount = 1;
-    snapshot.report.themes[0]!.share = 2 / 3;
+    snapshot.report.themes[0].share = 2 / 3;
     const { service, calls } = createService({
       historySource: {
         async read() { return currentHistory; },
@@ -1343,7 +1347,7 @@ describe("AudiencePulseService", () => {
     snapshot.report.coverage.populationSize = 4;
     snapshot.report.coverage.sampleSize = 4;
     snapshot.report.unclassifiedQuestionCount = 0;
-    snapshot.report.themes[0]!.share = 0.5;
+    snapshot.report.themes[0].share = 0.5;
     const { service, calls } = createService({
       historySource: {
         async read() { return currentHistory; },
@@ -1387,7 +1391,7 @@ describe("AudiencePulseService", () => {
     };
     const snapshot = priorNarrativeSnapshot();
     snapshot.report.coverage = { populationSize: 5, sampleSize: 5, sampled: false, facetReadyQuestionCount: 5 };
-    snapshot.report.themes[0]!.share = 2 / 5;
+    snapshot.report.themes[0].share = 2 / 5;
     const { service, calls } = createService({
       historySource: {
         async read() { return currentHistory; },
@@ -1402,7 +1406,7 @@ describe("AudiencePulseService", () => {
           populationSize: 5,
           unclassifiedCount: 3,
           facetReadyQuestionCount: 5,
-          topics: [{ ...censusResult().topics[0]!, share: 2 / 5 }],
+          topics: [{ ...censusResult().topics[0], share: 2 / 5 }],
         }) } as unknown as CensusService),
       } satisfies CensusServiceFactory,
     });
@@ -1510,7 +1514,7 @@ describe("AudiencePulseService", () => {
       evidence: [
         ...history().evidence.map((item) => ({ ...item, grounding: "grounded" as const, contentGapEligible: false })),
         ...[3, 4].map((ordinal) => ({
-          ...history().evidence[0]!,
+          ...history().evidence[0],
           id: `evidence-${ordinal}`,
           reference: { messageId: `message-${ordinal}`, conversationId: `conversation-${ordinal}` },
           question: `New unanswered question ${ordinal}`,
@@ -1519,7 +1523,7 @@ describe("AudiencePulseService", () => {
     };
     const snapshot = priorNarrativeSnapshot();
     snapshot.report.coverage = { populationSize: 4, sampleSize: 4, sampled: false, facetReadyQuestionCount: 4 };
-    snapshot.report.themes[0] = { ...snapshot.report.themes[0]!, memberCount: 4, share: 1 };
+    snapshot.report.themes[0] = { ...snapshot.report.themes[0], memberCount: 4, share: 1 };
     const { service, calls } = createService({
       historySource: {
         async read() { return currentHistory; },
@@ -1533,7 +1537,7 @@ describe("AudiencePulseService", () => {
           ...censusResultWithDissolved([]),
           populationSize: 4,
           facetReadyQuestionCount: 4,
-          topics: [{ ...censusResult().topics[0]!, memberIds: currentHistory.evidence.map((item) => item.id), memberCount: 4 }],
+          topics: [{ ...censusResult().topics[0], memberIds: currentHistory.evidence.map((item) => item.id), memberCount: 4 }],
         }) } as unknown as CensusService),
       } satisfies CensusServiceFactory,
     });
@@ -1582,7 +1586,7 @@ describe("AudiencePulseService", () => {
       censusServiceFactory: {
         create: () => ({ run: async () => ({
           ...censusResult(),
-          topics: [{ ...censusResult().topics[0]!, memberIds: ["evidence-1"], memberCount: 1, share: 0.5 }],
+          topics: [{ ...censusResult().topics[0], memberIds: ["evidence-1"], memberCount: 1, share: 0.5 }],
         }) } as unknown as CensusService),
       } satisfies CensusServiceFactory,
     });

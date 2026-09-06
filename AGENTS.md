@@ -157,7 +157,14 @@ pnpm run build
 pnpm test
 ```
 
-Use Conventional Commits for commit messages, such as `feat: add retrieval setting` or `fix: handle empty uploads`.
+Releases:
+
+```bash
+node scripts/release/cut-release.mjs --dry-run   # preview the next version and its notes
+node --test tests/release/*.test.mjs             # the generator's tests
+```
+
+Use Conventional Commits for commit messages, such as `feat: add retrieval setting` or `fix: handle empty uploads`. CI checks the pull request title against the same grammar, because `main` is squash-merged and the title becomes the changelog line. A release names a commit, not a deploy: cut the tag from `main` with the **Cut Release** workflow, then deploy that release. See `docs/releases.md`.
 
 ## Design Discipline
 
@@ -231,6 +238,7 @@ Update `readme.md` whenever a feature changes Docker run flow, authentication or
 ```
 radioso/
 |-- AGENTS.md                    # this file; stable hand-maintained agent guide
+|-- CHANGELOG.md                 # generated release notes, newest first
 |-- readme.md                    # product overview and quick start
 |-- backend/                     # Express API and document workers
 |   |-- src/

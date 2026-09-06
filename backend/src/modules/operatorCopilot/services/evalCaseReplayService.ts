@@ -33,7 +33,7 @@ const readDirectiveName = (config: Record<string, unknown>): string | null => {
 const withDirectiveDefaults = (config: Record<string, unknown>): Record<string, unknown> =>
   Object.prototype.hasOwnProperty.call(config, "enabled") ? config : { ...config, enabled: true };
 
-export interface EvalCaseReplayServiceDependencies extends CopilotExpensiveOperationGuardDependencies {
+interface EvalCaseReplayServiceDependencies extends CopilotExpensiveOperationGuardDependencies {
   cases: CopilotEvalCaseReaderPort;
   runs: CopilotEvalCaseReplayRunnerPort;
   evidence: CopilotReplayEvidenceRepositoryPort;

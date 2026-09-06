@@ -23,14 +23,14 @@ const metadataSchema = z.object({
   token_endpoint_auth_method: z.string().min(1).max(64),
 }).passthrough();
 
-export class OperatorMcpClientMetadataError extends Error {
+class OperatorMcpClientMetadataError extends Error {
   constructor(readonly code: "invalid_client_metadata" | "metadata_unavailable" | "metadata_too_large", message: string) {
     super(message);
     this.name = "OperatorMcpClientMetadataError";
   }
 }
 
-export interface OperatorMcpClientMetadataServiceOptions {
+interface OperatorMcpClientMetadataServiceOptions {
   fetchImpl?: typeof fetch;
   assertPublicUrl?: (url: string) => void | Promise<void>;
   preregisteredClients?: ReadonlyMap<string, OperatorMcpClientMetadataSnapshot>;
@@ -38,16 +38,16 @@ export interface OperatorMcpClientMetadataServiceOptions {
   now?: () => Date;
 }
 
-export interface ResolveOperatorMcpClientMetadataInput {
+interface ResolveOperatorMcpClientMetadataInput {
   clientId: string;
   redirectUri?: string;
 }
 
-export interface OperatorMcpClientMetadataService {
+interface OperatorMcpClientMetadataService {
   resolve(input: ResolveOperatorMcpClientMetadataInput): Promise<OperatorMcpClientMetadataSnapshot>;
 }
 
-export type OperatorMcpClientMetadataSnapshot = OperatorMcpClientSnapshot & {
+type OperatorMcpClientMetadataSnapshot = OperatorMcpClientSnapshot & {
   clientMetadataSnapshotId: string;
 };
 

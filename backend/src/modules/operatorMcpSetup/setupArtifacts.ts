@@ -1,6 +1,6 @@
-export type OperatorMcpSetupArtifactStatus = "verified" | "unavailable" | "unverified";
+type OperatorMcpSetupArtifactStatus = "verified" | "unavailable" | "unverified";
 
-export interface OperatorMcpSetupArtifact {
+interface OperatorMcpSetupArtifact {
   id: string;
   displayName: string;
   clientVersion: string | null;
@@ -16,7 +16,7 @@ export interface OperatorMcpSetupArtifact {
   failureRecovery: string;
 }
 
-export interface OperatorMcpSetupResponse {
+interface OperatorMcpSetupResponse {
   availability: "available" | "disabled" | "misconfigured" | "unavailable";
   resource: string | null;
   artifacts: readonly OperatorMcpSetupArtifact[];

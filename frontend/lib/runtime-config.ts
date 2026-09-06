@@ -23,7 +23,7 @@ export const parseRuntimeConfig = (body: unknown): RuntimeConfig => {
 }
 
 /** Path the public API is mounted at, behind the deployment's canonical API host. */
-export const PUBLIC_API_PATH = '/api/v1'
+const PUBLIC_API_PATH = '/api/v1'
 
 /**
  * The deployment's canonical API base when it declares one, so the dashboard, SDK, and

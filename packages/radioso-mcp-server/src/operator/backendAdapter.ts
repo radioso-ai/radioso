@@ -35,7 +35,7 @@ export class OperatorBackendAdapterError extends Error {
   }
 }
 
-export type OperatorBackendAdapterErrorCode =
+type OperatorBackendAdapterErrorCode =
   | "unauthorized"
   | "insufficient_scope"
   | "unavailable"

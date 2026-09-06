@@ -43,7 +43,7 @@ const removalInputSchema = z.object({
   rationale: rationaleSchema,
 }).strict();
 
-export type DocumentProposalCopilotToolDependencies = CopilotProposalToolDependencies;
+type DocumentProposalCopilotToolDependencies = CopilotProposalToolDependencies;
 
 /** What a tool contributes beyond persisting the draft: the payload it proposes and how it reads. */
 interface DocumentProposalSpec<TInput> {

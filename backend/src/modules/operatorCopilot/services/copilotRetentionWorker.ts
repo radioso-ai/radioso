@@ -11,7 +11,7 @@ import type { CopilotExpensiveOperationAuditPort } from "../contracts/expensiveO
 export const COPILOT_CONVERSATION_RETENTION_DAYS_DEFAULT = 90;
 
 /** Rows removed per statement, so a large backlog drains without one table-wide delete. */
-export const COPILOT_RETENTION_BATCH_SIZE_DEFAULT = 200;
+const COPILOT_RETENTION_BATCH_SIZE_DEFAULT = 200;
 
 const SWEEP_INTERVAL_MS_DEFAULT = 6 * 60 * 60 * 1_000;
 /** Caps one tick's work so a huge first sweep cannot monopolise the worker. */
@@ -28,7 +28,7 @@ export interface CopilotRetentionPort {
   deleteExpiredOperatorMcpRecords?(input: { now: Date; limit: number }): Promise<number>;
 }
 
-export interface CopilotRetentionLoggerPort {
+interface CopilotRetentionLoggerPort {
   info(payload: Record<string, unknown>, message: string): void;
   warn(payload: Record<string, unknown>, message: string): void;
   error(payload: Record<string, unknown>, message: string): void;
@@ -40,12 +40,12 @@ export interface CopilotRetentionLoggerPort {
  * task route has to return a retryable status — a transient deadlock reported as success is a
  * retention window that quietly stops being enforced.
  */
-export type CopilotRetentionSweepResult =
+type CopilotRetentionSweepResult =
   | { readonly status: "swept"; readonly deleted: number }
   | { readonly status: "skipped"; readonly reason: "disabled" | "in_flight" }
   | { readonly status: "failed"; readonly error: string };
 
-export interface CopilotRetentionWorkerOptions {
+interface CopilotRetentionWorkerOptions {
   readonly retention: CopilotRetentionPort;
   readonly audit: CopilotExpensiveOperationAuditPort;
   readonly logger: CopilotRetentionLoggerPort;

@@ -62,7 +62,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(
   value && typeof value === 'object' && !Array.isArray(value),
 )
 
-export interface CopilotProposalDiffRow {
+interface CopilotProposalDiffRow {
   path: string
   current: unknown
   proposed: unknown
@@ -213,7 +213,7 @@ const statusMessage = (
 const statusFromProposalDetail = (detail: CopilotProposalDetail): CopilotProposalStatus =>
   detail.status === 'pending' && !detail.currentVersionMatches ? 'stale' : detail.status
 
-export type CopilotProposalApplyConfirmationKind = 'irreversible-removal' | 'reach-change' | 'reversible-update'
+type CopilotProposalApplyConfirmationKind = 'irreversible-removal' | 'reach-change' | 'reversible-update'
 
 /**
  * What kind of confirmation an Apply click should show. A removal (e.g. propose_directive_removal)

@@ -18,7 +18,7 @@ const MANAGE_DOCUMENTS = ["workspace.documents.manage"] as const;
 const NAME = "start_crawl";
 const DESCRIPTION = "Propose crawling a website into the workspace knowledge base, for the operator to review and start. Drafting costs nothing; applying fetches the site and indexes what it finds, so say which pages matter and why the site is worth crawling. To refresh a site that is already a source, use recrawl_source instead.";
 
-export type WebsiteCrawlProposalCopilotToolDependencies = CopilotProposalToolDependencies;
+type WebsiteCrawlProposalCopilotToolDependencies = CopilotProposalToolDependencies;
 
 /**
  * How much of the card's sentence the pattern list may take. Patterns are individually long and

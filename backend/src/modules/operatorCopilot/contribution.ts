@@ -25,7 +25,7 @@ export interface CopilotToolContribution {
   readonly applicationPrimitives?: Readonly<Record<string, { readonly owningModule: string; readonly exportedPort: string }>>;
 }
 
-export interface ResolvedCopilotToolContributions {
+interface ResolvedCopilotToolContributions {
   readonly descriptors: ReadonlyArray<CopilotToolDescriptor>;
   readonly operationIds: ReadonlySet<string>;
   readonly operationPermissions: Readonly<Record<string, readonly string[]>>;

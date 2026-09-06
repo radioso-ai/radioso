@@ -73,9 +73,6 @@ export class ModelTopicLabelPrivacyAuditGateway implements TopicLabelPrivacyAudi
       workspaceContext: this.deps.workspaceContext,
       modelCallContext,
     });
-    if (!signal?.aborted) {
-      onModelCallIssued?.();
-    }
     const completion = await inference.complete({
       prompt: buildTopicLabelPrivacyAuditPrompt(label),
       maxInputTokens: TOPIC_LABEL_AUDIT_MAX_TOTAL_TOKENS,
@@ -83,6 +80,7 @@ export class ModelTopicLabelPrivacyAuditGateway implements TopicLabelPrivacyAudi
       responseFormat: TOPIC_LABEL_AUDIT_RESPONSE_FORMAT,
       signal,
       operation: modelCallContext,
+      onProviderRequestDispatched: onModelCallIssued,
       validateResult(result) {
         parseAuditResult(result.text);
       },

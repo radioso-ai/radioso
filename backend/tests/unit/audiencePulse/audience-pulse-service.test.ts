@@ -17,6 +17,7 @@ import type { AudiencePulseStoredReport } from "../../../src/modules/audiencePul
 import type { CensusRunResult, CensusService } from "../../../src/modules/audiencePulse/services/censusService.js";
 import type { CensusServiceFactory } from "../../../src/modules/audiencePulse/infra/censusServiceFactory.js";
 import { AUDIENCE_PULSE_SUMMARY_MAX_TOPICS } from "../../../src/modules/audiencePulse/services/prompt.js";
+import type { ModelInferenceRequest } from "../../../src/shared/infra/llm/modelInferencePipeline.js";
 
 const ACCOUNT_ID = "22222222-2222-2222-2222-222222222222";
 const USER_ID = "33333333-3333-3333-3333-333333333333";
@@ -226,7 +227,8 @@ const createService = (overrides: Partial<AudiencePulseServiceDependencies> = {}
       async create() {
         return {
           metadata: { capability: "chat", provider: "openai", model: "test" },
-          async complete() {
+          async complete(request) {
+            request.onProviderRequestDispatched?.();
             calls.inference += 1;
             calls.lifecycle.push("inference");
             return { text: modelResponse };
@@ -407,7 +409,10 @@ describe("AudiencePulseService", () => {
         async create() {
           return {
             metadata: { capability: "chat", provider: "openai", model: "test" },
-            async complete() { throw new Error("provider failed after dispatch"); },
+            async complete(request) {
+              request.onProviderRequestDispatched?.();
+              throw new Error("provider failed after dispatch");
+            },
             stream() { throw new Error("not used"); },
           };
         },
@@ -417,6 +422,51 @@ describe("AudiencePulseService", () => {
     await expect(service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID }))
       .resolves.toEqual({ kind: "unavailable", reason: "provider" });
     expect(calls).toMatchObject({ reserve: 1, commit: 1, release: 0, leaseRelease: 1 });
+  });
+
+  it("releases when cancellation wins during narrative provider request preparation", async () => {
+    let finishPreparation!: () => void;
+    let markPreparationStarted!: () => void;
+    const preparationStarted = new Promise<void>((resolve) => {
+      markPreparationStarted = resolve;
+    });
+    const preparation = new Promise<void>((resolve) => {
+      finishPreparation = resolve;
+    });
+    const controller = new AbortController();
+    const { service, calls } = createService({
+      inferenceFactory: {
+        async create() {
+          return {
+            metadata: { capability: "chat", provider: "openai", model: "test" },
+            async complete(request: ModelInferenceRequest) {
+              calls.inference += 1;
+              markPreparationStarted();
+              await preparation;
+              if (request.signal?.aborted) {
+                throw Object.assign(new Error("aborted during provider request preparation"), { name: "AbortError" });
+              }
+              request.onProviderRequestDispatched?.();
+              return { text: modelResponse };
+            },
+            stream() { throw new Error("not used"); },
+          };
+        },
+      },
+    });
+
+    const refresh = service.refresh({
+      accountId: ACCOUNT_ID,
+      userId: USER_ID,
+      workspaceId: WORKSPACE_ID,
+      signal: controller.signal,
+    });
+    await preparationStarted;
+    controller.abort();
+    finishPreparation();
+
+    await expect(refresh).resolves.toEqual({ kind: "unavailable", reason: "cancelled" });
+    expect(calls).toMatchObject({ reserve: 1, commit: 0, release: 1, leaseRelease: 1 });
   });
 
   it("regenerates when the saved narrative belongs to a different census baseline", async () => {
@@ -701,7 +751,8 @@ describe("AudiencePulseService", () => {
         async create() {
           return {
             metadata: { capability: "chat", provider: "openai", model: "test" },
-            async complete() {
+            async complete(request) {
+              request.onProviderRequestDispatched?.();
               calls.inference += 1;
               return { text: JSON.stringify({ summary: "Membership changed.", themes: [], recommendations: {}, caveats: [] }) };
             },
@@ -794,7 +845,8 @@ describe("AudiencePulseService", () => {
         async create() {
           return {
             metadata: { capability: "chat", provider: "openai", model: "test" },
-            async complete() {
+            async complete(request) {
+              request.onProviderRequestDispatched?.();
               calls.inference += 1;
               return { text: JSON.stringify({
                 summary: "Current summary.",
@@ -862,7 +914,8 @@ describe("AudiencePulseService", () => {
         async create() {
           return {
             metadata: { capability: "chat", provider: "openai", model: "test" },
-            async complete() {
+            async complete(request) {
+              request.onProviderRequestDispatched?.();
               calls.inference += 1;
               return { text: JSON.stringify({ summary: "No recurring topics.", themes: [], recommendations: {}, caveats: [] }) };
             },
@@ -1000,7 +1053,8 @@ describe("AudiencePulseService", () => {
         async create() {
           return {
             metadata: { capability: "chat", provider: "openai", model: "test" },
-            async complete() {
+            async complete(request) {
+              request.onProviderRequestDispatched?.();
               calls.inference += 1;
               return {
                 text: JSON.stringify({
@@ -1134,7 +1188,8 @@ describe("AudiencePulseService", () => {
         async create() {
           return {
             metadata: { capability: "chat", provider: "openai", model: "test" },
-            async complete() {
+            async complete(request) {
+              request.onProviderRequestDispatched?.();
               calls.inference += 1;
               return {
                 text: JSON.stringify({
@@ -1210,7 +1265,8 @@ describe("AudiencePulseService", () => {
         async create() {
           return {
             metadata: { capability: "chat", provider: "openai", model: "test" },
-            async complete() {
+            async complete(request) {
+              request.onProviderRequestDispatched?.();
               calls.inference += 1;
               return { text: JSON.stringify({ summary: "Population changed.", themes: [], recommendations: {}, caveats: [] }) };
             },
@@ -1376,7 +1432,8 @@ describe("AudiencePulseService", () => {
         async create() {
           return {
             metadata: { capability: "chat", provider: "openai", model: "test" },
-            async complete() {
+            async complete(request) {
+              request.onProviderRequestDispatched?.();
               calls.inference += 1;
               return { text: JSON.stringify({ summary: "The gap closed.", themes: [], recommendations: {}, caveats: [] }) };
             },
@@ -1497,7 +1554,8 @@ describe("AudiencePulseService", () => {
         async create() {
           return {
             metadata: { capability: "chat", provider: "openai", model: "test" },
-            async complete() {
+            async complete(request) {
+              request.onProviderRequestDispatched?.();
               completionFinished = true;
               return { text: modelResponse };
             },
@@ -1888,7 +1946,10 @@ describe("AudiencePulseService", () => {
         async create() {
           return {
             metadata: { capability: "chat", provider: "openai", model: "test" },
-            async complete() { return { text: response }; },
+            async complete(request) {
+              request.onProviderRequestDispatched?.();
+              return { text: response };
+            },
             stream() { throw new Error("not used"); },
           };
         },
@@ -1959,7 +2020,10 @@ describe("AudiencePulseService", () => {
         async create() {
           return {
             metadata: { capability: "chat", provider: "openai", model: "test" },
-            async complete() { return { text: response }; },
+            async complete(request) {
+              request.onProviderRequestDispatched?.();
+              return { text: response };
+            },
             stream() { throw new Error("not used"); },
           };
         },
@@ -2150,7 +2214,8 @@ describe("AudiencePulseService", () => {
         async create() {
           return {
             metadata: { capability: "chat", provider: "openai", model: "test" },
-            async complete() {
+            async complete(request) {
+              request.onProviderRequestDispatched?.();
               return {
                 text: JSON.stringify({
                   summary: "Visitors ask about a recurring topic.",
@@ -2449,8 +2514,9 @@ describe("AudiencePulseService", () => {
           async create() {
             return {
               metadata: { capability: "chat", provider: "openai", model: "test" },
-              async complete() {
+              async complete(request) {
                 providerCalls += 1;
+                request.onProviderRequestDispatched?.();
                 return failure.complete();
               },
               stream() { throw new Error("not used"); },
@@ -2479,7 +2545,10 @@ describe("AudiencePulseService", () => {
         async create() {
           return {
             metadata: { capability: "chat", provider: "openai", model: "test" },
-            async complete() { return { text: "not json" }; },
+            async complete(request) {
+              request.onProviderRequestDispatched?.();
+              return { text: "not json" };
+            },
             stream() { throw new Error("not used"); },
           };
         },

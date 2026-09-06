@@ -51,6 +51,21 @@ afterEach(() => {
 });
 
 describe("GeminiTextGenerationClient.complete", () => {
+  it("reports one logical call immediately before transport dispatch", async () => {
+    const events: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      events.push("fetch");
+      return jsonResponse({ candidates: [{ content: { parts: [{ text: "Hi" }] } }] });
+    });
+
+    await new GeminiTextGenerationClient(chatConfig).complete({
+      prompt: "Hi",
+      onProviderRequestDispatched: () => events.push("issued"),
+    });
+
+    expect(events).toEqual(["issued", "fetch"]);
+  });
+
   it("forwards JSON schema output through generationConfig", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       jsonResponse({ candidates: [{ content: { parts: [{ text: '{"answer":"Hi"}' }] } }] }),

@@ -100,7 +100,7 @@ export class ClaudeTextGenerationClient implements TextGenerationClient {
   }
 
   async complete(input: TextGenerationRequest): Promise<TextGenerationResult> {
-    const response = await fetch(CLAUDE_API_URL, {
+    const request: RequestInit = {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -109,7 +109,11 @@ export class ClaudeTextGenerationClient implements TextGenerationClient {
       },
       signal: input.signal,
       body: JSON.stringify(buildClaudeBody(this.config, input)),
-    });
+    };
+    if (!input.signal?.aborted) {
+      input.onProviderRequestDispatched?.();
+    }
+    const response = await fetch(CLAUDE_API_URL, request);
 
     if (!response.ok) {
       throw await readProviderErrorBody("Claude", "messages", response);

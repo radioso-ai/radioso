@@ -38,6 +38,9 @@ export interface TextGenerationRequest {
    * strict JSON-schema output (or an equivalent forced schema tool). */
   responseFormat?: JsonSchemaResponseFormat;
   signal?: AbortSignal;
+  /** Reports the first provider transport dispatch for this logical completion.
+   * Provider-side retries must not report additional calls. */
+  onProviderRequestDispatched?: () => void;
 }
 
 export type UsageQuality = "actual" | "estimated";

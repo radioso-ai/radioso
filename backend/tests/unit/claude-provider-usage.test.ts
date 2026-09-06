@@ -44,6 +44,21 @@ afterEach(() => {
 });
 
 describe("ClaudeTextGenerationClient.complete", () => {
+  it("reports one logical call immediately before transport dispatch", async () => {
+    const events: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      events.push("fetch");
+      return jsonResponse({ content: [{ type: "text", text: "Hi" }] });
+    });
+
+    await new ClaudeTextGenerationClient(chatConfig).complete({
+      prompt: "Hi",
+      onProviderRequestDispatched: () => events.push("issued"),
+    });
+
+    expect(events).toEqual(["issued", "fetch"]);
+  });
+
   it("forces a schema-backed tool and returns its input as structured JSON", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       jsonResponse({ content: [{ type: "tool_use", input: { answer: "Hi" } }] }),

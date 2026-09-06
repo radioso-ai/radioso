@@ -106,6 +106,28 @@ describe("ModelInferencePipelineService", () => {
     expect(JSON.stringify(exporter.spans[0]?.attributes)).not.toContain("private prompt");
   });
 
+  it("forwards logical-call accounting to the provider dispatch boundary", async () => {
+    const onProviderRequestDispatched = vi.fn();
+    const complete = vi.fn(async (request) => {
+      request.onProviderRequestDispatched?.();
+      return textResult("Answer");
+    });
+    const client: TextGenerationClient = {
+      metadata: { capability: "chat", provider: "openai", model: "gpt-test" },
+      complete,
+      stream: vi.fn(() => streamResult(["Answer"])),
+    };
+    const pipeline = new ModelInferencePipelineService(client);
+
+    await pipeline.complete({
+      operation: usageContext,
+      prompt: "private prompt",
+      onProviderRequestDispatched,
+    });
+
+    expect(onProviderRequestDispatched).toHaveBeenCalledTimes(1);
+  });
+
   it("rejects oversized non-streaming prompts before calling the provider", async () => {
     const complete = vi.fn(async () => textResult("Answer"));
     const client: TextGenerationClient = {

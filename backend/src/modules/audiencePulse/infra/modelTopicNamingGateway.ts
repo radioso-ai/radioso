@@ -103,9 +103,6 @@ export class ModelTopicNamingGateway implements TopicNamingPort {
       workspaceContext: this.deps.workspaceContext,
       modelCallContext,
     });
-    if (!input.signal?.aborted) {
-      input.onModelCallIssued?.();
-    }
     const completion = await inference.complete({
       prompt: input.prompt,
       maxInputTokens: TOPIC_NAMING_MAX_TOTAL_TOKENS,
@@ -113,6 +110,7 @@ export class ModelTopicNamingGateway implements TopicNamingPort {
       responseFormat: TOPIC_NAMING_RESPONSE_FORMAT,
       signal: input.signal,
       operation: modelCallContext,
+      onProviderRequestDispatched: input.onModelCallIssued,
       validateResult(result) {
         parseLabel(result.text);
       },

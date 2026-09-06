@@ -86,17 +86,19 @@ export class GeminiTextGenerationClient implements TextGenerationClient {
   }
 
   async complete(input: TextGenerationRequest): Promise<TextGenerationResult> {
-    const response = await fetch(
-      `${GEMINI_BASE_URL}/${this.config.model}:generateContent?key=${encodeURIComponent(this.config.apiKey)}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        signal: input.signal,
-        body: JSON.stringify(buildGenerateBody(input)),
+    const url = `${GEMINI_BASE_URL}/${this.config.model}:generateContent?key=${encodeURIComponent(this.config.apiKey)}`;
+    const request: RequestInit = {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
       },
-    );
+      signal: input.signal,
+      body: JSON.stringify(buildGenerateBody(input)),
+    };
+    if (!input.signal?.aborted) {
+      input.onProviderRequestDispatched?.();
+    }
+    const response = await fetch(url, request);
 
     if (!response.ok) {
       throw await readProviderErrorBody("Gemini", "generate", response);

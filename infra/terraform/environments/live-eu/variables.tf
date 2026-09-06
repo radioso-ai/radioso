@@ -310,6 +310,16 @@ variable "copilot_retention_schedule" {
   default     = null
 }
 
+variable "agent_bundle_import_orphan_age_ms" {
+  type    = number
+  default = 900000
+}
+
+variable "agent_bundle_import_cleanup_schedule" {
+  type    = string
+  default = null
+}
+
 # --- Monitoring and alerting ---
 
 variable "monitoring_enabled" {

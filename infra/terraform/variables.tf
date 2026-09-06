@@ -313,6 +313,23 @@ variable "copilot_retention_schedule" {
   default     = null
 }
 
+variable "agent_bundle_import_orphan_age_ms" {
+  description = "Milliseconds an active bundle-import job may run before orphan cleanup reclaims it. Imports normally take seconds; use a larger value only for a deployment with known slow imports."
+  type        = number
+  default     = 900000
+
+  validation {
+    condition     = var.agent_bundle_import_orphan_age_ms > 0 && floor(var.agent_bundle_import_orphan_age_ms) == var.agent_bundle_import_orphan_age_ms
+    error_message = "agent_bundle_import_orphan_age_ms must be a whole number greater than zero."
+  }
+}
+
+variable "agent_bundle_import_cleanup_schedule" {
+  description = "Optional cron schedule for the Cloud Run bundle-import orphan cleanup sweep."
+  type        = string
+  default     = null
+}
+
 # --- Document storage ---
 
 variable "document_storage_bucket_name" {

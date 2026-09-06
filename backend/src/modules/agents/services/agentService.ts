@@ -88,13 +88,13 @@ export class AgentService {
     return withSkillBackedFlags(await this.ensureDefaultAgent(workspaceId));
   }
 
-  async create(workspaceId: string, input: AgentInput): Promise<AgentSettingsResource> {
+  async create(workspaceId: string, input: AgentInput, options: { agentId?: string } = {}): Promise<AgentSettingsResource> {
     const workspace = await this.requireWorkspace(workspaceId);
     await this.validateSourceScope(workspaceId, input);
     const existingDefault = workspace.defaultAgentId
       ? await this.agentRepository.findByIdAndWorkspaceId(workspace.defaultAgentId, workspaceId)
       : await this.agentRepository.findDefaultByWorkspaceId(workspaceId);
-    const agent = await this.agentRepository.create(workspaceId, input);
+    const agent = await this.agentRepository.create(workspaceId, input, options);
     await this.syncPublicLaunchGrants(null, agent);
     if (!existingDefault) {
       await this.agentRepository.setDefault(workspaceId, agent.id);

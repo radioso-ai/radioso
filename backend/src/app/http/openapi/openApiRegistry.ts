@@ -67,6 +67,8 @@ export interface OpenApiSchemaCatalog {
   AgentBundleImportSkillSchema: z.ZodTypeAny;
   AgentBundleImportRequestSchema: z.ZodTypeAny;
   AgentBundleImportResponseSchema: z.ZodTypeAny;
+  AgentBundleImportParamsSchema: RouteParameterSchema;
+  AgentBundleImportStatusSchema: z.ZodTypeAny;
   AuthoredDirectiveConditionSchema: z.ZodTypeAny;
   AuthoredDirectiveCreateRequestSchema: z.ZodTypeAny;
   AuthoredDirectiveListResponseSchema: z.ZodTypeAny;

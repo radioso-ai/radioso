@@ -14,11 +14,11 @@ export const nowIso = "2026-04-26T12:00:00.000Z";
 type AuthoredDirectiveFixture = ApiSchemas["AuthoredDirective"];
 // What a spec has to state to seed a directive: the rest is filled from the same defaults the
 // API applies.
-export type AuthoredDirectiveDraftFixture =
+type AuthoredDirectiveDraftFixture =
   Partial<AuthoredDirectiveFixture> & Pick<AuthoredDirectiveFixture, "id" | "name" | "action">;
 type BuiltInDirectiveFixture = ApiSchemas["BuiltInDirective"];
-export type ContextVariableFixture = ApiSchemas["ContextVariable"];
-export type AgentContextVariableEnablementFixture = ApiSchemas["AgentContextVariableEnablement"];
+type ContextVariableFixture = ApiSchemas["ContextVariable"];
+type AgentContextVariableEnablementFixture = ApiSchemas["AgentContextVariableEnablement"];
 export type ContextVariableRequestFixture = {
   method: "POST" | "PATCH" | "DELETE" | "PUT";
   path: string;
@@ -48,7 +48,7 @@ export type RoutineMutationFixture = {
   body?: Partial<RoutineDraftFixture>;
 };
 type WebhookDestinationFixture = ApiSchemas["WebhookDestination"];
-export type McpConnectionFixture = {
+type McpConnectionFixture = {
   id: string;
   displayName: string;
   serverUrl: string;
@@ -58,7 +58,7 @@ export type McpConnectionFixture = {
   createdAt: string;
   updatedAt: string;
 };
-export type DiscoveredMcpToolFixture = {
+type DiscoveredMcpToolFixture = {
   name: string;
   description?: string;
   inputSchema?: unknown;
@@ -74,7 +74,7 @@ export type AgentChannelCredentialFixture = {
   lastUsedAt: string | null;
   revokedAt: string | null;
 };
-export type CustomerEmailSkillFixture = {
+type CustomerEmailSkillFixture = {
   id: string;
   workspaceId: string;
   agentId: string;
@@ -88,7 +88,7 @@ export type CustomerEmailSkillFixture = {
   createdAt: string;
   updatedAt: string;
 };
-export type CustomerEmailActivityFixture = {
+type CustomerEmailActivityFixture = {
   id: string;
   workspaceId: string;
   agentId: string;
@@ -109,7 +109,7 @@ export type CustomerEmailActivityFixture = {
   errorCode: string | null;
   createdAt: string;
 };
-export type SlackInstallStatusFixture = {
+type SlackInstallStatusFixture = {
   status: "connected" | "needs_reauth" | "disabled" | "not_configured";
   readiness?: {
     configured: boolean;
@@ -119,18 +119,18 @@ export type SlackInstallStatusFixture = {
   teamName?: string;
   answeringAgentId?: string;
 };
-export type SlackBindingFixture = {
+type SlackBindingFixture = {
   channelId: string | null;
   answeringAgentId: string | null;
   escalationChannelId: string | null;
   gapEscalationEnabled: boolean;
 };
 
-export type SlackManifestFixture = {
+type SlackManifestFixture = {
   manifest: Record<string, unknown>;
   requiredEnvVars: string[];
 };
-export type SlackSkillFixture = {
+type SlackSkillFixture = {
   id: string;
   workspaceId: string;
   agentId: string;
@@ -184,7 +184,7 @@ export type SkillCapabilityFixture = {
   available: boolean;
   unavailableReason: string | null;
 };
-export type RoutineSkillCatalogFixture = SkillAuthoringDescriptor[];
+type RoutineSkillCatalogFixture = SkillAuthoringDescriptor[];
 export type WebhookDestinationMutationFixture = {
   method: "POST" | "PUT" | "DELETE" | "ROTATE_SECRET";
   destinationId?: string;
@@ -225,7 +225,7 @@ export const basePlatformSettings = (): ApiSchemas["PlatformSettingsResponse"] =
   },
 });
 
-export type PlatformSettingsFixture = ReturnType<typeof basePlatformSettings>;
+type PlatformSettingsFixture = ReturnType<typeof basePlatformSettings>;
 
 export const baseRetrievalDefaults = (): ApiSchemas["RetrievalDefaultsResponse"] => ({
   queryRewriteEnabled: false,
@@ -248,7 +248,7 @@ export const baseRetrievalDefaults = (): ApiSchemas["RetrievalDefaultsResponse"]
   metadataRules: [],
 });
 
-export type RetrievalDefaultsFixture = ReturnType<typeof baseRetrievalDefaults>;
+type RetrievalDefaultsFixture = ReturnType<typeof baseRetrievalDefaults>;
 
 export const baseIngestionSettings = (): ApiSchemas["IngestionSettings"] => ({
   workspaceId,
@@ -271,7 +271,7 @@ export const baseIngestionSettings = (): ApiSchemas["IngestionSettings"] => ({
   updatedAt: nowIso,
 });
 
-export type IngestionSettingsFixture = ReturnType<typeof baseIngestionSettings>;
+type IngestionSettingsFixture = ReturnType<typeof baseIngestionSettings>;
 
 export const baseDocumentTypeCatalog = (): ApiSchemas["DocumentTypeCatalog"] => ({
   workspaceId,
@@ -338,9 +338,9 @@ export const baseDocumentTypeCatalog = (): ApiSchemas["DocumentTypeCatalog"] => 
   referencedFieldKeys: [],
 });
 
-export type DocumentTypeCatalogFixture = ReturnType<typeof baseDocumentTypeCatalog>;
+type DocumentTypeCatalogFixture = ReturnType<typeof baseDocumentTypeCatalog>;
 
-export const baseEmbeddingCoverage = (): ApiSchemas["EmbeddingCoverage"] => ({
+const baseEmbeddingCoverage = (): ApiSchemas["EmbeddingCoverage"] => ({
   eligibleChunks: 0,
   coveredChunks: 0,
   missingChunks: 0,
@@ -349,7 +349,7 @@ export const baseEmbeddingCoverage = (): ApiSchemas["EmbeddingCoverage"] => ({
   failedJobs: 0,
 });
 
-export type EmbeddingCoverageFixture = ReturnType<typeof baseEmbeddingCoverage>;
+type EmbeddingCoverageFixture = ReturnType<typeof baseEmbeddingCoverage>;
 
 export const baseWebhookDestination = (): WebhookDestinationFixture => ({
   id: "33333333-3333-4333-8333-333333333333",
@@ -373,6 +373,7 @@ const buildDefaultAgentSettings = (settings: PlatformSettingsFixture): ApiSchema
   citationDisplayEnabled: true,
   contactRequestsEnabled: false,
   webhookExportsEnabled: false,
+  handoffOnRetrievalMiss: false,
   contactRequestDelivery: {
     recipientEmails: [],
     webhook: null,
@@ -586,37 +587,6 @@ const baseBuiltInDirectives = (): BuiltInDirectiveFixture[] => [
     description: "Use available source URLs as inline links in grounded answers.",
   },
 ];
-
-export const baseDocumentSources = (): ApiSchemas["DocumentSourceListResponse"] => ({
-  sources: [
-    {
-      id: "11111111-1111-4111-8111-111111111111",
-      kind: "upload",
-      name: "Course guide",
-      externalId: null,
-      lastSyncStatus: null,
-      lastSyncedAt: null,
-      documentCount: 1,
-      documentEnrichmentOverride: "inherit",
-      documentMetadata: {},
-      createdAt: nowIso,
-      updatedAt: nowIso,
-    },
-    {
-      id: "22222222-2222-4222-8222-222222222222",
-      kind: "website",
-      name: "Release notes",
-      externalId: "https://example.com/releases",
-      lastSyncStatus: "completed",
-      lastSyncedAt: nowIso,
-      documentCount: 3,
-      documentEnrichmentOverride: "inherit",
-      documentMetadata: { department: "engineering" },
-      createdAt: nowIso,
-      updatedAt: nowIso,
-    },
-  ],
-});
 
 export const baseSkillCapabilities = (): SkillCapabilityFixture[] => [
   {

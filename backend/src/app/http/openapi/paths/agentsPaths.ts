@@ -17,6 +17,22 @@ export const registerAgentsPaths = (
 
   registry.registerPath({
     method: "get",
+    path: "/api/v1/agents/bundle/imports/{importId}",
+    tags: ["Agents"],
+    summary: "Get an agent bundle import job",
+    description: "Returns the durable state of an import attempt, including any compensated orphan cleanup.",
+    operationId: "getAgentBundleImport",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: { params: schemas.AgentBundleImportParamsSchema },
+    responses: {
+      200: { description: "Import job returned", content: { "application/json": { schema: schemas.AgentBundleImportStatusSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Import job not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
     path: "/api/v1/agents",
     tags: ["Agents"],
     summary: "List workspace agents",
@@ -616,7 +632,9 @@ export const registerAgentsPaths = (
     },
     responses: {
       201: { description: "Agent created from bundle", content: { "application/json": { schema: schemas.AgentBundleImportResponseSchema } } },
+      200: { description: "Existing completed import replayed", content: { "application/json": { schema: schemas.AgentBundleImportResponseSchema } } },
       400: { description: "Unsupported bundle version or agent schema version", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      409: { description: "An import with this idempotency key is still applying", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
     },
   });

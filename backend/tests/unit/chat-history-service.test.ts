@@ -1391,10 +1391,10 @@ describe("chat history service", () => {
 
     const itemsPage = await service.listItems("workspace-1", { limit: 10, offset: 0 });
 
-    expect(itemsPage.total).toBe(3);
+    expect(itemsPage.total).toBe(2);
     expect(itemsPage.hasMore).toBe(false);
     expect(itemsPage.nextCursor).toBeNull();
-    expect(itemsPage.items.map((item) => item.kind)).toEqual(["chat", "search", "chat"]);
+    expect(itemsPage.items.map((item) => item.kind)).toEqual(["chat", "chat"]);
     expect(itemsPage.items[0]).toMatchObject({
       kind: "chat",
       id: newestConversation.id,
@@ -1403,16 +1403,10 @@ describe("chat history service", () => {
         preview: "Newest question",
       },
     });
-    expect(itemsPage.items[1]).toMatchObject({
+    expect(itemsPage.items).not.toContainEqual(expect.objectContaining({
       kind: "search",
       id: "11111111-1111-4111-8111-111111111111",
-      search: {
-        query: "course calendar",
-        resultCount: 2,
-        activityTraceAvailable: true,
-        previewTopTitles: ["Course Calendar", "Workshop Notes"],
-      },
-    });
+    }));
   });
 
   it("skips the contact-history fetch once a chat-only filter (q/agent/site/outcome) is active, and forwards filters to the repository", async () => {
@@ -1554,7 +1548,7 @@ describe("chat history service", () => {
     });
   });
 
-  it("applies offset pagination to the merged history items", async () => {
+  it("keeps document searches out of paginated conversation history", async () => {
     const { conversationRepository, auditRepository, service } = createService();
     const first = await conversationRepository.create("workspace-1");
     first.updatedAt = new Date("2026-04-23T10:00:00.000Z");
@@ -1575,12 +1569,12 @@ describe("chat history service", () => {
 
     const itemsPage = await service.listItems("workspace-1", { limit: 1, offset: 1 });
 
-    expect(itemsPage.total).toBe(3);
-    expect(itemsPage.hasMore).toBe(true);
+    expect(itemsPage.total).toBe(2);
+    expect(itemsPage.hasMore).toBe(false);
     expect(itemsPage.items).toHaveLength(1);
     expect(itemsPage.items[0]).toMatchObject({
-      kind: "search",
-      id: "44444444-4444-4444-8444-444444444444",
+      kind: "chat",
+      id: third.id,
     });
   });
 

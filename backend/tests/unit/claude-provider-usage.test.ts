@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ClaudeTextGenerationClient } from "../../src/shared/infra/llm/claudeProvider.js";
-import type { LlmCapabilityConfig } from "../../src/shared/infra/llm/providerTypes.js";
+import type {
+  LlmCapabilityConfig,
+  ProviderDispatchRecord,
+} from "../../src/shared/infra/llm/providerTypes.js";
 
 const chatConfig: LlmCapabilityConfig = {
   capability: "chat",
@@ -39,39 +42,56 @@ const sseResponse = (events: string[]) => {
   } as unknown as Response;
 };
 
+const recordingDispatchRecord = () => {
+  let dispatched = false;
+  let assignmentCount = 0;
+  const dispatchRecord: ProviderDispatchRecord = {
+    get dispatched() {
+      return dispatched;
+    },
+    set dispatched(value: boolean) {
+      assignmentCount += 1;
+      dispatched = value;
+    },
+  };
+  return { dispatchRecord, assignmentCount: () => assignmentCount };
+};
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
 
 describe("ClaudeTextGenerationClient.complete", () => {
-  it("reports one logical call only after the transport has been invoked", async () => {
-    const events: string[] = [];
+  it("records one logical call exactly once and only after the transport is invoked", async () => {
+    const { dispatchRecord, assignmentCount } = recordingDispatchRecord();
     vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
-      events.push("fetch");
+      expect(dispatchRecord.dispatched).toBe(false);
       return jsonResponse({ content: [{ type: "text", text: "Hi" }] });
     });
 
     await new ClaudeTextGenerationClient(chatConfig).complete({
       prompt: "Hi",
-      onProviderRequestDispatched: () => events.push("issued"),
+      dispatchRecord,
     });
 
-    // Accounting follows dispatch: a request the transport never received must not
-    // be charged for.
-    expect(events).toEqual(["fetch", "issued"]);
+    expect(dispatchRecord.dispatched).toBe(true);
+    expect(assignmentCount()).toBe(1);
   });
 
-  it("survives a reporter that throws, because accounting must not break the call", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse({ content: [{ type: "text", text: "Hi" }] }),
-    );
+  it("does not record a call when the signal was already aborted", async () => {
+    const { dispatchRecord, assignmentCount } = recordingDispatchRecord();
+    const controller = new AbortController();
+    controller.abort();
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(controller.signal.reason);
 
-    const result = await new ClaudeTextGenerationClient(chatConfig).complete({
+    await expect(new ClaudeTextGenerationClient(chatConfig).complete({
       prompt: "Hi",
-      onProviderRequestDispatched: () => { throw new Error("accounting sink is down"); },
-    });
+      signal: controller.signal,
+      dispatchRecord,
+    })).rejects.toMatchObject({ name: "AbortError" });
 
-    expect(result.text).toBe("Hi");
+    expect(dispatchRecord.dispatched).toBe(false);
+    expect(assignmentCount()).toBe(0);
   });
 
   it("forces a schema-backed tool and returns its input as structured JSON", async () => {
@@ -134,6 +154,46 @@ describe("ClaudeTextGenerationClient.complete", () => {
 });
 
 describe("ClaudeTextGenerationClient.stream", () => {
+  it("records a streamed request only after the transport has been invoked", async () => {
+    const { dispatchRecord, assignmentCount } = recordingDispatchRecord();
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      expect(dispatchRecord.dispatched).toBe(false);
+      return sseResponse([]);
+    });
+
+    const { textStream } = new ClaudeTextGenerationClient(chatConfig).stream({
+      prompt: "Hi",
+      dispatchRecord,
+    });
+    for await (const _chunk of textStream) {
+      // drain
+    }
+
+    expect(dispatchRecord.dispatched).toBe(true);
+    expect(assignmentCount()).toBe(1);
+  });
+
+  it("does not record a streamed call when the signal was already aborted", async () => {
+    const { dispatchRecord, assignmentCount } = recordingDispatchRecord();
+    const controller = new AbortController();
+    controller.abort();
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(controller.signal.reason);
+
+    const { textStream } = new ClaudeTextGenerationClient(chatConfig).stream({
+      prompt: "Hi",
+      signal: controller.signal,
+      dispatchRecord,
+    });
+    await expect(async () => {
+      for await (const _chunk of textStream) {
+        // drain
+      }
+    }).rejects.toMatchObject({ name: "AbortError" });
+
+    expect(dispatchRecord.dispatched).toBe(false);
+    expect(assignmentCount()).toBe(0);
+  });
+
   it("streams schema-backed tool input JSON", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       sseResponse([

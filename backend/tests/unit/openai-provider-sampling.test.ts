@@ -16,9 +16,13 @@ vi.mock("openai", () => ({
               if (requestOptions?.signal?.aborted) {
                 throw requestOptions.signal.reason;
               }
-              await options.fetch?.("https://api.openai.test/v1/chat/completions", {
-                signal: requestOptions?.signal,
-              });
+              const request = args[0] as { model?: string };
+              const transportAttempts = request.model?.includes("sdk-retry") ? 2 : 1;
+              for (let attempt = 0; attempt < transportAttempts; attempt += 1) {
+                await options.fetch?.("https://api.openai.test/v1/chat/completions", {
+                  signal: requestOptions?.signal,
+                });
+              }
               return createMock(...args);
             },
           },
@@ -34,7 +38,10 @@ import {
   OpenAITextGenerationClient,
   type ChatSamplingParams,
 } from "../../src/shared/infra/llm/openaiProvider.js";
-import type { LlmCapabilityConfig } from "../../src/shared/infra/llm/providerTypes.js";
+import type {
+  LlmCapabilityConfig,
+  ProviderDispatchRecord,
+} from "../../src/shared/infra/llm/providerTypes.js";
 
 // The learned-support caches are module-global by design (they outlive a single
 // client), so every case uses a model id of its own to stay independent. None of
@@ -101,6 +108,21 @@ const drain = async (stream: AsyncIterable<string>): Promise<string[]> => {
     chunks.push(chunk);
   }
   return chunks;
+};
+
+const recordingDispatchRecord = () => {
+  let dispatched = false;
+  let assignmentCount = 0;
+  const dispatchRecord: ProviderDispatchRecord = {
+    get dispatched() {
+      return dispatched;
+    },
+    set dispatched(value: boolean) {
+      assignmentCount += 1;
+      dispatched = value;
+    },
+  };
+  return { dispatchRecord, assignmentCount: () => assignmentCount };
 };
 
 beforeEach(() => {
@@ -227,9 +249,34 @@ describe("createChatCompletionWithSamplingFallback", () => {
 });
 
 describe("OpenAITextGenerationClient.complete sampling reconciliation", () => {
-  it("reports one logical call when provider transport dispatch retries", async () => {
-    const onProviderRequestDispatched = vi.fn();
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response());
+  it("records one completed call across SDK transport retries", async () => {
+    const { dispatchRecord, assignmentCount } = recordingDispatchRecord();
+    const dispatchedBeforeTransportReturns: boolean[] = [];
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      dispatchedBeforeTransportReturns.push(dispatchRecord.dispatched);
+      return new Response();
+    });
+    createMock.mockResolvedValueOnce(completion("Hello"));
+
+    await new OpenAITextGenerationClient(chatConfig("complete-sdk-retry")).complete({
+      prompt: "Hi",
+      dispatchRecord,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(createMock).toHaveBeenCalledTimes(1);
+    expect(dispatchedBeforeTransportReturns).toEqual([false, true]);
+    expect(dispatchRecord.dispatched).toBe(true);
+    expect(assignmentCount()).toBe(1);
+  });
+
+  it("records one logical call after transport invocation when provider dispatch retries", async () => {
+    const { dispatchRecord, assignmentCount } = recordingDispatchRecord();
+    const dispatchedBeforeTransportReturns: boolean[] = [];
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      dispatchedBeforeTransportReturns.push(dispatchRecord.dispatched);
+      return new Response();
+    });
     createMock
       .mockRejectedValueOnce(unsupportedTemperatureError())
       .mockResolvedValueOnce(completion("Hello"));
@@ -237,16 +284,18 @@ describe("OpenAITextGenerationClient.complete sampling reconciliation", () => {
     await new OpenAITextGenerationClient(chatConfig("complete-dispatch-retry")).complete({
       prompt: "Hi",
       temperature: 0,
-      onProviderRequestDispatched,
+      dispatchRecord,
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(createMock).toHaveBeenCalledTimes(2);
-    expect(onProviderRequestDispatched).toHaveBeenCalledTimes(1);
+    expect(dispatchedBeforeTransportReturns).toEqual([false, true]);
+    expect(dispatchRecord.dispatched).toBe(true);
+    expect(assignmentCount()).toBe(1);
   });
 
-  it("does not report a call when cancellation stops SDK preparation before transport dispatch", async () => {
-    const onProviderRequestDispatched = vi.fn();
+  it("does not record a call when cancellation stops SDK preparation before transport dispatch", async () => {
+    const { dispatchRecord, assignmentCount } = recordingDispatchRecord();
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response());
     const controller = new AbortController();
     controller.abort();
@@ -254,12 +303,13 @@ describe("OpenAITextGenerationClient.complete sampling reconciliation", () => {
     await expect(new OpenAITextGenerationClient(chatConfig("complete-pre-dispatch-abort")).complete({
       prompt: "Hi",
       signal: controller.signal,
-      onProviderRequestDispatched,
+      dispatchRecord,
     })).rejects.toMatchObject({ name: "AbortError" });
 
     expect(fetchMock).not.toHaveBeenCalled();
     expect(createMock).not.toHaveBeenCalled();
-    expect(onProviderRequestDispatched).not.toHaveBeenCalled();
+    expect(dispatchRecord.dispatched).toBe(false);
+    expect(assignmentCount()).toBe(0);
   });
 
   it("retries without temperature when the model rejects the requested value", async () => {
@@ -379,7 +429,36 @@ describe("OpenAITextGenerationClient.complete sampling reconciliation", () => {
 });
 
 describe("OpenAITextGenerationClient.stream sampling reconciliation", () => {
-  it("retries the stream without temperature when the model rejects the value", async () => {
+  it("records one streamed call across SDK transport retries", async () => {
+    const { dispatchRecord, assignmentCount } = recordingDispatchRecord();
+    const dispatchedBeforeTransportReturns: boolean[] = [];
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      dispatchedBeforeTransportReturns.push(dispatchRecord.dispatched);
+      return new Response();
+    });
+    createMock.mockResolvedValueOnce(
+      asyncIterableOf([{ id: "s-sdk", choices: [{ delta: { content: "Hi" } }] }]),
+    );
+
+    const { textStream } = new OpenAITextGenerationClient(
+      chatConfig("stream-sdk-retry"),
+    ).stream({ prompt: "Hi", dispatchRecord });
+
+    expect(await drain(textStream)).toEqual(["Hi"]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(createMock).toHaveBeenCalledTimes(1);
+    expect(dispatchedBeforeTransportReturns).toEqual([false, true]);
+    expect(dispatchRecord.dispatched).toBe(true);
+    expect(assignmentCount()).toBe(1);
+  });
+
+  it("records one streamed call after transport invocation when provider dispatch retries", async () => {
+    const { dispatchRecord, assignmentCount } = recordingDispatchRecord();
+    const dispatchedBeforeTransportReturns: boolean[] = [];
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      dispatchedBeforeTransportReturns.push(dispatchRecord.dispatched);
+      return new Response();
+    });
     createMock
       .mockRejectedValueOnce(unsupportedTemperatureError())
       .mockResolvedValueOnce(
@@ -388,13 +467,35 @@ describe("OpenAITextGenerationClient.stream sampling reconciliation", () => {
 
     const { textStream, usage } = new OpenAITextGenerationClient(
       chatConfig("stream-temp-reject"),
-    ).stream({ prompt: "Hi", temperature: 0 });
+    ).stream({ prompt: "Hi", temperature: 0, dispatchRecord });
 
     expect(await drain(textStream)).toEqual(["Hi there"]);
     await expect(usage).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(createMock).toHaveBeenCalledTimes(2);
     expect(createMock.mock.calls[0]?.[0]).toMatchObject({ temperature: 0, stream: true });
     expect(createMock.mock.calls[1]?.[0]).not.toHaveProperty("temperature");
+    expect(dispatchedBeforeTransportReturns).toEqual([false, true]);
+    expect(dispatchRecord.dispatched).toBe(true);
+    expect(assignmentCount()).toBe(1);
+  });
+
+  it("does not record a streamed call when cancellation stops SDK preparation before dispatch", async () => {
+    const { dispatchRecord, assignmentCount } = recordingDispatchRecord();
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response());
+    const controller = new AbortController();
+    controller.abort();
+
+    const { textStream, usage } = new OpenAITextGenerationClient(
+      chatConfig("stream-pre-dispatch-abort"),
+    ).stream({ prompt: "Hi", signal: controller.signal, dispatchRecord });
+
+    await expect(drain(textStream)).rejects.toMatchObject({ name: "AbortError" });
+    await expect(usage).resolves.toBeUndefined();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(createMock).not.toHaveBeenCalled();
+    expect(dispatchRecord.dispatched).toBe(false);
+    expect(assignmentCount()).toBe(0);
   });
 
   it("rethrows an unrelated stream error without retrying", async () => {

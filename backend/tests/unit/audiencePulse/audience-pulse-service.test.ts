@@ -228,7 +228,7 @@ const createService = (overrides: Partial<AudiencePulseServiceDependencies> = {}
         return {
           metadata: { capability: "chat", provider: "openai", model: "test" },
           async complete(request) {
-            request.onProviderRequestDispatched?.();
+            if (request.dispatchRecord) request.dispatchRecord.dispatched = true;
             calls.inference += 1;
             calls.lifecycle.push("inference");
             return { text: modelResponse };
@@ -410,7 +410,7 @@ describe("AudiencePulseService", () => {
           return {
             metadata: { capability: "chat", provider: "openai", model: "test" },
             async complete(request) {
-              request.onProviderRequestDispatched?.();
+              if (request.dispatchRecord) request.dispatchRecord.dispatched = true;
               throw new Error("provider failed after dispatch");
             },
             stream() { throw new Error("not used"); },
@@ -446,7 +446,7 @@ describe("AudiencePulseService", () => {
               if (request.signal?.aborted) {
                 throw Object.assign(new Error("aborted during provider request preparation"), { name: "AbortError" });
               }
-              request.onProviderRequestDispatched?.();
+              if (request.dispatchRecord) request.dispatchRecord.dispatched = true;
               return { text: modelResponse };
             },
             stream() { throw new Error("not used"); },
@@ -752,7 +752,7 @@ describe("AudiencePulseService", () => {
           return {
             metadata: { capability: "chat", provider: "openai", model: "test" },
             async complete(request) {
-              request.onProviderRequestDispatched?.();
+              if (request.dispatchRecord) request.dispatchRecord.dispatched = true;
               calls.inference += 1;
               return { text: JSON.stringify({ summary: "Membership changed.", themes: [], recommendations: {}, caveats: [] }) };
             },
@@ -846,7 +846,7 @@ describe("AudiencePulseService", () => {
           return {
             metadata: { capability: "chat", provider: "openai", model: "test" },
             async complete(request) {
-              request.onProviderRequestDispatched?.();
+              if (request.dispatchRecord) request.dispatchRecord.dispatched = true;
               calls.inference += 1;
               return { text: JSON.stringify({
                 summary: "Current summary.",
@@ -915,7 +915,7 @@ describe("AudiencePulseService", () => {
           return {
             metadata: { capability: "chat", provider: "openai", model: "test" },
             async complete(request) {
-              request.onProviderRequestDispatched?.();
+              if (request.dispatchRecord) request.dispatchRecord.dispatched = true;
               calls.inference += 1;
               return { text: JSON.stringify({ summary: "No recurring topics.", themes: [], recommendations: {}, caveats: [] }) };
             },
@@ -1054,7 +1054,7 @@ describe("AudiencePulseService", () => {
           return {
             metadata: { capability: "chat", provider: "openai", model: "test" },
             async complete(request) {
-              request.onProviderRequestDispatched?.();
+              if (request.dispatchRecord) request.dispatchRecord.dispatched = true;
               calls.inference += 1;
               return {
                 text: JSON.stringify({
@@ -1189,7 +1189,7 @@ describe("AudiencePulseService", () => {
           return {
             metadata: { capability: "chat", provider: "openai", model: "test" },
             async complete(request) {
-              request.onProviderRequestDispatched?.();
+              if (request.dispatchRecord) request.dispatchRecord.dispatched = true;
               calls.inference += 1;
               return {
                 text: JSON.stringify({
@@ -1266,7 +1266,7 @@ describe("AudiencePulseService", () => {
           return {
             metadata: { capability: "chat", provider: "openai", model: "test" },
             async complete(request) {
-              request.onProviderRequestDispatched?.();
+              if (request.dispatchRecord) request.dispatchRecord.dispatched = true;
               calls.inference += 1;
               return { text: JSON.stringify({ summary: "Population changed.", themes: [], recommendations: {}, caveats: [] }) };
             },
@@ -1433,7 +1433,7 @@ describe("AudiencePulseService", () => {
           return {
             metadata: { capability: "chat", provider: "openai", model: "test" },
             async complete(request) {
-              request.onProviderRequestDispatched?.();
+              if (request.dispatchRecord) request.dispatchRecord.dispatched = true;
               calls.inference += 1;
               return { text: JSON.stringify({ summary: "The gap closed.", themes: [], recommendations: {}, caveats: [] }) };
             },
@@ -1555,7 +1555,7 @@ describe("AudiencePulseService", () => {
           return {
             metadata: { capability: "chat", provider: "openai", model: "test" },
             async complete(request) {
-              request.onProviderRequestDispatched?.();
+              if (request.dispatchRecord) request.dispatchRecord.dispatched = true;
               completionFinished = true;
               return { text: modelResponse };
             },
@@ -1947,7 +1947,7 @@ describe("AudiencePulseService", () => {
           return {
             metadata: { capability: "chat", provider: "openai", model: "test" },
             async complete(request) {
-              request.onProviderRequestDispatched?.();
+              if (request.dispatchRecord) request.dispatchRecord.dispatched = true;
               return { text: response };
             },
             stream() { throw new Error("not used"); },
@@ -2021,7 +2021,7 @@ describe("AudiencePulseService", () => {
           return {
             metadata: { capability: "chat", provider: "openai", model: "test" },
             async complete(request) {
-              request.onProviderRequestDispatched?.();
+              if (request.dispatchRecord) request.dispatchRecord.dispatched = true;
               return { text: response };
             },
             stream() { throw new Error("not used"); },
@@ -2215,7 +2215,7 @@ describe("AudiencePulseService", () => {
           return {
             metadata: { capability: "chat", provider: "openai", model: "test" },
             async complete(request) {
-              request.onProviderRequestDispatched?.();
+              if (request.dispatchRecord) request.dispatchRecord.dispatched = true;
               return {
                 text: JSON.stringify({
                   summary: "Visitors ask about a recurring topic.",
@@ -2516,7 +2516,7 @@ describe("AudiencePulseService", () => {
               metadata: { capability: "chat", provider: "openai", model: "test" },
               async complete(request) {
                 providerCalls += 1;
-                request.onProviderRequestDispatched?.();
+                if (request.dispatchRecord) request.dispatchRecord.dispatched = true;
                 return failure.complete();
               },
               stream() { throw new Error("not used"); },
@@ -2546,7 +2546,7 @@ describe("AudiencePulseService", () => {
           return {
             metadata: { capability: "chat", provider: "openai", model: "test" },
             async complete(request) {
-              request.onProviderRequestDispatched?.();
+              if (request.dispatchRecord) request.dispatchRecord.dispatched = true;
               return { text: "not json" };
             },
             stream() { throw new Error("not used"); },

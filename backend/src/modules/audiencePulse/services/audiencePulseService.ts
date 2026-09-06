@@ -4,6 +4,7 @@ import { ZodError } from "zod";
 
 import type { UsageLimitPolicy, UsageLimitReservation } from "../../../shared/domain/usageLimitPolicy.js";
 import { isUsageLimitExceededError } from "../../../shared/domain/usageLimitPolicy.js";
+import type { ProviderDispatchRecord } from "../../../shared/infra/llm/providerTypes.js";
 import type {
   AudiencePulseCensusTopic,
   AudiencePulseEvidence,
@@ -917,6 +918,7 @@ export class AudiencePulseService implements AudiencePulsePort {
         });
 
         let completion: Awaited<ReturnType<typeof inference.complete>>;
+        const dispatchRecord: ProviderDispatchRecord = { dispatched: false };
         try {
           completion = await inference.complete({
             prompt,
@@ -925,9 +927,7 @@ export class AudiencePulseService implements AudiencePulsePort {
             responseFormat,
             signal: input.signal,
             operation: modelCallContext,
-            onProviderRequestDispatched: () => {
-              modelCallsIssued += 1;
-            },
+            dispatchRecord,
             validateResult(result) {
               parseModelResult(result.text, shownQualifyingTopicIndexes);
             },
@@ -937,6 +937,10 @@ export class AudiencePulseService implements AudiencePulsePort {
           const reason = unavailableReason(error);
           deferredFailureOutcome = reason;
           return { kind: "unavailable", reason };
+        } finally {
+          if (dispatchRecord.dispatched) {
+            modelCallsIssued += 1;
+          }
         }
 
         try {

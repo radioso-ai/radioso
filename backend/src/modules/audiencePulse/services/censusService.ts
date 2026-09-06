@@ -262,7 +262,7 @@ export class CensusService {
     windowStart: Date;
     windowEnd: Date;
     signal?: AbortSignal;
-    /** Reports billable model work before awaiting it, so failures cannot erase issued usage. */
+    /** Reports billable model work after an attempt settles, including failures dispatched to a provider. */
     onModelCallIssued?: () => void;
   }): Promise<CensusRunResult> {
     const { workspaceId, windowStart, windowEnd, signal, onModelCallIssued } = input;

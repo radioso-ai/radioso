@@ -111,7 +111,7 @@ const stripOperation = (input: ModelInferenceRequest): TextGenerationRequest => 
     reasoningEffort: input.reasoningEffort,
     responseFormat: input.responseFormat,
     signal: input.signal,
-    onProviderRequestDispatched: input.onProviderRequestDispatched,
+    dispatchRecord: input.dispatchRecord,
   };
 };
 

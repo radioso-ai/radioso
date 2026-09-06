@@ -106,10 +106,11 @@ describe("ModelInferencePipelineService", () => {
     expect(JSON.stringify(exporter.spans[0]?.attributes)).not.toContain("private prompt");
   });
 
-  it("forwards logical-call accounting to the provider dispatch boundary", async () => {
-    const onProviderRequestDispatched = vi.fn();
+  it("forwards the dispatch record to the provider completion boundary", async () => {
+    const dispatchRecord = { dispatched: false };
     const complete = vi.fn(async (request) => {
-      request.onProviderRequestDispatched?.();
+      expect(request.dispatchRecord).toBe(dispatchRecord);
+      request.dispatchRecord!.dispatched = true;
       return textResult("Answer");
     });
     const client: TextGenerationClient = {
@@ -122,10 +123,35 @@ describe("ModelInferencePipelineService", () => {
     await pipeline.complete({
       operation: usageContext,
       prompt: "private prompt",
-      onProviderRequestDispatched,
+      dispatchRecord,
     });
 
-    expect(onProviderRequestDispatched).toHaveBeenCalledTimes(1);
+    expect(dispatchRecord.dispatched).toBe(true);
+  });
+
+  it("forwards the dispatch record to the provider streaming boundary", async () => {
+    const dispatchRecord = { dispatched: false };
+    const client: TextGenerationClient = {
+      metadata: { capability: "chat", provider: "openai", model: "gpt-test" },
+      complete: vi.fn(async () => textResult("unused")),
+      stream(request) {
+        expect(request.dispatchRecord).toBe(dispatchRecord);
+        request.dispatchRecord!.dispatched = true;
+        return streamResult(["Answer"]);
+      },
+    };
+    const pipeline = new ModelInferencePipelineService(client);
+
+    const { textStream } = pipeline.stream({
+      operation: usageContext,
+      prompt: "private prompt",
+      dispatchRecord,
+    });
+    for await (const _chunk of textStream) {
+      // drain
+    }
+
+    expect(dispatchRecord.dispatched).toBe(true);
   });
 
   it("rejects oversized non-streaming prompts before calling the provider", async () => {

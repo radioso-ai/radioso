@@ -14,7 +14,6 @@ import {
   type TextGenerationRequest,
   type TextGenerationResult,
   type TextGenerationStreamResult,
-  reportProviderRequestDispatched,
 } from "./providerTypes.js";
 import { streamWithUsage } from "./providerStreaming.js";
 import { EMBEDDING_REQUEST_TIMEOUT_MS, runProviderRequestWithTimeout } from "./providerTimeouts.js";
@@ -338,6 +337,23 @@ export const createOpenAIClient = (config: LlmCapabilityConfig): OpenAI =>
     baseURL: config.baseUrl,
   });
 
+const withDispatchRecording = (client: OpenAI, input: TextGenerationRequest): OpenAI => {
+  const dispatchRecord = input.dispatchRecord;
+  if (!dispatchRecord) return client;
+
+  let dispatchRecorded = dispatchRecord.dispatched;
+  return client.withOptions({
+    fetch: async (url, init) => {
+      const response = globalThis.fetch(url, init);
+      if (!dispatchRecorded && !input.signal?.aborted && !init?.signal?.aborted) {
+        dispatchRecorded = true;
+        dispatchRecord.dispatched = true;
+      }
+      return response;
+    },
+  });
+};
+
 export class OpenAITextGenerationClient implements TextGenerationClient {
   readonly metadata;
   private readonly client: OpenAI;
@@ -352,22 +368,7 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
   }
 
   async complete(input: TextGenerationRequest): Promise<TextGenerationResult> {
-    let dispatchReported = false;
-    const client = input.onProviderRequestDispatched
-      ? this.client.withOptions({
-          fetch: async (url, init) => {
-            // Invoking the transport is the dispatch, so report after handing it the
-            // request. A throwing observer must not look like a connection failure and
-            // burn an SDK retry, so reporting is isolated from this call.
-            const response = globalThis.fetch(url, init);
-            if (!dispatchReported && !input.signal?.aborted && !init?.signal?.aborted) {
-              dispatchReported = true;
-              reportProviderRequestDispatched(input.onProviderRequestDispatched);
-            }
-            return response;
-          },
-        })
-      : this.client;
+    const client = withDispatchRecording(this.client, input);
     const messages = buildMessages(input);
     const sampling = buildChatSamplingParams(this.config.provider, input, this.config.model);
     const createCompletion = (samplingParams: ChatSamplingParams) => {
@@ -406,7 +407,7 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
   }
 
   stream(input: TextGenerationRequest): TextGenerationStreamResult {
-    const client = this.client;
+    const client = withDispatchRecording(this.client, input);
     const config = this.config;
     const messages = buildMessages(input);
     const sampling = buildChatSamplingParams(config.provider, input, config.model);

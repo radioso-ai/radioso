@@ -202,14 +202,9 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
     const countSourceOriginFilter = buildSourceOriginFilter(input.sourceOrigin, sql`conversations.source_origin`);
     const rowOutcomeFilter = buildOutcomeFilter(input.outcome, sql`c.id`, sql`c.workspace_id`, sql`c.updated_at`);
     const countOutcomeFilter = buildOutcomeFilter(input.outcome, sql`conversations.id`, sql`conversations.workspace_id`, sql`conversations.updated_at`);
-    // q/agentId/sourceOrigin/outcome only mean something for a chat row — a search row has
-    // none of those facets — so any one of them active excludes search rows entirely, the
-    // same narrowing the All-lens toolbar already applied client-side for outcome/agent/site.
-    const hasChatOnlyFilter = Boolean(input.q || input.agentId || input.sourceOrigin || input.outcome);
-    const searchSourceFilter = hasChatOnlyFilter ? sql`AND FALSE` : sql``;
-    // A multi-CTE UNION ALL analytical query: expressed with the Kysely `sql` tag (which
-    // parameterizes the interpolated values) rather than the builder, which cannot model the
-    // NULL-padded union of two heterogeneous sources without more noise than the SQL itself.
+    // The Inbox's All lens is a conversation feed. Document-search audit events remain
+    // available through the dedicated document-search history surface, but must not consume
+    // rows or pagination in this operator-facing conversation list.
     const result = await sql<HistoryItemsRow>`
        WITH conversation_source AS (
          SELECT
@@ -250,62 +245,17 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
          ORDER BY c.updated_at DESC, c.created_at DESC, c.id DESC
          LIMIT ${sourceLimit}
        ),
-       search_source AS (
-         SELECT
-           'search'::text AS kind,
-           COALESCE(NULLIF(a.metadata_json ->> 'searchId', ''), a.id::text) AS item_id,
-           a.created_at AS sort_at,
-           a.created_at AS secondary_sort_at,
-           a.id::text AS stable_id,
-           NULL::uuid AS conversation_id,
-           NULL::uuid AS conversation_workspace_id,
-           NULL::uuid AS conversation_agent_id,
-           NULL::text AS conversation_agent_name,
-           NULL::text AS conversation_agent_internal_name,
-           NULL::text AS source_channel,
-           NULL::text AS source_origin,
-           NULL::jsonb AS channel_context,
-           NULL::text AS anonymous_session_id,
-           NULL::text AS verified_customer_id,
-           NULL::text AS entry_page_url,
-           NULL::text AS title,
-           NULL::timestamptz AS conversation_created_at,
-           NULL::timestamptz AS conversation_updated_at,
-           a.id AS audit_id,
-           a.account_id AS audit_account_id,
-           a.workspace_id AS audit_workspace_id,
-           a.event_type,
-           a.event_status,
-           a.metadata_json,
-           a.created_at AS audit_created_at
-         FROM audit_events a
-         WHERE a.workspace_id = ${workspaceId}
-           AND a.event_type = 'document.search'
-           ${searchSourceFilter}
-         ORDER BY a.created_at DESC, a.id DESC
-         LIMIT ${sourceLimit}
-       ),
-       history_items AS (
-         SELECT * FROM conversation_source
-         UNION ALL
-         SELECT * FROM search_source
-       ),
        counted AS (
-         SELECT (
-           (SELECT COUNT(*) FROM conversations WHERE workspace_id = ${workspaceId} ${countScopeFilter}
-              ${countTextSearchFilter}
-              ${countAgentFilter}
-              ${countSourceOriginFilter}
-              ${countOutcomeFilter}
-           ) +
-           (SELECT COUNT(*) FROM audit_events WHERE workspace_id = ${workspaceId} AND event_type = 'document.search'
-              ${searchSourceFilter}
-           )
+         SELECT (SELECT COUNT(*) FROM conversations WHERE workspace_id = ${workspaceId} ${countScopeFilter}
+           ${countTextSearchFilter}
+           ${countAgentFilter}
+           ${countSourceOriginFilter}
+           ${countOutcomeFilter}
          )::text AS total_count
        ),
        paged AS (
          SELECT *
-         FROM history_items
+         FROM conversation_source
          ORDER BY sort_at DESC, secondary_sort_at DESC, stable_id DESC
          LIMIT ${input.limit}
          OFFSET ${offset}

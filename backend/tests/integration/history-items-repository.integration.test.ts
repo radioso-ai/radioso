@@ -299,9 +299,9 @@ describeIntegration("HistoryItemsRepository search and filters (Postgres)", () =
     expect(chatIds(page)).toEqual(new Set([bothId]));
   });
 
-  it("excludes search-kind rows once any chat-only filter is active, but includes them with none", async () => {
+  it("excludes document-search audit events from the conversation feed", async () => {
     const unfiltered = await repository.listPageByWorkspaceId(workspaceId, { limit: 50, sourceScope: "all" });
-    expect(kinds(unfiltered)).toContain("search");
+    expect(kinds(unfiltered)).not.toContain("search");
 
     const filteredByQ = await repository.listPageByWorkspaceId(workspaceId, { limit: 50, sourceScope: "all", q: "refund" });
     expect(kinds(filteredByQ)).not.toContain("search");

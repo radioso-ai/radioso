@@ -4525,7 +4525,7 @@ export class InMemoryAuditEventRepository implements AuditEventRepositoryPort {
 export class InMemoryHistoryItemsRepository implements HistoryItemsRepositoryPort {
   constructor(
     private readonly conversationRepository: InMemoryConversationRepository,
-    private readonly auditEventRepository: InMemoryAuditEventRepository,
+    _auditEventRepository: InMemoryAuditEventRepository,
   ) {}
 
   async listPageByWorkspaceId(
@@ -4541,15 +4541,7 @@ export class InMemoryHistoryItemsRepository implements HistoryItemsRepositoryPor
         sortAt: conversation.updatedAt,
         conversation,
       }));
-    const searches: HistoryItemsSourceRecord[] = this.auditEventRepository.items
-      .filter((event) => event.workspaceId === workspaceId && event.eventType === "document.search" && !input.agentId)
-      .map((event) => ({
-        kind: "search" as const,
-        id: typeof event.metadata.searchId === "string" ? event.metadata.searchId : event.id,
-        sortAt: event.createdAt,
-        event,
-      }));
-    const items = [...conversations, ...searches].sort((left, right) => {
+    const items = conversations.sort((left, right) => {
       const timeDiff = right.sortAt.getTime() - left.sortAt.getTime();
       return timeDiff !== 0 ? timeDiff : right.id.localeCompare(left.id);
     });

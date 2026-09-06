@@ -13,6 +13,9 @@
     "psql",
     "pg_dump"
   ],
+  "ignoreIssues": {
+    "backend/src/shared/infra/kysely/schema.ts": ["types"]
+  },
   "workspaces": {
     ".": {
       "entry": [

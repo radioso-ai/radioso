@@ -91,6 +91,23 @@ export interface AgentAccessGrants {
   workspace_id: string;
 }
 
+export interface AgentBundleImports {
+  actor_account_id: string | null;
+  agent_id: string | null;
+  applied_at: Timestamp | null;
+  cleanup_lease_expires_at: Timestamp | null;
+  cleanup_lease_token: string | null;
+  compensated_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  failure_code: string | null;
+  id: Generated<string>;
+  idempotency_key: string | null;
+  state: Generated<string>;
+  unresolved: Generated<Json>;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
 export interface AgentContextVariables {
   agent_id: string;
   created_at: Generated<Timestamp>;
@@ -1451,6 +1468,7 @@ export interface DB {
   account_memberships: AccountMemberships;
   accounts: Accounts;
   agent_access_grants: AgentAccessGrants;
+  agent_bundle_imports: AgentBundleImports;
   agent_context_variables: AgentContextVariables;
   agent_converse_session_mappings: AgentConverseSessionMappings;
   agent_directives: AgentDirectives;

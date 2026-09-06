@@ -178,7 +178,7 @@ export const createAgentBundleServices = (deps: AgentBundleCompositionDependenci
     },
     routines: {
       createDraft: async (workspaceId, agentId, definition) => {
-        const saved = await deps.routineDefinitionService.createDraft(workspaceId, agentId, definition as never);
+        const saved = await deps.routineDefinitionService.createDraft(workspaceId, agentId, definition);
         return { routineId: saved.routine.id };
       },
       publish: async (workspaceId, agentId, routineId) => {

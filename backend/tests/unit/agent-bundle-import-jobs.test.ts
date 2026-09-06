@@ -50,7 +50,7 @@ describe("AgentBundleImportService import jobs", () => {
       markFailed: vi.fn(async () => true),
     };
     const service = new AgentBundleImportService({
-      imports: imports as never,
+      imports,
       agents: { create: async () => ({ agentId: "agent-1" }), delete: async () => undefined },
       directives: { create: async () => undefined },
       skills: { hasCapability: () => true, create: async () => undefined },
@@ -83,7 +83,7 @@ describe("AgentBundleImportService import jobs", () => {
           status: "existing",
           job: { id: "import-1", state: "applied", agentId: "agent-existing", unresolved: [] },
         }),
-      } as never,
+      },
       agents: { create, delete: async () => undefined },
       directives: { create: async () => undefined },
       skills: { hasCapability: () => true, create: async () => undefined },
@@ -98,7 +98,7 @@ describe("AgentBundleImportService import jobs", () => {
 
   it("returns a stable conflict while another request owns the same key", async () => {
     const service = new AgentBundleImportService({
-      imports: { createOrGet: async () => ({ status: "existing", job: { id: "import-1", state: "applying", agentId: null, unresolved: [] } }) } as never,
+      imports: { createOrGet: async () => ({ status: "existing", job: { id: "import-1", state: "applying", agentId: null, unresolved: [] } }) },
       agents: { create: async () => ({ agentId: "agent-new" }), delete: async () => undefined },
       directives: { create: async () => undefined },
       skills: { hasCapability: () => true, create: async () => undefined },
@@ -118,7 +118,7 @@ describe("AgentBundleImportService import jobs", () => {
       markFailed: vi.fn(async () => true),
     };
     const service = new AgentBundleImportService({
-      imports: imports as never,
+      imports,
       agents: { create: async () => ({ agentId: "agent-1" }), delete: async () => { throw new Error("network"); } },
       directives: { create: async () => { throw new Error("invalid directive"); } },
       skills: { hasCapability: () => true, create: async () => undefined },
@@ -141,7 +141,7 @@ describe("AgentBundleImportService import jobs", () => {
         setCreatedAgent: async () => true,
         markApplied: async () => false,
         markFailed: async () => false,
-      } as never,
+      },
       agents: { create: async () => ({ agentId: "agent-1" }), delete: deleteAgent },
       directives: { create: async () => undefined },
       skills: { hasCapability: () => true, create: async () => undefined },

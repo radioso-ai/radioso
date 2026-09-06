@@ -88,7 +88,7 @@ describeIfDatabase("agent bundle import jobs (Postgres)", () => {
     const [claimed] = await imports.claimStaleApplying({ ageSeconds: 15 * 60, leaseSeconds: 60, leaseToken, limit: 1 });
 
     expect(claimed).toMatchObject({ id: job.job.id, agentId: null });
-    await expect(imports.markFailed(claimed!.id, "apply_failed", { terminal: true, leaseToken })).resolves.toBe(true);
+    await expect(imports.markFailed(claimed.id, "apply_failed", { terminal: true, leaseToken })).resolves.toBe(true);
     await expect(imports.createOrGet(input)).resolves.toMatchObject({ status: "created" });
   });
 });

@@ -28,7 +28,7 @@ For a small private deployment, the minimum baseline is:
 - keep `.env` and secret values outside source control
 - back up PostgreSQL and document storage every day
 - test restore before relying on the backup
-- pin the deployed image tag or Git commit
+- deploy a tagged release and pin the image to it, rather than tracking a branch
 - apply upgrades manually after reading the migration list
 
 Live dashboard updates are optional. An enabled deployment also runs Redis or Valkey 7+ and the dedicated realtime process described below.
@@ -81,7 +81,7 @@ If realtime is enabled, start Redis or Valkey and the realtime process, then wai
 
 Use this order for self-hosted upgrades:
 
-1. Read the release notes or inspect `backend/src/db/migrations/` for new SQL migrations.
+1. Read the release notes for the version you are moving to. They list every SQL migration the release adds.
 2. Back up PostgreSQL and document storage.
 3. Build or pull the new backend, frontend, worker, and optional realtime images.
 4. Start the backend and let migrations run.
@@ -90,6 +90,15 @@ Use this order for self-hosted upgrades:
 7. Start or refresh the frontend.
 8. Upload a small document and confirm it becomes searchable.
 9. Ask one grounded question and verify citations or retrieval trace data.
+10. `curl <backend_url>/health` and confirm `version` matches the release you meant to deploy.
+
+`/health` reports the build it is running:
+
+```json
+{ "status": "ok", "version": "1.4.0", "commit": "5434e0eb6f2c1d..." }
+```
+
+`version` is the release the image was built from. A build made outside a release reads as `<last release>+<short commit>`, and a build with no deploy stamp at all reads as `development` — so a service can never claim a release it does not carry. When you run more than one stack, curl each of them: this is the fastest way to see that one is behind another.
 
 Do not auto-pull `main` into production without a backup. A failed application upgrade is usually reversible; a partially applied schema or mismatched storage restore is harder to recover.
 

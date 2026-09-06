@@ -152,10 +152,18 @@
             "enum": [
               "ok"
             ]
+          },
+          "version": {
+            "type": "string"
+          },
+          "commit": {
+            "type": "string"
           }
         },
         "required": [
-          "status"
+          "status",
+          "version",
+          "commit"
         ]
       },
       "ChatStatusStage": {

@@ -182,6 +182,30 @@ jobs:
       - name: Check for dead code
         run: pnpm run lint:dead-code:ci
 
+  release-tooling:
+    name: Release Tooling
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24
+          # This job installs nothing, so there is no package manager for setup-node to
+          # detect a cache for. Left on, it looks for pnpm and fails before the tests run.
+          package-manager-cache: false
+
+      - name: Test the changelog generator
+        run: node --test tests/release/*.test.mjs
+
+      - name: Check the pull request title
+        # main is squash-merged and GitHub seeds the squash subject from this title, so the
+        # title is the changelog line the release that ships it will carry.
+        if: github.event_name == 'pull_request'
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: node scripts/release/check-pr-title.mjs
+
   backend-build-openapi:
     name: Backend Build and OpenAPI
     needs: changes
@@ -683,6 +707,7 @@ jobs:
     needs:
       - changes
       - lint
+      - release-tooling
       - backend
       - frontend
       - docs-portal
@@ -696,6 +721,7 @@ jobs:
     env:
       CHANGES_RESULT: ${{ needs.changes.result }}
       LINT_RESULT: ${{ needs.lint.result }}
+      RELEASE_TOOLING_RESULT: ${{ needs['release-tooling'].result }}
       BACKEND_SELECTED: ${{ needs.changes.outputs.backend }}
       BACKEND_RESULT: ${{ needs.backend.result }}
       FRONTEND_SELECTED: ${{ needs.changes.outputs.frontend }}
@@ -725,6 +751,12 @@ jobs:
           # Lint and the dead-code ratchet are workspace-wide, so the job always runs.
           if [ "$LINT_RESULT" != "success" ]; then
             echo "::error::Lint completed with result: $LINT_RESULT"
+            exit 1
+          fi
+
+          # The release tooling gates every PR title, so it always runs too.
+          if [ "$RELEASE_TOOLING_RESULT" != "success" ]; then
+            echo "::error::Release Tooling completed with result: $RELEASE_TOOLING_RESULT"
             exit 1
           fi
 

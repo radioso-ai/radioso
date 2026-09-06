@@ -27,7 +27,7 @@ The split matters: metrics tell you the platform is unwell, and the ops event fe
 
 ## Health routes
 
-The backend serves `GET /health` and the standalone MCP server serves `GET /healthz`. Both return 200 with a small JSON body and need no authentication, so any orchestrator or uptime service can poll them.
+The backend serves `GET /health` and the standalone MCP server serves `GET /healthz`. Both return 200 with a small JSON body and need no authentication, so any orchestrator or uptime service can poll them. The backend body names the build it is running — `{"status":"ok","version":"1.4.0","commit":"5434e0e..."}` — which is what tells you whether an alert belongs to the release you just shipped. The same version reaches OpenTelemetry as `service.version`.
 
 ```yaml
 # docker-compose.yml

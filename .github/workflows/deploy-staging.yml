@@ -32,6 +32,12 @@ on:
       - packages/workspace-invalidation-contract/**
       - scripts/sync-ee-frontend-routes.mjs
   workflow_dispatch:
+    inputs:
+      release:
+        description: Release tag to ship, such as v1.4.0. Empty builds the current main.
+        required: false
+        default: ""
+        type: string
 
 jobs:
   deploy:
@@ -41,6 +47,7 @@ jobs:
       id-token: write
     with:
       github_environment: staging
+      release: ${{ inputs.release }}
       artifact_repository: radioso-staging
       backend_service: radioso-staging-backend
       crawler_worker_service: radioso-staging-crawler-worker

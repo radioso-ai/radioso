@@ -38,6 +38,11 @@ on:
         required: false
         default: enterprise
         type: string
+      release:
+        description: Release tag to ship, such as v1.4.0. Empty builds the checked-out commit.
+        required: false
+        default: ""
+        type: string
       worker_service:
         description: Cloud Run worker service name.
         required: true
@@ -65,7 +70,9 @@ jobs:
       GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
       GCP_REGION: ${{ vars.GCP_REGION }}
       GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      GITHUB_ENVIRONMENT: ${{ inputs.github_environment }}
       RADIOSO_EDITION: ${{ inputs.radioso_edition }}
+      RELEASE: ${{ inputs.release }}
       WORKER_SERVICE: ${{ inputs.worker_service }}
 
     steps:
@@ -93,6 +100,60 @@ jobs:
           fi
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          # A release deploy builds the tag, not whatever main happens to be at the moment the
+          # workflow was dispatched. Verifying the tag descends from main needs real history.
+          ref: ${{ inputs.release }}
+          fetch-depth: ${{ inputs.release != '' && '0' || '1' }}
+
+      - name: Resolve the build identity
+        run: |
+          set -euo pipefail
+
+          commit="$(git rev-parse HEAD)"
+
+          if [ -n "${RELEASE}" ]; then
+            # A workflow_dispatch input is free text. Without these three checks a branch name
+            # or a bare commit SHA passes the ancestry test below and deploys as if it were a
+            # release, stamping images and /health with something that is not a version.
+            if ! echo "${RELEASE}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "::error::${RELEASE} is not a release tag. Expected v<major>.<minor>.<patch>, as cut by the Cut Release workflow."
+              exit 1
+            fi
+
+            if ! git ls-remote --exit-code --tags origin "refs/tags/${RELEASE}" >/dev/null 2>&1; then
+              echo "::error::${RELEASE} is not a tag on origin. Cut the release before deploying it."
+              exit 1
+            fi
+
+            git fetch --no-tags origin main:refs/remotes/origin/main
+            git fetch --force origin "refs/tags/${RELEASE}:refs/tags/${RELEASE}"
+
+            # A branch sharing the tag's name wins the checkout, so confirm what was actually
+            # checked out is the tag's commit rather than trusting the name.
+            tag_commit="$(git rev-parse "refs/tags/${RELEASE}^{commit}")"
+            if [ "${tag_commit}" != "${commit}" ]; then
+              echo "::error::${RELEASE} points at ${tag_commit}, but the checkout is at ${commit}."
+              exit 1
+            fi
+
+            if ! git merge-base --is-ancestor HEAD refs/remotes/origin/main; then
+              echo "::error::${RELEASE} is not on main. Only releases cut from main can be deployed."
+              exit 1
+            fi
+            version="${RELEASE#v}"
+          else
+            # Not a release. Say which build this is rather than borrowing the last release's
+            # number: <last released version>+<short sha> reads as "that release, plus this commit".
+            version="$(node -p "require('./package.json').version")+$(git rev-parse --short=7 HEAD)"
+          fi
+
+          {
+            echo "RELEASE_COMMIT=${commit}"
+            echo "RADIOSO_RELEASE=${version}"
+          } >> "$GITHUB_ENV"
+
+          echo "Shipping ${version} (${commit}) to ${GITHUB_ENVIRONMENT}."
 
       - id: auth
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
@@ -111,20 +172,41 @@ jobs:
 
       - name: Compute image tags
         run: |
-          echo "BACKEND_IMAGE=${ARTIFACT_REGISTRY_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REPOSITORY}/backend:${GITHUB_SHA}" >> "$GITHUB_ENV"
-          echo "FRONTEND_IMAGE=${ARTIFACT_REGISTRY_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REPOSITORY}/frontend:${GITHUB_SHA}" >> "$GITHUB_ENV"
+          set -euo pipefail
+
+          # Keyed on the commit that was built, which is the tag's commit on a release deploy
+          # and not necessarily the commit the workflow was dispatched from.
+          repository="${ARTIFACT_REGISTRY_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REPOSITORY}"
+          {
+            echo "BACKEND_IMAGE=${repository}/backend:${RELEASE_COMMIT}"
+            echo "FRONTEND_IMAGE=${repository}/frontend:${RELEASE_COMMIT}"
+            if [ -n "${RELEASE}" ]; then
+              # A second tag so the registry can be read by version rather than by SHA.
+              echo "BACKEND_RELEASE_IMAGE=${repository}/backend:${RELEASE}"
+              echo "FRONTEND_RELEASE_IMAGE=${repository}/frontend:${RELEASE}"
+            fi
+          } >> "$GITHUB_ENV"
 
       - name: Build and push images
         run: |
           set -euo pipefail
 
+          # A release deploy pushes the same image under its version as well as its commit, so
+          # the registry can be read either way.
+          backend_tags=(-t "${BACKEND_IMAGE}")
+          frontend_tags=(-t "${FRONTEND_IMAGE}")
+          if [ -n "${BACKEND_RELEASE_IMAGE:-}" ]; then backend_tags+=(-t "${BACKEND_RELEASE_IMAGE}"); fi
+          if [ -n "${FRONTEND_RELEASE_IMAGE:-}" ]; then frontend_tags+=(-t "${FRONTEND_RELEASE_IMAGE}"); fi
+
           docker buildx build \
             --platform linux/amd64 \
             --build-arg RADIOSO_EDITION="${RADIOSO_EDITION}" \
+            --build-arg RADIOSO_RELEASE="${RADIOSO_RELEASE}" \
+            --build-arg RADIOSO_COMMIT="${RELEASE_COMMIT}" \
             --cache-from type=gha,scope=radioso-${RADIOSO_EDITION}-backend \
             --cache-to type=gha,scope=radioso-${RADIOSO_EDITION}-backend,mode=max,ignore-error=true \
             -f infra/backend.Dockerfile \
-            -t "${BACKEND_IMAGE}" \
+            "${backend_tags[@]}" \
             --push \
             . &
           backend_pid=$!
@@ -135,7 +217,7 @@ jobs:
             --cache-from type=gha,scope=radioso-${RADIOSO_EDITION}-frontend \
             --cache-to type=gha,scope=radioso-${RADIOSO_EDITION}-frontend,mode=max,ignore-error=true \
             -f infra/frontend.Dockerfile \
-            -t "${FRONTEND_IMAGE}" \
+            "${frontend_tags[@]}" \
             --push \
             . &
           frontend_pid=$!
@@ -152,7 +234,7 @@ jobs:
           fi
 
       - name: Deploy backend service
-        run: gcloud run services update "${BACKEND_SERVICE}" --image "${BACKEND_IMAGE}" --update-env-vars "RADIOSO_EDITION=${RADIOSO_EDITION}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --quiet
+        run: gcloud run services update "${BACKEND_SERVICE}" --image "${BACKEND_IMAGE}" --update-env-vars "RADIOSO_EDITION=${RADIOSO_EDITION},RADIOSO_RELEASE=${RADIOSO_RELEASE},RADIOSO_COMMIT=${RELEASE_COMMIT}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --quiet
 
       - name: Deploy MCP service if configured
         if: ${{ inputs.mcp_service != '' }}
@@ -162,16 +244,30 @@ jobs:
             exit 0
           fi
 
-          gcloud run services update "${MCP_SERVICE}" --image "${BACKEND_IMAGE}" --update-env-vars "RADIOSO_EDITION=${RADIOSO_EDITION}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --quiet
+          gcloud run services update "${MCP_SERVICE}" --image "${BACKEND_IMAGE}" --update-env-vars "RADIOSO_EDITION=${RADIOSO_EDITION},RADIOSO_RELEASE=${RADIOSO_RELEASE},RADIOSO_COMMIT=${RELEASE_COMMIT}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --quiet
 
       - name: Deploy worker service
-        run: gcloud run services update "${WORKER_SERVICE}" --image "${BACKEND_IMAGE}" --update-env-vars "RADIOSO_EDITION=${RADIOSO_EDITION}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --quiet
+        run: gcloud run services update "${WORKER_SERVICE}" --image "${BACKEND_IMAGE}" --update-env-vars "RADIOSO_EDITION=${RADIOSO_EDITION},RADIOSO_RELEASE=${RADIOSO_RELEASE},RADIOSO_COMMIT=${RELEASE_COMMIT}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --quiet
 
       - name: Deploy crawler worker service
-        run: gcloud run services update "${CRAWLER_WORKER_SERVICE}" --image "${BACKEND_IMAGE}" --update-env-vars "RADIOSO_EDITION=${RADIOSO_EDITION}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --quiet
+        run: gcloud run services update "${CRAWLER_WORKER_SERVICE}" --image "${BACKEND_IMAGE}" --update-env-vars "RADIOSO_EDITION=${RADIOSO_EDITION},RADIOSO_RELEASE=${RADIOSO_RELEASE},RADIOSO_COMMIT=${RELEASE_COMMIT}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --quiet
 
       - name: Deploy frontend service
         run: gcloud run services update "${FRONTEND_SERVICE}" --image "${FRONTEND_IMAGE}" --update-env-vars "RADIOSO_EDITION=${RADIOSO_EDITION},NEXT_PUBLIC_RADIOSO_EDITION=${RADIOSO_EDITION}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --quiet
+
+      - name: Record what shipped
+        run: |
+          {
+            echo "### ${GITHUB_ENVIRONMENT}"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Release | \`${RADIOSO_RELEASE}\` |"
+            echo "| Commit | \`${RELEASE_COMMIT}\` |"
+            echo "| Backend image | \`${BACKEND_IMAGE}\` |"
+            echo
+            echo "Read it back from the running service with \`curl <backend_url>/health\`."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Print deployed service URLs
         run: |

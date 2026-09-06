@@ -649,7 +649,6 @@
   "types|backend/src/modules/chat/services/turnTraceSummary.ts|TurnTraceModelCallSummary",
   "types|backend/src/modules/chat/services/workbenchReplayRunner.ts|WorkbenchReplayRunnerOptions",
   "types|backend/src/modules/connectors/plugins/slack/slackMessageHandler.ts|SlackMessageHandlerOptions",
-  "types|backend/src/modules/connectors/plugins/slack/slackPlugin.ts|SlackPluginOptions",
   "types|backend/src/modules/connectors/plugins/wordpress/wordpressClient.ts|FetchPostsOptions",
   "types|backend/src/modules/connectors/plugins/wordpress/wordpressClient.ts|FetchPostsResult",
   "types|backend/src/modules/connectors/plugins/wordpress/wordpressClient.ts|WordpressClientConfig",

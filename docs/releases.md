@@ -48,6 +48,30 @@ A subject the parser cannot read lands under **Other**. Nothing is dropped: a re
 
 When a release adds migrations under `backend/src/db/migrations/`, the entry lists them and reminds you to deploy one stack at a time. Migrations run at service startup, and overlapping deploys contend on the same DDL lock.
 
+## Ship it
+
+`Deploy Live (EU)` and `Deploy Live (US Legacy)` take a release tag and require one. That is the discipline the tag buys: production ships a version you can name, not whatever `main` happened to be when someone opened the Actions tab.
+
+The input is free text, so the deploy checks it before it believes it. The value has to read as `v<major>.<minor>.<patch>`, name a tag that exists on `origin`, and resolve to the commit that was checked out — a branch sharing a tag's name wins a checkout, so the name alone proves nothing. The commit then has to be on `main`. A branch name, a bare SHA, or a tag someone cut off `main` fails all the way through rather than shipping as a release.
+
+The deploy builds from the tag — so a release deployed a week after it was cut still ships the code it was cut from. Images are pushed under both the commit and the version:
+
+```
+europe-west1-docker.pkg.dev/<project>/radioso-live-eu/backend:5434e0eb6f2c1d...
+europe-west1-docker.pkg.dev/<project>/radioso-live-eu/backend:v1.4.0
+```
+
+The release is stamped into the image, so the running service can tell you what it is:
+
+```bash
+curl https://api.radioso.ai/health
+{"status":"ok","version":"1.4.0","commit":"5434e0eb6f2c1d..."}
+```
+
+Staging takes the same input and leaves it empty on a push, so a staging build reports `1.4.0+a1b2c3d` — the last release, plus the commit it actually runs. The same value reaches OpenTelemetry as `service.version`, so a span or metric can be attributed to the release that produced it.
+
+Reading `/health` on each stack is the drift check. Two stacks are supposed to run the same release; when they don't, this is where you see it first.
+
 ## The first release
 
 The generator reads commits between the previous `v*` tag and `HEAD`. Before the first tag exists there is no starting point, so give it one:

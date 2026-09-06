@@ -280,6 +280,36 @@ variable "radioso_mcp_enabled" {
   default     = false
 }
 
+variable "operator_mcp_enabled" {
+  description = "Whether to enable the separately authorized Operator MCP surface in live."
+  type        = bool
+  default     = false
+}
+
+variable "operator_mcp_public_origin" {
+  description = "Canonical HTTPS origin for Operator MCP in live."
+  type        = string
+  default     = null
+}
+
+variable "operator_mcp_credential_epoch" {
+  description = "Externally monotonic Operator MCP credential generation in live."
+  type        = string
+  default     = "1"
+}
+
+variable "operator_mcp_rollout_workspace_ids" {
+  description = "Workspace UUIDs permitted to use Operator MCP in live. Empty keeps the surface unavailable."
+  type        = list(string)
+  default     = []
+}
+
+variable "operator_mcp_verification_budget_per_minute" {
+  description = "Per-credential Operator MCP verification budget in live."
+  type        = number
+  default     = 6
+}
+
 variable "frontend_backend_internal_url_override" {
   description = "Optional backend URL override for the US frontend. Null uses the backend from the same US stack."
   type        = string

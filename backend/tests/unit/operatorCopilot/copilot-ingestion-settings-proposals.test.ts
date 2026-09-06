@@ -45,13 +45,15 @@ const toolFor = (adapter: ReturnType<typeof createIngestionSettingsCopilotPropos
     ...input,
   }) as never);
   const record = vi.fn(async () => undefined);
+  const recoverOperatorMcpProposal = vi.fn();
   const [descriptor] = createIngestionSettingsProposalCopilotTools({
     proposalRepository: { createProposal },
+    proposalRecovery: { recoverOperatorMcpProposal },
     proposalAdapters: [adapter],
     auditService: { record },
   });
   if (!descriptor) throw new Error("No ingestion settings proposal descriptor");
-  return { descriptor, createProposal, record };
+  return { descriptor, createProposal, recoverOperatorMcpProposal, record };
 };
 
 describe("propose_ingestion_settings", () => {
@@ -100,6 +102,65 @@ describe("propose_ingestion_settings", () => {
 
     await expect(descriptor.createTool(context).invoke({ fixedWindowChunkSize: 1_000 }, {} as never))
       .rejects.toThrow(/already/i);
+  });
+
+  it("reconstructs the exact normal result shape from a committed MCP proposal", async () => {
+    const { adapter } = adapterFor();
+    const { descriptor, recoverOperatorMcpProposal } = toolFor(adapter);
+    const invocation = {
+      id: "11111111-1111-4111-8111-111111111111",
+      grantId: "22222222-2222-4222-8222-222222222222",
+      operationId: "stable-operation",
+      inputDigest: "keyed-input-digest",
+    } as never;
+    recoverOperatorMcpProposal.mockResolvedValueOnce({
+      status: "recovered",
+      proposal: {
+        id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+        targetType: "ingestion_settings",
+        payload: {
+          name: "Ingestion settings",
+          chunkingStrategy: "fixed_window",
+          fixedWindowChunkSize: 1_500,
+          fixedWindowChunkOverlap: 100,
+          structuredMinChunkSize: 200,
+          structuredMaxChunkSize: 2_000,
+          documentEnrichmentEnabled: false,
+          manualDocumentEnrichmentOverride: "inherit",
+          summary: "Change ingestion fixedWindowChunkSize to 1500.",
+        },
+      },
+    });
+    const mcpContext = {
+      ...context,
+      surface: "mcp" as const,
+      copilotConversationId: undefined,
+      operatorMcpInvocationId: "33333333-3333-4333-8333-333333333333",
+    };
+    const now = new Date("2026-09-04T00:03:00.000Z");
+    const staleBefore = new Date("2026-09-04T00:01:00.000Z");
+
+    await expect(descriptor.reconcileMcpInvocation!({ invocation, context: mcpContext, now, staleBefore }))
+      .resolves.toEqual({
+        status: "recovered",
+        output: {
+          proposalId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+          targetType: "ingestion_settings",
+          targetLabel: "Ingestion settings",
+          summary: "Change ingestion fixedWindowChunkSize to 1500.",
+        },
+      });
+    expect(recoverOperatorMcpProposal).toHaveBeenCalledWith({
+      invocationId: "11111111-1111-4111-8111-111111111111",
+      grantId: "22222222-2222-4222-8222-222222222222",
+      workspaceId: "workspace-1",
+      operatorUserId: "operator-1",
+      operationId: "stable-operation",
+      descriptorName: "propose_ingestion_settings",
+      inputDigest: "keyed-input-digest",
+      staleBefore,
+      now,
+    });
   });
 });
 

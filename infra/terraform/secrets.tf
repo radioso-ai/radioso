@@ -8,15 +8,16 @@ locals {
 
   secret_values = merge(
     {
-      "database-url"               = "postgres://${google_sql_user.radioso.name}:${random_password.db_password.result}@${google_sql_database_instance.postgres.private_ip_address}:5432/${google_sql_database.radioso.name}"
-      "database-password"          = random_password.db_password.result
-      "worker-task-auth-token"     = random_password.worker_task_auth_token.result
-      "openai-api-key"             = var.openai_api_key
-      "session-cookie-secret"      = var.session_cookie_secret
-      "workspace-token-secret"     = var.workspace_token_secret
-      "public-chat-session-secret" = var.public_chat_session_secret
-      "connector-encryption-key"   = var.connector_encryption_key
-      "radioso-mcp-signing-secret" = random_password.radioso_mcp_signing_secret.result
+      "database-url"                 = "postgres://${google_sql_user.radioso.name}:${random_password.db_password.result}@${google_sql_database_instance.postgres.private_ip_address}:5432/${google_sql_database.radioso.name}"
+      "database-password"            = random_password.db_password.result
+      "worker-task-auth-token"       = random_password.worker_task_auth_token.result
+      "openai-api-key"               = var.openai_api_key
+      "session-cookie-secret"        = var.session_cookie_secret
+      "workspace-token-secret"       = var.workspace_token_secret
+      "public-chat-session-secret"   = var.public_chat_session_secret
+      "connector-encryption-key"     = var.connector_encryption_key
+      "radioso-mcp-signing-secret"   = random_password.radioso_mcp_signing_secret.result
+      "operator-mcp-internal-secret" = random_password.operator_mcp_internal_secret.result
     },
     var.resend_mail_api_key != null ? {
       "resend-mail-api-key" = var.resend_mail_api_key
@@ -46,15 +47,16 @@ locals {
 
   secret_names = nonsensitive(toset(keys(merge(
     {
-      "database-url"               = true
-      "database-password"          = true
-      "worker-task-auth-token"     = true
-      "openai-api-key"             = true
-      "session-cookie-secret"      = true
-      "workspace-token-secret"     = true
-      "public-chat-session-secret" = true
-      "connector-encryption-key"   = true
-      "radioso-mcp-signing-secret" = true
+      "database-url"                 = true
+      "database-password"            = true
+      "worker-task-auth-token"       = true
+      "openai-api-key"               = true
+      "session-cookie-secret"        = true
+      "workspace-token-secret"       = true
+      "public-chat-session-secret"   = true
+      "connector-encryption-key"     = true
+      "radioso-mcp-signing-secret"   = true
+      "operator-mcp-internal-secret" = true
     },
     var.resend_mail_api_key != null ? {
       "resend-mail-api-key" = true

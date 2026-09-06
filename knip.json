@@ -3,6 +3,7 @@
   "ignore": [
     "**/.next/**",
     "**/public/**",
+    "packages/radioso-mcp-server/src/generated/**",
     "typescript-sdk/src/generated/**",
     "frontend/app/{api/embed,embed,embed-test,radioso-embed.js,operator}/**"
   ],
@@ -14,7 +15,8 @@
     "pg_dump"
   ],
   "ignoreIssues": {
-    "backend/src/shared/infra/kysely/schema.ts": ["types"]
+    "backend/src/shared/infra/kysely/schema.ts": ["types"],
+    "ee/packages/backend-module/src/radiosoModuleTypes.ts": ["types"]
   },
   "workspaces": {
     ".": {

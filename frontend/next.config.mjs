@@ -80,6 +80,14 @@ const nextConfig = {
   async rewrites() {
     return [
       {
+        source: "/.well-known/oauth-authorization-server",
+        destination: "/backend/.well-known/oauth-authorization-server",
+      },
+      {
+        source: "/api/v1/operator-mcp/oauth/:path*",
+        destination: "/backend/api/v1/operator-mcp/oauth/:path*",
+      },
+      {
         source: "/:path*",
         has: [{ type: "host", value: "platform.radioso.dev" }],
         destination: "https://app.radioso.ai/:path*",
@@ -99,6 +107,15 @@ const nextConfig = {
       {
         source: "/embed-frame",
         headers: embedSecurityHeaders,
+      },
+      {
+        source: "/oauth/operator-mcp/consent",
+        headers: [
+          { key: "Content-Security-Policy", value: buildCspDirectives({ frameAncestors: "frame-ancestors 'none'" }) },
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "Cache-Control", value: "no-store" },
+          { key: "X-Frame-Options", value: "DENY" },
+        ],
       },
     ];
   },

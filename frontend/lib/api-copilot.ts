@@ -115,6 +115,7 @@ export interface CopilotProposalTargetReference {
 }
 
 export interface CopilotProposalDetail extends CopilotProposalSummary {
+  workspaceId: string
   targetRef?: CopilotProposalTargetReference
   target?: CopilotProposalTargetReference
   preview: CopilotProposalPreview
@@ -392,8 +393,12 @@ export const streamCopilotEvents = async (
 const copilotPath = (suffix: string) => `/copilot${suffix}`
 
 export const copilotApi = {
-  getAvailability(signal?: AbortSignal): Promise<CopilotAvailability> {
-    return request<CopilotAvailability>(copilotPath('/availability'), { method: 'GET', signal }, { withSession: true })
+  getAvailability(signal?: AbortSignal, workspaceId?: string): Promise<CopilotAvailability> {
+    return request<CopilotAvailability>(copilotPath('/availability'), {
+      method: 'GET',
+      signal,
+      headers: workspaceId ? { 'X-Workspace-Id': workspaceId } : undefined,
+    }, { withSession: true })
   },
 
   listConversations(signal?: AbortSignal): Promise<{ conversations: CopilotConversationSummary[] }> {
@@ -404,16 +409,26 @@ export const copilotApi = {
     return request(copilotPath(`/conversations/${encodeURIComponent(conversationId)}`), { method: 'GET', signal }, { withSession: true })
   },
 
-  getProposal(proposalId: string, signal?: AbortSignal): Promise<CopilotProposalDetail> {
-    return request(copilotPath(`/proposals/${encodeURIComponent(proposalId)}`), { method: 'GET', signal }, { withSession: true })
+  getProposal(proposalId: string, signal?: AbortSignal, workspaceId?: string): Promise<CopilotProposalDetail> {
+    return request(copilotPath(`/proposals/${encodeURIComponent(proposalId)}`), {
+      method: 'GET',
+      signal,
+      headers: workspaceId ? { 'X-Workspace-Id': workspaceId } : undefined,
+    }, { withSession: true })
   },
 
-  applyProposal(proposalId: string): Promise<CopilotProposalApplyResult> {
-    return request(copilotPath(`/proposals/${encodeURIComponent(proposalId)}/apply`), { method: 'POST' }, { withSession: true })
+  applyProposal(proposalId: string, workspaceId?: string): Promise<CopilotProposalApplyResult> {
+    return request(copilotPath(`/proposals/${encodeURIComponent(proposalId)}/apply`), {
+      method: 'POST',
+      headers: workspaceId ? { 'X-Workspace-Id': workspaceId } : undefined,
+    }, { withSession: true })
   },
 
-  dismissProposal(proposalId: string): Promise<{ status: 'dismissed' }> {
-    return request(copilotPath(`/proposals/${encodeURIComponent(proposalId)}/dismiss`), { method: 'POST' }, { withSession: true })
+  dismissProposal(proposalId: string, workspaceId?: string): Promise<{ status: 'dismissed' }> {
+    return request(copilotPath(`/proposals/${encodeURIComponent(proposalId)}/dismiss`), {
+      method: 'POST',
+      headers: workspaceId ? { 'X-Workspace-Id': workspaceId } : undefined,
+    }, { withSession: true })
   },
 
   async deleteConversation(conversationId: string): Promise<void> {

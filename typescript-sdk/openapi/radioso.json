@@ -290,6 +290,25 @@
           }
         ]
       },
+      "SessionResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/LoginResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "email": {
+                "type": "string",
+                "format": "email"
+              }
+            },
+            "required": [
+              "email"
+            ]
+          }
+        ]
+      },
       "EmailVerificationVerifyResponse": {
         "type": "object",
         "properties": {
@@ -934,13 +953,26 @@
           "expiresAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "requiresExistingPassword": {
+            "type": "boolean",
+            "description": "True when a login already exists for the invited email, so accepting with a password verifies the existing one instead of setting a new one."
+          },
+          "federatedProviders": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Identity providers the invited login can sign in with, such as \"google\". A login listed here can accept the invitation through that provider without a password."
           }
         },
         "required": [
           "accountId",
           "email",
           "status",
-          "expiresAt"
+          "expiresAt",
+          "requiresExistingPassword",
+          "federatedProviders"
         ]
       },
       "RetrievalDefaultsResponse": {
@@ -3191,6 +3223,9 @@
               "webhookExportsEnabled": {
                 "type": "boolean"
               },
+              "handoffOnRetrievalMiss": {
+                "type": "boolean"
+              },
               "contactRequestDelivery": {
                 "$ref": "#/components/schemas/AgentContactRequestDelivery"
               },
@@ -3332,6 +3367,7 @@
               "citationDisplayEnabled",
               "contactRequestsEnabled",
               "webhookExportsEnabled",
+              "handoffOnRetrievalMiss",
               "contactRequestDelivery",
               "theme",
               "branding",
@@ -3391,6 +3427,9 @@
             "type": "boolean"
           },
           "webhookExportsEnabled": {
+            "type": "boolean"
+          },
+          "handoffOnRetrievalMiss": {
             "type": "boolean"
           },
           "contactRequestDelivery": {
@@ -9080,6 +9119,12 @@
             "items": {
               "$ref": "#/components/schemas/AgentBundleImportSkill"
             }
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Caller-supplied key that replays a completed import in this workspace instead of creating another agent. A key whose import is still applying returns 409."
           }
         },
         "required": [
@@ -9091,9 +9136,17 @@
       "AgentBundleImportResponse": {
         "type": "object",
         "properties": {
+          "importId": {
+            "type": "string",
+            "format": "uuid"
+          },
           "agentId": {
             "type": "string",
             "format": "uuid"
+          },
+          "replayed": {
+            "type": "boolean",
+            "description": "True when this is the completed result of a prior request with the same idempotencyKey."
           },
           "unresolved": {
             "type": "array",
@@ -9103,8 +9156,97 @@
           }
         },
         "required": [
+          "importId",
           "agentId",
+          "replayed",
           "unresolved"
+        ]
+      },
+      "AgentBundleImportParams": {
+        "type": "object",
+        "properties": {
+          "importId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "importId"
+        ]
+      },
+      "AgentBundleImportStatus": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "applying",
+              "applied",
+              "failed",
+              "compensated"
+            ]
+          },
+          "agentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "unresolved": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentBundleUnresolvedReference"
+            }
+          },
+          "failureCode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "invalid_bundle",
+              "apply_failed"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "appliedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "compensatedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "state",
+          "agentId",
+          "unresolved",
+          "failureCode",
+          "createdAt",
+          "updatedAt",
+          "appliedAt",
+          "compensatedAt"
         ]
       },
       "DocumentCreateRequest": {
@@ -9733,15 +9875,15 @@
             "default": {}
           },
           "enrichment": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/DocumentEnrichment"
               },
               {
-                "type": [
-                  "object",
-                  "null"
-                ]
+                "type": "null"
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -9753,15 +9895,15 @@
             "format": "uuid"
           },
           "source": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/DocumentSourceSummary"
               },
               {
-                "type": [
-                  "object",
-                  "null"
-                ]
+                "type": "null"
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -15072,15 +15214,15 @@
             ]
           },
           "skillStatus": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/QualitySkillStatus"
               },
               {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": "null"
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -19256,6 +19398,43 @@
         }
       }
     },
+    "/api/v1/auth/session": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Describe the account context of the current session",
+        "description": "Recovers the signed-in identity from the session cookie. Sign-in paths that redirect the browser, such as provider OAuth, set the cookie without returning a body; this reports who the session belongs to and which account and workspace it lands on.",
+        "operationId": "getCurrentSession",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current session described",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No active session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/invitations/{invitationToken}": {
       "get": {
         "tags": [
@@ -19287,6 +19466,73 @@
           },
           "404": {
             "description": "Invitation not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/invitations/{invitationToken}/accept-as-current-user": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Accept an invitation as the signed-in user, without a password",
+        "operationId": "acceptAccountInvitationAsCurrentUser",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "invitationToken",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Invitation accepted and session switched to the joined account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No active session, or the session email does not match the invitation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Invitation not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Invitation is no longer valid",
             "content": {
               "application/json": {
                 "schema": {
@@ -26545,6 +26791,64 @@
         }
       }
     },
+    "/api/v1/agents/bundle/imports/{importId}": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Get an agent bundle import job",
+        "description": "Returns the durable state of an import attempt, including any compensated orphan cleanup.",
+        "operationId": "getAgentBundleImport",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "importId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Import job returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBundleImportStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Import job not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/agents": {
       "get": {
         "tags": [
@@ -28815,6 +29119,16 @@
           }
         },
         "responses": {
+          "200": {
+            "description": "Existing completed import replayed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBundleImportResponse"
+                }
+              }
+            }
+          },
           "201": {
             "description": "Agent created from bundle",
             "content": {
@@ -28837,6 +29151,16 @@
           },
           "401": {
             "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "An import with this idempotency key is still applying",
             "content": {
               "application/json": {
                 "schema": {

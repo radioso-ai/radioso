@@ -306,7 +306,7 @@ describeIfDatabase("persistence integration", () => {
     await database.query("DELETE FROM accounts WHERE id = $1", [account.id]);
   });
 
-  it("orders merged history items by chat updates and search audit timestamps", async () => {
+  it("paginates conversation history without document-search audit events", async () => {
     const accountRepository = new AccountRepository(database.kysely);
     const historyItemsRepository = new HistoryItemsRepository(database.kysely);
 
@@ -375,10 +375,9 @@ describeIfDatabase("persistence integration", () => {
       offset: 1,
     });
 
-    expect(firstWindow.total).toBe(4);
-    expect(firstWindow.hasMore).toBe(true);
+    expect(firstWindow.total).toBe(2);
+    expect(firstWindow.hasMore).toBe(false);
     expect(firstWindow.items.map((item) => `${item.kind}:${item.id}`)).toEqual([
-      `search:${newSearchId}`,
       `chat:${oldConversationId}`,
     ]);
 

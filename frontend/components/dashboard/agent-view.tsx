@@ -66,10 +66,10 @@ const WizardDialog = agentCreationExtensionsEnabled
   ? RawWizardDialog as unknown as WizardDialogComponent | null
   : null
 const readAgentCreationHandoff: ReadAgentCreationHandoff = agentCreationExtensionsEnabled
-  ? rawReadAgentCreationHandoff as ReadAgentCreationHandoff
+  ? rawReadAgentCreationHandoff
   : () => null
 const clearAgentCreationHandoff: () => void = agentCreationExtensionsEnabled
-  ? rawClearAgentCreationHandoff as () => void
+  ? rawClearAgentCreationHandoff
   : () => {}
 
 /** Each non-chat agent section maps to a content mode and a column-3 title. */

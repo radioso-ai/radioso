@@ -525,7 +525,7 @@ describe("runtime configuration", () => {
     expect(computeTf).toContain('resource "google_cloud_run_v2_service_iam_member" "mcp_public"');
     expect(computeTf).toContain('name  = "RADIOSO_MCP_PUBLIC_URL"');
     expect(computeTf.match(/name = "RADIOSO_MCP_SIGNING_SECRET"/g)).toHaveLength(2);
-    expect(computeTf.match(/name  = "RADIOSO_TRUSTED_PROXY_HOPS"/g)).toHaveLength(2);
+    expect(computeTf.match(/name {2}= "RADIOSO_TRUSTED_PROXY_HOPS"/g)).toHaveLength(2);
     expect(computeTf.match(/value = "2"/g)?.length).toBeGreaterThanOrEqual(2);
     expect(databaseTf).toContain('resource "random_password" "radioso_mcp_signing_secret"');
     expect(secretsTf).toContain('"radioso-mcp-signing-secret" = random_password.radioso_mcp_signing_secret.result');
@@ -588,7 +588,7 @@ describe("runtime configuration", () => {
     expect(computeTf).toContain('value = try(google_cloud_run_v2_service.crawler_worker[0].uri, "")');
     expect(computeTf).toContain('name  = "WORKER_TASKS_CRAWL_SERVICE_URL"');
     expect((computeTf.match(/name\s+=\s+"WORKER_TASK_AUTH_TOKEN"/g) ?? [])).toHaveLength(3);
-    expect((computeTf.match(/secret  = google_secret_manager_secret\.secrets\["worker-task-auth-token"\]\.secret_id/g) ?? [])).toHaveLength(3);
+    expect((computeTf.match(/secret {2}= google_secret_manager_secret\.secrets\["worker-task-auth-token"\]\.secret_id/g) ?? [])).toHaveLength(3);
     expect(computeTf).toContain('network_interfaces {');
     expect(computeTf).toContain('secret  = google_secret_manager_secret.secrets["database-url"].secret_id');
     expect(computeTf).not.toContain("cpu_idle = false");
@@ -598,9 +598,9 @@ describe("runtime configuration", () => {
     expect(computeTf).toContain('name = "RESEND_MAIL_API_KEY"');
     expect((computeTf.match(/name = "RESEND_MAIL_API_KEY"/g) ?? [])).toHaveLength(2);
     expect(computeTf).toContain('name  = "MAIL_FROM_EMAIL"');
-    expect((computeTf.match(/name  = "MAIL_FROM_EMAIL"/g) ?? [])).toHaveLength(2);
+    expect((computeTf.match(/name {2}= "MAIL_FROM_EMAIL"/g) ?? [])).toHaveLength(2);
     expect(computeTf).toContain('name  = "MAIL_FROM_NAME"');
-    expect((computeTf.match(/name  = "MAIL_FROM_NAME"/g) ?? [])).toHaveLength(2);
+    expect((computeTf.match(/name {2}= "MAIL_FROM_NAME"/g) ?? [])).toHaveLength(2);
     expect(computeTf).not.toContain('name  = "AUTH_SKIP_EMAIL_VERIFICATION"');
     expect(computeTf).toContain('ignore_changes = [');
     expect(computeTf).toContain('client_version,');

@@ -51,6 +51,7 @@ import { appendConversationSummaryStage } from "./conversationSummaryTracePresen
 import {
   attachCapabilitySubTrace,
   attachContextVariablesToGather,
+  attachPreparationTimingsToGather,
   buildPageReadTraceDiagnostic,
   buildTurnTraceEnvelope,
   type TurnTraceEnvelope,
@@ -371,10 +372,13 @@ export const buildTurnTraceForPresentation = (
   // engineTrace is present — but stay defensive: no spine means no envelope.
   const turnTrace = input.engineTrace
     ? buildTurnTraceEnvelope({
-      spine: attachContextVariablesToGather(
-        attachRetrievalActivityTrace(input.engineTrace, activityTrace),
-        contextVariablesSnapshot,
-        pageReadDiagnostic,
+      spine: attachPreparationTimingsToGather(
+        attachContextVariablesToGather(
+          attachRetrievalActivityTrace(input.engineTrace, activityTrace),
+          contextVariablesSnapshot,
+          pageReadDiagnostic,
+        ),
+        input.session.preparationTimings,
       ),
       modelCallTrace: input.modelCallTrace,
     })

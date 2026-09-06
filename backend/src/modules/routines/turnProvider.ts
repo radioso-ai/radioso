@@ -13,7 +13,6 @@ import {
   RoutineReentryGate,
   RoutineSlotCorrector,
   RoutineStepRenderer,
-  type RoutineActivationPrefilter,
   type RoutineGroundedAnswerRenderer,
   type RoutineRegistration,
 } from "@radioso/conversation-defaults";

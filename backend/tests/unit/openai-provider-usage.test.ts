@@ -267,7 +267,6 @@ describe("OpenAITextGenerationClient.stream", () => {
 
   it("resolves usage without rejecting when the stream errors mid-flight", async () => {
     createMock.mockResolvedValue({
-      // eslint-disable-next-line require-yield
       async *[Symbol.asyncIterator]() {
         throw new Error("stream blew up");
       },

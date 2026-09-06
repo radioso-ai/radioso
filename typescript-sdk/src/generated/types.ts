@@ -160,6 +160,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Describe the account context of the current session
+         * @description Recovers the signed-in identity from the session cookie. Sign-in paths that redirect the browser, such as provider OAuth, set the cookie without returning a body; this reports who the session belongs to and which account and workspace it lands on.
+         */
+        get: operations["getCurrentSession"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/invitations/{invitationToken}": {
         parameters: {
             query?: never;
@@ -171,6 +191,23 @@ export interface paths {
         get: operations["getAccountInvitation"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/invitations/{invitationToken}/accept-as-current-user": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept an invitation as the signed-in user, without a password */
+        post: operations["acceptAccountInvitationAsCurrentUser"];
         delete?: never;
         options?: never;
         head?: never;
@@ -986,6 +1023,26 @@ export interface paths {
         get: operations["getWorkspaceLlmModels"];
         /** Update workspace chat/rewrite/rerank model preferences */
         put: operations["updateWorkspaceLlmModels"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/bundle/imports/{importId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get an agent bundle import job
+         * @description Returns the durable state of an import attempt, including any compensated orphan cleanup.
+         */
+        get: operations["getAgentBundleImport"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -3527,6 +3584,10 @@ export interface components {
             /** Format: email */
             email: string;
         };
+        SessionResponse: components["schemas"]["LoginResponse"] & {
+            /** Format: email */
+            email: string;
+        };
         EmailVerificationVerifyResponse: {
             /** @enum {boolean} */
             verified: true;
@@ -3715,6 +3776,10 @@ export interface components {
             status: "pending" | "accepted" | "revoked" | "expired";
             /** Format: date-time */
             expiresAt: string;
+            /** @description True when a login already exists for the invited email, so accepting with a password verifies the existing one instead of setting a new one. */
+            requiresExistingPassword: boolean;
+            /** @description Identity providers the invited login can sign in with, such as "google". A login listed here can accept the invitation through that provider without a password. */
+            federatedProviders: string[];
         };
         RetrievalDefaultsResponse: {
             queryRewriteEnabled: boolean;
@@ -4279,6 +4344,7 @@ export interface components {
             citationDisplayEnabled: boolean;
             contactRequestsEnabled: boolean;
             webhookExportsEnabled: boolean;
+            handoffOnRetrievalMiss: boolean;
             contactRequestDelivery: components["schemas"]["AgentContactRequestDelivery"];
             theme: {
                 brand: string;
@@ -4326,6 +4392,7 @@ export interface components {
             citationDisplayEnabled?: boolean;
             contactRequestsEnabled?: boolean;
             webhookExportsEnabled?: boolean;
+            handoffOnRetrievalMiss?: boolean;
             contactRequestDelivery?: components["schemas"]["AgentContactRequestDeliveryRequest"];
             theme?: {
                 brand?: string;
@@ -5548,11 +5615,40 @@ export interface components {
             routines?: components["schemas"]["AgentBundleRoutine"][];
             contextVariables?: components["schemas"]["AgentBundleContextVariable"][];
             agentSkills?: components["schemas"]["AgentBundleImportSkill"][];
+            /** @description Caller-supplied key that replays a completed import in this workspace instead of creating another agent. A key whose import is still applying returns 409. */
+            idempotencyKey?: string;
         };
         AgentBundleImportResponse: {
             /** Format: uuid */
+            importId: string;
+            /** Format: uuid */
             agentId: string;
+            /** @description True when this is the completed result of a prior request with the same idempotencyKey. */
+            replayed: boolean;
             unresolved: components["schemas"]["AgentBundleUnresolvedReference"][];
+        };
+        AgentBundleImportParams: {
+            /** Format: uuid */
+            importId: string;
+        };
+        AgentBundleImportStatus: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            state: "queued" | "applying" | "applied" | "failed" | "compensated";
+            /** Format: uuid */
+            agentId: string | null;
+            unresolved: components["schemas"]["AgentBundleUnresolvedReference"][];
+            /** @enum {string|null} */
+            failureCode: "invalid_bundle" | "apply_failed" | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: date-time */
+            appliedAt: string | null;
+            /** Format: date-time */
+            compensatedAt: string | null;
         };
         DocumentCreateRequest: {
             title: string;
@@ -5714,10 +5810,10 @@ export interface components {
             metadata: {
                 [key: string]: string | number | boolean | null;
             };
-            enrichment?: components["schemas"]["DocumentEnrichment"] & (Record<string, never> | null);
+            enrichment?: components["schemas"]["DocumentEnrichment"] | null;
             /** Format: uuid */
             sourceId?: string | null;
-            source?: components["schemas"]["DocumentSourceSummary"] & (Record<string, never> | null);
+            source?: components["schemas"]["DocumentSourceSummary"] | null;
             externalDocumentId?: string | null;
             /** @enum {string} */
             sourceKind: "inline_text" | "uploaded_file";
@@ -7098,7 +7194,7 @@ export interface components {
             answerPreview: string;
             skillName: string | null;
             skillOutcome: string | null;
-            skillStatus: components["schemas"]["QualitySkillStatus"] & (string | null);
+            skillStatus: components["schemas"]["QualitySkillStatus"] | null;
             totalLatencyMs: number | null;
             grounding: components["schemas"]["GroundingDiagnostic"] | null;
             /** Format: date-time */
@@ -8409,6 +8505,35 @@ export interface operations {
             };
         };
     };
+    getCurrentSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current session described */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionResponse"];
+                };
+            };
+            /** @description No active session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     getAccountInvitation: {
         parameters: {
             query?: never;
@@ -8431,6 +8556,55 @@ export interface operations {
             };
             /** @description Invitation not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    acceptAccountInvitationAsCurrentUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invitationToken: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Invitation accepted and session switched to the joined account */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            /** @description No active session, or the session email does not match the invitation */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invitation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invitation is no longer valid */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -12200,6 +12374,46 @@ export interface operations {
             };
         };
     };
+    getAgentBundleImport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                importId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Import job returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentBundleImportStatus"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Import job not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     listAgents: {
         parameters: {
             query?: never;
@@ -13733,6 +13947,15 @@ export interface operations {
             };
         };
         responses: {
+            /** @description Existing completed import replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentBundleImportResponse"];
+                };
+            };
             /** @description Agent created from bundle */
             201: {
                 headers: {
@@ -13753,6 +13976,15 @@ export interface operations {
             };
             /** @description Authentication required */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description An import with this idempotency key is still applying */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

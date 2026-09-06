@@ -182,7 +182,7 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
     // the step asked for, possibly alongside a question).
     if (conditionMatched) {
       return {
-        nextStepId: input.transitions[decision.condition! - 1]!.to,
+        nextStepId: input.transitions[decision.condition! - 1].to,
         variables: sanitizeVariables(decision.variables, input.routine),
       };
     }

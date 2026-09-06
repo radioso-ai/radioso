@@ -56,6 +56,9 @@ const bundle = (over: Partial<AgentBundle> = {}): AgentBundle => ({
   ...over,
 });
 
+const importBundle = (service: AgentBundleImportService, workspaceId: string, imported: AgentBundle) =>
+  service.import({ workspaceId, actorAccountId: null, bundle: imported });
+
 const harness = (over: {
   capabilities?: string[];
   variableIds?: Record<string, string>;
@@ -126,11 +129,11 @@ describe("AgentBundleImportService", () => {
     const { service } = harness();
 
     await expect(
-      service.import("workspace-1", bundle({ bundleVersion: 2 as never })),
+      importBundle(service, "workspace-1", bundle({ bundleVersion: 2 as never })),
     ).rejects.toThrow(/Unsupported bundle version 2/);
 
     await expect(
-      service.import("workspace-1", bundle({ agent: agentConfig({ schemaVersion: 99 }) })),
+      importBundle(service, "workspace-1", bundle({ agent: agentConfig({ schemaVersion: 99 }) })),
     ).rejects.toThrow(/Unsupported agent config version 99/);
   });
 
@@ -143,7 +146,7 @@ describe("AgentBundleImportService", () => {
     delete legacy.internalName;
     delete legacy.handoffOnRetrievalMiss;
 
-    const result = await service.import("workspace-1", bundle({ agent: legacy as never }));
+    const result = await importBundle(service, "workspace-1", bundle({ agent: legacy as never }));
 
     expect(result.agentId).toBe("new-agent");
   });
@@ -151,7 +154,7 @@ describe("AgentBundleImportService", () => {
   it("imports a skill whose connection did not travel as disabled, and says so", async () => {
     const { service, created } = harness();
 
-    const result = await service.import("workspace-1", bundle({
+    const result = await importBundle(service, "workspace-1", bundle({
       agentSkills: [{
         name: "crm.create_lead",
         capability: "webhook.call",
@@ -200,7 +203,7 @@ describe("AgentBundleImportService", () => {
     });
 
     await expect(
-      service.import("workspace-1", bundle({
+      importBundle(service, "workspace-1", bundle({
         agentSkills: [{
           name: "crm.create_lead",
           capability: "webhook.call",
@@ -236,7 +239,7 @@ describe("AgentBundleImportService", () => {
       },
     });
 
-    const result = await service.import("workspace-1", bundle({
+    const result = await importBundle(service, "workspace-1", bundle({
       agentSkills: [{
         name: "crm.create_lead",
         capability: "webhook.call",
@@ -258,7 +261,7 @@ describe("AgentBundleImportService", () => {
   it("tells the operator which skill settings did not travel", async () => {
     const { service } = harness();
 
-    const result = await service.import("workspace-1", bundle({
+    const result = await importBundle(service, "workspace-1", bundle({
       agentSkills: [{
         name: "notify.ops",
         capability: "webhook.call",
@@ -299,7 +302,7 @@ describe("AgentBundleImportService", () => {
       },
     });
 
-    const result = await service.import("workspace-1", bundle({
+    const result = await importBundle(service, "workspace-1", bundle({
       agentSkills: [{
         name: "notify.ops",
         capability: "webhook.call",
@@ -339,14 +342,14 @@ describe("AgentBundleImportService", () => {
       },
     });
 
-    const result = await service.import("workspace-1", bundle({
+    const result = await importBundle(service, "workspace-1", bundle({
       agent: agentConfig({
         contactRequestsEnabled: true,
         contactRequestDelivery: { __redacted: "secret" },
       }),
     }));
 
-    const input = create.mock.calls[0]?.[1] as unknown as {
+    const input = create.mock.calls[0]?.[1] as {
       contactRequestDelivery: { recipientEmails: string[]; webhook: unknown }
     };
     // An imported agent must never deliver to the source workspace's people.
@@ -361,7 +364,7 @@ describe("AgentBundleImportService", () => {
   it("skips a skill whose capability this deployment does not register", async () => {
     const { service, created } = harness({ capabilities: [] });
 
-    const result = await service.import("workspace-1", bundle({
+    const result = await importBundle(service, "workspace-1", bundle({
       agentSkills: [{
         name: "crm.create_lead",
         capability: "webhook.call",
@@ -385,7 +388,7 @@ describe("AgentBundleImportService", () => {
       skillIds: { "crm.lookup": "skill-1" },
     });
 
-    const result = await service.import("workspace-1", bundle({
+    const result = await importBundle(service, "workspace-1", bundle({
       agentSkills: [{
         name: "crm.lookup",
         capability: "webhook.call",
@@ -421,7 +424,7 @@ describe("AgentBundleImportService", () => {
   it("reports a context variable the target workspace does not have, without writing it", async () => {
     const { service, enabled } = harness({ variableIds: {} });
 
-    const result = await service.import("workspace-1", bundle({
+    const result = await importBundle(service, "workspace-1", bundle({
       contextVariables: [{
         variableName: "plan_tier",
         source: "pushed",
@@ -443,7 +446,7 @@ describe("AgentBundleImportService", () => {
   it("keeps a routine that fails publish validation as a draft and reports it", async () => {
     const { service, drafts } = harness({ publishRejects: true });
 
-    const result = await service.import("workspace-1", bundle({
+    const result = await importBundle(service, "workspace-1", bundle({
       routines: [{
         name: "book-a-demo",
         version: 3,
@@ -461,7 +464,7 @@ describe("AgentBundleImportService", () => {
   it("creates skills before directives, because a directive binding names a skill", async () => {
     const { service, writeOrder, directivesWritten } = harness();
 
-    const result = await service.import("workspace-1", bundle({
+    const result = await importBundle(service, "workspace-1", bundle({
       agent: agentConfig({
         authoredDirectives: [{
           name: "refund-tone",
@@ -490,7 +493,7 @@ describe("AgentBundleImportService", () => {
     // binding has nothing to resolve against.
     const { service, directivesWritten } = harness({ capabilities: [] });
 
-    const result = await service.import("workspace-1", bundle({
+    const result = await importBundle(service, "workspace-1", bundle({
       agent: agentConfig({
         authoredDirectives: [{
           name: "refund-tone",
@@ -549,7 +552,7 @@ describe("AgentBundleImportService", () => {
     });
 
     await expect(
-      service.import("workspace-1", bundle({
+      importBundle(service, "workspace-1", bundle({
         agent: agentConfig({ authoredDirectives: [{ name: "tone", action: "Be brief." }] }),
       })),
     ).rejects.toThrow(/directive rejected/);
@@ -568,7 +571,7 @@ describe("AgentBundleImportService", () => {
     const { service, deleted } = harness({ createDirectiveThrows: true });
 
     await expect(
-      service.import("workspace-1", bundle({
+      importBundle(service, "workspace-1", bundle({
         agent: agentConfig({ authoredDirectives: [{ name: "tone", action: "Be brief." }] }),
       })),
     ).rejects.toThrow(/directive rejected/);
@@ -593,7 +596,7 @@ describe("AgentBundleImportService", () => {
       },
     });
 
-    const result = await service.import("workspace-1", bundle({
+    const result = await importBundle(service, "workspace-1", bundle({
       agent: agentConfig({
         skillSettings: {
           "retrieval.answer": {
@@ -614,7 +617,7 @@ describe("AgentBundleImportService", () => {
       }),
     }));
 
-    const input = create.mock.calls[0]?.[1] as unknown as { sourceScope: unknown };
+    const input = create.mock.calls[0]?.[1] as { sourceScope: unknown };
     expect(input.sourceScope).toEqual({ mode: "selected", sourceIds: [] });
     expect(JSON.stringify(input)).not.toContain("__ref");
     expect(result.unresolved).toContainEqual(expect.objectContaining({
@@ -647,7 +650,7 @@ describe("AgentBundleImportService", () => {
           ],
         },
       },
-    }) as never) as unknown as { input: { surfaceSettings: { extensions: { kiosk: Array<Record<string, unknown>> } } } };
+    })) as unknown as { input: { surfaceSettings: { extensions: { kiosk: Array<Record<string, unknown>> } } } };
 
     expect(input.surfaceSettings.extensions.kiosk).toEqual([
       { label: "Lobby" },
@@ -673,7 +676,7 @@ describe("AgentBundleImportService", () => {
       },
     });
 
-    const result = await service.import("workspace-1", bundle({
+    const result = await importBundle(service, "workspace-1", bundle({
       agent: agentConfig({
         surfaceSettings: {
           authenticatedChat: { enabled: true },
@@ -693,7 +696,7 @@ describe("AgentBundleImportService", () => {
       }),
     }));
 
-    const input = create.mock.calls[0]?.[1] as unknown as {
+    const input = create.mock.calls[0]?.[1] as {
       surfaceSettings: {
         anonymousChat: { enabled: boolean };
         websiteEmbed: { enabled: boolean; allowedOrigins: unknown[]; launcherLabel: string };
@@ -735,7 +738,7 @@ describe("AgentBundleImportService", () => {
       },
     });
 
-    const result = await service.import("workspace-1", bundle({
+    const result = await importBundle(service, "workspace-1", bundle({
       agentSkills: [{
         name: "notify.ops",
         capability: "notify",
@@ -761,7 +764,7 @@ describe("AgentBundleImportService", () => {
     const { service } = harness();
 
     await expect(
-      service.import("workspace-1", bundle({
+      importBundle(service, "workspace-1", bundle({
         agent: { schemaVersion: AGENT_CONFIG_SCHEMA_VERSION } as never,
       })),
     ).rejects.toMatchObject({ statusCode: 400, code: "bad_request" });

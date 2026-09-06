@@ -101,7 +101,7 @@ const realCatalogDependencies = () => {
 };
 
 const realCatalog = () => createCopilotToolDescriptors(
-  realCatalogDependencies() as unknown as Parameters<typeof createCopilotToolDescriptors>[0],
+  realCatalogDependencies(),
 );
 
 const contributedDescriptor = (overrides: Record<string, unknown> = {}) => ({
@@ -152,7 +152,7 @@ describe("copilot catalog contributions through the real factory", () => {
       surface: "dashboard" as const,
       currentAuthorization: { hasAllPermissions: async () => true },
       pageContext: { view: "other", agentId: null, conversationId: null, selection: null, entities: [] },
-    } as never).invoke({}, { signal: new AbortController().signal, stepIndex: 0, callId: "call-1" } as never);
+    } as never).invoke({}, { signal: new AbortController().signal, stepIndex: 0, callId: "call-1" });
 
     expect(result).toMatchObject({ value: "extension", dashboardUrl: "/w/acme/settings" });
     expect(copilotResolvableToolPermissions(catalog)).toContain("workspace.settings.read");

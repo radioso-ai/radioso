@@ -163,7 +163,7 @@ export class EmbeddingProfileJobService {
             chunkId: chunk.id,
             chunkIndex: chunk.chunkIndex,
             contentHash: createHash("sha256").update(chunk.text).digest("hex"),
-            embedding: [...generated.vectors[index]!],
+            embedding: [...generated.vectors[index]],
           })),
         });
       },

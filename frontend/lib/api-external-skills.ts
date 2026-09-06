@@ -1,7 +1,7 @@
 import { request } from './api-client'
 import type { DiscoveredMcpTool } from './external-skills'
 
-export type McpConnectionStatus = 'unconfigured' | 'authorized' | 'needs_reauth' | 'error' | string
+export type McpConnectionStatus = 'unconfigured' | 'authorized' | 'needs_reauth' | 'error' | (string & {})
 export type McpAuthMethod = 'access_token' | 'oauth'
 
 export type McpConnection = {

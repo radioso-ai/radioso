@@ -1,5 +1,6 @@
 import {
   API_BASE,
+  ApiError,
   buildError,
   getStoredActiveWorkspaceId,
   request,
@@ -31,12 +32,12 @@ const parseSseBlock = (block: string): { event: string; data: string } | null =>
 const requireActiveWorkspaceId = (): string => {
   const workspaceId = getStoredActiveWorkspaceId();
   if (!workspaceId) {
-    throw {
+    throw new ApiError({
       error: {
         code: "workspace_required",
         message: "Select a workspace before using the wizard.",
       },
-    };
+    });
   }
   return workspaceId;
 };
@@ -77,12 +78,12 @@ export const wizardApi = {
       throw await buildError(response);
     }
     if (!response.body) {
-      throw {
+      throw new ApiError({
         error: {
           code: "stream_unavailable",
           message: "Analysis stream was unavailable.",
         },
-      };
+      });
     }
 
     const reader = response.body.getReader();
@@ -105,24 +106,24 @@ export const wizardApi = {
           return payload as WizardAnalysisResult;
         } else if (parsed.event === "error") {
           const errorPayload = payload as { code?: string; message?: string };
-          throw {
+          throw new ApiError({
             error: {
               code: errorPayload.code ?? "analysis_failed",
               message: errorPayload.message ?? "Website analysis failed",
             },
-          };
+          });
         }
       }
 
       if (done) break;
     }
 
-    throw {
+    throw new ApiError({
       error: {
         code: "stream_incomplete",
         message: "Analysis stream ended before returning a result.",
       },
-    };
+    });
   },
 
   createFromWizard(input: WizardCreateInput): Promise<WizardCreateResult> {

@@ -30,5 +30,5 @@ export function useMDXComponents(components: MDXComponents): MDXComponents {
     pre: MdxCodeBlock,
     code: MdxInlineCode,
     ...components,
-  } as MDXComponents
+  }
 }

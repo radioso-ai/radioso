@@ -1,6 +1,5 @@
 export {
   skillAvailabilitySchema,
-  skillCallerSurfaceSchema,
   skillCatalogEntrySchema,
   skillCatalogResponseSchema,
   skillContractReferenceSchema,
@@ -11,92 +10,52 @@ export {
   skillDisplayMetadataSchema,
   skillDefinitionSchema,
   skillExecutionSchema,
-  skillExecutionClassSchema,
-  skillGeneratedContractSchema,
   skillIntakeDefinitionSchema,
-  skillIntakeFieldSchema,
   skillOutcomeDefinitionSchema,
   skillOutcomeStatusSchema,
-  skillOwnerSchema,
   skillParamsSchema,
-  skillSchemaReferencesSchema,
-  skillShapeDefinitionSchema,
-  skillStepDefinitionSchema,
   validateSkillDiagnostic,
-  type SkillCatalogEntry,
   type SkillCatalogEntryDefinition,
-  type SkillCatalogResponse,
   type SkillAvailability,
   type SkillCallerSurface,
   type SkillDefinition,
   type SkillDiagnostic,
   type SkillDisplayMetadata,
   type SkillExecution,
-  type SkillGeneratedContract,
-  type SkillIntakeDefinition,
-  type SkillIntakeField,
-  type SkillOutcomeDefinition,
   type SkillOutcomeStatus,
-  type SkillSchemaReferences,
-  type SkillShapeDefinition,
-  type SkillStepDefinition,
-  type SkillStepOverride,
   type ResolvedSkillRun,
-  type ResolvedSkillStep,
 } from "./domain.js";
 export { retrievalAnswerSkillDefinition } from "./definitions/retrieval.answer.js";
 export { retrievalContextSkillDefinition } from "./definitions/retrieval.context.js";
-export { builtInSkillCatalogEntries, createDefaultSkillCatalogRegistry } from "./defaultCatalog.js";
+export { createDefaultSkillCatalogRegistry } from "./defaultCatalog.js";
 export { directAnswerSkillDefinition } from "./definitions/direct.js";
-export { SkillCatalogService, type SkillCatalogContext } from "./skillCatalogService.js";
+export { SkillCatalogService } from "./skillCatalogService.js";
 export {
   SkillAuthoringCatalogService,
   type SkillAuthoringCatalog,
-  type SkillAuthoringCatalogContext,
 } from "./skillAuthoringCatalog.js";
 export {
-  externalSkillToAuthoringDescriptor,
-  skillCatalogEntryToAuthoringDescriptor,
-  type ExternalSkillAuthoringDescriptorSource,
   type SkillAuthoringDescriptor,
   type SkillAuthoringInput,
-  type SkillAuthoringInputType,
-  type SkillAuthoringOutcome,
-  type SkillCatalogDescriptorSource,
 } from "./authoringDescriptor.js";
 export {
-  isRoutineAuthoringBuiltInSkill,
-  isRoutineDispatchableBuiltInSkill,
-  routineAuthoringBuiltInSkillNames,
   routineAuthoringBuiltInSkills,
-  routineDispatchableBuiltInSkillNames,
   routineDispatchableBuiltInSkills,
-  routineSkillCategories,
-  routineSkillCategoryForBuiltIn,
-  type RoutineSkillCategory,
 } from "./routineAuthoringPolicy.js";
 export {
   RoutineInvocableSkillNamesService,
   routineNameDispatchedSkillKinds,
   type RoutineInvocableSkillNames,
-  type RoutineInvocableSkillNamesByKind,
-  type RoutineInvocableSkillNamesContext,
-  type RoutineNameDispatchedSkillKind,
 } from "./routineInvocableSkillNames.js";
 export {
-  SkillCatalogRegistry,
   SkillExecutorRegistry,
   SkillRunResolver,
   noopSkillEmitPort,
-  type SkillDeferralTicket,
   type SkillDispatchResult,
-  type SkillEmitPort,
-  type SkillExecutorDescriptor,
   type SkillExecutorPort,
   type SkillExecutorRegistration,
   type SkillInvocation,
   type SkillOutcome,
-  type SkillOutcomeControl,
   type SkillTransientGuidance,
 } from "./composition.js";
 // Exported last: the capability registry's descriptors import sibling module barrels whose
@@ -104,13 +63,8 @@ export {
 export {
   SkillCapabilityRegistry,
   createDefaultSkillCapabilityRegistry,
-  createSkillCapabilityDescriptor,
   skillCapabilityIds,
   skillCapabilityIdSchema,
   type SkillCapabilityDescriptor,
   type SkillCapabilityId,
-  type SkillCapabilityInputSchema,
-  type SkillCapabilityTarget,
-  type SkillCapabilityTargetContext,
-  type SkillCapabilityTargetEnumerators,
 } from "./capabilityRegistry.js";

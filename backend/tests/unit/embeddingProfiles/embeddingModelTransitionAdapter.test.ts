@@ -230,12 +230,12 @@ describe("EmbeddingModelTransitionAdapter", () => {
       prepare: vi.fn().mockResolvedValue(undefined),
     };
     const adapter = new EmbeddingModelTransitionAdapter(
-      profiles as never,
+      profiles,
       () => ({
         provider: "openai",
         endpointScopeFingerprint: "scope",
       }),
-      coordinator as never,
+      coordinator,
       indexPreparation,
     );
 
@@ -318,12 +318,12 @@ describe("EmbeddingModelTransitionAdapter", () => {
           space("space-target", "text-embedding-3-large"),
         ),
         initializeWorkspaceProfile: vi.fn(),
-      } as never,
+      },
       () => ({
         provider: "openai",
         endpointScopeFingerprint: "scope",
       }),
-      coordinator as never,
+      coordinator,
       { prepare: vi.fn().mockResolvedValue(undefined) },
     );
 
@@ -361,12 +361,12 @@ describe("EmbeddingModelTransitionAdapter", () => {
       prepare: vi.fn().mockRejectedValue(preparationFailure),
     };
     const adapter = new EmbeddingModelTransitionAdapter(
-      profiles as never,
+      profiles,
       () => ({
         provider: "openai",
         endpointScopeFingerprint: "scope",
       }),
-      coordinator as never,
+      coordinator,
       indexPreparation,
     );
 
@@ -412,7 +412,7 @@ describe("EmbeddingModelTransitionAdapter", () => {
         provider: "openai",
         endpointScopeFingerprint: "scope",
       }),
-      coordinator as never,
+      coordinator,
       indexPreparation,
     );
 
@@ -452,12 +452,12 @@ describe("EmbeddingModelTransitionAdapter", () => {
       reconcilePromotion: vi.fn(),
     };
     const adapter = new EmbeddingModelTransitionAdapter(
-      profiles as never,
+      profiles,
       () => ({
         provider: "openai",
         endpointScopeFingerprint: "scope",
       }),
-      coordinator as never,
+      coordinator,
       { prepare: vi.fn().mockResolvedValue(undefined) },
     );
 

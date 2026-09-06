@@ -4,10 +4,8 @@
 export {
   NOTIFY_SKILLS_ADAPTER,
   NotifyExecutor,
-  type NotifyOutboxPort,
 } from "./notifyExecutor.js";
 export {
   NotifyRoutineSkillResolver,
-  notifyRoutineSkillDefinition,
   type NotifyRoutineSkillRecord,
 } from "./routineSkillResolver.js";

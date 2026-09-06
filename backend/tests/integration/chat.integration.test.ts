@@ -1034,9 +1034,9 @@ describe("chat integration", () => {
   });
 
   it("returns a safe answer when no relevant chunks are found", async () => {
-    const { app, dependencies } = createTestApp();
+    const { app } = createTestApp();
 
-    const { token, workspaceId } = await issueTestToken(app, "empty@example.com");
+    const { token } = await issueTestToken(app, "empty@example.com");
 
     const response = await request(app)
       .post("/api/v1/assistant/chat")
@@ -1051,7 +1051,7 @@ describe("chat integration", () => {
   it("records product analytics for completed chat answers", async () => {
     const { app, repositories } = createTestApp();
 
-    const { token, workspaceId } = await issueTestToken(app, "chat-analytics@example.com");
+    const { token } = await issueTestToken(app, "chat-analytics@example.com");
     const authorization = `Bearer ${token}`;
 
     await request(app)
@@ -1082,31 +1082,26 @@ describe("chat integration", () => {
   });
 
   it("returns an actionable provider setup error when the model provider rejects credentials", async () => {
+    const providerCredentialError = () =>
+      Object.assign(new Error("Incorrect API key provided."), {
+        status: 401,
+        code: "invalid_api_key",
+        error: {
+          message: "Incorrect API key provided.",
+          code: "invalid_api_key",
+        },
+      });
     const failingGateway: ChatGateway = {
       async answer() {
-        throw {
-          status: 401,
-          code: "invalid_api_key",
-          error: {
-            message: "Incorrect API key provided.",
-            code: "invalid_api_key",
-          },
-        };
+        throw providerCredentialError();
       },
       async *streamAnswer() {
-        throw {
-          status: 401,
-          code: "invalid_api_key",
-          error: {
-            message: "Incorrect API key provided.",
-            code: "invalid_api_key",
-          },
-        };
+        throw providerCredentialError();
       },
     };
-    const { app, dependencies } = createTestApp({ chatGateway: failingGateway });
+    const { app } = createTestApp({ chatGateway: failingGateway });
 
-    const { token, workspaceId } = await issueTestToken(app, "provider-error@example.com");
+    const { token } = await issueTestToken(app, "provider-error@example.com");
     const authorization = `Bearer ${token}`;
 
     await request(app)
@@ -1135,7 +1130,7 @@ describe("chat integration", () => {
       throw new Error("stream setup failed");
     };
 
-    const { token, workspaceId } = await issueTestToken(app, "stream-route-error@example.com");
+    const { token } = await issueTestToken(app, "stream-route-error@example.com");
 
     const response = await request(app)
       .post("/api/v1/assistant/chat")
@@ -1162,9 +1157,9 @@ describe("chat integration", () => {
         yield "It also offers 24/7 phone support.";
       },
     };
-    const { app, dependencies } = createTestApp({ chatGateway: mixedGateway });
+    const { app } = createTestApp({ chatGateway: mixedGateway });
 
-    const { token, workspaceId } = await issueTestToken(app, "mixed-support@example.com");
+    const { token } = await issueTestToken(app, "mixed-support@example.com");
     const authorization = `Bearer ${token}`;
 
     await request(app)
@@ -1206,7 +1201,7 @@ describe("chat integration", () => {
       },
     });
 
-    const { token, workspaceId } = await issueTestToken(app, "fully-unsupported@example.com");
+    const { token } = await issueTestToken(app, "fully-unsupported@example.com");
     const authorization = `Bearer ${token}`;
 
     await request(app)
@@ -1280,7 +1275,7 @@ describe("chat integration", () => {
   });
 
   it("keeps conversations account scoped", async () => {
-    const { app, dependencies } = createTestApp();
+    const { app } = createTestApp();
 
     const { token: firstToken } = await issueTestToken(app, "scope-a@example.com");
     const { token: secondToken } = await issueTestToken(app, "scope-b@example.com");
@@ -1513,7 +1508,7 @@ describe("chat integration", () => {
     };
     const { app, dependencies } = createTestApp({ chatGateway: mixedGateway });
 
-    const { token, workspaceId } = await issueTestToken(app, "degraded-outcome@example.com");
+    const { token } = await issueTestToken(app, "degraded-outcome@example.com");
     const authorization = `Bearer ${token}`;
 
     await request(app)
@@ -1546,7 +1541,7 @@ describe("chat integration", () => {
   it("keeps no-context refusals distinct in audit metadata", async () => {
     const { app, dependencies } = createTestApp();
 
-    const { token, workspaceId } = await issueTestToken(app, "no-context-outcome@example.com");
+    const { token } = await issueTestToken(app, "no-context-outcome@example.com");
     const authorization = `Bearer ${token}`;
 
     const response = await request(app)
@@ -1580,9 +1575,9 @@ describe("chat integration", () => {
         throw new Error("upstream unavailable");
       },
     };
-    const { app, dependencies } = createTestApp({ chatGateway: failingGateway });
+    const { app } = createTestApp({ chatGateway: failingGateway });
 
-    const { token, workspaceId } = await issueTestToken(app, "history-failure@example.com");
+    const { token } = await issueTestToken(app, "history-failure@example.com");
     const authorization = `Bearer ${token}`;
 
     await request(app)
@@ -2049,7 +2044,7 @@ describe("chat integration", () => {
     const { app, dependencies } = createTestApp({
       chatGateway: deterministicGateway,
       queryRewriteGateway: {
-        async rewrite(input) {
+        async rewrite(_input) {
           return {
             rewrittenQuery: "what retreats are coming up Spring Retreat",
             semanticQuery: "what retreats are coming up Spring Retreat",
@@ -2403,9 +2398,9 @@ describe("chat integration", () => {
   }, 10_000);
 
   it("returns the exact-match source for identifier-style queries", async () => {
-    const { app, dependencies } = createTestApp();
+    const { app } = createTestApp();
 
-    const { token, workspaceId } = await issueTestToken(app, "identifiers@example.com");
+    const { token } = await issueTestToken(app, "identifiers@example.com");
     const authorization = `Bearer ${token}`;
 
     await request(app)
@@ -2526,7 +2521,7 @@ describe("chat integration", () => {
   });
 
   it("still answers grounded questions when lexical search is disabled", async () => {
-    const { app, dependencies } = createTestApp({
+    const { app } = createTestApp({
       lexicalSearch: {
         async search() {
           return [];
@@ -2534,7 +2529,7 @@ describe("chat integration", () => {
       },
     });
 
-    const { token, workspaceId } = await issueTestToken(app, "lexical-off@example.com");
+    const { token } = await issueTestToken(app, "lexical-off@example.com");
     const authorization = `Bearer ${token}`;
 
     await request(app)
@@ -2557,9 +2552,9 @@ describe("chat integration", () => {
   });
 
   it("accepts metadataFilter in the request body and returns a successful response", async () => {
-    const { app, dependencies } = createTestApp();
+    const { app } = createTestApp();
 
-    const { token, workspaceId } = await issueTestToken(app, "metadata-filter@example.com");
+    const { token } = await issueTestToken(app, "metadata-filter@example.com");
     const authorization = `Bearer ${token}`;
 
     await request(app)
@@ -2604,7 +2599,7 @@ describe("chat integration", () => {
   it("handles legacy chunks without search text or structured attributes", async () => {
     const { app, repositories } = createTestApp();
 
-    const { token, workspaceId } = await issueTestToken(app, "legacy-chunks@example.com");
+    const { token } = await issueTestToken(app, "legacy-chunks@example.com");
     const authorization = `Bearer ${token}`;
 
     const documentResponse = await request(app)

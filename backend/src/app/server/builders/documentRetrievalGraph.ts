@@ -104,6 +104,11 @@ export const buildDocumentRetrievalGraph = (input: {
     supportedEmbeddingModels: listSupportedEmbeddingModels(llmRegistry),
     embeddingTransitions,
   });
+  // forward-declared: VectorIndexReconciler's onIdle closure captures this binding before
+  // PgVectorTransitionMaintenance (which itself takes the reconciler as a constructor argument)
+  // is assigned a few lines down. onIdle only fires on a later async tick, after the assignment
+  // below has run, so this is not a use-before-init.
+  // eslint-disable-next-line prefer-const -- assigned once below, but must be declared before the reconciler that captures it in a closure
   let vectorTransitionMaintenance: PgVectorTransitionMaintenance;
   const vectorIndexReconciler = new VectorIndexReconciler({
     adapter: pgVectorAdapter,
@@ -143,7 +148,7 @@ export const buildDocumentRetrievalGraph = (input: {
     {
       reconcileBackfills: (transition) => embeddingTransitionCoordinator.reconcileBackfills(transition),
       promotePendingEmbeddingModelIfReady: (workspaceId) =>
-        settings.ingestionSettingsService.promotePendingEmbeddingModelIfReady!(workspaceId),
+        settings.ingestionSettingsService.promotePendingEmbeddingModelIfReady(workspaceId),
     },
     (outcome) => {
       logger.warn(

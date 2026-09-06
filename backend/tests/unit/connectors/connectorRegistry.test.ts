@@ -90,7 +90,7 @@ describe("ConnectorRegistry", () => {
 
     const context = {
       db: {} as any,
-      logger: { info: () => {}, error: () => {}, warn: () => {} } as any,
+      logger: { info: () => {}, error: () => {}, warn: () => {} },
       chat: { answer: async () => ({ conversationId: "conversation-1", answer: "ok" }) } as any,
       ingestion: {
         ingest: async () => ({ documentId: "doc-1", status: "queued" }),
@@ -119,13 +119,13 @@ describe("ConnectorRegistry", () => {
 
     await registry.initializeAll({
       db: {} as any,
-      logger: { info: () => {}, error: () => {}, warn: () => {} } as any,
+      logger: { info: () => {}, error: () => {}, warn: () => {} },
       chat: { answer: async () => ({ conversationId: "conversation-1", answer: "ok" }) } as any,
       ingestion: {
         ingest: async () => ({ documentId: "doc-1", status: "queued" }),
         deleteByExternalId: async () => false,
         ensureSource: async () => ({ id: "src-1" }),
-      } as any,
+      },
     });
 
     const app = express();
@@ -149,7 +149,7 @@ describe("ConnectorRegistry", () => {
 
     const context = {
       db: {} as any,
-      logger: { info: () => {}, error: () => {}, warn: () => {} } as any,
+      logger: { info: () => {}, error: () => {}, warn: () => {} },
       chat: { answer: async () => ({ conversationId: "conversation-1", answer: "ok" }) } as any,
       ingestion: {
         ingest: async () => ({ documentId: "doc-1", status: "queued" }),

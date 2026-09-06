@@ -18,6 +18,7 @@ import { Database } from "../../src/shared/infra/database.js";
 import {
   createAuditService,
   InMemoryAccountInvitationRepository,
+  InMemoryFederatedIdentityRepository,
   InMemorySessionRepository,
   RecordingAccountInvitationNotifier,
 } from "../support/fakes.js";
@@ -189,6 +190,7 @@ const createAuthService = (database: Database): AuthService => {
     accountRepository,
     userRepository,
     sessionRepository: new InMemorySessionRepository(),
+    federatedIdentityRepository: new InMemoryFederatedIdentityRepository(),
     workspaceService,
     accountAccessService,
     accountInvitationService: new AccountInvitationService(

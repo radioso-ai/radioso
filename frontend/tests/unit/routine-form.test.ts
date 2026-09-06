@@ -114,7 +114,7 @@ describe('routine form transforms', () => {
       mutable: true,
     }]
     form.steps[0] = {
-      ...form.steps[0]!,
+      ...form.steps[0],
       instruction: 'Ask for {{slot.customer_email}}.',
       transitions: [createTransitionForm('step_1', 'complete')],
     }
@@ -255,16 +255,16 @@ describe('routine form transforms', () => {
     const legacyRoutine = {
       ...routine,
       steps: [{
-        ...routine.steps[0]!,
+        ...routine.steps[0],
         kind: 'fork',
       }],
       transitions: [
         {
-          ...routine.transitions[0]!,
+          ...routine.transitions[0],
           guardKind: 'always',
         },
         {
-          ...routine.transitions[0]!,
+          ...routine.transitions[0],
           guardKind: 'fallback',
           ordinal: 1,
         },
@@ -291,7 +291,7 @@ describe('routine form transforms', () => {
     const metadataRoutine: RoutineDefinition = {
       ...routine,
       steps: [{
-        ...routine.steps[0]!,
+        ...routine.steps[0],
         metadata: { outlineLabel: 'Ask for email' },
       }],
     }
@@ -462,7 +462,7 @@ const LOCATION_FORMS = [
 // `severity` and any other field the wire contract grows are irrelevant to anchoring, so a
 // diagnostic is built from its location alone rather than spelled out field by field.
 const diagnosticAt = (location: string): RoutineValidationDiagnostic =>
-  ({ code: 'unreachable_step', location, message: location } as RoutineValidationDiagnostic)
+  ({ code: 'unreachable_step', location, message: location })
 
 // Node ids admit `.` and `-`, so dotted locations are resolved longest-match-first against
 // the ids that actually exist — exactly what the backend parser does.

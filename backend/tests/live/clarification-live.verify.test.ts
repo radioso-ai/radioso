@@ -62,7 +62,7 @@ const livePipeline: ModelInferencePipeline = {
     });
     const choices = json.choices as Array<{ message: { content: string } }> | undefined;
     if (!choices) throw new Error(`openai error: ${JSON.stringify(json).slice(0, 300)}`);
-    return { text: choices[0]!.message.content } as never;
+    return { text: choices[0].message.content };
   },
   stream() {
     throw new Error("not used");
@@ -117,7 +117,7 @@ const buildScenario = async (docs: DocSpec[]) => {
     });
   }
   const vectors = await embed(texts);
-  const byId = new Map(chunkIds.map((id, i) => [id, vectors[i]!]));
+  const byId = new Map(chunkIds.map((id, i) => [id, vectors[i]]));
   const embeddingReader: SenseEmbeddingReader = {
     async readChunkEmbeddings({ chunkIds: ids }) {
       return new Map(ids.flatMap((id) => (byId.has(id) ? [[id, byId.get(id)!] as const] : [])));
@@ -145,7 +145,7 @@ const runDetection = async (docs: DocSpec[], question: string, policy = POLICY) 
     conversationId: "conv-live",
     messageId: "msg-live",
     originalQuery: question,
-    policy: ASK_POLICY as never,
+    policy: ASK_POLICY,
     suppressAsk: false,
     expiresAt: new Date(Date.now() + 60_000),
   });
@@ -171,8 +171,8 @@ describe.skipIf(!apiKey)("LIVE retrieval-sense clarification", () => {
 
     const { detected, effect } = await runDetection(
       [
-        { documentId: "doc-new", title: prod.new_ananda_yoga!.title, metadata: prod.new_ananda_yoga!.metadata, content: prod.new_ananda_yoga!.content, chunks: 4 },
-        { documentId: "doc-live", title: prod.ananda_yoga!.title, metadata: prod.ananda_yoga!.metadata, content: prod.ananda_yoga!.content, chunks: 4 },
+        { documentId: "doc-new", title: prod.new_ananda_yoga.title, metadata: prod.new_ananda_yoga.metadata, content: prod.new_ananda_yoga.content, chunks: 4 },
+        { documentId: "doc-live", title: prod.ananda_yoga.title, metadata: prod.ananda_yoga.metadata, content: prod.ananda_yoga.content, chunks: 4 },
       ],
       "what ananda yoga types exist?",
     );
@@ -187,8 +187,8 @@ describe.skipIf(!apiKey)("LIVE retrieval-sense clarification", () => {
     // never reached — that distinction matters and must not be hidden by a green test.
     const forced = await runDetection(
       [
-        { documentId: "doc-new", title: prod.new_ananda_yoga!.title, metadata: prod.new_ananda_yoga!.metadata, content: prod.new_ananda_yoga!.content, chunks: 4 },
-        { documentId: "doc-live", title: prod.ananda_yoga!.title, metadata: prod.ananda_yoga!.metadata, content: prod.ananda_yoga!.content, chunks: 4 },
+        { documentId: "doc-new", title: prod.new_ananda_yoga.title, metadata: prod.new_ananda_yoga.metadata, content: prod.new_ananda_yoga.content, chunks: 4 },
+        { documentId: "doc-live", title: prod.ananda_yoga.title, metadata: prod.ananda_yoga.metadata, content: prod.ananda_yoga.content, chunks: 4 },
       ],
       "what ananda yoga types exist?",
       { ...POLICY, separationThreshold: 0 },

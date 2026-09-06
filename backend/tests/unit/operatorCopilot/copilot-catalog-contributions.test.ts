@@ -200,14 +200,14 @@ describe("copilot tool contributions", () => {
     const resolveWorkspaceKey = vi.fn(async () => "acme");
     const [enriched] = enrichCopilotToolCatalog([descriptor()], { resolveWorkspaceKey });
 
-    const authorized = enriched!.createTool(invocationContext(new Set(["workspace.settings.read"])));
+    const authorized = enriched.createTool(invocationContext(new Set(["workspace.settings.read"])));
     await expect(authorized.invoke({}, agentToolContext("call-1"))).resolves.toMatchObject({
       value: "extension",
       dashboardUrl: expect.stringContaining("/w/acme"),
     });
 
     // A revoked permission must present as absence, exactly as it does for a first-party tool.
-    const denied = enriched!.createTool(invocationContext(new Set()));
+    const denied = enriched.createTool(invocationContext(new Set()));
     await expect(denied.invoke({}, agentToolContext("call-2"))).resolves.toMatchObject({
       resolution: { status: "not_found" },
     });

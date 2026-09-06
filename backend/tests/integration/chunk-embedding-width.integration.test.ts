@@ -16,7 +16,7 @@ const { describeIntegration, integrationDatabaseUrl } = await resolveIntegration
 
 const CANONICAL_DIMENSIONS = 3;
 describeIntegration("chunk detail embedding width (Postgres)", () => {
-  const database = new Database(integrationDatabaseUrl as string);
+  const database = new Database(integrationDatabaseUrl);
   const chunkRepository = new ChunkRepository(database);
 
   let accountId: string;

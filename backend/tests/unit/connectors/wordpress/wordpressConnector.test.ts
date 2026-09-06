@@ -133,7 +133,7 @@ describe("WordpressConnector.onEnable", () => {
       ensureSource,
     } as unknown as ConnectorIngestionPort;
     const context: ConnectorContext = {
-      db: { query: async () => [] } as unknown as ConnectorContext["db"],
+      db: { query: async () => [] },
       logger: { info: () => {}, warn: () => {}, error: () => {} },
       chat: { answer: async () => ({ conversationId: "c-1", answer: "", outcome: "answered" }) },
       state,
@@ -150,7 +150,7 @@ describe("WordpressConnector.onEnable", () => {
   it("registers a connector-kind source on enable using the configured site URL", async () => {
     const { connector, context, ensureSource } = buildEnabledConnector();
     await connector.initialize(context);
-    await connector.onEnable!({ workspaceId: "ws-1" });
+    await connector.onEnable({ workspaceId: "ws-1" });
 
     expect(ensureSource).toHaveBeenCalledWith({
       workspaceId: "ws-1",
@@ -164,7 +164,7 @@ describe("WordpressConnector.onEnable", () => {
   it("is a no-op when no site URL is configured yet", async () => {
     const { connector, context, ensureSource } = buildEnabledConnector({ config: {} });
     await connector.initialize(context);
-    await connector.onEnable!({ workspaceId: "ws-1" });
+    await connector.onEnable({ workspaceId: "ws-1" });
 
     expect(ensureSource).not.toHaveBeenCalled();
   });
@@ -174,7 +174,7 @@ describe("WordpressConnector.onEnable", () => {
     const { connector, context } = buildEnabledConnector({ ensureSource });
     await connector.initialize(context);
 
-    await expect(connector.onEnable!({ workspaceId: "ws-1" })).resolves.toBeUndefined();
+    await expect(connector.onEnable({ workspaceId: "ws-1" })).resolves.toBeUndefined();
     expect(ensureSource).toHaveBeenCalled();
   });
 });

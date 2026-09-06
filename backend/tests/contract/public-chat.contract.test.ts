@@ -72,7 +72,7 @@ describe("public chat contract", () => {
     // conversation with this message"). The message must be answered, not
     // silently dropped for an empty greeting (which 204s and looks like a failure
     // to browser clients).
-    const { app, repositories } = createTestApp();
+    const { app } = createTestApp();
     const session = await issueTestSession(app, "public-chat-startconv-message@example.com");
 
     await request(app)

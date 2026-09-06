@@ -181,7 +181,7 @@ describe("eval LLM-call usage recording end-to-end", () => {
 
   it("records system defaults, agent overrides, then per-eval overrides in order", async () => {
     const runner = new RetrievalPipelineEvalRunner(
-      buildPipeline() as never,
+      buildPipeline(),
       buildChatGateway("unused").gateway,
       buildResolver(),
       buildDefaultsProvider(),
@@ -219,7 +219,7 @@ describe("eval LLM-call usage recording end-to-end", () => {
   it("threads eval usage context through the full_assistant answer gateway call", async () => {
     const chat = buildChatGateway("the answer");
     const runner = new RetrievalPipelineEvalRunner(
-      buildPipeline() as never,
+      buildPipeline(),
       chat.gateway,
       buildResolver(),
       buildDefaultsProvider(),
@@ -234,7 +234,7 @@ describe("eval LLM-call usage recording end-to-end", () => {
       history: [],
     });
 
-    expect(chat.calls[0]!.usageContext).toEqual({
+    expect(chat.calls[0].usageContext).toEqual({
       accountId: "acc-1",
       workspaceId: "ws-1",
       requestId: "run-1",
@@ -307,13 +307,13 @@ describe("eval LLM-call usage recording end-to-end", () => {
       { text: "." },
     ]);
     expect(result.groundingSummary).toMatchObject({ verdict: "grounded", parseStatus: "valid_v2" });
-    expect(chat.calls[0]!.systemPrompt).toContain("Return exactly the JSON object required by the provider response schema");
-    expect(chat.calls[0]!.generation?.responseFormat).toMatchObject({
+    expect(chat.calls[0].systemPrompt).toContain("Return exactly the JSON object required by the provider response schema");
+    expect(chat.calls[0].generation?.responseFormat).toMatchObject({
       type: "json_schema",
       name: "grounded_answer_envelope",
       strict: true,
     });
-    expect(chat.calls[0]!.systemPrompt).not.toContain("Suggestion quality");
+    expect(chat.calls[0].systemPrompt).not.toContain("Suggestion quality");
   });
 
   it("propagates chat gateway failures after passing eval usage context", async () => {
@@ -326,7 +326,7 @@ describe("eval LLM-call usage recording end-to-end", () => {
       async *streamAnswer() {},
     };
     const runner = new RetrievalPipelineEvalRunner(
-      buildPipeline() as never,
+      buildPipeline(),
       failingGateway,
       buildResolver(),
       buildDefaultsProvider(),
@@ -342,12 +342,12 @@ describe("eval LLM-call usage recording end-to-end", () => {
       }),
     ).rejects.toThrow(/rate limited/);
 
-    expect(calls[0]!.usageContext.operation).toBe("full_assistant");
+    expect(calls[0].usageContext.operation).toBe("full_assistant");
   });
 
   it("treats a blank generated envelope body as a generation failure", async () => {
     const runner = new RetrievalPipelineEvalRunner(
-      buildPipeline() as never,
+      buildPipeline(),
       buildChatGateway("   ").gateway,
       buildResolver(),
       buildDefaultsProvider(),
@@ -377,7 +377,7 @@ describe("eval LLM-call usage recording end-to-end", () => {
     });
 
     expect(verdict.status).toBe("pass");
-    expect(chat.calls[0]!.usageContext).toEqual({
+    expect(chat.calls[0].usageContext).toEqual({
       accountId: "acc-1",
       workspaceId: "ws-1",
       requestId: "run-1",

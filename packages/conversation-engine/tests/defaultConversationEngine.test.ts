@@ -131,12 +131,12 @@ describe("DefaultConversationEngine", () => {
     expect(resolver.resolve).toHaveBeenCalledTimes(2);
     const [first, second] = seenTurns as Array<{ turn: unknown; staged: unknown[]; history: unknown[] }>;
     // Independent snapshots, not one shared object.
-    expect(first!.turn).not.toBe(second!.turn);
+    expect(first.turn).not.toBe(second.turn);
     // The second resolver saw neither the first skill's dispatch output (nothing has
     // dispatched yet) nor the first resolver's mutations.
-    expect(second!.staged).toEqual([]);
-    expect(second!.history).toEqual(first!.history);
-    expect(second!.history).not.toContainEqual({ role: "user", content: "mutated_by_first" });
+    expect(second.staged).toEqual([]);
+    expect(second.history).toEqual(first.history);
+    expect(second.history).not.toContainEqual({ role: "user", content: "mutated_by_first" });
     expect((dispatchTurns[1] as { stagedContext: unknown[] }).stagedContext).toEqual([
       expect.objectContaining({ kind: "first" }),
     ]);
@@ -305,7 +305,7 @@ describe("DefaultConversationEngine", () => {
 
   it("omits the resolution stage for a no-fields skill without calling the resolver", async () => {
     const resolver: ConversationSkillInputResolver = { resolve: vi.fn() };
-    const dispatcher = vi.fn(async ({ selected }): Promise<TurnOutcome> => ({
+    const dispatcher = vi.fn(async ({ selected: _selected }): Promise<TurnOutcome> => ({
       kind: "generic",
       skillName: "legacy",
       outcome: { status: "completed" },

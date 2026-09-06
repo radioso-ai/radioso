@@ -4,6 +4,7 @@ import { AccountRepository } from "../../../db/repositories/accountRepository.js
 import { AccessGrantRepository } from "../../../db/repositories/accessGrantRepository.js";
 import { AgentConverseSessionMappingRepository } from "../../../db/repositories/agentConverseSessionMappingRepository.js";
 import { AgentRepository } from "../../../db/repositories/agentRepository.js";
+import { AgentBundleImportRepository } from "../../../db/repositories/agentBundleImportRepository.js";
 import { IdentityNonceRepository } from "../../../db/repositories/identityNonceRepository.js";
 import { RoutineDefinitionRepository } from "../../../db/repositories/routineDefinitionRepository.js";
 import type { AgentSkillSettingsRegistry, AgentSurfaceExtensionRegistry } from "../../../modules/agents/public.js";
@@ -28,6 +29,7 @@ import { MessageRepository } from "../../../db/repositories/messageRepository.js
 import { PasswordResetTokenRepository } from "../../../db/repositories/passwordResetTokenRepository.js";
 import { RetrievalSettingsRepository } from "../../../db/repositories/retrievalSettingsRepository.js";
 import { SessionRepository } from "../../../db/repositories/sessionRepository.js";
+import { UserFederatedIdentityRepository } from "../../../db/repositories/userFederatedIdentityRepository.js";
 import { UserRepository } from "../../../db/repositories/userRepository.js";
 import { WebsiteCrawlJobRepository } from "../../../db/repositories/websiteCrawlJobRepository.js";
 import { WorkspaceGrantRepository } from "../../../db/repositories/workspaceGrantRepository.js";
@@ -164,6 +166,7 @@ export const buildRepositories = (
   accessGrantRepository: new AccessGrantRepository(database.kysely),
   agentConverseSessionMappingRepository: new AgentConverseSessionMappingRepository(database.kysely),
   agentRepository: new AgentRepository(database.kysely, options.agentSurfaceExtensions, options.agentSkillSettings),
+  agentBundleImportRepository: new AgentBundleImportRepository(database.kysely),
   bootstrapGreetingCacheRepository: new BootstrapGreetingCacheRepository(database.kysely),
   chunkRepository: new ChunkRepository(database),
   conversationRepository: new ConversationRepository(database.kysely),
@@ -186,6 +189,7 @@ export const buildRepositories = (
   retrievalSettingsRepository: new RetrievalSettingsRepository(database.kysely),
   routineDefinitionRepository: new RoutineDefinitionRepository(database.kysely),
   sessionRepository: new SessionRepository(database.kysely),
+  userFederatedIdentityRepository: new UserFederatedIdentityRepository(database.kysely),
   userRepository: new UserRepository(database.kysely),
   websiteCrawlJobRepository: new WebsiteCrawlJobRepository(database.kysely),
   workspaceGrantRepository: new WorkspaceGrantRepository(database.kysely),

@@ -56,7 +56,7 @@ export class AuditService {
       return null;
     }
 
-    return latestSuccess.metadata as ChatAnswerAuditMetadata;
+    return latestSuccess.metadata;
   }
 
   async updateChatAnswerSuggestions(input: {

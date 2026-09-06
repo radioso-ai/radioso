@@ -27,8 +27,9 @@ const pruneEmptyParents = async (startPath: string, stopPath: string): Promise<v
   while (current.startsWith(root) && current !== root) {
     try {
       await fs.rmdir(current);
-    } catch (error: any) {
-      if (error?.code === "ENOTEMPTY" || error?.code === "ENOENT") {
+    } catch (error) {
+      const code = error && typeof error === "object" && "code" in error ? (error as { code?: unknown }).code : undefined;
+      if (code === "ENOTEMPTY" || code === "ENOENT") {
         return;
       }
       throw error;

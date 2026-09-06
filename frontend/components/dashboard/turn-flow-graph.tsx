@@ -187,17 +187,17 @@ export function TurnFlowGraph({
   const handleInit = useCallback(
     (instance: ReactFlowInstance) => {
       if (!firstNodeId) {
-        instance.fitView({ padding: 0.25 })
+        void instance.fitView({ padding: 0.25 })
         return
       }
       const node = instance.getNode(firstNodeId)
       if (!node) {
-        instance.fitView({ padding: 0.25 })
+        void instance.fitView({ padding: 0.25 })
         return
       }
       const width = node.measured?.width ?? (node.width ?? FLOW_NODE_WIDTH)
       const height = node.measured?.height ?? (node.height ?? FLOW_NODE_HEIGHT)
-      instance.setCenter(node.position.x + width / 2, node.position.y + height + 24, {
+      void instance.setCenter(node.position.x + width / 2, node.position.y + height + 24, {
         zoom: 1.2,
         duration: 0,
       })

@@ -69,7 +69,7 @@ describe("copilot routine readers", () => {
     const result = await tool.createTool(context("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"))
       .invoke({ routineId: "11111111-1111-4111-8111-111111111111" }, {} as never) as { routine: { editable: { steps: Array<{ instruction: string }> } } };
 
-    expect(result.routine.editable.steps[0]!.instruction).toHaveLength(161);
+    expect(result.routine.editable.steps[0].instruction).toHaveLength(161);
   });
 
   it("reports nonportable routines without failing discovery or detail", async () => {
@@ -126,7 +126,7 @@ describe("copilot routine readers", () => {
     // The addressable list still names the step, because an oversized routine is exactly one an
     // operator wants edited — but it carries a locator, not the wording.
     expect(JSON.stringify(result).length).toBeLessThan(1_000);
-    expect((result as { routine: { editable: { steps: Array<{ instruction: string }> } } }).routine.editable.steps[0]!.instruction).toHaveLength(161);
+    expect((result as { routine: { editable: { steps: Array<{ instruction: string }> } } }).routine.editable.steps[0].instruction).toHaveLength(161);
   });
 });
 

@@ -4,17 +4,6 @@ import type { TelemetryService } from "../../shared/observability/telemetry/tele
 import type { FacetExtractionJobStore, FacetExtractionPort } from "./contracts.js";
 import { FacetExtractionWorker } from "./services/facetExtractionWorker.js";
 
-export type {
-  FacetExtractionEnqueueResult,
-  FacetExtractionInferenceFactory,
-  FacetExtractionJob,
-  FacetExtractionJobStatus,
-  FacetExtractionJobStore,
-  FacetExtractionOutcome,
-  FacetExtractionPort,
-  FacetSourceMessagePort,
-  MessageFacetRepositoryPort,
-} from "./contracts.js";
 export { FacetExtractionWorker } from "./services/facetExtractionWorker.js";
 export { FacetExtractionWorkspaceDrainService } from "./services/facetExtractionWorkspaceDrainService.js";
 export {
@@ -24,11 +13,9 @@ export {
 export { CloudTasksFacetExtractionDrainDispatcher } from "./infra/cloudTasksFacetExtractionDrainDispatcher.js";
 export {
   FacetExtractionService,
-  type FacetExtractionServiceDependencies,
 } from "./services/facetExtractionService.js";
 export {
   FACET_EXTRACTION_PROMPT_VERSION,
-  FacetExtractionValidationError,
 } from "./services/prompt.js";
 
 /**

@@ -29,7 +29,7 @@ const silentLogger: ConnectorLogger = {
 };
 
 describeIntegration("wordpressSyncService (Postgres)", () => {
-  const database = new Database(integrationDatabaseUrl as string);
+  const database = new Database(integrationDatabaseUrl);
 
   const accountId = randomUUID();
   const workspaceId = randomUUID();

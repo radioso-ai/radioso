@@ -126,7 +126,7 @@ export const createDocumentSearchCopilotTools = (deps: DocumentSearchCopilotTool
     name: "document_search", shape: "read", verificationCost: () => 0, uiLabel: "Searching documents", contributingModule: "documents", dashboardSubject: { type: "document" }, requiredPermissions: ["workspace.documents.read"],
     description: "Search workspace documents and return matching document metadata and quoted evidence snippets — the only document text available to you.",
     inputSchema: documentSearchInputSchema, outputSchema: documentSearchOutputSchema,
-    createTool: (context) => ({ name: "document_search", description: "Search workspace documents and return matching document metadata and quoted evidence snippets — the only document text available to you.", inputSchema: documentSearchInputSchema, outputSchema: documentSearchOutputSchema, invoke: async ({ query }) => ({ results: boundPayload({ results: (await deps.documentSearchService.search({ workspaceId: context.workspaceId, query, executionSurface: "operator_copilot" })).results as Record<string, unknown>[] }).results as Record<string, unknown>[] }) }),
+    createTool: (context) => ({ name: "document_search", description: "Search workspace documents and return matching document metadata and quoted evidence snippets — the only document text available to you.", inputSchema: documentSearchInputSchema, outputSchema: documentSearchOutputSchema, invoke: async ({ query }) => ({ results: boundPayload({ results: (await deps.documentSearchService.search({ workspaceId: context.workspaceId, query, executionSurface: "operator_copilot" })).results as Record<string, unknown>[] }).results }) }),
   },
 ];
 
@@ -150,7 +150,7 @@ export const createDocumentStatusCopilotTools = (deps: DocumentStatusCopilotTool
           counts: { total: summary.documentCount, ready: summary.readyDocumentCount, pending: summary.pendingDocumentCount, failed: summary.failedDocumentCount },
           attention: attention.map((document) => ({ id: document.id, title: document.title, status: document.status, failureReason: document.failureReason ?? null, updatedAt: document.updatedAt.toISOString(), sourceId: document.sourceId ?? null })),
           sources: sources.sources.map((source) => ({ id: source.id, kind: source.kind, label: source.name, lastSyncStatus: source.lastSyncStatus, lastSyncedAt: source.lastSyncedAt ? source.lastSyncedAt.toISOString() : null, documentCount: source.documentCount })),
-        }) as z.infer<typeof documentStatusOutputSchema>;
+        });
       },
     }),
   },

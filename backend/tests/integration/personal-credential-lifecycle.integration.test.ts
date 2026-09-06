@@ -32,7 +32,7 @@ interface Fixture {
 }
 
 describeIntegration("Personal credential lifecycle deletion", () => {
-  const database = new Database(integrationDatabaseUrl as string);
+  const database = new Database(integrationDatabaseUrl);
   const accountIds: string[] = [];
   const machineAccessRepository = new MachineAccessRepository(database.kysely);
   const lifecycle = new PersonalCredentialLifecycleRepository(database.kysely);
@@ -83,6 +83,7 @@ describeIntegration("Personal credential lifecycle deletion", () => {
       accountRepository,
       userRepository: {} as never,
       sessionRepository: {} as never,
+      federatedIdentityRepository: {} as never,
       workspaceService: workspace,
       accountAccessService: access,
       accountInvitationService: {} as never,

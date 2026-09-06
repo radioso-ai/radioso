@@ -55,13 +55,6 @@ type Aggregate = {
   renewalDueAtMs: number | undefined;
 };
 
-/**
- * At 10k local leases, 256 workers need 40 turns. Two 250ms command attempts plus
- * one bounded 250ms sweep per turn are 30s, below the default 34s jittered renewal
- * margin before the 20s safety window begins.
- */
-const MAX_RENEWALS_PER_TURN = 256;
-
 type Limits = {
   account: number;
   workspace: number;
@@ -101,7 +94,7 @@ const failure = (reason: string | undefined, retryAfterMs?: number) => {
   const limited = reason === "account_limit" || reason === "workspace_limit" || reason === "principal_limit" || reason === "reconnect_limit" || reason === "local_capacity";
   const preserved = reason === "cleanup_backlog" || reason === "fenced";
   return new RealtimeAdmissionError(
-    (limited || preserved ? reason : "redis_unavailable") as RealtimeAdmissionError["reason"],
+    (limited || preserved ? reason : "redis_unavailable"),
     limited ? 429 : 503,
     Math.max(1, retryAfterMs ?? 1_000),
   );

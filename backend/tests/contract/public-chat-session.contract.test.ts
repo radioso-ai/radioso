@@ -521,7 +521,7 @@ describe("public chat session contract", () => {
         ...agent.logo,
         mimeType: "text/html",
       },
-    } as never);
+    });
 
     const response = await request(app)
       .get(`/api/v1/public/chat/${agent.surfaceSettings.anonymousChat.token}/assistant-logo`);

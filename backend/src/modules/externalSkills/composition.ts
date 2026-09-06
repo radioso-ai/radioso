@@ -45,7 +45,7 @@ export const createMcpToolServiceFactory = (
   },
 });
 
-export interface LiveMcpConnectionLookupOptions {
+interface LiveMcpConnectionLookupOptions {
   fetchImpl?: Parameters<typeof resolveFreshAccessToken>[0]["fetchImpl"];
   logger?: AppLogger;
   encryptionKeyId?: string | null;

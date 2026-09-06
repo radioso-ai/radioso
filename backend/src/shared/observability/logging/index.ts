@@ -26,7 +26,7 @@ interface LoggingLogger {
   info?: AppLogger["info"];
 }
 
-export interface OpenTelemetryLoggingConfig {
+interface OpenTelemetryLoggingConfig {
   authBearerToken?: string;
   enabled: boolean;
   environment: string;
@@ -106,6 +106,9 @@ class LoggingLogRecordExporter implements LogRecordExporter {
 
   export(records: Parameters<LogRecordExporter["export"]>[0], callback: Parameters<LogRecordExporter["export"]>[1]): void {
     this.exporter.export(records, (result) => {
+      // result.code is @opentelemetry/core's ExportResultCode (SUCCESS = 0, FAILED = 1); comparing
+      // to the literal avoids adding a direct dependency on that package for one enum value.
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-enum-comparison -- see comment above
       if (result.code !== 0) {
         this.logger?.error(
           {

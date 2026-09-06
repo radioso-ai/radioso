@@ -1,17 +1,101 @@
 {
-  "generatedAt": "2026-07-19T12:55:01.577Z",
+  "generatedAt": "2026-09-05T20:43:47.532Z",
+  "passThreshold": 1,
   "cases": {
-    "clarification-ambiguous-plan": "fail",
-    "directive-refund-empathy": "pass",
-    "grounding-out-of-scope-refusal": "pass",
-    "multiturn-pricing-followup": "pass",
-    "retrieval-pricing-pro": "pass",
-    "retrieval-refund-window": "pass",
-    "retrieval-security-soc2": "pass",
-    "routine-book-demo-activate": "pass",
-    "routine-contact-activate": "pass",
-    "routine-contact-resume": "pass",
-    "routing-greeting-direct": "pass",
-    "routing-identity-direct": "pass"
+    "clarification-ambiguous-plan": {
+      "status": "fail",
+      "passRate": 0.8,
+      "samples": 5
+    },
+    "directive-refund-empathy": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "grounding-out-of-scope-refusal": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "multiturn-pricing-followup": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "page-read-gratitude-no-leak": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "page-read-metadata-only-summary-unavailable": {
+      "status": "recorded",
+      "passRate": 1,
+      "samples": 5
+    },
+    "page-read-referential-followup": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "page-read-summarize": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "page-read-summarize-spanish": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "page-read-targeted-lookup": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "page-read-unrelated-product-question": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "retrieval-pricing-pro": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "retrieval-refund-window": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "retrieval-security-soc2": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "routine-book-demo-activate": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "routine-contact-activate": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "routine-contact-resume": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "routing-greeting-direct": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "routing-identity-direct": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    }
   }
 }

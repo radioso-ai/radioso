@@ -69,7 +69,7 @@ const createDependencies = (calls: { bearer: number; permission: number; rate: n
   },
   authService: {
     async authenticateSession(token: string) {
-      if (token !== "valid-session") throw { statusCode: 401, code: "unauthorized" };
+      if (token !== "valid-session") throw Object.assign(new Error("Unauthorized"), { statusCode: 401, code: "unauthorized" });
       return { accountId: ACCOUNT_ID, userId: USER_ID, sessionId: "session-id" };
     },
     async authenticateApiToken() {

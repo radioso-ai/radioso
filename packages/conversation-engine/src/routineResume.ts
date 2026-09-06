@@ -4,7 +4,6 @@ import type {
   ConversationRoutineSteeringInput,
   ConversationTraceStage,
   ProcessTurnResult,
-  RenderableTurn,
   RoutineState,
   SteeringRule,
   TurnContext,

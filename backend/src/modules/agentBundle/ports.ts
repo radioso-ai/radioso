@@ -3,7 +3,12 @@ import type { AgentSkillInvocationMode } from "../agentSkills/public.js";
 import type { ContextVariableSource } from "../context-variables/public.js";
 import type { ContextVariableSurfacing } from "../context-variables/public.js";
 import type { RoutineDefinition, RoutineDefinitionDraftInput } from "../routines/public.js";
-import type { AgentBundleSkill } from "./domain.js";
+import type {
+  AgentBundleImportFailureCode,
+  AgentBundleImportRecord,
+  AgentBundleImportResult,
+  AgentBundleSkill,
+} from "./domain.js";
 
 /**
  * Narrow ports, one per collection the bundle composes. The module depends on
@@ -80,7 +85,7 @@ export interface AgentBundleSkillConfigPortabilityPort {
 // ─── Write side ──────────────────────────────────────────────────────────────
 
 export interface AgentBundleAgentWriterPort {
-  create(workspaceId: string, input: AgentInput): Promise<{ agentId: string }>;
+  create(workspaceId: string, input: AgentInput, agentId?: string): Promise<{ agentId: string }>;
   /**
    * Compensation for a part-way failure. Import spans four modules' services and
    * a single transaction across them would invert this module's dependency
@@ -135,4 +140,27 @@ export interface AgentBundleRoutineWriterPort {
     agentId: string,
     routineId: string,
   ): Promise<AgentBundleRoutinePublishOutcome>;
+}
+
+export interface AgentBundleImportRepositoryPort {
+  createOrGet(input: {
+    workspaceId: string;
+    actorAccountId: string | null;
+    idempotencyKey: string | null;
+  }): Promise<
+    | { status: "created"; job: AgentBundleImportRecord }
+    | { status: "existing"; job: AgentBundleImportRecord }
+  >;
+  findById(workspaceId: string, importId: string): Promise<AgentBundleImportRecord | null>;
+  markApplying(importId: string): Promise<boolean>;
+  setCreatedAgent(importId: string, agentId: string): Promise<boolean>;
+  markApplied(importId: string, result: AgentBundleImportResult): Promise<boolean>;
+  markFailed(importId: string, failureCode: AgentBundleImportFailureCode, options: { terminal: boolean; leaseToken?: string }): Promise<boolean>;
+  claimStaleApplying(input: {
+    ageSeconds: number;
+    leaseSeconds: number;
+    leaseToken: string;
+    limit: number;
+  }): Promise<AgentBundleImportRecord[]>;
+  markCompensated(importId: string, leaseToken?: string): Promise<boolean>;
 }

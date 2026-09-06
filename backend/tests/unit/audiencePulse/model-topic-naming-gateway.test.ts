@@ -175,7 +175,7 @@ describe("ModelTopicNamingGateway", () => {
 
     await gateway.name({ prototypical: ["how much does it cost"], peripheral: [] });
 
-    const inference = await inferenceFactory.create.mock.results[0]!.value;
+    const inference = await inferenceFactory.create.mock.results[0].value;
     expect(inference.complete).toHaveBeenCalledWith(
       expect.objectContaining({ responseFormat: TOPIC_NAMING_RESPONSE_FORMAT }),
     );
@@ -211,7 +211,7 @@ describe("ModelTopicNamingGateway", () => {
         attemptKey: expect.any(String),
       }),
     });
-    const inference = await inferenceFactory.create.mock.results[0]!.value;
+    const inference = await inferenceFactory.create.mock.results[0].value;
     expect(inference.complete).toHaveBeenCalledWith(
       expect.objectContaining({
         operation: expect.objectContaining({ workspaceId, surface: "audience_pulse_census", operation: "topic_naming" }),
@@ -251,7 +251,7 @@ describe("ModelTopicNamingGateway", () => {
       tags: { fallback: "false" },
       metrics: expect.objectContaining({ durationMs: expect.any(Number) }),
     }));
-    const payload = JSON.stringify(emit.mock.calls[0]![0]);
+    const payload = JSON.stringify(emit.mock.calls[0][0]);
     expect(payload).not.toContain("Pricing");
   });
 

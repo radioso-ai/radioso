@@ -80,11 +80,11 @@ const dependencies = (overrides: Partial<WorkspaceTriageCopilotToolDependencies>
   evalResultsService: { listWithLatestRun: vi.fn(async () => []) },
   workspaceRouteKeyResolver: { resolveWorkspaceKey: vi.fn(async () => "acme") },
   ...overrides,
-} as WorkspaceTriageCopilotToolDependencies);
+});
 
 const digest = async (deps: WorkspaceTriageCopilotToolDependencies, invocation = context()) => {
   const [descriptor] = createWorkspaceTriageCopilotTools(deps);
-  return descriptor!.createTool(invocation).invoke({}, {} as never);
+  return descriptor.createTool(invocation).invoke({}, {} as never);
 };
 
 describe("workspace_triage", () => {
@@ -343,7 +343,7 @@ describe("workspace_triage", () => {
     });
     const [descriptor] = createWorkspaceTriageCopilotTools(deps);
 
-    const result = await descriptor!.createTool(context(ALL_PERMISSIONS)).invoke({ agentId: "agent-1" }, {} as never);
+    const result = await descriptor.createTool(context(ALL_PERMISSIONS)).invoke({ agentId: "agent-1" }, {} as never);
 
     expect(getQualityStats).toHaveBeenCalledWith("workspace-1", { range: "30d", agentId: "agent-1" });
     expect(listLowQualityTurns).toHaveBeenCalledWith("workspace-1", expect.objectContaining({ agentId: "agent-1" }));

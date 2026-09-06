@@ -28,7 +28,7 @@ const acceptInvite = async (
   expect(login.status).toBe(200);
 
   return {
-    cookie: login.headers["set-cookie"][0] as string,
+    cookie: login.headers["set-cookie"][0],
     workspaceId: accepted.body.workspaceId as string,
     accountId: accepted.body.accountId as string,
     userId: accepted.body.userId as string,

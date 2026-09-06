@@ -106,27 +106,29 @@ export function IngestionSettingsPanel({
 
     const saveId = saveSequenceRef.current + 1
     saveSequenceRef.current = saveId
-    const timeout = window.setTimeout(async () => {
-      setSaveState('saving')
-      setSaveError(null)
-      const draftVersionAtRequestStart = draftVersionRef.current
-      try {
-        const updated = await persistSettings(settings)
-        if (saveSequenceRef.current !== saveId) {
-          return
+    const timeout = window.setTimeout(() => {
+      void (async () => {
+        setSaveState('saving')
+        setSaveError(null)
+        const draftVersionAtRequestStart = draftVersionRef.current
+        try {
+          const updated = await persistSettings(settings)
+          if (saveSequenceRef.current !== saveId) {
+            return
+          }
+          if (draftVersionRef.current === draftVersionAtRequestStart) {
+            setSettings(updated)
+            setSaveState('saved')
+          }
+        } catch (error) {
+          if (saveSequenceRef.current !== saveId) {
+            return
+          }
+          console.error('Failed to save ingestion settings:', error)
+          setSaveState('error')
+          setSaveError('Failed to save changes. Your latest edits are still in the browser.')
         }
-        if (draftVersionRef.current === draftVersionAtRequestStart) {
-          setSettings(updated)
-          setSaveState('saved')
-        }
-      } catch (error) {
-        if (saveSequenceRef.current !== saveId) {
-          return
-        }
-        console.error('Failed to save ingestion settings:', error)
-        setSaveState('error')
-        setSaveError('Failed to save changes. Your latest edits are still in the browser.')
-      }
+      })()
     }, 700)
 
     return () => window.clearTimeout(timeout)

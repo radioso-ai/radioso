@@ -98,7 +98,7 @@ export class PostgresChunkCandidateHydrator implements ChunkCandidateHydratorPor
 
 const jsonRecord = (value: JsonValue): Record<string, unknown> => {
   if (value && typeof value === "object" && !Array.isArray(value)) {
-    return value as Record<string, unknown>;
+    return value;
   }
   return {};
 };

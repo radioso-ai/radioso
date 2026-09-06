@@ -12,7 +12,7 @@ import { createRealtimeRolloutPolicy } from "../../modules/realtime/domain/realt
 import { resolveGcpRedisCredentialsProvider } from "../../runtime/gcpMetadataRedisCredentials.js";
 import type { RealtimePublisherComposition } from "../composition/realtimePublisherComposition.js";
 import { AgentService, AgentSurfaceExtensionRegistry, projectInternalAgentConfig, projectInternalAgentExternalSkills, serializeAuthoredDirectivesWithIds } from "../../modules/agents/public.js";
-import { InMemoryPublicConversationEventBus, PostgresAudiencePulseHistorySource } from "../../modules/chat/composition.js";
+import { InMemoryPublicConversationEventBus } from "../../modules/chat/composition.js";
 import {
   createFacetExtractionWorker,
   FacetExtractionService,
@@ -22,7 +22,7 @@ import { RoutineTriggerEmbeddingService } from "../../modules/routines/public.js
 import { MetadataRuleFieldReferenceService } from "../../modules/retrieval/public.js";
 import { MetadataFieldSuggestionService } from "../../modules/settings/composition.js";
 import { resolveEmbedConfigCacheInvalidator } from "../composition/builtIn/cloudCdnEmbedConfigCacheInvalidator.js";
-import { ContextualStructuredInferenceFactory, createRewriteTierStructuredInferenceFactory } from "../../shared/infra/llm/contextualGateways.js";
+import { createRewriteTierStructuredInferenceFactory } from "../../shared/infra/llm/contextualGateways.js";
 import type { EvalRunOverrides } from "../../modules/eval/composition.js";
 import { CopilotReplayEvidenceRepository } from "../../db/repositories/copilotReplayEvidenceRepository.js";
 import type { AppDependencies } from "./types.js";
@@ -90,14 +90,14 @@ import { ConversationSummaryRepository } from "../../db/repositories/conversatio
 import { RoutineStateRepository } from "../../db/repositories/routineStateRepository.js";
 import { QUALITY_RESOLUTION_REASONS } from "../../modules/quality/domain/resolution.js";
 
-export interface BuildDependenciesOptions {
+interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
   realtimePublisherComposition?: RealtimePublisherComposition;
 }
 
 export const buildDependencies = (env: Env = getEnv(), options: BuildDependenciesOptions = {}): AppDependencies => {
   const logger = buildLogger();
-  const realtimeConfig = parseRealtimeConfig(env as Record<string, unknown>);
+  const realtimeConfig = parseRealtimeConfig(env);
   const realtimeRolloutPolicy = createRealtimeRolloutPolicy(realtimeConfig.rollout);
   const realtimePublisherComposition = options.realtimePublisherComposition ?? createRealtimePublisherComposition({
     config: realtimeConfig,
@@ -184,7 +184,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     skillSettingsResolver,
     vectorIndexReconciler,
     workspace,
-    workspaceIngestionReprocessService,
     workspaceLlmCapabilitySettingsService,
   } = documentRetrievalGraph;
   // Field suggestions for metadata rules are the catalog's declarations unioned
@@ -776,6 +775,10 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
 
   const agentBundleServices = createAgentBundleServices({
     logger,
+    metrics: infrastructure.metricsRegistry,
+    auditService: infrastructure.auditService,
+    imports: repositories.agentBundleImportRepository,
+    importOrphanAgeMs: env.AGENT_BUNDLE_IMPORT_ORPHAN_AGE_MS,
     agentService,
     authoredDirectiveService,
     agentSkillsService,
@@ -890,6 +893,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     authoredDirectiveService,
     agentBundleExportService: agentBundleServices.exportService,
     agentBundleImportService: agentBundleServices.importService,
+    agentBundleImportCleanupWorker: agentBundleServices.cleanupWorker,
     routineDefinitionService,
     routineDraftAssistService,
     directiveAuthorService,

@@ -2,7 +2,6 @@
 
 import { Send, Sparkles, X } from 'lucide-react'
 import type {
-  CSSProperties,
   FormEvent,
   KeyboardEvent as ReactKeyboardEvent,
   ReactNode,
@@ -254,7 +253,7 @@ export function PublicChatBubbleComposerForm({
           background: theme.inputBackground,
           borderColor: theme.inputBorder,
           ['--tw-ring-color' as string]: theme.accent,
-        } as CSSProperties}
+        }}
       >
         <Textarea
           ref={inputRef}

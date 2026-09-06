@@ -16,6 +16,11 @@ const config: GoogleOAuthConfig = {
 const jsonResponse = (status: number, body: unknown): Response =>
   ({ ok: status >= 200 && status < 300, status, json: async () => body }) as unknown as Response;
 
+// `fetch`'s RequestInfo union includes `Request`, which has no meaningful `toString`;
+// read its `.url` explicitly instead of relying on base Object stringification.
+const toUrlString = (input: string | URL | Request): string =>
+  typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+
 describe("buildGoogleAuthorizationUrl", () => {
   it("builds a Google consent URL with the required parameters", () => {
     const url = new URL(buildGoogleAuthorizationUrl({ config, state: "state-123" }));
@@ -32,8 +37,8 @@ describe("buildGoogleAuthorizationUrl", () => {
 describe("resolveGoogleIdentity", () => {
   it("exchanges the code and returns the verified identity", async () => {
     const calls: string[] = [];
-    const fetchImpl = (async (input: string | URL | Request) => {
-      const url = String(input);
+    const fetchImpl = async (input: string | URL | Request) => {
+      const url = toUrlString(input);
       calls.push(url);
       if (url.includes("token")) {
         return jsonResponse(200, { access_token: "access-token-abc" });
@@ -44,7 +49,7 @@ describe("resolveGoogleIdentity", () => {
         email_verified: true,
         name: "A Person",
       });
-    }) as unknown as typeof fetch;
+    };
 
     const identity = await resolveGoogleIdentity({ config, code: "auth-code", fetchImpl });
 
@@ -58,13 +63,13 @@ describe("resolveGoogleIdentity", () => {
   });
 
   it("treats a string email_verified of \"true\" as verified", async () => {
-    const fetchImpl = (async (input: string | URL | Request) => {
-      const url = String(input);
+    const fetchImpl = async (input: string | URL | Request) => {
+      const url = toUrlString(input);
       if (url.includes("token")) {
         return jsonResponse(200, { access_token: "t" });
       }
       return jsonResponse(200, { sub: "s", email: "e@example.com", email_verified: "true" });
-    }) as unknown as typeof fetch;
+    };
 
     const identity = await resolveGoogleIdentity({ config, code: "c", fetchImpl });
     expect(identity.emailVerified).toBe(true);
@@ -79,13 +84,13 @@ describe("resolveGoogleIdentity", () => {
   });
 
   it("throws when userinfo is missing the subject", async () => {
-    const fetchImpl = (async (input: string | URL | Request) => {
-      const url = String(input);
+    const fetchImpl = async (input: string | URL | Request) => {
+      const url = toUrlString(input);
       if (url.includes("token")) {
         return jsonResponse(200, { access_token: "t" });
       }
       return jsonResponse(200, { email: "e@example.com" });
-    }) as unknown as typeof fetch;
+    };
 
     await expect(resolveGoogleIdentity({ config, code: "c", fetchImpl })).rejects.toBeInstanceOf(GoogleOAuthError);
   });

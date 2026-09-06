@@ -47,7 +47,7 @@ export const createConnectionBoundPublicLookup = (
         callback(null, eligible);
         return;
       }
-      const selected = eligible[0] as PublicLookupAddress;
+      const selected = eligible[0];
       callback(null, selected.address, selected.family);
     })
     .catch((error: unknown) => {
@@ -77,7 +77,7 @@ export const createPublicUrlFetch = (
       dispatcher,
     });
     return response as unknown as Response;
-  }) as PublicUrlFetch;
+  });
 };
 
 export const fetchPublicUrl = createPublicUrlFetch();

@@ -33,7 +33,6 @@ import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import type { JobConsumerPort } from "../../shared/domain/jobConsumer.js";
 import { DefaultAllowCapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import { StaticActionCapabilityMap, type ActionCapabilityMap } from "../../shared/domain/actionCapabilities.js";
-import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import {
   DefaultTurnSelectionStrategy,
   NoopActionDrainDispatcher,

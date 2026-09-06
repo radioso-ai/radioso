@@ -185,8 +185,6 @@ export const emailSkillActivityQuerySchema = z
   })
   .strict();
 
-export type EmailSkillActivityQueryInput = z.infer<typeof emailSkillActivityQuerySchema>;
-
 export interface EmailSkillRecipientSummary {
   toCount: number;
   ccCount: number;

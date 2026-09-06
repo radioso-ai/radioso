@@ -191,7 +191,7 @@ export class SdkMcpToolService implements ToolService {
         },
         undefined,
         { timeout: this.timeoutMs, signal: input.context?.signal },
-      )) as McpCallToolResult;
+      ));
     } catch (error) {
       // Sanitized: never surface raw exception text (may carry endpoint/credential detail).
       const isTimeout = error instanceof McpTimeoutError;

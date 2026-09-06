@@ -1,7 +1,7 @@
 'use client'
 
 import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react'
-import { clearWorkspaceStorage } from '@/lib/api'
+import { authApi, clearWorkspaceStorage, seedWorkspaceSession } from '@/lib/api'
 
 export interface User {
   userId: string
@@ -145,22 +145,61 @@ export const getStoredLastAccountId = (
   return typeof value === 'string' && value.trim() ? value : null
 }
 
+const persistAuthUser = (
+  storage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>,
+  user: User,
+): void => {
+  storage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user))
+  storage.setItem(LAST_ACCOUNT_STORAGE_KEY, user.accountId)
+  storeAccountOrganizationName(storage, user.accountId, user.organizationName ?? null)
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [isBootstrapping, setIsBootstrapping] = useState(true)
 
   useEffect(() => {
+    let active = true
+
     const bootstrap = async () => {
       if (typeof window === 'undefined') {
         setIsBootstrapping(false)
         return
       }
 
-      setUser(readStoredAuthUser(window.localStorage))
+      const storedUser = readStoredAuthUser(window.localStorage)
+      if (storedUser) {
+        setUser(storedUser)
+        setIsBootstrapping(false)
+        return
+      }
+
+      // Local state is empty but a session cookie may still be live: a sign-in
+      // that redirects the browser — provider OAuth — sets the cookie and never
+      // runs `login()`. Asking the server who we are is what turns that cookie
+      // into a signed-in app, instead of showing the sign-in form again.
+      const session = await authApi.getCurrentSession()
+      if (!active) return
+      if (session) {
+        const organizationName = normalizeStoredOrganizationName(session.organizationName)
+        const recovered: User = {
+          userId: session.userId,
+          accountId: session.accountId,
+          email: session.email,
+          ...(organizationName ? { organizationName } : {}),
+        }
+        persistAuthUser(window.localStorage, recovered)
+        seedWorkspaceSession(session.workspaceId, session.workspacePublicRouteKey)
+        setUser(recovered)
+      }
       setIsBootstrapping(false)
     }
 
     void bootstrap()
+
+    return () => {
+      active = false
+    }
   }, [])
 
   const login = useCallback(async (email: string, userId: string, accountId: string, organizationName?: string | null) => {
@@ -172,9 +211,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ...(normalizedOrganizationName ? { organizationName: normalizedOrganizationName } : {}),
     }
     if (typeof window !== 'undefined') {
-      window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(nextUser))
-      window.localStorage.setItem(LAST_ACCOUNT_STORAGE_KEY, accountId)
-      storeAccountOrganizationName(window.localStorage, accountId, normalizedOrganizationName)
+      persistAuthUser(window.localStorage, nextUser)
     }
 
     setUser(nextUser)

@@ -69,7 +69,7 @@ describe("EmbeddingProfileJobService", () => {
     }> = [];
     const commits: Parameters<EmbeddingProfileJobPersistencePort["commit"]>[0][] = [];
     const persistence: EmbeddingProfileJobPersistencePort = {
-      async load(input) {
+      async load(_input) {
         return {
           outcome: "ready",
           sourceId: null,

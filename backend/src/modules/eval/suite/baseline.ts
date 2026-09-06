@@ -53,6 +53,8 @@ export interface CaseOutcome {
 }
 
 export interface BaselineDiff {
+  /** The current reducer bar differs from the one that produced the baseline. */
+  thresholdMismatch: { baseline: number; current: number } | null;
   /** Was `pass`, now anything else — the only class that should fail CI. */
   regressions: Array<{ caseId: string; name: string; from: EvalRunStatus; to: EvalRunStatus }>;
   /**
@@ -63,12 +65,13 @@ export interface BaselineDiff {
   rateRegressions: Array<{ caseId: string; name: string; from: number; to: number }>;
   /**
    * Would have been a regression, except this run sampled less deeply than the baseline did, so it
-   * is not evidence of one. Informational, and the reason to re-run at the baseline's depth.
+   * is not evidence of one. It still fails the gate: the run is too shallow to make a reliable
+   * comparison and must be re-run at the baseline's depth.
    */
   underSampled: Array<{ caseId: string; name: string; from: EvalRunStatus; to: EvalRunStatus; samples: number; baselineSamples: number }>;
   /** Was failing/erroring, now `pass`. */
   fixes: Array<{ caseId: string; name: string; from: EvalRunStatus; to: EvalRunStatus }>;
-  /** Not present in the baseline — informational, never a regression. */
+  /** Not present in the baseline — an unrecorded expected outcome, so the gate fails. */
   newCases: CaseOutcome[];
   /** In the baseline but absent from this run — informational. */
   removed: string[];
@@ -77,6 +80,8 @@ export interface BaselineDiff {
 }
 
 export interface BaselineDiffOptions {
+  /** The pass threshold used to reduce the current sampled run. */
+  passThreshold?: number;
   /**
    * How far a pass rate may fall before it is called a regression. Small sample counts make the
    * rate coarse — one sample of three moves it by a third — so the tolerance has to be wider than
@@ -94,6 +99,14 @@ const isRegression = (from: EvalRunStatus, to: EvalRunStatus): boolean =>
 const isFix = (from: EvalRunStatus, to: EvalRunStatus): boolean =>
   from !== "pass" && to === "pass";
 
+/** A run fails its gate when any selected case lacks a committed expected outcome. */
+export const hasBaselineGateFailures = (diff: BaselineDiff): boolean =>
+  diff.thresholdMismatch !== null ||
+  diff.regressions.length > 0 ||
+  diff.rateRegressions.length > 0 ||
+  diff.underSampled.length > 0 ||
+  diff.newCases.length > 0;
+
 export const diffAgainstBaseline = (
   current: CaseOutcome[],
   baseline: BaselineFile,
@@ -101,6 +114,12 @@ export const diffAgainstBaseline = (
 ): BaselineDiff => {
   const tolerance = options.rateDropTolerance ?? DEFAULT_RATE_DROP_TOLERANCE;
   const diff: BaselineDiff = {
+    thresholdMismatch:
+      baseline.passThreshold !== undefined &&
+      options.passThreshold !== undefined &&
+      baseline.passThreshold !== options.passThreshold
+        ? { baseline: baseline.passThreshold, current: options.passThreshold }
+        : null,
     regressions: [],
     rateRegressions: [],
     underSampled: [],
@@ -176,10 +195,32 @@ export const diffAgainstBaseline = (
 export const isBaselineInitialized = (baseline: BaselineFile): boolean =>
   Object.keys(baseline.cases).length > 0;
 
-export const buildBaselineFile = (current: CaseOutcome[], generatedAt: string): BaselineFile => {
+export const buildBaselineFile = (
+  current: CaseOutcome[],
+  generatedAt: string,
+  passThreshold?: number,
+): BaselineFile => {
   const cases: Record<string, BaselineCaseEntry> = {};
   for (const outcome of [...current].sort((left, right) => left.caseId.localeCompare(right.caseId))) {
-    cases[outcome.caseId] = outcome.status;
+    cases[outcome.caseId] =
+      outcome.passRate === undefined && outcome.samples === undefined
+        ? outcome.status
+        : { status: outcome.status, passRate: outcome.passRate, samples: outcome.samples };
   }
-  return { generatedAt, cases };
+  return { generatedAt, passThreshold, cases };
 };
+
+/** Replaces only observed cases so a filtered recorder cannot erase the rest of the baseline. */
+export const mergeBaselineFile = (
+  baseline: BaselineFile,
+  current: CaseOutcome[],
+  generatedAt: string,
+  passThreshold: number,
+): BaselineFile => ({
+  generatedAt,
+  passThreshold,
+  cases: {
+    ...baseline.cases,
+    ...buildBaselineFile(current, generatedAt, passThreshold).cases,
+  },
+});

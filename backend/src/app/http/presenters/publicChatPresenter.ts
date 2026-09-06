@@ -192,7 +192,7 @@ export const stripPublicConversationCitationArtifacts = (
     return {
       ...publicMessage,
       ...(exposeCitations && Array.isArray(citations)
-        ? { citations: (citations as ChatCitation[]).map(toPublicCitation) }
+        ? { citations: (citations).map(toPublicCitation) }
         : {}),
       ...(answerSegments ? { answerSegments: stripPublicAnswerSegmentCitations(answerSegments, exposeCitations) } : {}),
       ...(suggestions ? { suggestions: suggestions.map(stripPublicSuggestionCitation) } : {}),
@@ -224,7 +224,7 @@ export const stripPublicConversationTailCitationArtifacts = (
       return {
         ...publicMessage,
         ...(exposeCitations && Array.isArray(citations)
-          ? { citations: (citations as ChatCitation[]).map(toPublicCitation) }
+          ? { citations: (citations).map(toPublicCitation) }
           : {}),
         ...(answerSegments ? { answerSegments: stripPublicAnswerSegmentCitations(answerSegments, exposeCitations) } : {}),
         ...(suggestions ? { suggestions: suggestions.map(stripPublicSuggestionCitation) } : {}),

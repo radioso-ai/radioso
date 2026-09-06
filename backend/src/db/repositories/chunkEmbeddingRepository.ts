@@ -97,7 +97,7 @@ export class ChunkEmbeddingRepository implements ChunkEmbeddingRepositoryPort {
       .where("chunk_id", "=", input.chunkId)
       .where("embedding_space_id", "=", input.embeddingSpaceId)
       .executeTakeFirst();
-    return row ? mapChunkEmbedding(row as ChunkEmbeddingRow) : null;
+    return row ? mapChunkEmbedding(row) : null;
   }
 }
 
@@ -224,7 +224,7 @@ export const upsertCanonicalChunkEmbeddingWithProjection = async (
     .where("id", "=", input.embeddingSpaceId)
     .executeTakeFirst();
   assertEmbeddingSpaceCompatibility(
-    embeddingSpace as StoredEmbeddingSpaceRow | undefined,
+    embeddingSpace,
     {
       id: input.embeddingSpaceId,
       dimensions: input.dimensions,
@@ -263,7 +263,7 @@ export const upsertCanonicalChunkEmbeddingWithProjection = async (
     .executeTakeFirst();
   if (existing && BigInt(existing.canonical_version) >= BigInt(input.canonicalVersion)) {
     return {
-      record: mapChunkEmbedding(existing as ChunkEmbeddingRow),
+      record: mapChunkEmbedding(existing),
       applied: false,
     };
   }
@@ -304,7 +304,7 @@ export const upsertCanonicalChunkEmbeddingWithProjection = async (
       distanceMetric: "cosine",
       vector: [...input.embedding],
       sourceId: canonicalChunk.source_id,
-      metadata: (canonicalChunk.metadata ?? {}) as Record<string, unknown>,
+      metadata: (canonicalChunk.metadata ?? {}),
       retrievalEnabled: canonicalChunk.retrieval_enabled,
       retrievalExpiresAt: canonicalChunk.retrieval_expires_at
         ? new Date(canonicalChunk.retrieval_expires_at).toISOString()
@@ -312,7 +312,7 @@ export const upsertCanonicalChunkEmbeddingWithProjection = async (
     },
   });
   return {
-    record: mapChunkEmbedding(row as ChunkEmbeddingRow),
+    record: mapChunkEmbedding(row),
     applied: true,
   };
 };

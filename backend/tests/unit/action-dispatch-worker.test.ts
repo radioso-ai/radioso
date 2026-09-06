@@ -33,7 +33,7 @@ describe("ActionDispatchWorker queue-depth observability", () => {
 
     expect(depthSnapshot.getPendingDepthSnapshot).toHaveBeenCalledOnce();
     expect(emit).toHaveBeenCalledOnce();
-    const [event] = emit.mock.calls[0]!;
+    const [event] = emit.mock.calls[0];
     expect(event.eventType).toBe("action.dispatch.queue_state");
     expect(event.metrics.pendingCount).toBe(3);
     expect(event.metrics.inProgressCount).toBe(1);
@@ -58,7 +58,7 @@ describe("ActionDispatchWorker queue-depth observability", () => {
 
     await worker.drain();
 
-    const [event] = emit.mock.calls[0]!;
+    const [event] = emit.mock.calls[0];
     expect(event.metrics.oldestPendingAgeMs).toBe(0);
   });
 

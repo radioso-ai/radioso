@@ -28,7 +28,7 @@ interface MessageFixture {
 }
 
 describeIntegration("PostgresAudiencePulseHistorySource", () => {
-  const database = new Database(integrationDatabaseUrl as string);
+  const database = new Database(integrationDatabaseUrl);
   const source = new PostgresAudiencePulseHistorySource(database.kysely);
   const accountId = randomUUID();
   const workspaceId = randomUUID();

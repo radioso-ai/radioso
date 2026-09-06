@@ -116,7 +116,7 @@ export interface CopilotRepositoryPort {
   createProposal(input: Omit<CopilotProposal, "id" | "messageId" | "status" | "appliedRef" | "createdAt" | "updatedAt">): Promise<CopilotProposal>;
   findProposal(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null>;
   attachProposalsToMessage(input: { proposalIds: ReadonlyArray<string>; messageId: string; conversationId: string }): Promise<void>;
-  updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposalStatus; appliedRef?: unknown | null; reason?: string | null; applyClaimGuard: CopilotProposalApplyClaimGuard }): Promise<CopilotProposal | null>;
+  updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposalStatus; appliedRef?: unknown; reason?: string | null; applyClaimGuard: CopilotProposalApplyClaimGuard }): Promise<CopilotProposal | null>;
   claimProposalApply(input: { id: string; workspaceId: string; operatorUserId: string; claimTtlSeconds: number }): Promise<CopilotProposalClaim | null>;
   /** Clears only the exact claim this attempt was handed, after a pre-mutation denial. A claim already superseded by a later reclaim is left alone. */
   releaseProposalApplyClaim(input: { id: string; workspaceId: string; operatorUserId: string; claimedAt: Date }): Promise<boolean>;
@@ -167,7 +167,7 @@ export class OperatorCopilotService {
     return this.deps.repository.deleteConversation({ id, workspaceId, operatorUserId });
   }
 
-  async getProposal(input: { workspaceId: string; operatorUserId: string; proposalId: string }): Promise<{ proposal: CopilotProposal; preview: { targetLabel: string; current: unknown | null; proposed: unknown }; currentVersionMatches: boolean } | null> {
+  async getProposal(input: { workspaceId: string; operatorUserId: string; proposalId: string }): Promise<{ proposal: CopilotProposal; preview: { targetLabel: string; current: unknown; proposed: unknown }; currentVersionMatches: boolean } | null> {
     const proposal = await this.deps.repository.findProposal({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId });
     if (!proposal) return null;
     const adapter = this.adapterFor(proposal.targetType);
@@ -327,7 +327,7 @@ export class OperatorCopilotService {
       await reservation.commit();
       await this.recordTerminal(input, conversation.id, turnId, outcome, startedAt, now(), activity);
       yield { event: "outcome", data: { status: outcome } };
-    } catch (error) {
+    } catch {
       if (!terminalPersisted) {
         await this.persistTerminal(conversation, "", "failed", activity, proposals);
         terminalPersisted = true;
@@ -395,7 +395,7 @@ export class OperatorCopilotService {
     return this.deps.tools
       .filter((descriptor) => hasAllCopilotToolPermissions(descriptor.requiredPermissions, input.permissions))
       .map((descriptor) => meteredCopilotTool(
-        descriptor.createTool({ workspaceId: input.workspaceId, accountId: input.accountId, operatorUserId: input.operatorUserId, surface: input.surface, copilotConversationId: input.copilotConversationId, permissions: input.permissions, currentAuthorization: this.deps.currentAuthorization, pageContext: input.pageContext }) as AgentTool,
+        descriptor.createTool({ workspaceId: input.workspaceId, accountId: input.accountId, operatorUserId: input.operatorUserId, surface: input.surface, copilotConversationId: input.copilotConversationId, permissions: input.permissions, currentAuthorization: this.deps.currentAuthorization, pageContext: input.pageContext }),
         // Bound to its descriptor, not handed over bare: the contract declares a method, so a
         // contributed descriptor may legitimately be class-backed and read `this` to answer.
         (toolInput) => descriptor.verificationCost(toolInput),
@@ -474,7 +474,7 @@ export class OperatorCopilotService {
     }
   }
 
-  private async updateProposalAndAudit(input: { workspaceId: string; accountId: string; operatorUserId: string; surface: CopilotSurface }, proposal: CopilotProposal, status: CopilotProposalStatus, appliedRef: unknown | null, eventType: string, eventStatus: "success" | "failure", outcome: string, applyClaimGuard: CopilotProposalApplyClaimGuard, reason: string | null = null): Promise<void> {
+  private async updateProposalAndAudit(input: { workspaceId: string; accountId: string; operatorUserId: string; surface: CopilotSurface }, proposal: CopilotProposal, status: CopilotProposalStatus, appliedRef: unknown, eventType: string, eventStatus: "success" | "failure", outcome: string, applyClaimGuard: CopilotProposalApplyClaimGuard, reason: string | null = null): Promise<void> {
     const updated = await this.deps.repository.updateProposalOutcome({ id: proposal.id, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId, status, appliedRef, reason, applyClaimGuard });
     if (!updated) throw new CopilotConflictError();
     await this.audit(input, { accountId: input.accountId, workspaceId: input.workspaceId, eventType, eventStatus, metadata: { proposalId: proposal.id, targetType: proposal.targetType, outcome } });

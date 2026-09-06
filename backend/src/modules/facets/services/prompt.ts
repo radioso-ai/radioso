@@ -41,7 +41,7 @@ const HTML_SENSITIVE_CHARACTERS: Record<string, string> = {
 };
 
 const serializeUntrustedInput = (value: unknown): string =>
-  JSON.stringify(value).replace(/[<>&]/g, (character) => HTML_SENSITIVE_CHARACTERS[character]!);
+  JSON.stringify(value).replace(/[<>&]/g, (character) => HTML_SENSITIVE_CHARACTERS[character]);
 
 /** Builds an explicit data envelope so visitor text cannot become instructions. */
 export const buildFacetExtractionPrompt = (question: string): string => {

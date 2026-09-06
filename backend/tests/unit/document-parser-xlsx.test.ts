@@ -15,7 +15,7 @@ const buildLinkedWorkbookBuffer = async () => {
   sheet.getCell("B3").value = {
     richText: [{ text: "Apri la guida completa" }],
     hyperlink: "https://example.com/rich-account-recovery",
-  } as ExcelJS.CellRichTextValue & { hyperlink: string };
+  };
 
   return Buffer.from(await workbook.xlsx.writeBuffer());
 };

@@ -266,7 +266,7 @@ export const combineVerdicts = (verdicts: AssertionVerdict[]): AggregatedRunVerd
   return {
     status: "pass",
     reason: verdicts.length === 1
-      ? verdicts[0]!.reason
+      ? verdicts[0].reason
       : `All ${verdicts.length} assertions passed.`,
     verdicts,
   };

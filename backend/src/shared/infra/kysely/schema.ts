@@ -89,6 +89,23 @@ export interface AgentAccessGrants {
   workspace_id: string;
 }
 
+export interface AgentBundleImports {
+  actor_account_id: string | null;
+  agent_id: string | null;
+  applied_at: Timestamp | null;
+  cleanup_lease_expires_at: Timestamp | null;
+  cleanup_lease_token: string | null;
+  compensated_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  failure_code: string | null;
+  id: Generated<string>;
+  idempotency_key: string | null;
+  state: Generated<string>;
+  unresolved: Generated<Json>;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
 export interface AgentContextVariables {
   agent_id: string;
   created_at: Generated<Timestamp>;
@@ -1126,6 +1143,16 @@ export interface UsageEvents {
   workspace_id: string | null;
 }
 
+export interface UserFederatedIdentities {
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  last_authenticated_at: Generated<Timestamp>;
+  provider: string;
+  provider_email: string;
+  subject: string;
+  user_id: string;
+}
+
 export interface Users {
   created_at: Generated<Timestamp>;
   email: string;
@@ -1284,6 +1311,7 @@ export interface DB {
   account_memberships: AccountMemberships;
   accounts: Accounts;
   agent_access_grants: AgentAccessGrants;
+  agent_bundle_imports: AgentBundleImports;
   agent_context_variables: AgentContextVariables;
   agent_converse_session_mappings: AgentConverseSessionMappings;
   agent_directives: AgentDirectives;
@@ -1360,6 +1388,7 @@ export interface DB {
   topics: Topics;
   usage_daily_rollups: UsageDailyRollups;
   usage_events: UsageEvents;
+  user_federated_identities: UserFederatedIdentities;
   users: Users;
   vector_index_checkpoints: VectorIndexCheckpoints;
   vector_index_work: VectorIndexWork;

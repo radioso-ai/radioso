@@ -90,7 +90,7 @@ export function StaffLayout({ children, active }: { children: ReactNode; active:
             <Button
               variant="outline"
               size="sm"
-              onClick={logout}
+              onClick={() => { void logout(); }}
               className="border-zinc-700 bg-transparent text-zinc-200 hover:bg-zinc-800 hover:text-zinc-100"
             >
               <LogOut className="size-4" />

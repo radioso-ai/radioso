@@ -1,4 +1,5 @@
 import { createAgentBundleServices } from "../../src/app/composition/agentBundleComposition.js";
+import { InMemoryAgentBundleImportRepository } from "./inMemoryAgentBundleImports.js";
 import { setTimeout as delay } from "node:timers/promises";
 
 import request from "supertest";
@@ -169,12 +170,8 @@ import {
   EvalSuiteProbeService,
   OperatorCopilotService,
   RetrievalProbeService,
-  type CopilotConversation,
-  type CopilotMessage,
-  type CopilotProposal,
   type CopilotReplayEvidenceRecord,
   type CopilotReplayEvidenceRepositoryPort,
-  type CopilotRepositoryPort,
 } from "../../src/modules/operatorCopilot/public.js";
 import {
   AgenticCapabilityRunner,
@@ -274,6 +271,7 @@ import {
   InMemoryMessageRepository,
   InMemoryConversationOwnershipRepository,
   InMemoryRetrievalSettingsRepository,
+  InMemoryFederatedIdentityRepository,
   InMemorySessionRepository,
   InMemoryEmailVerificationTokenRepository,
   InMemoryPasswordResetTokenRepository,
@@ -349,6 +347,7 @@ export const createTestEnv = (): Env => ({
   EXPENSIVE_AUTHENTICATED_RATE_LIMIT_MAX_ATTEMPTS: 60,
   COPILOT_PROBE_BUDGET_PER_TURN: 3,
   COPILOT_CONVERSATION_RETENTION_DAYS: 90,
+  AGENT_BUNDLE_IMPORT_ORPHAN_AGE_MS: 15 * 60 * 1_000,
   PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS: 60_000,
   PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 10,
   PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: 600,
@@ -765,6 +764,7 @@ export const createTestDependencies = (overrides: {
     }),
   );
   const sessionRepository = new InMemorySessionRepository();
+  const federatedIdentityRepository = new InMemoryFederatedIdentityRepository();
   const machineAccessRepository = new InMemoryMachineAccessRepository();
   const ingestionSettingsRepository = new InMemoryIngestionSettingsRepository();
   const retrievalSettingsRepository = new InMemoryRetrievalSettingsRepository();
@@ -1599,7 +1599,7 @@ export const createTestDependencies = (overrides: {
   const publicChatActionAdvertiser = publicChatActionAdvertisers.length === 0
     ? new NoopPublicChatActionAdvertiser()
     : publicChatActionAdvertisers.length === 1
-      ? publicChatActionAdvertisers[0]!
+      ? publicChatActionAdvertisers[0]
       : new ChainedPublicChatActionAdvertiser(publicChatActionAdvertisers);
   const fallbackReplyComposer = overrides.fallbackReplyComposer ?? new TestFallbackReplyComposer();
   const publishedRoutineSource = createPublishedRoutineRegistrationSource(routineDefinitionRepository, {
@@ -1848,13 +1848,13 @@ export const createTestDependencies = (overrides: {
       async answer(_input: { history: unknown[]; runId: string }) {
         return { chunks: [], answer: "" };
       },
-    } as any,
+    },
     {
       async judge({ assertion }) {
         return { assertion, status: "error" as const, reason: "Judge is not configured in test app." };
       },
     },
-    workbenchReplayRunner as any,
+    workbenchReplayRunner,
     logger,
   );
   const evalCaseService = new EvalCaseService(evalRepository);
@@ -2103,6 +2103,7 @@ export const createTestDependencies = (overrides: {
     accountRepository,
     userRepository,
     sessionRepository,
+    federatedIdentityRepository,
     workspaceService,
     accountAccessService,
     accountInvitationService,
@@ -2115,7 +2116,12 @@ export const createTestDependencies = (overrides: {
       workspaceService,
     ),
   });
+  const agentBundleImportRepository = new InMemoryAgentBundleImportRepository();
   const agentBundleServices = createAgentBundleServices({
+    auditService,
+    imports: agentBundleImportRepository,
+    importOrphanAgeMs: 15 * 60 * 1_000,
+    metrics: metricsRegistry,
     agentService,
     authoredDirectiveService,
     agentSkillsService,
@@ -2130,6 +2136,7 @@ export const createTestDependencies = (overrides: {
     env,
     agentBundleExportService: agentBundleServices.exportService,
     agentBundleImportService: agentBundleServices.importService,
+    agentBundleImportCleanupWorker: agentBundleServices.cleanupWorker,
     workspaceInvalidationPublisher: { enqueue: () => ({ accepted: false, reason: "disabled" }) },
     realtimePublisherLifecycle: { shutdown: async () => undefined },
     credentialExpiryWarningLifecycle,
@@ -2197,6 +2204,7 @@ export const createTestDependencies = (overrides: {
       accountRepository,
       userRepository,
       sessionRepository,
+      federatedIdentityRepository,
       accountAccessService,
       workspaceService,
       passwordResetTokenRepository: new InMemoryPasswordResetTokenRepository(),
@@ -2294,7 +2302,7 @@ export const createTestDependencies = (overrides: {
     messageRepository,
     connectorRegistry,
     connectorManagementService: new ConnectorManagementService({
-      database: connectorDb as any,
+      database: connectorDb,
       registry: connectorRegistry,
     }),
     connectorIngestionPort: {
@@ -2311,7 +2319,7 @@ export const createTestDependencies = (overrides: {
   };
 
   void connectorRegistry.initializeAll({
-    db: connectorDb as any,
+    db: connectorDb,
     logger: dependencies.logger,
     chat: createConnectorChatPort(dependencies.chatService),
     ingestion: dependencies.connectorIngestionPort,
@@ -2472,18 +2480,6 @@ const keywordAllTermsMatch = (content: string, query: string): boolean => {
   return normalizedTerms.length > 0 && normalizedTerms.every((term) => lowerContent.includes(term));
 };
 
-const keywordEmbedding = (text: string): number[] => {
-  const vector = new Array<number>(8).fill(0);
-  const terms = normalizeTerms(text);
-
-  for (const term of terms) {
-    const bucket = hashTerm(term) % vector.length;
-    vector[bucket] += 1;
-  }
-
-  return vector;
-};
-
 const wordSegmenter = new Intl.Segmenter(undefined, { granularity: "word" });
 
 const normalizeTerms = (text: string): string[] =>
@@ -2497,16 +2493,6 @@ const normalizeRewriteContext = (text: string): string =>
     .trim()
     .replace(/[?.!]+$/g, "")
     .trim();
-
-const hashTerm = (term: string): number => {
-  let hash = 0;
-
-  for (let index = 0; index < term.length; index += 1) {
-    hash = (hash * 31 + term.charCodeAt(index)) >>> 0;
-  }
-
-  return hash;
-};
 
 class InMemoryCopilotReplayEvidenceRepository implements CopilotReplayEvidenceRepositoryPort {
   private records: CopilotReplayEvidenceRecord[] = [];

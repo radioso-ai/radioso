@@ -64,7 +64,7 @@ export const createHttpServer = ({ authService, auditLogger, config, readiness, 
     });
   };
 
-  const server = createServer(async (req, res) => {
+  const handleRequest = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     try {
       const url = new URL(req.url ?? "/", `http://${req.headers.host ?? `${config.bindHost}:${config.bindPort}`}`);
 
@@ -95,6 +95,12 @@ export const createHttpServer = ({ authService, auditLogger, config, readiness, 
     } catch (error) {
       writeUnhandledError(req, res, error);
     }
+  };
+
+  // `createServer` expects a listener returning `void`; `handleRequest` already catches
+  // everything internally, so the returned promise is intentionally not awaited here.
+  const server = createServer((req, res) => {
+    void handleRequest(req, res);
   });
 
   return {

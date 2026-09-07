@@ -739,6 +739,76 @@ CREATE TABLE public.api_credentials (
 
 
 --
+-- Name: app_storage_collection_usage; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.app_storage_collection_usage (
+    workspace_id uuid NOT NULL,
+    installation_id uuid NOT NULL,
+    collection_id text NOT NULL,
+    record_count integer DEFAULT 0 NOT NULL,
+    byte_size bigint DEFAULT 0 NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT app_storage_collection_usage_byte_size_check CHECK ((byte_size >= 0)),
+    CONSTRAINT app_storage_collection_usage_record_count_check CHECK ((record_count >= 0))
+);
+
+
+--
+-- Name: app_storage_index_entries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.app_storage_index_entries (
+    workspace_id uuid NOT NULL,
+    installation_id uuid NOT NULL,
+    collection_id text NOT NULL,
+    record_key text NOT NULL,
+    index_id text NOT NULL,
+    text_value text,
+    numeric_value double precision,
+    boolean_value boolean,
+    timestamp_value timestamp with time zone,
+    CONSTRAINT app_storage_index_entries_one_value CHECK (((((((text_value IS NOT NULL))::integer + ((numeric_value IS NOT NULL))::integer) + ((boolean_value IS NOT NULL))::integer) + ((timestamp_value IS NOT NULL))::integer) = 1))
+);
+
+
+--
+-- Name: app_storage_installation_state; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.app_storage_installation_state (
+    workspace_id uuid NOT NULL,
+    installation_id uuid NOT NULL,
+    access_revoked_at timestamp with time zone,
+    retain_until timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: app_storage_records; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.app_storage_records (
+    workspace_id uuid NOT NULL,
+    installation_id uuid NOT NULL,
+    collection_id text NOT NULL,
+    record_key text NOT NULL,
+    schema_version integer NOT NULL,
+    value jsonb NOT NULL,
+    byte_size integer NOT NULL,
+    version integer NOT NULL,
+    expires_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT app_storage_records_byte_size_check CHECK ((byte_size >= 0)),
+    CONSTRAINT app_storage_records_schema_version_check CHECK ((schema_version > 0)),
+    CONSTRAINT app_storage_records_version_check CHECK ((version > 0))
+);
+
+
+--
 -- Name: assistant_answer_feedback; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3749,6 +3819,38 @@ ALTER TABLE ONLY public.api_credentials
 
 
 --
+-- Name: app_storage_collection_usage app_storage_collection_usage_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_storage_collection_usage
+    ADD CONSTRAINT app_storage_collection_usage_pkey PRIMARY KEY (workspace_id, installation_id, collection_id);
+
+
+--
+-- Name: app_storage_index_entries app_storage_index_entries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_storage_index_entries
+    ADD CONSTRAINT app_storage_index_entries_pkey PRIMARY KEY (workspace_id, installation_id, collection_id, record_key, index_id);
+
+
+--
+-- Name: app_storage_installation_state app_storage_installation_state_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_storage_installation_state
+    ADD CONSTRAINT app_storage_installation_state_pkey PRIMARY KEY (workspace_id, installation_id);
+
+
+--
+-- Name: app_storage_records app_storage_records_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_storage_records
+    ADD CONSTRAINT app_storage_records_pkey PRIMARY KEY (workspace_id, installation_id, collection_id, record_key);
+
+
+--
 -- Name: assistant_answer_feedback assistant_answer_feedback_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6304,6 +6406,48 @@ CREATE INDEX idx_api_credentials_workspace_created ON public.api_credentials USI
 
 
 --
+-- Name: idx_app_storage_index_entries_boolean; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_app_storage_index_entries_boolean ON public.app_storage_index_entries USING btree (workspace_id, installation_id, collection_id, index_id, boolean_value, record_key) WHERE (boolean_value IS NOT NULL);
+
+
+--
+-- Name: idx_app_storage_index_entries_numeric; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_app_storage_index_entries_numeric ON public.app_storage_index_entries USING btree (workspace_id, installation_id, collection_id, index_id, numeric_value, record_key) WHERE (numeric_value IS NOT NULL);
+
+
+--
+-- Name: idx_app_storage_index_entries_text; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_app_storage_index_entries_text ON public.app_storage_index_entries USING btree (workspace_id, installation_id, collection_id, index_id, text_value, record_key) WHERE (text_value IS NOT NULL);
+
+
+--
+-- Name: idx_app_storage_index_entries_timestamp; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_app_storage_index_entries_timestamp ON public.app_storage_index_entries USING btree (workspace_id, installation_id, collection_id, index_id, timestamp_value, record_key) WHERE (timestamp_value IS NOT NULL);
+
+
+--
+-- Name: idx_app_storage_installation_state_retention; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_app_storage_installation_state_retention ON public.app_storage_installation_state USING btree (retain_until) WHERE (retain_until IS NOT NULL);
+
+
+--
+-- Name: idx_app_storage_records_expiry; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_app_storage_records_expiry ON public.app_storage_records USING btree (expires_at) WHERE (expires_at IS NOT NULL);
+
+
+--
 -- Name: idx_assistant_answer_feedback_actor_message; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8580,6 +8724,38 @@ ALTER TABLE ONLY public.api_credentials
 
 ALTER TABLE ONLY public.api_credentials
     ADD CONSTRAINT api_credentials_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: app_storage_collection_usage app_storage_collection_usage_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_storage_collection_usage
+    ADD CONSTRAINT app_storage_collection_usage_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: app_storage_index_entries app_storage_index_entries_workspace_id_installation_id_col_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_storage_index_entries
+    ADD CONSTRAINT app_storage_index_entries_workspace_id_installation_id_col_fkey FOREIGN KEY (workspace_id, installation_id, collection_id, record_key) REFERENCES public.app_storage_records(workspace_id, installation_id, collection_id, record_key) ON DELETE CASCADE;
+
+
+--
+-- Name: app_storage_installation_state app_storage_installation_state_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_storage_installation_state
+    ADD CONSTRAINT app_storage_installation_state_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: app_storage_records app_storage_records_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_storage_records
+    ADD CONSTRAINT app_storage_records_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

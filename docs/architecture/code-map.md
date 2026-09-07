@@ -1280,6 +1280,7 @@ Primary paths:
 - `packages/app-contract/src/index.ts` — the public surface
 - `packages/app-contract/src/manifest.ts` — the `AppManifest` schema
 - `packages/app-contract/src/runtime.ts` — invocation and host capability envelopes
+- `packages/app-contract/src/storage.ts` — collection declarations and storage request/result shapes
 - `packages/app-contract/src/validate.ts` — admission rules and issue codes
 - `packages/app-contract/fixtures/reference/wordpress.manifest.json` — the conformance vector
 - `packages/app-contract/tests/`
@@ -1299,6 +1300,45 @@ Related docs and specs:
 - [App Manifest Reference](../apps/app-manifest.md)
 - [App Runtime Protocol](../apps/runtime-protocol.md)
 - `packages/app-contract/README.md`
+- `specs/1118-hosted-app-runtime/`
+
+## Managed App Storage
+
+Owns the records an installed App keeps: collection declarations resolved against
+a record, schema compatibility between releases, quotas, optimistic versions,
+declared indexes and the one equality query they answer, expiry, and the export,
+retention, and deletion an operator drives. The physical model is Radioso-owned
+and generic — generic record rows, generic index-entry rows, and a maintained
+per-collection counter — so installing or updating an App runs no App-specific
+DDL and an App never observes a table.
+
+Should not own App business meaning, transport, or the rules about which
+installations may execute. Isolation is carried by the primary key: every row is
+keyed by workspace and installation before anything else.
+
+Primary paths:
+
+- `backend/src/modules/appStorage/public.ts` — the only import surface
+- `backend/src/modules/appStorage/domain/` — record validation, quota, query bounds, expiry, compatibility
+- `backend/src/modules/appStorage/ports/appStorageService.ts` — the capability port and the disposition port
+- `backend/src/modules/appStorage/repositories/appStorageRepository.ts` — the generic Postgres model
+- `backend/src/app/composition/appStorage.ts` — repository, service, sweeper, and the `app.data.*` audit sink
+- `backend/src/db/migrations/172_app_storage.sql`
+
+Useful searches:
+
+- `rg "appStorage|app_storage_" backend/src backend/tests`
+- `rg "app.data\." backend/src`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/appStorage`
+- `cd backend && pnpm exec vitest run tests/integration/appStorage --no-file-parallelism`
+
+Related docs and specs:
+
+- [Managed App Storage](../apps/storage.md)
+- [App Manifest Reference](../apps/app-manifest.md)
 - `specs/1118-hosted-app-runtime/`
 
 ## MCP Server Package

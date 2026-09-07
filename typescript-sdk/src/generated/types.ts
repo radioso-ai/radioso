@@ -1132,6 +1132,227 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/apps/releases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the App releases admission has admitted */
+        get: operations["listAppReleases"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/apps/releases/{releaseId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Inspect an admitted App release */
+        get: operations["getAppRelease"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/apps/installation-plans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Plan an installation for review */
+        post: operations["createAppInstallationPlan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/apps/installation-plans/{planId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read a previously created installation plan */
+        get: operations["getAppInstallationPlan"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/apps/installation-plans/{planId}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply an approved installation plan */
+        post: operations["applyAppInstallationPlan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/apps/installations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List this workspace's App installations */
+        get: operations["listAppInstallations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/apps/installations/{installationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read an installation with its grants and connections */
+        get: operations["getAppInstallation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/apps/installations/{installationId}/operations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List an installation's lifecycle operations */
+        get: operations["listAppInstallationOperations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/apps/installations/{installationId}/configuration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Change an installation's configuration values */
+        patch: operations["updateAppInstallationConfiguration"];
+        trace?: never;
+    };
+    "/api/v1/apps/installations/{installationId}/connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Bind a connection slot */
+        post: operations["bindAppConnection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/apps/installations/{installationId}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Disable an installation */
+        post: operations["disableAppInstallation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/apps/installations/{installationId}/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enable an installation */
+        post: operations["enableAppInstallation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/apps/installations/{installationId}/remove": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Remove an installation and dispose of its managed data */
+        post: operations["removeAppInstallation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agents/bundle/imports/{importId}": {
         parameters: {
             query?: never;
@@ -12989,6 +13210,1533 @@ export interface operations {
             };
             /** @description Authentication required */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAppReleases: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Installable releases */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            /** Format: uuid */
+                            id: string;
+                            appId: string;
+                            version: string;
+                            name: string;
+                            description: string;
+                            publisher: {
+                                id: string;
+                                name: string;
+                            };
+                            manifestDigest: string;
+                            artifactDigest: string;
+                            admissionPolicyVersion: string;
+                            /** Format: date-time */
+                            admittedAt: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Invalid configuration, connection, or request shape */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive workspace session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description App administration permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Release, plan, or installation not available in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale plan or installation version, conflicting installation, or an unbound connection this change needs */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No App runtime or secret encryption key is configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAppRelease: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                releaseId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The admitted release and its App Spec */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        appId: string;
+                        version: string;
+                        name: string;
+                        description: string;
+                        publisher: {
+                            id: string;
+                            name: string;
+                        };
+                        manifestDigest: string;
+                        artifactDigest: string;
+                        admissionPolicyVersion: string;
+                        /** Format: date-time */
+                        admittedAt: string;
+                        manifest: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Invalid configuration, connection, or request shape */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive workspace session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description App administration permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Release, plan, or installation not available in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale plan or installation version, conflicting installation, or an unbound connection this change needs */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No App runtime or secret encryption key is configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAppInstallationPlan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    releaseId: string;
+                    configuration?: {
+                        [key: string]: string | number | boolean;
+                    };
+                    targetAgentIds?: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description The plan an operator approves, with its checksum */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        /** Format: uuid */
+                        releaseId: string;
+                        checksum: string;
+                        plan: {
+                            /** @enum {number} */
+                            planVersion: 1;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            /** Format: uuid */
+                            releaseId: string;
+                            appId: string;
+                            version: string;
+                            manifestDigest: string;
+                            configuration: {
+                                [key: string]: string | number | boolean;
+                            };
+                            grants: {
+                                /** @enum {string} */
+                                kind: "permission" | "destination" | "collection" | "contribution";
+                                key: string;
+                            }[];
+                            destinations: {
+                                id: string;
+                                host: string | null;
+                                protocols: string[];
+                                credentials: {
+                                    slotId: string;
+                                    /** @enum {string} */
+                                    mode: "http_basic" | "bearer" | "header";
+                                    required: boolean;
+                                } | null;
+                            }[];
+                            storageCollections: string[];
+                            contributions: {
+                                id: string;
+                                kind: string;
+                                executionClass: string | null;
+                                availability: string;
+                                active: boolean;
+                            }[];
+                            connectionSlots: {
+                                slotId: string;
+                                kind: string;
+                                required: boolean;
+                                bound: boolean;
+                            }[];
+                            targetAgentIds: string[];
+                            unresolvedRequirements: {
+                                /** @enum {string} */
+                                code: "configuration_required" | "connection_unbound" | "destination_host_unresolved";
+                                path: string;
+                                message: string;
+                            }[];
+                        };
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        expiresAt: string;
+                        /** Format: date-time */
+                        consumedAt: string | null;
+                    };
+                };
+            };
+            /** @description Invalid configuration, connection, or request shape */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive workspace session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description App administration permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Release, plan, or installation not available in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale plan or installation version, conflicting installation, or an unbound connection this change needs */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No App runtime or secret encryption key is configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAppInstallationPlan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                planId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The approved plan */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        /** Format: uuid */
+                        releaseId: string;
+                        checksum: string;
+                        plan: {
+                            /** @enum {number} */
+                            planVersion: 1;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            /** Format: uuid */
+                            releaseId: string;
+                            appId: string;
+                            version: string;
+                            manifestDigest: string;
+                            configuration: {
+                                [key: string]: string | number | boolean;
+                            };
+                            grants: {
+                                /** @enum {string} */
+                                kind: "permission" | "destination" | "collection" | "contribution";
+                                key: string;
+                            }[];
+                            destinations: {
+                                id: string;
+                                host: string | null;
+                                protocols: string[];
+                                credentials: {
+                                    slotId: string;
+                                    /** @enum {string} */
+                                    mode: "http_basic" | "bearer" | "header";
+                                    required: boolean;
+                                } | null;
+                            }[];
+                            storageCollections: string[];
+                            contributions: {
+                                id: string;
+                                kind: string;
+                                executionClass: string | null;
+                                availability: string;
+                                active: boolean;
+                            }[];
+                            connectionSlots: {
+                                slotId: string;
+                                kind: string;
+                                required: boolean;
+                                bound: boolean;
+                            }[];
+                            targetAgentIds: string[];
+                            unresolvedRequirements: {
+                                /** @enum {string} */
+                                code: "configuration_required" | "connection_unbound" | "destination_host_unresolved";
+                                path: string;
+                                message: string;
+                            }[];
+                        };
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        expiresAt: string;
+                        /** Format: date-time */
+                        consumedAt: string | null;
+                    };
+                };
+            };
+            /** @description Invalid configuration, connection, or request shape */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive workspace session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description App administration permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Release, plan, or installation not available in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale plan or installation version, conflicting installation, or an unbound connection this change needs */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No App runtime or secret encryption key is configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    applyAppInstallationPlan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                planId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    checksum: string;
+                    expectedInstallationVersion?: number | null;
+                    idempotencyKey: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The installation and the lifecycle operation that ran */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        installation: {
+                            /** Format: uuid */
+                            id: string;
+                            appId: string;
+                            /** @enum {string} */
+                            state: "planned" | "provisioning" | "staged" | "testing" | "ready" | "active" | "disabled" | "failed" | "removing" | "removed";
+                            /** Format: uuid */
+                            activeReleaseId: string | null;
+                            /** Format: uuid */
+                            candidateReleaseId: string | null;
+                            configuration: {
+                                [key: string]: string | number | boolean;
+                            };
+                            health: {
+                                [key: string]: unknown;
+                            };
+                            version: number;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                        };
+                        operation: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            installationId: string;
+                            /** @enum {string} */
+                            kind: "install" | "disable" | "enable" | "remove" | "dispose_data";
+                            /** @enum {string} */
+                            state: "running" | "completed" | "failed" | "compensating";
+                            step: string | null;
+                            error: {
+                                reason: string;
+                                message: string;
+                            } | null;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+            /** @description Invalid configuration, connection, or request shape */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive workspace session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description App administration permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Release, plan, or installation not available in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale plan or installation version, conflicting installation, or an unbound connection this change needs */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No App runtime or secret encryption key is configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAppInstallations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Installations */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            /** Format: uuid */
+                            id: string;
+                            appId: string;
+                            /** @enum {string} */
+                            state: "planned" | "provisioning" | "staged" | "testing" | "ready" | "active" | "disabled" | "failed" | "removing" | "removed";
+                            /** Format: uuid */
+                            activeReleaseId: string | null;
+                            /** Format: uuid */
+                            candidateReleaseId: string | null;
+                            configuration: {
+                                [key: string]: string | number | boolean;
+                            };
+                            health: {
+                                [key: string]: unknown;
+                            };
+                            version: number;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Invalid configuration, connection, or request shape */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive workspace session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description App administration permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Release, plan, or installation not available in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale plan or installation version, conflicting installation, or an unbound connection this change needs */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No App runtime or secret encryption key is configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAppInstallation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                installationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The installation and what it currently holds */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        installation: {
+                            /** Format: uuid */
+                            id: string;
+                            appId: string;
+                            /** @enum {string} */
+                            state: "planned" | "provisioning" | "staged" | "testing" | "ready" | "active" | "disabled" | "failed" | "removing" | "removed";
+                            /** Format: uuid */
+                            activeReleaseId: string | null;
+                            /** Format: uuid */
+                            candidateReleaseId: string | null;
+                            configuration: {
+                                [key: string]: string | number | boolean;
+                            };
+                            health: {
+                                [key: string]: unknown;
+                            };
+                            version: number;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                        };
+                        activeVersion: string | null;
+                        candidateVersion: string | null;
+                        grants: {
+                            /** @enum {string} */
+                            kind: "permission" | "destination" | "collection" | "contribution";
+                            key: string;
+                            /** Format: uuid */
+                            releaseId: string;
+                            /** Format: date-time */
+                            approvedAt: string;
+                        }[];
+                        connections: {
+                            /** Format: uuid */
+                            id: string;
+                            slotId: string;
+                            /** @enum {string} */
+                            kind: "secret_fields" | "generated_secret";
+                            publicFields: {
+                                [key: string]: string;
+                            };
+                            hasSecret: boolean;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            /** Format: date-time */
+                            rotatedAt: string | null;
+                            /** Format: date-time */
+                            deletionRequestedAt: string | null;
+                        }[];
+                        currentOperation: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            installationId: string;
+                            /** @enum {string} */
+                            kind: "install" | "disable" | "enable" | "remove" | "dispose_data";
+                            /** @enum {string} */
+                            state: "running" | "completed" | "failed" | "compensating";
+                            step: string | null;
+                            error: {
+                                reason: string;
+                                message: string;
+                            } | null;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                        } | null;
+                    };
+                };
+            };
+            /** @description Invalid configuration, connection, or request shape */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive workspace session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description App administration permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Release, plan, or installation not available in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale plan or installation version, conflicting installation, or an unbound connection this change needs */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No App runtime or secret encryption key is configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAppInstallationOperations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                installationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Recent lifecycle operations */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            installationId: string;
+                            /** @enum {string} */
+                            kind: "install" | "disable" | "enable" | "remove" | "dispose_data";
+                            /** @enum {string} */
+                            state: "running" | "completed" | "failed" | "compensating";
+                            step: string | null;
+                            error: {
+                                reason: string;
+                                message: string;
+                            } | null;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Invalid configuration, connection, or request shape */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive workspace session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description App administration permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Release, plan, or installation not available in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale plan or installation version, conflicting installation, or an unbound connection this change needs */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No App runtime or secret encryption key is configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAppInstallationConfiguration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                installationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    configuration: {
+                        [key: string]: string | number | boolean;
+                    };
+                    expectedVersion: number;
+                };
+            };
+        };
+        responses: {
+            /** @description The updated installation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        appId: string;
+                        /** @enum {string} */
+                        state: "planned" | "provisioning" | "staged" | "testing" | "ready" | "active" | "disabled" | "failed" | "removing" | "removed";
+                        /** Format: uuid */
+                        activeReleaseId: string | null;
+                        /** Format: uuid */
+                        candidateReleaseId: string | null;
+                        configuration: {
+                            [key: string]: string | number | boolean;
+                        };
+                        health: {
+                            [key: string]: unknown;
+                        };
+                        version: number;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                    };
+                };
+            };
+            /** @description Invalid configuration, connection, or request shape */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive workspace session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description App administration permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Release, plan, or installation not available in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale plan or installation version, conflicting installation, or an unbound connection this change needs */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No App runtime or secret encryption key is configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    bindAppConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                installationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    slotId: string;
+                    values?: {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description The bound connection. `generatedSecret` is present only for a host-minted slot and is returned exactly once. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        connection: {
+                            /** Format: uuid */
+                            id: string;
+                            slotId: string;
+                            /** @enum {string} */
+                            kind: "secret_fields" | "generated_secret";
+                            publicFields: {
+                                [key: string]: string;
+                            };
+                            hasSecret: boolean;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            /** Format: date-time */
+                            rotatedAt: string | null;
+                            /** Format: date-time */
+                            deletionRequestedAt: string | null;
+                        };
+                        generatedSecret: string | null;
+                    };
+                };
+            };
+            /** @description Invalid configuration, connection, or request shape */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive workspace session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description App administration permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Release, plan, or installation not available in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale plan or installation version, conflicting installation, or an unbound connection this change needs */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No App runtime or secret encryption key is configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    disableAppInstallation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                installationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    idempotencyKey?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The installation and the lifecycle operation that ran */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        installation: {
+                            /** Format: uuid */
+                            id: string;
+                            appId: string;
+                            /** @enum {string} */
+                            state: "planned" | "provisioning" | "staged" | "testing" | "ready" | "active" | "disabled" | "failed" | "removing" | "removed";
+                            /** Format: uuid */
+                            activeReleaseId: string | null;
+                            /** Format: uuid */
+                            candidateReleaseId: string | null;
+                            configuration: {
+                                [key: string]: string | number | boolean;
+                            };
+                            health: {
+                                [key: string]: unknown;
+                            };
+                            version: number;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                        };
+                        operation: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            installationId: string;
+                            /** @enum {string} */
+                            kind: "install" | "disable" | "enable" | "remove" | "dispose_data";
+                            /** @enum {string} */
+                            state: "running" | "completed" | "failed" | "compensating";
+                            step: string | null;
+                            error: {
+                                reason: string;
+                                message: string;
+                            } | null;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+            /** @description Invalid configuration, connection, or request shape */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive workspace session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description App administration permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Release, plan, or installation not available in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale plan or installation version, conflicting installation, or an unbound connection this change needs */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No App runtime or secret encryption key is configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    enableAppInstallation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                installationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    idempotencyKey?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The installation and the lifecycle operation that ran */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        installation: {
+                            /** Format: uuid */
+                            id: string;
+                            appId: string;
+                            /** @enum {string} */
+                            state: "planned" | "provisioning" | "staged" | "testing" | "ready" | "active" | "disabled" | "failed" | "removing" | "removed";
+                            /** Format: uuid */
+                            activeReleaseId: string | null;
+                            /** Format: uuid */
+                            candidateReleaseId: string | null;
+                            configuration: {
+                                [key: string]: string | number | boolean;
+                            };
+                            health: {
+                                [key: string]: unknown;
+                            };
+                            version: number;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                        };
+                        operation: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            installationId: string;
+                            /** @enum {string} */
+                            kind: "install" | "disable" | "enable" | "remove" | "dispose_data";
+                            /** @enum {string} */
+                            state: "running" | "completed" | "failed" | "compensating";
+                            step: string | null;
+                            error: {
+                                reason: string;
+                                message: string;
+                            } | null;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+            /** @description Invalid configuration, connection, or request shape */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive workspace session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description App administration permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Release, plan, or installation not available in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale plan or installation version, conflicting installation, or an unbound connection this change needs */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No App runtime or secret encryption key is configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    removeAppInstallation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                installationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    disposition: "export" | "retain" | "delete";
+                    idempotencyKey?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The removed installation and the operation that ran */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        installation: {
+                            /** Format: uuid */
+                            id: string;
+                            appId: string;
+                            /** @enum {string} */
+                            state: "planned" | "provisioning" | "staged" | "testing" | "ready" | "active" | "disabled" | "failed" | "removing" | "removed";
+                            /** Format: uuid */
+                            activeReleaseId: string | null;
+                            /** Format: uuid */
+                            candidateReleaseId: string | null;
+                            configuration: {
+                                [key: string]: string | number | boolean;
+                            };
+                            health: {
+                                [key: string]: unknown;
+                            };
+                            version: number;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                        };
+                        operation: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            installationId: string;
+                            /** @enum {string} */
+                            kind: "install" | "disable" | "enable" | "remove" | "dispose_data";
+                            /** @enum {string} */
+                            state: "running" | "completed" | "failed" | "compensating";
+                            step: string | null;
+                            error: {
+                                reason: string;
+                                message: string;
+                            } | null;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+            /** @description Invalid configuration, connection, or request shape */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive workspace session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description App administration permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Release, plan, or installation not available in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale plan or installation version, conflicting installation, or an unbound connection this change needs */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No App runtime or secret encryption key is configured */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

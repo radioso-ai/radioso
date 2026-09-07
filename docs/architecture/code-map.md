@@ -1274,6 +1274,24 @@ to its own declarations, and measures it against what a host admits.
 Should not own persistence, transport, execution, or product policy. It carries
 schemas and pure functions, and depends on nothing inside the workspace.
 
+`backend/src/modules/apps/` is the control-plane domain built on that
+contract: App releases, release admission, installations, installation plans,
+grants, connections, and the lifecycle saga that carries an installation
+through provisioning, staging, testing, and activation, disable and
+re-enable, and removal, including the data-disposition choice removal asks
+for. Admission records the policy version and evidence behind every release
+decision. The plan/apply boundary binds an approval to an exact release,
+workspace, connection bindings, and grant set, so a plan anything relevant
+changes under requires a new review before it can apply.
+
+The domain does not know about provider APIs, runtime transport,
+product-specific execution, or React. Runtime execution — the App Gateway,
+host capabilities, App Jobs, the local-process provider — belongs to the
+sibling `appRuntime` domain; managed records belong to `appStorage`; both are
+separate domains composed alongside this one. `apps` reaches owning modules
+such as documents and agent skills only through their narrow ports, never
+their internals.
+
 Primary paths:
 
 - `packages/app-contract/src/index.ts` — the public surface
@@ -1282,21 +1300,31 @@ Primary paths:
 - `packages/app-contract/src/validate.ts` — admission rules and issue codes
 - `packages/app-contract/fixtures/reference/wordpress.manifest.json` — the conformance vector
 - `packages/app-contract/tests/`
+- `backend/src/modules/apps/public.ts` — the module's public entry
+- `backend/src/modules/apps/domain/` — release admission policy, plan builder and checksum, grant diff, lifecycle state machine
+- `backend/src/modules/apps/services/installationLifecycleService.ts` — saga steps, compensation, resume
+- `backend/src/app/composition/apps.ts` — repositories, services, and the built-in release registry
+- `backend/tests/unit/apps/`
+- `backend/tests/integration/apps/`
 
 Useful searches:
 
 - `rg "validateManifest|appManifestSchema|hostCapabilityRequestSchema" packages backend`
 - `rg "app-contract" package.json packages backend`
+- `rg "AppRelease|AppInstallation|admissionPolicyVersion|installationLifecycleService" backend/src backend/tests`
 
 Focused checks:
 
 - `pnpm --filter @radioso/app-contract test`
 - `pnpm --filter @radioso/app-contract build`
+- `cd backend && pnpm exec vitest run tests/unit/apps tests/integration/apps`
 
 Related docs and specs:
 
 - [App Manifest Reference](../apps/app-manifest.md)
 - [App Runtime Protocol](../apps/runtime-protocol.md)
+- [Release Admission](../apps/release-admission.md)
+- [Apps (operator)](../../docs-portal/content/operators/apps.mdx)
 - `packages/app-contract/README.md`
 - `specs/1118-hosted-app-runtime/`
 

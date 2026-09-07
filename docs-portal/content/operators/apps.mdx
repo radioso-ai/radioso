@@ -1,0 +1,97 @@
+---
+title: "Apps"
+description: "Install, review, connect, test, disable, and remove Hosted Apps: what each installation state means, what the plan review shows, and how data disposition works on removal."
+last_updated: 2026-09-06
+---
+
+# Apps
+
+An App runs outside Radioso and extends what a workspace can do — sync content
+from a site, react to a webhook, run a task on a schedule — without anyone
+redeploying Radioso itself. You review what an App asks for before it can do
+any of that, and every step from install to removal stays visible and
+reversible.
+
+## Apps and Packs
+
+An **App** is the thing you install: one publisher, one signed release, one
+running installation with its own connections and grants. A **Pack** is an
+optional bundle of agent-facing pieces — skills, directives, routines — that
+references an App's contributions instead of duplicating them. Installing an
+App never installs its Packs for you; you review and activate a Pack
+separately, and a Pack can never grant more authority than the App
+contribution it points at.
+
+## Installation states
+
+An installation moves through a fixed sequence on its way to serving traffic:
+
+| State | What's happening |
+|---|---|
+| `planned` | You've approved a plan; nothing is running yet. |
+| `provisioning` | Radioso is starting the App's runtime for this installation. |
+| `staged` | The runtime is up, but its contributions aren't visible to agents, schedules, or webhooks yet. |
+| `testing` | You're running the safe test (and, if you choose, a live test) against the staged installation. |
+| `ready` | Testing passed; the installation is one step from going live. |
+| `active` | The App's approved contributions are live together. |
+| `disabled` | You've turned the installation off; nothing runs, but everything is still configured. |
+| `removing` | You've asked to remove the App; Radioso is revoking runtime authority and applying your data choice. |
+| `removed` | The installation is gone. |
+
+`active` and `disabled` can move back and forth — disabling doesn't lose
+configuration, so re-enabling returns straight to `active`. Every step in this
+sequence is resumable: if a step is interrupted, Radioso picks it back up
+rather than leaving the installation half-configured.
+
+## The plan review
+
+Before anything runs, Radioso builds a plan and shows it to you: the
+publisher and version, compatibility with your Radioso deployment, every
+contribution the release offers, the permissions and external destinations it
+asks for, field-level detail on what data would cross each destination, the
+storage collections it would use, and anything it needs that isn't resolved
+yet — a connection you haven't filled in, an agent you haven't picked.
+
+The plan you approve is bound to exactly what you saw: that release, that
+workspace, those connection bindings, that grant set. If anything relevant
+changes before you apply it — a newer release appears, a destination shifts —
+the plan goes stale and Radioso asks for a fresh review rather than applying
+what you no longer approved.
+
+## Connections
+
+Credentials never pass through your screen twice. A connection you fill in —
+a site's application password, an API key — is write-only: Radioso stores it
+and the App receives a reference, never the value back. Where a connection
+slot is a generated secret, such as a webhook signing secret, Radioso mints it
+and shows it to you once at setup; copy it into the App or the external
+service at that point, because the dashboard doesn't display it again.
+
+## Safe test and live test
+
+The safe test runs an installation's contributions with external side effects
+suppressed and shows you what each call would have done. It's the default,
+and it's what a `testing`-state installation runs before you can move it to
+`ready`. A live test runs the same checks with real effects, and only for the
+destination and input you explicitly approve for that run — useful for
+confirming a webhook or an external write actually lands, without opening
+every call in the plan to real traffic.
+
+## Disable or remove
+
+**Disable** stops an installation immediately without touching its
+configuration or stored data — use it to pull an App out of service while you
+investigate, without losing anything. **Remove** goes further: Radioso
+revokes the installation's runtime authority first, then asks you to choose
+what happens to its data — export it, retain it for a period before deletion,
+or delete it now. That choice is explicit every time; nothing is deleted as a
+side effect of removal itself.
+
+## When Apps report unavailable
+
+Apps need a runtime provider registered to actually run — something has to
+start and host each installation's process. A deployment with no provider
+configured still installs and plans Apps normally, but every installation
+reports `unavailable` instead of running: the rest of Radioso keeps working,
+and nothing about chat, retrieval, or document ingestion depends on Apps being
+available.

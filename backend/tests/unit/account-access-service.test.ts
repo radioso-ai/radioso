@@ -125,6 +125,17 @@ describe("AccountAccessService", () => {
     );
   });
 
+  it("keeps App administration with workspace administrators", () => {
+    const service = new AccountAccessService(new InMemoryAccountMembershipRepository(), createAuditService());
+    const appsPermissions: AccountPermission[] = ["workspace.apps.manage"];
+
+    // Installing an App grants a third-party runtime host capabilities, so it is not a
+    // member-level change the way editing an agent is.
+    expect(service.permissionsForWorkspaceRole("member", appsPermissions)).toEqual(new Set());
+    expect(service.permissionsForWorkspaceRole("admin", appsPermissions)).toEqual(new Set(appsPermissions));
+    expect(service.permissionsForWorkspaceRole("owner", appsPermissions)).toEqual(new Set(appsPermissions));
+  });
+
   it("maps API-access capabilities through the central workspace permission authority", () => {
     const service = new AccountAccessService(new InMemoryAccountMembershipRepository(), createAuditService());
     const apiAccessPermissions: AccountPermission[] = [

@@ -41,6 +41,7 @@ import { createOperatorMcpSetupRoutes } from "../../../modules/operatorMcpSetup/
 import { createOperatorMcpDashboardRoutes } from "../../../modules/operatorMcpAuthorization/dashboardRoutes.js";
 import { createOperatorMcpDiscoveryRoutes, createOperatorMcpOauthRoutes } from "../../../modules/operatorMcpAuthorization/routes.js";
 import { createOperatorMcpInternalRoutes } from "../../../modules/operatorCopilot/mcpRoutes.js";
+import { createAppRoutes } from "./appRoutes.js";
 
 type ApiRouteMount = {
   path: string;
@@ -66,6 +67,7 @@ export const createApiRouteMounts = (_dependencies: AppDependencies): readonly A
   { path: "/api/v1", createRouter: createCustomerEmailConnectionRoutes },
   { path: "/api/v1", createRouter: createSlackConnectionRoutes },
   { path: "/api/v1", createRouter: createEmailSkillActivityRoutes },
+  { path: "/api/v1/apps", createRouter: createAppRoutes },
   { path: "/api/v1/agents", createRouter: createAgentRoutes },
   { path: "/api/v1", createRouter: createContextVariableRoutes },
   { path: "/api/v1/agents", createRouter: createDecisionRoutes },

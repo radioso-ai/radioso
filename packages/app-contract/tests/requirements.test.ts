@@ -4,20 +4,34 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  appManifestSchema,
   releaseAValidationPolicy,
   resolveInstallation,
   validateManifest,
+  type AdmittedManifest,
   type AppManifest,
   type Destination,
   type EffectiveConfiguration,
 } from "../src/index.js";
 
 const fixturePath = fileURLToPath(new URL("../fixtures/reference/wordpress.manifest.json", import.meta.url));
-const result = validateManifest(JSON.parse(readFileSync(fixturePath, "utf8")) as unknown, releaseAValidationPolicy);
+const fixtureJson = JSON.parse(readFileSync(fixturePath, "utf8")) as unknown;
+const result = validateManifest(fixtureJson, releaseAValidationPolicy);
 if (!result.ok) throw new Error("the reference WordPress manifest must validate");
-const manifest: AppManifest = result.manifest;
+const manifest: AdmittedManifest = result.manifest;
 
-const codesFor = (values: unknown, against: AppManifest = manifest): string[] => {
+/**
+ * `resolveInstallation` takes only what `validateManifest` admitted, so every
+ * test that builds a manifest variant reaches it the same way a host does:
+ * through admission, not by asserting a raw candidate past it.
+ */
+const admit = (candidate: AppManifest): AdmittedManifest => {
+  const admitted = validateManifest(candidate, releaseAValidationPolicy);
+  if (!admitted.ok) throw new Error(`expected the manifest to admit: ${JSON.stringify(admitted.issues)}`);
+  return admitted.manifest;
+};
+
+const codesFor = (values: unknown, against: AdmittedManifest = manifest): string[] => {
   const resolved = resolveInstallation(against, values);
   return resolved.ok ? [] : resolved.issues.map((issue) => issue.code);
 };
@@ -28,7 +42,7 @@ const configurationOf = (values: unknown): EffectiveConfiguration => {
   return resolved.configuration;
 };
 
-const readinessOf = (values: unknown, against: AppManifest = manifest) => {
+const readinessOf = (values: unknown, against: AdmittedManifest = manifest) => {
   const resolved = resolveInstallation(against, values);
   if (!resolved.ok) throw new Error(`expected a resolvable installation: ${JSON.stringify(resolved.issues)}`);
   return resolved.readiness;
@@ -122,7 +136,7 @@ describe("resolveInstallation", () => {
   });
 
   it("keeps a select value among its options and a slot field out of the value space", () => {
-    const withSelect: AppManifest = {
+    const withSelect = admit({
       ...manifest,
       configuration: {
         fields: [
@@ -145,7 +159,7 @@ describe("resolveInstallation", () => {
           },
         ],
       },
-    };
+    });
     expect(resolveInstallation(withSelect, { locale: "it", site_url: "https://example.com" }).ok).toBe(true);
     expect(
       codesFor({ locale: "de", site_url: "https://example.com", credentials: "hunter2" }, withSelect),
@@ -226,14 +240,14 @@ describe("the readiness resolution answers with", () => {
   });
 
   it("names a slot once, however many active contributions require it", () => {
-    const shared: AppManifest = {
+    const shared = admit({
       ...manifest,
       contributions: manifest.contributions.map((contribution) =>
         contribution.kind === "document_source"
           ? { ...contribution, requiredConnectionSlots: ["webhook_secret"] }
           : contribution,
       ),
-    };
+    });
     expect(readinessOf({ site_url: "https://example.com" }, shared).requiredConnectionSlots).toEqual([
       "webhook_secret",
     ]);
@@ -257,7 +271,7 @@ describe("the port a destination-bound address reaches", () => {
   });
 
   it("is exactly what an explicit ports list declares, default or not", () => {
-    const explicit = withDestination({ ...siteDestination, ports: [8443] });
+    const explicit = admit(withDestination({ ...siteDestination, ports: [8443] }));
     expect(codesFor({ site_url: "https://example.com:8443" }, explicit)).toEqual([]);
     expect(codesFor({ site_url: "https://example.com" }, explicit)).toEqual(["url_port_not_declared"]);
     expect(codesFor({ site_url: "https://example.com:443" }, explicit)).toEqual(["url_port_not_declared"]);
@@ -292,38 +306,11 @@ describe("resolveInstallation", () => {
     expect(forged).toMatchObject({ poll_interval_sec: 30 });
   });
 
-  it("reports rather than throws for a schedule field an installation could leave absent", () => {
-    const notAdmitted: AppManifest = {
-      ...manifest,
-      configuration: {
-        fields: manifest.configuration.fields.map((field) =>
-          field.type === "number" ? { ...field, required: false, default: undefined } : field,
-        ),
-      },
-    };
-    expect(validateManifest(notAdmitted, releaseAValidationPolicy).ok).toBe(false);
-    const resolved = resolveInstallation(notAdmitted, { site_url: "https://example.com" });
-    expect(resolved.ok).toBe(false);
-    expect(resolved.ok ? [] : resolved.issues.map((issue) => issue.code)).toEqual([
-      "manifest_not_admitted",
-    ]);
-    expect(resolved.ok ? "" : JSON.stringify(resolved.issues)).not.toContain("poll_interval_sec");
-  });
-
-  it("reports rather than throws for a destination host bound to a field that is not a url field", () => {
-    const notAdmitted: AppManifest = {
-      ...manifest,
-      destinations: manifest.destinations.map((destination) => ({
-        ...destination,
-        host: { kind: "configuration", field: "post_types" } as const,
-      })),
-    };
-    expect(validateManifest(notAdmitted, releaseAValidationPolicy).ok).toBe(false);
-    const resolved = resolveInstallation(notAdmitted, { site_url: "https://example.com" });
-    expect(resolved.ok).toBe(false);
-    expect(resolved.ok ? [] : resolved.issues.map((issue) => issue.code)).toEqual([
-      "manifest_not_admitted",
-    ]);
+  it("does not compile against a manifest that validateManifest has not admitted", () => {
+    const raw: AppManifest = appManifestSchema.parse(fixtureJson);
+    // @ts-expect-error resolveInstallation takes an AdmittedManifest, not a raw parsed AppManifest
+    const resolved = resolveInstallation(raw, { site_url: "https://example.com" });
+    expect(resolved.ok).toBe(true);
   });
 
   it("refuses a stored map carrying an accessor, without ever invoking it", () => {

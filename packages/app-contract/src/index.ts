@@ -255,6 +255,7 @@ export {
 export {
   releaseAValidationPolicy,
   validateManifest,
+  type AdmittedManifest,
   type ManifestValidationIssue,
   type ManifestValidationPolicy,
   type ManifestValidationResult,

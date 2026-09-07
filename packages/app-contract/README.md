@@ -71,19 +71,23 @@ results, then answers which contributions run and which connection slots the
 operator has to bind:
 
 ```ts
-const resolved = resolveInstallation(manifest, storedValues);
-if (resolved.ok) {
-  resolved.configuration; // context.configuration, exactly
-  resolved.readiness; // active and inactive contributions, required slots
+const admitted = validateManifest(manifest, releaseAValidationPolicy);
+if (admitted.ok) {
+  const resolved = resolveInstallation(admitted.manifest, storedValues);
+  if (resolved.ok) {
+    resolved.configuration; // context.configuration, exactly
+    resolved.readiness; // active and inactive contributions, required slots
+  }
 }
 ```
 
-It accepts any manifest that parses and never throws for one. A manifest that
-`validateManifest` would refuse on an invariant resolution stands on — a schedule
-bound to a field that is not a required or defaulted number, a destination host
-bound to a field that is not a `url` field — comes back as `manifest_not_admitted`
-issues, so a caller reads one failure shape whether the gap is in the stored map
-or in the release.
+`resolveInstallation` takes only the `AdmittedManifest` that `validateManifest`
+returns, not any manifest that merely parses, so admission is one boundary
+rather than a partial second copy of it inside resolution. A schedule bound to
+a field that is not a required or defaulted number, or a destination host bound
+to a field that is not a `url` field, can never reach `resolveInstallation` in
+the first place. A host that stores a manifest re-runs `validateManifest` on
+load to regain the admitted value.
 
 The configuration holds every required value field, every field that declares a
 default, and every optional field the operator supplied. A `connection_slot`

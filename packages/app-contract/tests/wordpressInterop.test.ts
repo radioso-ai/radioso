@@ -6,25 +6,26 @@ import { describe, expect, it } from "vitest";
 
 import {
   hostCapabilityCallSchema,
+  installationReadiness,
   invocationRequestSchema,
   releaseAValidationPolicy,
-  requiredConnectionSlotsFor,
-  validateConfigurationValues,
+  resolveConfiguration,
   validateManifest,
   webhookInvocationInputSchema,
   type AppManifest,
+  type ConfigurationValues,
 } from "../src/index.js";
 
 /**
  * The manifest says what the WordPress App may declare. This says the App can
- * still carry what the companion plugin already sends: the exact bytes it signs,
- * the same `wp_post_<id>` identity, the same rendered HTML including its facts
+ * still carry what the companion plugin sends: the exact bytes it signs, the
+ * same `wp_post_<id>` identity, the same rendered HTML including its facts
  * block, the same author and date handling, and the same site-owned field map —
  * including a key like `ISBN` that a catalogue registers in its own case.
  *
- * The deliveries are recorded, not rebuilt here. `tests/fixtures/wordpress-companion/README.md`
- * says how they were produced and what `wp_json_encode()` does that
- * `JSON.stringify` does not.
+ * The vectors are synthetic and companion-shaped, held as literal bytes rather
+ * than rebuilt here. `tests/fixtures/wordpress-companion/README.md` says which
+ * `wp_json_encode()` rules they reproduce.
  */
 const fixturePath = fileURLToPath(new URL("../fixtures/reference/wordpress.manifest.json", import.meta.url));
 const fixtureResult = validateManifest(
@@ -37,7 +38,7 @@ const manifest: AppManifest = fixtureResult.manifest;
 const SOURCE_CONTRIBUTION_ID = "site_content";
 const INVOCATION_ID = "8b1f6f2a-6f6f-4a3f-9c4a-2f0d0f8a1b21";
 
-interface RecordedDelivery {
+interface CompanionVector {
   event: "published" | "updated" | "deleted";
   secret: string;
   signature: string;
@@ -46,16 +47,16 @@ interface RecordedDelivery {
   body: string;
 }
 
-const recorded = (name: string): RecordedDelivery =>
+const vector = (name: string): CompanionVector =>
   JSON.parse(
     readFileSync(fileURLToPath(new URL(`./fixtures/wordpress-companion/${name}.json`, import.meta.url)), "utf8"),
-  ) as RecordedDelivery;
+  ) as CompanionVector;
 
-const publishedPost = recorded("post-published");
-const updatedPost = recorded("post-updated");
-const deletedPost = recorded("post-deleted");
-const defaultProduct = recorded("product-default");
-const filteredProduct = recorded("product-filtered-isbn");
+const publishedPost = vector("post-published");
+const updatedPost = vector("post-updated");
+const deletedPost = vector("post-deleted");
+const defaultProduct = vector("product-default");
+const filteredProduct = vector("product-filtered-isbn");
 
 /** What `radioso_dispatch()` builds, for a post and for a WooCommerce product. */
 interface PluginPost {
@@ -75,7 +76,7 @@ interface PluginPost {
 }
 
 interface PluginPayload {
-  event: RecordedDelivery["event"];
+  event: CompanionVector["event"];
   site_url: string;
   post: PluginPost;
 }
@@ -86,7 +87,7 @@ if (webhookContribution.kind !== "external_webhook_handler") {
 }
 const { signatureHeader, signaturePrefix } = webhookContribution.authentication;
 
-const deliveryFor = (delivery: RecordedDelivery): unknown => ({
+const deliveryFor = (delivery: CompanionVector): unknown => ({
   kind: "webhook",
   deliveryId: `wp-${delivery.event}-${delivery.signature.slice(-12)}`,
   receivedAt: "2026-09-06T12:00:00.000Z",
@@ -99,11 +100,11 @@ const deliveryFor = (delivery: RecordedDelivery): unknown => ({
 });
 
 /**
- * Verifies the recorded signature over the bytes that came out of the base64
+ * Verifies the vector's signature over the bytes that came out of the base64
  * round trip. Nothing here re-encodes the payload, because a verifier that did
  * would accept deliveries the plugin never sent.
  */
-const verifiedBodyOf = (delivery: RecordedDelivery): PluginPayload => {
+const verifiedBodyOf = (delivery: CompanionVector): PluginPayload => {
   const parsed = webhookInvocationInputSchema.parse(deliveryFor(delivery));
   const raw = Buffer.from(parsed.body.data, "base64");
   const presented = parsed.headers[signatureHeader];
@@ -157,14 +158,14 @@ const ingestCallFor = (payload: PluginPayload): unknown => {
   };
 };
 
-const ingestRequestFor = (delivery: RecordedDelivery) => {
+const ingestRequestFor = (delivery: CompanionVector) => {
   const call = hostCapabilityCallSchema.parse(ingestCallFor(verifiedBodyOf(delivery)));
   if (call.request.capability !== "documents.ingest") throw new Error("expected an ingest call");
   return { call, request: call.request };
 };
 
 describe("companion plugin interoperability", () => {
-  it("verifies each recorded delivery over the exact bytes, after a base64 round trip", () => {
+  it("verifies each vector over the exact bytes, after a base64 round trip", () => {
     for (const delivery of [publishedPost, updatedPost, deletedPost, defaultProduct, filteredProduct]) {
       expect(verifiedBodyOf(delivery).event).toBe(delivery.event);
     }
@@ -175,11 +176,11 @@ describe("companion plugin interoperability", () => {
       expect(JSON.stringify(JSON.parse(delivery.body))).not.toBe(delivery.body);
       expect(delivery.body).toContain(String.raw`https:\/\/example.com\/`);
     }
-    expect(defaultProduct.body).toContain(String.raw`"regular_price":29.0`);
+    expect(defaultProduct.body).toContain(String.raw`"regular_price":29`);
     expect(defaultProduct.body).toContain(String.raw`Prezzo: 24,50 \u20ac`);
   });
 
-  it("refuses a body whose bytes changed after signing", () => {
+  it("signs a same-length edit to a different value, so a length check is not a verification", () => {
     const tampered = publishedPost.body.replace("How we price books", "How we price bugs!");
     expect(tampered.length).toBe(publishedPost.body.length);
     const signature = `sha256=${createHmac("sha256", publishedPost.secret).update(Buffer.from(tampered, "utf8")).digest("hex")}`;
@@ -238,9 +239,10 @@ describe("companion plugin interoperability", () => {
     );
   });
 
-  it("repeats one requestId across retries of the same logical effect", () => {
-    expect(ingestRequestFor(defaultProduct).call.requestId).toBe(
-      ingestRequestFor(defaultProduct).call.requestId,
+  it("builds the requestId from the effect's own identity, so a retry repeats it", () => {
+    expect(ingestRequestFor(defaultProduct).call.requestId).toBe("wp_post_5120:2026-09-05 11:42:10");
+    expect(ingestRequestFor(publishedPost).call.requestId).not.toBe(
+      ingestRequestFor(updatedPost).call.requestId,
     );
   });
 
@@ -263,25 +265,38 @@ describe("companion plugin interoperability", () => {
   });
 });
 
-const PUSH_ONLY_CONTRIBUTIONS = ["site_content", "content_push"];
-const POLLING_CONTRIBUTIONS = ["site_content", "content_push", "content_poll"];
+const configurationOf = (stored: Record<string, unknown>): ConfigurationValues => {
+  const resolved = resolveConfiguration(manifest, stored);
+  if (!resolved.ok) throw new Error(`expected a resolvable configuration: ${JSON.stringify(resolved.issues)}`);
+  return resolved.configuration;
+};
 
 describe("installation shapes the WordPress App has to cover", () => {
   it("installs a push-only site with no site credentials at all", () => {
-    const validated = validateConfigurationValues(manifest, {
+    const configuration = configurationOf({ site_url: "https://example.com" });
+    expect(configuration).toEqual({
       site_url: "https://example.com",
       post_types: "page,post",
       poll_interval_sec: 0,
     });
-    expect(validated.ok ? [] : validated.issues).toEqual([]);
-    expect(requiredConnectionSlotsFor(manifest, PUSH_ONLY_CONTRIBUTIONS)).toEqual(["webhook_secret"]);
+    const readiness = installationReadiness(manifest, configuration);
+    expect(readiness.inactiveContributionIds).toEqual(["content_poll"]);
+    expect(readiness.requiredConnectionSlots).toEqual(["webhook_secret"]);
   });
 
-  it("asks for site credentials once the polling contribution is active", () => {
-    expect(requiredConnectionSlotsFor(manifest, POLLING_CONTRIBUTIONS)).toEqual([
-      "webhook_secret",
-      "site_credentials",
-    ]);
+  it("asks for site credentials once the operator gives the poll an interval", () => {
+    const readiness = installationReadiness(
+      manifest,
+      configurationOf({ site_url: "https://example.com", poll_interval_sec: 300 }),
+    );
+    expect(readiness.activeContributionIds).toContain("content_poll");
+    expect(readiness.requiredConnectionSlots).toEqual(["site_credentials", "webhook_secret"]);
+  });
+
+  it("installs a site that lives below a path on its domain", () => {
+    expect(configurationOf({ site_url: "https://example.com/wordpress" })).toMatchObject({
+      site_url: "https://example.com/wordpress",
+    });
   });
 
   it("reads the REST API anonymously until the operator binds the credential", () => {
@@ -314,7 +329,7 @@ describe("installation shapes the WordPress App has to cover", () => {
     expect(poll.schedule.minSeconds).toBe(60);
   });
 
-  it("runs a backfill against the source that owns the checkpoint, carrying the configured post types", () => {
+  it("carries the effective configuration and a checkpoint into a backfill invocation", () => {
     const source = manifest.contributions[0];
     if (source.kind !== "document_source") throw new Error("site_content must be a document source");
     expect(source.syncModes).toContain("backfill");
@@ -331,16 +346,14 @@ describe("installation shapes the WordPress App has to cover", () => {
       idempotencyKey: "backfill:2026-09-06",
       deadlineAt: "2026-09-06T12:10:00.000Z",
       capabilitySession: { token: "opaque-session-token", expiresAt: "2026-09-06T12:10:00.000Z" },
-      context: {
-        configuration: {
-          site_url: "https://example.com",
-          post_types: "page,post,product",
-          poll_interval_sec: 0,
-        },
-      },
+      context: { configuration: configurationOf({ site_url: "https://example.com", post_types: "page,post,product" }) },
       input: { kind: "backfill", requestId: "backfill-1", checkpoint: { cursor: "2026-04-18 07:30:00" } },
     });
     expect(request.input.kind).toBe("backfill");
-    expect(request.context.configuration["post_types"]).toBe("page,post,product");
+    expect(request.context.configuration).toEqual({
+      site_url: "https://example.com",
+      post_types: "page,post,product",
+      poll_interval_sec: 0,
+    });
   });
 });

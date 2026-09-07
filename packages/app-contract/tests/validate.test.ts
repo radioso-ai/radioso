@@ -51,7 +51,7 @@ const baseManifest = {
       host: { kind: "configuration", field: "site_url" },
       protocols: ["https"],
       purpose: "Read published content from the configured site.",
-      dataClasses: ["document_content"],
+      dataClasses: ["document_content", "credentials"],
       credentials: {
         slot: "site_credentials",
         application: {
@@ -264,11 +264,118 @@ describe("validateManifest", () => {
     const issues = issuesFor((manifest) => {
       const authentication = contributionsOf(manifest)[1]["authentication"] as Record<string, unknown>;
       authentication["secretConnectionSlot"] = "missing_slot";
+      contributionsOf(manifest)[1]["requiredConnectionSlots"] = ["missing_slot"];
     });
     expect(issues).toEqual([
       expect.objectContaining({
         code: "unknown_connection_slot",
+        path: "contributions[1].requiredConnectionSlots[0]",
+      }),
+      expect.objectContaining({
+        code: "unknown_connection_slot",
         path: "contributions[1].authentication.secretConnectionSlot",
+      }),
+    ]);
+  });
+
+  it("rejects a handler that verifies deliveries against a slot it never asks the operator to bind", () => {
+    const issues = issuesFor((manifest) => {
+      contributionsOf(manifest)[1]["requiredConnectionSlots"] = [];
+    });
+    expect(issues).toEqual([
+      expect.objectContaining({
+        code: "webhook_secret_not_required",
+        path: "contributions[1].requiredConnectionSlots",
+      }),
+    ]);
+  });
+
+  it("rejects a contribution that reaches a destination whose credential is mandatory without requiring the slot", () => {
+    const issues = issuesFor((manifest) => {
+      const destinations = manifest["destinations"] as Record<string, unknown>[];
+      (destinations[0]["credentials"] as Record<string, unknown>)["required"] = true;
+      contributionsOf(manifest)[2]["requiredConnectionSlots"] = [];
+    });
+    expect(issues).toEqual([
+      expect.objectContaining({
+        code: "destination_credentials_not_required",
+        path: "contributions[2].requiredConnectionSlots",
+      }),
+    ]);
+  });
+
+  it("rejects a credential built from a connection field an operator may leave empty", () => {
+    const issues = issuesFor((manifest) => {
+      const connections = manifest["connections"] as { slots: Record<string, unknown>[] };
+      const fields = connections.slots[0]["fields"] as Record<string, unknown>[];
+      fields[1]["required"] = false;
+    });
+    expect(issues).toEqual([
+      expect.objectContaining({
+        code: "credential_field_not_required",
+        path: "destinations[0].credentials.application.passwordField",
+      }),
+    ]);
+  });
+
+  it("rejects a secret credential half stored as a field the dashboard may show again", () => {
+    const issues = issuesFor((manifest) => {
+      const connections = manifest["connections"] as { slots: Record<string, unknown>[] };
+      const fields = connections.slots[0]["fields"] as Record<string, unknown>[];
+      fields[1]["sensitive"] = false;
+    });
+    expect(issues).toEqual([
+      expect.objectContaining({
+        code: "credential_field_not_sensitive",
+        path: "destinations[0].credentials.application.passwordField",
+      }),
+    ]);
+  });
+
+  it("admits a non-secret credential half that the dashboard may show again", () => {
+    expect(issuesFor(() => undefined)).toEqual([]);
+  });
+
+  it("rejects a destination that sends a credential without disclosing that it does", () => {
+    const issues = issuesFor((manifest) => {
+      const destinations = manifest["destinations"] as Record<string, unknown>[];
+      destinations[0]["dataClasses"] = ["document_content"];
+    });
+    expect(issues).toEqual([
+      expect.objectContaining({
+        code: "missing_credentials_data_class",
+        path: "destinations[0].dataClasses",
+      }),
+    ]);
+  });
+
+  it("rejects a schedule whose field cannot hold the value that disables it", () => {
+    const issues = issuesFor((manifest) => {
+      const fields = (manifest["configuration"] as { fields: Record<string, unknown>[] }).fields;
+      fields[1]["min"] = 60;
+      fields[1]["default"] = 60;
+      const schedule = contributionsOf(manifest)[2]["schedule"] as Record<string, unknown>;
+      schedule["disabledValue"] = 0;
+    });
+    expect(issues).toEqual([
+      expect.objectContaining({
+        code: "disabled_value_outside_field_range",
+        path: "contributions[2].schedule.disabledValue",
+      }),
+    ]);
+  });
+
+  it("rejects a schedule whose field can never reach the interval floor", () => {
+    const issues = issuesFor((manifest) => {
+      const fields = (manifest["configuration"] as { fields: Record<string, unknown>[] }).fields;
+      fields[1]["max"] = 30;
+      const schedule = contributionsOf(manifest)[2]["schedule"] as Record<string, unknown>;
+      schedule["disabledValue"] = 0;
+    });
+    expect(issues).toEqual([
+      expect.objectContaining({
+        code: "schedule_range_unreachable",
+        path: "contributions[2].schedule.minSeconds",
       }),
     ]);
   });

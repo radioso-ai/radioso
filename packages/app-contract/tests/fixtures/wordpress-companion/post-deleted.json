@@ -4,6 +4,6 @@
   "eventHeader": "X-Radioso-Event",
   "event": "deleted",
   "secret": "b2f0d1c4e5a6978877665544332211009988aabbccddeeff0011223344556677",
-  "signature": "sha256=50efde12a73aae774aef614b11d6408cd5be34e62e77726fde73dc291235ba41",
-  "body": "{\"event\":\"deleted\",\"site_url\":\"https:\\/\\/example.com\\/\",\"post\":{\"id\":4211,\"type\":\"post\",\"status\":\"trash\",\"slug\":\"how-we-price-books\",\"title\":\"How we price books\",\"content_raw\":\"Every edition is priced once, and stays priced.\",\"content_rendered\":\"<p>Every edition is priced once, and stays priced.<\\/p>\\n\",\"excerpt_rendered\":\"<p>Every edition is priced once, and stays priced.<\\/p>\\n\",\"link\":\"https:\\/\\/example.com\\/how-we-price-books\\/\",\"modified_gmt\":\"2026-09-03 10:05:00\",\"date_gmt\":\"2026-04-18 07:30:00\",\"author\":{\"id\":7,\"name\":\"Ada Lovelace\"}}}"
+  "signature": "sha256=28ce9388f97e34c6a2c2c5aac04dedb22a3012afddd73ae3760126a6722735e9",
+  "body": "{\"event\":\"deleted\",\"site_url\":\"https:\\/\\/example.com\\/\",\"post\":{\"id\":4211,\"type\":\"post\",\"status\":\"trash\",\"slug\":\"how-we-price-books\",\"title\":\"How we price books\",\"content_raw\":\"Every edition is priced once, and stays priced.\",\"content_rendered\":\"<p>Every edition is priced once, and stays priced.<\\/p>\\n\",\"excerpt_rendered\":\"<p>Every edition is priced once, and stays priced.<\\/p>\\n\",\"link\":\"https:\\/\\/example.com\\/how-we-price-books\\/\",\"modified_gmt\":\"2026-09-03 10:05:00\",\"date_gmt\":\"2026-09-01 08:00:00\",\"author\":{\"id\":7,\"name\":\"Ada Lovelace\"}}}"
 }

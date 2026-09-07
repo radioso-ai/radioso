@@ -5,11 +5,15 @@ import {
   boundedHeaderRecordSchema,
   boundedJsonRecordSchema,
   boundedJsonValueSchema,
+  containsLoneSurrogate,
+  formUrlencodedLength,
   refineBoundedJsonRecord,
+  refineObjectBreadth,
 } from "./bounds.js";
 import { configurationValuesSchema } from "./configuration.js";
 import { executionClassSchema } from "./contributions.js";
 import {
+  appliedHeaderNameSchema,
   contributionIdSchema,
   destinationIdSchema,
   digestSchema,
@@ -196,9 +200,14 @@ export const invocationCountsSchema = z
  * App-shaped and bounded rather than interpreted.
  */
 export const invocationOutputSchema = z
-  .object({ counts: invocationCountsSchema.optional() })
-  .catchall(boundedJsonValueSchema)
-  .superRefine(refineBoundedJsonRecord);
+  .any()
+  .superRefine(refineObjectBreadth)
+  .pipe(
+    z
+      .object({ counts: invocationCountsSchema.optional() })
+      .catchall(boundedJsonValueSchema)
+      .superRefine(refineBoundedJsonRecord),
+  );
 
 const responseHeader = {
   protocolVersion: z.literal(RUNTIME_PROTOCOL_VERSION),
@@ -316,16 +325,25 @@ export const MAX_EGRESS_QUERY_ENTRIES = 64;
 export const MAX_EGRESS_QUERY_BYTES = 8 * 1024;
 
 /**
- * The count is checked before anything is encoded, so a query with a hundred
- * thousand individually-valid pairs is refused without the host measuring each
- * one. A URL the broker would have to build and then reject is a URL the
- * boundary should have refused.
+ * The broker builds the query as `application/x-www-form-urlencoded`, exactly as
+ * `URLSearchParams` serializes it, so the ceiling is measured in that encoding
+ * and not in a looser one — `encodeURIComponent` leaves `!` and `'` alone where
+ * `URLSearchParams` escapes them, which would let a query pass here and exceed
+ * the ceiling once the broker built it.
+ *
+ * The count is checked before anything is measured, so a query with a hundred
+ * thousand individually-valid pairs is refused without the host sizing each one,
+ * and a lone surrogate is refused as an ordinary issue rather than throwing out
+ * of the encoder.
  */
 const egressQuerySchema = z
   .record(z.string().max(128), z.string().max(2048))
   .superRefine((query, context) => {
-    const keys = Object.keys(query);
-    if (keys.length > MAX_EGRESS_QUERY_ENTRIES) {
+    let entries = 0;
+    for (const key in query) {
+      if (!Object.hasOwn(query, key)) continue;
+      entries += 1;
+      if (entries <= MAX_EGRESS_QUERY_ENTRIES) continue;
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: [],
@@ -334,8 +352,18 @@ const egressQuerySchema = z
       return;
     }
     let bytes = 0;
-    for (const key of keys) {
-      bytes += encodeURIComponent(key).length + encodeURIComponent(query[key] ?? "").length + 2;
+    for (const key in query) {
+      if (!Object.hasOwn(query, key)) continue;
+      const value = query[key] ?? "";
+      if (containsLoneSurrogate(key) || containsLoneSurrogate(value)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [key],
+          message: "A query name and value must be encodable text",
+        });
+        return;
+      }
+      bytes += formUrlencodedLength(key) + formUrlencodedLength(value) + 2;
       if (bytes <= MAX_EGRESS_QUERY_BYTES) continue;
       context.addIssue({
         code: z.ZodIssueCode.custom,
@@ -360,7 +388,13 @@ export const egressFetchRequestSchema = z
         "Path must be origin-relative: one leading slash, no scheme, authority, backslash, or fragment",
       ),
     query: egressQuerySchema.optional(),
-    headers: boundedHeaderRecordSchema(httpHeaderNameSchema).optional(),
+    /**
+     * The broker owns routing, framing, hop-by-hop, and authorization headers,
+     * so an App cannot set one. It also refuses a header equal to the
+     * destination's declared credential header and injects exactly one
+     * host-owned value in its place.
+     */
+    headers: boundedHeaderRecordSchema(appliedHeaderNameSchema).optional(),
     body: base64BodySchema.optional(),
     timeoutMs: z.number().int().min(100).max(120_000).optional(),
   })

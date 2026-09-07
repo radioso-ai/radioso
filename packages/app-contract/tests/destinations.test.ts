@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  credentialFieldReferences,
-  destinationSchema,
-  type DestinationCredentialApplication,
-} from "../src/index.js";
+import { destinationSchema, type DestinationCredentialApplication } from "../src/index.js";
 
 const destination = {
   id: "site",
@@ -75,17 +71,15 @@ describe("destination credentials", () => {
     ).toBe(false);
   });
 
-  it("reports every connection field a mode names, and where it names it", () => {
-    expect(credentialFieldReferences(httpBasic)).toEqual([
-      { path: "usernameField", field: "wp_username" },
-      { path: "passwordField", field: "wp_application_password" },
-    ]);
-    expect(credentialFieldReferences({ mode: "bearer", tokenField: "token" })).toEqual([
-      { path: "tokenField", field: "token" },
-    ]);
-    expect(
-      credentialFieldReferences({ mode: "header", header: "X-Api-Key", valueField: "api_key" }),
-    ).toEqual([{ path: "valueField", field: "api_key" }]);
+  it("keeps the broker's own routing, framing, and hop-by-hop headers out of a credential mode", () => {
+    for (const header of ["Host", "content-length", "Transfer-Encoding", "Connection", "Proxy-Authorization"]) {
+      expect(
+        destinationSchema.safeParse({
+          ...destination,
+          credentials: { ...basic, application: { mode: "header", header, valueField: "api_key" } },
+        }).success,
+      ).toBe(false);
+    }
   });
 
   it("rejects the slot reference the credential declaration replaced", () => {

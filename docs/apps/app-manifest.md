@@ -127,22 +127,67 @@ A default is held to the same rules the value is: a `url` default that is not a
 URL, a `number` default outside its own bounds, and two `select` options that
 resolve to the same value all fail parsing.
 
-The host delivers these values to your App on every invocation, as
-`context.configuration` — see
-[Runtime Protocol](./runtime-protocol.md#installation-context). Validate stored
-values against the manifest with `validateConfigurationValues`:
+### Effective configuration
+
+The host stores what the operator typed, which is sparse: a field the operator
+left alone has no stored value, and the manifest owns its default. What your App
+reads is the effective configuration — the stored values with every declared
+default materialized. `resolveConfiguration` is the one operation that produces
+it:
 
 ```ts
-import { validateConfigurationValues } from "@radioso/app-contract";
+import { resolveConfiguration } from "@radioso/app-contract";
 
-const result = validateConfigurationValues(manifest, storedValues);
+const resolved = resolveConfiguration(manifest, storedValues);
+if (resolved.ok) {
+  // resolved.configuration is what an invocation carries as context.configuration
+}
 ```
 
-It reports a missing required value, an undeclared key, a value of the wrong
-type, a number outside `min`/`max`, a `select` value that is not an option, a
-`url` value that does not parse, a string over 4 096 characters, and a value
-supplied for a `connection_slot` field, which holds none. A value map carries at
-most 64 entries.
+It bounds the stored map, copies it, materializes the defaults, and validates the
+map that results. It reports a missing required value with no default, an
+undeclared key, a value of the wrong type, a number outside `min`/`max`, a
+`select` value that is not an option, a `url` value that does not parse, a string
+over 4 096 characters, and a value supplied for a `connection_slot` field, which
+holds none. A stored map carries at most 64 entries, each key spelled the way a
+field key is spelled; the reported list stops at 32 issues, and no issue repeats
+a stored key or value back to you.
+
+The host delivers the result to your App on every invocation, as
+`context.configuration` — see
+[Runtime Protocol](./runtime-protocol.md#installation-context).
+
+### A URL field a destination is built from
+
+When a `url` field backs a destination host, its value is held to that
+destination as well as to its own type. The scheme has to be one the destination
+declares under `protocols`, and the URL carries no user name or password:
+credentials belong in a connection slot, not in a value space the App reads.
+
+The URL is an origin prefix. The broker keeps its scheme, host, port, and path,
+and appends an `egress.fetch` request's origin-relative `path` below it, so a
+site installed at `https://example.com/wordpress` is reached at
+`https://example.com/wordpress/wp-json/wp/v2/posts` and no request an App makes
+climbs above the prefix the operator entered.
+
+### Which contributions an installation runs
+
+Readiness follows from the manifest and the effective configuration, never from a
+list a caller assembles:
+
+```ts
+import { installationReadiness } from "@radioso/app-contract";
+
+const { activeContributionIds, inactiveContributionIds, requiredConnectionSlots } =
+  installationReadiness(manifest, resolved.configuration);
+```
+
+A contribution with `availability: "required"` is always active. A
+`scheduled_task` reading `interval_from_configuration` is inactive when its
+configuration field holds the schedule's own `disabledValue`. Everything else is
+active. `requiredConnectionSlots` is the sorted union of the slots the active
+contributions require, so a push-only installation is never asked for the
+credential only a poll needs.
 
 ## connections
 
@@ -202,7 +247,14 @@ operator fills in:
 ```
 
 A configuration-bound host must name a `url` field. That is what lets one
-release serve many sites without one installation reaching another's.
+release serve many sites without one installation reaching another's. The value
+the operator enters is an origin prefix, and its scheme has to be one of this
+destination's `protocols`.
+
+A destination id is your App's only handle to a connection. An invocation carries
+no credential and no connection reference of any other kind: you name a
+destination on an `egress.fetch` call, and the broker resolves the address and
+attaches the credential.
 
 `protocols` holds `https`, `http`, or both. `http` is here because a self-hosted
 site reachable only over plain HTTP is a real installation; declaring it puts it
@@ -223,12 +275,23 @@ it. Your App never holds the secret, so the manifest has to state the mechanism:
 
 Every named field must exist in the slot, and the slot must be `secret_fields` —
 a `generated_secret` holds one opaque value and no fields to build a request
-from.
+from. Each named field is `required: true`, because a credential the broker
+builds on every request is not one an operator may leave empty, and the field
+carrying the secret half — the password, the token, the header value — is
+`sensitive: true`. A destination that attaches a credential lists `credentials`
+in its `dataClasses`, so the grant screen says so.
+
+`header` cannot name a header the broker owns: `host`, `content-length`,
+`transfer-encoding`, `connection`, `upgrade`, `te`, `trailer`, `keep-alive`,
+`proxy-authorization`, `proxy-connection`, or `proxy-authenticate`, matched
+without regard to case.
 
 `required` says whether the destination is reachable without the credential.
 `false` has the broker send the request anonymously while the slot is unbound
 and inject the credential once it is bound, which is what lets one release serve
 an installation that reads public content and one that reads private content.
+`true` means the destination is never reachable unbound, so every contribution
+that names the destination lists that slot in its `requiredConnectionSlots`.
 
 ## storageCollections
 
@@ -339,8 +402,10 @@ A signed push from outside.
 | `maxBodyBytes` | Largest body the host accepts, up to 4 MiB — the ceiling the invocation input carries |
 | `replayWindowSeconds` | How long a delivery id stays unrepeatable, up to 3 600 |
 
-The host verifies the HMAC over the raw body before your App sees anything.
-Invocations run under the `external_webhook` execution class.
+The host verifies the HMAC over the raw body before your App sees anything, so
+the handler lists `authentication.secretConnectionSlot` in its
+`requiredConnectionSlots`: a handler that cannot verify a delivery is a handler
+that cannot run. Invocations run under the `external_webhook` execution class.
 
 ### scheduled_task
 
@@ -364,6 +429,11 @@ An `interval_from_configuration` schedule also takes an optional
 push-only installation no schedule at all rather than a one-minute one.
 `disabledValue` must sit below `minSeconds`. A sentinel inside the interval
 range would silently disable a schedule the operator meant to run.
+
+The referenced field's own range has to admit both. `disabledValue` sits inside
+the field's `min` and `max` when either is declared, or the schedule is one
+nobody can turn off; and the field's `max`, when declared, is at least
+`minSeconds`, or the schedule is one that can never run.
 
 Invocations run under the `scheduled_task` execution class.
 
@@ -456,10 +526,17 @@ bracket path such as `contributions[1].authentication.secretConnectionSlot`.
 | `unknown_connection_slot` | A `connection_slot` field, a destination credential, a `requiredConnectionSlots` entry, or a webhook handler names a slot that does not exist. |
 | `invalid_destination_credential_slot` | A destination credential names a slot that holds no fields a request can be built from. |
 | `unknown_connection_field` | A credential application names a field its slot does not hold. |
+| `credential_field_not_required` | A credential application names a field the operator may leave empty. |
+| `credential_field_not_sensitive` | The secret half of a credential — the password, token, or header value — is stored in a field that is not `sensitive`. |
+| `missing_credentials_data_class` | A destination attaches a credential without listing `credentials` in `dataClasses`. |
+| `destination_credentials_not_required` | A contribution reaches a destination whose credential is mandatory without requiring that slot. |
+| `webhook_secret_not_required` | A webhook handler verifies against a slot it does not list in `requiredConnectionSlots`. |
 | `invalid_webhook_secret_slot` | A webhook handler's slot cannot hold a signing secret. |
 | `unknown_configuration_field` | A configuration-bound destination host or an `interval_from_configuration` schedule names a field that does not exist. |
 | `destination_host_field_not_url` | A destination host is bound to a field that is not a `url` field. |
 | `interval_field_not_number` | An interval reads from a field that is not a `number` field. |
+| `disabled_value_outside_field_range` | A schedule's `disabledValue` sits outside the range its configuration field admits, so the task can never be turned off. |
+| `schedule_range_unreachable` | A schedule's configuration field stops below `minSeconds`, so the task can never run. |
 | `unknown_destination` | A contribution lists an `egressDestinations` id no destination declares. |
 | `unknown_collection` | A `checkpointCollection` or backfill collection does not exist. |
 | `unknown_contribution` | A conformance fixture names a contribution the manifest does not declare. |

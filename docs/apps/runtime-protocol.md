@@ -69,21 +69,32 @@ contribution, schema, deadline, or capability set.
 
 ### Installation context
 
-`context.configuration` is what the operator filled in, as your App reads it:
-one scalar per configuration key, strings up to 4 096 characters, at most 64
-entries. It arrives on every invocation, so a handler never has to discover
-which post types, which folder, or which locale an installation meant.
+`context.configuration` is the effective configuration: one scalar per
+configuration key, strings up to 4 096 characters, at most 64 entries. It arrives
+on every invocation, so a handler never has to discover which post types, which
+folder, or which locale an installation meant.
 
-The gateway validates stored values against the manifest before it mints the
-invocation — every required field present, every value the type its field
-declares, numbers inside `min` and `max`, `select` values among their options,
-`url` values parseable, and no undeclared keys. `validateConfigurationValues` in
-`@radioso/app-contract` is the same check, so a dashboard and a gateway reach
-the same answer.
+Effective means resolved, and the order is fixed: resolve, then validate, then
+deliver. The gateway starts from what the operator stored, which is sparse —
+a field left alone has no stored value. It bounds that map, copies it,
+materializes every declared default, and validates the map that results: every
+required field present, every value the type its field declares, numbers inside
+`min` and `max`, `select` values among their options, `url` values parseable and
+inside the protocols of any destination they back, and no undeclared keys. Only
+then does it mint the invocation. `resolveConfiguration` in
+`@radioso/app-contract` is that one operation, so a dashboard, an installation
+plan, and the gateway reach the same map.
+
+What your App reads is therefore never sparse. A field with a default carries its
+default, and a handler never has to know which values the operator typed and
+which the manifest supplied.
 
 Nothing here is a secret. Configuration has no secret field type: credential
 material lives in a connection slot, and the broker attaches it server-side on
-the way out. An App holds no credential at any point.
+the way out. An App holds no credential at any point. A destination id is your
+App's only handle to a connection — you name a destination on an `egress.fetch`
+call, and the broker resolves the address from configuration and attaches the
+credential the manifest bound to it.
 
 ### input by contribution kind
 
@@ -158,7 +169,12 @@ object, 1 024 array items, 8 192 characters per string, and 64 KiB serialized.
 The serialized bound is measured over the whole value, not over each of its
 members, so `output` as a whole stays under 64 KiB however many keys it carries.
 An oversized value is refused at the first violation, without the host ever
-serializing it.
+serializing it, and an object wider than 256 keys is refused before its values
+are read at all.
+
+Serialized size is counted the way JSON writes the value. A surrogate pair is one
+character in four UTF-8 bytes; an unpaired surrogate has no encoding, so JSON
+writes it as a six-character `\uXXXX` escape and it costs six bytes here.
 
 ## Host capabilities
 
@@ -227,14 +243,27 @@ string of up to 1 024 characters, a number, or a boolean.
 }
 ```
 
-`destination` is a destination id from the manifest. `path` is origin-relative:
-exactly one leading slash, and no scheme, authority, backslash, or fragment. A
-path that could resolve to another host is refused here rather than by whatever
-resolves it later. `query` carries at most 64 entries and encodes to at most
-8 KiB, so a URL the broker would have to build and then reject is refused at the
-boundary instead.
+`destination` is a destination id from the manifest, and it is your App's only
+handle to a connection: you never see an address or a credential. `path` is
+origin-relative: exactly one leading slash, and no scheme, authority, backslash,
+or fragment. A path that could resolve to another host is refused here rather
+than by whatever resolves it later.
 
-The host resolves the host name — including one bound to a configuration field —
+`query` carries at most 64 entries and encodes to at most 8 KiB. The broker
+builds the query as `application/x-www-form-urlencoded`, exactly as
+`URLSearchParams` serializes it, and the ceiling is measured in that encoding, so
+a query that passes the boundary is a query the broker can build. A key or value
+holding an unpaired surrogate is not encodable text and is refused.
+
+`headers` carries what your App needs and nothing the broker owns. The broker
+refuses `host`, `content-length`, `transfer-encoding`, `connection`, `upgrade`,
+`te`, `trailer`, `keep-alive`, `proxy-authorization`, `proxy-connection`, and
+`proxy-authenticate`, matched without regard to case; it refuses `authorization`;
+and it refuses any header equal to the destination's own declared credential
+header, then injects exactly one host-owned value in its place.
+
+The host resolves the address — including one bound to a configuration field,
+where the operator's URL is an origin prefix and `path` is appended below it —
 applies the destination's declared credential, and returns the response with its
 body base64-encoded. The manifest says which slot to draw from and what to build:
 HTTP Basic from a username and password field, a bearer token from one field, or

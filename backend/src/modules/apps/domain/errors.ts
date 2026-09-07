@@ -14,6 +14,7 @@ export const appsErrorReasons = [
   "operation_in_progress",
   "runtime_unavailable",
   "initiating_principal_unauthorized",
+  "release_not_admitted",
 ] as const;
 
 export type AppsErrorReason = (typeof appsErrorReasons)[number];

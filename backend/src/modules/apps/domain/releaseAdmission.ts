@@ -1,12 +1,14 @@
 import {
   releaseAValidationPolicy,
   validateManifest,
+  type AdmittedManifest,
   type AppManifest,
   type ManifestValidationIssue,
   type ManifestValidationPolicy,
 } from "@radioso/app-contract";
 
 import { canonicalDigest } from "./canonicalJson.js";
+import { AppsError } from "./errors.js";
 
 /**
  * The Radioso-owned policy snapshot a decision is recorded against (FR-049a). Bump this
@@ -123,4 +125,52 @@ export const admitAppRelease = (input: AppReleaseAdmissionInput): AppReleaseAdmi
       verifiedDigestCount: 1 + (manifest.companionAssets?.length ?? 0),
     },
   };
+};
+
+/**
+ * Every admission policy version this host can still re-check a stored manifest against.
+ * Release A ships one; a future policy bump adds an entry here rather than replacing this
+ * one, so a release admitted under an older policy stays re-admittable exactly as it was
+ * decided.
+ */
+const admissionPoliciesByVersion: Readonly<Record<string, ManifestValidationPolicy>> = {
+  [APP_ADMISSION_POLICY_VERSION]: releaseAValidationPolicy,
+};
+
+/** The minimum a caller needs to re-admit a stored release: its manifest and the policy version it was admitted under. */
+interface AdmittableAppRelease {
+  readonly manifest: AppManifest;
+  readonly admissionPolicyVersion?: string;
+}
+
+/**
+ * Re-admission is the one boundary a manifest loaded back from storage crosses on its way
+ * to `resolveInstallation` and the plan builder, both of which only accept an
+ * `AdmittedManifest`. Storage keeps `AppManifest`, the persisted shape; nothing there earns
+ * the `AdmittedManifest` brand for free, so stored-state corruption — a hand-edited row, a
+ * policy this host no longer runs — surfaces here as a typed failure instead of a cast that
+ * would hide it. A release without a recorded policy version is re-checked against the
+ * current one, which is the only sound default for data admitted before this field existed.
+ */
+export const admittedManifestOf = (release: AdmittableAppRelease): AdmittedManifest => {
+  const policyVersion = release.admissionPolicyVersion ?? APP_ADMISSION_POLICY_VERSION;
+  const policy = admissionPoliciesByVersion[policyVersion];
+  if (!policy) {
+    throw new AppsError(
+      "release_not_admitted",
+      "This release was admitted under a policy this host no longer runs.",
+      { admissionPolicyVersion: policyVersion },
+    );
+  }
+
+  const validation = validateManifest(release.manifest, policy);
+  if (!validation.ok) {
+    throw new AppsError(
+      "release_not_admitted",
+      "The stored release manifest no longer passes admission.",
+      { issueCount: validation.issues.length },
+    );
+  }
+
+  return validation.manifest;
 };

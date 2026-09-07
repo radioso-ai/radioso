@@ -27,6 +27,9 @@ const statusByReason: Readonly<Record<AppsErrorReason, number>> = {
   operation_in_progress: 409,
   runtime_unavailable: 503,
   initiating_principal_unauthorized: 403,
+  // A stored release that no longer passes its own recorded admission policy is
+  // stored-state corruption, not a client mistake, so this is a 500 rather than a 409.
+  release_not_admitted: 500,
 };
 
 /** Leaves every other error untouched so the shared handler keeps owning it. */

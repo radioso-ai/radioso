@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 
+import type { AppManifest } from "@radioso/app-contract";
+
 import {
   AppConnectionService,
   AppInstallationLifecycleService,
@@ -494,6 +496,22 @@ describe("app connections through the service", () => {
   });
 });
 
+/**
+ * Simulates a release row whose manifest column changed underneath the admission decision
+ * recorded when it was published — a hand-edited row, a migration gone wrong — independent
+ * of anything a request submitted. `admittedManifestOf` exists to catch exactly this rather
+ * than let a stored `AppManifest` reach `resolveInstallation` unchecked.
+ */
+const tamperStoredReleaseManifest = (harness: Harness, releaseId: string): void => {
+  const stored = harness.repositories.releases.rows.get(releaseId);
+  if (!stored) throw new Error("release not found in test harness");
+  const { name: _name, ...appWithoutName } = stored.manifest.app;
+  harness.repositories.releases.rows.set(releaseId, {
+    ...stored,
+    manifest: { ...stored.manifest, app: appWithoutName } as AppManifest,
+  });
+};
+
 describe("app installation plans", () => {
   it("rejects an apply whose checksum no longer matches the approved plan", async () => {
     const harness = await createHarness();
@@ -600,5 +618,32 @@ describe("app installation plans", () => {
     });
 
     expect(plan.plan.unresolvedRequirements).toEqual([]);
+  });
+
+  // A stored manifest that no longer passes its own recorded admission policy is
+  // stored-state corruption, not a bad request: planning must refuse it with a typed
+  // reason rather than crash or silently build a plan off an unadmitted manifest.
+  it("refuses to plan when the stored release manifest no longer passes admission", async () => {
+    const harness = await createHarness();
+    const releaseId = await harness.admitReference();
+    tamperStoredReleaseManifest(harness, releaseId);
+
+    await expect(harness.plans.create({
+      workspaceId, releaseId, configuration: { site_url: "https://example.com" }, targetAgentIds: [], principal,
+    })).rejects.toMatchObject({ reason: "release_not_admitted" });
+  });
+
+  it("refuses a configuration update when the stored release manifest no longer passes admission", async () => {
+    const harness = await createHarness();
+    const installed = await harness.install();
+    tamperStoredReleaseManifest(harness, installed.installation.activeReleaseId!);
+
+    await expect(harness.installations.updateConfiguration({
+      workspaceId,
+      installationId: installed.installation.id,
+      configuration: { site_url: "https://example.com" },
+      expectedVersion: installed.installation.version,
+      principal,
+    })).rejects.toMatchObject({ reason: "release_not_admitted" });
   });
 });

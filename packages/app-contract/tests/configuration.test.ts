@@ -4,6 +4,9 @@ import {
   appConfigurationSchema,
   configurationFieldSchema,
   configurationFieldTypes,
+  configurationValuesSchema,
+  MAX_CONFIGURATION_ENTRIES,
+  MAX_CONFIGURATION_VALUE_LENGTH,
 } from "../src/index.js";
 
 const textField = {
@@ -118,7 +121,72 @@ describe("configuration fields", () => {
     ).toMatchObject({ type: "connection_slot", connectionSlot: "site_credentials" });
   });
 
+  it("requires a url field's default to be a URL", () => {
+    expect(
+      configurationFieldSchema.safeParse({ ...textField, type: "url", default: "not a URL" }).success,
+    ).toBe(false);
+    expect(
+      configurationFieldSchema.parse({ ...textField, type: "url", default: "https://example.com" }),
+    ).toMatchObject({ type: "url", default: "https://example.com" });
+  });
+
+  it("requires a number field's default to satisfy its own bounds", () => {
+    expect(
+      configurationFieldSchema.safeParse({ ...textField, type: "number", default: 5, min: 10 }).success,
+    ).toBe(false);
+    expect(
+      configurationFieldSchema.safeParse({ ...textField, type: "number", default: 50, max: 10 }).success,
+    ).toBe(false);
+    expect(
+      configurationFieldSchema.parse({ ...textField, type: "number", default: 10, min: 0, max: 60 }),
+    ).toMatchObject({ type: "number", default: 10 });
+  });
+
+  it("rejects two select options that resolve to the same value", () => {
+    expect(
+      configurationFieldSchema.safeParse({
+        ...textField,
+        type: "select",
+        options: [
+          { value: "post", label: "Posts" },
+          { value: "post", label: "Articles" },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
   it("defaults an omitted configuration block to no fields", () => {
     expect(appConfigurationSchema.parse({})).toEqual({ fields: [] });
+  });
+});
+
+describe("configuration values", () => {
+  it("carries one scalar per declared key", () => {
+    expect(
+      configurationValuesSchema.parse({ site_url: "https://example.com", poll_interval_sec: 0, verbose: true }),
+    ).toMatchObject({ poll_interval_sec: 0, verbose: true });
+  });
+
+  it("refuses a key that is not a configuration key, and a value that is not a scalar", () => {
+    expect(configurationValuesSchema.safeParse({ "Post Types": "page" }).success).toBe(false);
+    expect(configurationValuesSchema.safeParse({ post_types: ["page"] }).success).toBe(false);
+    expect(configurationValuesSchema.safeParse({ post_types: null }).success).toBe(false);
+  });
+
+  it("bounds one value and the whole map", () => {
+    expect(
+      configurationValuesSchema.safeParse({ post_types: "x".repeat(MAX_CONFIGURATION_VALUE_LENGTH) }).success,
+    ).toBe(true);
+    expect(
+      configurationValuesSchema.safeParse({ post_types: "x".repeat(MAX_CONFIGURATION_VALUE_LENGTH + 1) })
+        .success,
+    ).toBe(false);
+    expect(
+      configurationValuesSchema.safeParse(
+        Object.fromEntries(
+          Array.from({ length: MAX_CONFIGURATION_ENTRIES + 1 }, (_, index) => [`field_${index}`, "v"]),
+        ),
+      ).success,
+    ).toBe(false);
   });
 });

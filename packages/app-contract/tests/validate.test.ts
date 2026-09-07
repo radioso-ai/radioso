@@ -52,7 +52,15 @@ const baseManifest = {
       protocols: ["https"],
       purpose: "Read published content from the configured site.",
       dataClasses: ["document_content"],
-      connectionSlot: "site_credentials",
+      credentials: {
+        slot: "site_credentials",
+        application: {
+          mode: "http_basic",
+          usernameField: "wp_username",
+          passwordField: "wp_application_password",
+        },
+        required: false,
+      },
     },
   ],
   storageCollections: [
@@ -86,6 +94,7 @@ const baseManifest = {
       availability: "required",
       inputSchemaVersion: 1,
       outputSchemaVersion: 1,
+      requiredConnectionSlots: [],
       externalIdNamespace: "example_post",
       syncModes: ["push", "poll", "backfill"],
       contentFormats: ["html"],
@@ -103,6 +112,7 @@ const baseManifest = {
       availability: "required",
       inputSchemaVersion: 1,
       outputSchemaVersion: 1,
+      requiredConnectionSlots: ["webhook_secret"],
       documentSources: ["site_content"],
       authentication: {
         kind: "hmac_sha256",
@@ -124,6 +134,7 @@ const baseManifest = {
       availability: "optional",
       inputSchemaVersion: 1,
       outputSchemaVersion: 1,
+      requiredConnectionSlots: ["site_credentials"],
       documentSources: ["site_content"],
       schedule: { kind: "interval_from_configuration", field: "poll_interval_sec", minSeconds: 60 },
       overlapPolicy: "skip",
@@ -334,12 +345,109 @@ describe("validateManifest", () => {
     ]);
   });
 
-  it("rejects a destination connection slot that no slot declares", () => {
+  it("rejects a destination credential slot that no slot declares", () => {
     const issues = issuesFor((manifest) => {
-      (manifest["destinations"] as Record<string, unknown>[])[0]["connectionSlot"] = "missing_slot";
+      const destinations = manifest["destinations"] as Record<string, unknown>[];
+      (destinations[0]["credentials"] as Record<string, unknown>)["slot"] = "missing_slot";
     });
     expect(issues).toEqual([
-      expect.objectContaining({ code: "unknown_connection_slot", path: "destinations[0].connectionSlot" }),
+      expect.objectContaining({ code: "unknown_connection_slot", path: "destinations[0].credentials.slot" }),
+    ]);
+  });
+
+  it("rejects a destination credential bound to a slot that holds no fields to build a request from", () => {
+    const issues = issuesFor((manifest) => {
+      const destinations = manifest["destinations"] as Record<string, unknown>[];
+      (destinations[0]["credentials"] as Record<string, unknown>)["slot"] = "webhook_secret";
+    });
+    expect(issues).toEqual([
+      expect.objectContaining({
+        code: "invalid_destination_credential_slot",
+        path: "destinations[0].credentials.slot",
+      }),
+    ]);
+  });
+
+  it("rejects a credential application naming a field the slot does not hold", () => {
+    const issues = issuesFor((manifest) => {
+      const destinations = manifest["destinations"] as Record<string, unknown>[];
+      (destinations[0]["credentials"] as Record<string, unknown>)["application"] = {
+        mode: "http_basic",
+        usernameField: "wp_username",
+        passwordField: "missing_field",
+      };
+    });
+    expect(issues).toEqual([
+      expect.objectContaining({
+        code: "unknown_connection_field",
+        path: "destinations[0].credentials.application.passwordField",
+      }),
+    ]);
+  });
+
+  it("resolves every credential application mode against the slot it names", () => {
+    expect(
+      issuesFor((manifest) => {
+        const destinations = manifest["destinations"] as Record<string, unknown>[];
+        (destinations[0]["credentials"] as Record<string, unknown>)["application"] = {
+          mode: "bearer",
+          tokenField: "wp_application_password",
+        };
+      }),
+    ).toEqual([]);
+    expect(
+      issuesFor((manifest) => {
+        const destinations = manifest["destinations"] as Record<string, unknown>[];
+        (destinations[0]["credentials"] as Record<string, unknown>)["application"] = {
+          mode: "header",
+          header: "X-Api-Key",
+          valueField: "missing_field",
+        };
+      }),
+    ).toEqual([
+      expect.objectContaining({
+        code: "unknown_connection_field",
+        path: "destinations[0].credentials.application.valueField",
+      }),
+    ]);
+  });
+
+  it("rejects a required connection slot that no slot declares", () => {
+    const issues = issuesFor((manifest) => {
+      contributionsOf(manifest)[2]["requiredConnectionSlots"] = ["missing_slot"];
+    });
+    expect(issues).toEqual([
+      expect.objectContaining({
+        code: "unknown_connection_slot",
+        path: "contributions[2].requiredConnectionSlots[0]",
+      }),
+    ]);
+  });
+
+  it("rejects a handler that writes documents and names no source to write through", () => {
+    const issues = issuesFor((manifest) => {
+      contributionsOf(manifest)[1]["documentSources"] = [];
+    });
+    expect(issues).toEqual([
+      expect.objectContaining({ code: "missing_document_source", path: "contributions[1].documentSources" }),
+    ]);
+  });
+
+  it("admits an empty source list on a handler that writes no documents", () => {
+    const issues = issuesFor((manifest) => {
+      const handler = contributionsOf(manifest)[1];
+      handler["documentSources"] = [];
+      handler["permissions"] = [];
+    });
+    expect(issues).toEqual([]);
+  });
+
+  it("rejects a document source named twice by one handler", () => {
+    const issues = issuesFor((manifest) => {
+      contributionsOf(manifest)[1]["documentSources"] = ["site_content", "site_content"];
+    });
+    expect(issues).toEqual([
+      expect.objectContaining({ code: "duplicate_id", path: "contributions[1].documentSources[1]" }),
     ]);
   });
 
@@ -387,7 +495,8 @@ describe("validateManifest", () => {
     const issues = issuesFor((manifest) => {
       contributionsOf(manifest)[2]["egressDestinations"] = ["other_site"];
       contributionsOf(manifest)[2]["checkpointCollection"] = "missing_collection";
-      (manifest["destinations"] as Record<string, unknown>[])[0]["connectionSlot"] = "missing_slot";
+      const destinations = manifest["destinations"] as Record<string, unknown>[];
+      (destinations[0]["credentials"] as Record<string, unknown>)["slot"] = "missing_slot";
     });
     expect(issues.map((issue) => issue.code).sort()).toEqual([
       "unknown_collection",
@@ -469,6 +578,26 @@ describe("validateManifest", () => {
       schedule["disabledValue"] = 0;
     });
     expect(issues).toEqual([]);
+  });
+
+  it("rejects a disabled value that an operator could pick as a working interval", () => {
+    const issues = issuesFor((manifest) => {
+      const schedule = contributionsOf(manifest)[2]["schedule"] as Record<string, unknown>;
+      schedule["disabledValue"] = 300;
+    });
+    expect(issues).toEqual([
+      expect.objectContaining({ code: "schema", path: "contributions[2].schedule.disabledValue" }),
+    ]);
+  });
+
+  it("caps a declared record size at the size the wire carries", () => {
+    const issues = issuesFor((manifest) => {
+      const collections = manifest["storageCollections"] as Record<string, unknown>[];
+      collections[0]["quotas"] = { maxRecords: 100, maxRecordBytes: 200_000 };
+    });
+    expect(issues).toEqual([
+      expect.objectContaining({ code: "schema", path: "storageCollections[0].quotas.maxRecordBytes" }),
+    ]);
   });
 
   it("rejects an undeclared key rather than dropping it from a signed declaration", () => {

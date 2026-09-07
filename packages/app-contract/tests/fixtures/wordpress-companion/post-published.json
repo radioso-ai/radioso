@@ -1,0 +1,9 @@
+{
+  "description": "A page or post going live. `the_content` wraps the body and appends a newline; `modified_gmt` and `date_gmt` are MySQL datetimes, not RFC 3339 instants.",
+  "signatureHeader": "X-Radioso-Signature",
+  "eventHeader": "X-Radioso-Event",
+  "event": "published",
+  "secret": "b2f0d1c4e5a6978877665544332211009988aabbccddeeff0011223344556677",
+  "signature": "sha256=21f8d77b7888beea6c95a4f774cee146ed9bb095ccbf1a63f954cf4711df4842",
+  "body": "{\"event\":\"published\",\"site_url\":\"https:\\/\\/example.com\\/\",\"post\":{\"id\":4211,\"type\":\"post\",\"status\":\"publish\",\"slug\":\"how-we-price-books\",\"title\":\"How we price books\",\"content_raw\":\"Every edition is priced once.\",\"content_rendered\":\"<p>Every edition is priced once.<\\/p>\\n\",\"excerpt_rendered\":\"<p>Every edition is priced once.<\\/p>\\n\",\"link\":\"https:\\/\\/example.com\\/how-we-price-books\\/\",\"modified_gmt\":\"2026-09-01 08:00:00\",\"date_gmt\":\"2026-09-01 08:00:00\",\"author\":{\"id\":7,\"name\":\"Ada Lovelace\"}}}"
+}

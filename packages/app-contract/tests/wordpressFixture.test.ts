@@ -60,6 +60,33 @@ describe("reference WordPress manifest", () => {
     expect(destination.protocols).toEqual(["https", "http"]);
   });
 
+  it("says how the broker authenticates that destination, and that it need not", () => {
+    if (!result.ok) throw new Error("fixture must validate");
+    expect(result.manifest.destinations[0].credentials).toEqual({
+      slot: "site_credentials",
+      application: {
+        mode: "http_basic",
+        usernameField: "wp_username",
+        passwordField: "wp_application_password",
+      },
+      required: false,
+    });
+  });
+
+  it("requires a connection slot only for the contribution that cannot run without it", () => {
+    if (!result.ok) throw new Error("fixture must validate");
+    expect(
+      result.manifest.contributions.map((contribution) => [
+        contribution.id,
+        contribution.requiredConnectionSlots,
+      ]),
+    ).toEqual([
+      ["site_content", []],
+      ["content_push", ["webhook_secret"]],
+      ["content_poll", ["site_credentials"]],
+    ]);
+  });
+
   it("declares the runtime protocol its artifact speaks", () => {
     if (!result.ok) throw new Error("fixture must validate");
     expect(result.manifest.runtimeProtocolVersion).toBe(RUNTIME_PROTOCOL_VERSION);

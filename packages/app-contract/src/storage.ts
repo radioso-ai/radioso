@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { boundedJsonRecordSchema } from "./bounds.js";
+import { boundedJsonRecordSchema, MAX_JSON_SERIALIZED_BYTES } from "./bounds.js";
 import { collectionIdSchema, fieldKeySchema, indexIdSchema, timestampSchema } from "./identifiers.js";
 
 /**
@@ -51,10 +51,16 @@ export const storageCollectionSchema = z
       })
       .strict(),
     indexes: z.array(storageIndexSchema).max(8).default([]),
+    /**
+     * `maxRecordBytes` stops at the serialized ceiling every protocol message
+     * shares. A collection admitted above it would promise capacity the wire
+     * refuses, so the first oversized record would fail at the boundary rather
+     * than against the quota the operator approved.
+     */
     quotas: z
       .object({
         maxRecords: z.number().int().min(1).max(1_000_000),
-        maxRecordBytes: z.number().int().min(1).max(1_048_576),
+        maxRecordBytes: z.number().int().min(1).max(MAX_JSON_SERIALIZED_BYTES),
       })
       .strict(),
     retention: storageRetentionSchema,

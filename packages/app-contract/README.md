@@ -23,9 +23,10 @@ Radioso package would tie the contract to one side of it.
 | `src/contributions.ts` | The closed contribution catalog, host permissions, execution classes |
 | `src/setup.ts` | Setup guide and companion asset declarations |
 | `src/manifest.ts` | The `AppManifest` schema |
-| `src/runtime.ts` | Invocation and host capability envelopes |
+| `src/runtime.ts` | Invocation and host capability envelopes, including the installation context every invocation carries |
 | `src/jobs.ts` | The App Job wake-up envelope |
 | `src/validate.ts` | `validateManifest`: schema pass, cross-reference pass, policy pass |
+| `src/requirements.ts` | What one installation must supply: `validateConfigurationValues` and `requiredConnectionSlotsFor` |
 | `src/index.ts` | The public surface; re-exports only |
 
 ## Tests
@@ -43,9 +44,16 @@ against `releaseAValidationPolicy`. It exercises every section a real App uses �
 a configuration-bound destination, both connection slot kinds, a storage
 collection with an index, and all three Release A contribution kinds.
 
-`tests/wordpressInterop.test.ts` runs the other half: representative payloads
-from the companion WordPress plugin, signed the way it signs them, mapped onto
-the host capability calls the contract accepts.
+`tests/wordpressInterop.test.ts` runs the other half against recorded
+deliveries in `tests/fixtures/wordpress-companion/`: five bodies plus their
+signatures, verified over the recorded bytes and mapped onto the host capability
+calls the contract accepts. The bodies are written by hand to reproduce what
+`wp_json_encode()` emits — escaped slashes, escaped non-ASCII, PHP float
+formatting, MySQL datetimes — because PHP is not available in this
+repository's toolchain; the signature over each one is computed in Node from
+those exact bytes. That fixture directory's `README.md` states the procedure and
+the recompute command. A verifier that parses and re-serializes before checking
+the HMAC fails these vectors, which is what they exist to catch.
 
 Two digests in it are placeholders of 64 zeros: `artifact.digest` and the
 `radioso-sync.zip` companion asset. Nothing in this package builds either

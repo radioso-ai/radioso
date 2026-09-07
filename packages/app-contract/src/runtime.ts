@@ -5,12 +5,15 @@ import {
   boundedHeaderRecordSchema,
   boundedJsonRecordSchema,
   boundedJsonValueSchema,
+  refineBoundedJsonRecord,
 } from "./bounds.js";
+import { configurationValuesSchema } from "./configuration.js";
 import { executionClassSchema } from "./contributions.js";
 import {
   contributionIdSchema,
   destinationIdSchema,
   digestSchema,
+  httpHeaderNameSchema,
   indexedFieldKeySchema,
   schemaVersionSchema,
   timestampSchema,
@@ -57,15 +60,12 @@ export const appErrorSchema = z
   })
   .strict();
 
-const HTTP_HEADER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9-]{0,63}$/u;
-const httpHeaderKeySchema = z.string().regex(HTTP_HEADER_PATTERN);
-
 export const webhookInvocationInputSchema = z
   .object({
     kind: z.literal("webhook"),
     deliveryId: z.string().min(1).max(200),
     receivedAt: timestampSchema,
-    headers: boundedHeaderRecordSchema(httpHeaderKeySchema),
+    headers: boundedHeaderRecordSchema(httpHeaderNameSchema),
     body: base64BodySchema,
   })
   .strict();
@@ -117,6 +117,17 @@ export const capabilitySessionSchema = z
   })
   .strict();
 
+/**
+ * What the operator configured, as the App reads it. The host validates these
+ * values against the manifest before it mints an invocation, so a handler never
+ * has to guess which post types, which folder, or which locale an installation
+ * meant — and never receives a secret, because no configuration field can hold
+ * one.
+ */
+export const installationContextSchema = z
+  .object({ configuration: configurationValuesSchema })
+  .strict();
+
 export const invocationRequestSchema = z
   .object({
     protocolVersion: z.literal(RUNTIME_PROTOCOL_VERSION),
@@ -130,6 +141,7 @@ export const invocationRequestSchema = z
     idempotencyKey: z.string().min(1).max(200),
     deadlineAt: timestampSchema,
     capabilitySession: capabilitySessionSchema,
+    context: installationContextSchema,
     input: invocationInputSchema,
   })
   .strict()
@@ -185,7 +197,8 @@ export const invocationCountsSchema = z
  */
 export const invocationOutputSchema = z
   .object({ counts: invocationCountsSchema.optional() })
-  .catchall(boundedJsonValueSchema);
+  .catchall(boundedJsonValueSchema)
+  .superRefine(refineBoundedJsonRecord);
 
 const responseHeader = {
   protocolVersion: z.literal(RUNTIME_PROTOCOL_VERSION),
@@ -298,6 +311,41 @@ export const documentIngestInputSchema = z
  */
 const ORIGIN_RELATIVE_PATH_PATTERN = /^\/(?!\/)[^\\#]*$/u;
 
+/** Entries in one egress query string, and its total URL-encoded size. */
+export const MAX_EGRESS_QUERY_ENTRIES = 64;
+export const MAX_EGRESS_QUERY_BYTES = 8 * 1024;
+
+/**
+ * The count is checked before anything is encoded, so a query with a hundred
+ * thousand individually-valid pairs is refused without the host measuring each
+ * one. A URL the broker would have to build and then reject is a URL the
+ * boundary should have refused.
+ */
+const egressQuerySchema = z
+  .record(z.string().max(128), z.string().max(2048))
+  .superRefine((query, context) => {
+    const keys = Object.keys(query);
+    if (keys.length > MAX_EGRESS_QUERY_ENTRIES) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [],
+        message: `A query may hold at most ${MAX_EGRESS_QUERY_ENTRIES} entries`,
+      });
+      return;
+    }
+    let bytes = 0;
+    for (const key of keys) {
+      bytes += encodeURIComponent(key).length + encodeURIComponent(query[key] ?? "").length + 2;
+      if (bytes <= MAX_EGRESS_QUERY_BYTES) continue;
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [],
+        message: `A query may encode to at most ${MAX_EGRESS_QUERY_BYTES} bytes`,
+      });
+      return;
+    }
+  });
+
 export const egressFetchRequestSchema = z
   .object({
     capability: z.literal("egress.fetch"),
@@ -311,8 +359,8 @@ export const egressFetchRequestSchema = z
         ORIGIN_RELATIVE_PATH_PATTERN,
         "Path must be origin-relative: one leading slash, no scheme, authority, backslash, or fragment",
       ),
-    query: z.record(z.string().max(128), z.string().max(2048)).optional(),
-    headers: boundedHeaderRecordSchema(httpHeaderKeySchema).optional(),
+    query: egressQuerySchema.optional(),
+    headers: boundedHeaderRecordSchema(httpHeaderNameSchema).optional(),
     body: base64BodySchema.optional(),
     timeoutMs: z.number().int().min(100).max(120_000).optional(),
   })
@@ -408,6 +456,7 @@ export const hostCapabilityResponseSchema = z.union([
 export type AppErrorCode = z.infer<typeof appErrorCodeSchema>;
 export type AppError = z.infer<typeof appErrorSchema>;
 export type CapabilitySession = z.infer<typeof capabilitySessionSchema>;
+export type InstallationContext = z.infer<typeof installationContextSchema>;
 export type InvocationInput = z.infer<typeof invocationInputSchema>;
 export type InvocationRequest = z.infer<typeof invocationRequestSchema>;
 export type InvocationOutcome = z.infer<typeof invocationOutcomeSchema>;

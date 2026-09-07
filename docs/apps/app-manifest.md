@@ -1,7 +1,7 @@
 ---
 title: "App Manifest Reference"
 description: "Every section of a Radioso App manifest: identity, artifact, permissions, configuration, connections, destinations, storage collections, contributions, setup guide, and the issue codes validation returns."
-last_updated: 2026-09-06
+last_updated: 2026-09-07
 ---
 
 # App Manifest Reference
@@ -111,16 +111,38 @@ type can mean:
 
 | `type` | Carries |
 |---|---|
-| `text`, `url` | Optional `default`, a string |
-| `number` | Optional `default`, `min`, and `max`, all numbers; `max` is at least `min` |
+| `text` | Optional `default`, a string |
+| `url` | Optional `default`, a string that parses as a URL |
+| `number` | Optional `default`, `min`, and `max`, all numbers; `max` is at least `min`, and `default` sits between them |
 | `boolean` | Optional `default`, a boolean |
-| `select` | `options` with a `value` and a `label` each, and an optional `default` that is one of those values |
+| `select` | `options` with a `value` and a `label` each, values distinct, and an optional `default` that is one of those values |
 | `connection_slot` | `connectionSlot`, the id of a slot declared under `connections`, and no `default` |
 
 A `number` field cannot default to a word, and a `connection_slot` field carries
 no default at all. Credential material belongs in the slot, which is why there
 is no secret field type here: configuration values are visible to the operator,
 appear in the installation plan, and are readable by your App.
+
+A default is held to the same rules the value is: a `url` default that is not a
+URL, a `number` default outside its own bounds, and two `select` options that
+resolve to the same value all fail parsing.
+
+The host delivers these values to your App on every invocation, as
+`context.configuration` — see
+[Runtime Protocol](./runtime-protocol.md#installation-context). Validate stored
+values against the manifest with `validateConfigurationValues`:
+
+```ts
+import { validateConfigurationValues } from "@radioso/app-contract";
+
+const result = validateConfigurationValues(manifest, storedValues);
+```
+
+It reports a missing required value, an undeclared key, a value of the wrong
+type, a number outside `min`/`max`, a `select` value that is not an option, a
+`url` value that does not parse, a string over 4 096 characters, and a value
+supplied for a `connection_slot` field, which holds none. A value map carries at
+most 64 entries.
 
 ## connections
 
@@ -143,6 +165,10 @@ again:
 }
 ```
 
+A field's `required` means mandatory once the slot is bound, not that every
+installation has to bind the slot. Which slots an installation must bind follows
+from the contributions it turns on — see `requiredConnectionSlots` below.
+
 A `generated_secret` slot has the host mint the value and show it to the
 operator once — the shape to use for a webhook signing secret. `byteLength`
 defaults to 32.
@@ -162,8 +188,16 @@ operator fills in:
   "host": { "kind": "configuration", "field": "site_url" },
   "protocols": ["https", "http"],
   "purpose": "Read published content from the configured WordPress site.",
-  "dataClasses": ["credentials"],
-  "connectionSlot": "site_credentials"
+  "dataClasses": ["credentials", "operational_metadata"],
+  "credentials": {
+    "slot": "site_credentials",
+    "application": {
+      "mode": "http_basic",
+      "usernameField": "wp_username",
+      "passwordField": "wp_application_password"
+    },
+    "required": false
+  }
 }
 ```
 
@@ -177,7 +211,24 @@ on the operator's grant screen, one destination at a time.
 `ports` is optional. `purpose` is the sentence the operator reads on the grant
 screen. `dataClasses` says what leaves the platform on this destination — `document_content`, `document_metadata`,
 `installation_configuration`, `credentials`, or `operational_metadata`.
-`connectionSlot` names the credential the gateway attaches.
+
+`credentials` says which slot the broker draws from and what it builds out of
+it. Your App never holds the secret, so the manifest has to state the mechanism:
+
+| `application.mode` | Builds |
+|---|---|
+| `http_basic` | An `Authorization: Basic` header from `usernameField` and `passwordField` |
+| `bearer` | An `Authorization: Bearer` header from `tokenField` |
+| `header` | The named `header`, carrying `valueField` |
+
+Every named field must exist in the slot, and the slot must be `secret_fields` —
+a `generated_secret` holds one opaque value and no fields to build a request
+from.
+
+`required` says whether the destination is reachable without the credential.
+`false` has the broker send the request anonymously while the slot is unbound
+and inject the credential once it is bound, which is what lets one release serve
+an installation that reads public content and one that reads private content.
 
 ## storageCollections
 
@@ -211,6 +262,10 @@ compares one value per key, so it can only sit on a `string`, `number`,
 `{ "kind": "ttl", "seconds": 86400 }`. `allowedOperations` is the subset of
 `get`, `put`, `delete`, and `query_by_index` the host accepts.
 
+`quotas.maxRecords` runs to 1 000 000 and `quotas.maxRecordBytes` to 65 536, the
+serialized ceiling every protocol message shares. A collection declaring more
+would promise capacity the wire refuses.
+
 ## contributions
 
 A contribution is one thing your App does. Every contribution carries the same
@@ -227,6 +282,13 @@ header:
 | `availability` | `required` if the installation is broken without it, otherwise `optional` |
 | `inputSchemaVersion` | Which input shape this contribution reads, a positive integer |
 | `outputSchemaVersion` | Which output shape it writes, a positive integer |
+| `requiredConnectionSlots` | Ids of the slots this contribution cannot run without, each named once |
+
+`requiredConnectionSlots` is what makes a connection conditional. A slot is
+required for an installation only when a contribution that names it is active,
+so a site that only receives pushes needs the signing secret and nothing else,
+while turning polling on asks the operator for the site credentials. Field-level
+`required` inside a slot still means mandatory once the slot is bound.
 
 Input and output shapes version independently of the release, so a queued job
 says which shape it was written against and a host refuses one it cannot read
@@ -300,8 +362,8 @@ An `interval_from_configuration` schedule also takes an optional
 `disabledValue`. A configuration value equal to it leaves the task inactive, so
 `{ "field": "poll_interval_sec", "minSeconds": 60, "disabledValue": 0 }` gives a
 push-only installation no schedule at all rather than a one-minute one.
-`disabledValue` sits outside the interval range on purpose and is not measured
-against `minSeconds`.
+`disabledValue` must sit below `minSeconds`. A sentinel inside the interval
+range would silently disable a schedule the operator meant to run.
 
 Invocations run under the `scheduled_task` execution class.
 
@@ -310,14 +372,18 @@ host knows whose external-id namespace, indexed-field vocabulary, and provenance
 an effect belongs to before it lands — and it is what a `documents.ingest` or
 `documents.delete` call references as its `sourceContributionId`.
 
+A contribution that asks for `documents.ingest` or `documents.delete` names at
+least one source, and names each one once. A handler admitted with an empty list
+would hold a permission it could never exercise.
+
 ### Kinds a Release A host declines
 
 `tool`, `context_provider`, `event_subscription`, `ui`, and `pack` parse down to
 the common header and leave the rest of their keys unread — the one place a
-manifest is not strict, so a manifest written against a later release still gets
-one clear answer here instead of a wall of unknown-key noise. Validation returns `unsupported_contribution_kind` for each
-one, with the path of the offending `kind`. Any other value fails parsing
-outright.
+manifest is not strict, so a manifest that declares one gets a single clear
+answer instead of a wall of unknown-key noise. Validation returns
+`unsupported_contribution_kind` for each one, with the path of the offending
+`kind`. Any other value fails parsing outright.
 
 ## resourceProfile
 
@@ -387,7 +453,9 @@ bracket path such as `contributions[1].authentication.secretConnectionSlot`.
 | `duplicate_id` | Two entries in one family share an id or key. |
 | `unknown_index_field` | An index names a field the record schema does not declare. |
 | `non_scalar_index_field` | An index sits on a `json` field. |
-| `unknown_connection_slot` | A `connection_slot` field, a destination, or a webhook handler names a slot that does not exist. |
+| `unknown_connection_slot` | A `connection_slot` field, a destination credential, a `requiredConnectionSlots` entry, or a webhook handler names a slot that does not exist. |
+| `invalid_destination_credential_slot` | A destination credential names a slot that holds no fields a request can be built from. |
+| `unknown_connection_field` | A credential application names a field its slot does not hold. |
 | `invalid_webhook_secret_slot` | A webhook handler's slot cannot hold a signing secret. |
 | `unknown_configuration_field` | A configuration-bound destination host or an `interval_from_configuration` schedule names a field that does not exist. |
 | `destination_host_field_not_url` | A destination host is bound to a field that is not a `url` field. |
@@ -397,6 +465,7 @@ bracket path such as `contributions[1].authentication.secretConnectionSlot`.
 | `unknown_contribution` | A conformance fixture names a contribution the manifest does not declare. |
 | `unknown_document_source` | A `documentSources` entry names a contribution the manifest does not declare. |
 | `not_a_document_source` | A `documentSources` entry names a contribution that is not a `document_source`. |
+| `missing_document_source` | A contribution asks for a document permission and names no source to write through. |
 | `permission_not_declared` | A contribution asks for a permission the manifest does not declare. |
 | `unsupported_permission` | The manifest declares a permission the host does not offer. |
 | `unsupported_connection_kind` | The manifest declares a connection kind the host does not offer. |

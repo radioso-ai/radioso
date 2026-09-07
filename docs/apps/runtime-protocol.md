@@ -116,6 +116,13 @@ re-check what admission already proved. A host that stores a manifest re-runs
 `validateManifest` on load to regain the admitted value; it never persists or
 reconstructs the admitted type directly.
 
+The admitted value is deeply frozen and typed transitively `readonly`, down to
+every nested array and object rather than only the top level, so a nested
+mutation attempt is both a type error and a runtime `TypeError`. Spreading an
+admitted manifest produces a plain, unfrozen copy that still types as
+admitted, so a caller passes the admitted value itself to `resolveInstallation`,
+never a spread of it.
+
 An issue it reports names a key only when the manifest declares that key.
 Anything else is addressed by its position in the stored map — `configuration.3`
 — so a stored key an attacker chose never reaches a log or an audit record.

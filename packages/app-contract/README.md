@@ -89,6 +89,14 @@ to a field that is not a `url` field, can never reach `resolveInstallation` in
 the first place. A host that stores a manifest re-runs `validateManifest` on
 load to regain the admitted value.
 
+`AdmittedManifest` is deeply frozen and typed transitively `readonly` down to
+every nested array and object, not only at the top level, so a call like
+`admitted.contributions[0].requiredConnectionSlots.push(...)` is a type error
+and throws if a cast forces it through. A spread of an admitted manifest
+(`{ ...admitted }`) is a plain, unfrozen copy that still types as admitted, so
+callers pass the admitted value itself to `resolveInstallation`, never a
+spread of it.
+
 The configuration holds every required value field, every field that declares a
 default, and every optional field the operator supplied. A `connection_slot`
 field never appears: its value lives in the slot. The map is frozen and its type

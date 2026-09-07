@@ -4,13 +4,11 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  appManifestSchema,
   releaseAValidationPolicy,
   resolveInstallation,
   validateManifest,
   type AdmittedManifest,
   type AppManifest,
-  type Destination,
   type EffectiveConfiguration,
 } from "../src/index.js";
 
@@ -23,9 +21,12 @@ const manifest: AdmittedManifest = result.manifest;
 /**
  * `resolveInstallation` takes only what `validateManifest` admitted, so every
  * test that builds a manifest variant reaches it the same way a host does:
- * through admission, not by asserting a raw candidate past it.
+ * through admission, not by asserting a raw candidate past it. The parameter
+ * is `unknown`, matching `validateManifest` itself: a candidate built by
+ * spreading the admitted `manifest` is deeply readonly, never a plain
+ * `AppManifest`, and admission is what turns it back into one.
  */
-const admit = (candidate: AppManifest): AdmittedManifest => {
+const admit = (candidate: unknown): AdmittedManifest => {
   const admitted = validateManifest(candidate, releaseAValidationPolicy);
   if (!admitted.ok) throw new Error(`expected the manifest to admit: ${JSON.stringify(admitted.issues)}`);
   return admitted.manifest;
@@ -48,7 +49,7 @@ const readinessOf = (values: unknown, against: AdmittedManifest = manifest) => {
   return resolved.readiness;
 };
 
-const withDestination = (destination: Destination): AppManifest => ({
+const withDestination = (destination: unknown): unknown => ({
   ...manifest,
   destinations: [destination],
 });
@@ -255,7 +256,7 @@ describe("the readiness resolution answers with", () => {
 });
 
 describe("the port a destination-bound address reaches", () => {
-  const siteDestination: Destination = manifest.destinations[0];
+  const siteDestination = manifest.destinations[0];
 
   it("is the default port of the scheme when the destination declares no ports", () => {
     expect(configurationOf({ site_url: "https://example.com" })).toMatchObject({
@@ -307,10 +308,14 @@ describe("resolveInstallation", () => {
   });
 
   it("does not compile against a manifest that validateManifest has not admitted", () => {
-    const raw: AppManifest = appManifestSchema.parse(fixtureJson);
-    // @ts-expect-error resolveInstallation takes an AdmittedManifest, not a raw parsed AppManifest
-    const resolved = resolveInstallation(raw, { site_url: "https://example.com" });
-    expect(resolved.ok).toBe(true);
+    // Never invoked: the point is that this fails to typecheck, not that it runs.
+    // Executing it would run an unadmitted manifest through resolveInstallation,
+    // which is exactly the state the type is meant to make unrepresentable.
+    const neverCalled = (raw: AppManifest): void => {
+      // @ts-expect-error resolveInstallation takes an AdmittedManifest, not a raw parsed AppManifest
+      resolveInstallation(raw, { site_url: "https://example.com" });
+    };
+    expect(typeof neverCalled).toBe("function");
   });
 
   it("refuses a stored map carrying an accessor, without ever invoking it", () => {
@@ -332,5 +337,47 @@ describe("resolveInstallation", () => {
     } finally {
       Reflect.deleteProperty(Object.prototype, "polluted_key");
     }
+  });
+});
+
+/**
+ * `AdmittedManifest` is transitively readonly and `validateManifest` deep-
+ * freezes the value it returns, so the round-7 hole this closes — pushing an
+ * undeclared slot into a nested array and having `resolveInstallation` report
+ * it as though the manifest had always declared it — is refused at both the
+ * type level and at runtime. These tests reach past the type system with a
+ * cast, the same way a bug would, so they exercise the runtime freeze rather
+ * than only the compile-time check above.
+ */
+describe("AdmittedManifest immutability", () => {
+  it("throws when a nested array admission produced is pushed into", () => {
+    const mutable = manifest as unknown as {
+      contributions: { requiredConnectionSlots: string[] }[];
+    };
+    expect(() => {
+      mutable.contributions[0].requiredConnectionSlots.push("ghost_slot");
+    }).toThrow(TypeError);
+  });
+
+  it("throws when a nested scalar property is reassigned", () => {
+    const mutable = manifest as unknown as { app: { name: string } };
+    expect(() => {
+      mutable.app.name = "renamed";
+    }).toThrow(TypeError);
+  });
+
+  it("throws when a destination's protocol list is pushed into", () => {
+    const mutable = manifest as unknown as { destinations: { protocols: string[] }[] };
+    expect(() => {
+      mutable.destinations[0].protocols.push("http");
+    }).toThrow(TypeError);
+  });
+
+  it("still resolves installations once the manifest is deep-frozen", () => {
+    expect(Object.isFrozen(manifest)).toBe(true);
+    expect(Object.isFrozen(manifest.contributions[0])).toBe(true);
+    expect(Object.isFrozen(manifest.contributions[0].requiredConnectionSlots)).toBe(true);
+    const resolved = resolveInstallation(manifest, { site_url: "https://example.com" });
+    expect(resolved.ok).toBe(true);
   });
 });

@@ -1264,6 +1264,42 @@ Related docs and specs:
 - `specs/043-settings-ui-refresh/`
 - `specs/033-dashboard-deep-links/`
 
+## Apps
+
+Owns the provider-neutral contract every Hosted App and every host surface reads:
+manifest schemas, the runtime protocol envelopes, the App Job wake-up envelope,
+and `validateManifest`, which parses a manifest, resolves the references it makes
+to its own declarations, and measures it against what a host admits.
+
+Should not own persistence, transport, execution, or product policy. It carries
+schemas and pure functions, and depends on nothing inside the workspace.
+
+Primary paths:
+
+- `packages/app-contract/src/index.ts` — the public surface
+- `packages/app-contract/src/manifest.ts` — the `AppManifest` schema
+- `packages/app-contract/src/runtime.ts` — invocation and host capability envelopes
+- `packages/app-contract/src/validate.ts` — admission rules and issue codes
+- `packages/app-contract/fixtures/reference/wordpress.manifest.json` — the conformance vector
+- `packages/app-contract/tests/`
+
+Useful searches:
+
+- `rg "validateManifest|appManifestSchema|hostCapabilityRequestSchema" packages backend`
+- `rg "app-contract" package.json packages backend`
+
+Focused checks:
+
+- `pnpm --filter @radioso/app-contract test`
+- `pnpm --filter @radioso/app-contract build`
+
+Related docs and specs:
+
+- [App Manifest Reference](../apps/app-manifest.md)
+- [App Runtime Protocol](../apps/runtime-protocol.md)
+- `packages/app-contract/README.md`
+- `specs/1118-hosted-app-runtime/`
+
 ## MCP Server Package
 
 Owns the standalone MCP server package, MCP transport, read/write tool

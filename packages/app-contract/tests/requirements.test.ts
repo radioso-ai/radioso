@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  isAdmittedManifest,
   releaseAValidationPolicy,
   resolveInstallation,
   validateManifest,
@@ -310,12 +311,41 @@ describe("resolveInstallation", () => {
   it("does not compile against a manifest that validateManifest has not admitted", () => {
     // Never invoked: the point is that this fails to typecheck, not that it runs.
     // Executing it would run an unadmitted manifest through resolveInstallation,
-    // which is exactly the state the type is meant to make unrepresentable.
+    // which the runtime identity check below also refuses.
     const neverCalled = (raw: AppManifest): void => {
       // @ts-expect-error resolveInstallation takes an AdmittedManifest, not a raw parsed AppManifest
       resolveInstallation(raw, { site_url: "https://example.com" });
     };
     expect(typeof neverCalled).toBe("function");
+  });
+
+  it("rejects a spread of an admitted manifest, even though the copy still types as admitted", () => {
+    // TypeScript carries the phantom `AdmittedManifest` brand through an ordinary
+    // spread, so this compiles without a cast — the failure has to come from the
+    // runtime identity check, not from the type system.
+    const spread = {
+      ...manifest,
+      contributions: manifest.contributions.map((contribution, index) =>
+        index === 0
+          ? { ...contribution, requiredConnectionSlots: [...contribution.requiredConnectionSlots, "ghost_slot"] }
+          : contribution,
+      ),
+    } as AdmittedManifest;
+
+    const resolved = resolveInstallation(spread, { site_url: "https://example.com" });
+
+    expect(resolved.ok).toBe(false);
+    if (resolved.ok) return;
+    expect(resolved.issues).toEqual([
+      expect.objectContaining({ code: "unadmitted_manifest", path: "manifest" }),
+    ]);
+  });
+
+  it("still resolves the genuine admitted value the spread scenario copied from", () => {
+    const resolved = resolveInstallation(manifest, { site_url: "https://example.com" });
+    expect(resolved.ok).toBe(true);
+    if (!resolved.ok) return;
+    expect(resolved.readiness.requiredConnectionSlots).not.toContain("ghost_slot");
   });
 
   it("refuses a stored map carrying an accessor, without ever invoking it", () => {
@@ -345,11 +375,24 @@ describe("resolveInstallation", () => {
  * freezes the value it returns, so the round-7 hole this closes — pushing an
  * undeclared slot into a nested array and having `resolveInstallation` report
  * it as though the manifest had always declared it — is refused at both the
- * type level and at runtime. These tests reach past the type system with a
- * cast, the same way a bug would, so they exercise the runtime freeze rather
- * than only the compile-time check above.
+ * type level and at runtime: the first test below is a non-executed compile-time
+ * assertion that a direct nested mutation is a type error, and the rest reach
+ * past the type system with a cast, the same way a bug would, to prove the
+ * runtime freeze independently refuses it too.
  */
 describe("AdmittedManifest immutability", () => {
+  it("does not compile when a nested array is pushed into directly, without a cast", () => {
+    // Never invoked: the point is that this fails to typecheck. If `DeepReadonly`
+    // ever regressed to a shallow `Readonly`, this would start compiling while
+    // every runtime test below kept passing, since none of them exercise the
+    // type system on its own.
+    const neverCalled = (admitted: AdmittedManifest): void => {
+      // @ts-expect-error nested arrays are readonly; push is not a method DeepReadonly exposes
+      admitted.contributions[0].requiredConnectionSlots.push("ghost_slot");
+    };
+    expect(typeof neverCalled).toBe("function");
+  });
+
   it("throws when a nested array admission produced is pushed into", () => {
     const mutable = manifest as unknown as {
       contributions: { requiredConnectionSlots: string[] }[];
@@ -379,5 +422,20 @@ describe("AdmittedManifest immutability", () => {
     expect(Object.isFrozen(manifest.contributions[0].requiredConnectionSlots)).toBe(true);
     const resolved = resolveInstallation(manifest, { site_url: "https://example.com" });
     expect(resolved.ok).toBe(true);
+  });
+});
+
+describe("isAdmittedManifest", () => {
+  it("is true for the exact value validateManifest returned", () => {
+    expect(isAdmittedManifest(manifest)).toBe(true);
+  });
+
+  it("is false for the raw JSON that was only parsed, never admitted", () => {
+    expect(isAdmittedManifest(fixtureJson)).toBe(false);
+  });
+
+  it("is false for a spread copy, even though the copy still types as admitted", () => {
+    const spread = { ...manifest } as AdmittedManifest;
+    expect(isAdmittedManifest(spread)).toBe(false);
   });
 });

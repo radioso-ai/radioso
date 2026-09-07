@@ -48,18 +48,43 @@ declare const admittedManifestBrand: unique symbol;
  * `validateManifest` can produce a value of this type through ordinary
  * structural assignment, and `validateManifest` deep-freezes the value before
  * returning it, so the type is transitively `readonly` and the object itself
- * refuses mutation at every level, not only the top one. Neither promise
- * survives a type assertion — `as AdmittedManifest` has always been able to
- * bypass a phantom brand, and always will be — so this is a guarantee against
- * accidental structural assignment and mutation, not against a caller
- * deliberately casting. Spreading an admitted manifest (`{ ...admitted }`)
- * yields a plain, unfrozen copy that still types as admitted, because a
- * spread cannot carry the freeze with it; callers pass the admitted value
- * itself to `resolveInstallation`, never a spread of it.
+ * refuses mutation at every level, not only the top one.
+ *
+ * The type alone is not the admission boundary: a spread of an admitted
+ * manifest (`{ ...admitted }`, or any reconstruction that copies its
+ * properties) still types as `AdmittedManifest`, because TypeScript carries a
+ * phantom brand through ordinary structural assignment. That copy is not the
+ * value `validateManifest` proved and froze — it is a plain, unfrozen object
+ * that merely has the same shape. `isAdmittedManifest` and `resolveInstallation`
+ * close that gap at runtime, with an identity check, not a second structural
+ * validation: they ask "is this the exact object `validateManifest` returned
+ * and recorded," which a spread answers "no" to even though it still
+ * typechecks. Pass the admitted value itself to `resolveInstallation`, never a
+ * copy of it — a copy is rejected with `unadmitted_manifest`, not silently
+ * trusted.
  */
 export type AdmittedManifest = DeepReadonly<AppManifest> & {
   readonly [admittedManifestBrand]: true;
 };
+
+/**
+ * Every manifest object `validateManifest` has admitted, tracked by identity
+ * rather than by shape. A `WeakSet` keyed on the object itself does not keep
+ * an admitted manifest alive past what already references it, and it cannot
+ * be satisfied by a value that merely has the right shape — only the exact
+ * object `validateManifest` froze and returned is a member.
+ */
+const admittedManifests = new WeakSet<object>();
+
+/**
+ * Whether `value` is the exact object `validateManifest` returned — not
+ * merely a value shaped like one. This is an identity check against runtime
+ * admission state, not a re-validation: a spread or other reconstruction of
+ * an admitted manifest still satisfies the `AdmittedManifest` type but is a
+ * different object, and this returns `false` for it.
+ */
+export const isAdmittedManifest = (value: unknown): value is AdmittedManifest =>
+  typeof value === "object" && value !== null && admittedManifests.has(value);
 
 export type ManifestValidationResult =
   | { ok: true; manifest: AdmittedManifest }
@@ -821,7 +846,9 @@ export const validateManifest = (
     ...collectPolicyIssues(parsed.data, policy),
   ];
 
-  return issues.length === 0
-    ? { ok: true, manifest: deepFreeze(parsed.data) as unknown as AdmittedManifest }
-    : { ok: false, issues };
+  if (issues.length > 0) return { ok: false, issues };
+
+  const admitted = deepFreeze(parsed.data) as unknown as AdmittedManifest;
+  admittedManifests.add(admitted);
+  return { ok: true, manifest: admitted };
 };

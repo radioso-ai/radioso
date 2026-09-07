@@ -93,9 +93,12 @@ load to regain the admitted value.
 every nested array and object, not only at the top level, so a call like
 `admitted.contributions[0].requiredConnectionSlots.push(...)` is a type error
 and throws if a cast forces it through. A spread of an admitted manifest
-(`{ ...admitted }`) is a plain, unfrozen copy that still types as admitted, so
-callers pass the admitted value itself to `resolveInstallation`, never a
-spread of it.
+(`{ ...admitted }`) is a plain, unfrozen copy that still types as admitted —
+TypeScript carries the phantom brand through a spread — but `resolveInstallation`
+checks runtime admission identity, not only the type, and rejects a copy with
+an `unadmitted_manifest` issue rather than trusting it. Pass the admitted value
+itself to `resolveInstallation`, never a spread of it; `isAdmittedManifest`
+exposes that same identity check for any other caller that needs it.
 
 The configuration holds every required value field, every field that declares a
 default, and every optional field the operator supplied. A `connection_slot`

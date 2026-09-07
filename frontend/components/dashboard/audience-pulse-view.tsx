@@ -76,8 +76,11 @@ const formatDateTime = (iso: string) => {
 export const getMemberCountDelta = (
   theme: AudiencePulseTheme,
   previousShare: number | null,
-  materialityThreshold: number,
+  materialityThreshold: number | undefined,
 ): string | null => {
+  // Materiality is the report's rule, not the browser's: without a published
+  // threshold there is nothing to judge a count change against.
+  if (materialityThreshold === undefined) return null
   if (theme.transition?.kind !== 'survived' || theme.previousMemberCount === null) return null
   if (previousShare === null) return null
 
@@ -716,7 +719,7 @@ function TopicRow({
   theme: AudiencePulseTheme
   gap: AudiencePulseContentGap | null
   maxShare: number
-  materialityThreshold: number
+  materialityThreshold: number | undefined
   showNewBadge: boolean
   onOpenConversation: (evidence: AudiencePulseThemeEvidence) => void
 }) {

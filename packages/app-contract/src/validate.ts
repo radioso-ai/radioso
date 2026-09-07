@@ -21,6 +21,7 @@ import {
   type Destination,
 } from "./destinations.js";
 import { appManifestSchema, type AppManifest } from "./manifest.js";
+import { deepFreeze, type DeepReadonly } from "./readonly.js";
 import { isScalarStorageFieldType } from "./storage.js";
 
 export interface ManifestValidationIssue {
@@ -44,13 +45,19 @@ declare const admittedManifestBrand: unique symbol;
  * this module checks — duplicate ids, destination and schedule field types,
  * connection slot references, policy-supported kinds, and the rest — holds for
  * it. The brand is a symbol this module does not export, so nothing outside
- * `validateManifest` can produce a value of this type; a caller cannot forge
- * one by asserting a parsed `AppManifest` into it. This is a readonly *view*
- * over the manifest — the top level is frozen, but nested arrays and objects
- * are not — so it is safe to read and to hand to every function admission
- * exists to feed, and unsafe to mutate.
+ * `validateManifest` can produce a value of this type through ordinary
+ * structural assignment, and `validateManifest` deep-freezes the value before
+ * returning it, so the type is transitively `readonly` and the object itself
+ * refuses mutation at every level, not only the top one. Neither promise
+ * survives a type assertion — `as AdmittedManifest` has always been able to
+ * bypass a phantom brand, and always will be — so this is a guarantee against
+ * accidental structural assignment and mutation, not against a caller
+ * deliberately casting. Spreading an admitted manifest (`{ ...admitted }`)
+ * yields a plain, unfrozen copy that still types as admitted, because a
+ * spread cannot carry the freeze with it; callers pass the admitted value
+ * itself to `resolveInstallation`, never a spread of it.
  */
-export type AdmittedManifest = Readonly<AppManifest> & {
+export type AdmittedManifest = DeepReadonly<AppManifest> & {
   readonly [admittedManifestBrand]: true;
 };
 
@@ -815,6 +822,6 @@ export const validateManifest = (
   ];
 
   return issues.length === 0
-    ? { ok: true, manifest: Object.freeze(parsed.data) as AdmittedManifest }
+    ? { ok: true, manifest: deepFreeze(parsed.data) as unknown as AdmittedManifest }
     : { ok: false, issues };
 };

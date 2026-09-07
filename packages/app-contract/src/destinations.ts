@@ -7,6 +7,7 @@ import {
   fieldKeySchema,
   type FieldKey,
 } from "./identifiers.js";
+import type { DeepReadonly } from "./readonly.js";
 
 /**
  * Every network address an App may reach is declared here and nowhere else. A
@@ -123,7 +124,7 @@ const DEFAULT_PROTOCOL_PORTS: Readonly<Record<DestinationProtocol, number>> = {
 
 /** The ports one destination permits on one protocol: exactly what it declared, or that protocol's default. */
 const destinationPortsForProtocol = (
-  destination: Destination,
+  destination: DeepReadonly<Destination>,
   protocol: DestinationProtocol,
 ): readonly number[] => destination.ports ?? [DEFAULT_PROTOCOL_PORTS[protocol]];
 
@@ -133,7 +134,7 @@ const destinationPortsForProtocol = (
  * survives that intersection: two views of one operator-typed address that agree
  * on a scheme but not on a port describe an installation no URL can satisfy.
  */
-export const destinationEndpoints = (destination: Destination): readonly string[] =>
+export const destinationEndpoints = (destination: DeepReadonly<Destination>): readonly string[] =>
   destination.protocols.flatMap((protocol) =>
     destinationPortsForProtocol(destination, protocol).map((port) => `${protocol}:${port}`),
   );
@@ -194,7 +195,7 @@ const effectivePort = (url: URL): number | null => {
  */
 export const checkDestinationBoundUrl = (
   value: string,
-  destinations: readonly Destination[],
+  destinations: readonly DeepReadonly<Destination>[],
 ): readonly DestinationUrlRejection[] => {
   if (destinations.length === 0) return [];
   const url = parsedUrl(value);
@@ -227,9 +228,9 @@ export const checkDestinationBoundUrl = (
  * bound to a field is a view of the one address that field holds.
  */
 export const destinationsByHostField = (
-  destinations: readonly Destination[],
-): ReadonlyMap<string, Destination[]> => {
-  const bound = new Map<string, Destination[]>();
+  destinations: readonly DeepReadonly<Destination>[],
+): ReadonlyMap<string, DeepReadonly<Destination>[]> => {
+  const bound = new Map<string, DeepReadonly<Destination>[]>();
   for (const destination of destinations) {
     if (destination.host.kind !== "configuration") continue;
     const existing = bound.get(destination.host.field);

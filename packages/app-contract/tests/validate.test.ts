@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   releaseAValidationPolicy,
   validateManifest,
-  type AppManifest,
   type ManifestValidationIssue,
   type ManifestValidationPolicy,
 } from "../src/index.js";
@@ -174,7 +173,7 @@ describe("validateManifest", () => {
     const result = validateManifest(structuredClone(baseManifest), releaseAValidationPolicy);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    const manifest: AppManifest = result.manifest;
+    const manifest = result.manifest;
     expect(manifest.app.id).toBe("ai.radioso.example");
     expect(manifest.contributions).toHaveLength(3);
   });

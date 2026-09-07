@@ -13,7 +13,7 @@ import {
   type Destination,
 } from "./destinations.js";
 import { fieldKeySchema, type ConnectionSlotId, type ContributionId } from "./identifiers.js";
-import type { AppManifest } from "./manifest.js";
+import type { DeepReadonly } from "./readonly.js";
 import type { AdmittedManifest, ManifestValidationIssue } from "./validate.js";
 
 /**
@@ -65,8 +65,11 @@ const issue = (code: string, path: string, message: string): ManifestValidationI
  * screen. So only a declared key is ever repeated; everything else is addressed
  * by its position in the stored map.
  */
-const pathFor = (key: string, position: number, declared: ReadonlyMap<string, ConfigurationField>): string =>
-  declared.has(key) ? key : `configuration.${position}`;
+const pathFor = (
+  key: string,
+  position: number,
+  declared: ReadonlyMap<string, DeepReadonly<ConfigurationField>>,
+): string => (declared.has(key) ? key : `configuration.${position}`);
 
 const parsedUrl = (value: string): URL | null => {
   try {
@@ -83,7 +86,7 @@ const parsedUrl = (value: string): URL | null => {
  */
 const boundsIssues = (
   supplied: Record<string, unknown>,
-  declared: ReadonlyMap<string, ConfigurationField>,
+  declared: ReadonlyMap<string, DeepReadonly<ConfigurationField>>,
 ): ManifestValidationIssue[] => {
   const issues: ManifestValidationIssue[] = [];
   let position = 0;
@@ -111,9 +114,9 @@ const boundsIssues = (
  * shipped and a value an operator typed are refused on the same grounds.
  */
 const urlDestinationIssues = (
-  field: ValueField,
+  field: DeepReadonly<ValueField>,
   value: string,
-  destinations: readonly Destination[],
+  destinations: readonly DeepReadonly<Destination>[],
 ): ManifestValidationIssue[] =>
   field.type === "url"
     ? checkDestinationBoundUrl(value, destinations).map((rejection) =>
@@ -130,9 +133,9 @@ const urlDestinationIssues = (
  * running every minute is the failure that invention produces.
  */
 const scheduleValueIssues = (
-  field: ValueField,
+  field: DeepReadonly<ValueField>,
   value: number,
-  schedules: readonly ConfigurationSchedule[],
+  schedules: readonly DeepReadonly<ConfigurationSchedule>[],
 ): ManifestValidationIssue[] =>
   schedules.flatMap((schedule) => {
     if (satisfiesSchedule(schedule, value)) return [];
@@ -148,10 +151,10 @@ const scheduleValueIssues = (
   });
 
 const checkValue = (
-  field: ValueField,
+  field: DeepReadonly<ValueField>,
   value: unknown,
-  destinations: readonly Destination[],
-  schedules: readonly ConfigurationSchedule[],
+  destinations: readonly DeepReadonly<Destination>[],
+  schedules: readonly DeepReadonly<ConfigurationSchedule>[],
 ): ManifestValidationIssue[] => {
   const key = field.key;
   const wrongType = (expected: string): ManifestValidationIssue[] => [
@@ -192,8 +195,8 @@ const checkValue = (
   }
 };
 
-const schedulesByField = (manifest: AppManifest): ReadonlyMap<string, ConfigurationSchedule[]> => {
-  const bound = new Map<string, ConfigurationSchedule[]>();
+const schedulesByField = (manifest: AdmittedManifest): ReadonlyMap<string, DeepReadonly<ConfigurationSchedule>[]> => {
+  const bound = new Map<string, DeepReadonly<ConfigurationSchedule>[]>();
   for (const contribution of manifest.contributions) {
     if (contribution.kind !== "scheduled_task") continue;
     const schedule = contribution.schedule;
@@ -219,7 +222,7 @@ const schedulesByField = (manifest: AppManifest): ReadonlyMap<string, Configurat
  * its value in the slot.
  */
 const resolveConfiguration = (
-  manifest: AppManifest,
+  manifest: AdmittedManifest,
   storedValues: unknown,
 ): ConfigurationResolutionResult => {
   const read = readBoundedMap(storedValues, MAX_CONFIGURATION_ENTRIES);
@@ -333,7 +336,7 @@ export interface InstallationReadiness {
  * against a manifest that has passed it. An absent value here would activate a
  * task with no interval to run it on, and a host would have to invent one.
  */
-const isActive = (contribution: Contribution, configuration: EffectiveConfiguration): boolean => {
+const isActive = (contribution: DeepReadonly<Contribution>, configuration: EffectiveConfiguration): boolean => {
   if (contribution.kind !== "scheduled_task") return true;
   const schedule = contribution.schedule;
   if (schedule.kind !== "interval_from_configuration") return true;
@@ -343,7 +346,7 @@ const isActive = (contribution: Contribution, configuration: EffectiveConfigurat
 };
 
 const installationReadiness = (
-  manifest: AppManifest,
+  manifest: AdmittedManifest,
   effectiveConfiguration: EffectiveConfiguration,
 ): InstallationReadiness => {
   const activeContributionIds: ContributionId[] = [];

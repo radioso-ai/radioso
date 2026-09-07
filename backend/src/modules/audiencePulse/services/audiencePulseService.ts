@@ -145,16 +145,31 @@ const createHydratedEvidence = (evidence: AudiencePulseEvidence[]): Map<string, 
 
 type AudiencePulseThemeResponse = AudiencePulseHydratedReport["themes"][number];
 type AudiencePulseEvidenceResponse = AudiencePulseThemeResponse["evidence"][number];
+/**
+ * A stored transition whose array and flag fields may predate the columns that back
+ * them. Reports saved before those fields shipped reach hydration with them absent,
+ * so hydration must default each one -- matching the repository read path.
+ */
+type LegacyAudiencePulseStoredTransition = Omit<
+  NonNullable<AudiencePulseStoredReport["themes"][number]["transition"]>,
+  "parentTopicIds" | "viaCentroidFallback" | "membershipOverlap"
+> & {
+  parentTopicIds?: string[];
+  viaCentroidFallback?: boolean;
+  membershipOverlap?: number | null;
+};
 type LegacyAudiencePulseStoredTheme = Omit<
   AudiencePulseStoredReport["themes"][number],
-  "memberCount" | "previousMemberCount" | "previousShare" | "transition" | "share"
+  "memberCount" | "previousMemberCount" | "previousShare" | "transition" | "share" | "weeklyPulse" | "grounding"
 > & {
   memberCount?: number;
   previousMemberCount?: number | null;
   previousShare?: number | null;
-  transition?: AudiencePulseStoredReport["themes"][number]["transition"];
+  transition?: LegacyAudiencePulseStoredTransition | null;
   sampleCount?: number;
   share?: number;
+  weeklyPulse?: AudiencePulseStoredReport["themes"][number]["weeklyPulse"];
+  grounding?: AudiencePulseStoredReport["themes"][number]["grounding"];
 };
 type LegacyAudiencePulseStoredReport = Omit<
   AudiencePulseStoredReport,
@@ -211,6 +226,15 @@ const hydrateThemeEvidence = (
   };
 };
 
+/** Neutral grounding counts for a report saved before the grounding summary shipped. */
+const EMPTY_THEME_GROUNDING: AudiencePulseStoredReport["themes"][number]["grounding"] = {
+  grounded: 0,
+  degraded: 0,
+  noSupport: 0,
+  unknown: 0,
+  contentGapEligible: 0,
+};
+
 const hydrateReport = (
   report: AudiencePulseStoredReport,
   evidenceById: Map<string, AudiencePulseHydratedEvidence>,
@@ -263,12 +287,14 @@ const hydrateReport = (
         previousShare: theme.previousShare ?? null,
         transition: theme.transition ? {
           ...theme.transition,
+          parentTopicIds: theme.transition.parentTopicIds ?? [],
+          viaCentroidFallback: theme.transition.viaCentroidFallback ?? false,
           membershipOverlap: theme.transition.membershipOverlap ?? null,
         } : null,
         share,
         ...hydrateThemeEvidence(theme.evidenceIds, resolve),
-        weeklyPulse: theme.weeklyPulse,
-        grounding: theme.grounding,
+        weeklyPulse: theme.weeklyPulse ?? [],
+        grounding: theme.grounding ?? EMPTY_THEME_GROUNDING,
       };
     }),
     contentGaps: report.contentGaps,

@@ -157,6 +157,7 @@ describe("reference WordPress manifest", () => {
       kind: "interval_from_configuration",
       field: "poll_interval_sec",
       minSeconds: 60,
+      maxSeconds: 86_400,
       disabledValue: 0,
     });
     expect(poll.overlapPolicy).toBe("skip");

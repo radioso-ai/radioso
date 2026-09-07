@@ -131,10 +131,17 @@ export const externalWebhookHandlerContributionSchema = z
     ...contributionHeader,
     kind: z.literal("external_webhook_handler"),
     documentSources: documentSourcesField,
+    /**
+     * A `generated_secret` slot holds one value, so naming the slot names the
+     * key. A `secret_fields` slot holds several, and a gateway that had to pick
+     * one would be reading an App's field naming as a convention — so the
+     * manifest says which field carries the signing key.
+     */
     authentication: z
       .object({
         kind: z.literal("hmac_sha256"),
         secretConnectionSlot: connectionSlotIdSchema,
+        secretField: fieldKeySchema.optional(),
         signatureHeader: httpHeaderNameSchema,
         signaturePrefix: z.string().min(1).max(32).optional(),
       })
@@ -144,6 +151,9 @@ export const externalWebhookHandlerContributionSchema = z
   })
   .strict();
 
+/** The longest interval a configuration-driven schedule may declare: 30 days. */
+export const MAX_SCHEDULE_INTERVAL_SECONDS = 2_592_000;
+
 export const scheduleSchema = z
   .discriminatedUnion("kind", [
     z.object({ kind: z.literal("interval"), seconds: z.number().int().min(60).max(86_400) }).strict(),
@@ -151,19 +161,33 @@ export const scheduleSchema = z
       .object({
         kind: z.literal("interval_from_configuration"),
         field: fieldKeySchema,
-        minSeconds: z.number().int().min(60).max(86_400),
+        /**
+         * The interval an operator may pick is a closed range, not a floor with
+         * nothing above it. Without a ceiling the schedule's value space is
+         * "any number at all", and a host cannot say whether a stored value
+         * runs this task, disables it, or means nothing.
+         */
+        minSeconds: z.number().int().min(60).max(MAX_SCHEDULE_INTERVAL_SECONDS),
+        maxSeconds: z.number().int().min(60).max(MAX_SCHEDULE_INTERVAL_SECONDS),
         /**
          * The value that means "do not run this at all". It sits below the
          * interval floor — 0 is not a one-second poll — so an operator who
          * leaves a push-only installation alone never starts a schedule, and an
          * operator who picks a valid interval never silently stops one.
          */
-        disabledValue: z.number().int().min(0).max(86_400).optional(),
+        disabledValue: z.number().int().min(0).max(MAX_SCHEDULE_INTERVAL_SECONDS).optional(),
       })
       .strict(),
   ])
   .superRefine((schedule, context) => {
     if (schedule.kind !== "interval_from_configuration") return;
+    if (schedule.maxSeconds < schedule.minSeconds) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["maxSeconds"],
+        message: "An interval ceiling must be at least its floor",
+      });
+    }
     if (schedule.disabledValue === undefined || schedule.disabledValue < schedule.minSeconds) return;
     context.addIssue({
       code: z.ZodIssueCode.custom,
@@ -239,3 +263,8 @@ export type IndexedFieldsPolicy = z.infer<typeof indexedFieldsPolicySchema>;
 export type DocumentSourceContribution = z.infer<typeof documentSourceContributionSchema>;
 export type ExternalWebhookHandlerContribution = z.infer<typeof externalWebhookHandlerContributionSchema>;
 export type ScheduledTaskContribution = z.infer<typeof scheduledTaskContributionSchema>;
+/** The schedule arm whose interval an operator supplies through configuration. */
+export type ConfigurationSchedule = Extract<
+  ScheduledTaskContribution["schedule"],
+  { kind: "interval_from_configuration" }
+>;

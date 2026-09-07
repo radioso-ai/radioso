@@ -133,6 +133,7 @@ export {
 
 export {
   MAX_INDEXED_FIELDS,
+  MAX_SCHEDULE_INTERVAL_SECONDS,
   contributionKindSchema,
   contributionKinds,
   contributionSchema,
@@ -148,6 +149,7 @@ export {
   reservedContributionKinds,
   scheduleSchema,
   scheduledTaskContributionSchema,
+  type ConfigurationSchedule,
   type Contribution,
   type ContributionKind,
   type DocumentSourceContribution,
@@ -247,6 +249,7 @@ export {
   installationReadiness,
   resolveConfiguration,
   type ConfigurationResolutionResult,
+  type EffectiveConfiguration,
   type InstallationReadiness,
 } from "./requirements.js";
 

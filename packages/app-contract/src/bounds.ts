@@ -17,6 +17,10 @@ export const MAX_JSON_SERIALIZED_BYTES = 64 * 1024;
 /** Entries in one header map, in either direction. */
 export const MAX_HEADER_ENTRIES = 64;
 
+/** One header name, and one header value. */
+const MAX_HEADER_NAME_LENGTH = 128;
+const MAX_HEADER_VALUE_LENGTH = 8192;
+
 /** Decoded size of a base64 body, in either direction. */
 export const MAX_BASE64_DECODED_BYTES = 4 * 1024 * 1024;
 
@@ -146,17 +150,45 @@ interface Budget {
  * How many own enumerable keys an object has, or one more than the ceiling —
  * which is all a breadth check needs to know. `Object.keys` on a million-key
  * object allocates a million-entry array on the way to refusing it, so nothing
- * here materializes the list.
+ * here materializes the list, and it stops as soon as the answer is decided.
  */
-const countKeys = (record: object): number => {
+const countKeys = (record: object, ceiling: number): number => {
   let count = 0;
   for (const key in record) {
     if (!Object.hasOwn(record, key)) continue;
     count += 1;
-    if (count > MAX_JSON_OBJECT_KEYS) return count;
+    if (count > ceiling) return count;
   }
   return count;
 };
+
+const NOT_A_JSON_CONTAINER =
+  "A container must be a plain object or array, with no toJSON and no accessor property";
+
+/**
+ * Only a genuine JSON container is measurable. `JSON.stringify` asks `toJSON`
+ * what to write and reads an accessor again when it writes, so an object
+ * carrying either serializes to something this walk never measured — a Date, a
+ * class instance, a typed array, or a plain-looking object with a
+ * non-enumerable `toJSON` that returns a hundred megabytes. `in` decides that
+ * without reading the property, so nothing here can invoke what it is refusing.
+ */
+const hasCustomJson = (value: object): boolean => {
+  if (!("toJSON" in value)) return false;
+  const own = Object.getOwnPropertyDescriptor(value, "toJSON");
+  if (own === undefined) return true;
+  return own.get !== undefined || own.set !== undefined || typeof own.value === "function";
+};
+
+const isPlainArray = (value: object): boolean => Object.getPrototypeOf(value) === Array.prototype;
+
+const isPlainObject = (value: object): boolean => {
+  const prototype: unknown = Object.getPrototypeOf(value);
+  return prototype === null || prototype === Object.prototype;
+};
+
+const isAccessor = (descriptor: PropertyDescriptor | undefined): boolean =>
+  descriptor !== undefined && (descriptor.get !== undefined || descriptor.set !== undefined);
 
 const overBudget = (budget: Budget, path: (string | number)[]): Violation | null =>
   budget.bytes > MAX_JSON_SERIALIZED_BYTES
@@ -208,6 +240,7 @@ const measure = (
   }
 
   if (Array.isArray(value)) {
+    if (!isPlainArray(value) || hasCustomJson(value)) return { path, message: NOT_A_JSON_CONTAINER };
     if (value.length > MAX_JSON_ARRAY_ITEMS) {
       return { path, message: `An array may hold at most ${MAX_JSON_ARRAY_ITEMS} items` };
     }
@@ -215,14 +248,19 @@ const measure = (
     const structural = overBudget(budget, path);
     if (structural) return structural;
     for (let index = 0; index < value.length; index += 1) {
-      const violation = measure(value[index], depth + 1, [...path, index], budget);
+      const at = [...path, index];
+      const descriptor = Object.getOwnPropertyDescriptor(value, index);
+      if (isAccessor(descriptor)) return { path: at, message: NOT_A_JSON_CONTAINER };
+      const violation = measure(descriptor?.value, depth + 1, at, budget);
       if (violation) return violation;
     }
     return null;
   }
 
+  if (!isPlainObject(value) || hasCustomJson(value)) return { path, message: NOT_A_JSON_CONTAINER };
+
   const record = value as Record<string, unknown>;
-  const keyCount = countKeys(record);
+  const keyCount = countKeys(record, MAX_JSON_OBJECT_KEYS);
   if (keyCount > MAX_JSON_OBJECT_KEYS) {
     return { path, message: `An object may hold at most ${MAX_JSON_OBJECT_KEYS} keys` };
   }
@@ -235,7 +273,9 @@ const measure = (
     if (key.length > MAX_JSON_KEY_LENGTH) {
       return { path: at, message: `A key may hold at most ${MAX_JSON_KEY_LENGTH} characters` };
     }
-    const entry = record[key];
+    const descriptor = Object.getOwnPropertyDescriptor(record, key);
+    if (isAccessor(descriptor)) return { path: at, message: NOT_A_JSON_CONTAINER };
+    const entry: unknown = descriptor?.value;
     if (entry === undefined) return { path: at, message: "A key must carry a JSON value" };
     budget.bytes += jsonStringBytes(key) + 1;
     const keyBudget = overBudget(budget, at);
@@ -256,14 +296,14 @@ const addViolation = (context: z.RefinementCtx, violation: Violation): void => {
  * key ceiling has already paid for every key by the time it refuses the object,
  * so this runs first and aborts.
  */
-const exceedsObjectBreadth = (value: unknown): boolean =>
+const exceedsBreadth = (value: unknown, ceiling: number): boolean =>
   value !== null &&
   typeof value === "object" &&
   !Array.isArray(value) &&
-  countKeys(value) > MAX_JSON_OBJECT_KEYS;
+  countKeys(value, ceiling) > ceiling;
 
 export const refineObjectBreadth = (value: unknown, context: z.RefinementCtx): void => {
-  if (!exceedsObjectBreadth(value)) return;
+  if (!exceedsBreadth(value, MAX_JSON_OBJECT_KEYS)) return;
   context.addIssue({
     code: z.ZodIssueCode.custom,
     path: [],
@@ -271,6 +311,19 @@ export const refineObjectBreadth = (value: unknown, context: z.RefinementCtx): v
     message: `An object may hold at most ${MAX_JSON_OBJECT_KEYS} keys`,
   });
 };
+
+/**
+ * The same guard for a map with its own, smaller ceiling. It is fatal so a
+ * pipeline stops here: `z.record` parses and clones every entry before a
+ * refinement on the record could count them, which hands a hundred-thousand
+ * entry map a full traversal on its way to being refused.
+ */
+export const refineMapBreadth =
+  (ceiling: number, message: string) =>
+  (value: unknown, context: z.RefinementCtx): void => {
+    if (!exceedsBreadth(value, ceiling)) return;
+    context.addIssue({ code: z.ZodIssueCode.custom, path: [], fatal: true, message });
+  };
 
 /** The bounds, applied to a value the caller already knows should be an object. */
 export const refineBoundedJsonRecord = (value: unknown, context: z.RefinementCtx): void => {
@@ -290,7 +343,7 @@ export const boundedJsonValueSchema: z.ZodType<BoundedJsonValue> = z
       addViolation(context, { path: [], message: "A value is required" });
       return;
     }
-    if (exceedsObjectBreadth(value)) {
+    if (exceedsBreadth(value, MAX_JSON_OBJECT_KEYS)) {
       addViolation(context, { path: [], message: `An object may hold at most ${MAX_JSON_OBJECT_KEYS} keys` });
       return;
     }
@@ -340,35 +393,58 @@ export const base64BodySchema = z
   .strict();
 
 /**
- * A header map: bounded keys, bounded values, a bounded number of entries, and
- * no lone surrogate in either half. A header field is bytes on the wire, so a
- * code unit that has no UTF-8 encoding is refused here as an ordinary issue
- * rather than left for whichever encoder meets it first.
+ * What an HTTP field value may hold: HTAB, SP, VCHAR, and obs-text. CR, LF,
+ * NUL, DEL, and anything above one byte are not field-value characters, and a
+ * transport that carries one either rejects the request — Node's own `Headers`
+ * does — or splices it into the message. Refusing them here means the boundary
+ * decides that rather than whichever client is met first.
  */
-export const boundedHeaderRecordSchema = (
-  keySchema: z.ZodType<string, z.ZodTypeDef, string>,
-): z.ZodType<Record<string, string>> =>
+const isHttpFieldValueCode = (code: number): boolean =>
+  code === 0x09 || (code >= 0x20 && code <= 0x7e) || (code >= 0x80 && code <= 0xff);
+
+const httpFieldValueSchema = z
+  .string()
+  .max(MAX_HEADER_VALUE_LENGTH)
+  .refine(
+    (value) => {
+      for (let position = 0; position < value.length; position += 1) {
+        if (!isHttpFieldValueCode(value.charCodeAt(position))) return false;
+      }
+      return true;
+    },
+    "A header value holds tab, space, visible ASCII, and obs-text, and no carriage return, line feed, NUL, or DEL",
+  );
+
+/**
+ * A header map: bounded names, bounded field values, a bounded number of
+ * entries, and no lone surrogate in a name. Breadth is settled before
+ * `z.record` reads an entry, and a name or value already past its own length is
+ * never scanned: an oversized input has failed by then, and scanning it anyway
+ * is the work its size was meant to buy.
+ */
+export const boundedHeaderRecordSchema = (keySchema: z.ZodType<string, z.ZodTypeDef, string>) =>
   z
-    .record(keySchema, z.string().max(MAX_JSON_STRING_LENGTH))
-    .superRefine((headers, context) => {
-      let count = 0;
-      for (const key in headers) {
-        if (!Object.hasOwn(headers, key)) continue;
-        count += 1;
-        if (count > MAX_HEADER_ENTRIES) {
+    .any()
+    .superRefine(refineMapBreadth(MAX_HEADER_ENTRIES, `At most ${MAX_HEADER_ENTRIES} headers`))
+    .pipe(
+      z.record(keySchema, httpFieldValueSchema).superRefine((headers, context) => {
+        for (const key in headers) {
+          if (!Object.hasOwn(headers, key)) continue;
+          if (key.length > MAX_HEADER_NAME_LENGTH || (headers[key] ?? "").length > MAX_HEADER_VALUE_LENGTH) {
+            context.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: [],
+              message: `A header name holds at most ${MAX_HEADER_NAME_LENGTH} characters and a value at most ${MAX_HEADER_VALUE_LENGTH}`,
+            });
+            return;
+          }
+          if (!containsLoneSurrogate(key)) continue;
           context.addIssue({
             code: z.ZodIssueCode.custom,
-            path: [],
-            message: `At most ${MAX_HEADER_ENTRIES} headers`,
+            path: [key],
+            message: "A header name must be encodable text",
           });
           return;
         }
-        if (!containsLoneSurrogate(key) && !containsLoneSurrogate(headers[key] ?? "")) continue;
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: [key],
-          message: "A header name and value must be encodable text",
-        });
-        return;
-      }
-    });
+      }),
+    );

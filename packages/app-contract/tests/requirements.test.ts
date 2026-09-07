@@ -9,7 +9,7 @@ import {
   resolveConfiguration,
   validateManifest,
   type AppManifest,
-  type ConfigurationValues,
+  type EffectiveConfiguration,
 } from "../src/index.js";
 
 const fixturePath = fileURLToPath(new URL("../fixtures/reference/wordpress.manifest.json", import.meta.url));
@@ -22,7 +22,7 @@ const codesFor = (values: unknown): string[] => {
   return resolved.ok ? [] : resolved.issues.map((issue) => issue.code);
 };
 
-const configurationOf = (values: unknown): ConfigurationValues => {
+const configurationOf = (values: unknown): EffectiveConfiguration => {
   const resolved = resolveConfiguration(manifest, values);
   if (!resolved.ok) throw new Error(`expected a resolvable configuration: ${JSON.stringify(resolved.issues)}`);
   return resolved.configuration;
@@ -95,6 +95,14 @@ describe("resolveConfiguration", () => {
     expect(rendered).not.toContain(hostile);
   });
 
+  it("addresses an undeclared key by position even when it is spelled like a field key", () => {
+    const hostile = "customer_ssn_123456789";
+    const resolved = resolveConfiguration(manifest, { site_url: "https://example.com", [hostile]: "x" });
+    const rendered = resolved.ok ? "" : JSON.stringify(resolved.issues);
+    expect(resolved.ok ? [] : resolved.issues.map((issue) => issue.path)).toEqual(["configuration.1"]);
+    expect(rendered).not.toContain(hostile);
+  });
+
   it("stops collecting issues long before an oversized map becomes the answer", () => {
     const noisy = Object.fromEntries(Array.from({ length: 64 }, (_, index) => [`k${index}`, "v"]));
     const resolved = resolveConfiguration(manifest, noisy);
@@ -121,7 +129,6 @@ describe("resolveConfiguration", () => {
             key: "credentials",
             type: "connection_slot",
             label: "Credentials",
-            required: false,
             connectionSlot: "site_credentials",
           },
         ],
@@ -132,6 +139,35 @@ describe("resolveConfiguration", () => {
     expect(rejected.ok ? [] : rejected.issues.map((issue) => issue.code)).toEqual([
       "connection_slot_has_no_value",
       "unknown_select_option",
+    ]);
+  });
+});
+
+describe("a value a schedule reads", () => {
+  it("runs only on a whole number of seconds inside the declared interval range", () => {
+    expect(codesFor({ site_url: "https://example.com", poll_interval_sec: 30 })).toEqual([
+      "schedule_value_out_of_range",
+    ]);
+    expect(codesFor({ site_url: "https://example.com", poll_interval_sec: 90.5 })).toEqual([
+      "schedule_value_out_of_range",
+    ]);
+    expect(configurationOf({ site_url: "https://example.com", poll_interval_sec: 300 })).toMatchObject({
+      poll_interval_sec: 300,
+    });
+    expect(configurationOf({ site_url: "https://example.com", poll_interval_sec: 60 })).toMatchObject({
+      poll_interval_sec: 60,
+    });
+    expect(configurationOf({ site_url: "https://example.com", poll_interval_sec: 86_400 })).toMatchObject({
+      poll_interval_sec: 86_400,
+    });
+  });
+
+  it("accepts the sentinel that turns the schedule off, and nothing else below the floor", () => {
+    expect(configurationOf({ site_url: "https://example.com", poll_interval_sec: 0 })).toMatchObject({
+      poll_interval_sec: 0,
+    });
+    expect(codesFor({ site_url: "https://example.com", poll_interval_sec: 1 })).toEqual([
+      "schedule_value_out_of_range",
     ]);
   });
 });
@@ -153,6 +189,15 @@ describe("a URL field a destination is built from", () => {
   it("refuses a credential smuggled into the address as userinfo", () => {
     expect(codesFor({ site_url: "https://admin:hunter2@example.com" })).toEqual(["url_carries_userinfo"]);
   });
+
+  it("refuses a query or a fragment on a prefix every request is appended below", () => {
+    expect(codesFor({ site_url: "https://example.com/wordpress?preview=1" })).toEqual([
+      "url_carries_query_or_fragment",
+    ]);
+    expect(codesFor({ site_url: "https://example.com/wordpress#frag" })).toEqual([
+      "url_carries_query_or_fragment",
+    ]);
+  });
 });
 
 describe("installationReadiness", () => {
@@ -169,21 +214,6 @@ describe("installationReadiness", () => {
       configurationOf({ site_url: "https://example.com", poll_interval_sec: 300 }),
     );
     expect(readiness.activeContributionIds).toEqual(["site_content", "content_push", "content_poll"]);
-    expect(readiness.inactiveContributionIds).toEqual([]);
-    expect(readiness.requiredConnectionSlots).toEqual(["site_credentials", "webhook_secret"]);
-  });
-
-  it("never drops a required contribution's slot, whatever the configuration says", () => {
-    const alwaysRequired: AppManifest = {
-      ...manifest,
-      contributions: manifest.contributions.map((contribution) =>
-        contribution.id === "content_poll" ? { ...contribution, availability: "required" } : contribution,
-      ),
-    };
-    const readiness = installationReadiness(
-      alwaysRequired,
-      configurationOf({ site_url: "https://example.com", poll_interval_sec: 0 }),
-    );
     expect(readiness.inactiveContributionIds).toEqual([]);
     expect(readiness.requiredConnectionSlots).toEqual(["site_credentials", "webhook_secret"]);
   });

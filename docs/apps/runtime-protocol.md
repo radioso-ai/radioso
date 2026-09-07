@@ -69,25 +69,35 @@ contribution, schema, deadline, or capability set.
 
 ### Installation context
 
-`context.configuration` is the effective configuration: one scalar per
-configuration key, strings up to 4 096 characters, at most 64 entries. It arrives
-on every invocation, so a handler never has to discover which post types, which
-folder, or which locale an installation meant.
+`context.configuration` is the effective configuration: the values the operator
+stored plus every declared default, one scalar per key, strings up to 4 096
+characters, at most 64 entries. It arrives on every invocation, so a handler
+never has to discover which post types, which folder, or which locale an
+installation meant.
+
+A field that is optional and declares no default is absent from the map. That is
+the one shape to code against: read it as `configuration["author_filter"] ??
+"all"` rather than expecting a key for every field the manifest declares. Every
+other key is present, so a handler never has to know which values the operator
+typed and which the manifest supplied.
 
 Effective means resolved, and the order is fixed: resolve, then validate, then
 deliver. The gateway starts from what the operator stored, which is sparse —
 a field left alone has no stored value. It bounds that map, copies it,
 materializes every declared default, and validates the map that results: every
 required field present, every value the type its field declares, numbers inside
-`min` and `max`, `select` values among their options, `url` values parseable and
-inside the protocols of any destination they back, and no undeclared keys. Only
-then does it mint the invocation. `resolveConfiguration` in
-`@radioso/app-contract` is that one operation, so a dashboard, an installation
-plan, and the gateway reach the same map.
+`min` and `max` and inside the interval range of any schedule that reads them,
+`select` values among their options, `url` values parseable and inside the
+protocols of any destination they back, and no undeclared keys. Only then does it
+mint the invocation. `resolveConfiguration` in `@radioso/app-contract` is that
+one operation, so a dashboard, an installation plan, and the gateway reach the
+same map. It returns an `EffectiveConfiguration`, a branded type nothing else
+produces, which is what makes "this map has been resolved" a fact the compiler
+carries rather than a convention.
 
-What your App reads is therefore never sparse. A field with a default carries its
-default, and a handler never has to know which values the operator typed and
-which the manifest supplied.
+An issue it reports names a key only when the manifest declares that key.
+Anything else is addressed by its position in the stored map — `configuration.3`
+— so a stored key an attacker chose never reaches a log or an audit record.
 
 Nothing here is a secret. Configuration has no secret field type: credential
 material lives in a connection slot, and the broker attaches it server-side on
@@ -172,6 +182,14 @@ An oversized value is refused at the first violation, without the host ever
 serializing it, and an object wider than 256 keys is refused before its values
 are read at all.
 
+Send plain JSON containers: object literals and arrays, holding strings, finite
+numbers, booleans, and `null`. A `Date`, a `Map`, a class instance, a typed
+array, an object with a `toJSON` method, and a property backed by a getter are
+all refused, because what the host measures has to be what the host writes — an
+object that decides its own serialized form serializes to something no bound
+ever saw. Convert before you answer: `publishedAt: date.toISOString()`,
+`items: [...map.values()]`.
+
 Serialized size is counted the way JSON writes the value. A surrogate pair is one
 character in four UTF-8 bytes; an unpaired surrogate has no encoding, so JSON
 writes it as a six-character `\uXXXX` escape and it costs six bytes here.
@@ -246,14 +264,24 @@ string of up to 1 024 characters, a number, or a boolean.
 `destination` is a destination id from the manifest, and it is your App's only
 handle to a connection: you never see an address or a credential. `path` is
 origin-relative: exactly one leading slash, and no scheme, authority, backslash,
-or fragment. A path that could resolve to another host is refused here rather
-than by whatever resolves it later.
+query, or fragment. A path that could resolve to another host is refused here
+rather than by whatever resolves it later.
+
+A destination bound to a configuration field is an origin prefix, and `path` is
+appended below it, so `path` also carries no `.` or `..` segment — in either
+spelling, `/../wp-admin` and `/%2e%2e/wp-admin` alike. Both are how a path climbs
+back above the prefix the operator entered while every later check still reports
+it as inside. Put the whole address you mean in `path` and the parameters in
+`query`; a `?` inside `path` is refused, because a query that arrives that way is
+a query that never met the bounded `query` field.
 
 `query` carries at most 64 entries and encodes to at most 8 KiB. The broker
 builds the query as `application/x-www-form-urlencoded`, exactly as
-`URLSearchParams` serializes it, and the ceiling is measured in that encoding, so
-a query that passes the boundary is a query the broker can build. A key or value
-holding an unpaired surrogate is not encodable text and is refused.
+`URLSearchParams` serializes it, and the ceiling is measured in that encoding: one
+`=` inside every pair, one `&` between pairs, and each name and value encoded the
+way that serializer encodes it. A query whose encoding is exactly 8 192 bytes
+passes. A key or value holding an unpaired surrogate is not encodable text and is
+refused, and the entry count is settled before any of it is measured.
 
 `headers` carries what your App needs and nothing the broker owns. The broker
 refuses `host`, `content-length`, `transfer-encoding`, `connection`, `upgrade`,
@@ -261,6 +289,16 @@ refuses `host`, `content-length`, `transfer-encoding`, `connection`, `upgrade`,
 `proxy-authenticate`, matched without regard to case; it refuses `authorization`;
 and it refuses any header equal to the destination's own declared credential
 header, then injects exactly one host-owned value in its place.
+
+A header value is an HTTP field value: tab, space, visible ASCII, and obs-text.
+A carriage return, a line feed, a NUL, a DEL, or anything above one byte — an
+emoji, say — is refused at the boundary, where an App gets a clear answer,
+rather than by whichever client meets it first. The same rule holds for the
+headers a response brings back. Percent-encode or base64 anything else you need
+to carry.
+
+`GET` and `HEAD` carry no `body`. Node's own `Request` refuses one, so a request
+that declares it is a request the broker cannot make.
 
 The host resolves the address — including one bound to a configuration field,
 where the operator's URL is an origin prefix and `path` is appended below it —

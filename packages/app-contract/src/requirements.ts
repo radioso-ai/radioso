@@ -4,8 +4,8 @@ import {
   type ConfigurationField,
   type ConfigurationValues,
 } from "./configuration.js";
-import type { ConfigurationSchedule, Contribution } from "./contributions.js";
-import type { Destination } from "./destinations.js";
+import { satisfiesSchedule, type ConfigurationSchedule, type Contribution } from "./contributions.js";
+import { DEFAULT_PROTOCOL_PORTS, destinationPortsForProtocol, type Destination } from "./destinations.js";
 import { fieldKeySchema, type ConnectionSlotId, type ContributionId } from "./identifiers.js";
 import type { AppManifest } from "./manifest.js";
 import type { ManifestValidationIssue } from "./validate.js";
@@ -16,18 +16,23 @@ import type { ManifestValidationIssue } from "./validate.js";
  * operator's stored values, so the dashboard, the installation plan, and the
  * gateway reach the same conclusion from the same declaration rather than each
  * inventing a resolution rule.
- *
- * A configuration that has been through `resolveConfiguration`: defaults
- * materialized, every value checked against the field that declares it. The
- * brand exists only in the type system — nothing wraps the map at runtime — and
- * it is what keeps a caller from handing readiness a stored map with a required
- * field missing and reading the answer as authoritative.
  */
-export type EffectiveConfiguration = ConfigurationValues & {
-  readonly __brand: "EffectiveConfiguration";
+
+declare const effectiveConfigurationBrand: unique symbol;
+
+/**
+ * A configuration that resolution produced: defaults materialized, every value
+ * checked against the field that declares it. The brand is a symbol this module
+ * does not export, so nothing outside it can write the type down, and the map
+ * itself is frozen — the two together are what keep a caller from handing
+ * readiness a stored map with a required field missing, or from editing an
+ * interval out of a resolved one, and reading the answer as authoritative.
+ */
+export type EffectiveConfiguration = Readonly<ConfigurationValues> & {
+  readonly [effectiveConfigurationBrand]: true;
 };
 
-export type ConfigurationResolutionResult =
+type ConfigurationResolutionResult =
   | { ok: true; configuration: EffectiveConfiguration }
   | { ok: false; issues: ManifestValidationIssue[] };
 
@@ -69,6 +74,19 @@ const parsedUrl = (value: string): URL | null => {
   } catch {
     return null;
   }
+};
+
+/**
+ * Which port an address actually reaches. `URL` drops a port that is its
+ * scheme's default, so an address that names none reaches the default the
+ * destination is measured against — and `https://example.com:8443` reaches 8443,
+ * which a destination has to have declared.
+ */
+const effectivePort = (url: URL): number | null => {
+  if (url.port !== "") return Number(url.port);
+  const scheme = url.protocol.replace(":", "");
+  if (scheme === "https" || scheme === "http") return DEFAULT_PROTOCOL_PORTS[scheme];
+  return null;
 };
 
 /**
@@ -126,6 +144,7 @@ const urlDestinationIssues = (
   const url = parsedUrl(value);
   if (!url) return [];
   const issues: ManifestValidationIssue[] = [];
+  const port = effectivePort(url);
   if (url.search !== "" || url.hash !== "") {
     issues.push(
       issue(
@@ -146,12 +165,24 @@ const urlDestinationIssues = (
   }
   const scheme = url.protocol.replace(":", "");
   for (const destination of destinations) {
-    if (destination.protocols.some((protocol) => protocol === scheme)) continue;
+    const protocol = destination.protocols.find((candidate) => candidate === scheme);
+    if (protocol === undefined) {
+      issues.push(
+        issue(
+          "url_protocol_not_declared",
+          field.key,
+          `Destination ${destination.id} reaches ${destination.protocols.join(" and ")} addresses only`,
+        ),
+      );
+      continue;
+    }
+    const ports = destinationPortsForProtocol(destination, protocol);
+    if (port !== null && ports.includes(port)) continue;
     issues.push(
       issue(
-        "url_protocol_not_declared",
+        "url_port_not_declared",
         field.key,
-        `Destination ${destination.id} reaches ${destination.protocols.join(" and ")} addresses only`,
+        `Destination ${destination.id} reaches ${protocol} port ${ports.join(" and ")} only`,
       ),
     );
   }
@@ -172,8 +203,7 @@ const scheduleValueIssues = (
   schedules: readonly ConfigurationSchedule[],
 ): ManifestValidationIssue[] =>
   schedules.flatMap((schedule) => {
-    if (schedule.disabledValue !== undefined && value === schedule.disabledValue) return [];
-    if (Number.isInteger(value) && value >= schedule.minSeconds && value <= schedule.maxSeconds) return [];
+    if (satisfiesSchedule(schedule, value)) return [];
     const off =
       schedule.disabledValue === undefined ? "" : `, or ${schedule.disabledValue} to leave it off`;
     return [
@@ -267,7 +297,7 @@ const schedulesByField = (manifest: AppManifest): ReadonlyMap<string, Configurat
  * configuration field type holds a secret, and a `connection_slot` field holds
  * its value in the slot.
  */
-export const resolveConfiguration = (
+const resolveConfiguration = (
   manifest: AppManifest,
   storedValues: unknown,
 ): ConfigurationResolutionResult => {
@@ -336,7 +366,9 @@ export const resolveConfiguration = (
     );
   }
 
-  if (issues.length === 0) return { ok: true, configuration: effective as EffectiveConfiguration };
+  if (issues.length === 0) {
+    return { ok: true, configuration: Object.freeze(effective) as EffectiveConfiguration };
+  }
   return { ok: false, issues: issues.slice(0, MAX_CONFIGURATION_ISSUES) };
 };
 
@@ -360,17 +392,28 @@ export interface InstallationReadiness {
  * disabled: an `interval_from_configuration` task whose field holds the
  * schedule's own `disabledValue` never runs, so the slots it names are slots
  * nobody has to fill in.
+ *
+ * A schedule-bound field is present in every effective configuration, because
+ * admission refuses a manifest whose schedule reads a field an installation
+ * could leave empty. The assertion is what makes that a guarantee rather than an
+ * assumption: an absent value here would activate a task with no interval to run
+ * it on, and a host would have to invent one.
  */
 const isActive = (contribution: Contribution, configuration: EffectiveConfiguration): boolean => {
-  if (contribution.availability === "required") return true;
   if (contribution.kind !== "scheduled_task") return true;
   const schedule = contribution.schedule;
   if (schedule.kind !== "interval_from_configuration") return true;
+  if (configuration[schedule.field] === undefined) {
+    throw new Error(
+      `Schedule field ${schedule.field} is absent from the effective configuration; a validated manifest keeps it present`,
+    );
+  }
+  if (contribution.availability === "required") return true;
   if (schedule.disabledValue === undefined) return true;
   return configuration[schedule.field] !== schedule.disabledValue;
 };
 
-export const installationReadiness = (
+const installationReadiness = (
   manifest: AppManifest,
   effectiveConfiguration: EffectiveConfiguration,
 ): InstallationReadiness => {
@@ -391,5 +434,30 @@ export const installationReadiness = (
     activeContributionIds,
     inactiveContributionIds,
     requiredConnectionSlots: [...slots].sort(),
+  };
+};
+
+export type InstallationResolutionResult =
+  | { ok: true; configuration: EffectiveConfiguration; readiness: InstallationReadiness }
+  | { ok: false; issues: ManifestValidationIssue[] };
+
+/**
+ * The one door from a validated manifest and an operator's stored values to what
+ * an installation runs. Resolution and readiness are one call because they are
+ * one answer: a caller that could hold them apart could resolve against one
+ * manifest and ask readiness about another, and read the mismatch as
+ * authoritative. The dashboard, the installation plan, and the gateway all come
+ * through here, so all three reach the same conclusion.
+ */
+export const resolveInstallation = (
+  manifest: AppManifest,
+  storedValues: unknown,
+): InstallationResolutionResult => {
+  const resolved = resolveConfiguration(manifest, storedValues);
+  if (!resolved.ok) return { ok: false, issues: resolved.issues };
+  return {
+    ok: true,
+    configuration: resolved.configuration,
+    readiness: installationReadiness(manifest, resolved.configuration),
   };
 };

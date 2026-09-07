@@ -6,14 +6,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   hostCapabilityCallSchema,
-  installationReadiness,
   invocationRequestSchema,
   releaseAValidationPolicy,
-  resolveConfiguration,
+  resolveInstallation,
   validateManifest,
   webhookInvocationInputSchema,
   type AppManifest,
   type EffectiveConfiguration,
+  type InstallationReadiness,
 } from "../src/index.js";
 
 /**
@@ -265,30 +265,31 @@ describe("companion plugin interoperability", () => {
   });
 });
 
-const configurationOf = (stored: Record<string, unknown>): EffectiveConfiguration => {
-  const resolved = resolveConfiguration(manifest, stored);
-  if (!resolved.ok) throw new Error(`expected a resolvable configuration: ${JSON.stringify(resolved.issues)}`);
-  return resolved.configuration;
+const installationOf = (
+  stored: Record<string, unknown>,
+): { configuration: EffectiveConfiguration; readiness: InstallationReadiness } => {
+  const resolved = resolveInstallation(manifest, stored);
+  if (!resolved.ok) throw new Error(`expected a resolvable installation: ${JSON.stringify(resolved.issues)}`);
+  return resolved;
 };
+
+const configurationOf = (stored: Record<string, unknown>): EffectiveConfiguration =>
+  installationOf(stored).configuration;
 
 describe("installation shapes the WordPress App has to cover", () => {
   it("installs a push-only site with no site credentials at all", () => {
-    const configuration = configurationOf({ site_url: "https://example.com" });
+    const { configuration, readiness } = installationOf({ site_url: "https://example.com" });
     expect(configuration).toEqual({
       site_url: "https://example.com",
       post_types: "page,post",
       poll_interval_sec: 0,
     });
-    const readiness = installationReadiness(manifest, configuration);
     expect(readiness.inactiveContributionIds).toEqual(["content_poll"]);
     expect(readiness.requiredConnectionSlots).toEqual(["webhook_secret"]);
   });
 
   it("asks for site credentials once the operator gives the poll an interval", () => {
-    const readiness = installationReadiness(
-      manifest,
-      configurationOf({ site_url: "https://example.com", poll_interval_sec: 300 }),
-    );
+    const { readiness } = installationOf({ site_url: "https://example.com", poll_interval_sec: 300 });
     expect(readiness.activeContributionIds).toContain("content_poll");
     expect(readiness.requiredConnectionSlots).toEqual(["site_credentials", "webhook_secret"]);
   });

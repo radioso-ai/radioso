@@ -26,7 +26,7 @@ Radioso package would tie the contract to one side of it.
 | `src/runtime.ts` | Invocation and host capability envelopes, including the installation context every invocation carries |
 | `src/jobs.ts` | The App Job wake-up envelope |
 | `src/validate.ts` | `validateManifest`: schema pass, cross-reference pass, policy pass |
-| `src/requirements.ts` | What one installation supplies and what that turns on: `resolveConfiguration` and `installationReadiness` |
+| `src/requirements.ts` | What one installation supplies and what that turns on: `resolveInstallation` |
 | `src/index.ts` | The public surface; re-exports only |
 
 ## Tests
@@ -64,24 +64,55 @@ exercises.
 ## Installation shape
 
 An installation's stored configuration is sparse: the host keeps what the
-operator typed, and the manifest owns the rest. `resolveConfiguration(manifest,
-storedValues)` is the one operation that closes that gap. It bounds the stored
-map, copies it, materializes every declared default, and validates the map that
-results, so what it returns is the effective configuration — the exact map an
-invocation carries as `context.configuration`.
+operator typed, and the manifest owns the rest. `resolveInstallation(manifest,
+storedValues)` is the one door that closes that gap. It bounds the stored map,
+copies it, materializes every declared default, and validates the map that
+results, then answers which contributions run and which connection slots the
+operator has to bind:
 
-It returns an `EffectiveConfiguration`, a branded type nothing else produces.
-`installationReadiness(manifest, effectiveConfiguration)` takes that type and
-only that type, and answers which contributions run and which connection slots
-the operator has to bind. Neither answer takes a caller-supplied contribution
-list: a `required` contribution is always active, and the only thing that turns
-one off is a schedule the operator disabled by storing the schedule's own
-`disabledValue`.
+```ts
+const resolved = resolveInstallation(manifest, storedValues);
+if (resolved.ok) {
+  resolved.configuration; // context.configuration, exactly
+  resolved.readiness; // active and inactive contributions, required slots
+}
+```
+
+The configuration holds every required value field, every field that declares a
+default, and every optional field the operator supplied. A `connection_slot`
+field never appears: its value lives in the slot. The map is frozen and its type
+carries a brand this package does not export, so a stored map cannot be spelled
+as a resolved one and a resolved one cannot be edited after the fact. Resolution
+and readiness come back together because they are one answer — a caller holding
+them apart could resolve against one manifest and ask readiness about another.
+
+Readiness takes no caller-supplied contribution list: a `required` contribution
+is always active, and the only thing that turns one off is a schedule the
+operator disabled by storing the schedule's own `disabledValue`.
 
 A schedule read from configuration declares a closed interval range, so its
 field's value space is exactly two things: the sentinel, or a whole number of
-seconds between `minSeconds` and `maxSeconds`. Resolution holds a stored value to
-that, which is why readiness never meets a value it would have to interpret.
+seconds between `minSeconds` and `maxSeconds`. Admission holds the field's
+default to that same rule and refuses a schedule bound to a field an installation
+could leave empty, so readiness never meets an absent value or one it would have
+to interpret.
+
+## Destination ports
+
+A destination that declares no `ports` reaches the default port of each protocol
+it declares: 443 on `https`, 80 on `http`. One that declares `ports` reaches
+exactly those. Resolution holds a destination-bound URL to it, and admission
+proves that the destinations sharing one field have a protocol and a port in
+common — the operator types one address, and it has one scheme and one port.
+
+## Egress paths
+
+An `egress.fetch` `path` is origin-relative and canonically encoded: every `%`
+introduces two hex digits, and no escape spells a separator, a percent, or a
+control character. What is left decodes exactly once, and no segment of the
+result is `.` or `..`, so `/../wp-admin`, `/%2e%2e%2fwp-admin`, and
+`/%252e%252e/wp-admin` are one refusal rather than three spellings that climb
+above the operator's prefix at whichever hop decodes first.
 
 ## Docs
 

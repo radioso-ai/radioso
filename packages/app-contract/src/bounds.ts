@@ -312,16 +312,25 @@ export const refineObjectBreadth = (value: unknown, context: z.RefinementCtx): v
   });
 };
 
+const NOT_A_PLAIN_MAP = "A map is a plain JSON object carrying its own keys only";
+
 /**
- * The same guard for a map with its own, smaller ceiling. It is fatal so a
- * pipeline stops here: `z.record` parses and clones every entry before a
- * refinement on the record could count them, which hands a hundred-thousand
- * entry map a full traversal on its way to being refused.
+ * Shape and breadth for a bounded map, settled before a typed schema reads an
+ * entry. Both checks are fatal so a pipeline stops here: `z.record` parses and
+ * clones every entry before a refinement on the record could count them, which
+ * hands a hundred-thousand entry map a full traversal on its way to being
+ * refused, and it walks inherited enumerable properties that an own-key count
+ * never saw. A map whose prototype is `Object.prototype` or `null` has none, so
+ * what this counts is exactly what the parser goes on to traverse.
  */
-export const refineMapBreadth =
+export const refineBoundedMap =
   (ceiling: number, message: string) =>
   (value: unknown, context: z.RefinementCtx): void => {
-    if (!exceedsBreadth(value, ceiling)) return;
+    if (value === null || typeof value !== "object" || Array.isArray(value) || !isPlainObject(value)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: [], fatal: true, message: NOT_A_PLAIN_MAP });
+      return;
+    }
+    if (countKeys(value, ceiling) <= ceiling) return;
     context.addIssue({ code: z.ZodIssueCode.custom, path: [], fatal: true, message });
   };
 
@@ -402,30 +411,42 @@ export const base64BodySchema = z
 const isHttpFieldValueCode = (code: number): boolean =>
   code === 0x09 || (code >= 0x20 && code <= 0x7e) || (code >= 0x80 && code <= 0xff);
 
-const httpFieldValueSchema = z
-  .string()
-  .max(MAX_HEADER_VALUE_LENGTH)
-  .refine(
-    (value) => {
-      for (let position = 0; position < value.length; position += 1) {
-        if (!isHttpFieldValueCode(value.charCodeAt(position))) return false;
-      }
-      return true;
-    },
-    "A header value holds tab, space, visible ASCII, and obs-text, and no carriage return, line feed, NUL, or DEL",
-  );
+const HEADER_VALUE_CHARACTERS =
+  "A header value holds tab, space, visible ASCII, and obs-text, and no carriage return, line feed, NUL, or DEL";
 
 /**
- * A header map: bounded names, bounded field values, a bounded number of
- * entries, and no lone surrogate in a name. Breadth is settled before
- * `z.record` reads an entry, and a name or value already past its own length is
- * never scanned: an oversized input has failed by then, and scanning it anyway
- * is the work its size was meant to buy.
+ * Length first, and nothing after it. A `.max()` beside a refinement leaves the
+ * refinement to run anyway — a length failure is dirty, not fatal — so a single
+ * hundred-megabyte value would still be read character by character on its way
+ * to being refused, which is the work its size was written to buy.
+ */
+const httpFieldValueSchema = z.string().superRefine((value, context) => {
+  if (value.length > MAX_HEADER_VALUE_LENGTH) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: [],
+      message: `A header value holds at most ${MAX_HEADER_VALUE_LENGTH} characters`,
+    });
+    return;
+  }
+  for (let position = 0; position < value.length; position += 1) {
+    if (isHttpFieldValueCode(value.charCodeAt(position))) continue;
+    context.addIssue({ code: z.ZodIssueCode.custom, path: [], message: HEADER_VALUE_CHARACTERS });
+    return;
+  }
+});
+
+/**
+ * A header map: a plain own-property object, bounded names, bounded field
+ * values, a bounded number of entries, and no lone surrogate in a name. Shape
+ * and breadth are settled before `z.record` reads an entry, and a name or value
+ * already past its own length is never scanned: an oversized input has failed by
+ * then, and scanning it anyway is the work its size was meant to buy.
  */
 export const boundedHeaderRecordSchema = (keySchema: z.ZodType<string, z.ZodTypeDef, string>) =>
   z
     .any()
-    .superRefine(refineMapBreadth(MAX_HEADER_ENTRIES, `At most ${MAX_HEADER_ENTRIES} headers`))
+    .superRefine(refineBoundedMap(MAX_HEADER_ENTRIES, `At most ${MAX_HEADER_ENTRIES} headers`))
     .pipe(
       z.record(keySchema, httpFieldValueSchema).superRefine((headers, context) => {
         for (const key in headers) {

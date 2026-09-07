@@ -136,17 +136,20 @@ resolve to the same value all fail parsing.
 
 The host stores what the operator typed, which is sparse: a field the operator
 left alone has no stored value, and the manifest owns its default. What your App
-reads is the effective configuration — the stored values with every declared
-default materialized. A field that is optional and declares no default is absent
-from the result, which is the one gap a handler codes around.
-`resolveConfiguration` is the one operation that produces it:
+reads is the effective configuration — every required value field, every value
+field that declares a default, and every optional field the operator filled in. A
+field that is optional and declares no default is absent from the result, which is
+the one gap a handler codes around, and a `connection_slot` field never appears
+at all: its value lives in the slot. `resolveInstallation` is the one operation
+that produces it:
 
 ```ts
-import { resolveConfiguration } from "@radioso/app-contract";
+import { resolveInstallation } from "@radioso/app-contract";
 
-const resolved = resolveConfiguration(manifest, storedValues);
+const resolved = resolveInstallation(manifest, storedValues);
 if (resolved.ok) {
   // resolved.configuration is what an invocation carries as context.configuration
+  // resolved.readiness says which contributions run and which slots to bind
 }
 ```
 
@@ -154,21 +157,23 @@ It bounds the stored map, copies it, materializes the defaults, and validates th
 map that results. It reports a missing required value with no default, an
 undeclared key, a value of the wrong type, a number outside `min`/`max`, a number
 outside the interval range of a schedule that reads it, a `select` value that is
-not an option, a `url` value that does not parse or that carries a query or a
-fragment, a string over 4 096 characters, and a value supplied for a
-`connection_slot` field, which holds none. A stored map carries at most 64
-entries, each key spelled the way a field key is spelled; the reported list stops
-at 32 issues.
+not an option, a `url` value that does not parse, that carries a query or a
+fragment, or that names a port no destination bound to the field permits, a
+string over 4 096 characters, and a value supplied for a `connection_slot` field,
+which holds none. A stored map carries at most 64 entries, each key spelled the
+way a field key is spelled; the reported list stops at 32 issues.
 
 An issue names a key only when the manifest declares that key. Everything else is
 addressed by its position in the stored map — `configuration.3` — so a key an
 attacker chose reaches no log, no audit record, and no operator's screen, however
 much it looks like a field key. Values are never repeated back either.
 
-`resolveConfiguration` returns an `EffectiveConfiguration`, a branded type
-nothing else produces. `installationReadiness` takes that type and only that
-type, so a stored map with a required field missing cannot be read as an
-authoritative answer about what an installation runs.
+`resolveInstallation` returns an `EffectiveConfiguration` alongside the readiness
+answer. The brand is a symbol the package does not export and the map is frozen,
+so a stored map cannot be spelled as a resolved one and a resolved one cannot be
+edited afterwards. Resolution and readiness arrive together because they are one
+answer: a caller holding them apart could resolve against one manifest and ask
+readiness about another.
 
 The host delivers the result to your App on every invocation, as
 `context.configuration` — see
@@ -189,9 +194,16 @@ climbs above the prefix the operator entered. Being a prefix is also why the
 value carries no query and no fragment: `https://example.com/wordpress?preview=1`
 is refused, because each request supplies its own `path` and `query`.
 
+The address's port is held to the destination too. A destination that lists no
+`ports` reaches the default port of each protocol it declares — 443 on `https`,
+80 on `http` — so `https://example.com` and `https://example.com:443` are the same
+address and `https://example.com:8443` is refused. A destination that lists
+`ports` reaches exactly those, default or not.
+
 When two destinations are built from one field, they have to share at least one
-protocol. Two views of the same operator-typed address that agree on no scheme
-describe an installation no URL can satisfy.
+protocol, and at least one port on a shared protocol. The operator types one
+address, and two views of it that agree on no scheme, or on no port, describe an
+installation no URL can satisfy.
 
 ### Which contributions an installation runs
 
@@ -199,10 +211,8 @@ Readiness follows from the manifest and the effective configuration, never from 
 list a caller assembles:
 
 ```ts
-import { installationReadiness } from "@radioso/app-contract";
-
 const { activeContributionIds, inactiveContributionIds, requiredConnectionSlots } =
-  installationReadiness(manifest, resolved.configuration);
+  resolved.readiness;
 ```
 
 A contribution with `availability: "required"` is always active. A
@@ -284,7 +294,11 @@ attaches the credential.
 site reachable only over plain HTTP is a real installation; declaring it puts it
 on the operator's grant screen, one destination at a time.
 
-`ports` is optional. `purpose` is the sentence the operator reads on the grant
+`ports` is optional, and omitting it is not "any port": a destination that lists
+no `ports` reaches the default port of each protocol it declares, 443 on `https`
+and 80 on `http`. A destination that lists `ports` reaches exactly those, up to
+four of them, so a site served on 8443 says 8443 and the operator sees it on the
+grant screen. `purpose` is the sentence the operator reads on the grant
 screen. `dataClasses` says what leaves the platform on this destination — `document_content`, `document_metadata`,
 `installation_configuration`, `credentials`, or `operational_metadata`.
 
@@ -466,10 +480,15 @@ inside the interval range would silently disable a schedule the operator meant t
 run.
 
 That makes the field's value space exactly two things: the sentinel, or a whole
-number of seconds from `minSeconds` to `maxSeconds`. `resolveConfiguration`
-holds a stored value to it and reports `schedule_value_out_of_range` for anything
-else, so a 30 against a 60 second floor is refused where an operator can still
-fix it.
+number of seconds from `minSeconds` to `maxSeconds`. `resolveInstallation` holds
+a stored value to it and reports `schedule_value_out_of_range` for anything else,
+so a 30 against a 60 second floor is refused where an operator can still fix it.
+
+The field also has to hold a value at every moment the task is active, so a
+schedule-bound field is `required: true` or declares a `default`. An optional
+field with neither would leave an active task with no interval to run on, and a
+host would have to invent one. That default is held to the same rule a stored
+value is: it is the sentinel, or a whole number of seconds inside the range.
 
 A task with `availability: "required"` declares no `disabledValue`. It is active
 in every installation, so a value that claims to turn it off could only
@@ -477,8 +496,14 @@ contradict that.
 
 The referenced field's own range has to admit both. `disabledValue` sits inside
 the field's `min` and `max` when either is declared, or the schedule is one
-nobody can turn off; and the field's range has to overlap `minSeconds` to
-`maxSeconds`, or the schedule is one that can never run.
+nobody can turn off; and the field's range has to leave at least one whole number
+of seconds between `minSeconds` and `maxSeconds`, or the schedule is one that can
+never run — a field bounded to 60.1 and 60.9 overlaps a 60-to-61 range and holds
+no value a host would run.
+
+When two schedules read one field, they read one value: they declare the same
+`disabledValue` or none, and their ranges leave at least one whole number of
+seconds that runs both.
 
 Invocations run under the `scheduled_task` execution class.
 
@@ -583,9 +608,14 @@ bracket path such as `contributions[1].authentication.secretConnectionSlot`.
 | `destination_host_field_not_url` | A destination host is bound to a field that is not a `url` field. |
 | `interval_field_not_number` | An interval reads from a field that is not a `number` field. |
 | `disabled_value_outside_field_range` | A schedule's `disabledValue` sits outside the range its configuration field admits, so the task can never be turned off. |
-| `schedule_range_unreachable` | A schedule's configuration field admits no value between `minSeconds` and `maxSeconds`, so the task can never run. |
+| `schedule_range_unreachable` | A schedule's configuration field admits no whole number of seconds between `minSeconds` and `maxSeconds`, so the task can never run. |
+| `schedule_field_may_be_absent` | A schedule reads a field that is optional and declares no default, so an active task could have no interval. |
+| `schedule_default_invalid` | A schedule-bound field defaults to a value the schedule neither runs on nor reads as its `disabledValue`. |
+| `shared_schedule_sentinel_mismatch` | Two schedules reading one field disagree about the value that turns them off. |
+| `shared_schedule_ranges_disjoint` | Two schedules reading one field leave no whole number of seconds that runs both. |
 | `required_schedule_cannot_disable` | A `required` scheduled task declares a `disabledValue`. |
-| `destination_protocols_incompatible` | Two destinations built from one configuration field share no protocol. |
+| `destination_protocols_incompatible` | The destinations built from one configuration field have no protocol common to all. |
+| `destination_ports_incompatible` | The destinations built from one configuration field have no protocol and port pair common to all. |
 | `unknown_destination` | A contribution lists an `egressDestinations` id no destination declares. |
 | `unknown_collection` | A `checkpointCollection` or backfill collection does not exist. |
 | `unknown_contribution` | A conformance fixture names a contribution the manifest does not declare. |

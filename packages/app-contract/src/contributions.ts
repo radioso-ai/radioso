@@ -268,3 +268,15 @@ export type ConfigurationSchedule = Extract<
   ScheduledTaskContribution["schedule"],
   { kind: "interval_from_configuration" }
 >;
+
+/**
+ * The whole value space a configuration-driven schedule has: the sentinel that
+ * turns it off, or a whole number of seconds inside the declared range. One
+ * predicate, because admission asks it of a manifest's default and resolution
+ * asks it of an operator's stored value — and a manifest whose default the host
+ * would then refuse is a manifest that never should have been admitted.
+ */
+export const satisfiesSchedule = (schedule: ConfigurationSchedule, value: number): boolean => {
+  if (schedule.disabledValue !== undefined && value === schedule.disabledValue) return true;
+  return Number.isInteger(value) && value >= schedule.minSeconds && value <= schedule.maxSeconds;
+};

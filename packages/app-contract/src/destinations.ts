@@ -110,6 +110,34 @@ export const credentialFieldReferences = (
   }
 };
 
+/**
+ * What a protocol reaches when a destination declares no `ports`. Omitting the
+ * field is not "any port": it is the default port of each declared protocol, so
+ * a manifest that means 8443 has to say 8443 and an operator's grant screen
+ * never widens by silence.
+ */
+export const DEFAULT_PROTOCOL_PORTS: Readonly<Record<DestinationProtocol, number>> = {
+  https: 443,
+  http: 80,
+};
+
+/** The ports one destination permits on one protocol: exactly what it declared, or that protocol's default. */
+export const destinationPortsForProtocol = (
+  destination: Destination,
+  protocol: DestinationProtocol,
+): readonly number[] => destination.ports ?? [DEFAULT_PROTOCOL_PORTS[protocol]];
+
+/**
+ * Every protocol and port pair one destination permits, spelled so two
+ * destinations can be intersected. A destination is reachable only where a pair
+ * survives that intersection: two views of one operator-typed address that agree
+ * on a scheme but not on a port describe an installation no URL can satisfy.
+ */
+export const destinationEndpoints = (destination: Destination): readonly string[] =>
+  destination.protocols.flatMap((protocol) =>
+    destinationPortsForProtocol(destination, protocol).map((port) => `${protocol}:${port}`),
+  );
+
 export const destinationSchema = z.object({
   id: destinationIdSchema,
   host: destinationHostSchema,

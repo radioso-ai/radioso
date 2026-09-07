@@ -9,3 +9,4 @@ export * from "./modelEmbeddingSpaceMaterializer.js";
 export * from "./embeddingModelTransitionAdapter.js";
 export * from "./embeddingProfileJobFailureAdapter.js";
 export * from "./retrievalComposition.js";
+export * from "./appStorage.js";

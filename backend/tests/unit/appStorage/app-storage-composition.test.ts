@@ -1,0 +1,82 @@
+import { randomUUID } from "node:crypto";
+
+import { describe, expect, it, vi } from "vitest";
+import type { Kysely } from "kysely";
+
+import {
+  createAppStorageAuditSink,
+  createAppStorageComposition,
+  type AppStorageComposition,
+} from "../../../src/app/composition/appStorage.js";
+import type { AuditEventInput, AuditService } from "../../../src/modules/audit/contracts/index.js";
+import type { DB } from "../../../src/shared/infra/kysely/types.js";
+
+const buildAuditService = (recorded: AuditEventInput[]): AuditService => ({
+  async record(event) {
+    recorded.push(event);
+  },
+  async getLatestSuccessfulChatAnswerMetadata() {
+    return null;
+  },
+  async updateChatAnswerSuggestions() {
+    // Storage writes no chat metadata.
+  },
+});
+
+describe("app storage composition", () => {
+  it("assembles the repository, service, disposition, and sweeper", () => {
+    const composition: AppStorageComposition = createAppStorageComposition({
+      // Composition wires implementations; nothing here reaches the connection.
+      kysely: {} as Kysely<DB>,
+      auditService: buildAuditService([]),
+    });
+
+    expect(typeof composition.service.put).toBe("function");
+    expect(typeof composition.disposition.exportRecords).toBe("function");
+    expect(typeof composition.expirySweeper.runExpirySweep).toBe("function");
+    expect(typeof composition.repository.findRecord).toBe("function");
+  });
+});
+
+describe("app storage audit sink", () => {
+  it("puts an app.data event on the audit spine with the installation as an identity", async () => {
+    const recorded: AuditEventInput[] = [];
+    const workspaceId = randomUUID();
+    const installationId = randomUUID();
+
+    await createAppStorageAuditSink(buildAuditService(recorded)).record({
+      workspaceId,
+      installationId,
+      eventType: "app.data.deletion.completed",
+      eventStatus: "success",
+      metadata: { recordCount: 4, collectionCount: 2 },
+    });
+
+    expect(recorded).toEqual([
+      {
+        workspaceId,
+        eventType: "app.data.deletion.completed",
+        eventStatus: "success",
+        metadata: { recordCount: 4, collectionCount: 2, installationId },
+      },
+    ]);
+  });
+
+  it("carries a workspace-wide disposition with no installation identity", async () => {
+    const recorded: AuditEventInput[] = [];
+    const workspaceId = randomUUID();
+    const auditService = buildAuditService(recorded);
+    const spy = vi.spyOn(auditService, "record");
+
+    await createAppStorageAuditSink(auditService).record({
+      workspaceId,
+      installationId: null,
+      eventType: "app.data.deletion.requested",
+      eventStatus: "success",
+      metadata: { scope: "workspace" },
+    });
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(recorded[0]?.metadata).toEqual({ scope: "workspace", installationId: null });
+  });
+});

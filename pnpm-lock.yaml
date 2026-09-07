@@ -101,6 +101,9 @@ importers:
       '@opentelemetry/semantic-conventions':
         specifier: ^1.43.0
         version: 1.43.0
+      '@radioso/app-contract':
+        specifier: workspace:*
+        version: link:../packages/app-contract
       '@radioso/census':
         specifier: workspace:*
         version: link:../packages/census

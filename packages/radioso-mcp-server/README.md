@@ -34,7 +34,7 @@ Operator MCP additionally requires these values in both the standalone service a
 - `OPERATOR_MCP_ISSUER_URL`, the HTTPS Radioso authorization-server origin
 - `OPERATOR_MCP_INTERNAL_SECRET`, the same exact value in both processes, at least 32 characters
 - `OPERATOR_MCP_CREDENTIAL_EPOCH`, an externally managed positive decimal generation
-- `OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS`, a comma-separated workspace UUID allowlist; empty allows no workspaces
+- `OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS`, an optional comma-separated workspace UUID staged-rollout allowlist; empty allows every workspace
 
 ### Common Optional Environment Variables
 

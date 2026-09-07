@@ -5,6 +5,7 @@ import {
   ACCESS_TOKEN_TTL_SECONDS,
   AUTHORIZATION_CODE_TTL_SECONDS,
   hashOpaqueCredential,
+  operatorMcpRolloutWorkspaceIds,
   parseOperatorMcpScopes,
   validateAuthorizationResource,
   validateRedirectUri,
@@ -29,6 +30,12 @@ describe("operator MCP authorization domain", () => {
     expect(validateAuthorizationResource(canonical, canonical)).toBe(canonical);
     expect(() => validateAuthorizationResource(`${canonical}/`, canonical)).toThrow(/resource/i);
     expect(() => validateAuthorizationResource("https://mcp.example/mcp", canonical)).toThrow(/resource/i);
+  });
+
+  it("treats an empty rollout value as every workspace and preserves explicit staged rollout ids", () => {
+    expect(operatorMcpRolloutWorkspaceIds(undefined)).toBeUndefined();
+    expect(operatorMcpRolloutWorkspaceIds("  ")).toBeUndefined();
+    expect(operatorMcpRolloutWorkspaceIds("workspace-a, workspace-b")).toEqual(new Set(["workspace-a", "workspace-b"]));
   });
 
   it("accepts exact HTTPS redirects and literal loopback with variable ports", () => {

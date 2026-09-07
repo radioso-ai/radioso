@@ -4,7 +4,9 @@ import {
   resolveConfiguration,
   type AppManifest,
   type ConnectionSlot,
+  type EffectiveConfiguration,
   type ExecutionClass,
+  type InstallationReadiness,
 } from "@radioso/app-contract";
 
 import { canonicalDigest } from "./canonicalJson.js";
@@ -113,7 +115,20 @@ const invalidConfiguration = (key: string, message: string): AppsError =>
   new AppsError("invalid_configuration", message, { field: key });
 
 interface ResolvedAppConfiguration {
-  readonly values: Record<string, AppConfigurationValue>;
+  /**
+   * The branded, readiness-safe configuration — present only once every required field
+   * has a value. `null` here is not "empty"; it is "not yet an authoritative answer to
+   * what this installation does", and it is the signal that keeps a caller from handing
+   * `installationReadiness` a map with a hole in it.
+   */
+  readonly configuration: EffectiveConfiguration | null;
+  /**
+   * What the operator has entered so far, defaults materialised for every field that
+   * resolved. Display-only: the draft plan shows it back so the operator sees what they
+   * filled in, but it is never passed to `installationReadiness` — only `configuration`
+   * is.
+   */
+  readonly values: Readonly<Record<string, AppConfigurationValue>>;
   readonly unresolved: AppUnresolvedRequirement[];
 }
 
@@ -125,14 +140,14 @@ interface ResolvedAppConfiguration {
  * apart on purpose: a value that is wrong is a bad request, while a required value that
  * is simply absent is a hole the plan shows the operator so they can fill it.
  */
-export const resolveAppConfiguration = (
+const resolveAppConfiguration = (
   manifest: AppManifest,
   submitted: Readonly<Record<string, unknown>>,
 ): ResolvedAppConfiguration => {
   const declared = new Map(manifest.configuration.fields.map((field) => [field.key, field]));
   const result = resolveConfiguration(manifest, submitted);
   if (result.ok) {
-    return { values: result.configuration, unresolved: [] };
+    return { configuration: result.configuration, values: result.configuration, unresolved: [] };
   }
 
   const missing = new Set<string>();
@@ -157,7 +172,21 @@ export const resolveAppConfiguration = (
     const value = Object.hasOwn(submitted, field.key) ? submitted[field.key] : field.default;
     if (value !== undefined) values[field.key] = value as AppConfigurationValue;
   }
-  return { values, unresolved };
+  return { configuration: null, values, unresolved };
+};
+
+/**
+ * A configuration still missing a required field has no authoritative answer to "what
+ * does this installation do", so readiness is reported as undetermined rather than
+ * guessed from the draft: nothing is active and nothing is required yet. The plan's
+ * `unresolvedRequirements` list — not this — is what tells the operator the plan is not
+ * ready, so the shape here stays identical to a resolved plan's rather than growing a
+ * separate "pending" case for callers to branch on.
+ */
+const UNDETERMINED_READINESS: InstallationReadiness = {
+  activeContributionIds: [],
+  inactiveContributionIds: [],
+  requiredConnectionSlots: [],
 };
 
 const hostFromConfiguredUrl = (value: AppConfigurationValue | undefined): string | null => {
@@ -179,10 +208,13 @@ const byKey = <T>(items: readonly T[], key: (item: T) => string): T[] =>
  */
 export const buildAppInstallationPlan = (input: AppInstallationPlanInput): AppInstallationPlanResult => {
   const manifest = input.release.manifest;
-  const { values, unresolved } = resolveAppConfiguration(manifest, input.configuration);
-  const unresolvedRequirements = [...unresolved];
+  const resolved = resolveAppConfiguration(manifest, input.configuration);
+  const { values } = resolved;
+  const unresolvedRequirements = [...resolved.unresolved];
 
-  const readiness = installationReadiness(manifest, values);
+  const readiness = resolved.configuration
+    ? installationReadiness(manifest, resolved.configuration)
+    : UNDETERMINED_READINESS;
   const activeIds = new Set(readiness.activeContributionIds);
   const requiredSlotIds = new Set<string>([
     ...readiness.requiredConnectionSlots,

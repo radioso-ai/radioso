@@ -30,79 +30,143 @@ export type BoundedJsonValue =
 
 export type BoundedJsonRecord = { [key: string]: BoundedJsonValue };
 
-const addIssue = (context: z.RefinementCtx, path: (string | number)[], message: string): void => {
-  context.addIssue({ code: z.ZodIssueCode.custom, path, message });
+interface Violation {
+  path: (string | number)[];
+  message: string;
+}
+
+/**
+ * What one string costs in a JSON document: the two quotes, the UTF-8 encoding,
+ * and the escapes. Counted rather than produced, because the point of measuring
+ * during the walk is that nothing ever allocates a copy of the input.
+ */
+const jsonStringBytes = (value: string): number => {
+  let bytes = 2;
+  for (let position = 0; position < value.length; position += 1) {
+    const code = value.charCodeAt(position);
+    if (code === 0x22 || code === 0x5c) {
+      bytes += 2;
+    } else if (code < 0x20) {
+      // Backspace, tab, newline, form feed, and carriage return have two-character
+      // escapes; every other control character is written as \uXXXX.
+      bytes += code === 0x08 || code === 0x09 || code === 0x0a || code === 0x0c || code === 0x0d ? 2 : 6;
+    } else if (code < 0x80) {
+      bytes += 1;
+    } else if (code < 0x800) {
+      bytes += 2;
+    } else if (code >= 0xd800 && code < 0xe000) {
+      // Half of a surrogate pair, which together encode as four bytes.
+      bytes += 2;
+    } else {
+      bytes += 3;
+    }
+  }
+  return bytes;
 };
 
-const walk = (
+interface Budget {
+  bytes: number;
+}
+
+const overBudget = (budget: Budget, path: (string | number)[]): Violation | null =>
+  budget.bytes > MAX_JSON_SERIALIZED_BYTES
+    ? { path, message: `A value may serialize to at most ${MAX_JSON_SERIALIZED_BYTES} bytes` }
+    : null;
+
+/**
+ * One traversal that carries the encoded-byte total with it and stops at the
+ * first violation, structural or budgetary. Serializing the input to measure it
+ * would mean an oversized payload buys an attacker-sized allocation on its way
+ * to being refused, so nothing here serializes anything.
+ */
+const measure = (
   value: unknown,
   depth: number,
   path: (string | number)[],
-  context: z.RefinementCtx,
-): void => {
-  if (value === null || typeof value === "boolean") return;
+  budget: Budget,
+): Violation | null => {
+  if (value === null) {
+    budget.bytes += 4;
+    return overBudget(budget, path);
+  }
+
+  if (typeof value === "boolean") {
+    budget.bytes += value ? 4 : 5;
+    return overBudget(budget, path);
+  }
 
   if (typeof value === "number") {
-    if (!Number.isFinite(value)) addIssue(context, path, "A number must be finite");
-    return;
+    if (!Number.isFinite(value)) return { path, message: "A number must be finite" };
+    budget.bytes += String(value).length;
+    return overBudget(budget, path);
   }
 
   if (typeof value === "string") {
     if (value.length > MAX_JSON_STRING_LENGTH) {
-      addIssue(context, path, `A string may hold at most ${MAX_JSON_STRING_LENGTH} characters`);
+      return { path, message: `A string may hold at most ${MAX_JSON_STRING_LENGTH} characters` };
     }
-    return;
+    budget.bytes += jsonStringBytes(value);
+    return overBudget(budget, path);
+  }
+
+  if (typeof value !== "object") {
+    return { path, message: "A value must be JSON: a string, number, boolean, null, array, or object" };
   }
 
   if (depth > MAX_JSON_DEPTH) {
-    addIssue(context, path, `A value may nest at most ${MAX_JSON_DEPTH} levels deep`);
-    return;
+    return { path, message: `A value may nest at most ${MAX_JSON_DEPTH} levels deep` };
   }
 
   if (Array.isArray(value)) {
     if (value.length > MAX_JSON_ARRAY_ITEMS) {
-      addIssue(context, path, `An array may hold at most ${MAX_JSON_ARRAY_ITEMS} items`);
-      return;
+      return { path, message: `An array may hold at most ${MAX_JSON_ARRAY_ITEMS} items` };
     }
-    value.forEach((item, index) => walk(item, depth + 1, [...path, index], context));
-    return;
+    budget.bytes += 2 + Math.max(0, value.length - 1);
+    const structural = overBudget(budget, path);
+    if (structural) return structural;
+    for (let index = 0; index < value.length; index += 1) {
+      const violation = measure(value[index], depth + 1, [...path, index], budget);
+      if (violation) return violation;
+    }
+    return null;
   }
 
-  if (typeof value !== "object") {
-    addIssue(context, path, "A value must be JSON: a string, number, boolean, null, array, or object");
-    return;
+  const record = value as Record<string, unknown>;
+  const keys = Object.keys(record);
+  if (keys.length > MAX_JSON_OBJECT_KEYS) {
+    return { path, message: `An object may hold at most ${MAX_JSON_OBJECT_KEYS} keys` };
   }
-
-  const entries = Object.entries(value as Record<string, unknown>);
-  if (entries.length > MAX_JSON_OBJECT_KEYS) {
-    addIssue(context, path, `An object may hold at most ${MAX_JSON_OBJECT_KEYS} keys`);
-    return;
-  }
-  for (const [key, entry] of entries) {
+  budget.bytes += 2 + Math.max(0, keys.length - 1);
+  const structural = overBudget(budget, path);
+  if (structural) return structural;
+  for (const key of keys) {
+    const at = [...path, key];
     if (key.length > MAX_JSON_KEY_LENGTH) {
-      addIssue(context, [...path, key], `A key may hold at most ${MAX_JSON_KEY_LENGTH} characters`);
-      continue;
+      return { path: at, message: `A key may hold at most ${MAX_JSON_KEY_LENGTH} characters` };
     }
-    if (entry === undefined) {
-      addIssue(context, [...path, key], "A key must carry a JSON value");
-      continue;
-    }
-    walk(entry, depth + 1, [...path, key], context);
+    const entry = record[key];
+    if (entry === undefined) return { path: at, message: "A key must carry a JSON value" };
+    budget.bytes += jsonStringBytes(key) + 1;
+    const keyBudget = overBudget(budget, at);
+    if (keyBudget) return keyBudget;
+    const violation = measure(entry, depth + 1, at, budget);
+    if (violation) return violation;
   }
+  return null;
 };
 
-const checkSerializedSize = (value: unknown, context: z.RefinementCtx): void => {
-  let serialized: string;
-  try {
-    serialized = JSON.stringify(value) ?? "";
-  } catch {
-    addIssue(context, [], "A value must be serializable as JSON");
+const addViolation = (context: z.RefinementCtx, violation: Violation): void => {
+  context.addIssue({ code: z.ZodIssueCode.custom, path: violation.path, message: violation.message });
+};
+
+/** The bounds, applied to a value the caller already knows should be an object. */
+export const refineBoundedJsonRecord = (value: unknown, context: z.RefinementCtx): void => {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    addViolation(context, { path: [], message: "A record must be a JSON object" });
     return;
   }
-  const bytes = new TextEncoder().encode(serialized).length;
-  if (bytes > MAX_JSON_SERIALIZED_BYTES) {
-    addIssue(context, [], `A value may serialize to at most ${MAX_JSON_SERIALIZED_BYTES} bytes`);
-  }
+  const violation = measure(value, 1, [], { bytes: 0 });
+  if (violation) addViolation(context, violation);
 };
 
 /** Any JSON value, bounded in depth, breadth, string length, and serialized size. */
@@ -110,24 +174,17 @@ export const boundedJsonValueSchema: z.ZodType<BoundedJsonValue> = z
   .custom<BoundedJsonValue>()
   .superRefine((value, context) => {
     if (value === undefined) {
-      addIssue(context, [], "A value is required");
+      addViolation(context, { path: [], message: "A value is required" });
       return;
     }
-    walk(value, 1, [], context);
-    checkSerializedSize(value, context);
+    const violation = measure(value, 1, [], { bytes: 0 });
+    if (violation) addViolation(context, violation);
   });
 
 /** The same bounds, for the places the protocol requires an object: checkpoints, storage records. */
 export const boundedJsonRecordSchema: z.ZodType<BoundedJsonRecord> = z
   .custom<BoundedJsonRecord>()
-  .superRefine((value, context) => {
-    if (value === null || typeof value !== "object" || Array.isArray(value)) {
-      addIssue(context, [], "A record must be a JSON object");
-      return;
-    }
-    walk(value, 1, [], context);
-    checkSerializedSize(value, context);
-  });
+  .superRefine(refineBoundedJsonRecord);
 
 /**
  * One character-class loop rather than a quantified group. A grouped `{4}`

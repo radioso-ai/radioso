@@ -16,6 +16,7 @@ export {
   displayNameSchema,
   fieldKeySchema,
   fixtureIdSchema,
+  httpHeaderNameSchema,
   indexIdSchema,
   indexedFieldKeySchema,
   schemaVersionSchema,
@@ -51,14 +52,20 @@ export {
 } from "./bounds.js";
 
 export {
+  MAX_CONFIGURATION_ENTRIES,
+  MAX_CONFIGURATION_VALUE_LENGTH,
   appConfigurationSchema,
   configurationFieldSchema,
   configurationFieldTypeSchema,
   configurationFieldTypes,
   configurationSelectOptionSchema,
+  configurationValueSchema,
+  configurationValuesSchema,
   type AppConfiguration,
   type ConfigurationField,
   type ConfigurationFieldType,
+  type ConfigurationValue,
+  type ConfigurationValues,
 } from "./configuration.js";
 
 export {
@@ -76,6 +83,9 @@ export {
 } from "./connections.js";
 
 export {
+  credentialFieldReferences,
+  destinationCredentialApplicationSchema,
+  destinationCredentialsSchema,
   destinationDataClassSchema,
   destinationDataClasses,
   destinationHostSchema,
@@ -83,6 +93,8 @@ export {
   destinationProtocols,
   destinationSchema,
   type Destination,
+  type DestinationCredentialApplication,
+  type DestinationCredentials,
   type DestinationDataClass,
   type DestinationHost,
   type DestinationProtocol,
@@ -171,6 +183,8 @@ export {
 
 export {
   MAX_DOCUMENT_METADATA_KEYS,
+  MAX_EGRESS_QUERY_BYTES,
+  MAX_EGRESS_QUERY_ENTRIES,
   MAX_ERROR_MESSAGE_LENGTH,
   RUNTIME_PROTOCOL_VERSION,
   appErrorCodeSchema,
@@ -191,6 +205,7 @@ export {
   hostCapabilityRequestSchema,
   hostCapabilityResponseSchema,
   hostCapabilitySuccessSchema,
+  installationContextSchema,
   invocationCountsSchema,
   invocationInputSchema,
   invocationOutcomeSchema,
@@ -214,6 +229,7 @@ export {
   type HostCapabilityCall,
   type HostCapabilityRequest,
   type HostCapabilityResponse,
+  type InstallationContext,
   type InvocationInput,
   type InvocationInputKind,
   type InvocationOutcome,
@@ -227,6 +243,12 @@ export {
   appJobWakeUpEnvelopeSchema,
   type AppJobWakeUpEnvelope,
 } from "./jobs.js";
+
+export {
+  requiredConnectionSlotsFor,
+  validateConfigurationValues,
+  type ConfigurationValuesResult,
+} from "./requirements.js";
 
 export {
   releaseAValidationPolicy,

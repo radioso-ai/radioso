@@ -10,6 +10,7 @@ import {
   destinationIdSchema,
   displayNameSchema,
   fieldKeySchema,
+  httpHeaderNameSchema,
   indexedFieldKeySchema,
   schemaVersionSchema,
 } from "./identifiers.js";
@@ -46,7 +47,6 @@ export const reservedContributionKinds = [
 export const contributionKinds = [...releaseAContributionKinds, ...reservedContributionKinds] as const;
 export const contributionKindSchema = z.enum(contributionKinds);
 
-const HTTP_HEADER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9-]{0,63}$/u;
 /**
  * A delivery reaches the App base64-encoded inside the invocation input, so the
  * largest body a handler may declare is the largest body the protocol carries.
@@ -54,6 +54,15 @@ const HTTP_HEADER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9-]{0,63}$/u;
  */
 const MAX_WEBHOOK_BODY_BYTES = MAX_BASE64_DECODED_BYTES;
 export const MAX_INDEXED_FIELDS = 64;
+
+const requiredConnectionSlotsField = z
+  .array(connectionSlotIdSchema)
+  .max(16)
+  .refine(
+    (slots) => new Set(slots).size === slots.length,
+    "A contribution names a connection slot at most once",
+  )
+  .default([]);
 
 const contributionHeader = {
   id: contributionIdSchema,
@@ -66,6 +75,14 @@ const contributionHeader = {
   /** Which input shape this contribution reads and which output shape it writes. */
   inputSchemaVersion: schemaVersionSchema,
   outputSchemaVersion: schemaVersionSchema,
+  /**
+   * Slots this contribution cannot run without. A connection is required for an
+   * installation only when a contribution that names it is active, which is what
+   * separates "this App can poll" from "this operator has to enter credentials
+   * to install it at all". Field-level `required` still means mandatory once the
+   * slot is bound.
+   */
+  requiredConnectionSlots: requiredConnectionSlotsField,
 };
 
 /**
@@ -118,7 +135,7 @@ export const externalWebhookHandlerContributionSchema = z
       .object({
         kind: z.literal("hmac_sha256"),
         secretConnectionSlot: connectionSlotIdSchema,
-        signatureHeader: z.string().regex(HTTP_HEADER_PATTERN),
+        signatureHeader: httpHeaderNameSchema,
         signaturePrefix: z.string().min(1).max(32).optional(),
       })
       .strict(),
@@ -127,22 +144,33 @@ export const externalWebhookHandlerContributionSchema = z
   })
   .strict();
 
-export const scheduleSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("interval"), seconds: z.number().int().min(60).max(86_400) }).strict(),
-  z
-    .object({
-      kind: z.literal("interval_from_configuration"),
-      field: fieldKeySchema,
-      minSeconds: z.number().int().min(60).max(86_400),
-      /**
-       * The value that means "do not run this at all". It sits outside the
-       * interval range on purpose — 0 is not a one-second poll — so an operator
-       * who leaves a push-only installation alone never starts a schedule.
-       */
-      disabledValue: z.number().int().min(0).max(86_400).optional(),
-    })
-    .strict(),
-]);
+export const scheduleSchema = z
+  .discriminatedUnion("kind", [
+    z.object({ kind: z.literal("interval"), seconds: z.number().int().min(60).max(86_400) }).strict(),
+    z
+      .object({
+        kind: z.literal("interval_from_configuration"),
+        field: fieldKeySchema,
+        minSeconds: z.number().int().min(60).max(86_400),
+        /**
+         * The value that means "do not run this at all". It sits below the
+         * interval floor — 0 is not a one-second poll — so an operator who
+         * leaves a push-only installation alone never starts a schedule, and an
+         * operator who picks a valid interval never silently stops one.
+         */
+        disabledValue: z.number().int().min(0).max(86_400).optional(),
+      })
+      .strict(),
+  ])
+  .superRefine((schedule, context) => {
+    if (schedule.kind !== "interval_from_configuration") return;
+    if (schedule.disabledValue === undefined || schedule.disabledValue < schedule.minSeconds) return;
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["disabledValue"],
+      message: "A disabled value must sit below the interval floor, or it would disable a valid interval",
+    });
+  });
 
 export const scheduledTaskContributionSchema = z
   .object({

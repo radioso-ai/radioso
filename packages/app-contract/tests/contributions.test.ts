@@ -195,6 +195,44 @@ describe("contribution catalog", () => {
     ).toMatchObject({ schedule: { minSeconds: 60 } });
   });
 
+  it("lets a contribution name the connection slots it cannot run without", () => {
+    expect(contributionSchema.parse(scheduledTask)).toMatchObject({ requiredConnectionSlots: [] });
+    expect(
+      contributionSchema.parse({ ...scheduledTask, requiredConnectionSlots: ["site_credentials"] }),
+    ).toMatchObject({ requiredConnectionSlots: ["site_credentials"] });
+    expect(
+      contributionSchema.safeParse({
+        ...scheduledTask,
+        requiredConnectionSlots: ["site_credentials", "site_credentials"],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("refuses a disabled value an operator could pick as a working interval", () => {
+    expect(
+      contributionSchema.safeParse({
+        ...scheduledTask,
+        schedule: {
+          kind: "interval_from_configuration",
+          field: "poll_interval_sec",
+          minSeconds: 60,
+          disabledValue: 300,
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      contributionSchema.safeParse({
+        ...scheduledTask,
+        schedule: {
+          kind: "interval_from_configuration",
+          field: "poll_interval_sec",
+          minSeconds: 60,
+          disabledValue: 59,
+        },
+      }).success,
+    ).toBe(true);
+  });
+
   it("rejects a kind outside the catalog", () => {
     expect(contributionSchema.safeParse({ ...header, id: "mystery", kind: "widget" }).success).toBe(false);
   });

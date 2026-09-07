@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   appErrorCodes,
@@ -10,9 +10,14 @@ import {
   invocationOutcomes,
   invocationRequestSchema,
   invocationResponseSchema,
+  invocationOutputSchema,
   MAX_BASE64_DECODED_BYTES,
+  MAX_EGRESS_QUERY_BYTES,
+  MAX_EGRESS_QUERY_ENTRIES,
   MAX_ERROR_MESSAGE_LENGTH,
   MAX_HEADER_ENTRIES,
+  MAX_JSON_SERIALIZED_BYTES,
+  MAX_JSON_STRING_LENGTH,
   RUNTIME_PROTOCOL_VERSION,
 } from "../src/index.js";
 
@@ -29,6 +34,7 @@ const requestHeader = {
   idempotencyKey: "delivery:6f0f1c2d",
   deadlineAt: "2026-09-06T12:00:30.000Z",
   capabilitySession: { token: "opaque-session-token", expiresAt: "2026-09-06T12:00:30.000Z" },
+  context: { configuration: { site_url: "https://example.com", post_types: "page,post", poll_interval_sec: 0 } },
 };
 
 const webhookInput = {
@@ -131,6 +137,51 @@ describe("invocation request", () => {
     ).toBe(false);
   });
 
+  it("carries the validated configuration the App runs against", () => {
+    const parsed = invocationRequestSchema.parse({
+      ...requestHeader,
+      executionClass: "external_webhook",
+      input: webhookInput,
+    });
+    expect(parsed.context.configuration["post_types"]).toBe("page,post");
+    expect(parsed.context.configuration["poll_interval_sec"]).toBe(0);
+  });
+
+  it("refuses an invocation with no configuration context at all", () => {
+    const { context: _context, ...withoutContext } = requestHeader;
+    expect(
+      invocationRequestSchema.safeParse({
+        ...withoutContext,
+        executionClass: "external_webhook",
+        input: webhookInput,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("keeps the context to declared keys, scalar values, and a bounded size", () => {
+    const withContext = (configuration: Record<string, unknown>): boolean =>
+      invocationRequestSchema.safeParse({
+        ...requestHeader,
+        context: { configuration },
+        executionClass: "external_webhook",
+        input: webhookInput,
+      }).success;
+    expect(withContext({ "Not A Key": "x" })).toBe(false);
+    expect(withContext({ nested: { value: 1 } })).toBe(false);
+    expect(withContext({ site_url: "x".repeat(4097) })).toBe(false);
+    expect(
+      withContext(Object.fromEntries(Array.from({ length: 65 }, (_, index) => [`field_${index}`, "v"]))),
+    ).toBe(false);
+    expect(
+      invocationRequestSchema.safeParse({
+        ...requestHeader,
+        context: { configuration: {}, secrets: {} },
+        executionClass: "external_webhook",
+        input: webhookInput,
+      }).success,
+    ).toBe(false);
+  });
+
   it("bounds how many headers one delivery may carry", () => {
     const headers = Object.fromEntries(
       Array.from({ length: MAX_HEADER_ENTRIES + 1 }, (_, index) => [`X-Header-${index}`, "v"]),
@@ -229,6 +280,27 @@ describe("invocation response", () => {
     ).toBe(false);
   });
 
+  it("bounds the whole output rather than each of its values on its own", () => {
+    const wide = Object.fromEntries(
+      Array.from({ length: 32 }, (_, index) => [`key_${index}`, "x".repeat(MAX_JSON_STRING_LENGTH)]),
+    );
+    expect(invocationOutputSchema.safeParse({ counts: { ingested: 1, deleted: 0, skipped: 0 } }).success).toBe(
+      true,
+    );
+    expect(invocationOutputSchema.safeParse(wide).success).toBe(false);
+    expect(
+      invocationResponseSchema.safeParse({
+        ...responseHeader,
+        outcome: "succeeded",
+        outputSchemaVersion: 1,
+        output: wide,
+      }).success,
+    ).toBe(false);
+    expect(
+      invocationOutputSchema.safeParse({ report: "x".repeat(MAX_JSON_STRING_LENGTH) }).success,
+    ).toBe(true);
+  });
+
   it("bounds the error message so a payload cannot be echoed back", () => {
     expect(MAX_ERROR_MESSAGE_LENGTH).toBe(512);
     expect(
@@ -316,6 +388,48 @@ describe("host capabilities", () => {
     expect(reject("/wp-json/wp/v2/posts#fragment")).toBe(false);
     expect(reject("wp-json/wp/v2/posts")).toBe(false);
     expect(reject("/wp-json/wp/v2/posts")).toBe(true);
+  });
+
+  it("bounds an egress query by entry count and encoded size", () => {
+    const withQuery = (query: Record<string, string>): boolean =>
+      hostCapabilityRequestSchema.safeParse({
+        capability: "egress.fetch",
+        destination: "site",
+        method: "GET",
+        path: "/wp-json/wp/v2/posts",
+        query,
+      }).success;
+    expect(withQuery({ modified_after: "2026-09-05T00:00:00", per_page: "100" })).toBe(true);
+    expect(
+      withQuery(
+        Object.fromEntries(
+          Array.from({ length: MAX_EGRESS_QUERY_ENTRIES + 1 }, (_, index) => [`k${index}`, "v"]),
+        ),
+      ),
+    ).toBe(false);
+    expect(
+      withQuery(
+        Object.fromEntries(
+          Array.from({ length: 8 }, (_, index) => [
+            `k${index}`,
+            "x".repeat(Math.ceil(MAX_EGRESS_QUERY_BYTES / 8)),
+          ]),
+        ),
+      ),
+    ).toBe(false);
+  });
+
+  it("refuses an oversized payload without ever serializing it", () => {
+    const serialize = vi.spyOn(JSON, "stringify");
+    const oversized = { payload: "x".repeat(100_000_000) };
+    const startedAt = performance.now();
+    const parsed = invocationOutputSchema.safeParse(oversized);
+    const elapsedMs = performance.now() - startedAt;
+    serialize.mockRestore();
+    expect(parsed.success).toBe(false);
+    expect(serialize).not.toHaveBeenCalled();
+    expect(elapsedMs).toBeLessThan(2000);
+    expect(MAX_JSON_SERIALIZED_BYTES).toBe(64 * 1024);
   });
 
   it("rejects a capability outside the union", () => {

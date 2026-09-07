@@ -8,6 +8,7 @@ import {
   type HostPermission,
   hostPermissions,
 } from "./contributions.js";
+import { credentialFieldReferences } from "./destinations.js";
 import { appManifestSchema, type AppManifest } from "./manifest.js";
 import { isScalarStorageFieldType } from "./storage.js";
 
@@ -255,12 +256,33 @@ const collectDestinationIssues = (
         });
       }
     }
-    if (destination.connectionSlot !== undefined && !index.connectionSlots.has(destination.connectionSlot)) {
-      issues.push({
-        code: "unknown_connection_slot",
-        path: `destinations[${position}].connectionSlot`,
-        message: `No connection slot ${destination.connectionSlot} is declared`,
-      });
+    if (destination.credentials) {
+      const credentials = destination.credentials;
+      const slotPath = `destinations[${position}].credentials.slot`;
+      const slot = index.connectionSlots.get(credentials.slot);
+      if (!slot) {
+        issues.push({
+          code: "unknown_connection_slot",
+          path: slotPath,
+          message: `No connection slot ${credentials.slot} is declared`,
+        });
+      } else if (slot.kind !== "secret_fields") {
+        issues.push({
+          code: "invalid_destination_credential_slot",
+          path: slotPath,
+          message: `Slot ${slot.id} is ${slot.kind} and holds no fields a request can be built from`,
+        });
+      } else {
+        const fieldKeys = new Set(slot.fields.map((field) => field.key));
+        for (const reference of credentialFieldReferences(credentials.application)) {
+          if (fieldKeys.has(reference.field)) continue;
+          issues.push({
+            code: "unknown_connection_field",
+            path: `destinations[${position}].credentials.application.${reference.path}`,
+            message: `Slot ${slot.id} has no field ${reference.field}`,
+          });
+        }
+      }
     }
     return issues;
   });
@@ -306,7 +328,33 @@ const collectContributionIssues = (
       requireCollection(contribution.backfill.checkpointCollection, at("backfill.checkpointCollection"));
     }
 
+    contribution.requiredConnectionSlots.forEach((slotId, slotPosition) => {
+      if (index.connectionSlots.has(slotId)) return;
+      issues.push({
+        code: "unknown_connection_slot",
+        path: at(`requiredConnectionSlots[${slotPosition}]`),
+        message: `No connection slot ${slotId} is declared`,
+      });
+    });
+
     if (contribution.kind === "external_webhook_handler" || contribution.kind === "scheduled_task") {
+      const writesDocuments = contribution.permissions.some(
+        (permission) => permission === "documents.ingest" || permission === "documents.delete",
+      );
+      if (writesDocuments && contribution.documentSources.length === 0) {
+        issues.push({
+          code: "missing_document_source",
+          path: at("documentSources"),
+          message: `Contribution ${contribution.id} writes documents and names no source to write through`,
+        });
+      }
+      issues.push(
+        ...duplicateIssues(
+          contribution.documentSources,
+          (sourceId) => sourceId,
+          (sourcePosition) => at(`documentSources[${sourcePosition}]`),
+        ),
+      );
       issues.push(
         ...collectDocumentSourceIssues(contribution.id, contribution.documentSources, index, at),
       );

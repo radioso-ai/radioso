@@ -44,7 +44,11 @@ const textField = z
   .strict();
 
 const urlField = z
-  .object({ ...fieldHeader, type: z.literal("url"), default: z.string().max(1024).optional() })
+  .object({
+    ...fieldHeader,
+    type: z.literal("url"),
+    default: z.string().max(1024).url("A url field's default must be a URL").optional(),
+  })
   .strict();
 
 const numberField = z
@@ -95,16 +99,38 @@ export const configurationFieldSchema = z
         message: "A number field's ceiling must be at least its floor",
       });
     }
-    if (
-      field.type === "select" &&
-      field.default !== undefined &&
-      !field.options.some((option) => option.value === field.default)
-    ) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["default"],
-        message: "A select field's default must be one of its options",
+    if (field.type === "number" && field.default !== undefined) {
+      if (field.min !== undefined && field.default < field.min) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["default"],
+          message: "A number field's default must be at least its floor",
+        });
+      }
+      if (field.max !== undefined && field.default > field.max) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["default"],
+          message: "A number field's default must be at most its ceiling",
+        });
+      }
+    }
+    if (field.type === "select") {
+      field.options.forEach((option, position) => {
+        if (field.options.findIndex((candidate) => candidate.value === option.value) === position) return;
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["options", position, "value"],
+          message: `A select field states the value ${option.value} once`,
+        });
       });
+      if (field.default !== undefined && !field.options.some((option) => option.value === field.default)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["default"],
+          message: "A select field's default must be one of its options",
+        });
+      }
     }
   });
 
@@ -114,6 +140,30 @@ export const appConfigurationSchema = z
   })
   .strict();
 
+/**
+ * The value space those declarations describe. An installation's configuration
+ * is what the operator filled in, and it is the one part of an installation the
+ * App is allowed to read: no secret type declares here, so nothing in this map
+ * is credential material.
+ */
+export const MAX_CONFIGURATION_VALUE_LENGTH = 4096;
+export const MAX_CONFIGURATION_ENTRIES = 64;
+
+export const configurationValueSchema = z.union([
+  z.string().max(MAX_CONFIGURATION_VALUE_LENGTH),
+  z.number().finite(),
+  z.boolean(),
+]);
+
+export const configurationValuesSchema = z
+  .record(fieldKeySchema, configurationValueSchema)
+  .refine(
+    (values) => Object.keys(values).length <= MAX_CONFIGURATION_ENTRIES,
+    `At most ${MAX_CONFIGURATION_ENTRIES} configuration values`,
+  );
+
 export type ConfigurationFieldType = z.infer<typeof configurationFieldTypeSchema>;
 export type ConfigurationField = z.infer<typeof configurationFieldSchema>;
 export type AppConfiguration = z.infer<typeof appConfigurationSchema>;
+export type ConfigurationValue = z.infer<typeof configurationValueSchema>;
+export type ConfigurationValues = z.infer<typeof configurationValuesSchema>;

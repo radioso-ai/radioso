@@ -1,7 +1,7 @@
 ---
 title: "App Runtime Protocol"
 description: "The wire contract between a Radioso host and an App: invocation requests and responses per input kind, host capability calls, error codes, and the App Job wake-up envelope."
-last_updated: 2026-09-06
+last_updated: 2026-09-07
 ---
 
 # App Runtime Protocol
@@ -39,6 +39,7 @@ The host sends one request per unit of work:
   "idempotencyKey": "delivery:6f0f1c2d",
   "deadlineAt": "2026-09-06T12:00:30.000Z",
   "capabilitySession": { "token": "…", "expiresAt": "2026-09-06T12:00:30.000Z" },
+  "context": { "configuration": { "site_url": "https://example.com", "post_types": "page,post" } },
   "input": { "kind": "webhook", "…": "…" }
 }
 ```
@@ -65,6 +66,24 @@ it expires at `capabilitySession.expiresAt`.
 
 The gateway supplies all of this. An App cannot select a different installation,
 contribution, schema, deadline, or capability set.
+
+### Installation context
+
+`context.configuration` is what the operator filled in, as your App reads it:
+one scalar per configuration key, strings up to 4 096 characters, at most 64
+entries. It arrives on every invocation, so a handler never has to discover
+which post types, which folder, or which locale an installation meant.
+
+The gateway validates stored values against the manifest before it mints the
+invocation — every required field present, every value the type its field
+declares, numbers inside `min` and `max`, `select` values among their options,
+`url` values parseable, and no undeclared keys. `validateConfigurationValues` in
+`@radioso/app-contract` is the same check, so a dashboard and a gateway reach
+the same answer.
+
+Nothing here is a secret. Configuration has no secret field type: credential
+material lives in a connection slot, and the broker attaches it server-side on
+the way out. An App holds no credential at any point.
 
 ### input by contribution kind
 
@@ -136,6 +155,10 @@ everything else under `output` is yours, bounded rather than interpreted.
 
 Bounds apply to every free-form value: at most 8 levels of nesting, 256 keys per
 object, 1 024 array items, 8 192 characters per string, and 64 KiB serialized.
+The serialized bound is measured over the whole value, not over each of its
+members, so `output` as a whole stays under 64 KiB however many keys it carries.
+An oversized value is refused at the first violation, without the host ever
+serializing it.
 
 ## Host capabilities
 
@@ -174,6 +197,21 @@ belongs to. That is how the host knows whose external-id namespace and
 indexed-field vocabulary an effect uses, and it is what the host attaches
 provenance from — provenance is the host's to write, never yours.
 
+The gateway holds a document effect to four rules, in this order:
+
+1. It derives the invoking contribution from the authenticated capability
+   session, never from anything in the request.
+2. `sourceContributionId` must appear in that contribution's `documentSources`,
+   or equal the invoking contribution itself when a `document_source` is running
+   its own backfill. Anything else is `denied`.
+3. It enforces that source's `externalIdNamespace` and its `indexedFields`
+   policy: a key outside a `declared` list, or more keys than a `dynamic` policy
+   allows, is `invalid_input`.
+4. It writes installation, release, and source provenance itself.
+
+That is why a contribution asking for a document permission has to name at least
+one source at admission: a handler with an empty list could never satisfy rule 2.
+
 `indexedFields` carries the values a retrieval rule compares: one scalar per
 key, under keys the source's `indexedFields` policy allows. `metadata` carries
 the rest of what the source knows about the document — up to 64 keys, each a
@@ -192,13 +230,19 @@ string of up to 1 024 characters, a number, or a boolean.
 `destination` is a destination id from the manifest. `path` is origin-relative:
 exactly one leading slash, and no scheme, authority, backslash, or fragment. A
 path that could resolve to another host is refused here rather than by whatever
-resolves it later.
+resolves it later. `query` carries at most 64 entries and encodes to at most
+8 KiB, so a URL the broker would have to build and then reject is refused at the
+boundary instead.
 
 The host resolves the host name — including one bound to a configuration field —
-attaches the credential from the destination's connection slot, and returns the
-response with its body base64-encoded. A body in either direction is real base64
-and decodes to at most 4 MiB. Credentials stay on the host side, so an App never holds the
-secret it authenticates with.
+applies the destination's declared credential, and returns the response with its
+body base64-encoded. The manifest says which slot to draw from and what to build:
+HTTP Basic from a username and password field, a bearer token from one field, or
+a named header carrying one field. When the destination's credential is not
+`required` and the slot is unbound, the broker sends the request anonymously. A
+body in either direction is real base64 and decodes to at most 4 MiB.
+Credentials stay on the host side, so an App never holds the secret it
+authenticates with.
 
 `storage.put` and `storage.delete` take an optional `expectedVersion`. Supply
 the version you read and the write only lands if nobody changed the record

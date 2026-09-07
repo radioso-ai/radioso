@@ -16,6 +16,12 @@ const LOCAL_KEY_PATTERN = /^[a-z][a-z0-9_]{0,63}$/u;
  */
 const INDEXED_FIELD_KEY_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,63}$/u;
 const DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/u;
+/**
+ * An HTTP field name, in the one shape every side of the boundary uses: a
+ * webhook signature header, an egress header, and a credential header are the
+ * same kind of name, so they share one rule rather than three copies of it.
+ */
+const HTTP_HEADER_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9-]{0,63}$/u;
 const SEMANTIC_VERSION_PATTERN =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u;
 
@@ -43,6 +49,12 @@ export const indexedFieldKeySchema = z
     "Indexed field key must start with a letter and hold letters, digits, and underscores, 1 to 64 characters",
   );
 export const fixtureIdSchema = localKey("Fixture id");
+export const httpHeaderNameSchema = z
+  .string()
+  .regex(
+    HTTP_HEADER_NAME_PATTERN,
+    "Header name must start with a letter or digit and hold letters, digits, and hyphens, 1 to 64 characters",
+  );
 export const assetIdSchema = localKey("Asset id");
 
 export const digestSchema = z

@@ -10,6 +10,7 @@ import {
   storageOperations,
   storagePutRequestSchema,
   storageQueryRequestSchema,
+  MAX_JSON_SERIALIZED_BYTES,
 } from "../src/index.js";
 
 const collection = {
@@ -54,6 +55,21 @@ describe("storage collection declarations", () => {
   it("requires positive quotas", () => {
     expect(
       storageCollectionSchema.safeParse({ ...collection, quotas: { maxRecords: 0, maxRecordBytes: 16384 } }).success,
+    ).toBe(false);
+  });
+
+  it("caps a declared record size at the size a protocol message carries", () => {
+    expect(
+      storageCollectionSchema.safeParse({
+        ...collection,
+        quotas: { maxRecords: 100, maxRecordBytes: MAX_JSON_SERIALIZED_BYTES },
+      }).success,
+    ).toBe(true);
+    expect(
+      storageCollectionSchema.safeParse({
+        ...collection,
+        quotas: { maxRecords: 100, maxRecordBytes: MAX_JSON_SERIALIZED_BYTES + 1 },
+      }).success,
     ).toBe(false);
   });
 

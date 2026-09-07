@@ -420,6 +420,64 @@ describe("host capabilities", () => {
     }
   });
 
+  it("refuses an encoded separator, a double encoding, and a malformed escape", () => {
+    const accepts = (path: string): boolean =>
+      hostCapabilityRequestSchema.safeParse({
+        capability: "egress.fetch",
+        destination: "site",
+        method: "GET",
+        path,
+      }).success;
+    for (const path of [
+      "/%2e%2e%2fwp-admin",
+      "/.%2e%2fwp-admin",
+      "/%252e%252e/wp-admin",
+      "/wp%2f..%2fadmin",
+      "/wp%5c..%5cadmin",
+      "/wp-json/%zz",
+      "/wp-json/%2",
+      "/wp-json/%00",
+      "/wp-json/%0a",
+      "/wp-json/%7f",
+      "/wp-json/\u0000",
+      "/wp-json/\u007f",
+    ]) {
+      expect(accepts(path)).toBe(false);
+    }
+    expect(accepts("/wp-json/wp/v2/posts%20list")).toBe(true);
+  });
+
+  it("refuses a header map whose entries are inherited rather than its own", () => {
+    const inherited = Object.assign(Object.create({ "X-Radioso-Inherited": "value" }) as object, {
+      "X-Radioso-Note": "value",
+    });
+    const parsed = hostCapabilityRequestSchema.safeParse({
+      capability: "egress.fetch",
+      destination: "site",
+      method: "GET",
+      path: "/wp-json/wp/v2/posts",
+      headers: inherited,
+    });
+    expect(parsed.success).toBe(false);
+    expect(parsed.success ? [] : parsed.error.issues.map((issue) => issue.message)).toEqual([
+      "A map is a plain JSON object carrying its own keys only",
+    ]);
+  });
+
+  it("refuses one oversized header value on its length, without scanning it", () => {
+    const parsed = hostCapabilityRequestSchema.safeParse({
+      capability: "egress.fetch",
+      destination: "site",
+      method: "GET",
+      path: "/wp-json/wp/v2/posts",
+      headers: { "X-Radioso-Note": `\r\n${"x".repeat(200_000)}` },
+    });
+    expect(parsed.success).toBe(false);
+    const messages = parsed.success ? [] : parsed.error.issues.map((issue) => issue.message);
+    expect(messages.some((message) => message.includes("at most"))).toBe(true);
+    expect(messages.some((message) => message.includes("carriage return"))).toBe(false);
+  });
+
   it("refuses a body on a method that carries none", () => {
     const withBody = (method: string): boolean =>
       hostCapabilityRequestSchema.safeParse({

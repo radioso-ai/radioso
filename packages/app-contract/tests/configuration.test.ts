@@ -198,4 +198,32 @@ describe("configuration values", () => {
       ).success,
     ).toBe(false);
   });
+
+  it("refuses a hundred-thousand entry map on breadth alone, before it reads an entry", () => {
+    const wide = Object.fromEntries(
+      Array.from({ length: 100_000 }, (_, index) => [`field_${index}`, "x".repeat(64)]),
+    );
+    const parsed = configurationValuesSchema.safeParse(wide);
+    expect(parsed.success).toBe(false);
+    expect(parsed.success ? [] : parsed.error.issues.map((issue) => issue.message)).toEqual([
+      `At most ${MAX_CONFIGURATION_ENTRIES} configuration values`,
+    ]);
+  });
+
+  it("refuses a map whose entries are inherited rather than its own", () => {
+    const inherited = Object.assign(Object.create({ inherited_key: "value" }) as object, {
+      post_types: "page",
+    });
+    const parsed = configurationValuesSchema.safeParse(inherited);
+    expect(parsed.success).toBe(false);
+    expect(parsed.success ? [] : parsed.error.issues.map((issue) => issue.message)).toEqual([
+      "A map is a plain JSON object carrying its own keys only",
+    ]);
+  });
+
+  it("refuses a value space that is not a map at all", () => {
+    expect(configurationValuesSchema.safeParse(["page"]).success).toBe(false);
+    expect(configurationValuesSchema.safeParse("post_types=page").success).toBe(false);
+    expect(configurationValuesSchema.safeParse(null).success).toBe(false);
+  });
 });

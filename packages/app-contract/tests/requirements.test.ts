@@ -4,11 +4,11 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import {
-  installationReadiness,
   releaseAValidationPolicy,
-  resolveConfiguration,
+  resolveInstallation,
   validateManifest,
   type AppManifest,
+  type Destination,
   type EffectiveConfiguration,
 } from "../src/index.js";
 
@@ -17,18 +17,29 @@ const result = validateManifest(JSON.parse(readFileSync(fixturePath, "utf8")) as
 if (!result.ok) throw new Error("the reference WordPress manifest must validate");
 const manifest: AppManifest = result.manifest;
 
-const codesFor = (values: unknown): string[] => {
-  const resolved = resolveConfiguration(manifest, values);
+const codesFor = (values: unknown, against: AppManifest = manifest): string[] => {
+  const resolved = resolveInstallation(against, values);
   return resolved.ok ? [] : resolved.issues.map((issue) => issue.code);
 };
 
 const configurationOf = (values: unknown): EffectiveConfiguration => {
-  const resolved = resolveConfiguration(manifest, values);
-  if (!resolved.ok) throw new Error(`expected a resolvable configuration: ${JSON.stringify(resolved.issues)}`);
+  const resolved = resolveInstallation(manifest, values);
+  if (!resolved.ok) throw new Error(`expected a resolvable installation: ${JSON.stringify(resolved.issues)}`);
   return resolved.configuration;
 };
 
-describe("resolveConfiguration", () => {
+const readinessOf = (values: unknown, against: AppManifest = manifest) => {
+  const resolved = resolveInstallation(against, values);
+  if (!resolved.ok) throw new Error(`expected a resolvable installation: ${JSON.stringify(resolved.issues)}`);
+  return resolved.readiness;
+};
+
+const withDestination = (destination: Destination): AppManifest => ({
+  ...manifest,
+  destinations: [destination],
+});
+
+describe("resolveInstallation", () => {
   it("materializes every declared default, so an App reads one shape however little was stored", () => {
     expect(configurationOf({ site_url: "https://example.com" })).toEqual({
       site_url: "https://example.com",
@@ -89,7 +100,7 @@ describe("resolveConfiguration", () => {
 
   it("never repeats a key or a value back into a diagnostic", () => {
     const hostile = "!".repeat(2048);
-    const resolved = resolveConfiguration(manifest, { site_url: "https://example.com", [hostile]: "v" });
+    const resolved = resolveInstallation(manifest, { site_url: "https://example.com", [hostile]: "v" });
     const rendered = resolved.ok ? "" : JSON.stringify(resolved.issues);
     expect(rendered).toContain("configuration.1");
     expect(rendered).not.toContain(hostile);
@@ -97,7 +108,7 @@ describe("resolveConfiguration", () => {
 
   it("addresses an undeclared key by position even when it is spelled like a field key", () => {
     const hostile = "customer_ssn_123456789";
-    const resolved = resolveConfiguration(manifest, { site_url: "https://example.com", [hostile]: "x" });
+    const resolved = resolveInstallation(manifest, { site_url: "https://example.com", [hostile]: "x" });
     const rendered = resolved.ok ? "" : JSON.stringify(resolved.issues);
     expect(resolved.ok ? [] : resolved.issues.map((issue) => issue.path)).toEqual(["configuration.1"]);
     expect(rendered).not.toContain(hostile);
@@ -105,7 +116,7 @@ describe("resolveConfiguration", () => {
 
   it("stops collecting issues long before an oversized map becomes the answer", () => {
     const noisy = Object.fromEntries(Array.from({ length: 64 }, (_, index) => [`k${index}`, "v"]));
-    const resolved = resolveConfiguration(manifest, noisy);
+    const resolved = resolveInstallation(manifest, noisy);
     expect(resolved.ok).toBe(false);
     expect(resolved.ok ? 0 : resolved.issues.length).toBeLessThanOrEqual(32);
   });
@@ -115,6 +126,7 @@ describe("resolveConfiguration", () => {
       ...manifest,
       configuration: {
         fields: [
+          ...manifest.configuration.fields,
           {
             key: "locale",
             type: "select",
@@ -134,12 +146,10 @@ describe("resolveConfiguration", () => {
         ],
       },
     };
-    expect(resolveConfiguration(withSelect, { locale: "it" }).ok).toBe(true);
-    const rejected = resolveConfiguration(withSelect, { locale: "de", credentials: "hunter2" });
-    expect(rejected.ok ? [] : rejected.issues.map((issue) => issue.code)).toEqual([
-      "connection_slot_has_no_value",
-      "unknown_select_option",
-    ]);
+    expect(resolveInstallation(withSelect, { locale: "it", site_url: "https://example.com" }).ok).toBe(true);
+    expect(
+      codesFor({ locale: "de", site_url: "https://example.com", credentials: "hunter2" }, withSelect),
+    ).toEqual(["connection_slot_has_no_value", "unknown_select_option"]);
   });
 });
 
@@ -200,19 +210,16 @@ describe("a URL field a destination is built from", () => {
   });
 });
 
-describe("installationReadiness", () => {
+describe("the readiness resolution answers with", () => {
   it("leaves a disabled poll inactive and asks only for the signing secret", () => {
-    const readiness = installationReadiness(manifest, configurationOf({ site_url: "https://example.com" }));
+    const readiness = readinessOf({ site_url: "https://example.com" });
     expect(readiness.activeContributionIds).toEqual(["site_content", "content_push"]);
     expect(readiness.inactiveContributionIds).toEqual(["content_poll"]);
     expect(readiness.requiredConnectionSlots).toEqual(["webhook_secret"]);
   });
 
   it("asks for site credentials once the operator picks an interval", () => {
-    const readiness = installationReadiness(
-      manifest,
-      configurationOf({ site_url: "https://example.com", poll_interval_sec: 300 }),
-    );
+    const readiness = readinessOf({ site_url: "https://example.com", poll_interval_sec: 300 });
     expect(readiness.activeContributionIds).toEqual(["site_content", "content_push", "content_poll"]);
     expect(readiness.inactiveContributionIds).toEqual([]);
     expect(readiness.requiredConnectionSlots).toEqual(["site_credentials", "webhook_secret"]);
@@ -227,9 +234,76 @@ describe("installationReadiness", () => {
           : contribution,
       ),
     };
-    expect(
-      installationReadiness(shared, configurationOf({ site_url: "https://example.com" }))
-        .requiredConnectionSlots,
-    ).toEqual(["webhook_secret"]);
+    expect(readinessOf({ site_url: "https://example.com" }, shared).requiredConnectionSlots).toEqual([
+      "webhook_secret",
+    ]);
+  });
+});
+
+describe("the port a destination-bound address reaches", () => {
+  const siteDestination: Destination = manifest.destinations[0];
+
+  it("is the default port of the scheme when the destination declares no ports", () => {
+    expect(configurationOf({ site_url: "https://example.com" })).toMatchObject({
+      site_url: "https://example.com",
+    });
+    expect(configurationOf({ site_url: "https://example.com:443" })).toMatchObject({
+      site_url: "https://example.com:443",
+    });
+    expect(configurationOf({ site_url: "http://example.com:80" })).toMatchObject({
+      site_url: "http://example.com:80",
+    });
+    expect(codesFor({ site_url: "https://example.com:8443" })).toEqual(["url_port_not_declared"]);
+  });
+
+  it("is exactly what an explicit ports list declares, default or not", () => {
+    const explicit = withDestination({ ...siteDestination, ports: [8443] });
+    expect(codesFor({ site_url: "https://example.com:8443" }, explicit)).toEqual([]);
+    expect(codesFor({ site_url: "https://example.com" }, explicit)).toEqual(["url_port_not_declared"]);
+    expect(codesFor({ site_url: "https://example.com:443" }, explicit)).toEqual(["url_port_not_declared"]);
+  });
+
+  it("is checked once the scheme is one the destination declares", () => {
+    expect(codesFor({ site_url: "ftp://example.com:21" })).toEqual(["url_protocol_not_declared"]);
+  });
+});
+
+describe("resolveInstallation", () => {
+  it("answers configuration and readiness in one call, so neither can be paired with another manifest", () => {
+    const resolved = resolveInstallation(manifest, { site_url: "https://example.com" });
+    expect(resolved.ok).toBe(true);
+    if (!resolved.ok) return;
+    expect(resolved.configuration).toMatchObject({ site_url: "https://example.com" });
+    expect(resolved.readiness.inactiveContributionIds).toEqual(["content_poll"]);
+  });
+
+  it("freezes the configuration it returns, so an interval cannot be edited after the fact", () => {
+    const configuration = configurationOf({ site_url: "https://example.com", poll_interval_sec: 300 });
+    expect(Object.isFrozen(configuration)).toBe(true);
+    expect(() => {
+      (configuration as unknown as Record<string, unknown>)["poll_interval_sec"] = 30;
+    }).toThrow(TypeError);
+    expect(configuration).toMatchObject({ poll_interval_sec: 300 });
+  });
+
+  it("keeps the brand out of reach, so a stored map cannot be spelled as a resolved one", () => {
+    // @ts-expect-error the brand is a symbol this package does not export
+    const forged: EffectiveConfiguration = { site_url: "https://example.com", poll_interval_sec: 30 };
+    expect(forged).toMatchObject({ poll_interval_sec: 30 });
+  });
+
+  it("refuses to answer for a schedule field an installation could leave absent", () => {
+    const admitted: AppManifest = {
+      ...manifest,
+      configuration: {
+        fields: manifest.configuration.fields.map((field) =>
+          field.type === "number" ? { ...field, required: false, default: undefined } : field,
+        ),
+      },
+    };
+    expect(validateManifest(admitted, releaseAValidationPolicy).ok).toBe(false);
+    expect(() => resolveInstallation(admitted, { site_url: "https://example.com" })).toThrow(
+      /poll_interval_sec/u,
+    );
   });
 });

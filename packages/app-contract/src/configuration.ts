@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { refineBoundedMap } from "./bounds.js";
 import { connectionSlotIdSchema, descriptionSchema, displayNameSchema, fieldKeySchema } from "./identifiers.js";
 
 /**
@@ -166,12 +167,20 @@ export const configurationValueSchema = z.union([
   z.boolean(),
 ]);
 
+/**
+ * Shape and breadth are settled before `z.record` reads an entry: a record that
+ * counted its keys in a refinement would have parsed and cloned a
+ * hundred-thousand entry map on its way to refusing it.
+ */
 export const configurationValuesSchema = z
-  .record(fieldKeySchema, configurationValueSchema)
-  .refine(
-    (values) => Object.keys(values).length <= MAX_CONFIGURATION_ENTRIES,
-    `At most ${MAX_CONFIGURATION_ENTRIES} configuration values`,
-  );
+  .any()
+  .superRefine(
+    refineBoundedMap(
+      MAX_CONFIGURATION_ENTRIES,
+      `At most ${MAX_CONFIGURATION_ENTRIES} configuration values`,
+    ),
+  )
+  .pipe(z.record(fieldKeySchema, configurationValueSchema));
 
 export type ConfigurationFieldType = z.infer<typeof configurationFieldTypeSchema>;
 export type ConfigurationField = z.infer<typeof configurationFieldSchema>;

@@ -8,7 +8,7 @@ import {
   containsLoneSurrogate,
   formUrlencodedLength,
   refineBoundedJsonRecord,
-  refineMapBreadth,
+  refineBoundedMap,
   refineObjectBreadth,
 } from "./bounds.js";
 import { configurationValuesSchema } from "./configuration.js";
@@ -284,11 +284,9 @@ const documentMetadataValueSchema = z.union([
 
 const boundedFieldRecord = <V extends z.ZodTypeAny>(value: V) =>
   z
-    .record(indexedFieldKeySchema, value)
-    .refine(
-      (fields) => Object.keys(fields).length <= MAX_DOCUMENT_METADATA_KEYS,
-      `At most ${MAX_DOCUMENT_METADATA_KEYS} keys`,
-    );
+    .any()
+    .superRefine(refineBoundedMap(MAX_DOCUMENT_METADATA_KEYS, `At most ${MAX_DOCUMENT_METADATA_KEYS} keys`))
+    .pipe(z.record(indexedFieldKeySchema, value));
 
 /**
  * What an App writes into the workspace. Provenance — which App, which release,
@@ -327,10 +325,54 @@ const ORIGIN_RELATIVE_PATH_PATTERN = /^\/(?!\/)[^\\#?]*$/u;
  * A destination bound to a configuration field is an origin prefix, and a
  * request is appended below it. A dot segment is how a path climbs back above
  * that prefix during normalization, and it climbs just as well percent-encoded,
- * so both spellings are refused rather than left to whichever component
- * normalizes first.
+ * so a path is held to one canonical spelling before anything reads it.
+ *
+ * Canonical means every `%` introduces two hex digits, and it never introduces a
+ * separator or a control character: `%2F`, `%5C`, `%25`, and the encodings of
+ * 0x00-0x1F and 0x7F are refused outright. What is left decodes exactly once,
+ * and no segment of the result may be `.` or `..` — which is what makes
+ * `/%2e%2e%2fwp-admin` and `/%252e%252e/wp-admin` the same refusal as `/../`,
+ * rather than a path that only climbs once some intermediary decodes it.
  */
-const DOT_SEGMENT_PATTERN = /(?:^|\/)(?:\.|%2[eE]){1,2}(?:\/|$)/u;
+const HEX_PAIR_PATTERN = /^[0-9a-fA-F]{2}$/u;
+const REFUSED_OCTETS: ReadonlySet<number> = new Set([0x2f, 0x5c, 0x25]);
+
+const isCanonicallyEncoded = (path: string): boolean => {
+  for (let position = 0; position < path.length; position += 1) {
+    const code = path.charCodeAt(position);
+    if (code <= 0x1f || code === 0x7f) return false;
+    if (code !== 0x25) continue;
+    const pair = path.slice(position + 1, position + 3);
+    if (!HEX_PAIR_PATTERN.test(pair)) return false;
+    const octet = Number.parseInt(pair, 16);
+    if (octet <= 0x1f || octet === 0x7f || REFUSED_OCTETS.has(octet)) return false;
+  }
+  return true;
+};
+
+/**
+ * One decoding pass, byte by byte and without a decoder: `decodeURIComponent`
+ * throws on a percent sequence that is not valid UTF-8, and a path this refuses
+ * deserves the boundary's answer rather than an exception out of a helper. Only
+ * ASCII matters to what follows, and every octet keeps its own identity here.
+ */
+const decodedOnce = (path: string): string => {
+  let decoded = "";
+  for (let position = 0; position < path.length; position += 1) {
+    if (path.charCodeAt(position) !== 0x25) {
+      decoded += path[position];
+      continue;
+    }
+    decoded += String.fromCharCode(Number.parseInt(path.slice(position + 1, position + 3), 16));
+    position += 2;
+  }
+  return decoded;
+};
+
+const climbsAbovePrefix = (path: string): boolean =>
+  decodedOnce(path)
+    .split("/")
+    .some((segment) => segment === "." || segment === "..");
 
 /** Entries in one egress query string, and its total URL-encoded size. */
 export const MAX_EGRESS_QUERY_ENTRIES = 64;
@@ -354,7 +396,7 @@ const MAX_QUERY_VALUE_LENGTH = 2048;
 const egressQuerySchema = z
   .any()
   .superRefine(
-    refineMapBreadth(
+    refineBoundedMap(
       MAX_EGRESS_QUERY_ENTRIES,
       `A query may hold at most ${MAX_EGRESS_QUERY_ENTRIES} entries`,
     ),
@@ -408,10 +450,23 @@ const egressFetchRequestObjectSchema = z
         ORIGIN_RELATIVE_PATH_PATTERN,
         "Path must be origin-relative: one leading slash, no scheme, authority, backslash, query, or fragment",
       )
-      .refine(
-        (path) => !DOT_SEGMENT_PATTERN.test(path),
-        "Path must stay below the destination's prefix: no . or .. segment, encoded or not",
-      ),
+      .superRefine((path, context) => {
+        if (!isCanonicallyEncoded(path)) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [],
+            message:
+              "Path must be canonically encoded: every % introduces two hex digits, and no escape spells a separator, a percent, or a control character",
+          });
+          return;
+        }
+        if (!climbsAbovePrefix(path)) return;
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [],
+          message: "Path must stay below the destination's prefix: no . or .. segment, encoded or not",
+        });
+      }),
     query: egressQuerySchema.optional(),
     /**
      * The broker owns routing, framing, hop-by-hop, and authorization headers,

@@ -4,6 +4,7 @@ import type { ConfigurationField } from "./configuration.js";
 import type { ConnectionSlot, ConnectionSlotKind } from "./connections.js";
 import {
   releaseAContributionKinds,
+  satisfiesSchedule,
   type ConfigurationSchedule,
   type ContributionKind,
   type ExternalWebhookHandlerContribution,
@@ -11,7 +12,7 @@ import {
   type ScheduledTaskContribution,
   hostPermissions,
 } from "./contributions.js";
-import { credentialFieldReferences, type Destination } from "./destinations.js";
+import { credentialFieldReferences, destinationEndpoints, type Destination } from "./destinations.js";
 import { appManifestSchema, type AppManifest } from "./manifest.js";
 import { isScalarStorageFieldType } from "./storage.js";
 
@@ -238,32 +239,52 @@ const collectConfigurationIssues = (
 
 /**
  * Two destinations built from one configuration field are two views of one
- * address the operator types once. If they declare no protocol in common, every
- * value that satisfies one fails the other, and the manifest describes an
- * installation that cannot exist — which an author learns at admission here
- * rather than an operator learns by trying every URL.
+ * address the operator types once. The address has one scheme and one port, so
+ * every destination bound to the field has to permit that combination: a
+ * protocol common to all of them, and a port common to all of them on it.
+ * Otherwise every value that satisfies one fails another, and the manifest
+ * describes an installation that cannot exist — which an author learns at
+ * admission here rather than an operator learns by trying every URL.
+ *
+ * The intersection is cumulative and the diagnostic says so. Naming the first
+ * and the current destination would be a false sentence as soon as three are
+ * bound: A permitting HTTP and HTTPS, B only HTTP, and C only HTTPS leave
+ * nothing common to all, though A and C do share HTTPS.
  */
 const collectSharedHostIssues = (manifest: AppManifest): ManifestValidationIssue[] => {
   const issues: ManifestValidationIssue[] = [];
-  const reached = new Map<string, { id: string; protocols: Set<string> }>();
+  const reached = new Map<string, { protocols: Set<string>; endpoints: Set<string> }>();
   manifest.destinations.forEach((destination, position) => {
     if (destination.host.kind !== "configuration") return;
     const field = destination.host.field;
     const seen = reached.get(field);
     if (!seen) {
-      reached.set(field, { id: destination.id, protocols: new Set(destination.protocols) });
+      reached.set(field, {
+        protocols: new Set(destination.protocols),
+        endpoints: new Set(destinationEndpoints(destination)),
+      });
       return;
     }
-    const shared = destination.protocols.filter((protocol) => seen.protocols.has(protocol));
-    if (shared.length > 0) {
-      seen.protocols = new Set(shared);
+    const protocols = destination.protocols.filter((protocol) => seen.protocols.has(protocol));
+    if (protocols.length === 0) {
+      issues.push({
+        code: "destination_protocols_incompatible",
+        path: `destinations[${position}].protocols`,
+        message: `Destinations bound to field ${field} have no protocol common to all`,
+      });
       return;
     }
-    issues.push({
-      code: "destination_protocols_incompatible",
-      path: `destinations[${position}].protocols`,
-      message: `Destinations ${seen.id} and ${destination.id} are built from field ${field} and share no protocol`,
-    });
+    seen.protocols = new Set(protocols);
+    const endpoints = destinationEndpoints(destination).filter((endpoint) => seen.endpoints.has(endpoint));
+    if (endpoints.length === 0) {
+      issues.push({
+        code: "destination_ports_incompatible",
+        path: `destinations[${position}].ports`,
+        message: `Destinations bound to field ${field} have no protocol and port pair common to all`,
+      });
+      return;
+    }
+    seen.endpoints = new Set(endpoints);
   });
   return issues;
 };
@@ -349,22 +370,51 @@ const collectDestinationIssues = (
 
 const SECRET_BEARING_SLOT_KINDS: readonly ConnectionSlotKind[] = ["secret_fields", "generated_secret"];
 
+type NumberField = Extract<ConfigurationField, { type: "number" }>;
+
+/**
+ * The whole numbers of seconds one schedule can actually be given: its own range
+ * narrowed by the field's. Integers, because a schedule runs on a whole number
+ * of seconds — a field bounded to 60.1 and 60.9 overlaps a 60-to-61 range as a
+ * continuum and holds no value the host would ever run.
+ */
+const activeRange = (schedule: ConfigurationSchedule, field: NumberField): { floor: number; ceiling: number } => ({
+  floor: Math.ceil(Math.max(field.min ?? schedule.minSeconds, schedule.minSeconds)),
+  ceiling: Math.floor(Math.min(field.max ?? schedule.maxSeconds, schedule.maxSeconds)),
+});
+
 /**
  * A schedule an operator reads out of configuration is only a schedule if the
- * field can hold the values it means. A field whose range excludes the sentinel
- * leaves a task nobody can turn off; a field whose range never meets the
- * interval range leaves one that can never run. Both parse cleanly on their own
- * and only contradict each other here.
+ * field can hold the values it means, and holds one at every moment the task is
+ * active. A field whose range excludes the sentinel leaves a task nobody can
+ * turn off; a field whose range never meets the interval range leaves one that
+ * can never run; a field an installation may leave empty leaves an active task
+ * with no interval at all, which a host would have to invent. All of them parse
+ * cleanly on their own and only contradict each other here.
  */
 const collectScheduleRangeIssues = (
   schedule: ConfigurationSchedule,
-  field: Extract<ConfigurationField, { type: "number" }>,
+  field: NumberField,
   at: (suffix: string) => string,
 ): ManifestValidationIssue[] => {
   const issues: ManifestValidationIssue[] = [];
   const floor = field.min;
   const ceiling = field.max;
   const disabled = schedule.disabledValue;
+  if (!field.required && field.default === undefined) {
+    issues.push({
+      code: "schedule_field_may_be_absent",
+      path: at("schedule.field"),
+      message: `Field ${field.key} is optional and declares no default, so this schedule would run on no interval at all`,
+    });
+  }
+  if (field.default !== undefined && !satisfiesSchedule(schedule, field.default)) {
+    issues.push({
+      code: "schedule_default_invalid",
+      path: at("schedule.field"),
+      message: `Field ${field.key} defaults to ${field.default}, which this schedule neither runs on nor reads as off`,
+    });
+  }
   if (
     disabled !== undefined &&
     ((floor !== undefined && disabled < floor) || (ceiling !== undefined && disabled > ceiling))
@@ -375,15 +425,63 @@ const collectScheduleRangeIssues = (
       message: `Field ${field.key} cannot hold ${disabled}, so this schedule can never be turned off`,
     });
   }
-  const reachableFloor = Math.max(floor ?? schedule.minSeconds, schedule.minSeconds);
-  const reachableCeiling = Math.min(ceiling ?? schedule.maxSeconds, schedule.maxSeconds);
-  if (reachableFloor > reachableCeiling) {
+  const reachable = activeRange(schedule, field);
+  if (reachable.floor > reachable.ceiling) {
     issues.push({
       code: "schedule_range_unreachable",
       path: at("schedule.minSeconds"),
-      message: `Field ${field.key} admits no value between ${schedule.minSeconds} and ${schedule.maxSeconds} seconds, so this schedule can never run`,
+      message: `Field ${field.key} admits no whole number of seconds between ${schedule.minSeconds} and ${schedule.maxSeconds}, so this schedule can never run`,
     });
   }
+  return issues;
+};
+
+/**
+ * One field, one stored value, however many schedules read it. Two schedules
+ * that disagree about the sentinel disagree about whether that value means "off"
+ * or "every 60 seconds"; two whose active ranges never meet leave no interval
+ * that runs both. Each parses, and each is reachable on its own — the
+ * contradiction exists only between them.
+ */
+const collectSharedScheduleIssues = (
+  manifest: AppManifest,
+  index: ManifestIndex,
+): ManifestValidationIssue[] => {
+  const issues: ManifestValidationIssue[] = [];
+  const reached = new Map<string, { disabledValue: number | undefined; floor: number; ceiling: number }>();
+  manifest.contributions.forEach((contribution, position) => {
+    if (contribution.kind !== "scheduled_task") return;
+    const schedule = contribution.schedule;
+    if (schedule.kind !== "interval_from_configuration") return;
+    const field = index.configurationFields.get(schedule.field);
+    if (field?.type !== "number") return;
+    const at = (suffix: string): string => `contributions[${position}].${suffix}`;
+    const range = activeRange(schedule, field);
+    const seen = reached.get(schedule.field);
+    if (!seen) {
+      reached.set(schedule.field, { disabledValue: schedule.disabledValue, ...range });
+      return;
+    }
+    if (seen.disabledValue !== schedule.disabledValue) {
+      issues.push({
+        code: "shared_schedule_sentinel_mismatch",
+        path: at("schedule.disabledValue"),
+        message: `Field ${schedule.field} holds one value, so every schedule that reads it means the same thing by it`,
+      });
+    }
+    const floor = Math.max(seen.floor, range.floor);
+    const ceiling = Math.min(seen.ceiling, range.ceiling);
+    if (floor > ceiling) {
+      issues.push({
+        code: "shared_schedule_ranges_disjoint",
+        path: at("schedule.minSeconds"),
+        message: `Field ${schedule.field} holds one value, and no whole number of seconds runs every schedule that reads it`,
+      });
+      return;
+    }
+    seen.floor = floor;
+    seen.ceiling = ceiling;
+  });
   return issues;
 };
 
@@ -669,6 +767,7 @@ export const validateManifest = (
     ...collectDestinationIssues(parsed.data, index),
     ...collectSharedHostIssues(parsed.data),
     ...collectContributionIssues(parsed.data, index),
+    ...collectSharedScheduleIssues(parsed.data, index),
     ...collectConformanceFixtureIssues(parsed.data, index),
     ...collectPolicyIssues(parsed.data, policy),
   ];

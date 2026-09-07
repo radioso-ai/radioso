@@ -246,11 +246,10 @@ export {
 } from "./jobs.js";
 
 export {
-  installationReadiness,
-  resolveConfiguration,
-  type ConfigurationResolutionResult,
+  resolveInstallation,
   type EffectiveConfiguration,
   type InstallationReadiness,
+  type InstallationResolutionResult,
 } from "./requirements.js";
 
 export {

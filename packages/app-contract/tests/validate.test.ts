@@ -141,6 +141,7 @@ const baseManifest = {
         field: "poll_interval_sec",
         minSeconds: 60,
         maxSeconds: 86_400,
+        disabledValue: 0,
       },
       overlapPolicy: "skip",
       maxDurationSeconds: 600,
@@ -374,8 +375,6 @@ describe("validateManifest", () => {
     const issues = issuesFor((manifest) => {
       const fields = (manifest["configuration"] as { fields: Record<string, unknown>[] }).fields;
       fields[1]["max"] = 30;
-      const schedule = contributionsOf(manifest)[2]["schedule"] as Record<string, unknown>;
-      schedule["disabledValue"] = 0;
     });
     expect(issues).toEqual([
       expect.objectContaining({
@@ -393,11 +392,19 @@ describe("validateManifest", () => {
       const schedule = contributionsOf(manifest)[2]["schedule"] as Record<string, unknown>;
       schedule["maxSeconds"] = 3_600;
     });
-    expect(issues).toEqual([
+    // The field is now out of reach of the interval range, out of reach of the
+    // sentinel, and defaulted to a value the schedule cannot read. All three are
+    // true of this manifest, and admission reports all three.
+    expect(issues).toContainEqual(
       expect.objectContaining({
         code: "schedule_range_unreachable",
         path: "contributions[2].schedule.minSeconds",
       }),
+    );
+    expect(issues.map((issue) => issue.code).sort()).toEqual([
+      "disabled_value_outside_field_range",
+      "schedule_default_invalid",
+      "schedule_range_unreachable",
     ]);
   });
 
@@ -438,6 +445,173 @@ describe("validateManifest", () => {
       second["id"] = "site_media";
       second["protocols"] = ["https", "http"];
       destinations.push(second);
+    });
+    expect(issues).toEqual([]);
+  });
+
+  it("names no pair when three destinations leave nothing common to all", () => {
+    const issues = issuesFor((manifest) => {
+      const destinations = manifest["destinations"] as Record<string, unknown>[];
+      destinations[0]["protocols"] = ["https", "http"];
+      const plain = structuredClone(destinations[0]);
+      plain["id"] = "site_plain";
+      plain["protocols"] = ["http"];
+      const secure = structuredClone(destinations[0]);
+      secure["id"] = "site_secure";
+      secure["protocols"] = ["https"];
+      destinations.push(plain, secure);
+    });
+    expect(issues).toEqual([
+      expect.objectContaining({
+        code: "destination_protocols_incompatible",
+        path: "destinations[2].protocols",
+        message: "Destinations bound to field site_url have no protocol common to all",
+      }),
+    ]);
+  });
+
+  it("rejects two destinations built from one field that agree on a protocol and on no port", () => {
+    const issues = issuesFor((manifest) => {
+      const destinations = manifest["destinations"] as Record<string, unknown>[];
+      destinations[0]["ports"] = [443];
+      const second = structuredClone(destinations[0]);
+      second["id"] = "site_alternate";
+      second["ports"] = [8443];
+      destinations.push(second);
+    });
+    expect(issues).toEqual([
+      expect.objectContaining({
+        code: "destination_ports_incompatible",
+        path: "destinations[1].ports",
+      }),
+    ]);
+  });
+
+  it("rejects an explicit port beside a destination that reaches its protocol's default only", () => {
+    const issues = issuesFor((manifest) => {
+      const destinations = manifest["destinations"] as Record<string, unknown>[];
+      const second = structuredClone(destinations[0]);
+      second["id"] = "site_alternate";
+      second["ports"] = [8443];
+      destinations.push(second);
+    });
+    expect(issues).toEqual([
+      expect.objectContaining({
+        code: "destination_ports_incompatible",
+        path: "destinations[1].ports",
+      }),
+    ]);
+  });
+
+  it("admits two destinations built from one field that overlap on a port", () => {
+    const issues = issuesFor((manifest) => {
+      const destinations = manifest["destinations"] as Record<string, unknown>[];
+      destinations[0]["ports"] = [443, 8443];
+      const second = structuredClone(destinations[0]);
+      second["id"] = "site_alternate";
+      second["ports"] = [8443];
+      destinations.push(second);
+    });
+    expect(issues).toEqual([]);
+  });
+
+  it("rejects a schedule whose field an installation could leave empty", () => {
+    const issues = issuesFor((manifest) => {
+      const fields = (manifest["configuration"] as { fields: Record<string, unknown>[] }).fields;
+      delete fields[1]["default"];
+    });
+    expect(issues).toEqual([
+      expect.objectContaining({
+        code: "schedule_field_may_be_absent",
+        path: "contributions[2].schedule.field",
+      }),
+    ]);
+  });
+
+  it("admits a schedule whose field is required, because an installation always holds one", () => {
+    const issues = issuesFor((manifest) => {
+      const fields = (manifest["configuration"] as { fields: Record<string, unknown>[] }).fields;
+      delete fields[1]["default"];
+      fields[1]["required"] = true;
+    });
+    expect(issues).toEqual([]);
+  });
+
+  it("rejects a default the schedule that reads it would refuse", () => {
+    const issues = issuesFor((manifest) => {
+      const fields = (manifest["configuration"] as { fields: Record<string, unknown>[] }).fields;
+      fields[1]["default"] = 30;
+    });
+    expect(issues).toEqual([
+      expect.objectContaining({
+        code: "schedule_default_invalid",
+        path: "contributions[2].schedule.field",
+      }),
+    ]);
+  });
+
+  it("rejects a field range that overlaps the interval range but holds no whole second in it", () => {
+    const issues = issuesFor((manifest) => {
+      const fields = (manifest["configuration"] as { fields: Record<string, unknown>[] }).fields;
+      fields[1]["min"] = 60.1;
+      fields[1]["max"] = 60.9;
+      fields[1]["default"] = 60.5;
+      const schedule = contributionsOf(manifest)[2]["schedule"] as Record<string, unknown>;
+      schedule["minSeconds"] = 60;
+      schedule["maxSeconds"] = 61;
+      delete schedule["disabledValue"];
+    });
+    expect(issues.map((issue) => issue.code)).toContain("schedule_range_unreachable");
+  });
+
+  it("makes every schedule reading one field mean the same thing by the value it holds", () => {
+    const issues = issuesFor((manifest) => {
+      const fields = (manifest["configuration"] as { fields: Record<string, unknown>[] }).fields;
+      fields[1]["default"] = 300;
+      const contributions = contributionsOf(manifest);
+      delete (contributions[2]["schedule"] as Record<string, unknown>)["disabledValue"];
+      const second = structuredClone(contributions[2]);
+      second["id"] = "content_poll_media";
+      (second["schedule"] as Record<string, unknown>)["disabledValue"] = 0;
+      contributions.push(second);
+    });
+    expect(issues).toEqual([
+      expect.objectContaining({
+        code: "shared_schedule_sentinel_mismatch",
+        path: "contributions[3].schedule.disabledValue",
+      }),
+    ]);
+  });
+
+  it("rejects two schedules on one field whose active ranges never meet", () => {
+    const issues = issuesFor((manifest) => {
+      const contributions = contributionsOf(manifest);
+      const first = contributions[2]["schedule"] as Record<string, unknown>;
+      first["minSeconds"] = 60;
+      first["maxSeconds"] = 100;
+      const second = structuredClone(contributions[2]);
+      second["id"] = "content_poll_media";
+      const schedule = second["schedule"] as Record<string, unknown>;
+      schedule["minSeconds"] = 200;
+      schedule["maxSeconds"] = 300;
+      contributions.push(second);
+    });
+    expect(issues).toEqual([
+      expect.objectContaining({
+        code: "shared_schedule_ranges_disjoint",
+        path: "contributions[3].schedule.minSeconds",
+      }),
+    ]);
+  });
+
+  it("admits two schedules on one field whose active ranges overlap", () => {
+    const issues = issuesFor((manifest) => {
+      const contributions = contributionsOf(manifest);
+      const second = structuredClone(contributions[2]);
+      second["id"] = "content_poll_media";
+      const schedule = second["schedule"] as Record<string, unknown>;
+      schedule["minSeconds"] = 120;
+      contributions.push(second);
     });
     expect(issues).toEqual([]);
   });

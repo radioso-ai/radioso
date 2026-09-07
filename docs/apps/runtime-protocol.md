@@ -69,17 +69,18 @@ contribution, schema, deadline, or capability set.
 
 ### Installation context
 
-`context.configuration` is the effective configuration: the values the operator
-stored plus every declared default, one scalar per key, strings up to 4 096
-characters, at most 64 entries. It arrives on every invocation, so a handler
-never has to discover which post types, which folder, or which locale an
-installation meant.
+`context.configuration` is the effective configuration. It holds every required
+value field, every value field that declares a default, and every optional field
+the operator supplied a value for. It never holds a `connection_slot` field:
+those keep their value in the slot, and no invocation carries credential
+material. A value is a string of up to 4 096 characters, a finite number, or a
+boolean, and the map holds at most 64 entries. It arrives on every invocation, so
+a handler never has to discover which post types, which folder, or which locale
+an installation meant.
 
-A field that is optional and declares no default is absent from the map. That is
-the one shape to code against: read it as `configuration["author_filter"] ??
-"all"` rather than expecting a key for every field the manifest declares. Every
-other key is present, so a handler never has to know which values the operator
-typed and which the manifest supplied.
+A field that is optional and declares no default is the one gap to code against:
+read it as `configuration["author_filter"] ?? "all"` rather than expecting a key
+for every field the manifest declares.
 
 Effective means resolved, and the order is fixed: resolve, then validate, then
 deliver. The gateway starts from what the operator stored, which is sparse —
@@ -87,13 +88,23 @@ a field left alone has no stored value. It bounds that map, copies it,
 materializes every declared default, and validates the map that results: every
 required field present, every value the type its field declares, numbers inside
 `min` and `max` and inside the interval range of any schedule that reads them,
-`select` values among their options, `url` values parseable and inside the
-protocols of any destination they back, and no undeclared keys. Only then does it
-mint the invocation. `resolveConfiguration` in `@radioso/app-contract` is that
-one operation, so a dashboard, an installation plan, and the gateway reach the
-same map. It returns an `EffectiveConfiguration`, a branded type nothing else
-produces, which is what makes "this map has been resolved" a fact the compiler
-carries rather than a convention.
+`select` values among their options, `url` values parseable, inside the protocols
+of any destination they back and on a port those destinations permit, and no
+undeclared keys. Only then does it mint the invocation.
+
+`resolveInstallation(manifest, storedValues)` in `@radioso/app-contract` is that
+one operation, and it is the only door: it returns the effective configuration
+and the readiness answer together, so a dashboard, an installation plan, and the
+gateway reach the same map and the same list of active contributions. The
+configuration it returns is frozen and carries a brand the package does not
+export, so a stored map cannot be spelled as a resolved one and a resolved one
+cannot be edited after the fact — an interval a caller lowered to 30 seconds
+after resolution is exactly the failure that pairing prevents.
+
+A schedule-bound field is always present. Admission refuses a manifest whose
+`interval_from_configuration` schedule reads a field an installation could leave
+empty, so a scheduled task that is active always has a whole number of seconds to
+run on.
 
 An issue it reports names a key only when the manifest declares that key.
 Anything else is addressed by its position in the stored map — `configuration.3`
@@ -268,12 +279,19 @@ query, or fragment. A path that could resolve to another host is refused here
 rather than by whatever resolves it later.
 
 A destination bound to a configuration field is an origin prefix, and `path` is
-appended below it, so `path` also carries no `.` or `..` segment — in either
-spelling, `/../wp-admin` and `/%2e%2e/wp-admin` alike. Both are how a path climbs
-back above the prefix the operator entered while every later check still reports
-it as inside. Put the whole address you mean in `path` and the parameters in
-`query`; a `?` inside `path` is refused, because a query that arrives that way is
-a query that never met the bounded `query` field.
+appended below it, so `path` is held to one canonical spelling. Every `%`
+introduces two hex digits, and no escape spells a separator, a percent, or a
+control character: `%2F`, `%5C`, `%25`, and the encodings of 0x00-0x1F and 0x7F
+are refused, as are those characters written literally. What is left decodes
+exactly once, and no segment of the result may be `.` or `..`. That makes
+`/../wp-admin`, `/%2e%2e/wp-admin`, `/%2e%2e%2fwp-admin`, `/%252e%252e/wp-admin`,
+and `/wp%2f..%2fadmin` the same refusal: each is how a path climbs back above the
+prefix the operator entered while every later check still reports it as inside.
+`/wp-json/wp/v2/posts%20list` passes, because a space is not a separator.
+
+Put the whole address you mean in `path` and the parameters in `query`; a `?`
+inside `path` is refused, because a query that arrives that way is a query that
+never met the bounded `query` field.
 
 `query` carries at most 64 entries and encodes to at most 8 KiB. The broker
 builds the query as `application/x-www-form-urlencoded`, exactly as
@@ -302,7 +320,10 @@ that declares it is a request the broker cannot make.
 
 The host resolves the address — including one bound to a configuration field,
 where the operator's URL is an origin prefix and `path` is appended below it —
-applies the destination's declared credential, and returns the response with its
+on a protocol and port the destination declares: a destination that lists no
+`ports` reaches the default port of each protocol it declares, 443 on `https` and
+80 on `http`, and one that lists `ports` reaches exactly those. It applies the
+destination's declared credential, and returns the response with its
 body base64-encoded. The manifest says which slot to draw from and what to build:
 HTTP Basic from a username and password field, a bearer token from one field, or
 a named header carrying one field. When the destination's credential is not

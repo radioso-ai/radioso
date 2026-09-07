@@ -1,7 +1,7 @@
 ---
 title: "Deployment"
 description: "Production deployment expectations for Radioso and the standalone docs portal."
-last_updated: 2026-09-06
+last_updated: 2026-09-07
 ---
 
 import { Callout } from 'nextra/components'
@@ -63,16 +63,15 @@ OPERATOR_MCP_RESOURCE_URL=https://mcp.example.com/operator/mcp
 OPERATOR_MCP_ISSUER_URL=https://app.example.com
 OPERATOR_MCP_INTERNAL_SECRET=<at-least-32-character-secret>
 OPERATOR_MCP_CREDENTIAL_EPOCH=1
-OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS=00000000-0000-4000-8000-000000000001
 OPERATOR_MCP_VERIFICATION_BUDGET_PER_MINUTE=6
 RADIOSO_OPERATOR_MCP_PUBLIC_URL=https://mcp.example.com/operator/mcp
 ```
 
-`OPERATOR_MCP_RESOURCE_URL` must be the exact `/operator/mcp` URL with no query or fragment. `OPERATOR_MCP_ISSUER_URL` is the public Radioso application origin that serves authorization and consent. The frontend value is read at request time and should match the resource the standalone MCP process serves. Terraform derives these values from `operator_mcp_public_origin` and `operator_mcp_credential_epoch` when the feature is enabled.
+`OPERATOR_MCP_RESOURCE_URL` must be the exact `/operator/mcp` URL with no query or fragment. `OPERATOR_MCP_ISSUER_URL` is the public Radioso application origin that serves authorization and consent. The frontend value is read at request time and should match the resource the standalone MCP process serves. The GitHub Terraform workflow discovers the Cloud Run MCP URL unless `OPERATOR_MCP_PUBLIC_ORIGIN` supplies a custom domain.
 
 The credential epoch is a deployment-wide monotonic security value. Start at `1`, and increase it when rotating the Operator MCP internal secret or invalidating all issued Operator MCP credentials. Before rolling replicas, load `DATABASE_URL`, `OPERATOR_MCP_RESOURCE_URL`, the new `OPERATOR_MCP_INTERNAL_SECRET`, and the new `OPERATOR_MCP_CREDENTIAL_EPOCH`; set `OPERATOR_MCP_PREVIOUS_CREDENTIAL_EPOCH` to the current persisted epoch; then run `pnpm --dir backend run operator-mcp:rotate-credential-state` once. Roll the same new epoch and secret to every backend and MCP instance before serving traffic. Instances with an older epoch or a different secret fingerprint fail readiness. Tokens and refresh lineages issued under an older epoch stop working, including after a database restore. Keep the epoch value at or above the last value used by the deployment.
 
-The dashboard exposes `operator:read`, `operator:probe`, and `operator:propose` through the current limited catalog. Configure `OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS` with one or more workspace UUIDs; an empty value exposes Operator MCP to no workspaces. `OPERATOR_MCP_VERIFICATION_BUDGET_PER_MINUTE` accepts 1 through 6 and defaults to 6. The API access card reports disabled, misconfigured, or unavailable states without offering a personal-token workaround.
+The dashboard exposes `operator:read`, `operator:probe`, and `operator:propose` through the current limited catalog. Leave `OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS` unset or empty to make an enabled Operator MCP deployment available in every workspace. Set one or more workspace UUIDs only for a staged rollout. `OPERATOR_MCP_VERIFICATION_BUDGET_PER_MINUTE` accepts 1 through 6 and defaults to 6. The API access card reports disabled, misconfigured, or unavailable states without offering a personal-token workaround.
 
 ## Enterprise Edition deployment
 

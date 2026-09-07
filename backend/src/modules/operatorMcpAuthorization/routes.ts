@@ -190,7 +190,8 @@ export const createOperatorMcpOauthRoutes = (dependencies: Dependencies): Router
       const accessible = (await Promise.all(workspaces.map(async (workspace) => ({
         workspace,
         role: await dependencies.accountAccessService.resolveWorkspaceRole({ accountId: locals.accountId, userId: locals.userId, workspaceId: workspace.id }),
-      })))).filter((item) => item.role !== null && rolloutWorkspaceIds.has(item.workspace.id));
+      })))).filter((item) => item.role !== null
+        && (rolloutWorkspaceIds === undefined || rolloutWorkspaceIds.has(item.workspace.id)));
       res.status(200).json({
         transactionId: transaction.id,
         client: {

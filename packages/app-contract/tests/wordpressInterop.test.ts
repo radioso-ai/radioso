@@ -13,7 +13,7 @@ import {
   validateManifest,
   webhookInvocationInputSchema,
   type AppManifest,
-  type ConfigurationValues,
+  type EffectiveConfiguration,
 } from "../src/index.js";
 
 /**
@@ -265,7 +265,7 @@ describe("companion plugin interoperability", () => {
   });
 });
 
-const configurationOf = (stored: Record<string, unknown>): ConfigurationValues => {
+const configurationOf = (stored: Record<string, unknown>): EffectiveConfiguration => {
   const resolved = resolveConfiguration(manifest, stored);
   if (!resolved.ok) throw new Error(`expected a resolvable configuration: ${JSON.stringify(resolved.issues)}`);
   return resolved.configuration;

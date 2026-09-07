@@ -70,11 +70,18 @@ map, copies it, materializes every declared default, and validates the map that
 results, so what it returns is the effective configuration — the exact map an
 invocation carries as `context.configuration`.
 
-`installationReadiness(manifest, effectiveConfiguration)` reads that map and
-answers which contributions run and which connection slots the operator has to
-bind. Neither answer takes a caller-supplied contribution list: a `required`
-contribution is always active, and the only thing that turns one off is a
-schedule the operator disabled by storing the schedule's own `disabledValue`.
+It returns an `EffectiveConfiguration`, a branded type nothing else produces.
+`installationReadiness(manifest, effectiveConfiguration)` takes that type and
+only that type, and answers which contributions run and which connection slots
+the operator has to bind. Neither answer takes a caller-supplied contribution
+list: a `required` contribution is always active, and the only thing that turns
+one off is a schedule the operator disabled by storing the schedule's own
+`disabledValue`.
+
+A schedule read from configuration declares a closed interval range, so its
+field's value space is exactly two things: the sentinel, or a whole number of
+seconds between `minSeconds` and `maxSeconds`. Resolution holds a stored value to
+that, which is why readiness never meets a value it would have to interpret.
 
 ## Docs
 

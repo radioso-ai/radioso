@@ -1,13 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   appErrorCodes,
   base64BodySchema,
+  boundedJsonValueSchema,
   healthResponseSchema,
   hostCapabilityCallSchema,
   hostCapabilityRequestSchema,
   hostCapabilityResponseSchema,
   invocationOutcomes,
+  egressFetchRequestSchema,
   invocationRequestSchema,
   invocationResponseSchema,
   invocationOutputSchema,
@@ -391,6 +393,131 @@ describe("host capabilities", () => {
     expect(reject("/wp-json/wp/v2/posts")).toBe(true);
   });
 
+  it("keeps an egress path below the destination's prefix, encoded or not", () => {
+    const accepts = (path: string): boolean =>
+      hostCapabilityRequestSchema.safeParse({
+        capability: "egress.fetch",
+        destination: "site",
+        method: "GET",
+        path,
+      }).success;
+    for (const path of [
+      "/../wp-admin",
+      "/wp-json/../../wp-admin",
+      "/%2e%2e/wp-admin",
+      "/%2E%2E/wp-admin",
+      "/wp-json/%2e/posts",
+      "/wp-json/./posts",
+      "/wp-json/..",
+      "/wp-json/.",
+      "/wp-json/wp/v2/posts?per_page=100",
+      "/wp-json/%2e%2e",
+    ]) {
+      expect(accepts(path)).toBe(false);
+    }
+    for (const path of ["/wp-json/wp/v2/posts", "/wp-json/...posts", "/wp-json/a%2ebc", "/wp-json/v2.0/posts"]) {
+      expect(accepts(path)).toBe(true);
+    }
+  });
+
+  it("refuses a body on a method that carries none", () => {
+    const withBody = (method: string): boolean =>
+      hostCapabilityRequestSchema.safeParse({
+        capability: "egress.fetch",
+        destination: "site",
+        method,
+        path: "/wp-json/wp/v2/posts",
+        body: { encoding: "base64", data: "eyJhIjoxfQ==" },
+      }).success;
+    expect(withBody("GET")).toBe(false);
+    expect(withBody("HEAD")).toBe(false);
+    expect(withBody("POST")).toBe(true);
+    expect(
+      egressFetchRequestSchema.safeParse({
+        capability: "egress.fetch",
+        destination: "site",
+        method: "GET",
+        path: "/wp-json/wp/v2/posts",
+        body: { encoding: "base64", data: "eyJhIjoxfQ==" },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("holds a header value to what an HTTP field value may carry", () => {
+    const withHeaderValue = (value: string): boolean =>
+      hostCapabilityRequestSchema.safeParse({
+        capability: "egress.fetch",
+        destination: "site",
+        method: "GET",
+        path: "/wp-json/wp/v2/posts",
+        headers: { "X-Radioso-Note": value },
+      }).success;
+    expect(withHeaderValue("application/json")).toBe(true);
+    expect(withHeaderValue("token\tvalue")).toBe(true);
+    expect(withHeaderValue("caf\u00e9")).toBe(true);
+    expect(withHeaderValue("value\r\nX-Injected: 1")).toBe(false);
+    expect(withHeaderValue("value\n")).toBe(false);
+    expect(withHeaderValue("value\u0000")).toBe(false);
+    expect(withHeaderValue("value\u007f")).toBe(false);
+    expect(withHeaderValue("value \u{1f600}")).toBe(false);
+  });
+
+  it("refuses an oversized header map on breadth alone, before it reads an entry", () => {
+    const wide = Object.fromEntries(
+      Array.from({ length: 5_000 }, (_, index) => [`X-Header-${index}`, "value\r\ninjected"]),
+    );
+    const parsed = hostCapabilityRequestSchema.safeParse({
+      capability: "egress.fetch",
+      destination: "site",
+      method: "GET",
+      path: "/wp-json/wp/v2/posts",
+      headers: wide,
+    });
+    expect(parsed.success).toBe(false);
+    expect(parsed.success ? [] : parsed.error.issues.map((issue) => issue.message)).toEqual([
+      `At most ${MAX_HEADER_ENTRIES} headers`,
+    ]);
+  });
+
+  it("refuses an oversized query map on breadth alone, before it reads an entry", () => {
+    const wide = Object.fromEntries(
+      Array.from({ length: 5_000 }, (_, index) => [`k${index}`, "x".repeat(4096)]),
+    );
+    const parsed = hostCapabilityRequestSchema.safeParse({
+      capability: "egress.fetch",
+      destination: "site",
+      method: "GET",
+      path: "/wp-json/wp/v2/posts",
+      query: wide,
+    });
+    expect(parsed.success).toBe(false);
+    expect(parsed.success ? [] : parsed.error.issues.map((issue) => issue.message)).toEqual([
+      `A query may hold at most ${MAX_EGRESS_QUERY_ENTRIES} entries`,
+    ]);
+  });
+
+  it("charges one = inside a pair and one & between pairs, to the byte", () => {
+    const atCeiling = {
+      a: "x".repeat(2046),
+      b: "x".repeat(2045),
+      c: "x".repeat(2045),
+      d: "x".repeat(2045),
+    };
+    const oneOver = { ...atCeiling, a: "x".repeat(2047) };
+    expect(new URLSearchParams(atCeiling).toString().length).toBe(MAX_EGRESS_QUERY_BYTES);
+    expect(new URLSearchParams(oneOver).toString().length).toBe(MAX_EGRESS_QUERY_BYTES + 1);
+    const withQuery = (query: Record<string, string>): boolean =>
+      hostCapabilityRequestSchema.safeParse({
+        capability: "egress.fetch",
+        destination: "site",
+        method: "GET",
+        path: "/wp-json/wp/v2/posts",
+        query,
+      }).success;
+    expect(withQuery(atCeiling)).toBe(true);
+    expect(withQuery(oneOver)).toBe(false);
+  });
+
   it("bounds an egress query by entry count and encoded size", () => {
     const withQuery = (query: Record<string, string>): boolean =>
       hostCapabilityRequestSchema.safeParse({
@@ -504,6 +631,43 @@ describe("host capabilities", () => {
     ]) {
       expect(withHeader(header)).toBe(false);
     }
+  });
+
+  it("refuses an object whose serialized form was never measured, without asking it for one", () => {
+    const toJSON = vi.fn(() => "x".repeat(1_000_000));
+    const hostile: Record<string, unknown> = { cursor: "page-1" };
+    Object.defineProperty(hostile, "toJSON", { value: toJSON, enumerable: false });
+    expect(boundedJsonValueSchema.safeParse(hostile).success).toBe(false);
+    expect(invocationOutputSchema.safeParse({ payload: hostile }).success).toBe(false);
+    expect(toJSON).not.toHaveBeenCalled();
+  });
+
+  it("bounds only genuine JSON containers", () => {
+    class Report {
+      public value = 1;
+    }
+    class Rows extends Array {}
+    const accessor = {};
+    Object.defineProperty(accessor, "size", { get: () => 1, enumerable: true, configurable: true });
+    for (const value of [
+      new Date(),
+      new Map([["a", 1]]),
+      new Set([1]),
+      new Report(),
+      new Uint8Array(4),
+      new Rows(),
+      accessor,
+      () => 1,
+    ]) {
+      expect(boundedJsonValueSchema.safeParse(value).success).toBe(false);
+    }
+    expect(boundedJsonValueSchema.safeParse({ ok: true, items: [1, "two", null] }).success).toBe(true);
+    expect(boundedJsonValueSchema.safeParse({ toJSON: "a field the synced system calls that" }).success).toBe(
+      true,
+    );
+    expect(boundedJsonValueSchema.safeParse(Object.assign(Object.create(null), { ok: true })).success).toBe(
+      true,
+    );
   });
 
   it("rejects a capability outside the union", () => {

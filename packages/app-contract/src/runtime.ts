@@ -8,6 +8,7 @@ import {
   containsLoneSurrogate,
   formUrlencodedLength,
   refineBoundedJsonRecord,
+  refineMapBreadth,
   refineObjectBreadth,
 } from "./bounds.js";
 import { configurationValuesSchema } from "./configuration.js";
@@ -317,8 +318,19 @@ export const documentIngestInputSchema = z
  * Origin-relative only. `new URL(path, approvedBase)` replaces the host for an
  * absolute or authority-form path, so a broker that resolves one would leave the
  * approved destination behind while every later check still says it is inside it.
+ * A query delimiter is refused here too, because a query that arrives inside the
+ * path is a query that never met the bounded `query` field.
  */
-const ORIGIN_RELATIVE_PATH_PATTERN = /^\/(?!\/)[^\\#]*$/u;
+const ORIGIN_RELATIVE_PATH_PATTERN = /^\/(?!\/)[^\\#?]*$/u;
+
+/**
+ * A destination bound to a configuration field is an origin prefix, and a
+ * request is appended below it. A dot segment is how a path climbs back above
+ * that prefix during normalization, and it climbs just as well percent-encoded,
+ * so both spellings are refused rather than left to whichever component
+ * normalizes first.
+ */
+const DOT_SEGMENT_PATTERN = /(?:^|\/)(?:\.|%2[eE]){1,2}(?:\/|$)/u;
 
 /** Entries in one egress query string, and its total URL-encoded size. */
 export const MAX_EGRESS_QUERY_ENTRIES = 64;
@@ -331,50 +343,59 @@ export const MAX_EGRESS_QUERY_BYTES = 8 * 1024;
  * `URLSearchParams` escapes them, which would let a query pass here and exceed
  * the ceiling once the broker built it.
  *
- * The count is checked before anything is measured, so a query with a hundred
- * thousand individually-valid pairs is refused without the host sizing each one,
- * and a lone surrogate is refused as an ordinary issue rather than throwing out
- * of the encoder.
+ * Breadth is settled before `z.record` parses an entry, so a query with a
+ * hundred thousand individually-valid pairs is refused without the host reading
+ * each one, and a lone surrogate is refused as an ordinary issue rather than
+ * throwing out of the encoder.
  */
-const egressQuerySchema = z
-  .record(z.string().max(128), z.string().max(2048))
-  .superRefine((query, context) => {
-    let entries = 0;
-    for (const key in query) {
-      if (!Object.hasOwn(query, key)) continue;
-      entries += 1;
-      if (entries <= MAX_EGRESS_QUERY_ENTRIES) continue;
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: [],
-        message: `A query may hold at most ${MAX_EGRESS_QUERY_ENTRIES} entries`,
-      });
-      return;
-    }
-    let bytes = 0;
-    for (const key in query) {
-      if (!Object.hasOwn(query, key)) continue;
-      const value = query[key] ?? "";
-      if (containsLoneSurrogate(key) || containsLoneSurrogate(value)) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: [key],
-          message: "A query name and value must be encodable text",
-        });
-        return;
-      }
-      bytes += formUrlencodedLength(key) + formUrlencodedLength(value) + 2;
-      if (bytes <= MAX_EGRESS_QUERY_BYTES) continue;
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: [],
-        message: `A query may encode to at most ${MAX_EGRESS_QUERY_BYTES} bytes`,
-      });
-      return;
-    }
-  });
+const MAX_QUERY_NAME_LENGTH = 128;
+const MAX_QUERY_VALUE_LENGTH = 2048;
 
-export const egressFetchRequestSchema = z
+const egressQuerySchema = z
+  .any()
+  .superRefine(
+    refineMapBreadth(
+      MAX_EGRESS_QUERY_ENTRIES,
+      `A query may hold at most ${MAX_EGRESS_QUERY_ENTRIES} entries`,
+    ),
+  )
+  .pipe(
+    z
+      .record(z.string().max(MAX_QUERY_NAME_LENGTH), z.string().max(MAX_QUERY_VALUE_LENGTH))
+      .superRefine((query, context) => {
+        let bytes = 0;
+        let pairs = 0;
+        for (const key in query) {
+          if (!Object.hasOwn(query, key)) continue;
+          const value = query[key] ?? "";
+          // Already refused by the record's own bounds; measuring it again is
+          // the work an oversized input was written to buy.
+          if (key.length > MAX_QUERY_NAME_LENGTH || value.length > MAX_QUERY_VALUE_LENGTH) return;
+          if (containsLoneSurrogate(key) || containsLoneSurrogate(value)) {
+            context.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: [key],
+              message: "A query name and value must be encodable text",
+            });
+            return;
+          }
+          // One `=` inside every pair, and one `&` between pairs — exactly what
+          // `URLSearchParams` writes, so a query that fits here is one the
+          // broker can build.
+          bytes += (pairs > 0 ? 1 : 0) + formUrlencodedLength(key) + 1 + formUrlencodedLength(value);
+          pairs += 1;
+          if (bytes <= MAX_EGRESS_QUERY_BYTES) continue;
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [],
+            message: `A query may encode to at most ${MAX_EGRESS_QUERY_BYTES} bytes`,
+          });
+          return;
+        }
+      }),
+  );
+
+const egressFetchRequestObjectSchema = z
   .object({
     capability: z.literal("egress.fetch"),
     destination: destinationIdSchema,
@@ -385,7 +406,11 @@ export const egressFetchRequestSchema = z
       .max(2048)
       .regex(
         ORIGIN_RELATIVE_PATH_PATTERN,
-        "Path must be origin-relative: one leading slash, no scheme, authority, backslash, or fragment",
+        "Path must be origin-relative: one leading slash, no scheme, authority, backslash, query, or fragment",
+      )
+      .refine(
+        (path) => !DOT_SEGMENT_PATTERN.test(path),
+        "Path must stay below the destination's prefix: no . or .. segment, encoded or not",
       ),
     query: egressQuerySchema.optional(),
     /**
@@ -399,6 +424,27 @@ export const egressFetchRequestSchema = z
     timeoutMs: z.number().int().min(100).max(120_000).optional(),
   })
   .strict();
+
+/**
+ * `Request` in Node 24 refuses a body on GET and HEAD, so a request that
+ * carries one is not a request the broker can make. The rule lives beside the
+ * shape rather than inside the broker, because an App that sends one deserves
+ * the boundary's answer and not a transport's exception.
+ */
+const refineEgressFetchBody = (
+  request: z.infer<typeof egressFetchRequestObjectSchema>,
+  context: z.RefinementCtx,
+): void => {
+  if (request.body === undefined) return;
+  if (request.method !== "GET" && request.method !== "HEAD") return;
+  context.addIssue({
+    code: z.ZodIssueCode.custom,
+    path: ["body"],
+    message: `A ${request.method} request carries no body`,
+  });
+};
+
+export const egressFetchRequestSchema = egressFetchRequestObjectSchema.superRefine(refineEgressFetchBody);
 
 export const egressFetchResultSchema = z
   .object({
@@ -444,8 +490,11 @@ export const hostCapabilityRequestSchema = z.discriminatedUnion("capability", [
   z.object({ capability: z.literal("storage.put"), request: storagePutRequestSchema }).strict(),
   z.object({ capability: z.literal("storage.delete"), request: storageDeleteRequestSchema }).strict(),
   z.object({ capability: z.literal("storage.query"), request: storageQueryRequestSchema }).strict(),
-  egressFetchRequestSchema,
-]);
+  egressFetchRequestObjectSchema,
+]).superRefine((request, context) => {
+  if (request.capability !== "egress.fetch") return;
+  refineEgressFetchBody(request, context);
+});
 
 /**
  * The envelope every host operation arrives in. It carries the protocol

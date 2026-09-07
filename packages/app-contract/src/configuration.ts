@@ -25,12 +25,17 @@ export const configurationSelectOptionSchema = z
   })
   .strict();
 
-const fieldHeader = {
+const fieldIdentity = {
   key: fieldKeySchema,
   label: displayNameSchema,
   description: descriptionSchema.optional(),
-  required: z.boolean(),
   placeholder: z.string().max(200).optional(),
+};
+
+/** Whether an operator has to fill this in — a question only a value field asks. */
+const fieldHeader = {
+  ...fieldIdentity,
+  required: z.boolean(),
 };
 
 /**
@@ -74,9 +79,15 @@ const selectField = z
   })
   .strict();
 
+/**
+ * A slot field carries no `required` of its own. Whether an installation has to
+ * bind the slot follows from the contributions it turns on, through their
+ * `requiredConnectionSlots`, and a second flag beside that one could only
+ * contradict it.
+ */
 const connectionSlotField = z
   .object({
-    ...fieldHeader,
+    ...fieldIdentity,
     type: z.literal("connection_slot"),
     connectionSlot: connectionSlotIdSchema,
   })

@@ -105,9 +105,9 @@ What the operator fills in. Each field:
 }
 ```
 
-Every field carries `key`, `label`, `required`, and optionally `description` and
-`placeholder`. `type` decides the rest, and each type accepts only what that
-type can mean:
+Every field carries `key`, `label`, and optionally `description` and
+`placeholder`. Every field but `connection_slot` also carries `required`. `type`
+decides the rest, and each type accepts only what that type can mean:
 
 | `type` | Carries |
 |---|---|
@@ -116,12 +116,17 @@ type can mean:
 | `number` | Optional `default`, `min`, and `max`, all numbers; `max` is at least `min`, and `default` sits between them |
 | `boolean` | Optional `default`, a boolean |
 | `select` | `options` with a `value` and a `label` each, values distinct, and an optional `default` that is one of those values |
-| `connection_slot` | `connectionSlot`, the id of a slot declared under `connections`, and no `default` |
+| `connection_slot` | `connectionSlot`, the id of a slot declared under `connections`, and no `default` or `required` |
 
 A `number` field cannot default to a word, and a `connection_slot` field carries
 no default at all. Credential material belongs in the slot, which is why there
 is no secret field type here: configuration values are visible to the operator,
 appear in the installation plan, and are readable by your App.
+
+A `connection_slot` field carries no `required` either. Whether an installation
+has to bind that slot comes from the contributions it turns on, through their
+`requiredConnectionSlots`, so a push-only installation is never asked for the
+credential only a poll needs.
 
 A default is held to the same rules the value is: a `url` default that is not a
 URL, a `number` default outside its own bounds, and two `select` options that
@@ -132,8 +137,9 @@ resolve to the same value all fail parsing.
 The host stores what the operator typed, which is sparse: a field the operator
 left alone has no stored value, and the manifest owns its default. What your App
 reads is the effective configuration — the stored values with every declared
-default materialized. `resolveConfiguration` is the one operation that produces
-it:
+default materialized. A field that is optional and declares no default is absent
+from the result, which is the one gap a handler codes around.
+`resolveConfiguration` is the one operation that produces it:
 
 ```ts
 import { resolveConfiguration } from "@radioso/app-contract";
@@ -146,12 +152,23 @@ if (resolved.ok) {
 
 It bounds the stored map, copies it, materializes the defaults, and validates the
 map that results. It reports a missing required value with no default, an
-undeclared key, a value of the wrong type, a number outside `min`/`max`, a
-`select` value that is not an option, a `url` value that does not parse, a string
-over 4 096 characters, and a value supplied for a `connection_slot` field, which
-holds none. A stored map carries at most 64 entries, each key spelled the way a
-field key is spelled; the reported list stops at 32 issues, and no issue repeats
-a stored key or value back to you.
+undeclared key, a value of the wrong type, a number outside `min`/`max`, a number
+outside the interval range of a schedule that reads it, a `select` value that is
+not an option, a `url` value that does not parse or that carries a query or a
+fragment, a string over 4 096 characters, and a value supplied for a
+`connection_slot` field, which holds none. A stored map carries at most 64
+entries, each key spelled the way a field key is spelled; the reported list stops
+at 32 issues.
+
+An issue names a key only when the manifest declares that key. Everything else is
+addressed by its position in the stored map — `configuration.3` — so a key an
+attacker chose reaches no log, no audit record, and no operator's screen, however
+much it looks like a field key. Values are never repeated back either.
+
+`resolveConfiguration` returns an `EffectiveConfiguration`, a branded type
+nothing else produces. `installationReadiness` takes that type and only that
+type, so a stored map with a required field missing cannot be read as an
+authoritative answer about what an installation runs.
 
 The host delivers the result to your App on every invocation, as
 `context.configuration` — see
@@ -168,7 +185,13 @@ The URL is an origin prefix. The broker keeps its scheme, host, port, and path,
 and appends an `egress.fetch` request's origin-relative `path` below it, so a
 site installed at `https://example.com/wordpress` is reached at
 `https://example.com/wordpress/wp-json/wp/v2/posts` and no request an App makes
-climbs above the prefix the operator entered.
+climbs above the prefix the operator entered. Being a prefix is also why the
+value carries no query and no fragment: `https://example.com/wordpress?preview=1`
+is refused, because each request supplies its own `path` and `query`.
+
+When two destinations are built from one field, they have to share at least one
+protocol. Two views of the same operator-typed address that agree on no scheme
+describe an installation no URL can satisfy.
 
 ### Which contributions an installation runs
 
@@ -185,7 +208,8 @@ const { activeContributionIds, inactiveContributionIds, requiredConnectionSlots 
 A contribution with `availability: "required"` is always active. A
 `scheduled_task` reading `interval_from_configuration` is inactive when its
 configuration field holds the schedule's own `disabledValue`. Everything else is
-active. `requiredConnectionSlots` is the sorted union of the slots the active
+active. Only a resolved configuration reaches this function, so the value it
+reads is already known to be either the sentinel or a runnable interval. `requiredConnectionSlots` is the sorted union of the slots the active
 contributions require, so a push-only installation is never asked for the
 credential only a poll needs.
 
@@ -397,10 +421,17 @@ A signed push from outside.
 | `documentSources` | Ids of the `document_source` contributions this handler writes through |
 | `authentication.kind` | `hmac_sha256` |
 | `authentication.secretConnectionSlot` | A `generated_secret` or `secret_fields` slot holding the signing key |
+| `authentication.secretField` | Which field of a `secret_fields` slot carries the key |
 | `authentication.signatureHeader` | Header carrying the signature, such as `X-Radioso-Signature` |
 | `authentication.signaturePrefix` | Optional prefix inside that header, such as `sha256=` |
 | `maxBodyBytes` | Largest body the host accepts, up to 4 MiB — the ceiling the invocation input carries |
 | `replayWindowSeconds` | How long a delivery id stays unrepeatable, up to 3 600 |
+
+A `generated_secret` slot holds one value, so naming the slot names the key and
+`secretField` is left out. A `secret_fields` slot holds several, so the handler
+says which one signs: that field is `required: true` and `sensitive: true`, the
+same rules a destination credential's secret half is held to, because the gateway
+computes an HMAC with it on every delivery.
 
 The host verifies the HMAC over the raw body before your App sees anything, so
 the handler lists `authentication.secretConnectionSlot` in its
@@ -414,26 +445,40 @@ Work on a clock.
 | Field | Meaning |
 |---|---|
 | `documentSources` | Ids of the `document_source` contributions this task writes through |
-| `schedule` | `{ "kind": "interval", "seconds": 900 }`, or `{ "kind": "interval_from_configuration", "field": "poll_interval_sec", "minSeconds": 60 }` |
+| `schedule` | `{ "kind": "interval", "seconds": 900 }`, or `{ "kind": "interval_from_configuration", "field": "poll_interval_sec", "minSeconds": 60, "maxSeconds": 86400 }` |
 | `overlapPolicy` | `skip`, `queue`, or `replace` when the previous run is still going |
 | `maxDurationSeconds` | Longest a single run may take, up to 3 600 |
 | `retry` | `maxAttempts` 1 to 10, with `backoff` `{ "kind": "exponential", "baseSeconds": 30, "maxSeconds": 900 }` |
 | `checkpointCollection` | Optional collection the host round-trips your checkpoint through |
 
 An `interval_from_configuration` field must be a `number` configuration field,
-and `minSeconds` is the floor the host enforces on any interval it runs.
+and `minSeconds` and `maxSeconds` close the range of intervals the host runs:
+60 seconds to 30 days, `maxSeconds` at least `minSeconds`. Both are required,
+because a floor with nothing above it leaves "any number at all" as the value
+space, and a host meeting 0.5 or 31 536 000 would have to invent a clamp.
 
 An `interval_from_configuration` schedule also takes an optional
 `disabledValue`. A configuration value equal to it leaves the task inactive, so
-`{ "field": "poll_interval_sec", "minSeconds": 60, "disabledValue": 0 }` gives a
-push-only installation no schedule at all rather than a one-minute one.
-`disabledValue` must sit below `minSeconds`. A sentinel inside the interval
-range would silently disable a schedule the operator meant to run.
+`{ "field": "poll_interval_sec", "minSeconds": 60, "maxSeconds": 86400,
+"disabledValue": 0 }` gives a push-only installation no schedule at all rather
+than a one-minute one. `disabledValue` must sit below `minSeconds`. A sentinel
+inside the interval range would silently disable a schedule the operator meant to
+run.
+
+That makes the field's value space exactly two things: the sentinel, or a whole
+number of seconds from `minSeconds` to `maxSeconds`. `resolveConfiguration`
+holds a stored value to it and reports `schedule_value_out_of_range` for anything
+else, so a 30 against a 60 second floor is refused where an operator can still
+fix it.
+
+A task with `availability: "required"` declares no `disabledValue`. It is active
+in every installation, so a value that claims to turn it off could only
+contradict that.
 
 The referenced field's own range has to admit both. `disabledValue` sits inside
 the field's `min` and `max` when either is declared, or the schedule is one
-nobody can turn off; and the field's `max`, when declared, is at least
-`minSeconds`, or the schedule is one that can never run.
+nobody can turn off; and the field's range has to overlap `minSeconds` to
+`maxSeconds`, or the schedule is one that can never run.
 
 Invocations run under the `scheduled_task` execution class.
 
@@ -525,18 +570,22 @@ bracket path such as `contributions[1].authentication.secretConnectionSlot`.
 | `non_scalar_index_field` | An index sits on a `json` field. |
 | `unknown_connection_slot` | A `connection_slot` field, a destination credential, a `requiredConnectionSlots` entry, or a webhook handler names a slot that does not exist. |
 | `invalid_destination_credential_slot` | A destination credential names a slot that holds no fields a request can be built from. |
-| `unknown_connection_field` | A credential application names a field its slot does not hold. |
-| `credential_field_not_required` | A credential application names a field the operator may leave empty. |
-| `credential_field_not_sensitive` | The secret half of a credential — the password, token, or header value — is stored in a field that is not `sensitive`. |
+| `unknown_connection_field` | A credential application or a webhook's `secretField` names a field its slot does not hold. |
+| `credential_field_not_required` | A credential application or a webhook signing field names a field the operator may leave empty. |
+| `credential_field_not_sensitive` | The secret half of a credential — the password, token, header value, or webhook signing key — is stored in a field that is not `sensitive`. |
 | `missing_credentials_data_class` | A destination attaches a credential without listing `credentials` in `dataClasses`. |
 | `destination_credentials_not_required` | A contribution reaches a destination whose credential is mandatory without requiring that slot. |
 | `webhook_secret_not_required` | A webhook handler verifies against a slot it does not list in `requiredConnectionSlots`. |
 | `invalid_webhook_secret_slot` | A webhook handler's slot cannot hold a signing secret. |
+| `webhook_secret_field_required` | A webhook handler's slot is `secret_fields` and the handler names no `secretField`. |
+| `webhook_secret_field_not_allowed` | A webhook handler names a `secretField` beside a slot that holds one value. |
 | `unknown_configuration_field` | A configuration-bound destination host or an `interval_from_configuration` schedule names a field that does not exist. |
 | `destination_host_field_not_url` | A destination host is bound to a field that is not a `url` field. |
 | `interval_field_not_number` | An interval reads from a field that is not a `number` field. |
 | `disabled_value_outside_field_range` | A schedule's `disabledValue` sits outside the range its configuration field admits, so the task can never be turned off. |
-| `schedule_range_unreachable` | A schedule's configuration field stops below `minSeconds`, so the task can never run. |
+| `schedule_range_unreachable` | A schedule's configuration field admits no value between `minSeconds` and `maxSeconds`, so the task can never run. |
+| `required_schedule_cannot_disable` | A `required` scheduled task declares a `disabledValue`. |
+| `destination_protocols_incompatible` | Two destinations built from one configuration field share no protocol. |
 | `unknown_destination` | A contribution lists an `egressDestinations` id no destination declares. |
 | `unknown_collection` | A `checkpointCollection` or backfill collection does not exist. |
 | `unknown_contribution` | A conformance fixture names a contribution the manifest does not declare. |

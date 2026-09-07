@@ -4,7 +4,7 @@ import {
   type ConfigurationField,
   type ConfigurationValues,
 } from "./configuration.js";
-import type { Contribution } from "./contributions.js";
+import type { ConfigurationSchedule, Contribution } from "./contributions.js";
 import type { Destination } from "./destinations.js";
 import { fieldKeySchema, type ConnectionSlotId, type ContributionId } from "./identifiers.js";
 import type { AppManifest } from "./manifest.js";
@@ -16,9 +16,19 @@ import type { ManifestValidationIssue } from "./validate.js";
  * operator's stored values, so the dashboard, the installation plan, and the
  * gateway reach the same conclusion from the same declaration rather than each
  * inventing a resolution rule.
+ *
+ * A configuration that has been through `resolveConfiguration`: defaults
+ * materialized, every value checked against the field that declares it. The
+ * brand exists only in the type system — nothing wraps the map at runtime — and
+ * it is what keeps a caller from handing readiness a stored map with a required
+ * field missing and reading the answer as authoritative.
  */
+export type EffectiveConfiguration = ConfigurationValues & {
+  readonly __brand: "EffectiveConfiguration";
+};
+
 export type ConfigurationResolutionResult =
-  | { ok: true; configuration: ConfigurationValues }
+  | { ok: true; configuration: EffectiveConfiguration }
   | { ok: false; issues: ManifestValidationIssue[] };
 
 /**
@@ -37,13 +47,15 @@ const issue = (code: string, path: string, message: string): ManifestValidationI
 });
 
 /**
- * A path names the key only when the key is one the manifest's own rule would
- * admit. An attacker-chosen key can be four kilobytes of anything, and a
- * diagnostic that echoes it lands in an audit record and an operator's screen,
- * so an unrecognisable key is addressed by position instead.
+ * A path names the key only when the manifest declares it. An attacker-chosen
+ * key can be four kilobytes of anything and can be spelled exactly like a
+ * field key — `customer_ssn_123456789` satisfies every rule the shape has — and
+ * a diagnostic that echoes it lands in an audit record and on an operator's
+ * screen. So only a declared key is ever repeated; everything else is addressed
+ * by its position in the stored map.
  */
-const pathFor = (key: string, position: number): string =>
-  fieldKeySchema.safeParse(key).success ? key : `configuration.${position}`;
+const pathFor = (key: string, position: number, declared: ReadonlyMap<string, ConfigurationField>): string =>
+  declared.has(key) ? key : `configuration.${position}`;
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> => {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
@@ -64,7 +76,10 @@ const parsedUrl = (value: string): URL | null => {
  * Doing it the other way round means a huge map buys a per-key diagnostic and a
  * full traversal on its way to being refused.
  */
-const boundsIssues = (supplied: Record<string, unknown>): ManifestValidationIssue[] => {
+const boundsIssues = (
+  supplied: Record<string, unknown>,
+  declared: ReadonlyMap<string, ConfigurationField>,
+): ManifestValidationIssue[] => {
   const issues: ManifestValidationIssue[] = [];
   let position = 0;
   for (const key in supplied) {
@@ -79,9 +94,9 @@ const boundsIssues = (supplied: Record<string, unknown>): ManifestValidationIssu
       );
       return issues;
     }
-    const path = pathFor(key, position);
+    const path = pathFor(key, position, declared);
     const value = supplied[key];
-    if (path !== key) {
+    if (!fieldKeySchema.safeParse(key).success) {
       issues.push(
         issue("invalid_configuration_key", path, "A configuration key is lower-case snake case, 1 to 64 characters"),
       );
@@ -111,6 +126,15 @@ const urlDestinationIssues = (
   const url = parsedUrl(value);
   if (!url) return [];
   const issues: ManifestValidationIssue[] = [];
+  if (url.search !== "" || url.hash !== "") {
+    issues.push(
+      issue(
+        "url_carries_query_or_fragment",
+        field.key,
+        "A destination address is an origin prefix; a request's own path and query are supplied per call",
+      ),
+    );
+  }
   if (url.username !== "" || url.password !== "") {
     issues.push(
       issue(
@@ -134,10 +158,38 @@ const urlDestinationIssues = (
   return issues;
 };
 
+/**
+ * A schedule-bound number has a value space of its own, and it is not the
+ * field's: an interval either disables the task by being exactly the sentinel,
+ * or runs it by being a whole number of seconds inside the declared range.
+ * Anything else — 30 against a 60 second floor, 1.5, a year — would leave the
+ * host to invent a rounding or a clamp, and a task an operator believes is off
+ * running every minute is the failure that invention produces.
+ */
+const scheduleValueIssues = (
+  field: ValueField,
+  value: number,
+  schedules: readonly ConfigurationSchedule[],
+): ManifestValidationIssue[] =>
+  schedules.flatMap((schedule) => {
+    if (schedule.disabledValue !== undefined && value === schedule.disabledValue) return [];
+    if (Number.isInteger(value) && value >= schedule.minSeconds && value <= schedule.maxSeconds) return [];
+    const off =
+      schedule.disabledValue === undefined ? "" : `, or ${schedule.disabledValue} to leave it off`;
+    return [
+      issue(
+        "schedule_value_out_of_range",
+        field.key,
+        `This schedule runs on a whole number of seconds from ${schedule.minSeconds} to ${schedule.maxSeconds}${off}`,
+      ),
+    ];
+  });
+
 const checkValue = (
   field: ValueField,
   value: unknown,
   destinations: readonly Destination[],
+  schedules: readonly ConfigurationSchedule[],
 ): ManifestValidationIssue[] => {
   const key = field.key;
   const wrongType = (expected: string): ManifestValidationIssue[] => [
@@ -170,7 +222,7 @@ const checkValue = (
       if (field.max !== undefined && value > field.max) {
         return [issue("value_out_of_range", key, `This field stops at ${field.max}`)];
       }
-      return [];
+      return scheduleValueIssues(field, value, schedules);
     }
     case "boolean": {
       return typeof value === "boolean" ? [] : wrongType("a boolean");
@@ -185,6 +237,19 @@ const destinationsByHostField = (manifest: AppManifest): ReadonlyMap<string, Des
     const existing = bound.get(destination.host.field);
     if (existing) existing.push(destination);
     else bound.set(destination.host.field, [destination]);
+  }
+  return bound;
+};
+
+const schedulesByField = (manifest: AppManifest): ReadonlyMap<string, ConfigurationSchedule[]> => {
+  const bound = new Map<string, ConfigurationSchedule[]>();
+  for (const contribution of manifest.contributions) {
+    if (contribution.kind !== "scheduled_task") continue;
+    const schedule = contribution.schedule;
+    if (schedule.kind !== "interval_from_configuration") continue;
+    const existing = bound.get(schedule.field);
+    if (existing) existing.push(schedule);
+    else bound.set(schedule.field, [schedule]);
   }
   return bound;
 };
@@ -213,18 +278,20 @@ export const resolveConfiguration = (
     };
   }
 
-  const bounds = boundsIssues(storedValues);
+  const declared = new Map(manifest.configuration.fields.map((field) => [field.key, field]));
+
+  const bounds = boundsIssues(storedValues, declared);
   if (bounds.length > 0) return { ok: false, issues: bounds };
 
-  const declared = new Map(manifest.configuration.fields.map((field) => [field.key, field]));
   const bound = destinationsByHostField(manifest);
+  const scheduled = schedulesByField(manifest);
   const effective: Record<string, unknown> = {};
   const issues: ManifestValidationIssue[] = [];
 
   let position = 0;
   for (const key in storedValues) {
     if (!Object.hasOwn(storedValues, key)) continue;
-    const path = pathFor(key, position);
+    const path = pathFor(key, position, declared);
     position += 1;
     const field = declared.get(key);
     if (!field) {
@@ -259,10 +326,17 @@ export const resolveConfiguration = (
     if (issues.length >= MAX_CONFIGURATION_ISSUES) break;
     if (field.type === "connection_slot") continue;
     if (!Object.hasOwn(effective, field.key)) continue;
-    issues.push(...checkValue(field, effective[field.key], bound.get(field.key) ?? []));
+    issues.push(
+      ...checkValue(
+        field,
+        effective[field.key],
+        bound.get(field.key) ?? [],
+        scheduled.get(field.key) ?? [],
+      ),
+    );
   }
 
-  if (issues.length === 0) return { ok: true, configuration: effective as ConfigurationValues };
+  if (issues.length === 0) return { ok: true, configuration: effective as EffectiveConfiguration };
   return { ok: false, issues: issues.slice(0, MAX_CONFIGURATION_ISSUES) };
 };
 
@@ -280,13 +354,14 @@ export interface InstallationReadiness {
 }
 
 /**
- * A `required` contribution is active by definition. The one thing that turns a
- * contribution off is a schedule the operator disabled: an
- * `interval_from_configuration` task whose field holds the schedule's own
- * `disabledValue` never runs, so the slots it names are slots nobody has to
- * fill in.
+ * A `required` contribution is active by definition, and admission refuses one
+ * that declares a `disabledValue`, so the two never contradict each other here.
+ * The one thing that turns a contribution off is a schedule the operator
+ * disabled: an `interval_from_configuration` task whose field holds the
+ * schedule's own `disabledValue` never runs, so the slots it names are slots
+ * nobody has to fill in.
  */
-const isActive = (contribution: Contribution, configuration: ConfigurationValues): boolean => {
+const isActive = (contribution: Contribution, configuration: EffectiveConfiguration): boolean => {
   if (contribution.availability === "required") return true;
   if (contribution.kind !== "scheduled_task") return true;
   const schedule = contribution.schedule;
@@ -297,7 +372,7 @@ const isActive = (contribution: Contribution, configuration: ConfigurationValues
 
 export const installationReadiness = (
   manifest: AppManifest,
-  effectiveConfiguration: ConfigurationValues,
+  effectiveConfiguration: EffectiveConfiguration,
 ): InstallationReadiness => {
   const activeContributionIds: ContributionId[] = [];
   const inactiveContributionIds: ContributionId[] = [];

@@ -4,7 +4,9 @@ import type { ConfigurationField } from "./configuration.js";
 import type { ConnectionSlot, ConnectionSlotKind } from "./connections.js";
 import {
   releaseAContributionKinds,
+  type ConfigurationSchedule,
   type ContributionKind,
+  type ExternalWebhookHandlerContribution,
   type HostPermission,
   type ScheduledTaskContribution,
   hostPermissions,
@@ -234,6 +236,38 @@ const collectConfigurationIssues = (
     ];
   });
 
+/**
+ * Two destinations built from one configuration field are two views of one
+ * address the operator types once. If they declare no protocol in common, every
+ * value that satisfies one fails the other, and the manifest describes an
+ * installation that cannot exist — which an author learns at admission here
+ * rather than an operator learns by trying every URL.
+ */
+const collectSharedHostIssues = (manifest: AppManifest): ManifestValidationIssue[] => {
+  const issues: ManifestValidationIssue[] = [];
+  const reached = new Map<string, { id: string; protocols: Set<string> }>();
+  manifest.destinations.forEach((destination, position) => {
+    if (destination.host.kind !== "configuration") return;
+    const field = destination.host.field;
+    const seen = reached.get(field);
+    if (!seen) {
+      reached.set(field, { id: destination.id, protocols: new Set(destination.protocols) });
+      return;
+    }
+    const shared = destination.protocols.filter((protocol) => seen.protocols.has(protocol));
+    if (shared.length > 0) {
+      seen.protocols = new Set(shared);
+      return;
+    }
+    issues.push({
+      code: "destination_protocols_incompatible",
+      path: `destinations[${position}].protocols`,
+      message: `Destinations ${seen.id} and ${destination.id} are built from field ${field} and share no protocol`,
+    });
+  });
+  return issues;
+};
+
 const collectDestinationIssues = (
   manifest: AppManifest,
   index: ManifestIndex,
@@ -318,12 +352,12 @@ const SECRET_BEARING_SLOT_KINDS: readonly ConnectionSlotKind[] = ["secret_fields
 /**
  * A schedule an operator reads out of configuration is only a schedule if the
  * field can hold the values it means. A field whose range excludes the sentinel
- * leaves a task nobody can turn off; a field whose ceiling sits below the
- * interval floor leaves one that can never run. Both parse cleanly on their own
+ * leaves a task nobody can turn off; a field whose range never meets the
+ * interval range leaves one that can never run. Both parse cleanly on their own
  * and only contradict each other here.
  */
 const collectScheduleRangeIssues = (
-  schedule: Extract<ScheduledTaskContribution["schedule"], { kind: "interval_from_configuration" }>,
+  schedule: ConfigurationSchedule,
   field: Extract<ConfigurationField, { type: "number" }>,
   at: (suffix: string) => string,
 ): ManifestValidationIssue[] => {
@@ -341,11 +375,93 @@ const collectScheduleRangeIssues = (
       message: `Field ${field.key} cannot hold ${disabled}, so this schedule can never be turned off`,
     });
   }
-  if (ceiling !== undefined && ceiling < schedule.minSeconds) {
+  const reachableFloor = Math.max(floor ?? schedule.minSeconds, schedule.minSeconds);
+  const reachableCeiling = Math.min(ceiling ?? schedule.maxSeconds, schedule.maxSeconds);
+  if (reachableFloor > reachableCeiling) {
     issues.push({
       code: "schedule_range_unreachable",
       path: at("schedule.minSeconds"),
-      message: `Field ${field.key} stops at ${ceiling}, below the ${schedule.minSeconds} second floor, so this schedule can never run`,
+      message: `Field ${field.key} admits no value between ${schedule.minSeconds} and ${schedule.maxSeconds} seconds, so this schedule can never run`,
+    });
+  }
+  return issues;
+};
+
+/**
+ * A contribution the installation cannot run without is one the operator never
+ * turns off, so a sentinel that says "do not run this" contradicts the
+ * availability beside it. Refusing the pair here is what keeps a dashboard, an
+ * installation plan, and a scheduler from each picking a different winner.
+ */
+const collectRequiredScheduleIssues = (
+  contribution: ScheduledTaskContribution,
+  schedule: ConfigurationSchedule,
+  at: (suffix: string) => string,
+): ManifestValidationIssue[] =>
+  contribution.availability === "required" && schedule.disabledValue !== undefined
+    ? [
+        {
+          code: "required_schedule_cannot_disable",
+          path: at("schedule.disabledValue"),
+          message: `Contribution ${contribution.id} is required, so it holds no value that turns it off`,
+        },
+      ]
+    : [];
+
+/**
+ * Which field of a multi-field slot carries the signing key. A one-value slot
+ * answers that by being named; a `secret_fields` slot does not, and a gateway
+ * that guessed would be reading an App's field naming as a protocol.
+ */
+const collectWebhookSecretFieldIssues = (
+  authentication: ExternalWebhookHandlerContribution["authentication"],
+  slot: ConnectionSlot,
+  at: (suffix: string) => string,
+): ManifestValidationIssue[] => {
+  const path = at("authentication.secretField");
+  if (slot.kind !== "secret_fields") {
+    return authentication.secretField === undefined
+      ? []
+      : [
+          {
+            code: "webhook_secret_field_not_allowed",
+            path,
+            message: `Slot ${slot.id} holds one value, which is the signing key`,
+          },
+        ];
+  }
+  if (authentication.secretField === undefined) {
+    return [
+      {
+        code: "webhook_secret_field_required",
+        path,
+        message: `Slot ${slot.id} holds several fields, so this handler names the one that carries the signing key`,
+      },
+    ];
+  }
+  const field = slot.fields.find((candidate) => candidate.key === authentication.secretField);
+  if (!field) {
+    return [
+      {
+        code: "unknown_connection_field",
+        path,
+        message: `Slot ${slot.id} has no field ${authentication.secretField}`,
+      },
+    ];
+  }
+  const issues: ManifestValidationIssue[] = [];
+  if (!field.required) {
+    issues.push({
+      code: "credential_field_not_required",
+      path,
+      message: `Field ${field.key} verifies every delivery, so a bound slot always holds it`,
+    });
+  }
+  if (!field.sensitive) {
+    issues.push({
+      code: "credential_field_not_sensitive",
+      path,
+      message: `Field ${field.key} is a signing key and is stored as one`,
     });
   }
   return issues;
@@ -450,6 +566,8 @@ const collectContributionIssues = (
           path,
           message: `Slot ${slot.id} is ${slot.kind} and cannot hold a signing secret`,
         });
+      } else {
+        issues.push(...collectWebhookSecretFieldIssues(contribution.authentication, slot, at));
       }
       if (!requiredSlots.has(contribution.authentication.secretConnectionSlot)) {
         issues.push({
@@ -479,6 +597,7 @@ const collectContributionIssues = (
         } else {
           issues.push(...collectScheduleRangeIssues(contribution.schedule, field, at));
         }
+        issues.push(...collectRequiredScheduleIssues(contribution, contribution.schedule, at));
       }
       if (contribution.checkpointCollection !== undefined) {
         requireCollection(contribution.checkpointCollection, at("checkpointCollection"));
@@ -548,6 +667,7 @@ export const validateManifest = (
     ...collectStorageIssues(parsed.data),
     ...collectConfigurationIssues(parsed.data, index),
     ...collectDestinationIssues(parsed.data, index),
+    ...collectSharedHostIssues(parsed.data),
     ...collectContributionIssues(parsed.data, index),
     ...collectConformanceFixtureIssues(parsed.data, index),
     ...collectPolicyIssues(parsed.data, policy),

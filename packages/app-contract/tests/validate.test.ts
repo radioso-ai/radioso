@@ -136,7 +136,12 @@ const baseManifest = {
       outputSchemaVersion: 1,
       requiredConnectionSlots: ["site_credentials"],
       documentSources: ["site_content"],
-      schedule: { kind: "interval_from_configuration", field: "poll_interval_sec", minSeconds: 60 },
+      schedule: {
+        kind: "interval_from_configuration",
+        field: "poll_interval_sec",
+        minSeconds: 60,
+        maxSeconds: 86_400,
+      },
       overlapPolicy: "skip",
       maxDurationSeconds: 600,
       retry: { maxAttempts: 5, backoff: { kind: "exponential", baseSeconds: 30, maxSeconds: 900 } },
@@ -365,7 +370,7 @@ describe("validateManifest", () => {
     ]);
   });
 
-  it("rejects a schedule whose field can never reach the interval floor", () => {
+  it("rejects a schedule whose field admits no value inside the interval range", () => {
     const issues = issuesFor((manifest) => {
       const fields = (manifest["configuration"] as { fields: Record<string, unknown>[] }).fields;
       fields[1]["max"] = 30;
@@ -376,6 +381,120 @@ describe("validateManifest", () => {
       expect.objectContaining({
         code: "schedule_range_unreachable",
         path: "contributions[2].schedule.minSeconds",
+      }),
+    ]);
+  });
+
+  it("rejects a schedule whose field starts above the interval ceiling", () => {
+    const issues = issuesFor((manifest) => {
+      const fields = (manifest["configuration"] as { fields: Record<string, unknown>[] }).fields;
+      fields[1]["min"] = 100_000;
+      fields[1]["default"] = 100_000;
+      const schedule = contributionsOf(manifest)[2]["schedule"] as Record<string, unknown>;
+      schedule["maxSeconds"] = 3_600;
+    });
+    expect(issues).toEqual([
+      expect.objectContaining({
+        code: "schedule_range_unreachable",
+        path: "contributions[2].schedule.minSeconds",
+      }),
+    ]);
+  });
+
+  it("rejects a required scheduled task that also declares a value turning it off", () => {
+    const issues = issuesFor((manifest) => {
+      const poll = contributionsOf(manifest)[2];
+      poll["availability"] = "required";
+      (poll["schedule"] as Record<string, unknown>)["disabledValue"] = 0;
+    });
+    expect(issues).toEqual([
+      expect.objectContaining({
+        code: "required_schedule_cannot_disable",
+        path: "contributions[2].schedule.disabledValue",
+      }),
+    ]);
+  });
+
+  it("rejects two destinations built from one field that share no protocol", () => {
+    const issues = issuesFor((manifest) => {
+      const destinations = manifest["destinations"] as Record<string, unknown>[];
+      const second = structuredClone(destinations[0]);
+      second["id"] = "site_plain";
+      second["protocols"] = ["http"];
+      destinations.push(second);
+    });
+    expect(issues).toEqual([
+      expect.objectContaining({
+        code: "destination_protocols_incompatible",
+        path: "destinations[1].protocols",
+      }),
+    ]);
+  });
+
+  it("admits two destinations built from one field that overlap on a protocol", () => {
+    const issues = issuesFor((manifest) => {
+      const destinations = manifest["destinations"] as Record<string, unknown>[];
+      const second = structuredClone(destinations[0]);
+      second["id"] = "site_media";
+      second["protocols"] = ["https", "http"];
+      destinations.push(second);
+    });
+    expect(issues).toEqual([]);
+  });
+
+  it("makes a webhook handler name the field of a multi-field slot that signs deliveries", () => {
+    const useSecretFields = (manifest: MutableManifest, secretField?: string): void => {
+      const authentication = contributionsOf(manifest)[1]["authentication"] as Record<string, unknown>;
+      authentication["secretConnectionSlot"] = "site_credentials";
+      if (secretField !== undefined) authentication["secretField"] = secretField;
+      contributionsOf(manifest)[1]["requiredConnectionSlots"] = ["site_credentials"];
+    };
+    expect(issuesFor((manifest) => useSecretFields(manifest))).toEqual([
+      expect.objectContaining({
+        code: "webhook_secret_field_required",
+        path: "contributions[1].authentication.secretField",
+      }),
+    ]);
+    expect(issuesFor((manifest) => useSecretFields(manifest, "missing_field"))).toEqual([
+      expect.objectContaining({
+        code: "unknown_connection_field",
+        path: "contributions[1].authentication.secretField",
+      }),
+    ]);
+    expect(issuesFor((manifest) => useSecretFields(manifest, "wp_username"))).toEqual([
+      expect.objectContaining({
+        code: "credential_field_not_sensitive",
+        path: "contributions[1].authentication.secretField",
+      }),
+    ]);
+    expect(issuesFor((manifest) => useSecretFields(manifest, "wp_application_password"))).toEqual([]);
+  });
+
+  it("rejects a signing field an operator may leave empty", () => {
+    const issues = issuesFor((manifest) => {
+      const connections = manifest["connections"] as { slots: Record<string, unknown>[] };
+      const fields = connections.slots[0]["fields"] as Record<string, unknown>[];
+      fields[1]["required"] = false;
+      const authentication = contributionsOf(manifest)[1]["authentication"] as Record<string, unknown>;
+      authentication["secretConnectionSlot"] = "site_credentials";
+      authentication["secretField"] = "wp_application_password";
+      contributionsOf(manifest)[1]["requiredConnectionSlots"] = ["site_credentials"];
+    });
+    expect(issues.map((issue) => [issue.code, issue.path])).toEqual([
+      ["credential_field_not_required", "destinations[0].credentials.application.passwordField"],
+      ["credential_field_not_required", "contributions[1].authentication.secretField"],
+    ]);
+  });
+
+  it("rejects a signing field named beside a slot that holds exactly one value", () => {
+    const issues = issuesFor((manifest) => {
+      const authentication = contributionsOf(manifest)[1]["authentication"] as Record<string, unknown>;
+      authentication["secretField"] = "wp_application_password";
+    });
+    expect(issues).toEqual([
+      expect.objectContaining({
+        code: "webhook_secret_field_not_allowed",
+        path: "contributions[1].authentication.secretField",
       }),
     ]);
   });
@@ -420,7 +539,6 @@ describe("validateManifest", () => {
         key: "credentials",
         type: "connection_slot",
         label: "Credentials",
-        required: false,
         connectionSlot: "missing_slot",
       });
     });

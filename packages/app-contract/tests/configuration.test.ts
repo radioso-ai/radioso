@@ -97,15 +97,13 @@ describe("configuration fields", () => {
 
   it("requires a connection_slot field to name the slot it binds and to carry no value", () => {
     expect(
-      configurationFieldSchema.safeParse({ key: "creds", type: "connection_slot", label: "Credentials", required: true })
-        .success,
+      configurationFieldSchema.safeParse({ key: "creds", type: "connection_slot", label: "Credentials" }).success,
     ).toBe(false);
     expect(
       configurationFieldSchema.safeParse({
         key: "creds",
         type: "connection_slot",
         label: "Credentials",
-        required: true,
         connectionSlot: "site_credentials",
         default: "hunter2",
       }).success,
@@ -115,10 +113,21 @@ describe("configuration fields", () => {
         key: "creds",
         type: "connection_slot",
         label: "Credentials",
-        required: true,
         connectionSlot: "site_credentials",
       }),
     ).toMatchObject({ type: "connection_slot", connectionSlot: "site_credentials" });
+  });
+
+  it("keeps a requiredness flag off a connection_slot field, where nothing could read it", () => {
+    expect(
+      configurationFieldSchema.safeParse({
+        key: "creds",
+        type: "connection_slot",
+        label: "Credentials",
+        connectionSlot: "site_credentials",
+        required: true,
+      }).success,
+    ).toBe(false);
   });
 
   it("requires a url field's default to be a URL", () => {

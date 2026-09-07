@@ -54,6 +54,7 @@ const scheduledTask = {
     kind: "interval_from_configuration",
     field: "poll_interval_sec",
     minSeconds: 60,
+    maxSeconds: 86_400,
     disabledValue: 0,
   },
   overlapPolicy: "skip",
@@ -190,9 +191,14 @@ describe("contribution catalog", () => {
     expect(
       contributionSchema.parse({
         ...scheduledTask,
-        schedule: { kind: "interval_from_configuration", field: "poll_interval_sec", minSeconds: 60 },
+        schedule: {
+          kind: "interval_from_configuration",
+          field: "poll_interval_sec",
+          minSeconds: 60,
+          maxSeconds: 86_400,
+        },
       }),
-    ).toMatchObject({ schedule: { minSeconds: 60 } });
+    ).toMatchObject({ schedule: { minSeconds: 60, maxSeconds: 86_400 } });
   });
 
   it("lets a contribution name the connection slots it cannot run without", () => {
@@ -216,6 +222,7 @@ describe("contribution catalog", () => {
           kind: "interval_from_configuration",
           field: "poll_interval_sec",
           minSeconds: 60,
+          maxSeconds: 86_400,
           disabledValue: 300,
         },
       }).success,
@@ -227,10 +234,58 @@ describe("contribution catalog", () => {
           kind: "interval_from_configuration",
           field: "poll_interval_sec",
           minSeconds: 60,
+          maxSeconds: 86_400,
           disabledValue: 59,
         },
       }).success,
     ).toBe(true);
+  });
+
+  it("requires a configuration-driven schedule to close its interval range", () => {
+    expect(
+      contributionSchema.safeParse({
+        ...scheduledTask,
+        schedule: { kind: "interval_from_configuration", field: "poll_interval_sec", minSeconds: 60 },
+      }).success,
+    ).toBe(false);
+    expect(
+      contributionSchema.safeParse({
+        ...scheduledTask,
+        schedule: {
+          kind: "interval_from_configuration",
+          field: "poll_interval_sec",
+          minSeconds: 3600,
+          maxSeconds: 600,
+          disabledValue: 0,
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      contributionSchema.safeParse({
+        ...scheduledTask,
+        schedule: {
+          kind: "interval_from_configuration",
+          field: "poll_interval_sec",
+          minSeconds: 60,
+          maxSeconds: 2_592_001,
+          disabledValue: 0,
+        },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("lets a webhook handler name the slot field that carries the signing key", () => {
+    const parsed = contributionSchema.parse({
+      ...webhookHandler,
+      authentication: { ...webhookHandler.authentication, secretField: "signing_key" },
+    });
+    expect(parsed).toMatchObject({ authentication: { secretField: "signing_key" } });
+    expect(
+      contributionSchema.safeParse({
+        ...webhookHandler,
+        authentication: { ...webhookHandler.authentication, secretField: "Signing Key" },
+      }).success,
+    ).toBe(false);
   });
 
   it("rejects a kind outside the catalog", () => {

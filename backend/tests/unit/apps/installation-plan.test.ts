@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import type { AppManifest } from "@radioso/app-contract";
+
 import {
   APP_INSTALLATION_PLAN_TTL_MS,
   AppsError,
@@ -192,6 +194,18 @@ describe("app installation plan", () => {
     expect(() => buildAppInstallationPlan(planInput({
       configuration: { site_url: "https://example.com", poll_interval_sec: 120, wp_application_password: "hunter2" },
     }))).toThrow(expect.objectContaining({ reason: "invalid_configuration" }));
+  });
+
+  // The persisted `manifest` field is `AppManifest`, not `AdmittedManifest`: nothing
+  // stops a stored row from drifting away from what the release was admitted under. The
+  // plan builder re-admits it through `admittedManifestOf` rather than trust the cast a
+  // repository takes on read, so corruption here is a typed refusal, not a crash.
+  it("refuses to build a plan when the stored release manifest no longer passes admission", () => {
+    const { name: _name, ...appWithoutName } = wordpressManifest().app;
+    const tamperedRelease = { ...release(), manifest: { ...wordpressManifest(), app: appWithoutName } as AppManifest };
+
+    expect(() => buildAppInstallationPlan(planInput({ release: tamperedRelease })))
+      .toThrow(expect.objectContaining({ reason: "release_not_admitted" }));
   });
 });
 

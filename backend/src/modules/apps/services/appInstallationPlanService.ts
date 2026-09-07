@@ -63,6 +63,7 @@ export class AppInstallationPlanService {
         version: release.version,
         manifestDigest: release.manifestDigest,
         manifest: release.manifest,
+        admissionPolicyVersion: release.admissionPolicyVersion,
       },
       configuration: request.configuration,
       boundConnectionSlotIds: [

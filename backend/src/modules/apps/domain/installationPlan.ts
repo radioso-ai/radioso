@@ -1,6 +1,7 @@
 import {
   executionClassForContributionKind,
   resolveInstallation,
+  type AdmittedManifest,
   type AppManifest,
   type ConnectionSlot,
   type EffectiveConfiguration,
@@ -10,6 +11,7 @@ import {
 
 import { canonicalDigest } from "./canonicalJson.js";
 import { AppsError } from "./errors.js";
+import { admittedManifestOf } from "./releaseAdmission.js";
 
 /** How long an approved plan stays applicable before it must be reviewed again. */
 export const APP_INSTALLATION_PLAN_TTL_MS = 30 * 60 * 1000;
@@ -92,7 +94,9 @@ interface AppInstallationPlanRelease {
   readonly appId: string;
   readonly version: string;
   readonly manifestDigest: string;
+  /** Persisted shape. Re-admitted through `admittedManifestOf` before it drives a plan. */
   readonly manifest: AppManifest;
+  readonly admissionPolicyVersion?: string;
 }
 
 interface AppInstallationPlanInput {
@@ -160,7 +164,7 @@ const UNDETERMINED_READINESS: InstallationReadiness = {
  * other than the one it just resolved.
  */
 const resolveAppConfiguration = (
-  manifest: AppManifest,
+  manifest: AdmittedManifest,
   submitted: Readonly<Record<string, unknown>>,
 ): ResolvedAppConfiguration => {
   const declared = new Map(manifest.configuration.fields.map((field) => [field.key, field]));
@@ -217,7 +221,7 @@ const byKey = <T>(items: readonly T[], key: (item: T) => string): T[] =>
  * the same checksum and apply stays comparable.
  */
 export const buildAppInstallationPlan = (input: AppInstallationPlanInput): AppInstallationPlanResult => {
-  const manifest = input.release.manifest;
+  const manifest = admittedManifestOf(input.release);
   const resolved = resolveAppConfiguration(manifest, input.configuration);
   const { values, readiness } = resolved;
   const unresolvedRequirements = [...resolved.unresolved];

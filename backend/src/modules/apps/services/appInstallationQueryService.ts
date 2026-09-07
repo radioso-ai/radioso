@@ -2,6 +2,7 @@ import { resolveInstallation } from "@radioso/app-contract";
 
 import { notFound } from "../../../shared/domain/errors.js";
 import { AppsError } from "../domain/errors.js";
+import { admittedManifestOf } from "../domain/releaseAdmission.js";
 import type {
   AppConnectionRecord,
   AppGrantRecord,
@@ -91,8 +92,9 @@ export class AppInstallationQueryService {
     const releaseId = installation.activeReleaseId ?? installation.candidateReleaseId;
     const release = releaseId ? await this.dependencies.releases.findById(releaseId) : null;
     if (!release) throw notFound("App release not found");
+    const manifest = admittedManifestOf(release);
 
-    const resolved = resolveInstallation(release.manifest, request.configuration);
+    const resolved = resolveInstallation(manifest, request.configuration);
     if (!resolved.ok) {
       const [issue] = resolved.issues;
       throw new AppsError("invalid_configuration", issue?.message ?? "Configuration is invalid.", {
@@ -111,7 +113,7 @@ export class AppInstallationQueryService {
     // the guard falls back to the safer empty set rather than trusting an unresolved map.
     // `resolveInstallation` hands back readiness together with configuration in one call,
     // so both the new and the stored configuration are resolved once each here.
-    const storedConfiguration = resolveInstallation(release.manifest, installation.configuration);
+    const storedConfiguration = resolveInstallation(manifest, installation.configuration);
     const alreadyRequired = new Set(
       storedConfiguration.ok ? storedConfiguration.readiness.requiredConnectionSlots : [],
     );

@@ -90,7 +90,7 @@ export type OperatorMcpConfig =
       internalSecret: string;
       issuerUrl: string;
       resourceUrl: string;
-      rolloutWorkspaceIds: string[];
+      rolloutWorkspaceIds?: string[];
     };
 
 export interface RadiosoMcpConfig {
@@ -120,6 +120,11 @@ const normalizeEnv = (
 
 type ParsedConfig = z.infer<typeof configSchema>;
 
+const parseOperatorMcpRolloutWorkspaceIds = (value: string | undefined): string[] | undefined => {
+  const workspaceIds = value?.split(",").map((entry) => entry.trim()).filter(Boolean) ?? [];
+  return workspaceIds.length > 0 ? workspaceIds : undefined;
+};
+
 const buildConfig = (parsed: ParsedConfig): RadiosoMcpConfig => {
   const config: RadiosoMcpConfig = {
     auditLogPath: parsed.RADIOSO_MCP_AUDIT_LOG_PATH,
@@ -138,9 +143,7 @@ const buildConfig = (parsed: ParsedConfig): RadiosoMcpConfig => {
           internalSecret: parsed.OPERATOR_MCP_INTERNAL_SECRET!,
           issuerUrl: parsed.OPERATOR_MCP_ISSUER_URL!.replace(/\/+$/, ""),
           resourceUrl: parsed.OPERATOR_MCP_RESOURCE_URL!.replace(/\/+$/, ""),
-          rolloutWorkspaceIds: parsed.OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS
-            ? parsed.OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS.split(",").map((value) => value.trim()).filter(Boolean)
-            : [],
+          rolloutWorkspaceIds: parseOperatorMcpRolloutWorkspaceIds(parsed.OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS),
         }
       : { enabled: false },
     trustedProxyHops: parsed.RADIOSO_TRUSTED_PROXY_HOPS,

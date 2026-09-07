@@ -80,7 +80,9 @@ export const createRemoteHttpRuntime = async ({
       principalRateLimit: operatorFloodLimiter?.principal,
       rateLimit: operatorFloodLimiter?.source ?? createFixedWindowPreAuthSourceBudget({ maxAttempts: 120, windowMs: 60_000 }),
       readiness: createOperatorMcpReadiness(true),
-      rolloutWorkspaceIds: new Set(config.operatorMcp.rolloutWorkspaceIds),
+      rolloutWorkspaceIds: config.operatorMcp.rolloutWorkspaceIds
+        ? new Set(config.operatorMcp.rolloutWorkspaceIds)
+        : undefined,
       resource: {
         authorizationServerUrl: config.operatorMcp.issuerUrl,
         metadataUrl: `${new URL(config.operatorMcp.resourceUrl).origin}/.well-known/oauth-protected-resource/operator/mcp`,

@@ -540,7 +540,7 @@ variable "operator_mcp_enabled" {
 }
 
 variable "operator_mcp_public_origin" {
-  description = "Canonical HTTPS origin for the standalone MCP service when Operator MCP is enabled; /operator/mcp is appended as the exact OAuth resource."
+  description = "Optional canonical HTTPS custom origin for Operator MCP; the GitHub Terraform workflow otherwise discovers the Cloud Run MCP URL. /operator/mcp is appended as the exact OAuth resource."
   type        = string
   default     = null
 
@@ -565,7 +565,7 @@ variable "operator_mcp_credential_epoch" {
 }
 
 variable "operator_mcp_rollout_workspace_ids" {
-  description = "Workspace UUIDs permitted to use Operator MCP. An empty list keeps the surface unavailable even when the service is enabled."
+  description = "Optional staged-rollout workspace UUIDs. An empty list makes Operator MCP available to every workspace when the service is enabled."
   type        = list(string)
   default     = []
 

@@ -9,7 +9,7 @@ import { createOperatorMcpSetupRoutes } from "../../src/modules/operatorMcpSetup
 const workspaceId = "00000000-0000-4000-8000-000000000001";
 const grantId = "00000000-0000-4000-8000-000000000002";
 
-const buildApp = () => {
+const buildApp = (rolloutWorkspaceIds?: string) => {
   const grantService = {
     list: vi.fn(async () => ({ grants: [], canViewWorkspace: false })),
     get: vi.fn(async () => ({ id: grantId })),
@@ -20,7 +20,7 @@ const buildApp = () => {
       SESSION_COOKIE_NAME: "radioso_session",
       OPERATOR_MCP_ENABLED: true,
       OPERATOR_MCP_RESOURCE_URL: "https://mcp.example/operator/mcp",
-      OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS: workspaceId,
+      OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS: rolloutWorkspaceIds,
     },
     authService: { authenticateSession: vi.fn(async () => ({ userId: "user", accountId: "account", sessionId: "session" })) },
     accountAccessService: { requireActiveMembership: vi.fn(async () => undefined) },
@@ -47,6 +47,22 @@ describe("operator MCP dashboard contract", () => {
       .set("x-workspace-id", workspaceId).set("Cookie", "radioso_session=session-token").expect(200);
     expect(response.body).toMatchObject({ availability: "available", resource: "https://mcp.example/operator/mcp" });
     expect(JSON.stringify(response.body)).not.toContain("session-token");
+  });
+
+  it("makes setup available to every workspace when no rollout list is configured", async () => {
+    const { app } = buildApp();
+    const response = await request(app).get(`/api/v1/workspaces/${workspaceId}/operator-mcp/setup`)
+      .set("x-workspace-id", workspaceId).set("Cookie", "radioso_session=session-token").expect(200);
+
+    expect(response.body).toMatchObject({ availability: "available", resource: "https://mcp.example/operator/mcp" });
+  });
+
+  it("keeps setup unavailable outside an explicit staged rollout", async () => {
+    const { app } = buildApp(grantId);
+    const response = await request(app).get(`/api/v1/workspaces/${workspaceId}/operator-mcp/setup`)
+      .set("x-workspace-id", workspaceId).set("Cookie", "radioso_session=session-token").expect(200);
+
+    expect(response.body).toMatchObject({ availability: "unavailable", resource: null, artifacts: [] });
   });
 
   it("backs grant inventory/detail and requires CSRF for revocation", async () => {

@@ -52,11 +52,7 @@ jobs:
       CONNECTOR_PUBLIC_BASE_URL: ${{ vars.CONNECTOR_PUBLIC_BASE_URL }}
       PUBLIC_CHAT_BASE_URL: ${{ vars.PUBLIC_CHAT_BASE_URL }}
       RADIOSO_MCP_ENABLED: ${{ vars.RADIOSO_MCP_ENABLED }}
-      OPERATOR_MCP_ENABLED: ${{ vars.OPERATOR_MCP_ENABLED }}
-      OPERATOR_MCP_PUBLIC_ORIGIN: ${{ vars.OPERATOR_MCP_PUBLIC_ORIGIN }}
-      OPERATOR_MCP_CREDENTIAL_EPOCH: ${{ vars.OPERATOR_MCP_CREDENTIAL_EPOCH }}
-      OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS: ${{ vars.OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS }}
-      OPERATOR_MCP_VERIFICATION_BUDGET_PER_MINUTE: ${{ vars.OPERATOR_MCP_VERIFICATION_BUDGET_PER_MINUTE }}
+      MCP_PUBLIC_ORIGIN: ${{ vars.MCP_PUBLIC_ORIGIN }}
       OTEL_LOGS_ENABLED: ${{ vars.OTEL_LOGS_ENABLED }}
       OTEL_LOGS_MIN_LEVEL: ${{ vars.OTEL_LOGS_MIN_LEVEL }}
       TF_IN_AUTOMATION: true
@@ -262,18 +258,9 @@ jobs:
           echo "TF_VAR_backend_image=${BACKEND_IMAGE}" >> "$GITHUB_ENV"
           echo "TF_VAR_frontend_image=${FRONTEND_IMAGE}" >> "$GITHUB_ENV"
           echo "TF_VAR_radioso_mcp_enabled=${RADIOSO_MCP_ENABLED:-false}" >> "$GITHUB_ENV"
-          echo "TF_VAR_operator_mcp_enabled=${OPERATOR_MCP_ENABLED:-false}" >> "$GITHUB_ENV"
-          echo "TF_VAR_operator_mcp_credential_epoch=${OPERATOR_MCP_CREDENTIAL_EPOCH:-1}" >> "$GITHUB_ENV"
-          OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS_JSON="$(jq --null-input --compact-output --arg raw "${OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS:-}" '$raw | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))')"
-          echo "TF_VAR_operator_mcp_rollout_workspace_ids=${OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS_JSON}" >> "$GITHUB_ENV"
-          echo "TF_VAR_operator_mcp_verification_budget_per_minute=${OPERATOR_MCP_VERIFICATION_BUDGET_PER_MINUTE:-6}" >> "$GITHUB_ENV"
-          OPERATOR_MCP_RESOURCE_ORIGIN="${OPERATOR_MCP_PUBLIC_ORIGIN:-$MCP_URL}"
-          if [ "${OPERATOR_MCP_ENABLED:-false}" = "true" ]; then
-            if [ -z "${OPERATOR_MCP_RESOURCE_ORIGIN}" ]; then
-              echo "Operator MCP is enabled but its Cloud Run URL is unavailable. Set OPERATOR_MCP_PUBLIC_ORIGIN for a custom domain or run Terraform again after the MCP service exists." >&2
-              exit 1
-            fi
-            echo "TF_VAR_operator_mcp_public_origin=${OPERATOR_MCP_RESOURCE_ORIGIN%/}" >> "$GITHUB_ENV"
+          MCP_RESOURCE_ORIGIN="${MCP_PUBLIC_ORIGIN:-$MCP_URL}"
+          if [ "${RADIOSO_MCP_ENABLED:-false}" = "true" ] && [ -n "${MCP_RESOURCE_ORIGIN}" ]; then
+            echo "TF_VAR_mcp_public_origin=${MCP_RESOURCE_ORIGIN%/}" >> "$GITHUB_ENV"
           fi
           echo "TF_VAR_app_base_url_override=${APP_BASE_URL_OVERRIDE}" >> "$GITHUB_ENV"
           echo "TF_VAR_public_chat_base_url_override=${PUBLIC_CHAT_BASE_URL_OVERRIDE}" >> "$GITHUB_ENV"

@@ -168,7 +168,6 @@ const envSchema = z.object({
   MCP_CONVERSE_SESSION_TOKEN_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(10),
   RADIOSO_MCP_SIGNING_SECRET: emptyStringToUndefined(z.string().min(32)),
   RADIOSO_TRUSTED_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(0),
-  OPERATOR_MCP_ENABLED: booleanish(false),
   OPERATOR_MCP_RESOURCE_URL: emptyStringToUndefined(z.string().url()),
   OPERATOR_MCP_ISSUER_URL: emptyStringToUndefined(z.string().url()),
   OPERATOR_MCP_INTERNAL_SECRET: emptyStringToUndefined(z.string().min(32)),
@@ -177,8 +176,6 @@ const envSchema = z.object({
   OPERATOR_MCP_AUTHORIZATION_CODE_TTL_SECONDS: z.coerce.number().int().positive().max(300).default(300),
   OPERATOR_MCP_REFRESH_IDLE_TTL_DAYS: z.coerce.number().int().positive().max(30).default(30),
   OPERATOR_MCP_REFRESH_ABSOLUTE_TTL_DAYS: z.coerce.number().int().positive().max(90).default(90),
-  OPERATOR_MCP_VERIFICATION_BUDGET_PER_MINUTE: z.coerce.number().int().positive().max(6).default(6),
-  OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS: emptyStringToUndefined(z.string().min(1)),
   DOCUMENT_STORAGE_DRIVER: z.enum(["local", "gcs"]).default("local"),
   DOCUMENT_STORAGE_LOCAL_PATH: z.string().min(1).default("../.context/document-storage"),
   DOCUMENT_STORAGE_BUCKET: emptyStringToUndefined(z.string().min(1)),
@@ -365,14 +362,19 @@ const envSchema = z.object({
     });
   }
 
-  if (value.OPERATOR_MCP_ENABLED) {
-    for (const [field, message] of [
-      ["OPERATOR_MCP_RESOURCE_URL", "OPERATOR_MCP_RESOURCE_URL is required when OPERATOR_MCP_ENABLED is true"],
-      ["OPERATOR_MCP_ISSUER_URL", "OPERATOR_MCP_ISSUER_URL is required when OPERATOR_MCP_ENABLED is true"],
-      ["OPERATOR_MCP_INTERNAL_SECRET", "OPERATOR_MCP_INTERNAL_SECRET is required when OPERATOR_MCP_ENABLED is true"],
-      ["OPERATOR_MCP_CREDENTIAL_EPOCH", "OPERATOR_MCP_CREDENTIAL_EPOCH is required when OPERATOR_MCP_ENABLED is true"],
-    ] as const) {
-      if (!value[field]) ctx.addIssue({ code: z.ZodIssueCode.custom, path: [field], message });
+  const operatorMcpFields = [
+    "OPERATOR_MCP_RESOURCE_URL",
+    "OPERATOR_MCP_ISSUER_URL",
+    "OPERATOR_MCP_INTERNAL_SECRET",
+    "OPERATOR_MCP_CREDENTIAL_EPOCH",
+  ] as const;
+  if (operatorMcpFields.some((field) => value[field] !== undefined)) {
+    for (const field of operatorMcpFields) {
+      if (!value[field]) ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [field],
+        message: `${field} is required when Operator MCP is configured`,
+      });
     }
     if (value.OPERATOR_MCP_RESOURCE_URL) {
       const resource = new URL(value.OPERATOR_MCP_RESOURCE_URL);

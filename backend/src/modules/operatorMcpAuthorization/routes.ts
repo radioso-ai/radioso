@@ -6,7 +6,7 @@ import { requireApiAccessCsrf } from "../../app/http/middleware/requireApiAccess
 import { createPreAuthSourceRateLimiter } from "../../app/http/middleware/preAuthSourceRateLimiter.js";
 import { requireSession } from "../../app/http/middleware/requireSession.js";
 import type { AppDependencies } from "../../app/server/types.js";
-import { OperatorMcpProtocolError, operatorMcpRolloutWorkspaceIds, validateRedirectUri } from "./domain.js";
+import { OperatorMcpProtocolError, validateRedirectUri } from "./domain.js";
 
 type Dependencies = Pick<AppDependencies,
   "env" | "authService" | "accountAccessService" | "workspaceService" | "userRepository" |
@@ -43,7 +43,7 @@ export const createOperatorMcpDiscoveryRoutes = (dependencies: Pick<Dependencies
   const router = Router();
   router.get("/oauth-authorization-server", (_req, res) => {
     const issuer = dependencies.env.OPERATOR_MCP_ISSUER_URL;
-    if (!dependencies.env.OPERATOR_MCP_ENABLED || !issuer) {
+    if (!issuer) {
       res.status(404).json({ error: "not_found" });
       return;
     }
@@ -66,7 +66,6 @@ export const createOperatorMcpDiscoveryRoutes = (dependencies: Pick<Dependencies
 
 export const createOperatorMcpOauthRoutes = (dependencies: Dependencies): Router => {
   const router = Router();
-  const rolloutWorkspaceIds = operatorMcpRolloutWorkspaceIds(dependencies.env.OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS);
   const sessionOnly = requireSession(dependencies);
   const service = dependencies.operatorMcpAuthorizationService;
   const sourceRateLimit = (scope: string, limit: number) => createPreAuthSourceRateLimiter({
@@ -190,8 +189,7 @@ export const createOperatorMcpOauthRoutes = (dependencies: Dependencies): Router
       const accessible = (await Promise.all(workspaces.map(async (workspace) => ({
         workspace,
         role: await dependencies.accountAccessService.resolveWorkspaceRole({ accountId: locals.accountId, userId: locals.userId, workspaceId: workspace.id }),
-      })))).filter((item) => item.role !== null
-        && (rolloutWorkspaceIds === undefined || rolloutWorkspaceIds.has(item.workspace.id)));
+      })))).filter((item) => item.role !== null);
       res.status(200).json({
         transactionId: transaction.id,
         client: {

@@ -39,7 +39,6 @@ export interface OperatorMcpRequestHandlerDependencies {
   resourceMetadataUrl?: string;
   readiness?: { isReady(): boolean };
   onOutcome?: (observation: OperatorMcpAuditObservation) => void | Promise<void>;
-  rolloutWorkspaceIds?: ReadonlySet<string>;
 }
 
 const MAX_BODY_BYTES = 256 * 1024;
@@ -243,10 +242,6 @@ const createModernOperatorMcpRequestHandler = (dependencies: OperatorMcpRequestH
     });
     if (!admission) {
       reportOutcome(dependencies, { method, outcome: "denied", descriptorName, reason: "invalid_token" });
-      return unauthorized(dependencies.resourceMetadataUrl, true);
-    }
-    if (dependencies.rolloutWorkspaceIds !== undefined && !dependencies.rolloutWorkspaceIds.has(admission.proof.workspaceId)) {
-      reportOutcome(dependencies, { method, outcome: "denied", descriptorName, reason: "workspace_not_in_rollout" });
       return unauthorized(dependencies.resourceMetadataUrl, true);
     }
     if (dependencies.principalRateLimit && !await dependencies.principalRateLimit.consume({ sourceDigest: principalDigest(admission.proof) })) {

@@ -1,4 +1,5 @@
 import {
+  appManifestSchema,
   releaseAValidationPolicy,
   validateManifest,
   type AdmittedManifest,
@@ -64,7 +65,7 @@ interface AppReleaseAdmissionInput {
 export const appManifestDigest = (manifest: unknown): string => canonicalDigest(manifest);
 
 const digestIssues = (
-  manifest: AppManifest,
+  manifest: AdmittedManifest,
   catalogue: ReadonlySet<string>,
 ): ManifestValidationIssue[] => {
   const referenced: Array<{ digest: string; path: string }> = [
@@ -109,11 +110,17 @@ export const admitAppRelease = (input: AppReleaseAdmissionInput): AppReleaseAdmi
 
   if (issues.length > 0) return { outcome: "rejected", policyVersion, issues };
 
+  // The decision's `manifest` field is the persisted shape (FR-008 immutability lives in
+  // storage, not in this admitted value), so it is serialised into a plain, mutable copy
+  // here at the one boundary that writes it out. The admitted, deeply-readonly `manifest`
+  // above stays what every read-only computation in this function uses.
+  const persistedManifest: AppManifest = appManifestSchema.parse(manifest);
+
   return {
     outcome: "admitted",
     policyVersion,
     provenance: { kind: "built_in_registry" },
-    manifest,
+    manifest: persistedManifest,
     manifestDigest,
     artifactDigest: manifest.artifact.digest,
     evidence: {

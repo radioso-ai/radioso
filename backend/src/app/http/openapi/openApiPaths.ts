@@ -37,6 +37,7 @@ import { registerCopilotPaths } from "./paths/copilotPaths.js";
 import { registerWorkspaceEventsPaths } from "./paths/workspaceEventsPaths.js";
 import { registerApiAccessPaths } from "./paths/apiAccessPaths.js";
 import { registerOperatorMcpPaths } from "./paths/operatorMcpPaths.js";
+import { registerAppsPaths } from "./paths/appsPaths.js";
 
 export const registerOpenApiPaths = (
   registry: OpenAPIRegistry,
@@ -52,6 +53,7 @@ export const registerOpenApiPaths = (
   registerOperatorMcpPaths(registry, schemas, security);
   registerWorkspacePaths(registry, schemas, security);
   registerSettingsPaths(registry, schemas, security);
+  registerAppsPaths(registry, schemas, security);
   registerAgentsPaths(registry, schemas, security);
   registerAgentWizardPaths(registry, schemas, security);
   registerContextVariablePaths(registry, schemas, security);

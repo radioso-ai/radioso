@@ -43,13 +43,14 @@ export type AccountPermission =
   | "workspace.api_access.service.manage"
   | "workspace.credentials.manage"
   | "workspace.llm-models.manage"
+  | "workspace.apps.manage"
   | "workspace.documents.manage"
   | "workspace.documents.read"
   | "workspace.agents.delete";
 
 export type WorkspaceMachineRole = "admin" | "member";
 export type PublicAccessRole = "public" | "agent";
-export type PrincipalAccessRole = WorkspaceMachineRole | PublicAccessRole;
+type PrincipalAccessRole = WorkspaceMachineRole | PublicAccessRole;
 
 export type PublicChatPermission =
   | "public_chat.turn.create"
@@ -101,7 +102,7 @@ export type AuthenticatedPrincipal =
     publicSessionId: string;
   };
 
-export interface WorkspaceGrantSummary {
+interface WorkspaceGrantSummary {
   workspaceId: string;
   userId: string;
   role: WorkspaceGrantRole;
@@ -110,7 +111,7 @@ export interface WorkspaceGrantSummary {
 }
 
 /** A narrow outbound signal; account access never learns credential persistence. */
-export interface PersonalCredentialTenureTerminationPort {
+interface PersonalCredentialTenureTerminationPort {
   endMembership(input: { accountId: string; membershipId: string; actorUserId?: string | null }): Promise<void>;
 }
 

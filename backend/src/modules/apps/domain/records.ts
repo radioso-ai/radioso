@@ -1,0 +1,105 @@
+import type { AppManifest } from "@radioso/app-contract";
+
+import type { AppConnectionKind } from "./connectionBinding.js";
+import type { AppGrantKind, AppInstallationPlan } from "./installationPlan.js";
+import type {
+  AppInstallationState,
+  AppLifecycleOperationKind,
+  AppLifecycleOperationState,
+  AppSagaStepId,
+} from "./lifecycle.js";
+import type { AppOperatorPrincipal } from "../ports/operatorAuthorization.js";
+
+export const appReleaseStates = [
+  "submitted",
+  "validating",
+  "admitted",
+  "rejected",
+  "withdrawn",
+  "deprecated",
+  "revoked",
+  "quarantined",
+] as const;
+export type AppReleaseState = (typeof appReleaseStates)[number];
+
+export interface AppReleaseRecord {
+  readonly id: string;
+  readonly appId: string;
+  readonly version: string;
+  readonly manifest: AppManifest;
+  readonly manifestDigest: string;
+  readonly artifactDigest: string;
+  readonly publisherId: string;
+  readonly state: AppReleaseState;
+  readonly admissionPolicyVersion: string;
+  /** Issue list or evidence summary. Never a copy of the manifest. */
+  readonly admissionDecision: Readonly<Record<string, unknown>>;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+}
+
+export interface AppInstallationRecord {
+  readonly id: string;
+  readonly workspaceId: string;
+  readonly appId: string;
+  readonly activeReleaseId: string | null;
+  readonly candidateReleaseId: string | null;
+  readonly state: AppInstallationState;
+  readonly configuration: Readonly<Record<string, unknown>>;
+  readonly version: number;
+  readonly health: Readonly<Record<string, unknown>>;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+}
+
+export interface AppInstallationPlanRecord {
+  readonly id: string;
+  readonly workspaceId: string;
+  readonly releaseId: string;
+  readonly checksum: string;
+  readonly plan: AppInstallationPlan;
+  readonly createdBy: string | null;
+  readonly createdAt: Date;
+  readonly expiresAt: Date;
+  readonly consumedAt: Date | null;
+}
+
+export interface AppGrantRecord {
+  readonly id: string;
+  readonly installationId: string;
+  readonly releaseId: string;
+  readonly kind: AppGrantKind;
+  readonly key: string;
+  readonly planId: string | null;
+  readonly approvedBy: string | null;
+  readonly approvedAt: Date;
+  readonly revokedAt: Date | null;
+}
+
+export interface AppConnectionRecord {
+  readonly id: string;
+  readonly installationId: string;
+  readonly slotId: string;
+  readonly kind: AppConnectionKind;
+  readonly publicFields: Readonly<Record<string, string>>;
+  /** True when secret material is stored. The ciphertext itself never leaves persistence. */
+  readonly hasSecret: boolean;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+  readonly rotatedAt: Date | null;
+  readonly deletionRequestedAt: Date | null;
+}
+
+export interface AppLifecycleOperationRecord {
+  readonly id: string;
+  readonly installationId: string;
+  readonly kind: AppLifecycleOperationKind;
+  readonly state: AppLifecycleOperationState;
+  readonly step: AppSagaStepId | null;
+  readonly idempotencyKey: string;
+  readonly initiatedBy: AppOperatorPrincipal;
+  readonly payload: Readonly<Record<string, unknown>>;
+  readonly error: { readonly reason: string; readonly message: string } | null;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+}

@@ -17,7 +17,7 @@ interface ServerLike {
   close(callback?: (error?: Error) => void): void;
 }
 
-export interface StartApiRuntimeOptions {
+interface StartApiRuntimeOptions {
   env: Env;
   logger?: AppLogger;
   runMigrations?: (connectionString: string, logger: AppLogger, options: MigrationTimeoutOptions) => Promise<void>;
@@ -75,6 +75,11 @@ export const startApiRuntime = async (options: StartApiRuntimeOptions): Promise<
     fetchPublicUrl,
   });
   await dependencies.applicationModules.initializeAll();
+  // Admission runs after application modules register, so a module that contributes a
+  // built-in App release is admitted in the same pass. It is idempotent per version and
+  // never throws: a registry entry that fails policy makes that App uninstallable, not
+  // the platform unstartable.
+  await dependencies.appReleaseAdmissionService.syncBuiltInReleases();
   await dependencies.credentialExpiryWarningLifecycle.start();
 
   const app = (options.createApp ?? createApp)(dependencies);

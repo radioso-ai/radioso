@@ -44,7 +44,11 @@ describe("operator copilot catalog coverage", () => {
   //               the bounded document maintenance acts in the Wave 2 knowledge-base tools.
   //   106 -> 93   when the forty-five workspace, channel, and connector operations were reasoned
   //               one ground at a time; twelve of them were permanent, not deferred.
-  const maxDeferredCatalogExclusions = 93;
+  //    93 -> 106  the thirteen Apps control-plane operations arrived as one new API family. In
+  //               Release A an App's lifecycle is a signed-in administrator's decision and the
+  //               routes refuse machine credentials, so none of them has a Ray shape yet; the
+  //               reads land with the Apps dashboard.
+  const maxDeferredCatalogExclusions = 106;
 
   it("states each permanent exclusion's own ground rather than one conflated reason", () => {
     // A permanent exclusion is the strongest claim this map makes, so a wrong one either blocks

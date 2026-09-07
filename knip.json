@@ -5,7 +5,8 @@
     "**/public/**",
     "packages/radioso-mcp-server/src/generated/**",
     "typescript-sdk/src/generated/**",
-    "frontend/app/{api/embed,embed,embed-test,radioso-embed.js,operator}/**"
+    "frontend/app/{api/embed,embed,embed-test,radioso-embed.js,operator}/**",
+    "backend/src/shared/infra/kysely/schema.ts"
   ],
   "ignoreBinaries": [
     "depcruise",

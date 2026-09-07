@@ -37,16 +37,17 @@
 
 ## PR 2 — `apps` domain: releases, installations, plans, grants, connections, lifecycle
 
-- [ ] T101 [US2] Failing repository and domain tests: built-in release registry admits a manifest under the Release A policy and records `admissionPolicyVersion`; digests are verified against the registry's artifact catalogue; a second admission of the same version with different content is rejected.
-- [ ] T102 [US1] Failing tests: deterministic installation plan (checksum, expiry) covering release, workspace, configuration values, connection bindings, grants, destinations, collections; a stale plan is rejected on apply.
-- [ ] T103 [US1] Failing tests: connection binding stores sensitive fields through the existing secret path and never returns them; `generated_secret` is minted once and shown once.
-- [ ] T104 [US7] Failing tests: lifecycle state machine `planned → provisioning → staged → testing → ready → active`, `disabled`, `removing → removed`; saga cursor resumes after a simulated crash at each step; compensation never re-runs a completed external step.
-- [ ] T105 [US1] Failing route tests: inspect, plan, apply, get installation, disable, enable, remove, data disposition; current-principal re-check on every mutation (FR-027a).
-- [ ] T106 Migrations for `app_releases`, `app_installations`, `app_installation_plans`, `app_grants`, `app_connections`, `app_lifecycle_operations`; regenerate both DB snapshots (`db:types` and `db:schema`).
-- [ ] T107 Implement domain, repositories, services, routes, OpenAPI registration; regenerate `backend/openapi.*`, run `cd typescript-sdk && pnpm run sync`; check the MCP package's OpenAPI copy.
-- [ ] T108 Composition module `backend/src/app/composition/apps.ts` with the built-in registry wired from a static list (empty until PR 5 registers WordPress).
-- [ ] T109 Audit events `app.release.*`, `app.installation.*`, `app.grant.*`, `app.connection.*`; Ray coverage: read-only installation inspection tool plus coverage-map exclusions for apply, remove, and disposition with reasons.
-- [ ] T110 Docs: `docs/apps/release-admission.md`, operator page skeleton `docs-portal/content/operators/apps.mdx` (lifecycle states, plan review), code-map update.
+- [x] T101 [US2] Failing repository and domain tests: built-in release registry admits a manifest under the Release A policy and records `admissionPolicyVersion`; digests are verified against the registry's artifact catalogue; a second admission of the same version with different content is rejected.
+- [x] T102 [US1] Failing tests: deterministic installation plan (checksum, expiry) covering release, workspace, configuration values, connection bindings, grants, destinations, collections; a stale plan is rejected on apply.
+- [x] T103 [US1] Failing tests: connection binding stores sensitive fields through the existing secret path and never returns them; `generated_secret` is minted once and shown once.
+- [x] T104 [US7] Failing tests: lifecycle state machine `planned → provisioning → staged → testing → ready → active`, `disabled`, `removing → removed`; saga cursor resumes after a simulated crash at each step; compensation never re-runs a completed external step.
+- [x] T105 [US1] Failing route tests: inspect, plan, apply, get installation, disable, enable, remove, data disposition; current-principal re-check on every mutation (FR-027a).
+- [x] T106 Migrations for `app_releases`, `app_installations`, `app_installation_plans`, `app_grants`, `app_connections`, `app_lifecycle_operations`; regenerate both DB snapshots (`db:types` and `db:schema`).
+- [x] T107 Implement domain, repositories, services, routes, OpenAPI registration; regenerate `backend/openapi.*`, run `cd typescript-sdk && pnpm run sync`; check the MCP package's OpenAPI copy.
+- [x] T108 Composition module `backend/src/app/composition/apps.ts` with the built-in registry wired from a static list (empty until PR 5 registers WordPress).
+- [x] T109 Audit events `app.release.*`, `app.installation.*`, `app.grant.*`, `app.connection.*`; Ray coverage: read-only installation inspection tool plus coverage-map exclusions for apply, remove, and disposition with reasons.
+- [x] T111 Observability follow-up recorded: the lifecycle saga emits audit events and warn/error logs only; metrics and spans are added with the first real runtime provider in PR 4. `dispose_data` is an operation kind without its own route; disposition rides on `remove`.
+- [x] T110 Docs: `docs/apps/release-admission.md`, operator page skeleton `docs-portal/content/operators/apps.mdx` (lifecycle states, plan review), code-map update.
 
 ---
 

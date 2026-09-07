@@ -330,7 +330,7 @@ describe("resolveInstallation", () => {
           ? { ...contribution, requiredConnectionSlots: [...contribution.requiredConnectionSlots, "ghost_slot"] }
           : contribution,
       ),
-    } as AdmittedManifest;
+    };
 
     const resolved = resolveInstallation(spread, { site_url: "https://example.com" });
 
@@ -435,7 +435,7 @@ describe("isAdmittedManifest", () => {
   });
 
   it("is false for a spread copy, even though the copy still types as admitted", () => {
-    const spread = { ...manifest } as AdmittedManifest;
+    const spread = { ...manifest };
     expect(isAdmittedManifest(spread)).toBe(false);
   });
 });

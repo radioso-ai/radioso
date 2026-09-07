@@ -1,7 +1,6 @@
 import {
   executionClassForContributionKind,
-  installationReadiness,
-  resolveConfiguration,
+  resolveInstallation,
   type AppManifest,
   type ConnectionSlot,
   type EffectiveConfiguration,
@@ -118,36 +117,61 @@ interface ResolvedAppConfiguration {
   /**
    * The branded, readiness-safe configuration — present only once every required field
    * has a value. `null` here is not "empty"; it is "not yet an authoritative answer to
-   * what this installation does", and it is the signal that keeps a caller from handing
-   * `installationReadiness` a map with a hole in it.
+   * what this installation does".
    */
   readonly configuration: EffectiveConfiguration | null;
   /**
    * What the operator has entered so far, defaults materialised for every field that
    * resolved. Display-only: the draft plan shows it back so the operator sees what they
-   * filled in, but it is never passed to `installationReadiness` — only `configuration`
-   * is.
+   * filled in.
    */
   readonly values: Readonly<Record<string, AppConfigurationValue>>;
   readonly unresolved: AppUnresolvedRequirement[];
+  /**
+   * `resolveInstallation` hands back readiness together with configuration on success, so
+   * this is that same answer, and `UNDETERMINED_READINESS` on a draft that has not
+   * resolved yet — never a second, separately computed readiness.
+   */
+  readonly readiness: InstallationReadiness;
 }
 
 /**
+ * A configuration still missing a required field has no authoritative answer to "what
+ * does this installation do", so readiness is reported as undetermined rather than
+ * guessed from the draft: nothing is active and nothing is required yet. The plan's
+ * `unresolvedRequirements` list — not this — is what tells the operator the plan is not
+ * ready, so the shape here stays identical to a resolved plan's rather than growing a
+ * separate "pending" case for callers to branch on.
+ */
+const UNDETERMINED_READINESS: InstallationReadiness = {
+  activeContributionIds: [],
+  inactiveContributionIds: [],
+  requiredConnectionSlots: [],
+};
+
+/**
  * Only declared fields survive, and what survives is measured by the contract package's
- * own resolver rather than by a second copy of its rules here: `resolveConfiguration`
+ * own resolver rather than by a second copy of its rules here: `resolveInstallation`
  * materialises manifest defaults itself, so this function submits the operator's raw
  * input unchanged and never pre-fills a default before asking. The two outcomes are kept
  * apart on purpose: a value that is wrong is a bad request, while a required value that
- * is simply absent is a hole the plan shows the operator so they can fill it.
+ * is simply absent is a hole the plan shows the operator so they can fill it. Resolution
+ * and readiness are one call, so a draft plan never asks readiness about a configuration
+ * other than the one it just resolved.
  */
 const resolveAppConfiguration = (
   manifest: AppManifest,
   submitted: Readonly<Record<string, unknown>>,
 ): ResolvedAppConfiguration => {
   const declared = new Map(manifest.configuration.fields.map((field) => [field.key, field]));
-  const result = resolveConfiguration(manifest, submitted);
+  const result = resolveInstallation(manifest, submitted);
   if (result.ok) {
-    return { configuration: result.configuration, values: result.configuration, unresolved: [] };
+    return {
+      configuration: result.configuration,
+      values: result.configuration,
+      unresolved: [],
+      readiness: result.readiness,
+    };
   }
 
   const missing = new Set<string>();
@@ -163,7 +187,7 @@ const resolveAppConfiguration = (
   }
 
   // Every remaining issue is a required field with no default and nothing submitted for
-  // it. Every other declared field already passed `resolveConfiguration`'s own checks, so
+  // it. Every other declared field already passed `resolveInstallation`'s own checks, so
   // the draft plan can still show the operator what they filled in and what the manifest
   // defaults, leaving only the fields nobody has reached yet out of the map.
   const values: Record<string, AppConfigurationValue> = {};
@@ -172,21 +196,7 @@ const resolveAppConfiguration = (
     const value = Object.hasOwn(submitted, field.key) ? submitted[field.key] : field.default;
     if (value !== undefined) values[field.key] = value as AppConfigurationValue;
   }
-  return { configuration: null, values, unresolved };
-};
-
-/**
- * A configuration still missing a required field has no authoritative answer to "what
- * does this installation do", so readiness is reported as undetermined rather than
- * guessed from the draft: nothing is active and nothing is required yet. The plan's
- * `unresolvedRequirements` list — not this — is what tells the operator the plan is not
- * ready, so the shape here stays identical to a resolved plan's rather than growing a
- * separate "pending" case for callers to branch on.
- */
-const UNDETERMINED_READINESS: InstallationReadiness = {
-  activeContributionIds: [],
-  inactiveContributionIds: [],
-  requiredConnectionSlots: [],
+  return { configuration: null, values, unresolved, readiness: UNDETERMINED_READINESS };
 };
 
 const hostFromConfiguredUrl = (value: AppConfigurationValue | undefined): string | null => {
@@ -209,12 +219,9 @@ const byKey = <T>(items: readonly T[], key: (item: T) => string): T[] =>
 export const buildAppInstallationPlan = (input: AppInstallationPlanInput): AppInstallationPlanResult => {
   const manifest = input.release.manifest;
   const resolved = resolveAppConfiguration(manifest, input.configuration);
-  const { values } = resolved;
+  const { values, readiness } = resolved;
   const unresolvedRequirements = [...resolved.unresolved];
 
-  const readiness = resolved.configuration
-    ? installationReadiness(manifest, resolved.configuration)
-    : UNDETERMINED_READINESS;
   const activeIds = new Set(readiness.activeContributionIds);
   const requiredSlotIds = new Set<string>([
     ...readiness.requiredConnectionSlots,

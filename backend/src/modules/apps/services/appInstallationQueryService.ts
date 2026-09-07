@@ -1,4 +1,4 @@
-import { installationReadiness, resolveConfiguration, type EffectiveConfiguration } from "@radioso/app-contract";
+import { resolveInstallation } from "@radioso/app-contract";
 
 import { notFound } from "../../../shared/domain/errors.js";
 import { AppsError } from "../domain/errors.js";
@@ -92,7 +92,7 @@ export class AppInstallationQueryService {
     const release = releaseId ? await this.dependencies.releases.findById(releaseId) : null;
     if (!release) throw notFound("App release not found");
 
-    const resolved = resolveConfiguration(release.manifest, request.configuration);
+    const resolved = resolveInstallation(release.manifest, request.configuration);
     if (!resolved.ok) {
       const [issue] = resolved.issues;
       throw new AppsError("invalid_configuration", issue?.message ?? "Configuration is invalid.", {
@@ -109,11 +109,15 @@ export class AppInstallationQueryService {
     // this same, immutable release manifest, so re-resolving it here is expected to
     // succeed; if it somehow does not, there is nothing "already required" to protect and
     // the guard falls back to the safer empty set rather than trusting an unresolved map.
-    const requiredSlotsOf = (values: EffectiveConfiguration): readonly string[] =>
-      installationReadiness(release.manifest, values).requiredConnectionSlots;
-    const storedConfiguration = resolveConfiguration(release.manifest, installation.configuration);
-    const alreadyRequired = new Set(storedConfiguration.ok ? requiredSlotsOf(storedConfiguration.configuration) : []);
-    const newlyRequired = requiredSlotsOf(configuration).filter((slotId) => !alreadyRequired.has(slotId));
+    // `resolveInstallation` hands back readiness together with configuration in one call,
+    // so both the new and the stored configuration are resolved once each here.
+    const storedConfiguration = resolveInstallation(release.manifest, installation.configuration);
+    const alreadyRequired = new Set(
+      storedConfiguration.ok ? storedConfiguration.readiness.requiredConnectionSlots : [],
+    );
+    const newlyRequired = resolved.readiness.requiredConnectionSlots.filter(
+      (slotId) => !alreadyRequired.has(slotId),
+    );
     if (newlyRequired.length > 0) {
       const bound = new Set(
         (await this.dependencies.connections.listByInstallation(installation.id))

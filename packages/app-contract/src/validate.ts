@@ -37,8 +37,25 @@ export interface ManifestValidationPolicy {
   supportedPermissions: readonly HostPermission[];
 }
 
+declare const admittedManifestBrand: unique symbol;
+
+/**
+ * A manifest `validateManifest` has proved against a policy: every invariant
+ * this module checks — duplicate ids, destination and schedule field types,
+ * connection slot references, policy-supported kinds, and the rest — holds for
+ * it. The brand is a symbol this module does not export, so nothing outside
+ * `validateManifest` can produce a value of this type; a caller cannot forge
+ * one by asserting a parsed `AppManifest` into it. This is a readonly *view*
+ * over the manifest — the top level is frozen, but nested arrays and objects
+ * are not — so it is safe to read and to hand to every function admission
+ * exists to feed, and unsafe to mutate.
+ */
+export type AdmittedManifest = Readonly<AppManifest> & {
+  readonly [admittedManifestBrand]: true;
+};
+
 export type ManifestValidationResult =
-  | { ok: true; manifest: AppManifest }
+  | { ok: true; manifest: AdmittedManifest }
   | { ok: false; issues: ManifestValidationIssue[] };
 
 /** What a Release A host admits. */
@@ -797,5 +814,7 @@ export const validateManifest = (
     ...collectPolicyIssues(parsed.data, policy),
   ];
 
-  return issues.length === 0 ? { ok: true, manifest: parsed.data } : { ok: false, issues };
+  return issues.length === 0
+    ? { ok: true, manifest: Object.freeze(parsed.data) as AdmittedManifest }
+    : { ok: false, issues };
 };

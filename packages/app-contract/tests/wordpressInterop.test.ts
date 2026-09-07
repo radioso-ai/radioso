@@ -11,7 +11,7 @@ import {
   resolveInstallation,
   validateManifest,
   webhookInvocationInputSchema,
-  type AppManifest,
+  type AdmittedManifest,
   type EffectiveConfiguration,
   type InstallationReadiness,
 } from "../src/index.js";
@@ -33,7 +33,7 @@ const fixtureResult = validateManifest(
   releaseAValidationPolicy,
 );
 if (!fixtureResult.ok) throw new Error("the reference WordPress manifest must validate");
-const manifest: AppManifest = fixtureResult.manifest;
+const manifest: AdmittedManifest = fixtureResult.manifest;
 
 const SOURCE_CONTRIBUTION_ID = "site_content";
 const INVOCATION_ID = "8b1f6f2a-6f6f-4a3f-9c4a-2f0d0f8a1b21";

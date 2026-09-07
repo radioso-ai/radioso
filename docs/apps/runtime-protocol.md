@@ -106,13 +106,15 @@ A schedule-bound field is always present. Admission refuses a manifest whose
 empty, so a scheduled task that is active always has a whole number of seconds to
 run on.
 
-`resolveInstallation` takes any manifest that parses, and it answers rather than
-throws for every one of them. A manifest that would fail `validateManifest` on an
-invariant resolution stands on — a schedule bound to a field that is not a
-required or defaulted number, a destination host bound to a field that is not a
-`url` field — comes back as `manifest_not_admitted` issues. A caller therefore
-reads one failure shape whether the problem is the operator's stored map or the
-release itself.
+`resolveInstallation` accepts only the admitted manifest `validateManifest`
+returns, not any manifest that merely parses. Admission is one boundary rather
+than two: a manifest `validateManifest` would refuse — a schedule bound to a
+field that is not a required or defaulted number, a destination host bound to
+a field that is not a `url` field — can never reach readiness, because the
+type it takes makes that state unrepresentable rather than asking resolution to
+re-check what admission already proved. A host that stores a manifest re-runs
+`validateManifest` on load to regain the admitted value; it never persists or
+reconstructs the admitted type directly.
 
 An issue it reports names a key only when the manifest declares that key.
 Anything else is addressed by its position in the stored map — `configuration.3`

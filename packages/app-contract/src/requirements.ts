@@ -14,7 +14,7 @@ import {
 } from "./destinations.js";
 import { fieldKeySchema, type ConnectionSlotId, type ContributionId } from "./identifiers.js";
 import type { AppManifest } from "./manifest.js";
-import type { ManifestValidationIssue } from "./validate.js";
+import type { AdmittedManifest, ManifestValidationIssue } from "./validate.js";
 
 /**
  * What one installation has to supply before it can run, and what it turns on
@@ -328,10 +328,10 @@ export interface InstallationReadiness {
  * nobody has to fill in.
  *
  * A schedule-bound field is present in every effective configuration, because
- * `resolveInstallation` refuses a manifest whose schedule reads a field an
- * installation could leave empty before it resolves anything. An absent value
- * here would activate a task with no interval to run it on, and a host would
- * have to invent one.
+ * `validateManifest` refuses a manifest whose schedule reads a field an
+ * installation could leave empty, and `resolveInstallation` only ever runs
+ * against a manifest that has passed it. An absent value here would activate a
+ * task with no interval to run it on, and a host would have to invent one.
  */
 const isActive = (contribution: Contribution, configuration: EffectiveConfiguration): boolean => {
   if (contribution.kind !== "scheduled_task") return true;
@@ -370,55 +370,6 @@ export type InstallationResolutionResult =
   | { ok: true; configuration: EffectiveConfiguration; readiness: InstallationReadiness }
   | { ok: false; issues: ManifestValidationIssue[] };
 
-const NOT_ADMITTED = "manifest_not_admitted";
-
-/**
- * The manifest invariants resolution reads as given. Admission proves all of
- * them, so a manifest that `validateManifest` returned satisfies them and this
- * pass finds nothing — but the parameter is an ordinary `AppManifest`, and
- * `appManifestSchema.parse` produces plenty of those that admission would
- * refuse. Reporting the gap is what makes this operation total: a caller holding
- * a shape-valid manifest gets the declared failure arm rather than an exception
- * from somewhere inside readiness.
- *
- * A message names no key and no value. The manifest is the author's, the stored
- * map may be an attacker's, and neither belongs in a diagnostic that reaches an
- * audit record; the path already says where to look.
- */
-const admissionIssues = (manifest: AppManifest): ManifestValidationIssue[] => {
-  const issues: ManifestValidationIssue[] = [];
-  const declared = new Map(manifest.configuration.fields.map((field) => [field.key, field]));
-
-  manifest.destinations.forEach((destination, position) => {
-    if (destination.host.kind !== "configuration") return;
-    const field = declared.get(destination.host.field);
-    if (field?.type === "url") return;
-    issues.push(
-      issue(
-        NOT_ADMITTED,
-        `destinations[${position}].host.field`,
-        "A destination host is built from a declared url field",
-      ),
-    );
-  });
-
-  manifest.contributions.forEach((contribution, position) => {
-    if (contribution.kind !== "scheduled_task") return;
-    if (contribution.schedule.kind !== "interval_from_configuration") return;
-    const field = declared.get(contribution.schedule.field);
-    if (field?.type === "number" && (field.required || field.default !== undefined)) return;
-    issues.push(
-      issue(
-        NOT_ADMITTED,
-        `contributions[${position}].schedule.field`,
-        "A schedule reads a declared number field that every installation holds a value for",
-      ),
-    );
-  });
-
-  return issues;
-};
-
 /**
  * The one door from a manifest and an operator's stored values to what an
  * installation runs. Resolution and readiness are one call because they are one
@@ -427,17 +378,18 @@ const admissionIssues = (manifest: AppManifest): ManifestValidationIssue[] => {
  * dashboard, the installation plan, and the gateway all come through here, so
  * all three reach the same conclusion.
  *
- * It accepts any manifest that parses, and it never throws for one. A manifest
- * that would fail `validateManifest` on an invariant resolution depends on comes
- * back as `manifest_not_admitted` issues, so a caller reads one failure shape
- * whether the problem is the operator's map or the release itself.
+ * The parameter is an `AdmittedManifest`, not an ordinary `AppManifest`:
+ * admission is `validateManifest`'s job alone, proved once, at the one boundary
+ * that owns it. A caller cannot reach this function with a manifest that
+ * `validateManifest` would refuse — the type makes that state unrepresentable
+ * rather than asking this module to re-derive a partial copy of the same
+ * checks. It still never throws: every failure left to find here is in the
+ * operator's stored values, not in the manifest.
  */
 export const resolveInstallation = (
-  manifest: AppManifest,
+  manifest: AdmittedManifest,
   storedValues: unknown,
 ): InstallationResolutionResult => {
-  const notAdmitted = admissionIssues(manifest);
-  if (notAdmitted.length > 0) return { ok: false, issues: notAdmitted };
   const resolved = resolveConfiguration(manifest, storedValues);
   if (!resolved.ok) return { ok: false, issues: resolved.issues };
   return {

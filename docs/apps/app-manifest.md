@@ -141,15 +141,20 @@ field that declares a default, and every optional field the operator filled in. 
 field that is optional and declares no default is absent from the result, which is
 the one gap a handler codes around, and a `connection_slot` field never appears
 at all: its value lives in the slot. `resolveInstallation` is the one operation
-that produces it:
+that produces it, and it takes the admitted manifest `validateManifest` returns
+(see [Validating a manifest](#validating-a-manifest)), not a manifest that has
+only parsed:
 
 ```ts
-import { resolveInstallation } from "@radioso/app-contract";
+import { releaseAValidationPolicy, resolveInstallation, validateManifest } from "@radioso/app-contract";
 
-const resolved = resolveInstallation(manifest, storedValues);
-if (resolved.ok) {
-  // resolved.configuration is what an invocation carries as context.configuration
-  // resolved.readiness says which contributions run and which slots to bind
+const admitted = validateManifest(manifest, releaseAValidationPolicy);
+if (admitted.ok) {
+  const resolved = resolveInstallation(admitted.manifest, storedValues);
+  if (resolved.ok) {
+    // resolved.configuration is what an invocation carries as context.configuration
+    // resolved.readiness says which contributions run and which slots to bind
+  }
 }
 ```
 
@@ -596,6 +601,10 @@ if (!result.ok) {
 gives you the whole list. First the schema, then every reference the manifest
 makes to its own declarations, then what this host admits. A `path` is a dot and
 bracket path such as `contributions[1].authentication.secretConnectionSlot`.
+
+On success, `result.manifest` is an `AdmittedManifest`: the type
+`resolveInstallation` requires, so admission happens exactly once, at this call,
+rather than being re-derived wherever a manifest is resolved.
 
 | Code | Raised when |
 |---|---|

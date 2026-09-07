@@ -3,7 +3,6 @@ import {
   resolveInstallation,
   type AdmittedManifest,
   type AppManifest,
-  type ConnectionSlot,
   type EffectiveConfiguration,
   type ExecutionClass,
   type InstallationReadiness,
@@ -236,7 +235,7 @@ export const buildAppInstallationPlan = (input: AppInstallationPlanInput): AppIn
       .map((destination) => destination.credentials!.slot),
   ]);
   const boundSlotIds = new Set(input.boundConnectionSlotIds);
-  const connectionSlots = byKey(manifest.connections.slots, (slot: ConnectionSlot) => slot.id).map((slot) => {
+  const connectionSlots = byKey(manifest.connections.slots, (slot) => slot.id).map((slot) => {
     const required = requiredSlotIds.has(slot.id);
     const bound = boundSlotIds.has(slot.id);
     if (required && !bound) {

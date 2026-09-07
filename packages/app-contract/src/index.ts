@@ -83,7 +83,6 @@ export {
 } from "./connections.js";
 
 export {
-  credentialFieldReferences,
   destinationCredentialApplicationSchema,
   destinationCredentialsSchema,
   destinationDataClassSchema,
@@ -245,9 +244,10 @@ export {
 } from "./jobs.js";
 
 export {
-  requiredConnectionSlotsFor,
-  validateConfigurationValues,
-  type ConfigurationValuesResult,
+  installationReadiness,
+  resolveConfiguration,
+  type ConfigurationResolutionResult,
+  type InstallationReadiness,
 } from "./requirements.js";
 
 export {

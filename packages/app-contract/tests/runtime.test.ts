@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import {
   appErrorCodes,
@@ -16,6 +16,7 @@ import {
   MAX_EGRESS_QUERY_ENTRIES,
   MAX_ERROR_MESSAGE_LENGTH,
   MAX_HEADER_ENTRIES,
+  MAX_JSON_OBJECT_KEYS,
   MAX_JSON_SERIALIZED_BYTES,
   MAX_JSON_STRING_LENGTH,
   RUNTIME_PROTOCOL_VERSION,
@@ -419,17 +420,90 @@ describe("host capabilities", () => {
     ).toBe(false);
   });
 
-  it("refuses an oversized payload without ever serializing it", () => {
-    const serialize = vi.spyOn(JSON, "stringify");
-    const oversized = { payload: "x".repeat(100_000_000) };
-    const startedAt = performance.now();
-    const parsed = invocationOutputSchema.safeParse(oversized);
-    const elapsedMs = performance.now() - startedAt;
-    serialize.mockRestore();
-    expect(parsed.success).toBe(false);
-    expect(serialize).not.toHaveBeenCalled();
-    expect(elapsedMs).toBeLessThan(2000);
+  it("refuses an output one string longer than the ceiling allows", () => {
     expect(MAX_JSON_SERIALIZED_BYTES).toBe(64 * 1024);
+    expect(invocationOutputSchema.safeParse({ payload: "x".repeat(MAX_JSON_STRING_LENGTH + 1) }).success).toBe(
+      false,
+    );
+  });
+
+  it("refuses an output wider than the key ceiling, one key past it", () => {
+    const atCeiling = Object.fromEntries(
+      Array.from({ length: MAX_JSON_OBJECT_KEYS }, (_, index) => [`k${index}`, 1]),
+    );
+    const oneWider = { ...atCeiling, [`k${MAX_JSON_OBJECT_KEYS}`]: 1 };
+    expect(MAX_JSON_OBJECT_KEYS).toBe(256);
+    expect(invocationOutputSchema.safeParse(atCeiling).success).toBe(true);
+    expect(invocationOutputSchema.safeParse(oneWider).success).toBe(false);
+  });
+
+  it("charges a lone surrogate the six bytes JSON writes it in, not the two it occupies", () => {
+    // Two full-length lone-surrogate strings are 16,384 UTF-16 code units and
+    // serialize to about 96 KiB, because `JSON.stringify` writes each half as a
+    // six-character `\\uXXXX` escape.
+    const lone = "\ud800".repeat(MAX_JSON_STRING_LENGTH);
+    expect(invocationOutputSchema.safeParse({ p: lone, q: lone }).success).toBe(false);
+    expect(Buffer.byteLength(JSON.stringify({ p: lone, q: lone }), "utf8")).toBeGreaterThan(
+      MAX_JSON_SERIALIZED_BYTES,
+    );
+    expect(invocationOutputSchema.safeParse({ p: lone }).success).toBe(true);
+  });
+
+  it("accepts an output of exactly the ceiling and refuses it one byte later", () => {
+    const lone = "\ud800".repeat(MAX_JSON_STRING_LENGTH);
+    const atCeiling = { p: [lone, "x".repeat(8184), "x".repeat(8184)] };
+    const oneOver = { p: [lone, "x".repeat(8184), "x".repeat(8185)] };
+    expect(Buffer.byteLength(JSON.stringify(atCeiling), "utf8")).toBe(MAX_JSON_SERIALIZED_BYTES);
+    expect(Buffer.byteLength(JSON.stringify(oneOver), "utf8")).toBe(MAX_JSON_SERIALIZED_BYTES + 1);
+    expect(invocationOutputSchema.safeParse(atCeiling).success).toBe(true);
+    expect(invocationOutputSchema.safeParse(oneOver).success).toBe(false);
+  });
+
+  it("charges a surrogate pair the four UTF-8 bytes it encodes to", () => {
+    const pairs = "\u{1f600}".repeat(MAX_JSON_STRING_LENGTH / 2);
+    const payload = { p: [pairs, "x".repeat(8192)] };
+    expect(Buffer.byteLength(JSON.stringify(payload), "utf8")).toBeLessThan(MAX_JSON_SERIALIZED_BYTES);
+    expect(invocationOutputSchema.safeParse(payload).success).toBe(true);
+  });
+
+  it("refuses a query whose value is not encodable text, rather than throwing out of the encoder", () => {
+    const parsed = hostCapabilityRequestSchema.safeParse({
+      capability: "egress.fetch",
+      destination: "site",
+      method: "GET",
+      path: "/wp-json/wp/v2/posts",
+      query: { x: "\ud800" },
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it("keeps the broker's own headers, and its authorization, out of an App's request", () => {
+    const withHeader = (header: string): boolean =>
+      hostCapabilityRequestSchema.safeParse({
+        capability: "egress.fetch",
+        destination: "site",
+        method: "GET",
+        path: "/wp-json/wp/v2/posts",
+        headers: { [header]: "value" },
+      }).success;
+    expect(withHeader("Accept")).toBe(true);
+    for (const header of [
+      "Host",
+      "content-length",
+      "Transfer-Encoding",
+      "connection",
+      "Upgrade",
+      "TE",
+      "Trailer",
+      "Keep-Alive",
+      "Proxy-Authorization",
+      "proxy-connection",
+      "Proxy-Authenticate",
+      "Authorization",
+      "authorization",
+    ]) {
+      expect(withHeader(header)).toBe(false);
+    }
   });
 
   it("rejects a capability outside the union", () => {

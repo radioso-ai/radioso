@@ -2,9 +2,9 @@ import { z } from "zod";
 
 import {
   connectionSlotIdSchema,
+  declaredHeaderNameSchema,
   destinationIdSchema,
   fieldKeySchema,
-  httpHeaderNameSchema,
   type FieldKey,
 } from "./identifiers.js";
 
@@ -34,6 +34,14 @@ export const destinationDataClasses = [
 ] as const;
 export const destinationDataClassSchema = z.enum(destinationDataClasses);
 
+/**
+ * A `configuration` host names a `url` field, and that URL is an origin prefix:
+ * the broker keeps its scheme, host, port, and path, and appends an
+ * `egress.fetch` request's origin-relative `path` below it. A site installed at
+ * `https://example.com/wordpress` therefore reaches
+ * `https://example.com/wordpress/wp-json/wp/v2/posts`, and no request an App
+ * makes can climb above the prefix the operator entered.
+ */
 export const destinationHostSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("pattern"), pattern: z.string().regex(HOST_PATTERN) }).strict(),
   z.object({ kind: z.literal("configuration"), field: fieldKeySchema }).strict(),
@@ -55,7 +63,7 @@ export const destinationCredentialApplicationSchema = z.discriminatedUnion("mode
     .strict(),
   z.object({ mode: z.literal("bearer"), tokenField: fieldKeySchema }).strict(),
   z
-    .object({ mode: z.literal("header"), header: httpHeaderNameSchema, valueField: fieldKeySchema })
+    .object({ mode: z.literal("header"), header: declaredHeaderNameSchema, valueField: fieldKeySchema })
     .strict(),
 ]);
 
@@ -73,20 +81,32 @@ export const destinationCredentialsSchema = z
   })
   .strict();
 
-/** Every connection field one application mode names, and where it names it. */
+/**
+ * Every connection field one application mode names, where it names it, and
+ * whether that field carries the secret half of the credential. Admission uses
+ * the last flag to insist the secret half is stored as one: a username the
+ * dashboard may show again is not the same kind of value as the password beside
+ * it. Validator plumbing, so it stays inside the package.
+ */
+interface CredentialFieldReference {
+  path: string;
+  field: FieldKey;
+  secret: boolean;
+}
+
 export const credentialFieldReferences = (
   application: DestinationCredentialApplication,
-): ReadonlyArray<{ path: string; field: FieldKey }> => {
+): readonly CredentialFieldReference[] => {
   switch (application.mode) {
     case "http_basic":
       return [
-        { path: "usernameField", field: application.usernameField },
-        { path: "passwordField", field: application.passwordField },
+        { path: "usernameField", field: application.usernameField, secret: false },
+        { path: "passwordField", field: application.passwordField, secret: true },
       ];
     case "bearer":
-      return [{ path: "tokenField", field: application.tokenField }];
+      return [{ path: "tokenField", field: application.tokenField, secret: true }];
     case "header":
-      return [{ path: "valueField", field: application.valueField }];
+      return [{ path: "valueField", field: application.valueField, secret: true }];
   }
 };
 

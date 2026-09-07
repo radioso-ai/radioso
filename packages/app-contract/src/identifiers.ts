@@ -57,6 +57,48 @@ export const httpHeaderNameSchema = z
   );
 export const assetIdSchema = localKey("Asset id");
 
+/**
+ * Headers whoever opens the connection owns. Routing (`host`), framing
+ * (`content-length`, `transfer-encoding`), and the hop-by-hop control fields
+ * belong to the broker: an App or a manifest that set one would be rewriting the
+ * request the host is accountable for, and `host` in particular would send a
+ * declared destination's bytes somewhere else. Matching is case-insensitive
+ * because a header name is.
+ */
+const TRANSPORT_OWNED_HEADER_NAMES: ReadonlySet<string> = new Set([
+  "host",
+  "content-length",
+  "transfer-encoding",
+  "connection",
+  "upgrade",
+  "te",
+  "trailer",
+  "keep-alive",
+  "proxy-authorization",
+  "proxy-connection",
+  "proxy-authenticate",
+]);
+
+const isTransportOwnedHeaderName = (name: string): boolean =>
+  TRANSPORT_OWNED_HEADER_NAMES.has(name.toLowerCase());
+
+/** A header name a manifest may name, such as the one a credential is applied through. */
+export const declaredHeaderNameSchema = httpHeaderNameSchema.refine(
+  (name) => !isTransportOwnedHeaderName(name),
+  "Routing, framing, and hop-by-hop headers belong to the broker",
+);
+
+/**
+ * A header name an App may set on an outbound request. `authorization` is
+ * excluded on top of the transport-owned set because the broker builds it from
+ * the destination's declared credential; an App-supplied one would race the
+ * host's own value with no defined winner.
+ */
+export const appliedHeaderNameSchema = httpHeaderNameSchema.refine(
+  (name) => !isTransportOwnedHeaderName(name) && name.toLowerCase() !== "authorization",
+  "The broker owns routing, framing, hop-by-hop, and authorization headers",
+);
+
 export const digestSchema = z
   .string()
   .regex(DIGEST_PATTERN, "Digest must be sha256: followed by 64 lower-case hex characters");

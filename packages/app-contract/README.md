@@ -26,7 +26,7 @@ Radioso package would tie the contract to one side of it.
 | `src/runtime.ts` | Invocation and host capability envelopes, including the installation context every invocation carries |
 | `src/jobs.ts` | The App Job wake-up envelope |
 | `src/validate.ts` | `validateManifest`: schema pass, cross-reference pass, policy pass |
-| `src/requirements.ts` | What one installation must supply: `validateConfigurationValues` and `requiredConnectionSlotsFor` |
+| `src/requirements.ts` | What one installation supplies and what that turns on: `resolveConfiguration` and `installationReadiness` |
 | `src/index.ts` | The public surface; re-exports only |
 
 ## Tests
@@ -44,21 +44,37 @@ against `releaseAValidationPolicy`. It exercises every section a real App uses �
 a configuration-bound destination, both connection slot kinds, a storage
 collection with an index, and all three Release A contribution kinds.
 
-`tests/wordpressInterop.test.ts` runs the other half against recorded
-deliveries in `tests/fixtures/wordpress-companion/`: five bodies plus their
-signatures, verified over the recorded bytes and mapped onto the host capability
-calls the contract accepts. The bodies are written by hand to reproduce what
-`wp_json_encode()` emits — escaped slashes, escaped non-ASCII, PHP float
-formatting, MySQL datetimes — because PHP is not available in this
-repository's toolchain; the signature over each one is computed in Node from
-those exact bytes. That fixture directory's `README.md` states the procedure and
-the recompute command. A verifier that parses and re-serializes before checking
-the HMAC fails these vectors, which is what they exist to catch.
+`tests/wordpressInterop.test.ts` runs the other half against synthetic
+companion-shaped vectors in `tests/fixtures/wordpress-companion/`: five bodies
+plus their signatures, verified over those exact bytes and mapped onto the host
+capability calls the contract accepts. PHP is not part of this repository's
+toolchain, so the bodies are written by hand to reproduce what `wp_json_encode()`
+emits under WordPress's default flags — escaped slashes, `\uXXXX`-escaped
+non-ASCII, a zero-fraction float as an integer literal, MySQL datetimes — and the
+signature over each one is computed in Node from those bytes. That fixture
+directory's `README.md` lists the rules reproduced and the recompute command. A
+verifier that parses and re-serializes before checking the HMAC fails these
+vectors, which is what they exist to catch.
 
 Two digests in it are placeholders of 64 zeros: `artifact.digest` and the
 `radioso-sync.zip` companion asset. Nothing in this package builds either
 artifact, so nothing here can compute them; the digest shape is what the fixture
 exercises.
+
+## Installation shape
+
+An installation's stored configuration is sparse: the host keeps what the
+operator typed, and the manifest owns the rest. `resolveConfiguration(manifest,
+storedValues)` is the one operation that closes that gap. It bounds the stored
+map, copies it, materializes every declared default, and validates the map that
+results, so what it returns is the effective configuration — the exact map an
+invocation carries as `context.configuration`.
+
+`installationReadiness(manifest, effectiveConfiguration)` reads that map and
+answers which contributions run and which connection slots the operator has to
+bind. Neither answer takes a caller-supplied contribution list: a `required`
+contribution is always active, and the only thing that turns one off is a
+schedule the operator disabled by storing the schedule's own `disabledValue`.
 
 ## Docs
 

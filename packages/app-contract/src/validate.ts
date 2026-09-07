@@ -6,9 +6,10 @@ import {
   releaseAContributionKinds,
   type ContributionKind,
   type HostPermission,
+  type ScheduledTaskContribution,
   hostPermissions,
 } from "./contributions.js";
-import { credentialFieldReferences } from "./destinations.js";
+import { credentialFieldReferences, type Destination } from "./destinations.js";
 import { appManifestSchema, type AppManifest } from "./manifest.js";
 import { isScalarStorageFieldType } from "./storage.js";
 
@@ -124,7 +125,7 @@ const collectDuplicateIds = (manifest: AppManifest): ManifestValidationIssue[] =
 interface ManifestIndex {
   configurationFields: ReadonlyMap<string, ConfigurationField>;
   connectionSlots: ReadonlyMap<string, ConnectionSlot>;
-  destinationIds: ReadonlySet<string>;
+  destinationsById: ReadonlyMap<string, Destination>;
   collectionIds: ReadonlySet<string>;
   contributionKindsById: ReadonlyMap<string, ContributionKind>;
 }
@@ -132,7 +133,7 @@ interface ManifestIndex {
 const indexManifest = (manifest: AppManifest): ManifestIndex => ({
   configurationFields: new Map(manifest.configuration.fields.map((field) => [field.key, field])),
   connectionSlots: new Map(manifest.connections.slots.map((slot) => [slot.id, slot])),
-  destinationIds: new Set(manifest.destinations.map((destination) => destination.id)),
+  destinationsById: new Map(manifest.destinations.map((destination) => [destination.id, destination])),
   collectionIds: new Set(manifest.storageCollections.map((collection) => collection.id)),
   contributionKindsById: new Map(
     manifest.contributions.map((contribution) => [contribution.id, contribution.kind]),
@@ -260,6 +261,13 @@ const collectDestinationIssues = (
       const credentials = destination.credentials;
       const slotPath = `destinations[${position}].credentials.slot`;
       const slot = index.connectionSlots.get(credentials.slot);
+      if (!destination.dataClasses.includes("credentials")) {
+        issues.push({
+          code: "missing_credentials_data_class",
+          path: `destinations[${position}].dataClasses`,
+          message: `Destination ${destination.id} sends a credential, which the operator sees only if it says so`,
+        });
+      }
       if (!slot) {
         issues.push({
           code: "unknown_connection_slot",
@@ -273,14 +281,32 @@ const collectDestinationIssues = (
           message: `Slot ${slot.id} is ${slot.kind} and holds no fields a request can be built from`,
         });
       } else {
-        const fieldKeys = new Set(slot.fields.map((field) => field.key));
+        const fields = new Map(slot.fields.map((field) => [field.key, field]));
         for (const reference of credentialFieldReferences(credentials.application)) {
-          if (fieldKeys.has(reference.field)) continue;
-          issues.push({
-            code: "unknown_connection_field",
-            path: `destinations[${position}].credentials.application.${reference.path}`,
-            message: `Slot ${slot.id} has no field ${reference.field}`,
-          });
+          const path = `destinations[${position}].credentials.application.${reference.path}`;
+          const field = fields.get(reference.field);
+          if (!field) {
+            issues.push({
+              code: "unknown_connection_field",
+              path,
+              message: `Slot ${slot.id} has no field ${reference.field}`,
+            });
+            continue;
+          }
+          if (!field.required) {
+            issues.push({
+              code: "credential_field_not_required",
+              path,
+              message: `Field ${field.key} builds every request to ${destination.id}, so a bound slot always holds it`,
+            });
+          }
+          if (reference.secret && !field.sensitive) {
+            issues.push({
+              code: "credential_field_not_sensitive",
+              path,
+              message: `Field ${field.key} carries the secret half of a credential and is stored as one`,
+            });
+          }
         }
       }
     }
@@ -288,6 +314,43 @@ const collectDestinationIssues = (
   });
 
 const SECRET_BEARING_SLOT_KINDS: readonly ConnectionSlotKind[] = ["secret_fields", "generated_secret"];
+
+/**
+ * A schedule an operator reads out of configuration is only a schedule if the
+ * field can hold the values it means. A field whose range excludes the sentinel
+ * leaves a task nobody can turn off; a field whose ceiling sits below the
+ * interval floor leaves one that can never run. Both parse cleanly on their own
+ * and only contradict each other here.
+ */
+const collectScheduleRangeIssues = (
+  schedule: Extract<ScheduledTaskContribution["schedule"], { kind: "interval_from_configuration" }>,
+  field: Extract<ConfigurationField, { type: "number" }>,
+  at: (suffix: string) => string,
+): ManifestValidationIssue[] => {
+  const issues: ManifestValidationIssue[] = [];
+  const floor = field.min;
+  const ceiling = field.max;
+  const disabled = schedule.disabledValue;
+  if (
+    disabled !== undefined &&
+    ((floor !== undefined && disabled < floor) || (ceiling !== undefined && disabled > ceiling))
+  ) {
+    issues.push({
+      code: "disabled_value_outside_field_range",
+      path: at("schedule.disabledValue"),
+      message: `Field ${field.key} cannot hold ${disabled}, so this schedule can never be turned off`,
+    });
+  }
+  if (ceiling !== undefined && ceiling < schedule.minSeconds) {
+    issues.push({
+      code: "schedule_range_unreachable",
+      path: at("schedule.minSeconds"),
+      message: `Field ${field.key} stops at ${ceiling}, below the ${schedule.minSeconds} second floor, so this schedule can never run`,
+    });
+  }
+  return issues;
+};
+
 
 const collectContributionIssues = (
   manifest: AppManifest,
@@ -297,12 +360,24 @@ const collectContributionIssues = (
     const issues: ManifestValidationIssue[] = [];
     const at = (suffix: string): string => `contributions[${position}].${suffix}`;
 
+    const requiredSlots = new Set<string>(contribution.requiredConnectionSlots);
+
     contribution.egressDestinations.forEach((destinationId, destinationPosition) => {
-      if (index.destinationIds.has(destinationId)) return;
+      const destination = index.destinationsById.get(destinationId);
+      if (!destination) {
+        issues.push({
+          code: "unknown_destination",
+          path: at(`egressDestinations[${destinationPosition}]`),
+          message: `No destination ${destinationId} is declared`,
+        });
+        return;
+      }
+      const credentials = destination.credentials;
+      if (!credentials?.required || requiredSlots.has(credentials.slot)) return;
       issues.push({
-        code: "unknown_destination",
-        path: at(`egressDestinations[${destinationPosition}]`),
-        message: `No destination ${destinationId} is declared`,
+        code: "destination_credentials_not_required",
+        path: at("requiredConnectionSlots"),
+        message: `Destination ${destination.id} is never reachable unbound, so ${contribution.id} requires slot ${credentials.slot}`,
       });
     });
 
@@ -376,6 +451,13 @@ const collectContributionIssues = (
           message: `Slot ${slot.id} is ${slot.kind} and cannot hold a signing secret`,
         });
       }
+      if (!requiredSlots.has(contribution.authentication.secretConnectionSlot)) {
+        issues.push({
+          code: "webhook_secret_not_required",
+          path: at("requiredConnectionSlots"),
+          message: `Contribution ${contribution.id} verifies every delivery against slot ${contribution.authentication.secretConnectionSlot}, so it requires it`,
+        });
+      }
     }
 
     if (contribution.kind === "scheduled_task") {
@@ -394,6 +476,8 @@ const collectContributionIssues = (
             path,
             message: `Configuration field ${field.key} is ${field.type}; an interval must come from a number field`,
           });
+        } else {
+          issues.push(...collectScheduleRangeIssues(contribution.schedule, field, at));
         }
       }
       if (contribution.checkpointCollection !== undefined) {

@@ -35,10 +35,40 @@ interface Violation {
   message: string;
 }
 
+const HIGH_SURROGATE_START = 0xd800;
+const LOW_SURROGATE_START = 0xdc00;
+const SURROGATE_END = 0xe000;
+
+const isHighSurrogate = (code: number): boolean =>
+  code >= HIGH_SURROGATE_START && code < LOW_SURROGATE_START;
+const isLowSurrogate = (code: number): boolean => code >= LOW_SURROGATE_START && code < SURROGATE_END;
+
+/**
+ * A code unit that has no pair is not a character. `JSON.stringify` writes it as
+ * a six-character `\uXXXX` escape and `TextEncoder` replaces it, so anything
+ * that measures or encodes one has to say which. Callers that refuse it outright
+ * ask here first.
+ */
+export const containsLoneSurrogate = (value: string): boolean => {
+  for (let position = 0; position < value.length; position += 1) {
+    const code = value.charCodeAt(position);
+    if (isLowSurrogate(code)) return true;
+    if (!isHighSurrogate(code)) continue;
+    if (!isLowSurrogate(value.charCodeAt(position + 1))) return true;
+    position += 1;
+  }
+  return false;
+};
+
 /**
  * What one string costs in a JSON document: the two quotes, the UTF-8 encoding,
  * and the escapes. Counted rather than produced, because the point of measuring
  * during the walk is that nothing ever allocates a copy of the input.
+ *
+ * A surrogate pair is one character in four UTF-8 bytes. A lone surrogate is not
+ * a character at all: `JSON.stringify` emits the six ASCII bytes of a `\uXXXX`
+ * escape for it, so counting it as its two UTF-16 bytes would let a string of
+ * them serialize to three times the measured size.
  */
 const jsonStringBytes = (value: string): number => {
   let bytes = 2;
@@ -54,9 +84,11 @@ const jsonStringBytes = (value: string): number => {
       bytes += 1;
     } else if (code < 0x800) {
       bytes += 2;
-    } else if (code >= 0xd800 && code < 0xe000) {
-      // Half of a surrogate pair, which together encode as four bytes.
-      bytes += 2;
+    } else if (isHighSurrogate(code) && isLowSurrogate(value.charCodeAt(position + 1))) {
+      bytes += 4;
+      position += 1;
+    } else if (isHighSurrogate(code) || isLowSurrogate(code)) {
+      bytes += 6;
     } else {
       bytes += 3;
     }
@@ -64,9 +96,67 @@ const jsonStringBytes = (value: string): number => {
   return bytes;
 };
 
+/** Bytes an ASCII alphanumeric, `*`, `-`, `.`, or `_` keeps unescaped. */
+const isFormUrlencodedSafe = (code: number): boolean =>
+  (code >= 0x30 && code <= 0x39) ||
+  (code >= 0x41 && code <= 0x5a) ||
+  (code >= 0x61 && code <= 0x7a) ||
+  code === 0x2a ||
+  code === 0x2d ||
+  code === 0x2e ||
+  code === 0x5f;
+
+/**
+ * How long one query component is once `URLSearchParams` writes it: the
+ * `application/x-www-form-urlencoded` serializer keeps the unreserved set,
+ * writes a space as `+`, and percent-encodes every other UTF-8 byte as three
+ * characters. A lone surrogate encodes as U+FFFD, which is nine characters —
+ * counted rather than encoded, so measuring an oversized query never throws and
+ * never allocates a copy of it.
+ */
+export const formUrlencodedLength = (value: string): number => {
+  let length = 0;
+  for (let position = 0; position < value.length; position += 1) {
+    const code = value.charCodeAt(position);
+    if (code === 0x20) {
+      length += 1;
+    } else if (isFormUrlencodedSafe(code)) {
+      length += 1;
+    } else if (code < 0x80) {
+      length += 3;
+    } else if (code < 0x800) {
+      length += 6;
+    } else if (isHighSurrogate(code) && isLowSurrogate(value.charCodeAt(position + 1))) {
+      length += 12;
+      position += 1;
+    } else {
+      // Three UTF-8 bytes, and the same three for the replacement a lone
+      // surrogate turns into.
+      length += 9;
+    }
+  }
+  return length;
+};
+
 interface Budget {
   bytes: number;
 }
+
+/**
+ * How many own enumerable keys an object has, or one more than the ceiling —
+ * which is all a breadth check needs to know. `Object.keys` on a million-key
+ * object allocates a million-entry array on the way to refusing it, so nothing
+ * here materializes the list.
+ */
+const countKeys = (record: object): number => {
+  let count = 0;
+  for (const key in record) {
+    if (!Object.hasOwn(record, key)) continue;
+    count += 1;
+    if (count > MAX_JSON_OBJECT_KEYS) return count;
+  }
+  return count;
+};
 
 const overBudget = (budget: Budget, path: (string | number)[]): Violation | null =>
   budget.bytes > MAX_JSON_SERIALIZED_BYTES
@@ -132,14 +222,15 @@ const measure = (
   }
 
   const record = value as Record<string, unknown>;
-  const keys = Object.keys(record);
-  if (keys.length > MAX_JSON_OBJECT_KEYS) {
+  const keyCount = countKeys(record);
+  if (keyCount > MAX_JSON_OBJECT_KEYS) {
     return { path, message: `An object may hold at most ${MAX_JSON_OBJECT_KEYS} keys` };
   }
-  budget.bytes += 2 + Math.max(0, keys.length - 1);
+  budget.bytes += 2 + Math.max(0, keyCount - 1);
   const structural = overBudget(budget, path);
   if (structural) return structural;
-  for (const key of keys) {
+  for (const key in record) {
+    if (!Object.hasOwn(record, key)) continue;
     const at = [...path, key];
     if (key.length > MAX_JSON_KEY_LENGTH) {
       return { path: at, message: `A key may hold at most ${MAX_JSON_KEY_LENGTH} characters` };
@@ -159,6 +250,28 @@ const addViolation = (context: z.RefinementCtx, violation: Violation): void => {
   context.addIssue({ code: z.ZodIssueCode.custom, path: violation.path, message: violation.message });
 };
 
+/**
+ * Breadth alone, cheaply, before a typed schema walks an object's children. A
+ * schema that parses each value against a child schema and only then applies a
+ * key ceiling has already paid for every key by the time it refuses the object,
+ * so this runs first and aborts.
+ */
+const exceedsObjectBreadth = (value: unknown): boolean =>
+  value !== null &&
+  typeof value === "object" &&
+  !Array.isArray(value) &&
+  countKeys(value) > MAX_JSON_OBJECT_KEYS;
+
+export const refineObjectBreadth = (value: unknown, context: z.RefinementCtx): void => {
+  if (!exceedsObjectBreadth(value)) return;
+  context.addIssue({
+    code: z.ZodIssueCode.custom,
+    path: [],
+    fatal: true,
+    message: `An object may hold at most ${MAX_JSON_OBJECT_KEYS} keys`,
+  });
+};
+
 /** The bounds, applied to a value the caller already knows should be an object. */
 export const refineBoundedJsonRecord = (value: unknown, context: z.RefinementCtx): void => {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -175,6 +288,10 @@ export const boundedJsonValueSchema: z.ZodType<BoundedJsonValue> = z
   .superRefine((value, context) => {
     if (value === undefined) {
       addViolation(context, { path: [], message: "A value is required" });
+      return;
+    }
+    if (exceedsObjectBreadth(value)) {
+      addViolation(context, { path: [], message: `An object may hold at most ${MAX_JSON_OBJECT_KEYS} keys` });
       return;
     }
     const violation = measure(value, 1, [], { bytes: 0 });
@@ -222,11 +339,36 @@ export const base64BodySchema = z
   })
   .strict();
 
-/** A header map: bounded keys, bounded values, and a bounded number of entries. */
-export const boundedHeaderRecordSchema = (keySchema: z.ZodString): z.ZodType<Record<string, string>> =>
+/**
+ * A header map: bounded keys, bounded values, a bounded number of entries, and
+ * no lone surrogate in either half. A header field is bytes on the wire, so a
+ * code unit that has no UTF-8 encoding is refused here as an ordinary issue
+ * rather than left for whichever encoder meets it first.
+ */
+export const boundedHeaderRecordSchema = (
+  keySchema: z.ZodType<string, z.ZodTypeDef, string>,
+): z.ZodType<Record<string, string>> =>
   z
     .record(keySchema, z.string().max(MAX_JSON_STRING_LENGTH))
-    .refine(
-      (headers) => Object.keys(headers).length <= MAX_HEADER_ENTRIES,
-      `At most ${MAX_HEADER_ENTRIES} headers`,
-    );
+    .superRefine((headers, context) => {
+      let count = 0;
+      for (const key in headers) {
+        if (!Object.hasOwn(headers, key)) continue;
+        count += 1;
+        if (count > MAX_HEADER_ENTRIES) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [],
+            message: `At most ${MAX_HEADER_ENTRIES} headers`,
+          });
+          return;
+        }
+        if (!containsLoneSurrogate(key) && !containsLoneSurrogate(headers[key] ?? "")) continue;
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [key],
+          message: "A header name and value must be encodable text",
+        });
+        return;
+      }
+    });

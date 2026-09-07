@@ -11,7 +11,11 @@ const SCRIPT = join(
 
 const check = (title) => {
   try {
-    execFileSync('node', [SCRIPT], { env: { ...process.env, PR_TITLE: title }, encoding: 'utf8' })
+    execFileSync('node', [SCRIPT], {
+      env: { ...process.env, PR_TITLE: title },
+      encoding: 'utf8',
+      stdio: 'pipe',
+    })
     return { accepted: true, output: '' }
   } catch (error) {
     return { accepted: false, output: `${error.stdout ?? ''}${error.stderr ?? ''}` }

@@ -1,8 +1,7 @@
-import { installationReadiness, type ConfigurationValues } from "@radioso/app-contract";
+import { installationReadiness, resolveConfiguration, type EffectiveConfiguration } from "@radioso/app-contract";
 
 import { notFound } from "../../../shared/domain/errors.js";
 import { AppsError } from "../domain/errors.js";
-import { resolveAppConfiguration } from "../domain/installationPlan.js";
 import type {
   AppConnectionRecord,
   AppGrantRecord,
@@ -93,22 +92,28 @@ export class AppInstallationQueryService {
     const release = releaseId ? await this.dependencies.releases.findById(releaseId) : null;
     if (!release) throw notFound("App release not found");
 
-    const resolved = resolveAppConfiguration(release.manifest, request.configuration);
-    if (resolved.unresolved.length > 0) {
-      throw new AppsError("invalid_configuration", "A required configuration field has no value.", {
-        field: resolved.unresolved[0].path,
+    const resolved = resolveConfiguration(release.manifest, request.configuration);
+    if (!resolved.ok) {
+      const [issue] = resolved.issues;
+      throw new AppsError("invalid_configuration", issue?.message ?? "Configuration is invalid.", {
+        field: issue?.path ?? "configuration",
       });
     }
-    const configuration = resolved.values;
+    const configuration = resolved.configuration;
 
     // Configuration decides which contributions run, so a value change can turn one on.
     // Only what this change newly requires is checked: a slot that was already required
     // and already unbound is the installation's existing state, not something this edit
-    // introduced, and refusing here would make an unrelated edit impossible.
-    const requiredFor = (values: Readonly<Record<string, unknown>>): string[] =>
-      installationReadiness(release.manifest, values as ConfigurationValues).requiredConnectionSlots;
-    const alreadyRequired = new Set(requiredFor(installation.configuration));
-    const newlyRequired = requiredFor(configuration).filter((slotId) => !alreadyRequired.has(slotId));
+    // introduced, and refusing here would make an unrelated edit impossible. The stored
+    // configuration was itself only ever persisted after resolving successfully against
+    // this same, immutable release manifest, so re-resolving it here is expected to
+    // succeed; if it somehow does not, there is nothing "already required" to protect and
+    // the guard falls back to the safer empty set rather than trusting an unresolved map.
+    const requiredSlotsOf = (values: EffectiveConfiguration): readonly string[] =>
+      installationReadiness(release.manifest, values).requiredConnectionSlots;
+    const storedConfiguration = resolveConfiguration(release.manifest, installation.configuration);
+    const alreadyRequired = new Set(storedConfiguration.ok ? requiredSlotsOf(storedConfiguration.configuration) : []);
+    const newlyRequired = requiredSlotsOf(configuration).filter((slotId) => !alreadyRequired.has(slotId));
     if (newlyRequired.length > 0) {
       const bound = new Set(
         (await this.dependencies.connections.listByInstallation(installation.id))

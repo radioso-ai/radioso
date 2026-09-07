@@ -550,6 +550,31 @@ describe("app installation plans", () => {
     expect(events.filter((event) => event === "app.installation.installed")).toHaveLength(1);
   });
 
+  // A live installation's configuration goes through the same `resolveConfiguration` the
+  // plan does — there is no separate, looser rule for an edit versus a first install.
+  it("refuses a configuration update that drops a required field or breaks the schedule's range", async () => {
+    const harness = await createHarness();
+    const installed = await harness.install();
+
+    await expect(harness.installations.updateConfiguration({
+      workspaceId,
+      installationId: installed.installation.id,
+      configuration: { poll_interval_sec: 300 },
+      expectedVersion: installed.installation.version,
+      principal,
+    })).rejects.toMatchObject({ reason: "invalid_configuration" });
+
+    // The schedule this field drives runs 60 to 86400 seconds; 30 is neither in range nor
+    // the 0 sentinel that leaves it off.
+    await expect(harness.installations.updateConfiguration({
+      workspaceId,
+      installationId: installed.installation.id,
+      configuration: { site_url: "https://example.com", poll_interval_sec: 30 },
+      expectedVersion: installed.installation.version,
+      principal,
+    })).rejects.toMatchObject({ reason: "invalid_configuration" });
+  });
+
   it("refuses to plan at all when a secret arrives as a configuration value", async () => {
     const harness = await createHarness();
     const releaseId = await harness.admitReference();

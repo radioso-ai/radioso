@@ -80,7 +80,9 @@ describe("app installation plan", () => {
 
   // One release, two installations: a site that pushes needs no credentials, and a site
   // that is polled does. Configuration decides which, so the plan has to ask for exactly
-  // what this installation will run.
+  // what this installation will run. Readiness here comes from a fully resolved
+  // configuration (`resolveConfiguration` succeeded), which is the only map
+  // `installationReadiness` is ever handed.
   it("requires only the slots the configuration actually turns on", () => {
     const pushOnly = buildAppInstallationPlan(planInput({
       configuration: { site_url: "https://example.com", poll_interval_sec: 0 },
@@ -90,23 +92,29 @@ describe("app installation plan", () => {
     expect(pushOnly.contributions).toContainEqual(
       expect.objectContaining({ id: "content_poll", active: false }),
     );
-    expect(pushOnly.connectionSlots).toContainEqual(
-      expect.objectContaining({ slotId: "site_credentials", required: false }),
-    );
+    // content_push is a `required` contribution, so its webhook_secret slot is required
+    // regardless of the poll schedule; site_credentials is not, because polling is off.
+    expect(pushOnly.connectionSlots).toEqual([
+      { slotId: "site_credentials", kind: "secret_fields", required: false, bound: false },
+      { slotId: "webhook_secret", kind: "generated_secret", required: true, bound: false },
+    ]);
     expect(pushOnly.unresolvedRequirements.map((requirement) => requirement.path))
       .not.toContain("connections.slots.site_credentials");
 
     const polling = buildAppInstallationPlan(planInput({
-      configuration: { site_url: "https://example.com", poll_interval_sec: 900 },
+      configuration: { site_url: "https://example.com", poll_interval_sec: 300 },
       boundConnectionSlotIds: [],
     })).plan;
 
     expect(polling.contributions).toContainEqual(
       expect.objectContaining({ id: "content_poll", active: true }),
     );
-    expect(polling.connectionSlots).toContainEqual(
-      expect.objectContaining({ slotId: "site_credentials", required: true }),
-    );
+    // Polling is on, so both slots are required: site_credentials for the poll and
+    // webhook_secret for the always-required content_push.
+    expect(polling.connectionSlots).toEqual([
+      { slotId: "site_credentials", kind: "secret_fields", required: true, bound: false },
+      { slotId: "webhook_secret", kind: "generated_secret", required: true, bound: false },
+    ]);
     expect(polling.unresolvedRequirements).toContainEqual(
       expect.objectContaining({ code: "connection_unbound", path: "connections.slots.site_credentials" }),
     );
@@ -136,6 +144,25 @@ describe("app installation plan", () => {
       .toThrow(expect.objectContaining({ reason: "invalid_configuration" }));
     expect(() => buildAppInstallationPlan(planInput({ configuration: { site_url: "https://a.example", poll_interval_sec: "soon" } })))
       .toThrow(expect.objectContaining({ reason: "invalid_configuration" }));
+    // The schedule this field drives runs 60 to 86400 seconds; 30 is neither in range nor
+    // the 0 sentinel that leaves it off.
+    expect(() => buildAppInstallationPlan(planInput({ configuration: { site_url: "https://a.example", poll_interval_sec: 30 } })))
+      .toThrow(expect.objectContaining({ reason: "invalid_configuration" }));
+  });
+
+  // A configuration still missing a required field (here, site_url) is a draft: there is
+  // no authoritative answer yet to which contributions are active or which slots they
+  // need, so the plan reports readiness as undetermined rather than guessing from a
+  // hand-built partial map. `unresolvedRequirements` — not the contributions/slots
+  // lists — is what tells the operator the plan is not ready.
+  it("reports readiness as undetermined while required configuration is still missing", () => {
+    const { plan } = buildAppInstallationPlan(planInput({ configuration: { poll_interval_sec: 300 } }));
+
+    expect(plan.unresolvedRequirements).toContainEqual(
+      expect.objectContaining({ code: "configuration_required", path: "configuration.site_url" }),
+    );
+    expect(plan.contributions.every((contribution) => contribution.active === false)).toBe(true);
+    expect(plan.connectionSlots.every((slot) => slot.required === false)).toBe(true);
   });
 
   it("is deterministic: the same inputs in any order produce the same checksum and expiry", () => {

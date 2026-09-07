@@ -29,12 +29,12 @@ The package has no stdio MCP entrypoint.
 
 Operator MCP additionally requires these values in both the standalone service and backend:
 
-- `OPERATOR_MCP_ENABLED=true`
 - `OPERATOR_MCP_RESOURCE_URL`, the exact HTTPS resource ending in `/operator/mcp`
 - `OPERATOR_MCP_ISSUER_URL`, the HTTPS Radioso authorization-server origin
 - `OPERATOR_MCP_INTERNAL_SECRET`, the same exact value in both processes, at least 32 characters
 - `OPERATOR_MCP_CREDENTIAL_EPOCH`, an externally managed positive decimal generation
-- `OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS`, an optional comma-separated workspace UUID staged-rollout allowlist; empty allows every workspace
+
+The Operator surface starts when all four values are present. A complete configuration always serves every workspace; OAuth consent, membership, scopes, per-request authorization, rate limits, and audit logging still govern each connection and tool call.
 
 ### Common Optional Environment Variables
 

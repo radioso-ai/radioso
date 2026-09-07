@@ -12,5 +12,4 @@ export interface OperatorHttpDependencies {
   rateLimit?: OperatorRequestRateLimit;
   readiness?: OperatorRequestReadiness;
   resource: OperatorProtectedResourceConfig & { metadataUrl: string };
-  rolloutWorkspaceIds?: ReadonlySet<string>;
 }

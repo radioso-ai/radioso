@@ -42,10 +42,9 @@ describe("loadConfig", () => {
     });
   });
 
-  it("requires one complete externally-versioned operator configuration when enabled", () => {
+  it("activates Operator MCP from one complete externally-versioned configuration", () => {
     expect(() => loadConfig({
       RADIOSO_BASE_URL: "http://localhost:8080",
-      OPERATOR_MCP_ENABLED: "true",
       OPERATOR_MCP_RESOURCE_URL: "https://mcp.example/operator/mcp",
       OPERATOR_MCP_ISSUER_URL: "https://app.example",
       OPERATOR_MCP_INTERNAL_SECRET: "a-long-enough-operator-proof-secret",
@@ -53,54 +52,28 @@ describe("loadConfig", () => {
 
     expect(loadConfig({
       RADIOSO_BASE_URL: "http://localhost:8080",
-      OPERATOR_MCP_ENABLED: "true",
       OPERATOR_MCP_RESOURCE_URL: "https://mcp.example/operator/mcp",
       OPERATOR_MCP_ISSUER_URL: "https://app.example",
       OPERATOR_MCP_INTERNAL_SECRET: "a-long-enough-operator-proof-secret",
       OPERATOR_MCP_CREDENTIAL_EPOCH: "7",
-      OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS: "00000000-0000-4000-8000-000000000001",
     }).operatorMcp).toEqual({
       credentialEpoch: "7",
       enabled: true,
       internalSecret: "a-long-enough-operator-proof-secret",
       issuerUrl: "https://app.example",
       resourceUrl: "https://mcp.example/operator/mcp",
-      rolloutWorkspaceIds: ["00000000-0000-4000-8000-000000000001"],
     });
     expect(() => loadConfig({
       RADIOSO_BASE_URL: "http://localhost:8080",
-      OPERATOR_MCP_ENABLED: "true",
       OPERATOR_MCP_RESOURCE_URL: "https://mcp.example/operator/mcp",
       OPERATOR_MCP_ISSUER_URL: "https://app.example/oauth",
       OPERATOR_MCP_INTERNAL_SECRET: "a-long-enough-operator-proof-secret",
       OPERATOR_MCP_CREDENTIAL_EPOCH: "1",
     })).toThrow(/OPERATOR_MCP_ISSUER_URL/i);
-    expect(() => loadConfig({
-      RADIOSO_BASE_URL: "http://localhost:8080",
-      OPERATOR_MCP_ENABLED: "true",
-      OPERATOR_MCP_RESOURCE_URL: "https://mcp.example/operator/mcp",
-      OPERATOR_MCP_ISSUER_URL: "https://app.example",
-      OPERATOR_MCP_INTERNAL_SECRET: "a-long-enough-operator-proof-secret",
-      OPERATOR_MCP_CREDENTIAL_EPOCH: "1",
-      OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS: "not-a-uuid",
-    })).toThrow(/OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS/i);
-  });
-
-  it.each([undefined, ",", " , , "])("treats %j as an all-workspaces Operator MCP rollout", (rolloutWorkspaceIds) => {
-    expect(loadConfig({
-      RADIOSO_BASE_URL: "http://localhost:8080",
-      OPERATOR_MCP_ENABLED: "true",
-      OPERATOR_MCP_RESOURCE_URL: "https://mcp.example/operator/mcp",
-      OPERATOR_MCP_ISSUER_URL: "https://app.example",
-      OPERATOR_MCP_INTERNAL_SECRET: "a-long-enough-operator-proof-secret",
-      OPERATOR_MCP_CREDENTIAL_EPOCH: "7",
-      OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS: rolloutWorkspaceIds,
-    }).operatorMcp).toMatchObject({ enabled: true, rolloutWorkspaceIds: undefined });
   });
 
   it("requires HTTPS issuer/resource in production but permits loopback HTTP in development", () => {
     const common = {
-      OPERATOR_MCP_ENABLED: "true",
       OPERATOR_MCP_INTERNAL_SECRET: "a-long-enough-operator-proof-secret",
       OPERATOR_MCP_CREDENTIAL_EPOCH: "1",
     };
@@ -132,7 +105,6 @@ describe("loadConfig", () => {
     expect(loadConfig({
       NODE_ENV: "development",
       OPERATOR_MCP_CREDENTIAL_EPOCH: "1",
-      OPERATOR_MCP_ENABLED: "true",
       OPERATOR_MCP_INTERNAL_SECRET: internalSecret,
       OPERATOR_MCP_ISSUER_URL: "http://127.0.0.1:8080",
       OPERATOR_MCP_RESOURCE_URL: "http://127.0.0.1:8787/operator/mcp",

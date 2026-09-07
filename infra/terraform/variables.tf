@@ -533,23 +533,17 @@ variable "radioso_mcp_enabled" {
   default     = false
 }
 
-variable "operator_mcp_enabled" {
-  description = "Whether the separately authorized Operator MCP resource is enabled on the standalone MCP service. Named client artifacts remain gated by captured compatibility evidence."
-  type        = bool
-  default     = false
-}
-
-variable "operator_mcp_public_origin" {
-  description = "Optional canonical HTTPS custom origin for Operator MCP; the GitHub Terraform workflow otherwise discovers the Cloud Run MCP URL. /operator/mcp is appended as the exact OAuth resource."
+variable "mcp_public_origin" {
+  description = "Optional canonical HTTPS origin for the standalone MCP service. GitHub Actions discovers the Cloud Run URL after the service exists; set this only for a custom domain or a direct Terraform run."
   type        = string
   default     = null
 
   validation {
     condition = (
-      var.operator_mcp_public_origin == null ||
-      can(regex("^https://[^/?#]+$", var.operator_mcp_public_origin))
+      var.mcp_public_origin == null ||
+      can(regex("^https://[^/?#]+$", var.mcp_public_origin))
     )
-    error_message = "operator_mcp_public_origin must be an HTTPS origin without a path, query, fragment, or trailing slash."
+    error_message = "mcp_public_origin must be an HTTPS origin without a path, query, fragment, or trailing slash."
   }
 }
 
@@ -561,35 +555,6 @@ variable "operator_mcp_credential_epoch" {
   validation {
     condition     = can(regex("^[1-9][0-9]*$", var.operator_mcp_credential_epoch))
     error_message = "operator_mcp_credential_epoch must be a canonical positive decimal integer."
-  }
-}
-
-variable "operator_mcp_rollout_workspace_ids" {
-  description = "Optional staged-rollout workspace UUIDs. An empty list makes Operator MCP available to every workspace when the service is enabled."
-  type        = list(string)
-  default     = []
-
-  validation {
-    condition = alltrue([
-      for workspace_id in var.operator_mcp_rollout_workspace_ids :
-      can(regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$", workspace_id))
-    ])
-    error_message = "operator_mcp_rollout_workspace_ids must contain UUIDs."
-  }
-}
-
-variable "operator_mcp_verification_budget_per_minute" {
-  description = "Maximum verification operations admitted per Operator MCP credential each minute."
-  type        = number
-  default     = 6
-
-  validation {
-    condition = (
-      var.operator_mcp_verification_budget_per_minute >= 1 &&
-      var.operator_mcp_verification_budget_per_minute <= 6 &&
-      floor(var.operator_mcp_verification_budget_per_minute) == var.operator_mcp_verification_budget_per_minute
-    )
-    error_message = "operator_mcp_verification_budget_per_minute must be an integer from 1 through 6."
   }
 }
 

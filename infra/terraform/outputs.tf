@@ -55,7 +55,7 @@ output "app_base_url" {
 
 output "operator_mcp_resource_url" {
   description = "Canonical OAuth resource URL for the separate Operator MCP surface, or null while disabled."
-  value       = var.operator_mcp_enabled ? "${var.operator_mcp_public_origin}/operator/mcp" : null
+  value       = local.operator_mcp_configured ? "${var.mcp_public_origin}/operator/mcp" : null
 }
 
 output "document_storage_bucket_name" {

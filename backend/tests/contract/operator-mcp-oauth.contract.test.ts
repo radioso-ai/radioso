@@ -7,7 +7,7 @@ import { captureRequestBody } from "../../src/app/server/createApp.js";
 import { createOperatorMcpDiscoveryRoutes, createOperatorMcpOauthRoutes } from "../../src/modules/operatorMcpAuthorization/routes.js";
 
 const env = {
-  SESSION_COOKIE_NAME: "radioso_session", OPERATOR_MCP_ENABLED: true,
+  SESSION_COOKIE_NAME: "radioso_session",
   OPERATOR_MCP_ISSUER_URL: "https://app.example", OPERATOR_MCP_RESOURCE_URL: "https://mcp.example/operator/mcp",
   AUTH_RATE_LIMIT_MAX_ATTEMPTS: 5, AUTH_RATE_LIMIT_WINDOW_MS: 60_000,
   OPERATOR_MCP_OAUTH_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 300,

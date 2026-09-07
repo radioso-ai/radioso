@@ -43,6 +43,10 @@ describe('getMemberCountDelta', () => {
     expect(getMemberCountDelta(theme({ memberCount: 96, share: 0.4, transition: null }), 0.2, 0.2)).toBeNull()
   })
 
+  it('reports no delta when the report carries no materiality threshold', () => {
+    expect(getMemberCountDelta(theme({ memberCount: 96, share: 0.4 }), 0.2, undefined)).toBeNull()
+  })
+
   it.each(['emerged', 'split', 'merged'] as const)(
     'does not render a delta for a %s transition even when count and share would otherwise grow',
     (kind) => {

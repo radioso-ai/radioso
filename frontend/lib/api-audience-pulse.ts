@@ -91,7 +91,8 @@ export interface AudiencePulseHydratedReport {
   isFirstCensus: boolean
   narrativeGeneratedAt: string
   narrativeReuseCount: number
-  narrativeReuseMaxDrift: number
+  /** Absent from an API deploy older than the materiality rule; only the report's producer owns that rule. */
+  narrativeReuseMaxDrift?: number
   coverage: AudiencePulseCoverage
   weeklyVolume: AudiencePulseWeeklyVolume[]
   /** Absent when no narrative call ran because nothing in the window was facet-ready. */
@@ -148,23 +149,77 @@ export type AudiencePulseRefreshResponse =
   | { kind: 'unavailable'; reason: 'provider' | 'validation' | 'census' | 'cancelled' }
   | { kind: 'completed'; report: AudiencePulseHydratedReport }
 
+type OptionalTopicTransitionFields = 'previousMemberCount' | 'previousShare' | 'transition'
+type OptionalReportFields = 'dissolvedTopics' | 'isFirstCensus' | 'narrativeGeneratedAt' | 'narrativeReuseCount'
+
+/**
+ * What an API deploy older than the topic-transition contract sends. The browser
+ * bundle and the API are released separately, so the fields a newer view reads can
+ * be missing from a response that is otherwise valid.
+ */
+type WireAudiencePulseTheme =
+  Omit<AudiencePulseTheme, OptionalTopicTransitionFields>
+  & Partial<Pick<AudiencePulseTheme, OptionalTopicTransitionFields>>
+
+type WireAudiencePulseReport =
+  Omit<AudiencePulseHydratedReport, OptionalReportFields | 'themes'>
+  & Partial<Pick<AudiencePulseHydratedReport, OptionalReportFields>>
+  & { themes: WireAudiencePulseTheme[] }
+
+type WireAudiencePulseReadResponse =
+  | Exclude<AudiencePulseReadResponse, { kind: 'completed' }>
+  | { kind: 'completed'; report: WireAudiencePulseReport }
+
+type WireAudiencePulseRefreshResponse =
+  | Exclude<AudiencePulseRefreshResponse, { kind: 'completed' }>
+  | { kind: 'completed'; report: WireAudiencePulseReport }
+
+/**
+ * Restores today's report shape from an older response. Defaults state only what the
+ * older API could already prove — no prior identity, no reused narrative, nothing
+ * dissolved — so a version-skewed deploy renders a smaller report instead of failing.
+ */
+function normalizeAudiencePulseReport(
+  report: WireAudiencePulseReport,
+): AudiencePulseHydratedReport {
+  return {
+    ...report,
+    isFirstCensus: report.isFirstCensus ?? false,
+    narrativeGeneratedAt: report.narrativeGeneratedAt ?? report.generatedAt,
+    narrativeReuseCount: report.narrativeReuseCount ?? 0,
+    dissolvedTopics: report.dissolvedTopics ?? [],
+    themes: report.themes.map((theme) => ({
+      ...theme,
+      previousMemberCount: theme.previousMemberCount ?? null,
+      previousShare: theme.previousShare ?? null,
+      transition: theme.transition ?? null,
+    })),
+  }
+}
+
 const BASE_PATH = '/quality/audience-pulse'
 
 export const audiencePulseApi = {
   async read(options: { signal?: AbortSignal } = {}): Promise<AudiencePulseReadResponse> {
-    return request<AudiencePulseReadResponse>(
+    const response = await request<WireAudiencePulseReadResponse>(
       BASE_PATH,
       { method: 'GET', signal: options.signal },
       { withSession: true },
     )
+    return response.kind === 'completed'
+      ? { kind: 'completed', report: normalizeAudiencePulseReport(response.report) }
+      : response
   },
 
   async refresh(options: { signal?: AbortSignal } = {}): Promise<AudiencePulseRefreshResponse> {
-    return request<AudiencePulseRefreshResponse>(
+    const response = await request<WireAudiencePulseRefreshResponse>(
       BASE_PATH,
       { method: 'POST', signal: options.signal },
       { withSession: true },
     )
+    return response.kind === 'completed'
+      ? { kind: 'completed', report: normalizeAudiencePulseReport(response.report) }
+      : response
   },
 
   async getRefreshStatus(options: { signal?: AbortSignal } = {}): Promise<{ pending: boolean }> {

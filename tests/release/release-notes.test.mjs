@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 
 import {
   CHANGELOG_HEADER,
+  assertPlainSemver,
   classifyBump,
   groupCommits,
   isReleaseCommit,
@@ -69,6 +70,13 @@ test('computes the next semver and refuses a version it cannot bump', () => {
   assert.equal(nextVersion('1.4.2', 'patch'), '1.4.3')
   assert.throws(() => nextVersion('1.4.2-rc.1', 'patch'), /not plain semver/)
   assert.throws(() => nextVersion('1.4.2', 'sideways'), /Unknown bump/)
+})
+
+test('rejects explicit release versions that would not deploy as release tags', () => {
+  assert.equal(assertPlainSemver('1.4.0'), '1.4.0')
+  assert.throws(() => assertPlainSemver('v1.4.0'), /plain semver/)
+  assert.throws(() => assertPlainSemver('1.4'), /plain semver/)
+  assert.throws(() => assertPlainSemver('not-a-version'), /plain semver/)
 })
 
 test('orders sections so breaking changes lead and internal work trails', () => {

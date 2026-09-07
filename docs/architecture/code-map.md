@@ -868,7 +868,8 @@ Public surfaces and contracts:
 - `backend/src/modules/routines/public.ts` (definition types, compiler, validator)
 - `backend/src/modules/routines/authoringEdit.ts` (stable-id field patch and the keyed projection an external authoring surface reviews a routine through)
 - `packages/routine-definition` (shared definition schemas and types)
-- `packages/routine-document` (routine block-document projection and shared guard/condition labeling for the Document editor)
+- `packages/routine-document` (routine block-document projection and shared guard/condition labeling, including `branchDecisionLabel` — the one place a branch's decision is named for the Document editor and the map)
+- `packages/routine-definition` also owns the shared slot-collection rule (`collectedSlotsByStep`, `SLOT_REFERENCE_PATTERN`) so the compiler, the population analysis, and the authoring surfaces agree on which step captures a slot
 - `backend/src/app/http/routes/agentRoutes.ts` (`/api/v1/agents/:agentId/routines` CRUD/validate/publish/revise/archive/restore)
 - `packages/conversation-contract/index.d.ts` (the `Routine` graph and guards the compiler targets)
 - `packages/conversation-defaults/src/routineRegistry.ts` (ranked one-call
@@ -883,10 +884,15 @@ Primary internals:
 - `packages/conversation-engine/src/routineRunner.ts` (runtime: activation, resume, guards, fast-forward)
 - `backend/prompts/chat/routine-next-step.md`, `routine-step-reply.md`, `routine-ranked-activation.md`
 - `frontend/components/dashboard/settings/assistant-routines-section.tsx` (authoring UI)
+- `frontend/lib/routine-flow.ts` (block document → canvas graph, guard provenance, slot collection)
+- `frontend/components/dashboard/settings/routine-canvas.tsx` (read-only map over that graph)
+- `frontend/lib/turn-flow-layout.ts` (`layoutFlowGraph`, the dagre call the turn flow and the routine map share)
 
 Focused checks:
 
 - `cd backend && pnpm test -- tests/unit/routine-definition-domain.test.ts tests/unit/routine-definition-service.test.ts tests/integration/chat.integration.test.ts`
+- `cd frontend && pnpm exec vitest run tests/unit/routine-flow.test.ts`
+- `cd frontend && pnpm exec playwright test tests/e2e/routine-canvas.spec.ts`
 - `cd packages/conversation-engine && pnpm test`
 
 Related docs and specs:

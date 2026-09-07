@@ -1,7 +1,7 @@
 ---
 title: "Authoring Routines"
-description: "Create and edit dashboard routines in the Document view, connect skills, test drafts, and manage their lifecycle."
-last_updated: 2026-08-29
+description: "Create and edit dashboard routines in the Document view, read the Map, connect skills, test drafts, and manage their lifecycle."
+last_updated: 2026-09-04
 ---
 
 # Authoring Routines
@@ -163,6 +163,32 @@ missing webhook destination for completion export.
 
 Choose **Save draft** to keep work in progress. **Publish** creates the immutable
 version that the chat runtime runs after the draft validates cleanly.
+
+## Map
+
+Choose **Map** to read the routine as a graph — the trigger, every step, every
+ending, and the branches between them — over the full width of the window. Close it
+to return to the document.
+
+Two line styles carry the reading. A solid line is a **Rule** — the branch resolves
+in code from a captured value, a skill outcome, a field comparison, or a repeat
+count, and takes the same edge every time its condition holds. A dashed amber line
+labelled **AI decides** is an `llm` branch, where the model judges the condition in
+whatever words the visitor used. A branch that states no condition is the plain
+onward path, drawn as a bare arrow.
+
+Under the graph, a count says how much of the routine is settled: *3 of 4 branch
+decisions are rules*. A routine that reads mostly amber varies more from
+conversation to conversation than one that reads mostly solid, which is the number
+to check before publishing a flow that has to behave the same way twice.
+
+Select a step to read what it does and where it can go next, in the order its
+branches are evaluated. **Show conditions** prints every condition onto the graph at
+once, so a whole routine can be read without clicking through it.
+
+The map also names any declared variable that no step captures. A variable in that
+state can never be filled, and seeing it here beats discovering it in a live
+conversation.
 
 ## Test a draft before publishing
 

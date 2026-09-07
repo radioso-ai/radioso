@@ -1,0 +1,9 @@
+{
+  "description": "The same post re-pushed after an edit: one external id, a later `modified_gmt`, an unchanged `date_gmt`.",
+  "signatureHeader": "X-Radioso-Signature",
+  "eventHeader": "X-Radioso-Event",
+  "event": "updated",
+  "secret": "b2f0d1c4e5a6978877665544332211009988aabbccddeeff0011223344556677",
+  "signature": "sha256=a25ad0ae5b7c7036ead31ed3a257a1204e52ff1c8eb05b57b1b53ad630ddef59",
+  "body": "{\"event\":\"updated\",\"site_url\":\"https:\\/\\/example.com\\/\",\"post\":{\"id\":4211,\"type\":\"post\",\"status\":\"publish\",\"slug\":\"how-we-price-books\",\"title\":\"How we price books\",\"content_raw\":\"Every edition is priced once, and stays priced.\",\"content_rendered\":\"<p>Every edition is priced once, and stays priced.<\\/p>\\n\",\"excerpt_rendered\":\"<p>Every edition is priced once, and stays priced.<\\/p>\\n\",\"link\":\"https:\\/\\/example.com\\/how-we-price-books\\/\",\"modified_gmt\":\"2026-09-02 09:15:00\",\"date_gmt\":\"2026-09-01 08:00:00\",\"author\":{\"id\":7,\"name\":\"Ada Lovelace\"}}}"
+}

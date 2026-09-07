@@ -58,6 +58,19 @@ export function formatBranchTargetLabel(ending: Pick<RoutineBlockEnding, 'kind' 
   return `${kind}: ${truncatedMessage}`
 }
 
+/**
+ * How a branch's decision is named wherever a routine is shown. Its sibling below says
+ * what the condition is; together they are the whole wording of a branch, so they live
+ * together and the Document view and the Map cannot drift into two vocabularies.
+ *
+ * A `default` guard states no condition, so it reads as the plain onward path.
+ */
+export function branchDecisionLabel(guardKind: RoutineBlockGuard['kind']): string {
+  if (guardKind === 'llm') return 'AI decides'
+  if (guardKind === 'default') return 'Continue'
+  return 'Rule'
+}
+
 export function guardToSentence(guard: Pick<RoutineBlockGuard, 'kind' | 'guardText' | 'outcomeStatus' | 'counterLimit' | 'fieldRef' | 'fieldOp' | 'fieldValue' | 'fieldValues' | 'fieldUnit'> & { slotKeys?: string[] }, slotNames: Map<string, string>): string {
   switch (guard.kind) {
     case 'llm':

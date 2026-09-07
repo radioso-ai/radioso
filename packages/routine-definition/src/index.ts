@@ -30,8 +30,8 @@ export const routineStepKinds = ["chat", "tool", "action", "approval"] as const;
 export const routineGuardKinds = ["llm", "default", "slot_filled", "outcome", "counter", "field"] as const;
 export const routineFieldGuardOps = ["is_true", "is_false", "equals", "not_equals", "in", "is_present", "is_absent", "gt", "gte", "lt", "lte", "older_than", "within"] as const;
 export const routineFieldGuardUnits = ["days", "weeks", "months", "years"] as const;
-export const routineTerminalKinds = ["complete", "handoff"] as const;
-export const routineCompletionExportTriggerKinds = routineTerminalKinds;
+const routineTerminalKinds = ["complete", "handoff"] as const;
+const routineCompletionExportTriggerKinds = routineTerminalKinds;
 export const routineValidationCodes = [
   "unreachable_step",
   "missing_terminal",
@@ -431,6 +431,83 @@ export type RoutineGuardProvenance = "exact" | "judgment";
 
 export const routineGuardProvenance = (guardKind: RoutineGuardKind): RoutineGuardProvenance =>
   guardKind === "llm" ? "judgment" : "exact";
+
+/**
+ * A `{{slot.<key>}}` reference inside an instruction or guard text.
+ *
+ * One pattern, shared: the block-document projection segments on it, and
+ * slot-collection ownership below is decided by it. Two copies could drift, and a
+ * drift would silently move which step owns a slot.
+ */
+export const SLOT_REFERENCE_PATTERN = /\{\{\s*slot\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/gu;
+
+/** Extract the distinct `{{slot.<key>}}` references from an instruction, in first-seen order. */
+export const collectSlotKeys = (instruction: string): string[] => {
+  const keys = new Set<string>();
+  for (const match of instruction.matchAll(SLOT_REFERENCE_PATTERN)) {
+    const key = match[1];
+    if (key) {
+      keys.add(key);
+    }
+  }
+  return [...keys];
+};
+
+/** The minimum a step must expose for slot-collection ownership to be decided. */
+export interface SlotCollectionStep {
+  stableStepId: string;
+  kind: RoutineStepKind;
+  instruction: string;
+  ordinal: number;
+}
+
+/**
+ * Which chat step collects which slots, by the single rule shared across the
+ * routine pipeline:
+ *
+ * A slot is *collected* by the FIRST chat step (in ordinal order) that references
+ * `{{slot.x}}`; a later reference is a *use* (interpolation), not a re-collection.
+ * Only `chat` steps collect from the customer.
+ *
+ * The compiler uses this to auto-gate the collecting step and to stamp `collectsSlots`
+ * metadata; the population analysis uses it to decide which step *produces* a variable;
+ * authoring surfaces use it to show where a slot is captured. They MUST agree — if they
+ * don't, the guaranteed-population analysis can mark a variable available on a path where
+ * the runtime never actually collected it, defeating the "typed mode has no runtime input
+ * gaps" guarantee (spec FR-010 / R7).
+ *
+ * Returns only the steps that collect at least one slot, keyed by `stableStepId`.
+ */
+export const collectedSlotsByStep = (
+  steps: readonly SlotCollectionStep[],
+): ReadonlyMap<string, string[]> => {
+  const sortedSteps = [...steps].sort((left, right) => left.ordinal - right.ordinal);
+  const firstReferencerByKey = new Map<string, string>();
+  for (const step of sortedSteps) {
+    if (step.kind !== "chat") {
+      continue;
+    }
+    for (const key of collectSlotKeys(step.instruction)) {
+      if (!firstReferencerByKey.has(key)) {
+        firstReferencerByKey.set(key, step.stableStepId);
+      }
+    }
+  }
+
+  const collectedByStep = new Map<string, string[]>();
+  for (const step of sortedSteps) {
+    if (step.kind !== "chat") {
+      continue;
+    }
+    const collected = collectSlotKeys(step.instruction).filter(
+      (key) => firstReferencerByKey.get(key) === step.stableStepId,
+    );
+    if (collected.length > 0) {
+      collectedByStep.set(step.stableStepId, collected);
+    }
+  }
+  return collectedByStep;
+};
 export type RoutineTerminalKind = typeof routineTerminalKinds[number];
 export type RoutineValidationCode = typeof routineValidationCodes[number];
 export type RoutineCompletionExportTriggerKind = typeof routineCompletionExportTriggerKinds[number];

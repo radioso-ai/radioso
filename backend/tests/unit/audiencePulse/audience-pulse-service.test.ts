@@ -1750,6 +1750,58 @@ describe("AudiencePulseService", () => {
     expect(hydrated.themes[0]?.previousMemberCount).toBeNull();
   });
 
+  it("defaults transition array fields, weeklyPulse and grounding on reports saved before those fields shipped", () => {
+    const legacyReport = {
+      period: { start: "2026-07-01T00:00:00.000Z", end: "2026-07-31T00:00:00.000Z" },
+      generatedAt: "2026-08-01T00:00:00.000Z",
+      coverage: { populationSize: 1, sampleSize: 1, sampled: false, facetReadyQuestionCount: 1 },
+      weeklyVolume: [],
+      summary: "Legacy summary",
+      unclassifiedQuestionCount: 0,
+      dissolvedTopics: [],
+      themes: [{
+        id: "theme-1",
+        title: "Plans",
+        description: "Visitors ask about plans.",
+        evidenceIds: ["evidence-1"],
+        memberCount: 1,
+        previousMemberCount: null,
+        previousShare: null,
+        // A merged transition from before the parent-topic-ids column shipped: no
+        // parentTopicIds, no viaCentroidFallback. This is the shape that crashed the view.
+        transition: { kind: "merged" },
+        share: 1,
+      }],
+      contentGaps: [],
+      recommendations: [],
+      caveats: [],
+    } as unknown as AudiencePulseStoredReport;
+
+    const hydrated = hydrateReport(legacyReport, new Map([
+      ["evidence-1", {
+        evidenceId: "evidence-1",
+        conversationId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        messageId: "11111111-1111-1111-1111-111111111111",
+        question: "How do I change my plan?",
+      }],
+    ]));
+
+    expect(hydrated.themes[0]?.transition).toEqual({
+      kind: "merged",
+      parentTopicIds: [],
+      viaCentroidFallback: false,
+      membershipOverlap: null,
+    });
+    expect(hydrated.themes[0]?.weeklyPulse).toEqual([]);
+    expect(hydrated.themes[0]?.grounding).toEqual({
+      grounded: 0,
+      degraded: 0,
+      noSupport: 0,
+      unknown: 0,
+      contentGapEligible: 0,
+    });
+  });
+
   it("reads the prior snapshot before replacing it to carry forward full member counts", async () => {
     const lifecycle: string[] = [];
     const priorSnapshot = {

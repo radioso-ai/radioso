@@ -40,12 +40,20 @@ const MIGRATIONS_DIR = 'backend/src/db/migrations'
  *  contributor likes, but not these. */
 const RECORD = '\x1e'
 const FIELD = '\x1f'
+const MAX_GIT_OUTPUT_BYTES = 16 * 1024 * 1024
 
 const args = process.argv.slice(2)
 const flag = (name) => args.find((arg) => arg.startsWith(`--${name}=`))?.slice(name.length + 3)
 const isDryRun = args.includes('--dry-run')
 
-const git = (...gitArgs) => execFileSync('git', gitArgs, { cwd: ROOT, encoding: 'utf8' }).trim()
+const git = (...gitArgs) =>
+  execFileSync('git', gitArgs, {
+    cwd: ROOT,
+    encoding: 'utf8',
+    // The first release reads all commit bodies so it can detect BREAKING CHANGE footers.
+    // Node otherwise caps execFileSync output at 1 MiB, which this repository's history exceeds.
+    maxBuffer: MAX_GIT_OUTPUT_BYTES,
+  }).trim()
 
 const fail = (message) => {
   console.error(`\n${message}\n`)

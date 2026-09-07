@@ -312,27 +312,61 @@ export const refineObjectBreadth = (value: unknown, context: z.RefinementCtx): v
   });
 };
 
-const NOT_A_PLAIN_MAP = "A map is a plain JSON object carrying its own keys only";
+const NOT_A_PLAIN_MAP = "A map is a plain JSON object carrying its own data properties only";
 
 /**
- * Shape and breadth for a bounded map, settled before a typed schema reads an
- * entry. Both checks are fatal so a pipeline stops here: `z.record` parses and
- * clones every entry before a refinement on the record could count them, which
- * hands a hundred-thousand entry map a full traversal on its way to being
- * refused, and it walks inherited enumerable properties that an own-key count
- * never saw. A map whose prototype is `Object.prototype` or `null` has none, so
- * what this counts is exactly what the parser goes on to traverse.
+ * Shape, breadth, and property kind for a bounded map, settled before a typed
+ * schema reads an entry, and settled by descriptor rather than by reading. A
+ * getter is a caller's code: reading one to find out whether the map is
+ * acceptable hands an attacker an exception out of a validation function, or an
+ * entry whose second read is a different value than the one that passed. An
+ * enumerable property on `Object.prototype` is the same problem from the other
+ * side — an own-key count never sees it, and a parser that walks it goes on to
+ * read a key the map never carried.
+ *
+ * What comes back is a null-prototype copy of the own data properties, which is
+ * what the rest of a pipeline reads: nothing downstream can reach a getter or an
+ * inherited key, because neither survived this pass.
  */
-export const refineBoundedMap =
-  (ceiling: number, message: string) =>
-  (value: unknown, context: z.RefinementCtx): void => {
-    if (value === null || typeof value !== "object" || Array.isArray(value) || !isPlainObject(value)) {
-      context.addIssue({ code: z.ZodIssueCode.custom, path: [], fatal: true, message: NOT_A_PLAIN_MAP });
-      return;
-    }
-    if (countKeys(value, ceiling) <= ceiling) return;
-    context.addIssue({ code: z.ZodIssueCode.custom, path: [], fatal: true, message });
-  };
+export const readBoundedMap = (
+  value: unknown,
+  ceiling: number,
+): { ok: true; map: Record<string, unknown> } | { ok: false; failure: "not_a_plain_map" | "too_many_entries" } => {
+  if (value === null || typeof value !== "object" || Array.isArray(value) || !isPlainObject(value)) {
+    return { ok: false, failure: "not_a_plain_map" };
+  }
+  const map = Object.create(null) as Record<string, unknown>;
+  let count = 0;
+  for (const key in value) {
+    // An inherited enumerable property has no own descriptor, and an accessor
+    // has one that names a function rather than a value. Neither is read.
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (descriptor === undefined || isAccessor(descriptor)) return { ok: false, failure: "not_a_plain_map" };
+    count += 1;
+    if (count > ceiling) return { ok: false, failure: "too_many_entries" };
+    map[key] = descriptor.value;
+  }
+  return { ok: true, map };
+};
+
+/**
+ * The pre-pipe stage every bounded map goes through. Its issues are fatal so the
+ * pipeline stops here: `z.record` parses and clones every entry before a
+ * refinement on the record could count them, which hands a hundred-thousand
+ * entry map a full traversal on its way to being refused.
+ */
+export const boundedMapSchema = (ceiling: number, message: string) =>
+  z.any().transform((value: unknown, context: z.RefinementCtx) => {
+    const read = readBoundedMap(value, ceiling);
+    if (read.ok) return read.map;
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: [],
+      fatal: true,
+      message: read.failure === "too_many_entries" ? message : NOT_A_PLAIN_MAP,
+    });
+    return z.NEVER;
+  });
 
 /** The bounds, applied to a value the caller already knows should be an object. */
 export const refineBoundedJsonRecord = (value: unknown, context: z.RefinementCtx): void => {
@@ -444,10 +478,7 @@ const httpFieldValueSchema = z.string().superRefine((value, context) => {
  * then, and scanning it anyway is the work its size was meant to buy.
  */
 export const boundedHeaderRecordSchema = (keySchema: z.ZodType<string, z.ZodTypeDef, string>) =>
-  z
-    .any()
-    .superRefine(refineBoundedMap(MAX_HEADER_ENTRIES, `At most ${MAX_HEADER_ENTRIES} headers`))
-    .pipe(
+  boundedMapSchema(MAX_HEADER_ENTRIES, `At most ${MAX_HEADER_ENTRIES} headers`).pipe(
       z.record(keySchema, httpFieldValueSchema).superRefine((headers, context) => {
         for (const key in headers) {
           if (!Object.hasOwn(headers, key)) continue;

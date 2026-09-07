@@ -78,6 +78,13 @@ if (resolved.ok) {
 }
 ```
 
+It accepts any manifest that parses and never throws for one. A manifest that
+`validateManifest` would refuse on an invariant resolution stands on — a schedule
+bound to a field that is not a required or defaulted number, a destination host
+bound to a field that is not a `url` field — comes back as `manifest_not_admitted`
+issues, so a caller reads one failure shape whether the gap is in the stored map
+or in the release.
+
 The configuration holds every required value field, every field that declares a
 default, and every optional field the operator supplied. A `connection_slot`
 field never appears: its value lives in the slot. The map is frozen and its type
@@ -101,18 +108,31 @@ to interpret.
 
 A destination that declares no `ports` reaches the default port of each protocol
 it declares: 443 on `https`, 80 on `http`. One that declares `ports` reaches
-exactly those. Resolution holds a destination-bound URL to it, and admission
-proves that the destinations sharing one field have a protocol and a port in
-common — the operator types one address, and it has one scheme and one port.
+exactly those, and declares at least one. Resolution holds a destination-bound
+URL to it, admission holds the field's `default` to it through the same check, and
+admission proves that the destinations sharing one field have a protocol and a
+port in common — the operator types one address, and it has one scheme and one
+port.
 
 ## Egress paths
 
 An `egress.fetch` `path` is origin-relative and canonically encoded: every `%`
 introduces two hex digits, and no escape spells a separator, a percent, or a
-control character. What is left decodes exactly once, and no segment of the
-result is `.` or `..`, so `/../wp-admin`, `/%2e%2e%2fwp-admin`, and
-`/%252e%252e/wp-admin` are one refusal rather than three spellings that climb
-above the operator's prefix at whichever hop decodes first.
+control character. What is left decodes exactly once, as UTF-8 and no other way,
+and no segment of the result is `.` or `..`, so `/../wp-admin`,
+`/%2e%2e%2fwp-admin`, `/%252e%252e/wp-admin`, and the overlong
+`/%C0%AE%C0%AE/wp-admin` are one refusal rather than four spellings that climb
+above the operator's prefix at whichever hop decodes first. Invalid UTF-8 and
+unpaired surrogates are refused for the same reason.
+
+## Bounded maps
+
+Every map the protocol carries — headers, query, metadata, indexed fields, and an
+installation's stored configuration — is read by descriptor: an own accessor and
+an inherited enumerable key are both refused before any value is read, so a
+validation call never runs a caller's getter and never walks a key an object does
+not carry. What passes is copied into a null-prototype map before anything
+downstream sees it.
 
 ## Docs
 

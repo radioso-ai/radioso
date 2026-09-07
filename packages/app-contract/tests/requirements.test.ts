@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   releaseAValidationPolicy,
@@ -292,8 +292,8 @@ describe("resolveInstallation", () => {
     expect(forged).toMatchObject({ poll_interval_sec: 30 });
   });
 
-  it("refuses to answer for a schedule field an installation could leave absent", () => {
-    const admitted: AppManifest = {
+  it("reports rather than throws for a schedule field an installation could leave absent", () => {
+    const notAdmitted: AppManifest = {
       ...manifest,
       configuration: {
         fields: manifest.configuration.fields.map((field) =>
@@ -301,9 +301,49 @@ describe("resolveInstallation", () => {
         ),
       },
     };
-    expect(validateManifest(admitted, releaseAValidationPolicy).ok).toBe(false);
-    expect(() => resolveInstallation(admitted, { site_url: "https://example.com" })).toThrow(
-      /poll_interval_sec/u,
-    );
+    expect(validateManifest(notAdmitted, releaseAValidationPolicy).ok).toBe(false);
+    const resolved = resolveInstallation(notAdmitted, { site_url: "https://example.com" });
+    expect(resolved.ok).toBe(false);
+    expect(resolved.ok ? [] : resolved.issues.map((issue) => issue.code)).toEqual([
+      "manifest_not_admitted",
+    ]);
+    expect(resolved.ok ? "" : JSON.stringify(resolved.issues)).not.toContain("poll_interval_sec");
+  });
+
+  it("reports rather than throws for a destination host bound to a field that is not a url field", () => {
+    const notAdmitted: AppManifest = {
+      ...manifest,
+      destinations: manifest.destinations.map((destination) => ({
+        ...destination,
+        host: { kind: "configuration", field: "post_types" } as const,
+      })),
+    };
+    expect(validateManifest(notAdmitted, releaseAValidationPolicy).ok).toBe(false);
+    const resolved = resolveInstallation(notAdmitted, { site_url: "https://example.com" });
+    expect(resolved.ok).toBe(false);
+    expect(resolved.ok ? [] : resolved.issues.map((issue) => issue.code)).toEqual([
+      "manifest_not_admitted",
+    ]);
+  });
+
+  it("refuses a stored map carrying an accessor, without ever invoking it", () => {
+    const getter = vi.fn(() => "https://example.com");
+    const hostile = Object.defineProperty({}, "site_url", { get: getter, enumerable: true });
+    expect(codesFor(hostile)).toEqual(["invalid_configuration_values"]);
+    expect(getter).not.toHaveBeenCalled();
+  });
+
+  it("answers with an issue rather than a throw when Object.prototype carries an enumerable key", () => {
+    Object.defineProperty(Object.prototype, "polluted_key", {
+      value: "value",
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
+    try {
+      expect(codesFor({ site_url: "https://example.com" })).toEqual(["invalid_configuration_values"]);
+    } finally {
+      Reflect.deleteProperty(Object.prototype, "polluted_key");
+    }
   });
 });

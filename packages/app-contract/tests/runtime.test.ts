@@ -447,6 +447,29 @@ describe("host capabilities", () => {
     expect(accepts("/wp-json/wp/v2/posts%20list")).toBe(true);
   });
 
+  it("refuses a path that does not decode as UTF-8, an overlong dot segment included", () => {
+    const accepts = (path: string): boolean =>
+      hostCapabilityRequestSchema.safeParse({
+        capability: "egress.fetch",
+        destination: "site",
+        method: "GET",
+        path,
+      }).success;
+    for (const path of [
+      "/wp-json/%FF",
+      "/wp-json/%C0%AE%C0%AE/admin",
+      "/wp-json/%C3",
+      "/wp-json/%ED%A0%80",
+      "/wp-json/\ud800",
+      "/wp-json/a\udc00b",
+    ]) {
+      expect(accepts(path)).toBe(false);
+    }
+    for (const path of ["/wp-json/wp/v2/posts", "/wp-json/caf%C3%A9", "/wp-json/a%20b", "/wp-json/café"]) {
+      expect(accepts(path)).toBe(true);
+    }
+  });
+
   it("refuses a header map whose entries are inherited rather than its own", () => {
     const inherited = Object.assign(Object.create({ "X-Radioso-Inherited": "value" }) as object, {
       "X-Radioso-Note": "value",
@@ -460,8 +483,25 @@ describe("host capabilities", () => {
     });
     expect(parsed.success).toBe(false);
     expect(parsed.success ? [] : parsed.error.issues.map((issue) => issue.message)).toEqual([
-      "A map is a plain JSON object carrying its own keys only",
+      "A map is a plain JSON object carrying its own data properties only",
     ]);
+  });
+
+  it("refuses a header map carrying an accessor, without ever invoking it", () => {
+    const getter = vi.fn(() => "application/json");
+    const headers = Object.defineProperty({}, "Accept", { get: getter, enumerable: true });
+    const parsed = hostCapabilityRequestSchema.safeParse({
+      capability: "egress.fetch",
+      destination: "site",
+      method: "GET",
+      path: "/wp-json/wp/v2/posts",
+      headers,
+    });
+    expect(parsed.success).toBe(false);
+    expect(parsed.success ? [] : parsed.error.issues.map((issue) => issue.message)).toEqual([
+      "A map is a plain JSON object carrying its own data properties only",
+    ]);
+    expect(getter).not.toHaveBeenCalled();
   });
 
   it("refuses one oversized header value on its length, without scanning it", () => {

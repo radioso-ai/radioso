@@ -116,13 +116,13 @@ export const credentialFieldReferences = (
  * a manifest that means 8443 has to say 8443 and an operator's grant screen
  * never widens by silence.
  */
-export const DEFAULT_PROTOCOL_PORTS: Readonly<Record<DestinationProtocol, number>> = {
+const DEFAULT_PROTOCOL_PORTS: Readonly<Record<DestinationProtocol, number>> = {
   https: 443,
   http: 80,
 };
 
 /** The ports one destination permits on one protocol: exactly what it declared, or that protocol's default. */
-export const destinationPortsForProtocol = (
+const destinationPortsForProtocol = (
   destination: Destination,
   protocol: DestinationProtocol,
 ): readonly number[] => destination.ports ?? [DEFAULT_PROTOCOL_PORTS[protocol]];
@@ -142,11 +142,116 @@ export const destinationSchema = z.object({
   id: destinationIdSchema,
   host: destinationHostSchema,
   protocols: z.array(destinationProtocolSchema).min(1).max(destinationProtocols.length),
-  ports: z.array(z.number().int().min(1).max(65535)).max(4).optional(),
+  // Present and empty is not "no restriction": it is a destination no address
+  // can satisfy, which admits at release and then denies every request.
+  ports: z.array(z.number().int().min(1).max(65535)).min(1).max(4).optional(),
   purpose: z.string().min(1).max(256),
   dataClasses: z.array(destinationDataClassSchema).min(1).max(destinationDataClasses.length),
   credentials: destinationCredentialsSchema.optional(),
 }).strict();
+
+/**
+ * Why one address cannot serve one destination. A reason is a stable token
+ * rather than a sentence, because two callers report it in two places: admission
+ * reads it against a `url` field's declared default, and resolution reads it
+ * against the value an operator stored. One check, so the two cannot drift into
+ * a manifest that is admitted and an installation that can never resolve.
+ */
+type DestinationUrlRejection =
+  | { reason: "url_carries_query_or_fragment" }
+  | { reason: "url_carries_userinfo" }
+  | { reason: "url_protocol_not_declared"; destination: string; protocols: readonly string[] }
+  | { reason: "url_port_not_declared"; destination: string; protocol: string; ports: readonly number[] };
+
+const parsedUrl = (value: string): URL | null => {
+  try {
+    return new URL(value);
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Which port an address actually reaches. `URL` drops a port that is its
+ * scheme's default, so an address that names none reaches the default the
+ * destination is measured against — and `https://example.com:8443` reaches 8443,
+ * which a destination has to have declared.
+ */
+const effectivePort = (url: URL): number | null => {
+  if (url.port !== "") return Number(url.port);
+  const scheme = url.protocol.replace(":", "");
+  if (scheme === "https" || scheme === "http") return DEFAULT_PROTOCOL_PORTS[scheme];
+  return null;
+};
+
+/**
+ * A URL a destination's host is built from carries more than a URL: it decides
+ * the scheme the broker speaks, the port it reaches, and — through userinfo —
+ * could hand the App's own requests a credential the manifest never declared.
+ * None of that belongs in a value space an author or an operator types into
+ * freely. A value that is not a URL at all is not this function's answer; the
+ * field's own type reports that first.
+ */
+export const checkDestinationBoundUrl = (
+  value: string,
+  destinations: readonly Destination[],
+): readonly DestinationUrlRejection[] => {
+  if (destinations.length === 0) return [];
+  const url = parsedUrl(value);
+  if (!url) return [];
+  const rejections: DestinationUrlRejection[] = [];
+  if (url.search !== "" || url.hash !== "") rejections.push({ reason: "url_carries_query_or_fragment" });
+  if (url.username !== "" || url.password !== "") rejections.push({ reason: "url_carries_userinfo" });
+  const scheme = url.protocol.replace(":", "");
+  const port = effectivePort(url);
+  for (const destination of destinations) {
+    const protocol = destination.protocols.find((candidate) => candidate === scheme);
+    if (protocol === undefined) {
+      rejections.push({
+        reason: "url_protocol_not_declared",
+        destination: destination.id,
+        protocols: destination.protocols,
+      });
+      continue;
+    }
+    const ports = destinationPortsForProtocol(destination, protocol);
+    if (port !== null && ports.includes(port)) continue;
+    rejections.push({ reason: "url_port_not_declared", destination: destination.id, protocol, ports });
+  }
+  return rejections;
+};
+
+/**
+ * The destinations one configuration field is the host of. Admission and
+ * resolution both need it, and both need the same answer: every destination
+ * bound to a field is a view of the one address that field holds.
+ */
+export const destinationsByHostField = (
+  destinations: readonly Destination[],
+): ReadonlyMap<string, Destination[]> => {
+  const bound = new Map<string, Destination[]>();
+  for (const destination of destinations) {
+    if (destination.host.kind !== "configuration") continue;
+    const existing = bound.get(destination.host.field);
+    if (existing) existing.push(destination);
+    else bound.set(destination.host.field, [destination]);
+  }
+  return bound;
+};
+
+/** One sentence per rejection, written once so both callers say the same thing. */
+export const destinationUrlRejectionMessage = (rejection: DestinationUrlRejection): string => {
+  switch (rejection.reason) {
+    case "url_carries_query_or_fragment":
+      return "A destination address is an origin prefix; a request's own path and query are supplied per call";
+    case "url_carries_userinfo":
+      return "A destination address holds no user name or password; credentials belong in a connection slot";
+    case "url_protocol_not_declared":
+      return `Destination ${rejection.destination} reaches ${rejection.protocols.join(" and ")} addresses only`;
+    case "url_port_not_declared":
+      return `Destination ${rejection.destination} reaches ${rejection.protocol} port ${rejection.ports.join(" and ")} only`;
+  }
+};
 
 export type DestinationProtocol = z.infer<typeof destinationProtocolSchema>;
 export type DestinationDataClass = z.infer<typeof destinationDataClassSchema>;

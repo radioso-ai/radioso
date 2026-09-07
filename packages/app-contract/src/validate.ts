@@ -12,7 +12,14 @@ import {
   type ScheduledTaskContribution,
   hostPermissions,
 } from "./contributions.js";
-import { credentialFieldReferences, destinationEndpoints, type Destination } from "./destinations.js";
+import {
+  checkDestinationBoundUrl,
+  credentialFieldReferences,
+  destinationEndpoints,
+  destinationUrlRejectionMessage,
+  destinationsByHostField,
+  type Destination,
+} from "./destinations.js";
 import { appManifestSchema, type AppManifest } from "./manifest.js";
 import { isScalarStorageFieldType } from "./storage.js";
 
@@ -221,21 +228,39 @@ const collectConformanceFixtureIssues = (
         ],
   );
 
+/**
+ * A `url` field's default is a value every installation that leaves the field
+ * alone will hold, so it meets the same destination policy a stored value meets
+ * — through the same function, so admission and resolution cannot drift into a
+ * release that ships and an installation that can never resolve. The reason code
+ * travels in the message as a stable token: an author reading
+ * `url_port_not_declared` at admission and an operator meeting it at resolution
+ * are looking at one rule.
+ */
 const collectConfigurationIssues = (
   manifest: AppManifest,
   index: ManifestIndex,
-): ManifestValidationIssue[] =>
-  manifest.configuration.fields.flatMap((field, position) => {
-    if (field.type !== "connection_slot") return [];
-    if (index.connectionSlots.has(field.connectionSlot)) return [];
-    return [
-      {
-        code: "unknown_connection_slot",
-        path: `configuration.fields[${position}].connectionSlot`,
-        message: `No connection slot ${field.connectionSlot} is declared`,
-      },
-    ];
+): ManifestValidationIssue[] => {
+  const bound = destinationsByHostField(manifest.destinations);
+  return manifest.configuration.fields.flatMap((field, position) => {
+    if (field.type === "connection_slot") {
+      if (index.connectionSlots.has(field.connectionSlot)) return [];
+      return [
+        {
+          code: "unknown_connection_slot",
+          path: `configuration.fields[${position}].connectionSlot`,
+          message: `No connection slot ${field.connectionSlot} is declared`,
+        },
+      ];
+    }
+    if (field.type !== "url" || field.default === undefined) return [];
+    return checkDestinationBoundUrl(field.default, bound.get(field.key) ?? []).map((rejection) => ({
+      code: "url_default_invalid",
+      path: `configuration.fields[${position}].default`,
+      message: `${destinationUrlRejectionMessage(rejection)} (${rejection.reason})`,
+    }));
   });
+};
 
 /**
  * Two destinations built from one configuration field are two views of one

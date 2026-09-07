@@ -608,6 +608,18 @@ describe("runtime configuration", () => {
     expect(terraformWorkflow).not.toContain('RADIOSO_MCP_SIGNING_SECRET');
     expect(terraformVariables).toContain('variable "operator_mcp_rollout_workspace_ids"');
     expect(terraformVariables).toContain('variable "operator_mcp_verification_budget_per_minute"');
+    expect(terraformWorkflow).toContain("OPERATOR_MCP_ENABLED: ${{ vars.OPERATOR_MCP_ENABLED }}");
+    expect(terraformWorkflow).toContain("OPERATOR_MCP_PUBLIC_ORIGIN: ${{ vars.OPERATOR_MCP_PUBLIC_ORIGIN }}");
+    expect(terraformWorkflow).toContain("OPERATOR_MCP_CREDENTIAL_EPOCH: ${{ vars.OPERATOR_MCP_CREDENTIAL_EPOCH }}");
+    expect(terraformWorkflow).toContain("OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS: ${{ vars.OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS }}");
+    expect(terraformWorkflow).toContain("OPERATOR_MCP_VERIFICATION_BUDGET_PER_MINUTE: ${{ vars.OPERATOR_MCP_VERIFICATION_BUDGET_PER_MINUTE }}");
+    expect(terraformWorkflow).toContain('TF_VAR_operator_mcp_enabled=${OPERATOR_MCP_ENABLED:-false}');
+    expect(terraformWorkflow).toContain('TF_VAR_operator_mcp_credential_epoch=${OPERATOR_MCP_CREDENTIAL_EPOCH:-1}');
+    expect(terraformWorkflow).toContain('TF_VAR_operator_mcp_rollout_workspace_ids=${OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS_JSON}');
+    expect(terraformWorkflow).toContain('TF_VAR_operator_mcp_verification_budget_per_minute=${OPERATOR_MCP_VERIFICATION_BUDGET_PER_MINUTE:-6}');
+    expect(terraformWorkflow).toContain('MCP_URL="$(gcloud run services describe "${SERVICE_PREFIX}-mcp"');
+    expect(terraformWorkflow).toContain('OPERATOR_MCP_RESOURCE_ORIGIN="${OPERATOR_MCP_PUBLIC_ORIGIN:-$MCP_URL}"');
+    expect(terraformWorkflow).toContain('TF_VAR_operator_mcp_public_origin=${OPERATOR_MCP_RESOURCE_ORIGIN%/}');
     expect(computeTf.match(/name {2}= "OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS"/g)).toHaveLength(2);
     expect(computeTf.match(/value = join\(",", var\.operator_mcp_rollout_workspace_ids\)/g)).toHaveLength(2);
     expect(computeTf).toContain('name  = "OPERATOR_MCP_VERIFICATION_BUDGET_PER_MINUTE"');

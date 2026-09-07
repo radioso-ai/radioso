@@ -21,7 +21,8 @@ export const createOperatorMcpSetupRoutes = (dependencies: Dependencies): Router
       res.status(200).json(buildOperatorMcpSetup({
         enabled: dependencies.env.OPERATOR_MCP_ENABLED === true,
         resource: dependencies.env.OPERATOR_MCP_RESOURCE_URL,
-        ready: rolloutWorkspaceIds.has(workspaceId) && await dependencies.operatorMcpReadiness,
+        ready: (rolloutWorkspaceIds === undefined || rolloutWorkspaceIds.has(workspaceId))
+          && await dependencies.operatorMcpReadiness,
         now: new Date(),
       }));
     } catch (error) {

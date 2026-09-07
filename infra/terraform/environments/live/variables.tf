@@ -287,7 +287,7 @@ variable "operator_mcp_enabled" {
 }
 
 variable "operator_mcp_public_origin" {
-  description = "Canonical HTTPS origin for Operator MCP in live."
+  description = "Optional canonical HTTPS custom origin for Operator MCP in live; the deployment workflow otherwise discovers its Cloud Run URL."
   type        = string
   default     = null
 }
@@ -299,7 +299,7 @@ variable "operator_mcp_credential_epoch" {
 }
 
 variable "operator_mcp_rollout_workspace_ids" {
-  description = "Workspace UUIDs permitted to use Operator MCP in live. Empty keeps the surface unavailable."
+  description = "Optional staged-rollout workspace UUIDs for Operator MCP in live. Empty makes it available to every workspace."
   type        = list(string)
   default     = []
 }

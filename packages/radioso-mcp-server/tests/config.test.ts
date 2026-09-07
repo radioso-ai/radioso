@@ -86,6 +86,18 @@ describe("loadConfig", () => {
     })).toThrow(/OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS/i);
   });
 
+  it.each([undefined, ",", " , , "])("treats %j as an all-workspaces Operator MCP rollout", (rolloutWorkspaceIds) => {
+    expect(loadConfig({
+      RADIOSO_BASE_URL: "http://localhost:8080",
+      OPERATOR_MCP_ENABLED: "true",
+      OPERATOR_MCP_RESOURCE_URL: "https://mcp.example/operator/mcp",
+      OPERATOR_MCP_ISSUER_URL: "https://app.example",
+      OPERATOR_MCP_INTERNAL_SECRET: "a-long-enough-operator-proof-secret",
+      OPERATOR_MCP_CREDENTIAL_EPOCH: "7",
+      OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS: rolloutWorkspaceIds,
+    }).operatorMcp).toMatchObject({ enabled: true, rolloutWorkspaceIds: undefined });
+  });
+
   it("requires HTTPS issuer/resource in production but permits loopback HTTP in development", () => {
     const common = {
       OPERATOR_MCP_ENABLED: "true",

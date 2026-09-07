@@ -1,3 +1,4 @@
+import { readBoundedMap } from "./bounds.js";
 import {
   MAX_CONFIGURATION_ENTRIES,
   MAX_CONFIGURATION_VALUE_LENGTH,
@@ -5,7 +6,12 @@ import {
   type ConfigurationValues,
 } from "./configuration.js";
 import { satisfiesSchedule, type ConfigurationSchedule, type Contribution } from "./contributions.js";
-import { DEFAULT_PROTOCOL_PORTS, destinationPortsForProtocol, type Destination } from "./destinations.js";
+import {
+  checkDestinationBoundUrl,
+  destinationUrlRejectionMessage,
+  destinationsByHostField,
+  type Destination,
+} from "./destinations.js";
 import { fieldKeySchema, type ConnectionSlotId, type ContributionId } from "./identifiers.js";
 import type { AppManifest } from "./manifest.js";
 import type { ManifestValidationIssue } from "./validate.js";
@@ -62,12 +68,6 @@ const issue = (code: string, path: string, message: string): ManifestValidationI
 const pathFor = (key: string, position: number, declared: ReadonlyMap<string, ConfigurationField>): string =>
   declared.has(key) ? key : `configuration.${position}`;
 
-const isPlainObject = (value: unknown): value is Record<string, unknown> => {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-  const prototype: unknown = Object.getPrototypeOf(value);
-  return prototype === null || prototype === Object.prototype;
-};
-
 const parsedUrl = (value: string): URL | null => {
   try {
     return new URL(value);
@@ -77,22 +77,9 @@ const parsedUrl = (value: string): URL | null => {
 };
 
 /**
- * Which port an address actually reaches. `URL` drops a port that is its
- * scheme's default, so an address that names none reaches the default the
- * destination is measured against — and `https://example.com:8443` reaches 8443,
- * which a destination has to have declared.
- */
-const effectivePort = (url: URL): number | null => {
-  if (url.port !== "") return Number(url.port);
-  const scheme = url.protocol.replace(":", "");
-  if (scheme === "https" || scheme === "http") return DEFAULT_PROTOCOL_PORTS[scheme];
-  return null;
-};
-
-/**
- * Shape, key, and value-size bounds, applied before any field is looked up.
- * Doing it the other way round means a huge map buys a per-key diagnostic and a
- * full traversal on its way to being refused.
+ * Key and value-size bounds, applied before any field is looked up. Doing it the
+ * other way round means a huge map buys a per-key diagnostic and a full
+ * traversal on its way to being refused.
  */
 const boundsIssues = (
   supplied: Record<string, unknown>,
@@ -101,17 +88,6 @@ const boundsIssues = (
   const issues: ManifestValidationIssue[] = [];
   let position = 0;
   for (const key in supplied) {
-    if (!Object.hasOwn(supplied, key)) continue;
-    if (position >= MAX_CONFIGURATION_ENTRIES) {
-      issues.push(
-        issue(
-          "too_many_configuration_entries",
-          "configuration",
-          `Configuration holds at most ${MAX_CONFIGURATION_ENTRIES} entries`,
-        ),
-      );
-      return issues;
-    }
     const path = pathFor(key, position, declared);
     const value = supplied[key];
     if (!fieldKeySchema.safeParse(key).success) {
@@ -130,64 +106,20 @@ const boundsIssues = (
 };
 
 /**
- * A URL field that a destination's host is built from carries more than a URL:
- * it decides the scheme the broker speaks and, through userinfo, could hand the
- * App's own requests a credential the manifest never declared. Neither belongs
- * in a value space the operator can type into freely.
+ * A stored URL is held to the destinations built from it by the same check
+ * admission applies to that field's declared default, so a value an author
+ * shipped and a value an operator typed are refused on the same grounds.
  */
 const urlDestinationIssues = (
   field: ValueField,
   value: string,
   destinations: readonly Destination[],
-): ManifestValidationIssue[] => {
-  if (field.type !== "url" || destinations.length === 0) return [];
-  const url = parsedUrl(value);
-  if (!url) return [];
-  const issues: ManifestValidationIssue[] = [];
-  const port = effectivePort(url);
-  if (url.search !== "" || url.hash !== "") {
-    issues.push(
-      issue(
-        "url_carries_query_or_fragment",
-        field.key,
-        "A destination address is an origin prefix; a request's own path and query are supplied per call",
-      ),
-    );
-  }
-  if (url.username !== "" || url.password !== "") {
-    issues.push(
-      issue(
-        "url_carries_userinfo",
-        field.key,
-        "A destination address holds no user name or password; credentials belong in a connection slot",
-      ),
-    );
-  }
-  const scheme = url.protocol.replace(":", "");
-  for (const destination of destinations) {
-    const protocol = destination.protocols.find((candidate) => candidate === scheme);
-    if (protocol === undefined) {
-      issues.push(
-        issue(
-          "url_protocol_not_declared",
-          field.key,
-          `Destination ${destination.id} reaches ${destination.protocols.join(" and ")} addresses only`,
-        ),
-      );
-      continue;
-    }
-    const ports = destinationPortsForProtocol(destination, protocol);
-    if (port !== null && ports.includes(port)) continue;
-    issues.push(
-      issue(
-        "url_port_not_declared",
-        field.key,
-        `Destination ${destination.id} reaches ${protocol} port ${ports.join(" and ")} only`,
-      ),
-    );
-  }
-  return issues;
-};
+): ManifestValidationIssue[] =>
+  field.type === "url"
+    ? checkDestinationBoundUrl(value, destinations).map((rejection) =>
+        issue(rejection.reason, field.key, destinationUrlRejectionMessage(rejection)),
+      )
+    : [];
 
 /**
  * A schedule-bound number has a value space of its own, and it is not the
@@ -260,17 +192,6 @@ const checkValue = (
   }
 };
 
-const destinationsByHostField = (manifest: AppManifest): ReadonlyMap<string, Destination[]> => {
-  const bound = new Map<string, Destination[]>();
-  for (const destination of manifest.destinations) {
-    if (destination.host.kind !== "configuration") continue;
-    const existing = bound.get(destination.host.field);
-    if (existing) existing.push(destination);
-    else bound.set(destination.host.field, [destination]);
-  }
-  return bound;
-};
-
 const schedulesByField = (manifest: AppManifest): ReadonlyMap<string, ConfigurationSchedule[]> => {
   const bound = new Map<string, ConfigurationSchedule[]>();
   for (const contribution of manifest.contributions) {
@@ -301,26 +222,39 @@ const resolveConfiguration = (
   manifest: AppManifest,
   storedValues: unknown,
 ): ConfigurationResolutionResult => {
-  if (!isPlainObject(storedValues)) {
+  const read = readBoundedMap(storedValues, MAX_CONFIGURATION_ENTRIES);
+  if (!read.ok) {
     return {
       ok: false,
-      issues: [issue("invalid_configuration_values", "configuration", "Configuration is a JSON object")],
+      issues: [
+        read.failure === "too_many_entries"
+          ? issue(
+              "too_many_configuration_entries",
+              "configuration",
+              `Configuration holds at most ${MAX_CONFIGURATION_ENTRIES} entries`,
+            )
+          : issue(
+              "invalid_configuration_values",
+              "configuration",
+              "Configuration is a JSON object carrying its own data properties only",
+            ),
+      ],
     };
   }
+  const supplied = read.map;
 
   const declared = new Map(manifest.configuration.fields.map((field) => [field.key, field]));
 
-  const bounds = boundsIssues(storedValues, declared);
+  const bounds = boundsIssues(supplied, declared);
   if (bounds.length > 0) return { ok: false, issues: bounds };
 
-  const bound = destinationsByHostField(manifest);
+  const bound = destinationsByHostField(manifest.destinations);
   const scheduled = schedulesByField(manifest);
   const effective: Record<string, unknown> = {};
   const issues: ManifestValidationIssue[] = [];
 
   let position = 0;
-  for (const key in storedValues) {
-    if (!Object.hasOwn(storedValues, key)) continue;
+  for (const key in supplied) {
     const path = pathFor(key, position, declared);
     position += 1;
     const field = declared.get(key);
@@ -338,7 +272,7 @@ const resolveConfiguration = (
       );
       continue;
     }
-    effective[key] = storedValues[key];
+    effective[key] = supplied[key];
   }
 
   for (const field of manifest.configuration.fields) {
@@ -394,20 +328,15 @@ export interface InstallationReadiness {
  * nobody has to fill in.
  *
  * A schedule-bound field is present in every effective configuration, because
- * admission refuses a manifest whose schedule reads a field an installation
- * could leave empty. The assertion is what makes that a guarantee rather than an
- * assumption: an absent value here would activate a task with no interval to run
- * it on, and a host would have to invent one.
+ * `resolveInstallation` refuses a manifest whose schedule reads a field an
+ * installation could leave empty before it resolves anything. An absent value
+ * here would activate a task with no interval to run it on, and a host would
+ * have to invent one.
  */
 const isActive = (contribution: Contribution, configuration: EffectiveConfiguration): boolean => {
   if (contribution.kind !== "scheduled_task") return true;
   const schedule = contribution.schedule;
   if (schedule.kind !== "interval_from_configuration") return true;
-  if (configuration[schedule.field] === undefined) {
-    throw new Error(
-      `Schedule field ${schedule.field} is absent from the effective configuration; a validated manifest keeps it present`,
-    );
-  }
   if (contribution.availability === "required") return true;
   if (schedule.disabledValue === undefined) return true;
   return configuration[schedule.field] !== schedule.disabledValue;
@@ -441,18 +370,74 @@ export type InstallationResolutionResult =
   | { ok: true; configuration: EffectiveConfiguration; readiness: InstallationReadiness }
   | { ok: false; issues: ManifestValidationIssue[] };
 
+const NOT_ADMITTED = "manifest_not_admitted";
+
 /**
- * The one door from a validated manifest and an operator's stored values to what
- * an installation runs. Resolution and readiness are one call because they are
- * one answer: a caller that could hold them apart could resolve against one
- * manifest and ask readiness about another, and read the mismatch as
- * authoritative. The dashboard, the installation plan, and the gateway all come
- * through here, so all three reach the same conclusion.
+ * The manifest invariants resolution reads as given. Admission proves all of
+ * them, so a manifest that `validateManifest` returned satisfies them and this
+ * pass finds nothing — but the parameter is an ordinary `AppManifest`, and
+ * `appManifestSchema.parse` produces plenty of those that admission would
+ * refuse. Reporting the gap is what makes this operation total: a caller holding
+ * a shape-valid manifest gets the declared failure arm rather than an exception
+ * from somewhere inside readiness.
+ *
+ * A message names no key and no value. The manifest is the author's, the stored
+ * map may be an attacker's, and neither belongs in a diagnostic that reaches an
+ * audit record; the path already says where to look.
+ */
+const admissionIssues = (manifest: AppManifest): ManifestValidationIssue[] => {
+  const issues: ManifestValidationIssue[] = [];
+  const declared = new Map(manifest.configuration.fields.map((field) => [field.key, field]));
+
+  manifest.destinations.forEach((destination, position) => {
+    if (destination.host.kind !== "configuration") return;
+    const field = declared.get(destination.host.field);
+    if (field?.type === "url") return;
+    issues.push(
+      issue(
+        NOT_ADMITTED,
+        `destinations[${position}].host.field`,
+        "A destination host is built from a declared url field",
+      ),
+    );
+  });
+
+  manifest.contributions.forEach((contribution, position) => {
+    if (contribution.kind !== "scheduled_task") return;
+    if (contribution.schedule.kind !== "interval_from_configuration") return;
+    const field = declared.get(contribution.schedule.field);
+    if (field?.type === "number" && (field.required || field.default !== undefined)) return;
+    issues.push(
+      issue(
+        NOT_ADMITTED,
+        `contributions[${position}].schedule.field`,
+        "A schedule reads a declared number field that every installation holds a value for",
+      ),
+    );
+  });
+
+  return issues;
+};
+
+/**
+ * The one door from a manifest and an operator's stored values to what an
+ * installation runs. Resolution and readiness are one call because they are one
+ * answer: a caller that could hold them apart could resolve against one manifest
+ * and ask readiness about another, and read the mismatch as authoritative. The
+ * dashboard, the installation plan, and the gateway all come through here, so
+ * all three reach the same conclusion.
+ *
+ * It accepts any manifest that parses, and it never throws for one. A manifest
+ * that would fail `validateManifest` on an invariant resolution depends on comes
+ * back as `manifest_not_admitted` issues, so a caller reads one failure shape
+ * whether the problem is the operator's map or the release itself.
  */
 export const resolveInstallation = (
   manifest: AppManifest,
   storedValues: unknown,
 ): InstallationResolutionResult => {
+  const notAdmitted = admissionIssues(manifest);
+  if (notAdmitted.length > 0) return { ok: false, issues: notAdmitted };
   const resolved = resolveConfiguration(manifest, storedValues);
   if (!resolved.ok) return { ok: false, issues: resolved.issues };
   return {

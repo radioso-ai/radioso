@@ -503,6 +503,76 @@ describe("validateManifest", () => {
     ]);
   });
 
+  it("rejects an explicit port list with nothing in it, whichever host the destination declares", () => {
+    const configurationBound = issuesFor((manifest) => {
+      const destinations = manifest["destinations"] as Record<string, unknown>[];
+      destinations[0]["ports"] = [];
+    });
+    expect(configurationBound).toEqual([
+      expect.objectContaining({ code: "schema", path: "destinations[0].ports" }),
+    ]);
+
+    const patternBound = issuesFor((manifest) => {
+      const destinations = manifest["destinations"] as Record<string, unknown>[];
+      destinations[0]["host"] = { kind: "pattern", pattern: "api.example.com" };
+      destinations[0]["ports"] = [];
+    });
+    expect(patternBound).toEqual([
+      expect.objectContaining({ code: "schema", path: "destinations[0].ports" }),
+    ]);
+  });
+
+  it("holds a url field's default to the destinations built from it", () => {
+    const issues = issuesFor((manifest) => {
+      const fields = (manifest["configuration"] as { fields: Record<string, unknown>[] }).fields;
+      fields[0]["required"] = false;
+      fields[0]["default"] = "https://example.com:8443";
+    });
+    expect(issues).toEqual([
+      expect.objectContaining({
+        code: "url_default_invalid",
+        path: "configuration.fields[0].default",
+        message: expect.stringContaining("url_port_not_declared") as unknown as string,
+      }),
+    ]);
+  });
+
+  it("reports a default that carries userinfo, a query, or a protocol the destination never declared", () => {
+    const withDefault = (value: string): ManifestValidationIssue[] =>
+      issuesFor((manifest) => {
+        const fields = (manifest["configuration"] as { fields: Record<string, unknown>[] }).fields;
+        fields[0]["required"] = false;
+        fields[0]["default"] = value;
+      });
+    expect(withDefault("https://admin:hunter2@example.com").map((issue) => issue.message)).toEqual([
+      expect.stringContaining("url_carries_userinfo"),
+    ]);
+    expect(withDefault("https://example.com/wordpress?preview=1").map((issue) => issue.message)).toEqual([
+      expect.stringContaining("url_carries_query_or_fragment"),
+    ]);
+    expect(withDefault("http://example.com").map((issue) => issue.message)).toEqual([
+      expect.stringContaining("url_protocol_not_declared"),
+    ]);
+  });
+
+  it("admits a url field default that every destination built from it can reach", () => {
+    expect(
+      issuesFor((manifest) => {
+        const fields = (manifest["configuration"] as { fields: Record<string, unknown>[] }).fields;
+        fields[0]["required"] = false;
+        fields[0]["default"] = "https://example.com/wordpress";
+      }),
+    ).toEqual([]);
+    expect(
+      issuesFor((manifest) => {
+        const fields = (manifest["configuration"] as { fields: Record<string, unknown>[] }).fields;
+        fields[0]["required"] = false;
+        fields[0]["default"] = "https://example.com:8443";
+        (manifest["destinations"] as Record<string, unknown>[])[0]["ports"] = [8443];
+      }),
+    ).toEqual([]);
+  });
+
   it("admits two destinations built from one field that overlap on a port", () => {
     const issues = issuesFor((manifest) => {
       const destinations = manifest["destinations"] as Record<string, unknown>[];

@@ -198,7 +198,16 @@ The address's port is held to the destination too. A destination that lists no
 `ports` reaches the default port of each protocol it declares — 443 on `https`,
 80 on `http` — so `https://example.com` and `https://example.com:443` are the same
 address and `https://example.com:8443` is refused. A destination that lists
-`ports` reaches exactly those, default or not.
+`ports` reaches exactly those, default or not, and lists at least one: an empty
+list is a destination no address could ever satisfy.
+
+A `default` on the field meets the same rules. It is the value every installation
+that leaves the field alone will hold, so admission checks it against the
+destinations built from the field — the same check resolution runs on a stored
+value, reported as `url_default_invalid` with the underlying reason in the
+message. A default of `https://example.com:8443` beside a destination that lists
+no `ports` is refused at release rather than at every operator's first
+installation.
 
 When two destinations are built from one field, they have to share at least one
 protocol, and at least one port on a shared protocol. The operator types one
@@ -296,9 +305,10 @@ on the operator's grant screen, one destination at a time.
 
 `ports` is optional, and omitting it is not "any port": a destination that lists
 no `ports` reaches the default port of each protocol it declares, 443 on `https`
-and 80 on `http`. A destination that lists `ports` reaches exactly those, up to
+and 80 on `http`. A destination that lists `ports` reaches exactly those, one to
 four of them, so a site served on 8443 says 8443 and the operator sees it on the
-grant screen. `purpose` is the sentence the operator reads on the grant
+grant screen. An empty list is refused: it would admit at release and deny every
+request. `purpose` is the sentence the operator reads on the grant
 screen. `dataClasses` says what leaves the platform on this destination — `document_content`, `document_metadata`,
 `installation_configuration`, `credentials`, or `operational_metadata`.
 
@@ -606,6 +616,7 @@ bracket path such as `contributions[1].authentication.secretConnectionSlot`.
 | `webhook_secret_field_not_allowed` | A webhook handler names a `secretField` beside a slot that holds one value. |
 | `unknown_configuration_field` | A configuration-bound destination host or an `interval_from_configuration` schedule names a field that does not exist. |
 | `destination_host_field_not_url` | A destination host is bound to a field that is not a `url` field. |
+| `url_default_invalid` | A `url` field's `default` is one the destinations built from that field cannot reach. The reason — `url_protocol_not_declared`, `url_port_not_declared`, `url_carries_userinfo`, or `url_carries_query_or_fragment` — travels in the message. |
 | `interval_field_not_number` | An interval reads from a field that is not a `number` field. |
 | `disabled_value_outside_field_range` | A schedule's `disabledValue` sits outside the range its configuration field admits, so the task can never be turned off. |
 | `schedule_range_unreachable` | A schedule's configuration field admits no whole number of seconds between `minSeconds` and `maxSeconds`, so the task can never run. |

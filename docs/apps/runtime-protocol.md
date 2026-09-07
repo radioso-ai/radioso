@@ -106,6 +106,14 @@ A schedule-bound field is always present. Admission refuses a manifest whose
 empty, so a scheduled task that is active always has a whole number of seconds to
 run on.
 
+`resolveInstallation` takes any manifest that parses, and it answers rather than
+throws for every one of them. A manifest that would fail `validateManifest` on an
+invariant resolution stands on — a schedule bound to a field that is not a
+required or defaulted number, a destination host bound to a field that is not a
+`url` field — comes back as `manifest_not_admitted` issues. A caller therefore
+reads one failure shape whether the problem is the operator's stored map or the
+release itself.
+
 An issue it reports names a key only when the manifest declares that key.
 Anything else is addressed by its position in the stored map — `configuration.3`
 — so a stored key an attacker chose never reaches a log or an audit record.
@@ -283,11 +291,19 @@ appended below it, so `path` is held to one canonical spelling. Every `%`
 introduces two hex digits, and no escape spells a separator, a percent, or a
 control character: `%2F`, `%5C`, `%25`, and the encodings of 0x00-0x1F and 0x7F
 are refused, as are those characters written literally. What is left decodes
-exactly once, and no segment of the result may be `.` or `..`. That makes
-`/../wp-admin`, `/%2e%2e/wp-admin`, `/%2e%2e%2fwp-admin`, `/%252e%252e/wp-admin`,
-and `/wp%2f..%2fadmin` the same refusal: each is how a path climbs back above the
-prefix the operator entered while every later check still reports it as inside.
-`/wp-json/wp/v2/posts%20list` passes, because a space is not a separator.
+exactly once, as UTF-8 and no other way, and no segment of the result may be `.`
+or `..`. That makes `/../wp-admin`, `/%2e%2e/wp-admin`, `/%2e%2e%2fwp-admin`,
+`/%252e%252e/wp-admin`, and `/wp%2f..%2fadmin` the same refusal: each is how a
+path climbs back above the prefix the operator entered while every later check
+still reports it as inside.
+
+The decoder is strict, so a path has one meaning rather than one per hop. An
+invalid percent sequence such as `/wp-json/%FF`, an overlong encoding such as
+`/wp-json/%C0%AE%C0%AE/admin` — a historical spelling of `..` — and an unpaired
+UTF-16 surrogate are all refused, because each is something one transport rejects
+and the next replaces or normalizes into a different path. Valid UTF-8 passes:
+`/wp-json/wp/v2/posts`, `/wp-json/caf%C3%A9`, and `/wp-json/a%20b` are all
+reachable, because a space and an accented character are not separators.
 
 Put the whole address you mean in `path` and the parameters in `query`; a `?`
 inside `path` is refused, because a query that arrives that way is a query that
@@ -307,6 +323,15 @@ refuses `host`, `content-length`, `transfer-encoding`, `connection`, `upgrade`,
 `proxy-authenticate`, matched without regard to case; it refuses `authorization`;
 and it refuses any header equal to the destination's own declared credential
 header, then injects exactly one host-owned value in its place.
+
+`query`, `headers`, `metadata`, `indexedFields`, and an installation's stored
+configuration are all read the same way: as plain objects carrying their own data
+properties. A map whose entry is backed by a getter, or whose key comes from its
+prototype rather than from itself, is refused before any value is read — the host
+never runs a caller's accessor to find out whether a map is acceptable, and never
+walks a key the map does not carry. What passes is copied into a fresh map with
+no prototype, so what the rest of the pipeline reads is exactly what was
+validated.
 
 A header value is an HTTP field value: tab, space, visible ASCII, and obs-text.
 A carriage return, a line feed, a NUL, a DEL, or anything above one byte — an

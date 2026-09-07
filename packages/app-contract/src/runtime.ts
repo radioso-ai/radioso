@@ -5,10 +5,10 @@ import {
   boundedHeaderRecordSchema,
   boundedJsonRecordSchema,
   boundedJsonValueSchema,
+  boundedMapSchema,
   containsLoneSurrogate,
   formUrlencodedLength,
   refineBoundedJsonRecord,
-  refineBoundedMap,
   refineObjectBreadth,
 } from "./bounds.js";
 import { configurationValuesSchema } from "./configuration.js";
@@ -283,10 +283,9 @@ const documentMetadataValueSchema = z.union([
 ]);
 
 const boundedFieldRecord = <V extends z.ZodTypeAny>(value: V) =>
-  z
-    .any()
-    .superRefine(refineBoundedMap(MAX_DOCUMENT_METADATA_KEYS, `At most ${MAX_DOCUMENT_METADATA_KEYS} keys`))
-    .pipe(z.record(indexedFieldKeySchema, value));
+  boundedMapSchema(MAX_DOCUMENT_METADATA_KEYS, `At most ${MAX_DOCUMENT_METADATA_KEYS} keys`).pipe(
+    z.record(indexedFieldKeySchema, value),
+  );
 
 /**
  * What an App writes into the workspace. Provenance — which App, which release,
@@ -329,10 +328,11 @@ const ORIGIN_RELATIVE_PATH_PATTERN = /^\/(?!\/)[^\\#?]*$/u;
  *
  * Canonical means every `%` introduces two hex digits, and it never introduces a
  * separator or a control character: `%2F`, `%5C`, `%25`, and the encodings of
- * 0x00-0x1F and 0x7F are refused outright. What is left decodes exactly once,
- * and no segment of the result may be `.` or `..` — which is what makes
- * `/%2e%2e%2fwp-admin` and `/%252e%252e/wp-admin` the same refusal as `/../`,
- * rather than a path that only climbs once some intermediary decodes it.
+ * 0x00-0x1F and 0x7F are refused outright. What is left decodes exactly once, as
+ * UTF-8 and no other way, and no segment of the result may be `.` or `..` —
+ * which is what makes `/%2e%2e%2fwp-admin`, `/%252e%252e/wp-admin`, and the
+ * overlong `/%C0%AE%C0%AE/wp-admin` the same refusal as `/../`, rather than
+ * paths that only climb once some intermediary decodes them.
  */
 const HEX_PAIR_PATTERN = /^[0-9a-fA-F]{2}$/u;
 const REFUSED_OCTETS: ReadonlySet<number> = new Set([0x2f, 0x5c, 0x25]);
@@ -351,28 +351,73 @@ const isCanonicallyEncoded = (path: string): boolean => {
 };
 
 /**
- * One decoding pass, byte by byte and without a decoder: `decodeURIComponent`
- * throws on a percent sequence that is not valid UTF-8, and a path this refuses
- * deserves the boundary's answer rather than an exception out of a helper. Only
- * ASCII matters to what follows, and every octet keeps its own identity here.
+ * The octets the path stands for: every percent escape as the byte it spells,
+ * every literal run as its own UTF-8 encoding. Runs rather than characters,
+ * because encoding one UTF-16 code unit at a time would split a surrogate pair
+ * into two replacement characters and measure a path nobody sent.
  */
-const decodedOnce = (path: string): string => {
-  let decoded = "";
+const pathOctets = (path: string): Uint8Array => {
+  const encoder = new TextEncoder();
+  const octets: number[] = [];
+  let literal = "";
+  const flush = (): void => {
+    if (literal === "") return;
+    for (const octet of encoder.encode(literal)) octets.push(octet);
+    literal = "";
+  };
   for (let position = 0; position < path.length; position += 1) {
     if (path.charCodeAt(position) !== 0x25) {
-      decoded += path[position];
+      literal += path[position];
       continue;
     }
-    decoded += String.fromCharCode(Number.parseInt(path.slice(position + 1, position + 3), 16));
+    flush();
+    octets.push(Number.parseInt(path.slice(position + 1, position + 3), 16));
     position += 2;
   }
-  return decoded;
+  flush();
+  return Uint8Array.from(octets);
 };
 
-const climbsAbovePrefix = (path: string): boolean =>
-  decodedOnce(path)
-    .split("/")
-    .some((segment) => segment === "." || segment === "..");
+/**
+ * One decoding pass, through a fatal UTF-8 decoder. A percent sequence that is
+ * not valid UTF-8 has no single meaning: `%FF` is what one transport rejects and
+ * another replaces, and `%C0%AE` is an overlong spelling of `.` that a decoder
+ * built before the rule was tightened still reads as a dot segment. Either would
+ * put the path back in the state the canonical rule exists to remove — different
+ * components normalizing it differently — so neither decodes, and the boundary
+ * answers with a validation issue rather than an exception out of a helper.
+ */
+const UTF8_DECODER = new TextDecoder("utf-8", { fatal: true });
+
+const decodedOnce = (path: string): string | null => {
+  try {
+    return UTF8_DECODER.decode(pathOctets(path));
+  } catch {
+    return null;
+  }
+};
+
+const PATH_NOT_CANONICAL =
+  "Path must be canonically encoded: every % introduces two hex digits, and no escape spells a separator, a percent, or a control character";
+const PATH_NOT_DECODABLE =
+  "Path must decode as UTF-8: no invalid or overlong percent sequence, and no unpaired surrogate";
+const PATH_CLIMBS = "Path must stay below the destination's prefix: no . or .. segment, encoded or not";
+
+/**
+ * The whole path policy in one order: canonical spelling, then a decoding that
+ * has exactly one result, then the dot-segment rule read off that result. A lone
+ * UTF-16 code unit is refused on the raw string, before anything encodes it,
+ * because it reaches the wire as whatever the first encoder that meets it
+ * substitutes.
+ */
+const pathViolation = (path: string): string | null => {
+  if (!isCanonicallyEncoded(path)) return PATH_NOT_CANONICAL;
+  if (containsLoneSurrogate(path)) return PATH_NOT_DECODABLE;
+  const decoded = decodedOnce(path);
+  if (decoded === null) return PATH_NOT_DECODABLE;
+  if (decoded.split("/").some((segment) => segment === "." || segment === "..")) return PATH_CLIMBS;
+  return null;
+};
 
 /** Entries in one egress query string, and its total URL-encoded size. */
 export const MAX_EGRESS_QUERY_ENTRIES = 64;
@@ -393,15 +438,10 @@ export const MAX_EGRESS_QUERY_BYTES = 8 * 1024;
 const MAX_QUERY_NAME_LENGTH = 128;
 const MAX_QUERY_VALUE_LENGTH = 2048;
 
-const egressQuerySchema = z
-  .any()
-  .superRefine(
-    refineBoundedMap(
-      MAX_EGRESS_QUERY_ENTRIES,
-      `A query may hold at most ${MAX_EGRESS_QUERY_ENTRIES} entries`,
-    ),
-  )
-  .pipe(
+const egressQuerySchema = boundedMapSchema(
+  MAX_EGRESS_QUERY_ENTRIES,
+  `A query may hold at most ${MAX_EGRESS_QUERY_ENTRIES} entries`,
+).pipe(
     z
       .record(z.string().max(MAX_QUERY_NAME_LENGTH), z.string().max(MAX_QUERY_VALUE_LENGTH))
       .superRefine((query, context) => {
@@ -451,21 +491,9 @@ const egressFetchRequestObjectSchema = z
         "Path must be origin-relative: one leading slash, no scheme, authority, backslash, query, or fragment",
       )
       .superRefine((path, context) => {
-        if (!isCanonicallyEncoded(path)) {
-          context.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: [],
-            message:
-              "Path must be canonically encoded: every % introduces two hex digits, and no escape spells a separator, a percent, or a control character",
-          });
-          return;
-        }
-        if (!climbsAbovePrefix(path)) return;
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: [],
-          message: "Path must stay below the destination's prefix: no . or .. segment, encoded or not",
-        });
+        const violation = pathViolation(path);
+        if (violation === null) return;
+        context.addIssue({ code: z.ZodIssueCode.custom, path: [], message: violation });
       }),
     query: egressQuerySchema.optional(),
     /**

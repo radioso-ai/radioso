@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   appConfigurationSchema,
@@ -217,8 +217,37 @@ describe("configuration values", () => {
     const parsed = configurationValuesSchema.safeParse(inherited);
     expect(parsed.success).toBe(false);
     expect(parsed.success ? [] : parsed.error.issues.map((issue) => issue.message)).toEqual([
-      "A map is a plain JSON object carrying its own keys only",
+      "A map is a plain JSON object carrying its own data properties only",
     ]);
+  });
+
+  it("refuses a map carrying an accessor, without ever invoking it", () => {
+    const getter = vi.fn(() => "page");
+    const hostile = Object.defineProperty({}, "post_types", { get: getter, enumerable: true });
+    const parsed = configurationValuesSchema.safeParse(hostile);
+    expect(parsed.success).toBe(false);
+    expect(parsed.success ? [] : parsed.error.issues.map((issue) => issue.message)).toEqual([
+      "A map is a plain JSON object carrying its own data properties only",
+    ]);
+    expect(getter).not.toHaveBeenCalled();
+  });
+
+  it("answers with an issue rather than a throw when Object.prototype carries an enumerable key", () => {
+    Object.defineProperty(Object.prototype, "polluted_key", {
+      value: "value",
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
+    try {
+      const parsed = configurationValuesSchema.safeParse({ post_types: "page" });
+      expect(parsed.success).toBe(false);
+      expect(parsed.success ? [] : parsed.error.issues.map((issue) => issue.message)).toEqual([
+        "A map is a plain JSON object carrying its own data properties only",
+      ]);
+    } finally {
+      Reflect.deleteProperty(Object.prototype, "polluted_key");
+    }
   });
 
   it("refuses a value space that is not a map at all", () => {

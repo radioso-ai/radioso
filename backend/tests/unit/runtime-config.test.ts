@@ -562,6 +562,19 @@ describe("runtime configuration", () => {
     expect(example).toContain("EMAIL_VERIFICATION_TOKEN_TTL_MINUTES=30");
   });
 
+  it("leaves Operator MCP opt-in configuration empty in the example environment", async () => {
+    const example = await readFile(new URL("../../../.env.example", import.meta.url), "utf8");
+
+    for (const setting of [
+      "OPERATOR_MCP_RESOURCE_URL",
+      "OPERATOR_MCP_ISSUER_URL",
+      "OPERATOR_MCP_INTERNAL_SECRET",
+      "OPERATOR_MCP_CREDENTIAL_EPOCH",
+    ]) {
+      expect(example).toMatch(new RegExp(`^${setting}=$`, "m"));
+    }
+  });
+
   it("pins environment-aware observability identity and cloud runtime URLs for the Cloud Run API and worker services", async () => {
     const computeTf = await readFile(new URL("../../../infra/terraform/compute.tf", import.meta.url), "utf8");
     const terraformFoundation = await readFile(new URL("../../../infra/terraform/foundation/main.tf", import.meta.url), "utf8");

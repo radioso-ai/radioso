@@ -253,6 +253,7 @@ export {
 } from "./requirements.js";
 
 export {
+  isAdmittedManifest,
   releaseAValidationPolicy,
   validateManifest,
   type AdmittedManifest,

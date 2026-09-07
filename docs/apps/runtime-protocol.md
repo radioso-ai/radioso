@@ -110,9 +110,9 @@ run on.
 returns, not any manifest that merely parses. Admission is one boundary rather
 than two: a manifest `validateManifest` would refuse — a schedule bound to a
 field that is not a required or defaulted number, a destination host bound to
-a field that is not a `url` field — can never reach readiness, because the
-type it takes makes that state unrepresentable rather than asking resolution to
-re-check what admission already proved. A host that stores a manifest re-runs
+a field that is not a `url` field — can never reach readiness, because
+`resolveInstallation` checks the manifest against runtime admission identity
+before using it, not only its type. A host that stores a manifest re-runs
 `validateManifest` on load to regain the admitted value; it never persists or
 reconstructs the admitted type directly.
 
@@ -120,8 +120,11 @@ The admitted value is deeply frozen and typed transitively `readonly`, down to
 every nested array and object rather than only the top level, so a nested
 mutation attempt is both a type error and a runtime `TypeError`. Spreading an
 admitted manifest produces a plain, unfrozen copy that still types as
-admitted, so a caller passes the admitted value itself to `resolveInstallation`,
-never a spread of it.
+admitted — TypeScript carries the phantom brand through a spread — but that
+copy is not the object `validateManifest` returned, so `resolveInstallation`
+rejects it with an `unadmitted_manifest` issue instead of trusting it. A
+caller passes the admitted value itself to `resolveInstallation`, never a
+spread of it.
 
 An issue it reports names a key only when the manifest declares that key.
 Anything else is addressed by its position in the stored map — `configuration.3`

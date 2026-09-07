@@ -14,7 +14,7 @@ import {
 } from "./destinations.js";
 import { fieldKeySchema, type ConnectionSlotId, type ContributionId } from "./identifiers.js";
 import type { DeepReadonly } from "./readonly.js";
-import type { AdmittedManifest, ManifestValidationIssue } from "./validate.js";
+import { isAdmittedManifest, type AdmittedManifest, type ManifestValidationIssue } from "./validate.js";
 
 /**
  * What one installation has to supply before it can run, and what it turns on
@@ -383,16 +383,33 @@ export type InstallationResolutionResult =
  *
  * The parameter is an `AdmittedManifest`, not an ordinary `AppManifest`:
  * admission is `validateManifest`'s job alone, proved once, at the one boundary
- * that owns it. A caller cannot reach this function with a manifest that
- * `validateManifest` would refuse — the type makes that state unrepresentable
- * rather than asking this module to re-derive a partial copy of the same
- * checks. It still never throws: every failure left to find here is in the
- * operator's stored values, not in the manifest.
+ * that owns it. The type alone does not stop every caller: a spread or other
+ * reconstruction of an admitted manifest still typechecks as `AdmittedManifest`,
+ * so this checks `isAdmittedManifest` against runtime admission identity — is
+ * this the exact object `validateManifest` returned, not merely one shaped
+ * like it — before trusting the manifest at all. A value that fails that check
+ * is rejected with `unadmitted_manifest`; it is never re-validated, because
+ * this module does not own the rules `validateManifest` proved. It still never
+ * throws: a manifest that fails the identity check, and every failure left to
+ * find once it passes, comes back as an issue, not an exception.
  */
 export const resolveInstallation = (
   manifest: AdmittedManifest,
   storedValues: unknown,
 ): InstallationResolutionResult => {
+  if (!isAdmittedManifest(manifest)) {
+    return {
+      ok: false,
+      issues: [
+        {
+          code: "unadmitted_manifest",
+          path: "manifest",
+          message:
+            "The manifest is not the value validateManifest returned; pass the admitted manifest itself, not a copy.",
+        },
+      ],
+    };
+  }
   const resolved = resolveConfiguration(manifest, storedValues);
   if (!resolved.ok) return { ok: false, issues: resolved.issues };
   return {

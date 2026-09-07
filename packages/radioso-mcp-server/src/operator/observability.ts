@@ -4,7 +4,7 @@ import { createFixedWindowPreAuthSourceBudget, type PreAuthSourceBudget } from "
 
 export type { OperatorMcpMethod, OperatorMcpShape } from "@radioso/operator-mcp-contract";
 export type OperatorMcpOutcome = "success" | "denied" | "error";
-export type OperatorMcpReason = "invalid_request" | "invalid_token" | "insufficient_scope" | "rate_limit_exceeded" | "runtime_unavailable" | "workspace_not_in_rollout";
+export type OperatorMcpReason = "invalid_request" | "invalid_token" | "insufficient_scope" | "rate_limit_exceeded" | "runtime_unavailable";
 
 export interface OperatorMcpAuditObservation {
   readonly method: OperatorMcpMethod;

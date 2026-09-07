@@ -50,34 +50,23 @@ Authorization-server metadata comes from the configured Radioso issuer at `/.wel
 
 ## Deployment
 
-For Terraform-managed Cloud Run, keep the existing agent MCP deployment switch and the Operator MCP switch distinct. Enabling Operator MCP makes it available in every workspace; an explicit workspace list is only for a staged rollout.
+For Terraform-managed Cloud Run, turn on the existing standalone MCP service. Its `/mcp` and `/operator/mcp` routes stay separate, but the same service deployment supplies both.
 
 ```hcl
-radioso_mcp_enabled           = true
-operator_mcp_enabled          = true
-operator_mcp_credential_epoch = "1"
-operator_mcp_verification_budget_per_minute = 6
+radioso_mcp_enabled = true
 ```
 
-The GitHub Terraform workflow discovers the Cloud Run MCP URL and uses it as the resource URL. Set `OPERATOR_MCP_PUBLIC_ORIGIN` only when the MCP service is served from a custom domain. Terraform generates one `OPERATOR_MCP_INTERNAL_SECRET`, injects the exact same bytes into the backend and standalone service, and exports `operator_mcp_resource_url`. It also sends that URL to the dashboard as `RADIOSO_OPERATOR_MCP_PUBLIC_URL`.
+The GitHub Terraform workflow discovers the Cloud Run MCP URL and uses it for both MCP routes. Set `MCP_PUBLIC_ORIGIN` only when the MCP service is served from a custom domain. Terraform generates one `OPERATOR_MCP_INTERNAL_SECRET`, injects the exact same bytes into the backend and standalone service, and exports `operator_mcp_resource_url`. It also sends that URL to the dashboard as `RADIOSO_OPERATOR_MCP_PUBLIC_URL`.
 
-The Cloud Run URL exists after the standalone MCP service has been created. When bootstrapping a deployment, enable the agent MCP service first, then enable Operator MCP in a later Terraform run. A direct Terraform run that does not use the GitHub workflow needs `operator_mcp_public_origin` set to the Cloud Run URL or custom domain.
-
-To limit an enabled deployment to selected workspaces while you verify it, set a list:
-
-```hcl
-operator_mcp_rollout_workspace_ids = ["00000000-0000-4000-8000-000000000001"]
-```
+The Cloud Run URL exists after the standalone MCP service has been created. When bootstrapping a deployment, run Terraform once to create the service, then run it again; the workflow discovers the new URL and configures Operator MCP automatically. A direct Terraform run needs `mcp_public_origin` set to the Cloud Run URL or custom domain after the service exists.
 
 For a manual deployment, configure both processes with the same values:
 
 ```dotenv
-OPERATOR_MCP_ENABLED=true
 OPERATOR_MCP_RESOURCE_URL=https://mcp.example.com/operator/mcp
 OPERATOR_MCP_ISSUER_URL=https://app.example.com
 OPERATOR_MCP_INTERNAL_SECRET=<at least 32 random characters>
 OPERATOR_MCP_CREDENTIAL_EPOCH=1
-OPERATOR_MCP_VERIFICATION_BUDGET_PER_MINUTE=6
 ```
 
 Production resource and issuer URLs must use HTTPS. Local development may use HTTP only on a loopback host.
@@ -86,7 +75,7 @@ Production resource and issuer URLs must use HTTPS. Local development may use HT
 
 `OPERATOR_MCP_CREDENTIAL_EPOCH` is an external monotonic generation, not data recovered from a database backup. All enabled backend replicas and the standalone service must use the same epoch and internal-secret fingerprint.
 
-`OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS` is an optional comma-separated staged-rollout allowlist. Leave it unset or empty to make the enabled service available in every workspace. A nonempty value limits setup, consent, and credential use to those workspaces. `OPERATOR_MCP_VERIFICATION_BUDGET_PER_MINUTE` may be set from 1 through 6 and defaults to 6.
+Operator MCP starts when its resource URL, issuer URL, internal secret, and credential epoch are all configured in both processes. It is available to every workspace; there is no deployment allowlist. The verification budget stays capped at six operations per credential each minute.
 
 Deployment availability does not grant a client access. Each connection still needs browser OAuth consent, an active membership in the selected workspace, approved scopes, and the canonical resource URL. Every tool request rechecks the grant, client, membership, scopes, and current permissions; it remains subject to source and principal rate limits and is recorded in audit logs.
 

@@ -280,14 +280,8 @@ variable "radioso_mcp_enabled" {
   default     = false
 }
 
-variable "operator_mcp_enabled" {
-  description = "Whether to enable the separately authorized Operator MCP surface in live."
-  type        = bool
-  default     = false
-}
-
-variable "operator_mcp_public_origin" {
-  description = "Optional canonical HTTPS custom origin for Operator MCP in live; the deployment workflow otherwise discovers its Cloud Run URL."
+variable "mcp_public_origin" {
+  description = "Optional canonical HTTPS origin for standalone MCP in live. GitHub Actions discovers the Cloud Run URL; set this only for a custom domain or direct Terraform run."
   type        = string
   default     = null
 }
@@ -296,18 +290,6 @@ variable "operator_mcp_credential_epoch" {
   description = "Externally monotonic Operator MCP credential generation in live."
   type        = string
   default     = "1"
-}
-
-variable "operator_mcp_rollout_workspace_ids" {
-  description = "Optional staged-rollout workspace UUIDs for Operator MCP in live. Empty makes it available to every workspace."
-  type        = list(string)
-  default     = []
-}
-
-variable "operator_mcp_verification_budget_per_minute" {
-  description = "Per-credential Operator MCP verification budget in live."
-  type        = number
-  default     = 6
 }
 
 variable "frontend_backend_internal_url_override" {

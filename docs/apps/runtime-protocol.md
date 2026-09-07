@@ -14,6 +14,14 @@ versioned by `protocolVersion: 1`.
 The schemas are in `@radioso/app-contract`, so a host, an App, and the
 conformance harness all validate the same bytes the same way.
 
+## Readiness
+
+Before the host sends any work, it asks the artifact what it is:
+
+```json
+{ "protocolVersion": 1, "ready": true, "implementedContributionIds": ["site_content", "content_push"] }
+```
+
 ## An invocation
 
 The host sends one request per unit of work:
@@ -23,26 +31,40 @@ The host sends one request per unit of work:
   "protocolVersion": 1,
   "invocationId": "8b1f6f2a-6f6f-4a3f-9c4a-2f0d0f8a1b21",
   "installationId": "1d2e3f40-1111-4222-8333-444455556666",
+  "releaseDigest": "sha256:1f0c…",
   "contributionId": "content_push",
   "executionClass": "external_webhook",
+  "inputSchemaVersion": 1,
   "attempt": 1,
   "idempotencyKey": "delivery:6f0f1c2d",
   "deadlineAt": "2026-09-06T12:00:30.000Z",
-  "identity": { "token": "…", "expiresAt": "2026-09-06T12:00:30.000Z" },
+  "capabilitySession": { "token": "…", "expiresAt": "2026-09-06T12:00:30.000Z" },
   "input": { "kind": "webhook", "…": "…" }
 }
 ```
 
-`contributionId` says which handler to run. `executionClass` is
-`external_webhook` for a webhook handler and `scheduled_task` for a scheduled
-task or a backfill. `attempt` starts at 1 and counts retries of the same unit of
-work, and `idempotencyKey` is stable across them — the same key arriving twice
-is the same work, so a handler that already finished it can say so and stop.
+`contributionId` says which handler to run. `releaseDigest` and
+`inputSchemaVersion` say which release and which input shape the work was queued
+against, so an old job leased while a candidate release is under test resolves
+to one answer rather than a guess.
 
-`deadlineAt` is when the host stops waiting. `identity.token` is the short-lived
-proof you attach to host capability calls; it is bound to this installation,
-this contribution, this invocation, and this execution class, and it expires at
-`identity.expiresAt`.
+`executionClass` is `external_webhook` for a webhook handler and
+`scheduled_task` for a scheduled task or a backfill, and it has to match
+`input.kind`: `external_webhook` carries `webhook`, `scheduled_task` carries
+`scheduled` or `backfill`. A request that pairs them any other way fails at the
+boundary.
+
+`attempt` starts at 1 and counts retries of the same unit of work, and
+`idempotencyKey` is stable across them — the same key arriving twice is the same
+work, so a handler that already finished it can say so and stop.
+
+`deadlineAt` is when the host stops waiting. `capabilitySession.token` is the
+short-lived handle you attach to host capability calls; it is bound to this
+installation, this contribution, this invocation, and this execution class, and
+it expires at `capabilitySession.expiresAt`.
+
+The gateway supplies all of this. An App cannot select a different installation,
+contribution, schema, deadline, or capability set.
 
 ### input by contribution kind
 
@@ -83,38 +105,79 @@ A backfill receives the request that started it and its own checkpoint:
 {
   "protocolVersion": 1,
   "invocationId": "8b1f6f2a-6f6f-4a3f-9c4a-2f0d0f8a1b21",
-  "outcome": "completed",
-  "output": {
-    "checkpoint": { "cursor": "2026-09-06T12:00:00.000Z" },
-    "counts": { "ingested": 3, "deleted": 1, "skipped": 0 }
-  }
+  "outcome": "succeeded",
+  "outputSchemaVersion": 1,
+  "output": { "counts": { "ingested": 3, "deleted": 1, "skipped": 0 } },
+  "checkpoint": { "cursor": "2026-09-06T12:00:00.000Z" }
 }
 ```
 
-`outcome` is `completed`, `failed`, or `retry`. Anything other than `completed`
-carries an `error`, and a `retry` may carry `retryAfterSeconds` to ask the host
-to wait before the next attempt.
+`outcome` is a closed catalog, and what a response may carry follows from it:
 
-`output.checkpoint` is a JSON object the host stores and hands back on the next
+| `outcome` | Means | Carries |
+|---|---|---|
+| `succeeded` | The work is done | `outputSchemaVersion`, `output`, optional `checkpoint` |
+| `retryable_failure` | Worth another attempt | `error`, optional `retryAfterSeconds` and `checkpoint` |
+| `rate_limited` | A dependency is throttling | `error`, optional `retryAfterSeconds` and `checkpoint` |
+| `unavailable` | A dependency is down | `error`, optional `retryAfterSeconds` and `checkpoint` |
+| `invalid_request` | The App could not read the request | `error` |
+| `denied` | The App refused the work | `error` |
+| `terminal_failure` | Over, and another attempt changes nothing | `error` |
+| `timed_out` | The deadline passed | `error` |
+| `cancelled` | The work was called off | `error` |
+
+The arms are mutually exclusive: a success cannot carry an error, and an outcome
+that is over cannot carry a checkpoint or a retry hint nothing would read.
+
+`checkpoint` is a JSON object the host stores and hands back on the next
 invocation of the same contribution. `output.counts` reports what the run did
-with documents, and the host uses it for the installation's health view.
+with documents, and the host uses it for the installation's health view;
+everything else under `output` is yours, bounded rather than interpreted.
+
+Bounds apply to every free-form value: at most 8 levels of nesting, 256 keys per
+object, 1 024 array items, 8 192 characters per string, and 64 KiB serialized.
 
 ## Host capabilities
 
-Anything the App needs from the platform goes through the gateway. Each call
-carries the invocation identity token and names one capability. What you may
-call is the intersection of the manifest's `permissions`, the contribution's
-`permissions`, and the grant the operator approved.
+Anything the App needs from the platform goes through the gateway, in one
+envelope:
+
+```json
+{
+  "protocolVersion": 1,
+  "invocationId": "8b1f6f2a-6f6f-4a3f-9c4a-2f0d0f8a1b21",
+  "capabilitySession": "…",
+  "requestId": "wp_post_4211:2026-09-02T09:15:00",
+  "request": { "capability": "storage.get", "request": { "collection": "sync_state", "key": "site" } }
+}
+```
+
+`capabilitySession` is the token from the invocation request, which is what
+authenticates the call. `requestId` is yours to choose and has to stay the same
+across every retry of one logical effect — that is what lets a deduplicating
+capability recognise the second delivery as the first. What you may call is the
+intersection of the manifest's `permissions`, the contribution's `permissions`,
+and the grant the operator approved.
 
 | Capability | Payload |
 |---|---|
-| `documents.ingest` | `document` with `externalDocumentId`, `title`, `content` (`format` of `html`, `markdown`, or `text`, plus `value`), optional `sourceUrl` and `indexedFields` |
-| `documents.delete` | `externalDocumentId` |
+| `documents.ingest` | `sourceContributionId`, and `document` with `externalDocumentId`, `title`, `content` (`format` of `html`, `markdown`, or `text`, plus `value`), optional `sourceUrl`, `indexedFields`, `metadata`, `publishedAt`, `modifiedAt`, `author` |
+| `documents.delete` | `sourceContributionId`, `externalDocumentId` |
 | `storage.get` | `request` with `collection`, `key` |
 | `storage.put` | `request` with `collection`, `key`, `record`, optional `expectedVersion` |
 | `storage.delete` | `request` with `collection`, `key`, optional `expectedVersion` |
 | `storage.query` | `request` with `collection`, `index`, `equals`, `limit`, optional `cursor` |
 | `egress.fetch` | `destination`, `method`, `path`, optional `query`, `headers`, `body`, `timeoutMs` |
+
+`sourceContributionId` names the `document_source` contribution the write
+belongs to. That is how the host knows whose external-id namespace and
+indexed-field vocabulary an effect uses, and it is what the host attaches
+provenance from — provenance is the host's to write, never yours.
+
+`indexedFields` carries the values a retrieval rule compares: one scalar per
+key, under keys the source's `indexedFields` policy allows. `metadata` carries
+the rest of what the source knows about the document — up to 64 keys, each a
+string of up to 1 024 characters, a number, or a boolean.
 
 ```json
 {
@@ -126,10 +189,15 @@ call is the intersection of the manifest's `permissions`, the contribution's
 }
 ```
 
-`destination` is a destination id from the manifest. The host resolves the host
-name — including one bound to a configuration field — attaches the credential
-from the destination's connection slot, and returns the response with its body
-base64-encoded. Credentials stay on the host side, so an App never holds the
+`destination` is a destination id from the manifest. `path` is origin-relative:
+exactly one leading slash, and no scheme, authority, backslash, or fragment. A
+path that could resolve to another host is refused here rather than by whatever
+resolves it later.
+
+The host resolves the host name — including one bound to a configuration field —
+attaches the credential from the destination's connection slot, and returns the
+response with its body base64-encoded. A body in either direction is real base64
+and decodes to at most 4 MiB. Credentials stay on the host side, so an App never holds the
 secret it authenticates with.
 
 `storage.put` and `storage.delete` take an optional `expectedVersion`. Supply
@@ -139,9 +207,23 @@ untouched.
 
 ### Capability responses
 
+A success names the capability, and the capability fixes the result's shape:
+
 ```json
-{ "ok": true, "result": { "version": 2 } }
+{ "ok": true, "capability": "storage.put", "result": { "version": 2 } }
 ```
+
+| Capability | `result` |
+|---|---|
+| `documents.ingest` | `externalDocumentId`, and `outcome` of `created`, `updated`, or `unchanged` |
+| `documents.delete` | `deleted` |
+| `storage.get` | `record`, or `null` |
+| `storage.put` | `version` |
+| `storage.delete` | `deleted` |
+| `storage.query` | `records`, optional `cursor` |
+| `egress.fetch` | `status`, `headers`, `body` base64-encoded |
+
+A failure carries an error and nothing else:
 
 ```json
 { "ok": false, "error": { "code": "destination_denied", "message": "host not declared" } }

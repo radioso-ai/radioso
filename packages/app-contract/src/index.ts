@@ -17,6 +17,8 @@ export {
   fieldKeySchema,
   fixtureIdSchema,
   indexIdSchema,
+  indexedFieldKeySchema,
+  schemaVersionSchema,
   semanticVersionRangeSchema,
   semanticVersionSchema,
   timestampSchema,
@@ -27,9 +29,26 @@ export {
   type DestinationId,
   type Digest,
   type FieldKey,
+  type IndexedFieldKey,
   type SemanticVersion,
   type SemanticVersionRange,
 } from "./identifiers.js";
+
+export {
+  MAX_BASE64_DECODED_BYTES,
+  MAX_HEADER_ENTRIES,
+  MAX_JSON_ARRAY_ITEMS,
+  MAX_JSON_DEPTH,
+  MAX_JSON_OBJECT_KEYS,
+  MAX_JSON_SERIALIZED_BYTES,
+  MAX_JSON_STRING_LENGTH,
+  base64BodySchema,
+  base64DecodedByteLength,
+  boundedJsonRecordSchema,
+  boundedJsonValueSchema,
+  type BoundedJsonRecord,
+  type BoundedJsonValue,
+} from "./bounds.js";
 
 export {
   appConfigurationSchema,
@@ -71,7 +90,6 @@ export {
 
 export {
   isScalarStorageFieldType,
-  jsonRecordSchema,
   scalarStorageFieldTypes,
   storageCollectionSchema,
   storageDeleteRequestSchema,
@@ -88,6 +106,7 @@ export {
   storageRecordFieldSchema,
   storageRecordSchema,
   storageRetentionSchema,
+  storageRecordValueSchema,
   storageScalarValueSchema,
   storageVersionSchema,
   type StorageCollection,
@@ -102,6 +121,7 @@ export {
 } from "./storage.js";
 
 export {
+  MAX_INDEXED_FIELDS,
   contributionKindSchema,
   contributionKinds,
   contributionSchema,
@@ -112,6 +132,7 @@ export {
   externalWebhookHandlerContributionSchema,
   hostPermissionSchema,
   hostPermissions,
+  indexedFieldsPolicySchema,
   releaseAContributionKinds,
   reservedContributionKinds,
   scheduleSchema,
@@ -122,6 +143,7 @@ export {
   type ExecutionClass,
   type ExternalWebhookHandlerContribution,
   type HostPermission,
+  type IndexedFieldsPolicy,
   type ScheduledTaskContribution,
 } from "./contributions.js";
 
@@ -148,20 +170,28 @@ export {
 } from "./manifest.js";
 
 export {
+  MAX_DOCUMENT_METADATA_KEYS,
   MAX_ERROR_MESSAGE_LENGTH,
   RUNTIME_PROTOCOL_VERSION,
   appErrorCodeSchema,
   appErrorCodes,
   appErrorSchema,
   backfillInvocationInputSchema,
-  base64BodySchema,
+  capabilitySessionSchema,
   documentContentFormatSchema,
+  documentDeleteResultSchema,
   documentIngestInputSchema,
+  documentIngestOutcomeSchema,
+  documentIngestResultSchema,
   egressFetchRequestSchema,
   egressFetchResultSchema,
+  healthResponseSchema,
+  hostCapabilityCallSchema,
+  hostCapabilityFailureSchema,
   hostCapabilityRequestSchema,
   hostCapabilityResponseSchema,
-  invocationIdentitySchema,
+  hostCapabilitySuccessSchema,
+  invocationCountsSchema,
   invocationInputSchema,
   invocationOutcomeSchema,
   invocationOutcomes,
@@ -169,16 +199,25 @@ export {
   invocationRequestSchema,
   invocationResponseSchema,
   scheduledInvocationInputSchema,
+  storageDeleteResultSchema,
+  storageGetResultSchema,
+  storagePutResultSchema,
   webhookInvocationInputSchema,
   type AppError,
   type AppErrorCode,
+  type CapabilitySession,
   type DocumentIngestInput,
+  type DocumentIngestResult,
   type EgressFetchRequest,
   type EgressFetchResult,
+  type HealthResponse,
+  type HostCapabilityCall,
   type HostCapabilityRequest,
   type HostCapabilityResponse,
   type InvocationInput,
+  type InvocationInputKind,
   type InvocationOutcome,
+  type InvocationOutput,
   type InvocationRequest,
   type InvocationResponse,
 } from "./runtime.js";

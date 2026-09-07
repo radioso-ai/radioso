@@ -1,5 +1,6 @@
 {
   "manifestSchemaVersion": 1,
+  "runtimeProtocolVersion": 1,
   "app": {
     "id": "ai.radioso.wordpress",
     "name": "WordPress",
@@ -39,7 +40,7 @@
         "label": "Post types to sync",
         "description": "Comma-separated WordPress post types. Add product to sync a WooCommerce catalogue.",
         "required": false,
-        "default": "post,page,product"
+        "default": "page,post"
       },
       {
         "key": "poll_interval_sec",
@@ -91,9 +92,14 @@
         "kind": "configuration",
         "field": "site_url"
       },
-      "protocols": ["https"],
+      "protocols": [
+        "https",
+        "http"
+      ],
       "purpose": "Read published content from the configured WordPress site over its REST API.",
-      "dataClasses": ["credentials"],
+      "dataClasses": [
+        "credentials"
+      ],
       "connectionSlot": "site_credentials"
     }
   ],
@@ -102,7 +108,9 @@
       "id": "sync_state",
       "scope": "installation",
       "schemaVersion": 1,
-      "compatibleReaderVersions": [1],
+      "compatibleReaderVersions": [
+        1
+      ],
       "recordSchema": {
         "fields": [
           {
@@ -130,7 +138,12 @@
       "retention": {
         "kind": "none"
       },
-      "allowedOperations": ["get", "put", "delete", "query_by_index"]
+      "allowedOperations": [
+        "get",
+        "put",
+        "delete",
+        "query_by_index"
+      ]
     }
   ],
   "contributions": [
@@ -139,14 +152,33 @@
       "kind": "document_source",
       "displayName": "WordPress content",
       "description": "Pages, posts, and products from the connected site, kept in step as they change.",
-      "permissions": ["documents.ingest", "documents.delete"],
-      "egressDestinations": [],
+      "permissions": [
+        "documents.ingest",
+        "documents.delete",
+        "storage.read",
+        "storage.write",
+        "egress.fetch"
+      ],
+      "egressDestinations": [
+        "site"
+      ],
       "deadlineMs": 600000,
       "availability": "required",
+      "inputSchemaVersion": 1,
+      "outputSchemaVersion": 1,
       "externalIdNamespace": "wp_post",
-      "syncModes": ["push", "poll", "backfill"],
-      "contentFormats": ["html"],
-      "indexedFieldKeys": [],
+      "syncModes": [
+        "push",
+        "poll",
+        "backfill"
+      ],
+      "contentFormats": [
+        "html"
+      ],
+      "indexedFields": {
+        "policy": "dynamic",
+        "maxFields": 32
+      },
       "backfill": {
         "checkpointCollection": "sync_state"
       }
@@ -156,10 +188,18 @@
       "kind": "external_webhook_handler",
       "displayName": "Content push",
       "description": "Receives signed pushes from the Radioso Sync companion plugin when a post is published, updated, or deleted.",
-      "permissions": ["documents.ingest", "documents.delete"],
+      "permissions": [
+        "documents.ingest",
+        "documents.delete"
+      ],
       "egressDestinations": [],
       "deadlineMs": 30000,
       "availability": "required",
+      "inputSchemaVersion": 1,
+      "outputSchemaVersion": 1,
+      "documentSources": [
+        "site_content"
+      ],
       "authentication": {
         "kind": "hmac_sha256",
         "secretConnectionSlot": "webhook_secret",
@@ -181,13 +221,21 @@
         "storage.write",
         "egress.fetch"
       ],
-      "egressDestinations": ["site"],
+      "egressDestinations": [
+        "site"
+      ],
       "deadlineMs": 600000,
       "availability": "optional",
+      "inputSchemaVersion": 1,
+      "outputSchemaVersion": 1,
+      "documentSources": [
+        "site_content"
+      ],
       "schedule": {
         "kind": "interval_from_configuration",
         "field": "poll_interval_sec",
-        "minSeconds": 60
+        "minSeconds": 60,
+        "disabledValue": 0
       },
       "overlapPolicy": "skip",
       "maxDurationSeconds": 600,
@@ -225,7 +273,7 @@
         "title": "Point the plugin at this installation",
         "paragraphs": [
           "The endpoint and the signing secret belong to this installation alone. The secret is shown once, so paste it before leaving the page.",
-          "Set Post types to the comma-separated list you want synced. Add product for a WooCommerce catalogue, plus any custom types the site registers."
+          "Post types starts at page,post. Set it to the comma-separated list you want synced: add product for a WooCommerce catalogue, plus any custom types the site registers."
         ],
         "steps": [
           "In WordPress, open Settings, then Radioso Sync.",

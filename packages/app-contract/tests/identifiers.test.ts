@@ -8,6 +8,8 @@ import {
   destinationIdSchema,
   digestSchema,
   fieldKeySchema,
+  indexedFieldKeySchema,
+  schemaVersionSchema,
   semanticVersionRangeSchema,
   semanticVersionSchema,
 } from "../src/index.js";
@@ -41,6 +43,23 @@ describe("app identifiers", () => {
       expect(schema.safeParse("1site").success).toBe(false);
       expect(schema.safeParse("").success).toBe(false);
       expect(schema.safeParse(`a${"b".repeat(64)}`).success).toBe(false);
+    }
+  });
+
+  it("keeps indexed-field keys case-capable, unlike every author-chosen identifier", () => {
+    for (const value of ["ISBN", "sku", "Price_Max", "A1"]) {
+      expect(indexedFieldKeySchema.parse(value)).toBe(value);
+      expect(fieldKeySchema.safeParse(value).success).toBe(value === value.toLowerCase());
+    }
+    for (const value of ["", "1sku", "price-max", "wp.post", `a${"b".repeat(64)}`]) {
+      expect(indexedFieldKeySchema.safeParse(value).success).toBe(false);
+    }
+  });
+
+  it("requires a schema version to be a positive integer", () => {
+    expect(schemaVersionSchema.parse(1)).toBe(1);
+    for (const value of [0, -1, 1.5]) {
+      expect(schemaVersionSchema.safeParse(value).success).toBe(false);
     }
   });
 

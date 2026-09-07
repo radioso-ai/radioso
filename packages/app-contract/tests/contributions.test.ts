@@ -15,6 +15,8 @@ const header = {
   egressDestinations: [],
   deadlineMs: 30_000,
   availability: "required",
+  inputSchemaVersion: 1,
+  outputSchemaVersion: 1,
 };
 
 const documentSource = {
@@ -24,7 +26,7 @@ const documentSource = {
   externalIdNamespace: "wp_post",
   syncModes: ["push", "poll", "backfill"],
   contentFormats: ["html"],
-  indexedFieldKeys: ["sku", "price"],
+  indexedFields: { policy: "declared", keys: ["sku", "price", "ISBN"] },
   backfill: { checkpointCollection: "sync_state" },
 };
 
@@ -32,6 +34,7 @@ const webhookHandler = {
   ...header,
   id: "content_push",
   kind: "external_webhook_handler",
+  documentSources: ["site_content"],
   authentication: {
     kind: "hmac_sha256",
     secretConnectionSlot: "webhook_secret",
@@ -46,7 +49,13 @@ const scheduledTask = {
   ...header,
   id: "content_poll",
   kind: "scheduled_task",
-  schedule: { kind: "interval_from_configuration", field: "poll_interval_sec", minSeconds: 60 },
+  documentSources: ["site_content"],
+  schedule: {
+    kind: "interval_from_configuration",
+    field: "poll_interval_sec",
+    minSeconds: 60,
+    disabledValue: 0,
+  },
   overlapPolicy: "skip",
   maxDurationSeconds: 600,
   retry: { maxAttempts: 5, backoff: { kind: "exponential", baseSeconds: 30, maxSeconds: 900 } },
@@ -114,7 +123,7 @@ describe("contribution catalog", () => {
     ).toBe(false);
   });
 
-  it("parses a reserved kind by header alone", () => {
+  it("parses a reserved kind by header alone, leaving the rest unread rather than rejected", () => {
     const parsed = contributionSchema.parse({
       ...header,
       id: "answer_tool",
@@ -122,7 +131,68 @@ describe("contribution catalog", () => {
       inputSchema: { type: "object" },
     });
     expect(parsed).toMatchObject({ id: "answer_tool", kind: "tool" });
-    expect(parsed).not.toHaveProperty("inputSchema");
+    expect(parsed).toHaveProperty("inputSchema");
+  });
+
+  it("rejects an unknown key on a kind this release does run", () => {
+    expect(contributionSchema.safeParse({ ...documentSource, physicalTable: "customer_data" }).success).toBe(
+      false,
+    );
+    expect(contributionSchema.safeParse({ ...webhookHandler, allowPrivateNetwork: true }).success).toBe(false);
+  });
+
+  it("requires every contribution to version the shapes it reads and writes", () => {
+    const { inputSchemaVersion: _input, ...withoutInput } = documentSource;
+    const { outputSchemaVersion: _output, ...withoutOutput } = documentSource;
+    expect(contributionSchema.safeParse(withoutInput).success).toBe(false);
+    expect(contributionSchema.safeParse(withoutOutput).success).toBe(false);
+    expect(contributionSchema.safeParse({ ...documentSource, inputSchemaVersion: 0 }).success).toBe(false);
+  });
+
+  it("makes a document source say who owns its indexed-field vocabulary", () => {
+    expect(contributionSchema.safeParse({ ...documentSource, indexedFields: undefined }).success).toBe(false);
+    expect(
+      contributionSchema.parse({
+        ...documentSource,
+        indexedFields: { policy: "dynamic", maxFields: 32 },
+      }),
+    ).toMatchObject({ indexedFields: { policy: "dynamic", maxFields: 32 } });
+    expect(
+      contributionSchema.safeParse({ ...documentSource, indexedFields: { policy: "dynamic" } }).success,
+    ).toBe(false);
+    expect(
+      contributionSchema.safeParse({
+        ...documentSource,
+        indexedFields: { policy: "declared", keys: ["price-max"] },
+      }).success,
+    ).toBe(false);
+    expect(
+      contributionSchema.safeParse({
+        ...documentSource,
+        indexedFields: { policy: "dynamic", maxFields: 65 },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("has a handler that writes documents name the sources it writes through", () => {
+    expect(contributionSchema.parse(webhookHandler)).toMatchObject({ documentSources: ["site_content"] });
+    const { documentSources: _sources, ...withoutSources } = scheduledTask;
+    expect(contributionSchema.parse(withoutSources)).toMatchObject({ documentSources: [] });
+  });
+
+  it("lets a configuration-driven schedule name the value that means do not run", () => {
+    const parsed = contributionSchema.parse(scheduledTask);
+    if (parsed.kind !== "scheduled_task") throw new Error("scheduledTask must parse as a scheduled task");
+    if (parsed.schedule.kind !== "interval_from_configuration") {
+      throw new Error("scheduledTask must read its interval from configuration");
+    }
+    expect(parsed.schedule.disabledValue).toBe(0);
+    expect(
+      contributionSchema.parse({
+        ...scheduledTask,
+        schedule: { kind: "interval_from_configuration", field: "poll_interval_sec", minSeconds: 60 },
+      }),
+    ).toMatchObject({ schedule: { minSeconds: 60 } });
   });
 
   it("rejects a kind outside the catalog", () => {

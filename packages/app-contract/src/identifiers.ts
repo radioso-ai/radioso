@@ -8,6 +8,13 @@ import { z } from "zod";
  */
 const APP_ID_PATTERN = /^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)+$/u;
 const LOCAL_KEY_PATTERN = /^[a-z][a-z0-9_]{0,63}$/u;
+/**
+ * An indexed-field key is the one key space an App does not own: it comes from
+ * the system being synced — a WooCommerce `ISBN`, a CRM `AccountTier` — and a
+ * metadata rule addresses it by splitting on ".". So it is case-capable while
+ * every author-chosen identifier stays lower-case snake.
+ */
+const INDEXED_FIELD_KEY_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,63}$/u;
 const DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/u;
 const SEMANTIC_VERSION_PATTERN =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u;
@@ -29,6 +36,12 @@ export const connectionSlotIdSchema = localKey("Connection slot id");
 export const destinationIdSchema = localKey("Destination id");
 export const indexIdSchema = localKey("Index id");
 export const fieldKeySchema = localKey("Field key");
+export const indexedFieldKeySchema = z
+  .string()
+  .regex(
+    INDEXED_FIELD_KEY_PATTERN,
+    "Indexed field key must start with a letter and hold letters, digits, and underscores, 1 to 64 characters",
+  );
 export const fixtureIdSchema = localKey("Fixture id");
 export const assetIdSchema = localKey("Asset id");
 
@@ -41,6 +54,13 @@ export const semanticVersionSchema = z.string().regex(SEMANTIC_VERSION_PATTERN, 
 export const semanticVersionRangeSchema = z
   .string()
   .regex(SEMANTIC_VERSION_RANGE_PATTERN, "Compatibility must be a semantic version range");
+
+/**
+ * A contribution's input and output shapes version independently of the App's
+ * release, so a queued job says which shape it was written against and a host
+ * refuses one it cannot read rather than half-reading it.
+ */
+export const schemaVersionSchema = z.number().int().min(1).max(1_000_000);
 
 /** Short human-readable label shown to an operator. */
 export const displayNameSchema = z.string().min(1).max(120);
@@ -55,6 +75,7 @@ export type CollectionId = z.infer<typeof collectionIdSchema>;
 export type ConnectionSlotId = z.infer<typeof connectionSlotIdSchema>;
 export type DestinationId = z.infer<typeof destinationIdSchema>;
 export type FieldKey = z.infer<typeof fieldKeySchema>;
+export type IndexedFieldKey = z.infer<typeof indexedFieldKeySchema>;
 export type Digest = z.infer<typeof digestSchema>;
 export type SemanticVersion = z.infer<typeof semanticVersionSchema>;
 export type SemanticVersionRange = z.infer<typeof semanticVersionRangeSchema>;

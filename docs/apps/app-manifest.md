@@ -19,6 +19,7 @@ gateway, and in a conformance run.
 ```json
 {
   "manifestSchemaVersion": 1,
+  "runtimeProtocolVersion": 1,
   "app": {
     "id": "ai.radioso.wordpress",
     "name": "WordPress",
@@ -40,11 +41,24 @@ gateway, and in a conformance run.
 `manifestSchemaVersion` is `1`. Any other value fails parsing, which is what
 keeps a host from half-reading a manifest written against a different schema.
 
+`runtimeProtocolVersion` is `1`: the wire protocol your artifact implements. It
+moves independently of the manifest schema, so admission establishes that the
+program speaks a protocol this host still runs before it sends any work.
+
+Every object in a manifest is strict. An undeclared key fails parsing rather
+than being dropped, because a declaration the operator approves and the host
+ignores is worse than one it refuses.
+
 `app.id` and `app.publisher.id` are lower-case reverse-DNS names such as
 `ai.radioso.wordpress`. Everything else you name — contribution ids, collection
 ids, connection slot ids, destination ids, index ids, configuration keys,
 storage field keys — shares one shape: lower-case, starting with a letter,
 letters, digits, and underscores, up to 64 characters.
+
+Indexed-field keys are the exception, because you do not own them: they come
+from the system you sync, where a `SKU` or an `ISBN` is spelled the way that
+system spells it. They start with a letter and hold letters, digits, and
+underscores in any case, up to 64 characters.
 
 `version` is a semantic version. `radiosoCompatibility` is a semantic version
 range such as `>=1.0.0` or `^1.2.0 || ^2.0.0`; the host checks its own version
@@ -91,14 +105,22 @@ What the operator fills in. Each field:
 }
 ```
 
-`type` is one of `text`, `number`, `boolean`, `select`, `url`, or
-`connection_slot`. A `select` field carries `options` with a `value` and a
-`label` each. A `connection_slot` field carries `connectionSlot`, the id of a
-slot declared under `connections`.
+Every field carries `key`, `label`, `required`, and optionally `description` and
+`placeholder`. `type` decides the rest, and each type accepts only what that
+type can mean:
 
-Credential material belongs in a connection slot, which is why there is no
-secret field type here. Configuration values are visible to the operator, appear
-in the installation plan, and are readable by your App.
+| `type` | Carries |
+|---|---|
+| `text`, `url` | Optional `default`, a string |
+| `number` | Optional `default`, `min`, and `max`, all numbers; `max` is at least `min` |
+| `boolean` | Optional `default`, a boolean |
+| `select` | `options` with a `value` and a `label` each, and an optional `default` that is one of those values |
+| `connection_slot` | `connectionSlot`, the id of a slot declared under `connections`, and no `default` |
+
+A `number` field cannot default to a word, and a `connection_slot` field carries
+no default at all. Credential material belongs in the slot, which is why there
+is no secret field type here: configuration values are visible to the operator,
+appear in the installation plan, and are readable by your App.
 
 ## connections
 
@@ -138,7 +160,7 @@ operator fills in:
 {
   "id": "site",
   "host": { "kind": "configuration", "field": "site_url" },
-  "protocols": ["https"],
+  "protocols": ["https", "http"],
   "purpose": "Read published content from the configured WordPress site.",
   "dataClasses": ["credentials"],
   "connectionSlot": "site_credentials"
@@ -148,9 +170,12 @@ operator fills in:
 A configuration-bound host must name a `url` field. That is what lets one
 release serve many sites without one installation reaching another's.
 
-`protocols` is `["https"]`. `ports` is optional. `purpose` is the sentence the
-operator reads on the grant screen. `dataClasses` says what leaves the platform
-on this destination — `document_content`, `document_metadata`,
+`protocols` holds `https`, `http`, or both. `http` is here because a self-hosted
+site reachable only over plain HTTP is a real installation; declaring it puts it
+on the operator's grant screen, one destination at a time.
+
+`ports` is optional. `purpose` is the sentence the operator reads on the grant
+screen. `dataClasses` says what leaves the platform on this destination — `document_content`, `document_metadata`,
 `installation_configuration`, `credentials`, or `operational_metadata`.
 `connectionSlot` names the credential the gateway attaches.
 
@@ -200,6 +225,12 @@ header:
 | `egressDestinations` | Ids of destinations this contribution may reach |
 | `deadlineMs` | Wall-clock budget for one invocation, 1 000 to 900 000 |
 | `availability` | `required` if the installation is broken without it, otherwise `optional` |
+| `inputSchemaVersion` | Which input shape this contribution reads, a positive integer |
+| `outputSchemaVersion` | Which output shape it writes, a positive integer |
+
+Input and output shapes version independently of the release, so a queued job
+says which shape it was written against and a host refuses one it cannot read
+rather than half-reading it.
 
 ### document_source
 
@@ -210,8 +241,25 @@ Content your App publishes into the workspace.
 | `externalIdNamespace` | Prefix for the external ids you write, such as `wp_post` |
 | `syncModes` | Any of `push`, `poll`, `backfill` |
 | `contentFormats` | Any of `html`, `markdown`, `text` |
-| `indexedFieldKeys` | Metadata keys you push alongside content; leave empty when the source owns the vocabulary |
+| `indexedFields` | Who owns the keys this source indexes, below |
 | `backfill` | Optional `{ "checkpointCollection": "sync_state" }` |
+
+`indexedFields` is a policy, not a list of convenience. Name the keys when you
+know them:
+
+```json
+{ "policy": "declared", "keys": ["sku", "price", "stock_status"] }
+```
+
+An empty `keys` array means none, and it means that because the policy says so.
+When the synced system owns the vocabulary — a WooCommerce catalogue, a CRM's
+custom fields — say so and bound how many keys one document may carry:
+
+```json
+{ "policy": "dynamic", "maxFields": 32 }
+```
+
+`maxFields` runs from 1 to 64.
 
 Backfill runs under the `scheduled_task` execution class.
 
@@ -221,11 +269,12 @@ A signed push from outside.
 
 | Field | Meaning |
 |---|---|
+| `documentSources` | Ids of the `document_source` contributions this handler writes through |
 | `authentication.kind` | `hmac_sha256` |
 | `authentication.secretConnectionSlot` | A `generated_secret` or `secret_fields` slot holding the signing key |
 | `authentication.signatureHeader` | Header carrying the signature, such as `X-Radioso-Signature` |
 | `authentication.signaturePrefix` | Optional prefix inside that header, such as `sha256=` |
-| `maxBodyBytes` | Largest body the host accepts, up to 8 MiB |
+| `maxBodyBytes` | Largest body the host accepts, up to 4 MiB — the ceiling the invocation input carries |
 | `replayWindowSeconds` | How long a delivery id stays unrepeatable, up to 3 600 |
 
 The host verifies the HMAC over the raw body before your App sees anything.
@@ -237,6 +286,7 @@ Work on a clock.
 
 | Field | Meaning |
 |---|---|
+| `documentSources` | Ids of the `document_source` contributions this task writes through |
 | `schedule` | `{ "kind": "interval", "seconds": 900 }`, or `{ "kind": "interval_from_configuration", "field": "poll_interval_sec", "minSeconds": 60 }` |
 | `overlapPolicy` | `skip`, `queue`, or `replace` when the previous run is still going |
 | `maxDurationSeconds` | Longest a single run may take, up to 3 600 |
@@ -244,13 +294,28 @@ Work on a clock.
 | `checkpointCollection` | Optional collection the host round-trips your checkpoint through |
 
 An `interval_from_configuration` field must be a `number` configuration field,
-and `minSeconds` is the floor the host enforces whatever the operator types.
+and `minSeconds` is the floor the host enforces on any interval it runs.
+
+An `interval_from_configuration` schedule also takes an optional
+`disabledValue`. A configuration value equal to it leaves the task inactive, so
+`{ "field": "poll_interval_sec", "minSeconds": 60, "disabledValue": 0 }` gives a
+push-only installation no schedule at all rather than a one-minute one.
+`disabledValue` sits outside the interval range on purpose and is not measured
+against `minSeconds`.
+
 Invocations run under the `scheduled_task` execution class.
+
+A handler that writes documents names its sources. `documentSources` is how the
+host knows whose external-id namespace, indexed-field vocabulary, and provenance
+an effect belongs to before it lands — and it is what a `documents.ingest` or
+`documents.delete` call references as its `sourceContributionId`.
 
 ### Kinds a Release A host declines
 
 `tool`, `context_provider`, `event_subscription`, `ui`, and `pack` parse down to
-the common header. Validation returns `unsupported_contribution_kind` for each
+the common header and leave the rest of their keys unread — the one place a
+manifest is not strict, so a manifest written against a later release still gets
+one clear answer here instead of a wall of unknown-key noise. Validation returns `unsupported_contribution_kind` for each
 one, with the path of the offending `kind`. Any other value fails parsing
 outright.
 
@@ -329,6 +394,9 @@ bracket path such as `contributions[1].authentication.secretConnectionSlot`.
 | `interval_field_not_number` | An interval reads from a field that is not a `number` field. |
 | `unknown_destination` | A contribution lists an `egressDestinations` id no destination declares. |
 | `unknown_collection` | A `checkpointCollection` or backfill collection does not exist. |
+| `unknown_contribution` | A conformance fixture names a contribution the manifest does not declare. |
+| `unknown_document_source` | A `documentSources` entry names a contribution the manifest does not declare. |
+| `not_a_document_source` | A `documentSources` entry names a contribution that is not a `document_source`. |
 | `permission_not_declared` | A contribution asks for a permission the manifest does not declare. |
 | `unsupported_permission` | The manifest declares a permission the host does not offer. |
 | `unsupported_connection_kind` | The manifest declares a connection kind the host does not offer. |

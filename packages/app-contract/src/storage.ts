@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { boundedJsonRecordSchema } from "./bounds.js";
 import { collectionIdSchema, fieldKeySchema, indexIdSchema, timestampSchema } from "./identifiers.js";
 
 /**
@@ -18,20 +19,24 @@ export const storageOperationSchema = z.enum(storageOperations);
 export const isScalarStorageFieldType = (type: string): boolean =>
   (scalarStorageFieldTypes as readonly string[]).includes(type);
 
-export const storageRecordFieldSchema = z.object({
-  key: fieldKeySchema,
-  type: storageFieldTypeSchema,
-  required: z.boolean(),
-});
+export const storageRecordFieldSchema = z
+  .object({
+    key: fieldKeySchema,
+    type: storageFieldTypeSchema,
+    required: z.boolean(),
+  })
+  .strict();
 
-export const storageIndexSchema = z.object({
-  id: indexIdSchema,
-  field: fieldKeySchema,
-});
+export const storageIndexSchema = z
+  .object({
+    id: indexIdSchema,
+    field: fieldKeySchema,
+  })
+  .strict();
 
 export const storageRetentionSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("none") }),
-  z.object({ kind: z.literal("ttl"), seconds: z.number().int().min(60).max(31_536_000) }),
+  z.object({ kind: z.literal("none") }).strict(),
+  z.object({ kind: z.literal("ttl"), seconds: z.number().int().min(60).max(31_536_000) }).strict(),
 ]);
 
 export const storageCollectionSchema = z
@@ -40,17 +45,22 @@ export const storageCollectionSchema = z
     scope: z.literal("installation"),
     schemaVersion: z.number().int().min(1),
     compatibleReaderVersions: z.array(z.number().int().min(1)).min(1).max(8),
-    recordSchema: z.object({
-      fields: z.array(storageRecordFieldSchema).min(1).max(64),
-    }),
+    recordSchema: z
+      .object({
+        fields: z.array(storageRecordFieldSchema).min(1).max(64),
+      })
+      .strict(),
     indexes: z.array(storageIndexSchema).max(8).default([]),
-    quotas: z.object({
-      maxRecords: z.number().int().min(1).max(1_000_000),
-      maxRecordBytes: z.number().int().min(1).max(1_048_576),
-    }),
+    quotas: z
+      .object({
+        maxRecords: z.number().int().min(1).max(1_000_000),
+        maxRecordBytes: z.number().int().min(1).max(1_048_576),
+      })
+      .strict(),
     retention: storageRetentionSchema,
     allowedOperations: z.array(storageOperationSchema).min(1).max(storageOperations.length),
   })
+  .strict()
   .superRefine((collection, context) => {
     if (!collection.compatibleReaderVersions.includes(collection.schemaVersion)) {
       context.addIssue({
@@ -68,49 +78,64 @@ export const storageScalarValueSchema = z.union([
   z.boolean(),
 ]);
 
-/** A free-form JSON object carried across the protocol, such as a checkpoint. */
-export const jsonRecordSchema = z.record(z.string().max(128), z.unknown());
+/**
+ * A stored record's value space is the App's, so the contract bounds its size
+ * rather than its meaning.
+ */
+export const storageRecordValueSchema = boundedJsonRecordSchema;
 
 export const storageKeySchema = z.string().min(1).max(256);
 export const storageVersionSchema = z.number().int().min(1);
 
-export const storageGetRequestSchema = z.object({
-  collection: collectionIdSchema,
-  key: storageKeySchema,
-});
+export const storageGetRequestSchema = z
+  .object({
+    collection: collectionIdSchema,
+    key: storageKeySchema,
+  })
+  .strict();
 
-export const storagePutRequestSchema = z.object({
-  collection: collectionIdSchema,
-  key: storageKeySchema,
-  record: jsonRecordSchema,
-  expectedVersion: storageVersionSchema.optional(),
-});
+export const storagePutRequestSchema = z
+  .object({
+    collection: collectionIdSchema,
+    key: storageKeySchema,
+    record: storageRecordValueSchema,
+    expectedVersion: storageVersionSchema.optional(),
+  })
+  .strict();
 
-export const storageDeleteRequestSchema = z.object({
-  collection: collectionIdSchema,
-  key: storageKeySchema,
-  expectedVersion: storageVersionSchema.optional(),
-});
+export const storageDeleteRequestSchema = z
+  .object({
+    collection: collectionIdSchema,
+    key: storageKeySchema,
+    expectedVersion: storageVersionSchema.optional(),
+  })
+  .strict();
 
-export const storageQueryRequestSchema = z.object({
-  collection: collectionIdSchema,
-  index: indexIdSchema,
-  equals: storageScalarValueSchema,
-  limit: z.number().int().min(1).max(200).default(50),
-  cursor: z.string().max(512).optional(),
-});
+export const storageQueryRequestSchema = z
+  .object({
+    collection: collectionIdSchema,
+    index: indexIdSchema,
+    equals: storageScalarValueSchema,
+    limit: z.number().int().min(1).max(200).default(50),
+    cursor: z.string().max(512).optional(),
+  })
+  .strict();
 
-export const storageRecordSchema = z.object({
-  key: storageKeySchema,
-  version: storageVersionSchema,
-  updatedAt: timestampSchema,
-  record: jsonRecordSchema,
-});
+export const storageRecordSchema = z
+  .object({
+    key: storageKeySchema,
+    version: storageVersionSchema,
+    updatedAt: timestampSchema,
+    record: storageRecordValueSchema,
+  })
+  .strict();
 
-export const storageQueryResultSchema = z.object({
-  records: z.array(storageRecordSchema).max(200),
-  cursor: z.string().max(512).optional(),
-});
+export const storageQueryResultSchema = z
+  .object({
+    records: z.array(storageRecordSchema).max(200),
+    cursor: z.string().max(512).optional(),
+  })
+  .strict();
 
 export type StorageFieldType = z.infer<typeof storageFieldTypeSchema>;
 export type StorageOperation = z.infer<typeof storageOperationSchema>;

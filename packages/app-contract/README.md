@@ -14,7 +14,8 @@ Radioso package would tie the contract to one side of it.
 
 | File | Owns |
 |---|---|
-| `src/identifiers.ts` | Structural shapes: app ids, local keys, digests, semantic versions and ranges |
+| `src/identifiers.ts` | Structural shapes: app ids, local keys, indexed-field keys, digests, semantic versions and ranges |
+| `src/bounds.ts` | Size, depth, and encoding bounds for every free-form value the protocol carries |
 | `src/configuration.ts` | The bounded configuration field vocabulary |
 | `src/connections.ts` | Connection slot declarations |
 | `src/destinations.ts` | Declared network destinations and their data classes |
@@ -42,9 +43,14 @@ against `releaseAValidationPolicy`. It exercises every section a real App uses â
 a configuration-bound destination, both connection slot kinds, a storage
 collection with an index, and all three Release A contribution kinds.
 
+`tests/wordpressInterop.test.ts` runs the other half: representative payloads
+from the companion WordPress plugin, signed the way it signs them, mapped onto
+the host capability calls the contract accepts.
+
 Two digests in it are placeholders of 64 zeros: `artifact.digest` and the
-`radioso-sync.zip` companion asset. Both are computed from the built artifacts
-when the fixture moves into the WordPress App package in PR 5.
+`radioso-sync.zip` companion asset. Nothing in this package builds either
+artifact, so nothing here can compute them; the digest shape is what the fixture
+exercises.
 
 ## Docs
 

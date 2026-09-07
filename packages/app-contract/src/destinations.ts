@@ -9,7 +9,13 @@ import { connectionSlotIdSchema, destinationIdSchema, fieldKeySchema } from "./i
  */
 const HOST_PATTERN = /^(?:\*\.)?[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/u;
 
-export const destinationProtocols = ["https"] as const;
+/**
+ * `http` is here because a self-hosted site reachable only over plain HTTP is a
+ * real, currently-working installation. Admitting it narrowly — declared,
+ * operator-visible on the grant screen, one destination at a time — is what lets
+ * those installations move onto the runtime instead of being stranded by it.
+ */
+export const destinationProtocols = ["https", "http"] as const;
 export const destinationProtocolSchema = z.enum(destinationProtocols);
 
 /** What leaves the platform on this destination, shown to the operator on the grant screen. */
@@ -23,8 +29,8 @@ export const destinationDataClasses = [
 export const destinationDataClassSchema = z.enum(destinationDataClasses);
 
 export const destinationHostSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("pattern"), pattern: z.string().regex(HOST_PATTERN) }),
-  z.object({ kind: z.literal("configuration"), field: fieldKeySchema }),
+  z.object({ kind: z.literal("pattern"), pattern: z.string().regex(HOST_PATTERN) }).strict(),
+  z.object({ kind: z.literal("configuration"), field: fieldKeySchema }).strict(),
 ]);
 
 export const destinationSchema = z.object({
@@ -35,7 +41,7 @@ export const destinationSchema = z.object({
   purpose: z.string().min(1).max(256),
   dataClasses: z.array(destinationDataClassSchema).min(1).max(destinationDataClasses.length),
   connectionSlot: connectionSlotIdSchema.optional(),
-});
+}).strict();
 
 export type DestinationProtocol = z.infer<typeof destinationProtocolSchema>;
 export type DestinationDataClass = z.infer<typeof destinationDataClassSchema>;

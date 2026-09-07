@@ -102,6 +102,22 @@ const collectDuplicateIds = (manifest: AppManifest): ManifestValidationIssue[] =
     (fixture) => fixture.id,
     (index) => `conformanceFixtures[${index}].id`,
   ),
+  ...manifest.connections.slots.flatMap((slot, slotIndex) =>
+    slot.kind === "secret_fields"
+      ? duplicateIssues(
+          slot.fields,
+          (field) => field.key,
+          (index) => `connections.slots[${slotIndex}].fields[${index}].key`,
+        )
+      : [],
+  ),
+  ...manifest.storageCollections.flatMap((collection, collectionIndex) =>
+    duplicateIssues(
+      collection.recordSchema.fields,
+      (field) => field.key,
+      (index) => `storageCollections[${collectionIndex}].recordSchema.fields[${index}].key`,
+    ),
+  ),
 ];
 
 interface ManifestIndex {
@@ -109,6 +125,7 @@ interface ManifestIndex {
   connectionSlots: ReadonlyMap<string, ConnectionSlot>;
   destinationIds: ReadonlySet<string>;
   collectionIds: ReadonlySet<string>;
+  contributionKindsById: ReadonlyMap<string, ContributionKind>;
 }
 
 const indexManifest = (manifest: AppManifest): ManifestIndex => ({
@@ -116,6 +133,9 @@ const indexManifest = (manifest: AppManifest): ManifestIndex => ({
   connectionSlots: new Map(manifest.connections.slots.map((slot) => [slot.id, slot])),
   destinationIds: new Set(manifest.destinations.map((destination) => destination.id)),
   collectionIds: new Set(manifest.storageCollections.map((collection) => collection.id)),
+  contributionKindsById: new Map(
+    manifest.contributions.map((contribution) => [contribution.id, contribution.kind]),
+  ),
 });
 
 const collectStorageIssues = (manifest: AppManifest): ManifestValidationIssue[] =>
@@ -145,12 +165,63 @@ const collectStorageIssues = (manifest: AppManifest): ManifestValidationIssue[] 
     }),
   );
 
+/**
+ * A handler that writes documents has to say whose namespace, indexed-field
+ * vocabulary, and provenance the write belongs to, and the named contribution
+ * has to be a source that owns one.
+ */
+const collectDocumentSourceIssues = (
+  contributionId: string,
+  documentSources: readonly string[],
+  index: ManifestIndex,
+  at: (suffix: string) => string,
+): ManifestValidationIssue[] =>
+  documentSources.flatMap((sourceId, position) => {
+    const path = at(`documentSources[${position}]`);
+    const kind = index.contributionKindsById.get(sourceId);
+    if (kind === undefined) {
+      return [
+        {
+          code: "unknown_document_source",
+          path,
+          message: `No contribution ${sourceId} is declared`,
+        },
+      ];
+    }
+    if (kind !== "document_source") {
+      return [
+        {
+          code: "not_a_document_source",
+          path,
+          message: `Contribution ${contributionId} writes through ${sourceId}, which is a ${kind}`,
+        },
+      ];
+    }
+    return [];
+  });
+
+const collectConformanceFixtureIssues = (
+  manifest: AppManifest,
+  index: ManifestIndex,
+): ManifestValidationIssue[] =>
+  manifest.conformanceFixtures.flatMap((fixture, position) =>
+    index.contributionKindsById.has(fixture.contributionId)
+      ? []
+      : [
+          {
+            code: "unknown_contribution",
+            path: `conformanceFixtures[${position}].contributionId`,
+            message: `No contribution ${fixture.contributionId} is declared for fixture ${fixture.id}`,
+          },
+        ],
+  );
+
 const collectConfigurationIssues = (
   manifest: AppManifest,
   index: ManifestIndex,
 ): ManifestValidationIssue[] =>
   manifest.configuration.fields.flatMap((field, position) => {
-    if (field.type !== "connection_slot" || field.connectionSlot === undefined) return [];
+    if (field.type !== "connection_slot") return [];
     if (index.connectionSlots.has(field.connectionSlot)) return [];
     return [
       {
@@ -233,6 +304,12 @@ const collectContributionIssues = (
 
     if (contribution.kind === "document_source" && contribution.backfill) {
       requireCollection(contribution.backfill.checkpointCollection, at("backfill.checkpointCollection"));
+    }
+
+    if (contribution.kind === "external_webhook_handler" || contribution.kind === "scheduled_task") {
+      issues.push(
+        ...collectDocumentSourceIssues(contribution.id, contribution.documentSources, index, at),
+      );
     }
 
     if (contribution.kind === "external_webhook_handler") {
@@ -340,6 +417,7 @@ export const validateManifest = (
     ...collectConfigurationIssues(parsed.data, index),
     ...collectDestinationIssues(parsed.data, index),
     ...collectContributionIssues(parsed.data, index),
+    ...collectConformanceFixtureIssues(parsed.data, index),
     ...collectPolicyIssues(parsed.data, policy),
   ];
 

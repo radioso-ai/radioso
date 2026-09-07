@@ -10,6 +10,7 @@ import {
 
 const baseManifest = {
   manifestSchemaVersion: 1,
+  runtimeProtocolVersion: 1,
   app: {
     id: "ai.radioso.example",
     name: "Example",
@@ -83,10 +84,12 @@ const baseManifest = {
       egressDestinations: [],
       deadlineMs: 60_000,
       availability: "required",
+      inputSchemaVersion: 1,
+      outputSchemaVersion: 1,
       externalIdNamespace: "example_post",
       syncModes: ["push", "poll", "backfill"],
       contentFormats: ["html"],
-      indexedFieldKeys: [],
+      indexedFields: { policy: "declared", keys: [] },
       backfill: { checkpointCollection: "sync_state" },
     },
     {
@@ -98,6 +101,9 @@ const baseManifest = {
       egressDestinations: [],
       deadlineMs: 30_000,
       availability: "required",
+      inputSchemaVersion: 1,
+      outputSchemaVersion: 1,
+      documentSources: ["site_content"],
       authentication: {
         kind: "hmac_sha256",
         secretConnectionSlot: "webhook_secret",
@@ -116,6 +122,9 @@ const baseManifest = {
       egressDestinations: ["site"],
       deadlineMs: 600_000,
       availability: "optional",
+      inputSchemaVersion: 1,
+      outputSchemaVersion: 1,
+      documentSources: ["site_content"],
       schedule: { kind: "interval_from_configuration", field: "poll_interval_sec", minSeconds: 60 },
       overlapPolicy: "skip",
       maxDurationSeconds: 600,
@@ -184,6 +193,8 @@ describe("validateManifest", () => {
         egressDestinations: [],
         deadlineMs: 10_000,
         availability: "optional",
+        inputSchemaVersion: 1,
+        outputSchemaVersion: 1,
       });
     });
     expect(issues).toEqual([
@@ -382,6 +393,92 @@ describe("validateManifest", () => {
       "unknown_collection",
       "unknown_connection_slot",
       "unknown_destination",
+    ]);
+  });
+  it("reports duplicate secret-field keys inside one connection slot", () => {
+    const issues = issuesFor((manifest) => {
+      const connections = manifest["connections"] as { slots: Record<string, unknown>[] };
+      const fields = connections.slots[0]["fields"] as Record<string, unknown>[];
+      fields.push(structuredClone(fields[0]));
+    });
+    expect(issues).toEqual([
+      expect.objectContaining({ code: "duplicate_id", path: "connections.slots[0].fields[2].key" }),
+    ]);
+  });
+
+  it("reports duplicate record-field keys and duplicate index ids inside one collection", () => {
+    const issues = issuesFor((manifest) => {
+      const collections = manifest["storageCollections"] as Record<string, unknown>[];
+      const fields = collections[0]["recordSchema"] as { fields: Record<string, unknown>[] };
+      fields.fields.push(structuredClone(fields.fields[0]));
+      const indexes = collections[0]["indexes"] as Record<string, unknown>[];
+      indexes.push({ id: "by_updated_at", field: "cursor" });
+    });
+    expect(issues.map((issue) => [issue.code, issue.path])).toEqual([
+      ["duplicate_id", "storageCollections[0].indexes[1].id"],
+      ["duplicate_id", "storageCollections[0].recordSchema.fields[3].key"],
+    ]);
+  });
+
+  it("rejects a conformance fixture naming a contribution the manifest does not declare", () => {
+    const issues = issuesFor((manifest) => {
+      manifest["conformanceFixtures"] = [
+        {
+          id: "push_published",
+          contributionId: "missing_handler",
+          description: "Replays a published push.",
+          path: "fixtures/push-published.json",
+        },
+      ];
+    });
+    expect(issues).toEqual([
+      expect.objectContaining({
+        code: "unknown_contribution",
+        path: "conformanceFixtures[0].contributionId",
+      }),
+    ]);
+  });
+
+  it("rejects a document source reference that no contribution declares", () => {
+    const issues = issuesFor((manifest) => {
+      contributionsOf(manifest)[1]["documentSources"] = ["missing_source"];
+    });
+    expect(issues).toEqual([
+      expect.objectContaining({
+        code: "unknown_document_source",
+        path: "contributions[1].documentSources[0]",
+      }),
+    ]);
+  });
+
+  it("rejects a document source reference that names a contribution which is not a source", () => {
+    const issues = issuesFor((manifest) => {
+      contributionsOf(manifest)[2]["documentSources"] = ["content_push"];
+    });
+    expect(issues).toEqual([
+      expect.objectContaining({
+        code: "not_a_document_source",
+        path: "contributions[2].documentSources[0]",
+      }),
+    ]);
+  });
+
+  it("admits a disabled value below the interval floor, because it means no schedule at all", () => {
+    const issues = issuesFor((manifest) => {
+      const schedule = contributionsOf(manifest)[2]["schedule"] as Record<string, unknown>;
+      schedule["disabledValue"] = 0;
+    });
+    expect(issues).toEqual([]);
+  });
+
+  it("rejects an undeclared key rather than dropping it from a signed declaration", () => {
+    const issues = issuesFor((manifest) => {
+      (manifest["storageCollections"] as Record<string, unknown>[])[0]["physicalTable"] = "customer_data";
+      (manifest["destinations"] as Record<string, unknown>[])[0]["allowPrivateNetwork"] = true;
+    });
+    expect(issues.map((issue) => [issue.code, issue.path])).toEqual([
+      ["schema", "destinations[0]"],
+      ["schema", "storageCollections[0]"],
     ]);
   });
 });

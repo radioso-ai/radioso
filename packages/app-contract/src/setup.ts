@@ -13,11 +13,11 @@ export const setupGuideSectionSchema = z.object({
   title: displayNameSchema,
   paragraphs: z.array(z.string().min(1).max(1000)).min(1).max(10),
   steps: z.array(z.string().min(1).max(600)).max(20).optional(),
-});
+}).strict();
 
 export const setupGuideSchema = z.object({
   sections: z.array(setupGuideSectionSchema).min(1).max(10),
-});
+}).strict();
 
 export const companionAssetSchema = z.object({
   id: assetIdSchema,
@@ -25,7 +25,7 @@ export const companionAssetSchema = z.object({
   fileName: z.string().regex(FILE_NAME_PATTERN),
   mediaType: z.string().regex(MEDIA_TYPE_PATTERN).max(128),
   digest: digestSchema,
-});
+}).strict();
 
 export type SetupGuide = z.infer<typeof setupGuideSchema>;
 export type CompanionAsset = z.infer<typeof companionAssetSchema>;

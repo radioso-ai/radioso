@@ -2,23 +2,41 @@ import { describe, expect, it } from "vitest";
 
 import {
   appErrorCodes,
+  base64BodySchema,
+  healthResponseSchema,
+  hostCapabilityCallSchema,
   hostCapabilityRequestSchema,
   hostCapabilityResponseSchema,
+  invocationOutcomes,
   invocationRequestSchema,
   invocationResponseSchema,
+  MAX_BASE64_DECODED_BYTES,
   MAX_ERROR_MESSAGE_LENGTH,
+  MAX_HEADER_ENTRIES,
   RUNTIME_PROTOCOL_VERSION,
 } from "../src/index.js";
 
+const INVOCATION_ID = "8b1f6f2a-6f6f-4a3f-9c4a-2f0d0f8a1b21";
+
 const requestHeader = {
   protocolVersion: 1,
-  invocationId: "8b1f6f2a-6f6f-4a3f-9c4a-2f0d0f8a1b21",
+  invocationId: INVOCATION_ID,
   installationId: "1d2e3f40-1111-4222-8333-444455556666",
+  releaseDigest: `sha256:${"a".repeat(64)}`,
   contributionId: "content_push",
+  inputSchemaVersion: 1,
   attempt: 1,
   idempotencyKey: "delivery:6f0f1c2d",
   deadlineAt: "2026-09-06T12:00:30.000Z",
-  identity: { token: "opaque-identity-token", expiresAt: "2026-09-06T12:00:30.000Z" },
+  capabilitySession: { token: "opaque-session-token", expiresAt: "2026-09-06T12:00:30.000Z" },
+};
+
+const webhookInput = {
+  kind: "webhook",
+  deliveryId: "6f0f1c2d",
+  receivedAt: "2026-09-06T12:00:00.000Z",
+  headers: { "X-Radioso-Signature": "sha256=abc" },
+  body: { encoding: "base64", data: "eyJldmVudCI6InB1Ymxpc2hlZCJ9" },
 };
 
 describe("invocation request", () => {
@@ -29,23 +47,20 @@ describe("invocation request", () => {
         ...requestHeader,
         protocolVersion: 2,
         executionClass: "external_webhook",
-        input: { kind: "webhook", deliveryId: "d1", receivedAt: requestHeader.deadlineAt, headers: {}, body: { encoding: "base64", data: "" } },
+        input: webhookInput,
       }).success,
     ).toBe(false);
   });
 
-  it("carries a webhook input", () => {
+  it("carries the release and input-schema identity the work was queued against", () => {
     const parsed = invocationRequestSchema.parse({
       ...requestHeader,
       executionClass: "external_webhook",
-      input: {
-        kind: "webhook",
-        deliveryId: "6f0f1c2d",
-        receivedAt: "2026-09-06T12:00:00.000Z",
-        headers: { "x-radioso-signature": "sha256=abc" },
-        body: { encoding: "base64", data: "eyJldmVudCI6InB1Ymxpc2hlZCJ9" },
-      },
+      input: webhookInput,
     });
+    expect(parsed.releaseDigest).toBe(requestHeader.releaseDigest);
+    expect(parsed.inputSchemaVersion).toBe(1);
+    expect(parsed.capabilitySession.token).toBe("opaque-session-token");
     expect(parsed.input.kind).toBe("webhook");
   });
 
@@ -74,6 +89,27 @@ describe("invocation request", () => {
     expect(parsed.input).toMatchObject({ kind: "backfill", requestId: "backfill-1" });
   });
 
+  it("refuses an input kind the execution class does not carry", () => {
+    expect(
+      invocationRequestSchema.safeParse({
+        ...requestHeader,
+        executionClass: "external_webhook",
+        input: {
+          kind: "scheduled",
+          occurrenceId: "o1",
+          scheduledFor: "2026-09-06T12:00:00.000Z",
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      invocationRequestSchema.safeParse({
+        ...requestHeader,
+        executionClass: "scheduled_task",
+        input: webhookInput,
+      }).success,
+    ).toBe(false);
+  });
+
   it("rejects an input kind outside the union", () => {
     expect(
       invocationRequestSchema.safeParse({
@@ -83,30 +119,114 @@ describe("invocation request", () => {
       }).success,
     ).toBe(false);
   });
+
+  it("bounds a webhook body to real base64 under a decoded ceiling", () => {
+    expect(base64BodySchema.safeParse({ encoding: "base64", data: "not base64!" }).success).toBe(false);
+    expect(base64BodySchema.safeParse({ encoding: "base64", data: "abcde" }).success).toBe(false);
+    expect(
+      base64BodySchema.safeParse({
+        encoding: "base64",
+        data: "A".repeat(Math.ceil((MAX_BASE64_DECODED_BYTES + 1024) / 3) * 4),
+      }).success,
+    ).toBe(false);
+  });
+
+  it("bounds how many headers one delivery may carry", () => {
+    const headers = Object.fromEntries(
+      Array.from({ length: MAX_HEADER_ENTRIES + 1 }, (_, index) => [`X-Header-${index}`, "v"]),
+    );
+    expect(
+      invocationRequestSchema.safeParse({
+        ...requestHeader,
+        executionClass: "external_webhook",
+        input: { ...webhookInput, headers },
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("health response", () => {
+  it("reports readiness and the contributions the artifact implements", () => {
+    const parsed = healthResponseSchema.parse({
+      protocolVersion: 1,
+      ready: true,
+      implementedContributionIds: ["site_content", "content_push", "content_poll"],
+    });
+    expect(parsed.implementedContributionIds).toHaveLength(3);
+    expect(healthResponseSchema.safeParse({ protocolVersion: 2, ready: true, implementedContributionIds: [] }).success).toBe(
+      false,
+    );
+  });
 });
 
 describe("invocation response", () => {
-  const responseHeader = { protocolVersion: 1, invocationId: requestHeader.invocationId };
+  const responseHeader = { protocolVersion: 1, invocationId: INVOCATION_ID };
 
-  it("accepts a completed response with counts and a checkpoint", () => {
-    const parsed = invocationResponseSchema.parse({
-      ...responseHeader,
-      outcome: "completed",
-      output: { checkpoint: { cursor: "2026-09-06T12:00:00.000Z" }, counts: { ingested: 3, deleted: 1, skipped: 0 } },
-    });
-    expect(parsed.outcome).toBe("completed");
+  it("names the closed outcome catalog", () => {
+    expect([...invocationOutcomes]).toEqual([
+      "succeeded",
+      "invalid_request",
+      "denied",
+      "unavailable",
+      "rate_limited",
+      "retryable_failure",
+      "terminal_failure",
+      "timed_out",
+      "cancelled",
+    ]);
   });
 
-  it("requires an error on a failed or retry outcome", () => {
-    expect(invocationResponseSchema.safeParse({ ...responseHeader, outcome: "failed" }).success).toBe(false);
+  it("accepts a success carrying its output schema version, output, and checkpoint", () => {
+    const parsed = invocationResponseSchema.parse({
+      ...responseHeader,
+      outcome: "succeeded",
+      outputSchemaVersion: 1,
+      output: { counts: { ingested: 3, deleted: 1, skipped: 0 } },
+      checkpoint: { cursor: "2026-09-06T12:00:00.000Z" },
+    });
+    expect(parsed.outcome).toBe("succeeded");
+  });
+
+  it("keeps success and failure mutually exclusive", () => {
     expect(
-      invocationResponseSchema.parse({
+      invocationResponseSchema.safeParse({
         ...responseHeader,
-        outcome: "retry",
-        error: { code: "unavailable", message: "site unreachable" },
+        outcome: "succeeded",
+        outputSchemaVersion: 1,
+        output: {},
+        error: { code: "internal", message: "both at once" },
+      }).success,
+    ).toBe(false);
+    expect(
+      invocationResponseSchema.safeParse({
+        ...responseHeader,
+        outcome: "terminal_failure",
+        error: { code: "internal", message: "over" },
+        checkpoint: { cursor: "a" },
+      }).success,
+    ).toBe(false);
+    expect(
+      invocationResponseSchema.safeParse({
+        ...responseHeader,
+        outcome: "denied",
+        error: { code: "denied", message: "no grant" },
         retryAfterSeconds: 30,
-      }).outcome,
-    ).toBe("retry");
+      }).success,
+    ).toBe(false);
+  });
+
+  it("lets an outcome worth retrying report progress and ask the host to wait", () => {
+    const parsed = invocationResponseSchema.parse({
+      ...responseHeader,
+      outcome: "rate_limited",
+      error: { code: "unavailable", message: "site is throttling" },
+      retryAfterSeconds: 30,
+      checkpoint: { cursor: "page-3" },
+    });
+    expect(parsed.outcome).toBe("rate_limited");
+    expect(
+      invocationResponseSchema.safeParse({ ...responseHeader, outcome: "retryable_failure" }).success,
+    ).toBe(false);
   });
 
   it("bounds the error message so a payload cannot be echoed back", () => {
@@ -114,7 +234,7 @@ describe("invocation response", () => {
     expect(
       invocationResponseSchema.safeParse({
         ...responseHeader,
-        outcome: "failed",
+        outcome: "terminal_failure",
         error: { code: "internal", message: "x".repeat(MAX_ERROR_MESSAGE_LENGTH + 1) },
       }).success,
     ).toBe(false);
@@ -140,15 +260,24 @@ describe("host capabilities", () => {
     const requests = [
       {
         capability: "documents.ingest",
+        sourceContributionId: "site_content",
         document: {
           externalDocumentId: "wp_post_12",
           title: "Hello",
           content: { format: "html", value: "<p>Hello</p>" },
           sourceUrl: "https://example.com/hello",
-          indexedFields: { sku: "A-1", price: 9.5 },
+          indexedFields: { sku: "A-1", price: 9.5, ISBN: "9788894000000" },
+          metadata: { wp_post_type: "post", author: "Ada Lovelace" },
+          publishedAt: "2026-09-01T08:00:00.000Z",
+          modifiedAt: "2026-09-02T08:00:00.000Z",
+          author: "Ada Lovelace",
         },
       },
-      { capability: "documents.delete", externalDocumentId: "wp_post_12" },
+      {
+        capability: "documents.delete",
+        sourceContributionId: "site_content",
+        externalDocumentId: "wp_post_12",
+      },
       { capability: "storage.get", request: { collection: "sync_state", key: "site" } },
       { capability: "storage.put", request: { collection: "sync_state", key: "site", record: { cursor: "a" } } },
       { capability: "storage.delete", request: { collection: "sync_state", key: "site" } },
@@ -159,18 +288,80 @@ describe("host capabilities", () => {
       { capability: "egress.fetch", destination: "site", method: "GET", path: "/wp-json/wp/v2/posts" },
     ];
     for (const request of requests) {
-      expect(hostCapabilityRequestSchema.safeParse(request).success).toBe(true);
+      const parsed = hostCapabilityRequestSchema.safeParse(request);
+      expect(parsed.success ? [] : parsed.error.issues).toEqual([]);
     }
+  });
+
+  it("requires a document effect to name the source that owns the namespace", () => {
+    expect(
+      hostCapabilityRequestSchema.safeParse({
+        capability: "documents.delete",
+        externalDocumentId: "wp_post_12",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("keeps an egress path origin-relative", () => {
+    const reject = (path: string): boolean =>
+      hostCapabilityRequestSchema.safeParse({
+        capability: "egress.fetch",
+        destination: "site",
+        method: "GET",
+        path,
+      }).success;
+    expect(reject("https://169.254.169.254/latest/meta-data/")).toBe(false);
+    expect(reject("//169.254.169.254/latest/meta-data/")).toBe(false);
+    expect(reject("\\\\evil.example/")).toBe(false);
+    expect(reject("/wp-json/wp/v2/posts#fragment")).toBe(false);
+    expect(reject("wp-json/wp/v2/posts")).toBe(false);
+    expect(reject("/wp-json/wp/v2/posts")).toBe(true);
   });
 
   it("rejects a capability outside the union", () => {
     expect(hostCapabilityRequestSchema.safeParse({ capability: "documents.list" }).success).toBe(false);
   });
 
-  it("parses both arms of the capability response", () => {
-    expect(hostCapabilityResponseSchema.parse({ ok: true, result: { version: 2 } })).toMatchObject({ ok: true });
+  it("carries the protocol version, invocation, session, and idempotency id on every call", () => {
+    const call = {
+      protocolVersion: 1,
+      invocationId: INVOCATION_ID,
+      capabilitySession: "opaque-session-token",
+      requestId: "wp_post_12:published",
+      request: { capability: "storage.get", request: { collection: "sync_state", key: "site" } },
+    };
+    expect(hostCapabilityCallSchema.parse(call).requestId).toBe("wp_post_12:published");
+    for (const missing of ["protocolVersion", "invocationId", "capabilitySession", "requestId"]) {
+      const partial: Record<string, unknown> = { ...call };
+      delete partial[missing];
+      expect(hostCapabilityCallSchema.safeParse(partial).success).toBe(false);
+    }
+  });
+
+  it("ties a successful result to the capability that produced it", () => {
     expect(
-      hostCapabilityResponseSchema.parse({ ok: false, error: { code: "destination_denied", message: "host not declared" } }),
+      hostCapabilityResponseSchema.parse({
+        ok: true,
+        capability: "documents.ingest",
+        result: { externalDocumentId: "wp_post_12", outcome: "created" },
+      }),
+    ).toMatchObject({ ok: true });
+    expect(
+      hostCapabilityResponseSchema.parse({ ok: true, capability: "storage.put", result: { version: 2 } }),
+    ).toMatchObject({ ok: true });
+    expect(
+      hostCapabilityResponseSchema.safeParse({ ok: true, capability: "storage.put", result: { deleted: true } })
+        .success,
+    ).toBe(false);
+    expect(hostCapabilityResponseSchema.safeParse({ ok: true, result: { version: 2 } }).success).toBe(false);
+  });
+
+  it("parses the failure arm and refuses an error code outside the vocabulary", () => {
+    expect(
+      hostCapabilityResponseSchema.parse({
+        ok: false,
+        error: { code: "destination_denied", message: "host not declared" },
+      }),
     ).toMatchObject({ ok: false });
     expect(
       hostCapabilityResponseSchema.safeParse({ ok: false, error: { code: "teapot", message: "no" } }).success,

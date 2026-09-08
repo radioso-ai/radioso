@@ -1,7 +1,9 @@
 import { notFound } from "../../../shared/domain/errors.js";
 import type { AuditPort } from "../../audit/contracts/index.js";
+import { requireAppAdministration } from "../domain/authorization.js";
 import { buildAppInstallationPlan } from "../domain/installationPlan.js";
 import type { AppInstallationPlanRecord } from "../domain/records.js";
+import { assertAppReleaseEligible } from "../domain/releaseAdmission.js";
 import type { AppOperatorAuthorizationPort, AppOperatorPrincipal } from "../ports/operatorAuthorization.js";
 import type { AppConnectionRepositoryPort } from "../repositories/appConnectionRepository.js";
 import type { AppInstallationPlanRepositoryPort } from "../repositories/appInstallationPlanRepository.js";
@@ -12,7 +14,6 @@ interface CreateAppInstallationPlanRequest {
   readonly workspaceId: string;
   readonly releaseId: string;
   readonly configuration: Readonly<Record<string, unknown>>;
-  readonly targetAgentIds: readonly string[];
   readonly principal: AppOperatorPrincipal;
 }
 
@@ -23,6 +24,7 @@ interface AppInstallationPlanServiceDependencies {
   readonly plans: AppInstallationPlanRepositoryPort;
   readonly authorization: AppOperatorAuthorizationPort;
   readonly audit: Pick<AuditPort, "record">;
+  readonly runningRadiosoVersion: string | null;
   readonly clock?: () => Date;
 }
 
@@ -38,22 +40,16 @@ export class AppInstallationPlanService {
    * principal because what an operator is shown here is what apply will bind to.
    */
   async create(request: CreateAppInstallationPlanRequest): Promise<AppInstallationPlanRecord> {
-    await this.dependencies.authorization.requireAppAdministration(request.principal, request.workspaceId);
+    await requireAppAdministration(this.dependencies.authorization, request.principal, request.workspaceId);
 
     const release = await this.dependencies.releases.findById(request.releaseId);
-    if (!release || release.state !== "admitted") throw notFound("App release not found");
+    if (!release) throw notFound("App release not found");
+    assertAppReleaseEligible(release, this.dependencies.runningRadiosoVersion);
 
     const existing = await this.dependencies.installations.findLiveByAppId(request.workspaceId, release.appId);
     const existingConnections = existing
       ? await this.dependencies.connections.listByInstallation(existing.id)
       : [];
-
-    // A `generated_secret` slot needs nothing from the operator: the host mints it on an
-    // explicit, audited bind. Counting it as satisfied here is what keeps planning from
-    // demanding a value that only the host can produce.
-    const hostMintedSlotIds = release.manifest.connections.slots
-      .filter((slot) => slot.kind === "generated_secret")
-      .map((slot) => slot.id);
 
     const { plan, checksum, expiresAt } = buildAppInstallationPlan({
       workspaceId: request.workspaceId,
@@ -63,14 +59,16 @@ export class AppInstallationPlanService {
         version: release.version,
         manifestDigest: release.manifestDigest,
         manifest: release.manifest,
+        state: release.state,
         admissionPolicyVersion: release.admissionPolicyVersion,
       },
       configuration: request.configuration,
-      boundConnectionSlotIds: [
-        ...hostMintedSlotIds,
-        ...existingConnections.map((connection) => connection.slotId),
-      ],
-      targetAgentIds: request.targetAgentIds,
+      // A slot counts as bound when a connection record exists for it, and never
+      // otherwise. A host-minted secret is bound by the bind that mints it, which is why
+      // the plan can show it as an open requirement and the setup phase closes it.
+      boundConnectionSlotIds: existingConnections
+        .filter((connection) => connection.deletionRequestedAt === null)
+        .map((connection) => connection.slotId),
       now: this.now(),
     });
 
@@ -94,6 +92,7 @@ export class AppInstallationPlanService {
         releaseId: release.id,
         version: release.version,
         checksum,
+        actorUserId: request.principal.userId,
         grantCount: plan.grants.length,
         destinationCount: plan.destinations.length,
         contributionCount: plan.contributions.length,
@@ -114,7 +113,7 @@ export class AppInstallationPlanService {
     planId: string,
     principal: AppOperatorPrincipal,
   ): Promise<AppInstallationPlanRecord> {
-    await this.dependencies.authorization.requireAppAdministration(principal, workspaceId);
+    await requireAppAdministration(this.dependencies.authorization, principal, workspaceId);
 
     const record = await this.dependencies.plans.findById(workspaceId, planId);
     if (!record) throw notFound("App installation plan not found");

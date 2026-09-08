@@ -1,4 +1,10 @@
-import type { ConnectionSlot } from "@radioso/app-contract";
+import type { AdmittedManifest } from "@radioso/app-contract";
+
+/**
+ * The slot as the admitted manifest holds it: deeply readonly, because that brand is what
+ * says these rules came from a manifest admission actually accepted.
+ */
+type AdmittedConnectionSlot = AdmittedManifest["connections"]["slots"][number];
 
 import { AppsError } from "./errors.js";
 
@@ -6,7 +12,7 @@ export const appConnectionKinds = ["secret_fields", "generated_secret"] as const
 export type AppConnectionKind = (typeof appConnectionKinds)[number];
 
 interface AppConnectionBindingInput {
-  readonly slot: ConnectionSlot;
+  readonly slot: AdmittedConnectionSlot;
   readonly values: Readonly<Record<string, unknown>>;
   /** Host-side entropy for a `generated_secret` slot. */
   readonly generateSecret: (byteLength: number) => string;

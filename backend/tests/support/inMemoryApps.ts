@@ -14,7 +14,9 @@ import type {
   AppLifecycleOperationRepositoryPort,
   AppReleaseRecord,
   AppReleaseRepositoryPort,
+  AppsUnitOfWork,
 } from "../../src/modules/apps/public.js";
+import { AppsError } from "../../src/modules/apps/public.js";
 
 /**
  * In-memory Apps persistence for route and service tests. It mirrors the Postgres
@@ -24,12 +26,15 @@ import type {
 export class InMemoryAppReleaseRepository implements AppReleaseRepositoryPort {
   readonly rows = new Map<string, AppReleaseRecord>();
 
-  async upsert(input: Parameters<AppReleaseRepositoryPort["upsert"]>[0]): Promise<AppReleaseRecord> {
+  async insertIfAbsent(
+    input: Parameters<AppReleaseRepositoryPort["insertIfAbsent"]>[0],
+  ): Promise<AppReleaseRecord | null> {
     const existing = [...this.rows.values()].find(
       (row) => row.appId === input.appId && row.version === input.version,
     );
+    if (existing) return null;
     const record: AppReleaseRecord = {
-      id: existing?.id ?? randomUUID(),
+      id: randomUUID(),
       appId: input.appId,
       version: input.version,
       manifest: input.manifest,
@@ -39,11 +44,22 @@ export class InMemoryAppReleaseRepository implements AppReleaseRepositoryPort {
       state: input.state,
       admissionPolicyVersion: input.admissionPolicyVersion,
       admissionDecision: input.admissionDecision,
-      createdAt: existing?.createdAt ?? new Date(),
+      createdAt: new Date(),
       updatedAt: new Date(),
     };
     this.rows.set(record.id, record);
     return record;
+  }
+
+  async transitionState(
+    id: string,
+    state: Parameters<AppReleaseRepositoryPort["transitionState"]>[1],
+  ): Promise<AppReleaseRecord | null> {
+    const row = this.rows.get(id);
+    if (!row) return null;
+    const updated: AppReleaseRecord = { ...row, state, updatedAt: new Date() };
+    this.rows.set(id, updated);
+    return updated;
   }
 
   async findByAppIdAndVersion(appId: string, version: string): Promise<AppReleaseRecord | null> {
@@ -85,6 +101,10 @@ export class InMemoryAppInstallationRepository implements AppInstallationReposit
   async findById(workspaceId: string, id: string): Promise<AppInstallationRecord | null> {
     const row = this.rows.get(id);
     return row && row.workspaceId === workspaceId ? row : null;
+  }
+
+  async findAnyById(id: string): Promise<AppInstallationRecord | null> {
+    return this.rows.get(id) ?? null;
   }
 
   async findLiveByAppId(workspaceId: string, appId: string): Promise<AppInstallationRecord | null> {
@@ -213,7 +233,9 @@ export class InMemoryAppConnectionRepository implements AppConnectionRepositoryP
       createdAt: index >= 0 ? this.rows[index].createdAt : now,
       updatedAt: now,
       rotatedAt: index >= 0 ? now : null,
-      deletionRequestedAt: null,
+      // Never cleared by a rebind: a connection marked for deletion belongs to an
+      // installation that is being removed.
+      deletionRequestedAt: index >= 0 ? this.rows[index].deletionRequestedAt : null,
     };
     if (index >= 0) this.rows[index] = record;
     else this.rows.push(record);
@@ -244,13 +266,28 @@ export class InMemoryAppLifecycleOperationRepository implements AppLifecycleOper
   async start(input: Parameters<AppLifecycleOperationRepositoryPort["start"]>[0]) {
     const existing = [...this.rows.values()].find((row) => row.idempotencyKey === input.idempotencyKey);
     if (existing) return { operation: existing, created: false };
+    // Mirrors migration 171's partial unique index: one in-flight operation per
+    // installation, and its violation reads as `operation_in_progress`.
+    const inFlight = [...this.rows.values()].some(
+      (row) => row.installationId === input.installationId
+        && (row.state === "running" || row.state === "compensating"),
+    );
+    if (inFlight) {
+      throw new AppsError(
+        "operation_in_progress",
+        "Another lifecycle operation is already running for this installation.",
+        { installationId: input.installationId },
+      );
+    }
     const record: AppLifecycleOperationRecord = {
       id: randomUUID(),
       installationId: input.installationId,
       kind: input.kind,
       state: "running",
       step: null,
+      compensationStep: null,
       idempotencyKey: input.idempotencyKey,
+      requestFingerprint: input.requestFingerprint,
       initiatedBy: input.initiatedBy,
       payload: input.payload,
       error: null,
@@ -275,7 +312,34 @@ export class InMemoryAppLifecycleOperationRepository implements AppLifecycleOper
       ...row,
       ...(mutation.state === undefined ? {} : { state: mutation.state }),
       ...(mutation.step === undefined ? {} : { step: mutation.step }),
+      ...(mutation.compensationStep === undefined ? {} : { compensationStep: mutation.compensationStep }),
       ...(mutation.error === undefined ? {} : { error: mutation.error }),
+      updatedAt: new Date(),
+    };
+    this.rows.set(id, updated);
+    return updated;
+  }
+
+  async advance(
+    id: string,
+    input: Parameters<AppLifecycleOperationRepositoryPort["advance"]>[1],
+  ): Promise<AppLifecycleOperationRecord | null> {
+    const row = this.rows.get(id);
+    if (!row || row.state !== input.expectedState || row.step !== input.expectedStep) return null;
+    const updated: AppLifecycleOperationRecord = { ...row, step: input.step, updatedAt: new Date() };
+    this.rows.set(id, updated);
+    return updated;
+  }
+
+  async advanceCompensation(
+    id: string,
+    input: Parameters<AppLifecycleOperationRepositoryPort["advanceCompensation"]>[1],
+  ): Promise<AppLifecycleOperationRecord | null> {
+    const row = this.rows.get(id);
+    if (!row || row.state !== "compensating" || row.compensationStep !== input.expectedCompensationStep) return null;
+    const updated: AppLifecycleOperationRecord = {
+      ...row,
+      compensationStep: input.compensationStep,
       updatedAt: new Date(),
     };
     this.rows.set(id, updated);
@@ -309,6 +373,15 @@ export interface InMemoryAppRepositories {
   readonly connections: InMemoryAppConnectionRepository;
   readonly operations: InMemoryAppLifecycleOperationRepository;
 }
+
+/**
+ * The in-memory repositories share one object graph, so running work "in a transaction"
+ * is running it against the same repositories. What this double cannot reproduce is
+ * rollback, so a test that needs to prove atomicity uses the integration suite.
+ */
+export const createInMemoryAppsUnitOfWork = (repositories: InMemoryAppRepositories): AppsUnitOfWork => ({
+  run: (work) => work(repositories),
+});
 
 export const createInMemoryAppRepositories = (): InMemoryAppRepositories => ({
   releases: new InMemoryAppReleaseRepository(),

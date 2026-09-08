@@ -68,7 +68,8 @@ const plan = z.object({
     required: z.boolean(),
     bound: z.boolean(),
   })),
-  targetAgentIds: z.array(z.string().uuid()),
+  admissionPolicyVersion: z.string(),
+  releaseState: z.string(),
   unresolvedRequirements: z.array(z.object({
     code: z.enum(["configuration_required", "connection_unbound", "destination_host_unresolved"]),
     path: z.string(),
@@ -118,9 +119,11 @@ const connection = z.object({
 const operation = z.object({
   id: z.string().uuid(),
   installationId: z.string().uuid(),
-  kind: z.enum(["install", "disable", "enable", "remove", "dispose_data"]),
-  state: z.enum(["running", "completed", "failed", "compensating"]),
+  kind: z.enum(["install", "activate", "reconfigure", "disable", "enable", "remove", "dispose_data"]),
+  state: z.enum(["running", "completed", "failed", "compensating", "compensation_failed"]),
   step: z.string().nullable(),
+  compensationStep: z.string().nullable(),
+  // A reason code and a static message. Never an adapter's own exception text.
   error: z.object({ reason: z.string(), message: z.string() }).nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
@@ -155,8 +158,8 @@ export const registerAppsPaths = (
     401: json("Interactive workspace session required", schemas.ErrorResponseSchema),
     403: json("App administration permission required", schemas.ErrorResponseSchema),
     404: json("Release, plan, or installation not available in this workspace", schemas.ErrorResponseSchema),
-    409: json("Stale plan or installation version, conflicting installation, or an unbound connection this change needs", schemas.ErrorResponseSchema),
-    503: json("No App runtime or secret encryption key is configured", schemas.ErrorResponseSchema),
+    409: json("Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible", schemas.ErrorResponseSchema),
+    503: json("No App runtime or secret encryption key is configured, or App administration permission could not be checked", schemas.ErrorResponseSchema),
   };
   const body = <T extends z.ZodTypeAny>(schema: T) =>
     ({ required: true, content: { "application/json": { schema } } });
@@ -181,8 +184,7 @@ export const registerAppsPaths = (
       body: body(z.object({
         releaseId: z.string().uuid(),
         configuration: configuration.optional(),
-        targetAgentIds: z.array(z.string().uuid()).optional(),
-      })),
+      }).strict()),
     },
     responses: { 201: json("The plan an operator approves, with its checksum", planRecord), ...errors },
   });
@@ -196,7 +198,7 @@ export const registerAppsPaths = (
 
   registry.registerPath({
     method: "post", path: "/api/v1/apps/installation-plans/{planId}/apply", tags: ["Apps"],
-    summary: "Apply an approved installation plan", operationId: "applyAppInstallationPlan", security: session,
+    summary: "Apply an approved plan and create the installation", operationId: "applyAppInstallationPlan", security: session,
     request: {
       params: planParams,
       body: body(z.object({
@@ -205,7 +207,13 @@ export const registerAppsPaths = (
         idempotencyKey: z.string().min(1).max(200),
       })),
     },
-    responses: { 201: json("The installation and the lifecycle operation that ran", lifecycleOutcome), ...errors },
+    responses: {
+      201: json(
+        "The installation, created in `planned` with its grants recorded and nothing running yet, and the operation that recorded it",
+        lifecycleOutcome,
+      ),
+      ...errors,
+    },
   });
 
   registry.registerPath({
@@ -230,13 +238,17 @@ export const registerAppsPaths = (
 
   registry.registerPath({
     method: "patch", path: "/api/v1/apps/installations/{installationId}/configuration", tags: ["Apps"],
-    summary: "Change an installation's configuration values",
+    summary: "Reconfigure an installation, re-staging and re-testing before the change applies",
     operationId: "updateAppInstallationConfiguration", security: session,
     request: {
       params: installationParams,
-      body: body(z.object({ configuration, expectedVersion: z.number().int().positive() })),
+      body: body(z.object({
+        configuration,
+        expectedVersion: z.number().int().positive(),
+        idempotencyKey: z.string().min(1).max(200).optional(),
+      })),
     },
-    responses: { 200: json("The updated installation", installation), ...errors },
+    responses: { 200: json("The installation and the reconfigure operation that ran", lifecycleOutcome), ...errors },
   });
 
   registry.registerPath({
@@ -244,7 +256,11 @@ export const registerAppsPaths = (
     summary: "Bind a connection slot", operationId: "bindAppConnection", security: session,
     request: {
       params: installationParams,
-      body: body(z.object({ slotId: z.string(), values: z.record(z.unknown()).optional() })),
+      body: body(z.object({
+        slotId: z.string(),
+        values: z.record(z.unknown()).optional(),
+        expectedVersion: z.number().int().positive(),
+      })),
     },
     responses: {
       201: json(
@@ -255,14 +271,23 @@ export const registerAppsPaths = (
     },
   });
 
-  for (const action of ["disable", "enable"] as const) {
+  const lifecycleSummaries = {
+    activate: "Provision, stage, test, and activate an installation",
+    disable: "Disable an installation",
+    enable: "Enable a disabled installation",
+  } as const;
+
+  for (const action of ["activate", "disable", "enable"] as const) {
     registry.registerPath({
       method: "post", path: `/api/v1/apps/installations/{installationId}/${action}`, tags: ["Apps"],
-      summary: `${action[0]?.toUpperCase()}${action.slice(1)} an installation`,
+      summary: lifecycleSummaries[action],
       operationId: `${action}AppInstallation`, security: session,
       request: {
         params: installationParams,
-        body: body(z.object({ idempotencyKey: z.string().min(1).max(200).optional() })),
+        body: body(z.object({
+          expectedVersion: z.number().int().positive(),
+          idempotencyKey: z.string().min(1).max(200).optional(),
+        })),
       },
       responses: { 200: json("The installation and the lifecycle operation that ran", lifecycleOutcome), ...errors },
     });
@@ -276,6 +301,7 @@ export const registerAppsPaths = (
       params: installationParams,
       body: body(z.object({
         disposition: z.enum(["export", "retain", "delete"]),
+        expectedVersion: z.number().int().positive(),
         idempotencyKey: z.string().min(1).max(200).optional(),
       })),
     },

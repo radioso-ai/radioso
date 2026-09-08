@@ -6,7 +6,7 @@ import { toJsonb } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../../shared/infra/kysely/types.js";
 import type { AppReleaseRecord, AppReleaseState } from "../domain/records.js";
 
-export interface UpsertAppReleaseInput {
+export interface InsertAppReleaseInput {
   readonly appId: string;
   readonly version: string;
   readonly manifest: AppManifest;
@@ -19,8 +19,15 @@ export interface UpsertAppReleaseInput {
 }
 
 export interface AppReleaseRepositoryPort {
-  /** Idempotent by (appId, version): re-admitting unchanged content refreshes the decision. */
-  upsert(input: UpsertAppReleaseInput): Promise<AppReleaseRecord>;
+  /**
+   * Inserts a release that does not exist yet and returns `null` when one already does.
+   * There is deliberately no update path here: a release version is immutable, and its
+   * security state changes only through {@link AppReleaseRepositoryPort.transitionState},
+   * so a registry re-sync at start-up can never resurrect a revoked or quarantined row.
+   */
+  insertIfAbsent(input: InsertAppReleaseInput): Promise<AppReleaseRecord | null>;
+  /** The one writer of a release's state, used by explicit deprecate/revoke/quarantine. */
+  transitionState(id: string, state: AppReleaseState): Promise<AppReleaseRecord | null>;
   findByAppIdAndVersion(appId: string, version: string): Promise<AppReleaseRecord | null>;
   findById(id: string): Promise<AppReleaseRecord | null>;
   listInstallable(): Promise<AppReleaseRecord[]>;
@@ -77,7 +84,7 @@ const mapRecord = (row: AppReleaseRow): AppReleaseRecord => ({
 export class AppReleaseRepository implements AppReleaseRepositoryPort {
   constructor(private readonly db: Db) {}
 
-  async upsert(input: UpsertAppReleaseInput): Promise<AppReleaseRecord> {
+  async insertIfAbsent(input: InsertAppReleaseInput): Promise<AppReleaseRecord | null> {
     const row = await this.db
       .insertInto("app_releases")
       .values({
@@ -92,19 +99,20 @@ export class AppReleaseRepository implements AppReleaseRepositoryPort {
         admission_policy_version: input.admissionPolicyVersion,
         admission_decision: toJsonb(input.admissionDecision),
       })
-      .onConflict((conflict) => conflict.columns(["app_id", "version"]).doUpdateSet({
-        manifest: toJsonb(input.manifest),
-        manifest_digest: input.manifestDigest,
-        artifact_digest: input.artifactDigest,
-        publisher_id: input.publisherId,
-        state: input.state,
-        admission_policy_version: input.admissionPolicyVersion,
-        admission_decision: toJsonb(input.admissionDecision),
-        updated_at: new Date(),
-      }))
+      .onConflict((conflict) => conflict.columns(["app_id", "version"]).doNothing())
       .returning(COLUMNS)
-      .executeTakeFirstOrThrow();
-    return mapRecord(row);
+      .executeTakeFirst();
+    return row ? mapRecord(row) : null;
+  }
+
+  async transitionState(id: string, state: AppReleaseState): Promise<AppReleaseRecord | null> {
+    const row = await this.db
+      .updateTable("app_releases")
+      .set({ state, updated_at: new Date() })
+      .where("id", "=", id)
+      .returning(COLUMNS)
+      .executeTakeFirst();
+    return row ? mapRecord(row) : null;
   }
 
   async findByAppIdAndVersion(appId: string, version: string): Promise<AppReleaseRecord | null> {

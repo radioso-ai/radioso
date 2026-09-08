@@ -20,13 +20,24 @@ const statusByReason: Readonly<Record<AppsErrorReason, number>> = {
   connection_invalid: 400,
   connection_slot_unknown: 400,
   connection_unbound: 409,
+  connections_unbound: 409,
   connection_encryption_unavailable: 503,
   plan_stale: 409,
   invalid_transition: 409,
   installation_conflict: 409,
+  installation_removing: 409,
   operation_in_progress: 409,
+  idempotency_key_reused: 409,
   runtime_unavailable: 503,
+  staging_unavailable: 503,
+  safe_test_failed: 409,
+  data_disposition_unavailable: 503,
   initiating_principal_unauthorized: 403,
+  // The platform could not establish whether this operator may administer Apps. That is
+  // a temporary platform condition, not a statement about the operator, so it invites a
+  // retry rather than telling them they lost access.
+  authorization_unavailable: 503,
+  release_not_eligible: 409,
   // A stored release that no longer passes its own recorded admission policy is
   // stored-state corruption, not a client mistake, so this is a 500 rather than a 409.
   release_not_admitted: 500,
@@ -101,6 +112,9 @@ export const presentAppLifecycleOperation = (operation: AppLifecycleOperationRec
   kind: operation.kind,
   state: operation.state,
   step: operation.step,
+  compensationStep: operation.compensationStep,
+  // A reason code and a static message written in this repository. An adapter's own
+  // exception text never reaches here.
   error: operation.error,
   createdAt: operation.createdAt.toISOString(),
   updatedAt: operation.updatedAt.toISOString(),

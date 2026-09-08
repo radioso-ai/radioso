@@ -5,6 +5,7 @@ import {
   appSagaSteps,
   assertAppInstallationTransition,
   canTransitionAppInstallation,
+  remainingAppSagaCompensationSteps,
   remainingAppSagaSteps,
 } from "../../../src/modules/apps/public.js";
 
@@ -32,16 +33,30 @@ describe("app installation state machine", () => {
 });
 
 describe("app lifecycle saga", () => {
-  it("orders the install steps and the state each one enters", () => {
+  /**
+   * Setup and activation are separate operations so a connection can be bound against an
+   * installation that exists. Nothing in `install` reaches outside the database.
+   */
+  it("records the approval in install and does every external effect in activate", () => {
     expect(appSagaSteps.install.map((step) => [step.id, step.enters])).toEqual([
       ["create_records", "planned"],
       ["persist_grants_and_connections", null],
+    ]);
+    expect(appSagaSteps.activate.map((step) => [step.id, step.enters])).toEqual([
       ["provision_runtime", "provisioning"],
       ["stage_contributions", "staged"],
       ["run_safe_tests", "testing"],
       ["mark_ready", "ready"],
       ["activate", "active"],
     ]);
+  });
+
+  // FR-021b: a configuration change re-stages and re-tests before it applies.
+  it("re-stages and re-tests a reconfigure before the change applies", () => {
+    const ids = appSagaSteps.reconfigure.map((step) => step.id);
+
+    expect(ids).toEqual(["validate", "stage_contributions", "run_safe_tests", "apply_configuration"]);
+    expect(ids.indexOf("run_safe_tests")).toBeLessThan(ids.indexOf("apply_configuration"));
   });
 
   it("revokes grants and marks connections for deletion before disposing data on removal", () => {
@@ -60,26 +75,38 @@ describe("app lifecycle saga", () => {
   });
 
   it("resumes from the durable cursor at every step", () => {
-    expect(remainingAppSagaSteps("install", null).map((step) => step.id)).toEqual(
-      appSagaSteps.install.map((step) => step.id),
+    expect(remainingAppSagaSteps("activate", null).map((step) => step.id)).toEqual(
+      appSagaSteps.activate.map((step) => step.id),
     );
-    for (const [index, step] of appSagaSteps.install.entries()) {
-      expect(remainingAppSagaSteps("install", step.id).map((remaining) => remaining.id))
-        .toEqual(appSagaSteps.install.slice(index + 1).map((remaining) => remaining.id));
+    for (const [index, step] of appSagaSteps.activate.entries()) {
+      expect(remainingAppSagaSteps("activate", step.id).map((remaining) => remaining.id))
+        .toEqual(appSagaSteps.activate.slice(index + 1).map((remaining) => remaining.id));
     }
   });
 
   it("compensates completed steps in reverse and never re-runs a completed external test", () => {
-    expect(appSagaCompensationPlan("install", "run_safe_tests").map((step) => step.id)).toEqual([
+    expect(appSagaCompensationPlan("activate", "run_safe_tests").map((step) => step.id)).toEqual([
       "stage_contributions",
       "provision_runtime",
-      "persist_grants_and_connections",
-      "create_records",
     ]);
-    expect(appSagaCompensationPlan("install", "create_records").map((step) => step.id)).toEqual([
-      "create_records",
+    expect(appSagaCompensationPlan("activate", "provision_runtime").map((step) => step.id)).toEqual([
+      "provision_runtime",
     ]);
-    expect(appSagaCompensationPlan("install", null)).toEqual([]);
+    expect(appSagaCompensationPlan("activate", null)).toEqual([]);
     expect(appSagaCompensationPlan("remove", "mark_removed")).toEqual([]);
+    // A reconfigure writes nothing until its last step, so there is nothing to reverse.
+    expect(appSagaCompensationPlan("reconfigure", "run_safe_tests")).toEqual([]);
+  });
+
+  /**
+   * A rollback interrupted halfway continues from its own cursor. Without this, a resumed
+   * compensation would replay reversals it had already run.
+   */
+  it("resumes compensation from the compensation cursor", () => {
+    expect(remainingAppSagaCompensationSteps("activate", "run_safe_tests", null).map((step) => step.id))
+      .toEqual(["stage_contributions", "provision_runtime"]);
+    expect(remainingAppSagaCompensationSteps("activate", "run_safe_tests", "stage_contributions").map((step) => step.id))
+      .toEqual(["provision_runtime"]);
+    expect(remainingAppSagaCompensationSteps("activate", "run_safe_tests", "provision_runtime")).toEqual([]);
   });
 });

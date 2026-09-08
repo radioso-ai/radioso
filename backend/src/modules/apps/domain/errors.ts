@@ -7,14 +7,22 @@ export const appsErrorReasons = [
   "connection_invalid",
   "connection_slot_unknown",
   "connection_unbound",
+  "connections_unbound",
   "connection_encryption_unavailable",
   "plan_stale",
   "invalid_transition",
   "installation_conflict",
+  "installation_removing",
   "operation_in_progress",
+  "idempotency_key_reused",
   "runtime_unavailable",
+  "staging_unavailable",
+  "safe_test_failed",
+  "data_disposition_unavailable",
   "initiating_principal_unauthorized",
+  "authorization_unavailable",
   "release_not_admitted",
+  "release_not_eligible",
 ] as const;
 
 export type AppsErrorReason = (typeof appsErrorReasons)[number];

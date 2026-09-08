@@ -28,12 +28,15 @@ const installationParams = z.object({ installationId: z.string().uuid() });
 
 const configurationValue = z.union([z.string(), z.number(), z.boolean()]);
 const idempotencyKey = z.string().min(1).max(200);
+const expectedVersion = z.number().int().positive();
 
+// Strict: Release A attaches an App to a workspace, and agent-level attachment arrives
+// with tools. A request that names target agents is asking for authority this surface
+// cannot grant, so it is refused rather than silently dropped.
 const planBodySchema = z.object({
   releaseId: z.string().uuid(),
   configuration: z.record(configurationValue).default({}),
-  targetAgentIds: z.array(z.string().uuid()).default([]),
-});
+}).strict();
 
 const applyBodySchema = z.object({
   checksum: z.string().min(1),
@@ -44,14 +47,19 @@ const applyBodySchema = z.object({
 const connectionBodySchema = z.object({
   slotId: z.string().min(1),
   values: z.record(z.unknown()).default({}),
+  expectedVersion,
 });
 
 const configurationBodySchema = z.object({
   configuration: z.record(configurationValue),
-  expectedVersion: z.number().int().positive(),
+  expectedVersion,
+  idempotencyKey: idempotencyKey.optional(),
 });
 
-const lifecycleBodySchema = z.object({ idempotencyKey: idempotencyKey.optional() });
+const lifecycleBodySchema = z.object({
+  expectedVersion,
+  idempotencyKey: idempotencyKey.optional(),
+});
 
 const removeBodySchema = lifecycleBodySchema.extend({
   disposition: z.enum(appDataDispositions),
@@ -114,7 +122,6 @@ export const createAppRoutes = (dependencies: AppDependencies): Router => {
         workspaceId: workspaceOf(res),
         releaseId: body.releaseId,
         configuration: body.configuration,
-        targetAgentIds: body.targetAgentIds,
         principal: operatorPrincipal(res),
       });
       res.status(201).json(presentAppInstallationPlan(plan));
@@ -198,14 +205,15 @@ export const createAppRoutes = (dependencies: AppDependencies): Router => {
       try {
         const { installationId } = installationParams.parse(req.params);
         const body = configurationBodySchema.parse(req.body);
-        const installation = await dependencies.appInstallationQueryService.updateConfiguration({
+        const outcome = await dependencies.appInstallationLifecycleService.reconfigure({
           workspaceId: workspaceOf(res),
           installationId,
           configuration: body.configuration,
           expectedVersion: body.expectedVersion,
+          idempotencyKey: body.idempotencyKey ?? randomUUID(),
           principal: operatorPrincipal(res),
         });
-        res.status(200).json(presentAppInstallation(installation));
+        res.status(200).json(presentAppLifecycleOutcome(outcome));
       } catch (error) {
         next(presentAppsError(error));
       }
@@ -225,6 +233,7 @@ export const createAppRoutes = (dependencies: AppDependencies): Router => {
           installationId,
           slotId: body.slotId,
           values: body.values,
+          expectedVersion: body.expectedVersion,
           principal: operatorPrincipal(res),
         });
         // The only response that ever carries the minted secret. There is no read path
@@ -239,7 +248,7 @@ export const createAppRoutes = (dependencies: AppDependencies): Router => {
     },
   );
 
-  for (const action of ["disable", "enable"] as const) {
+  for (const action of ["activate", "disable", "enable"] as const) {
     router.post(
       `/installations/:installationId/${action}`,
       ...guarded,
@@ -251,6 +260,7 @@ export const createAppRoutes = (dependencies: AppDependencies): Router => {
           const outcome = await dependencies.appInstallationLifecycleService[action]({
             workspaceId: workspaceOf(res),
             installationId,
+            expectedVersion: body.expectedVersion,
             idempotencyKey: body.idempotencyKey ?? randomUUID(),
             principal: operatorPrincipal(res),
           });
@@ -274,6 +284,7 @@ export const createAppRoutes = (dependencies: AppDependencies): Router => {
           workspaceId: workspaceOf(res),
           installationId,
           disposition: body.disposition,
+          expectedVersion: body.expectedVersion,
           idempotencyKey: body.idempotencyKey ?? randomUUID(),
           principal: operatorPrincipal(res),
         });

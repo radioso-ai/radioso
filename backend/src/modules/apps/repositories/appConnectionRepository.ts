@@ -94,7 +94,10 @@ export class AppConnectionRepository implements AppConnectionRepositoryPort {
         encryption_key_id: input.encryptionKeyId,
         updated_at: now,
         rotated_at: now,
-        deletion_requested_at: null,
+        // Deliberately not cleared. A connection is marked for deletion when its
+        // installation is being removed, and a late bind must not quietly bring live
+        // ciphertext back onto a removed installation. The service refuses a bind
+        // against a removing or removed installation before it ever reaches here.
       }))
       .returning([...COLUMNS, (eb) => eb("secret_ciphertext", "is not", null).as("has_secret")])
       .executeTakeFirstOrThrow();

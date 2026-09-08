@@ -825,14 +825,16 @@ CREATE TABLE public.app_lifecycle_operations (
     kind text NOT NULL,
     state text NOT NULL,
     step text,
+    compensation_step text,
     idempotency_key text NOT NULL,
+    request_fingerprint text NOT NULL,
     initiated_by jsonb NOT NULL,
     payload jsonb DEFAULT '{}'::jsonb NOT NULL,
     error jsonb,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT app_lifecycle_operations_kind_check CHECK ((kind = ANY (ARRAY['install'::text, 'disable'::text, 'enable'::text, 'remove'::text, 'dispose_data'::text]))),
-    CONSTRAINT app_lifecycle_operations_state_check CHECK ((state = ANY (ARRAY['running'::text, 'completed'::text, 'failed'::text, 'compensating'::text])))
+    CONSTRAINT app_lifecycle_operations_kind_check CHECK ((kind = ANY (ARRAY['install'::text, 'activate'::text, 'reconfigure'::text, 'disable'::text, 'enable'::text, 'remove'::text, 'dispose_data'::text]))),
+    CONSTRAINT app_lifecycle_operations_state_check CHECK ((state = ANY (ARRAY['running'::text, 'completed'::text, 'failed'::text, 'compensating'::text, 'compensation_failed'::text])))
 );
 
 
@@ -6516,10 +6518,10 @@ CREATE UNIQUE INDEX idx_app_installations_workspace_app_live ON public.app_insta
 
 
 --
--- Name: idx_app_lifecycle_operations_resumable; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_app_lifecycle_operations_in_flight; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_app_lifecycle_operations_resumable ON public.app_lifecycle_operations USING btree (installation_id, created_at DESC) WHERE (state = ANY (ARRAY['running'::text, 'compensating'::text]));
+CREATE UNIQUE INDEX idx_app_lifecycle_operations_in_flight ON public.app_lifecycle_operations USING btree (installation_id) WHERE (state = ANY (ARRAY['running'::text, 'compensating'::text]));
 
 
 --

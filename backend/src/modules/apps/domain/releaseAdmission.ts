@@ -10,6 +10,7 @@ import {
 
 import { canonicalDigest } from "./canonicalJson.js";
 import { AppsError } from "./errors.js";
+import { satisfiesSemanticVersionRange } from "./semanticVersion.js";
 
 /**
  * The Radioso-owned policy snapshot a decision is recorded against (FR-049a). Bump this
@@ -19,16 +20,30 @@ import { AppsError } from "./errors.js";
 export const APP_ADMISSION_POLICY_VERSION = "release-a.1";
 
 /**
- * Release A has one trust root: the built-in registry Radioso ships. There is no
- * publisher PKI yet, so provenance records which root vouched for the artifact rather
- * than a signature that nobody can verify.
+ * What admission actually established, said plainly. Release A has one trust root — the
+ * built-in registry Radioso ships — so `signature` and `provenance` name that root rather
+ * than a publisher key nobody can verify yet. The checks this release does not run are
+ * recorded as `not_evaluated` instead of being left out, because a decision that omits a
+ * check reads later as though the check passed.
  */
-interface AppReleaseProvenance {
-  readonly kind: "built_in_registry";
+type AppAdmissionEvidenceOutcome = "built_in_registry" | "not_evaluated";
+
+interface AppCompatibilityEvidence {
+  /** `null` when the host could not determine its own version, which fails admission closed. */
+  readonly runningVersion: string | null;
+  readonly range: string;
+  readonly result: "compatible" | "incompatible" | "undetermined";
 }
 
-/** Counts only. An admission decision must not become a second copy of the manifest. */
 interface AppReleaseAdmissionEvidence {
+  readonly signature: AppAdmissionEvidenceOutcome;
+  readonly provenance: AppAdmissionEvidenceOutcome;
+  /** Software inventory and vulnerability policy arrive with the publisher pipeline. */
+  readonly softwareInventory: AppAdmissionEvidenceOutcome;
+  readonly vulnerabilityPolicy: AppAdmissionEvidenceOutcome;
+  /** Conformance execution arrives with the App runtime. */
+  readonly conformance: AppAdmissionEvidenceOutcome;
+  readonly compatibility: AppCompatibilityEvidence;
   readonly contributionCount: number;
   readonly permissionCount: number;
   readonly destinationCount: number;
@@ -41,7 +56,6 @@ type AppReleaseAdmissionDecision =
   | {
     readonly outcome: "admitted";
     readonly policyVersion: string;
-    readonly provenance: AppReleaseProvenance;
     readonly manifest: AppManifest;
     readonly manifestDigest: string;
     readonly artifactDigest: string;
@@ -57,11 +71,22 @@ interface AppReleaseAdmissionInput {
   readonly manifest: unknown;
   /** Every digest the registry vouches for; a manifest may reference no other. */
   readonly artifactCatalogue: ReadonlySet<string>;
-  /** The digest already admitted for this app id and version, when there is one. */
-  readonly admittedManifestDigest?: string | null;
+  /**
+   * The digest already recorded for this app id and version, in whatever state that row
+   * is in. Immutability is a property of the version, not of the admitted state: a
+   * revoked version must not come back with different content either.
+   */
+  readonly recordedManifestDigest?: string | null;
+  /** The Radioso version this host runs, or `null` when it cannot be determined. */
+  readonly runningRadiosoVersion: string | null;
   readonly policy?: ManifestValidationPolicy;
 }
 
+/**
+ * The digest is taken over the parsed manifest, which is also the shape persisted, so
+ * `manifest_digest` always describes the bytes storage actually holds and re-admission
+ * can prove it.
+ */
 export const appManifestDigest = (manifest: unknown): string => canonicalDigest(manifest);
 
 const digestIssues = (
@@ -84,10 +109,22 @@ const digestIssues = (
     }));
 };
 
+/** Compatibility is evidence, so it is computed once and both recorded and acted on. */
+export const appCompatibilityEvidence = (
+  range: string,
+  runningVersion: string | null,
+): AppCompatibilityEvidence => ({
+  runningVersion,
+  range,
+  result: runningVersion === null
+    ? "undetermined"
+    : satisfiesSemanticVersionRange(runningVersion, range) ? "compatible" : "incompatible",
+});
+
 /**
- * Release A admission: the contract policy, then digest provenance, then version
- * immutability. All three run so an operator sees every reason at once rather than
- * fixing one and discovering the next.
+ * Release A admission: the contract policy, then digest provenance, then compatibility
+ * with the running host, then version immutability. All four run so an operator sees
+ * every reason at once rather than fixing one and discovering the next.
  */
 export const admitAppRelease = (input: AppReleaseAdmissionInput): AppReleaseAdmissionDecision => {
   const policyVersion = APP_ADMISSION_POLICY_VERSION;
@@ -95,35 +132,49 @@ export const admitAppRelease = (input: AppReleaseAdmissionInput): AppReleaseAdmi
   if (!validation.ok) return { outcome: "rejected", policyVersion, issues: validation.issues };
 
   const manifest = validation.manifest;
-  const manifestDigest = appManifestDigest(input.manifest);
+  const persistedManifest: AppManifest = appManifestSchema.parse(manifest);
+  const manifestDigest = appManifestDigest(persistedManifest);
   const issues = digestIssues(manifest, input.artifactCatalogue);
 
+  const compatibility = appCompatibilityEvidence(manifest.radiosoCompatibility, input.runningRadiosoVersion);
+  if (compatibility.result !== "compatible") {
+    issues.push({
+      code: compatibility.result === "undetermined"
+        ? "radioso_version_undetermined"
+        : "radioso_version_incompatible",
+      path: "radiosoCompatibility",
+      message: compatibility.result === "undetermined"
+        ? "This host cannot determine which Radioso version it runs, so compatibility cannot be established."
+        : "This release does not support the Radioso version this host runs.",
+    });
+  }
+
   // FR-008: a published release is immutable. Changed content is a new version, never a
-  // silent overwrite of the one workspaces already installed.
-  if (input.admittedManifestDigest && input.admittedManifestDigest !== manifestDigest) {
+  // silent overwrite of the one workspaces already installed — and never a rewrite of a
+  // version that was deprecated, revoked, or quarantined either.
+  if (input.recordedManifestDigest && input.recordedManifestDigest !== manifestDigest) {
     issues.push({
       code: "release_version_immutable",
       path: "version",
-      message: "This version is already admitted with different content. Publish a new version.",
+      message: "This version already exists with different content. Publish a new version.",
     });
   }
 
   if (issues.length > 0) return { outcome: "rejected", policyVersion, issues };
 
-  // The decision's `manifest` field is the persisted shape (FR-008 immutability lives in
-  // storage, not in this admitted value), so it is serialised into a plain, mutable copy
-  // here at the one boundary that writes it out. The admitted, deeply-readonly `manifest`
-  // above stays what every read-only computation in this function uses.
-  const persistedManifest: AppManifest = appManifestSchema.parse(manifest);
-
   return {
     outcome: "admitted",
     policyVersion,
-    provenance: { kind: "built_in_registry" },
     manifest: persistedManifest,
     manifestDigest,
     artifactDigest: manifest.artifact.digest,
     evidence: {
+      signature: "built_in_registry",
+      provenance: "built_in_registry",
+      softwareInventory: "not_evaluated",
+      vulnerabilityPolicy: "not_evaluated",
+      conformance: "not_evaluated",
+      compatibility,
       contributionCount: manifest.contributions.length,
       permissionCount: manifest.permissions.length,
       destinationCount: manifest.destinations.length,
@@ -144,20 +195,20 @@ const admissionPoliciesByVersion: Readonly<Record<string, ManifestValidationPoli
   [APP_ADMISSION_POLICY_VERSION]: releaseAValidationPolicy,
 };
 
-/** The minimum a caller needs to re-admit a stored release: its manifest and the policy version it was admitted under. */
+/** The minimum a caller needs to re-admit a stored release: its manifest, digest, and policy version. */
 interface AdmittableAppRelease {
   readonly manifest: AppManifest;
+  readonly manifestDigest: string;
   readonly admissionPolicyVersion?: string;
 }
 
 /**
  * Re-admission is the one boundary a manifest loaded back from storage crosses on its way
- * to `resolveInstallation` and the plan builder, both of which only accept an
- * `AdmittedManifest`. Storage keeps `AppManifest`, the persisted shape; nothing there earns
- * the `AdmittedManifest` brand for free, so stored-state corruption — a hand-edited row, a
- * policy this host no longer runs — surfaces here as a typed failure instead of a cast that
- * would hide it. A release without a recorded policy version is re-checked against the
- * current one, which is the only sound default for data admitted before this field existed.
+ * to `resolveInstallation`, the plan builder, and every rule that reads what a slot or a
+ * destination means. Storage keeps `AppManifest`, the persisted shape; nothing there earns
+ * the `AdmittedManifest` brand for free. The recorded digest is checked first, so
+ * stored-state corruption — a hand-edited row, a migration gone wrong — cannot present a
+ * structurally valid but different document and earn a fresh admitted brand for it.
  */
 export const admittedManifestOf = (release: AdmittableAppRelease): AdmittedManifest => {
   const policyVersion = release.admissionPolicyVersion ?? APP_ADMISSION_POLICY_VERSION;
@@ -167,6 +218,14 @@ export const admittedManifestOf = (release: AdmittableAppRelease): AdmittedManif
       "release_not_admitted",
       "This release was admitted under a policy this host no longer runs.",
       { admissionPolicyVersion: policyVersion },
+    );
+  }
+
+  if (appManifestDigest(release.manifest) !== release.manifestDigest) {
+    throw new AppsError(
+      "release_not_admitted",
+      "The stored release manifest no longer matches the digest admission recorded for it.",
+      { cause: "manifest_digest_mismatch" },
     );
   }
 
@@ -180,4 +239,40 @@ export const admittedManifestOf = (release: AdmittableAppRelease): AdmittedManif
   }
 
   return validation.manifest;
+};
+
+interface EligibleAppRelease extends AdmittableAppRelease {
+  readonly state: string;
+  readonly manifest: AppManifest;
+}
+
+/**
+ * Whether a release may be acted on right now (FR-049c). Planning binds the admission
+ * policy version and the state it saw; apply, activation, and every resumed release
+ * effect ask this again, because a release can be revoked or quarantined between the
+ * approval and the effect.
+ */
+export const assertAppReleaseEligible = (
+  release: EligibleAppRelease,
+  runningRadiosoVersion: string | null,
+): AdmittedManifest => {
+  if (release.state !== "admitted") {
+    throw new AppsError(
+      "release_not_eligible",
+      "This release is no longer admitted, so it cannot be installed or activated.",
+      { releaseState: release.state },
+    );
+  }
+  const manifest = admittedManifestOf(release);
+  const compatibility = appCompatibilityEvidence(manifest.radiosoCompatibility, runningRadiosoVersion);
+  if (compatibility.result !== "compatible") {
+    throw new AppsError(
+      "release_not_eligible",
+      compatibility.result === "undetermined"
+        ? "This host cannot determine which Radioso version it runs, so this release cannot be installed or activated."
+        : "This release does not support the Radioso version this host runs.",
+      { compatibility: compatibility.result },
+    );
+  }
+  return manifest;
 };

@@ -1276,13 +1276,22 @@ schemas and pure functions, and depends on nothing inside the workspace.
 
 `backend/src/modules/apps/` is the control-plane domain built on that
 contract: App releases, release admission, installations, installation plans,
-grants, connections, and the lifecycle saga that carries an installation
-through provisioning, staging, testing, and activation, disable and
-re-enable, and removal, including the data-disposition choice removal asks
-for. Admission records the policy version and evidence behind every release
-decision. The plan/apply boundary binds an approval to an exact release,
-workspace, connection bindings, and grant set, so a plan anything relevant
-changes under requires a new review before it can apply.
+grants, connections, and the lifecycle saga.
+
+Setup and activation are separate operations. `apply` records the approval —
+installation row, grants, effective configuration — in one transaction with the
+plan's consumption, and touches nothing outside the database; the operator then
+binds the release's connections against an installation that exists; `activate`
+provisions, stages, tests, and goes live. Every operation is serialized by a
+partial unique index (one in flight per installation), advances a durable cursor
+by compare-and-set, hands each port a stable `{ operationId, stepId }` effect id
+to deduplicate on, and rolls back through a reverse runner with its own cursor.
+Admission records the policy version and an evidence record that names both what
+it established and what it did not; apply, activation, and every resumed step
+re-check that the release is currently admitted and compatible.
+
+`AppExecutionEligibility` on `public.ts` is the fail-closed decision the runtime
+paths ask before granting authority to a contribution.
 
 The domain does not know about provider APIs, runtime transport,
 product-specific execution, or React. Runtime execution — the App Gateway,
@@ -1301,9 +1310,11 @@ Primary paths:
 - `packages/app-contract/fixtures/reference/wordpress.manifest.json` — the conformance vector
 - `packages/app-contract/tests/`
 - `backend/src/modules/apps/public.ts` — the module's public entry
-- `backend/src/modules/apps/domain/` — release admission policy, plan builder and checksum, grant diff, lifecycle state machine
-- `backend/src/modules/apps/services/installationLifecycleService.ts` — saga steps, compensation, resume
-- `backend/src/app/composition/apps.ts` — repositories, services, and the built-in release registry
+- `backend/src/modules/apps/domain/` — release admission policy and evidence, semantic-version ranges, plan builder and checksum, lifecycle state machine, secret-safe port outcomes
+- `backend/src/modules/apps/services/appInstallationLifecycleService.ts` — saga steps, cursor compare-and-set, compensation, resume
+- `backend/src/modules/apps/services/appExecutionEligibilityService.ts` — the fail-closed execution decision
+- `backend/src/modules/apps/repositories/appsUnitOfWork.ts` — the atomic boundary a step commits through
+- `backend/src/app/composition/apps.ts` — repositories, unit of work, services, and the built-in release registry
 - `backend/tests/unit/apps/`
 - `backend/tests/integration/apps/`
 
@@ -1311,7 +1322,7 @@ Useful searches:
 
 - `rg "validateManifest|appManifestSchema|hostCapabilityRequestSchema" packages backend`
 - `rg "app-contract" package.json packages backend`
-- `rg "AppRelease|AppInstallation|admissionPolicyVersion|installationLifecycleService" backend/src backend/tests`
+- `rg "AppRelease|AppInstallation|admissionPolicyVersion|AppInstallationLifecycleService|AppExecutionEligibility" backend/src backend/tests`
 
 Focused checks:
 

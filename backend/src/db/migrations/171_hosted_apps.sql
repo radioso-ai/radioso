@@ -105,12 +105,24 @@ CREATE TABLE IF NOT EXISTS app_connections (
 CREATE TABLE IF NOT EXISTS app_lifecycle_operations (
   id UUID PRIMARY KEY,
   installation_id UUID NOT NULL REFERENCES app_installations(id) ON DELETE CASCADE,
-  kind TEXT NOT NULL CHECK (kind IN ('install', 'disable', 'enable', 'remove', 'dispose_data')),
-  state TEXT NOT NULL CHECK (state IN ('running', 'completed', 'failed', 'compensating')),
+  kind TEXT NOT NULL CHECK (kind IN (
+    'install', 'activate', 'reconfigure', 'disable', 'enable', 'remove', 'dispose_data'
+  )),
+  state TEXT NOT NULL CHECK (state IN (
+    'running', 'completed', 'failed', 'compensating', 'compensation_failed'
+  )),
   -- Durable cursor: the last step this operation completed. NULL means no step
   -- has committed yet, so a resume starts from the first step of the kind.
   step TEXT,
+  -- Durable cursor for the reverse direction: the last compensator that completed.
+  -- A rollback interrupted halfway continues from here instead of replaying
+  -- reversals that already ran.
+  compensation_step TEXT,
   idempotency_key TEXT NOT NULL UNIQUE,
+  -- What the request asked for, normalized. The same key with a different
+  -- fingerprint is a reused key, not a retry, and is refused rather than
+  -- answered with the earlier operation.
+  request_fingerprint TEXT NOT NULL,
   initiated_by JSONB NOT NULL,
   payload JSONB NOT NULL DEFAULT '{}'::jsonb,
   error JSONB,
@@ -118,6 +130,10 @@ CREATE TABLE IF NOT EXISTS app_lifecycle_operations (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_app_lifecycle_operations_resumable
-  ON app_lifecycle_operations (installation_id, created_at DESC)
+-- One operation may be in flight per installation. The service reads before it
+-- inserts, but that read and this insert are not atomic, so this partial unique
+-- index is what actually serializes two concurrent commands; the repository
+-- translates its violation into `operation_in_progress`.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_app_lifecycle_operations_in_flight
+  ON app_lifecycle_operations (installation_id)
   WHERE state IN ('running', 'compensating');

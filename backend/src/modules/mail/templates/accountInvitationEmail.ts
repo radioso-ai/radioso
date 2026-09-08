@@ -1,7 +1,7 @@
 import type { EmailMessage } from "../emailService.js";
-import { button, escapeHtml } from "./layout.js";
+import { renderEmail, renderEmailText, type EmailContent } from "./layout.js";
 
-export interface AccountInvitationEmailInput {
+interface AccountInvitationEmailInput {
   to: string;
   acceptanceUrl: string;
   invitedByEmail: string | null;
@@ -17,29 +17,23 @@ export const renderAccountInvitationEmail = (
   const invitedBy = input.invitedByEmail
     ? `${input.invitedByEmail} invited you to join their Radioso organization.`
     : "You have been invited to join a Radioso organization.";
-  const expiry = `This invitation expires on ${formatExpiry(input.expiresAt)}.`;
+
+  const content: EmailContent = {
+    preheader: "Accept the invitation to join the organization.",
+    heading: "You have been invited to Radioso",
+    paragraphs: [invitedBy],
+    cta: { href: input.acceptanceUrl, label: "Accept invitation" },
+    metaRows: [{ label: "Expires", value: formatExpiry(input.expiresAt) }],
+    footnote: "If you were not expecting this, you can ignore this email.",
+  };
 
   return {
     to: input.to,
     subject: "You have been invited to Radioso",
-    text: [
-      invitedBy,
-      "",
-      `Accept the invitation here: ${input.acceptanceUrl}`,
-      "",
-      expiry,
-      "If you were not expecting this, you can ignore this email.",
-    ].join("\n"),
-    html: [
-      `<p>${escapeHtml(invitedBy)}</p>`,
-      button({ href: input.acceptanceUrl, label: "Accept invitation" }),
-      `<p>${escapeHtml(expiry)}</p>`,
-      "<p>If you were not expecting this, you can ignore this email.</p>",
-    ].join(""),
+    text: renderEmailText(content),
+    html: renderEmail(content),
+    kind: "account_invitation",
     // The acceptance URL carries a live invitation token, so it is deliberately absent from
     // metadata, which the log driver writes verbatim.
-    metadata: {
-      kind: "account_invitation",
-    },
   };
 };

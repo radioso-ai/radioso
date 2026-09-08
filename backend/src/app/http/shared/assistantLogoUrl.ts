@@ -27,6 +27,7 @@ export const buildOperatorAssistantLogoUrl = (input: {
   workspaceId: string;
   hasLogo: boolean;
   cacheKey?: string | null;
+  forwardedPrefix?: string | null;
 }): string | null => {
   if (!input.hasLogo) {
     return null;
@@ -35,7 +36,8 @@ export const buildOperatorAssistantLogoUrl = (input: {
   if (input.cacheKey) {
     query.set("v", input.cacheKey);
   }
-  return `/api/v1/agents/${encodeURIComponent(input.agentId)}/assistant-logo?${query.toString()}`;
+  const forwardedPrefix = input.forwardedPrefix?.trim().replace(/\/$/, "") ?? "";
+  return `${forwardedPrefix}/api/v1/agents/${encodeURIComponent(input.agentId)}/assistant-logo?${query.toString()}`;
 };
 
 const hashCacheKeyPart = (value: string): string => {

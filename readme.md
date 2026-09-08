@@ -6,20 +6,20 @@
 </p>
 
 <p align="center">
-  <a href="https://docs.radioso.ai">Docs</a> · <a href="https://docs.radioso.ai/why-radioso">Why Radioso?</a> · <a href="https://docs.radioso.ai/quickstarts/run-locally">Run locally</a> · <a href="https://docs.radioso.ai/api-reference">API reference</a> · <a href="./CONTRIBUTING.md">Contributing</a>
+  <a href="https://app.radioso.ai">Radioso Cloud</a> · <a href="https://docs.radioso.ai">Docs</a> · <a href="https://docs.radioso.ai/why-radioso">Why Radioso?</a> · <a href="https://docs.radioso.ai/quickstarts/run-locally">Run locally</a> · <a href="https://docs.radioso.ai/api-reference">API reference</a> · <a href="./CONTRIBUTING.md">Contributing</a>
 </p>
 
 <p align="center">
-  <a href="./LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
+  <a href="./LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/github/license/radioso-ai/radioso?color=blue"></a>
   <a href="http://makeapullrequest.com"><img alt="PRs welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg"></a>
   <a href="https://github.com/radioso-ai/radioso/commits/main"><img alt="Commit activity" src="https://img.shields.io/github/commit-activity/m/radioso-ai/radioso"></a>
 </p>
 
-## Radioso is the self-hosted platform for conversational agents that answer, act, and hand off
+## Radioso is the open-source platform for conversational agents that answer, act, and hand off
 
 Run one script and you have an agent your customers can talk to. It answers from the documents you gave it, with citations so you can check its work. It carries a request across turns: collects what it needs, calls your tools, finishes the job. And when the conversation needs a human, it hands the whole thing to one instead of improvising. All of this happens inside rules you author — we call it [guided autonomy](https://docs.radioso.ai/why-radioso/guided-autonomy). You don't have to enumerate every path in advance, and you don't have to accept whatever the model decides on its own.
 
-Self-hosted, so your data stays put. Multi-provider, so no model lock-in. API-first, because you'll want to build on it.
+Run it in Radioso Cloud or on your own infrastructure, so your data sits where you want it. Multi-provider, so no model lock-in. API-first, because you'll want to build on it.
 
 <p align="center">
   <img src="./docs-portal/public/screenshots/dashboard-agents-workbench.png" alt="A grounded agent answer in the Radioso dashboard, cited to its source, with suggested follow-up questions" width="800">
@@ -44,7 +44,9 @@ Every surface hands its turn to the same engine, and every turn records which di
 
 ## Quick start
 
-You need Node.js 24+ and Docker Desktop. On Windows, configure Docker Desktop to use Linux containers. A provider API key (OpenAI, Gemini, or Anthropic) can wait — enter it when the bootstrap prompts, or add it later in the app under **Settings → Credentials**.
+**Fastest path.** Create a workspace at [app.radioso.ai](https://app.radioso.ai). Radioso Cloud is this platform hosted in the EU, with every product feature you see below and your own model keys.
+
+**Run it yourself.** You need Node.js 24+ and Docker Desktop. On Windows, configure Docker Desktop to use Linux containers. A provider API key (OpenAI, Gemini, or Anthropic) can wait — enter it when the bootstrap prompts, or add it later in the app under **Settings → Credentials**.
 
 macOS or Linux:
 

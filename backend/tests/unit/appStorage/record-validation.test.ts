@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import { buildStorageCollection } from "../../support/appStorageCollections.js";
 import {
   buildStorageIndexEntries,
+  INDEXED_STRING_BYTE_BOUND,
+  INDEXED_STRING_CHARACTER_BOUND,
   validateStorageRecord,
 } from "../../../src/modules/appStorage/public.js";
 
@@ -72,11 +74,52 @@ describe("validateStorageRecord", () => {
     expect(result).toMatchObject({ ok: false, code: "quota_exceeded" });
   });
 
-  it("never repeats a record key or a stored value in its message", () => {
-    const result = validateStorageRecord(collection, { external_id: "secret-value", extra: 1 });
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.message).not.toContain("secret-value");
+  it("bounds an indexed string to what a query can ask for", () => {
+    // storage.query compares against a bounded scalar, so a longer stored value
+    // is one no query could ever match — the collection would hold a record its
+    // own declared index cannot find.
+    const wide = buildStorageCollection({ quotas: { maxRecords: 10, maxRecordBytes: 65_536 } });
+    expect(
+      validateStorageRecord(wide, { external_id: "x".repeat(INDEXED_STRING_CHARACTER_BOUND) }),
+    ).toMatchObject({ ok: true });
+    expect(
+      validateStorageRecord(wide, { external_id: "x".repeat(INDEXED_STRING_CHARACTER_BOUND + 1) }),
+    ).toMatchObject({ ok: false, code: "invalid_input" });
+  });
+
+  it("bounds an indexed string by bytes too, so a valid put cannot fail inside the index write", () => {
+    const wide = buildStorageCollection({ quotas: { maxRecords: 10, maxRecordBytes: 65_536 } });
+    // Four bytes per character, so the byte ceiling binds well before the
+    // character one and a B-tree tuple can still hold the entry.
+    const wide4 = "\u{1F600}".repeat(INDEXED_STRING_BYTE_BOUND / 4 + 1);
+    expect(validateStorageRecord(wide, { external_id: wide4 })).toMatchObject({
+      ok: false,
+      code: "invalid_input",
+    });
+  });
+
+  it("leaves an unindexed string unbounded beyond the collection's own byte quota", () => {
+    const wide = buildStorageCollection({ quotas: { maxRecords: 10, maxRecordBytes: 65_536 } });
+    const long = "x".repeat(INDEXED_STRING_CHARACTER_BOUND + 1);
+    expect(
+      validateStorageRecord(wide, { external_id: "post-1", payload: { note: long } }),
+    ).toMatchObject({ ok: true });
+  });
+
+  it("never repeats a record key, an undeclared field name, or a stored value in its message", () => {
+    const undeclared = validateStorageRecord(collection, {
+      external_id: "secret-value",
+      customer_ssn: 1,
+    });
+    expect(undeclared.ok).toBe(false);
+    if (undeclared.ok) return;
+    expect(undeclared.message).not.toContain("secret-value");
+    expect(undeclared.message).not.toContain("customer_ssn");
+
+    const mistyped = validateStorageRecord(collection, { external_id: { name: "secret-value" } });
+    expect(mistyped.ok).toBe(false);
+    if (mistyped.ok) return;
+    expect(mistyped.message).not.toContain("secret-value");
   });
 });
 

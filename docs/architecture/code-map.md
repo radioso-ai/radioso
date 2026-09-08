@@ -1313,16 +1313,29 @@ per-collection counter — so installing or updating an App runs no App-specific
 DDL and an App never observes a table.
 
 Should not own App business meaning, transport, or the rules about which
-installations may execute. Isolation is carried by the primary key: every row is
-keyed by workspace and installation before anything else.
+installations may execute. Isolation is carried by two things together: every
+statement supplies the workspace and installation predicate, and every operation
+runs in a transaction that holds the installation's state row and rechecks
+revocation and the deletion tombstone inside it. The primary key makes the scoped
+lookup unique and cheap; it does not by itself keep an unscoped query out.
+
+Locks are taken in one order everywhere — installation state row, then the
+collection's usage row, then record rows — so a put, a delete, a sweep, and an
+index rebuild queue behind each other rather than deadlocking. Liveness and TTL
+deadlines come from SQL `now()` inside the acting transaction, never from a
+timestamp the caller read before it queued. Record versions come from the usage
+row's `next_version` counter, so they are monotonic per collection and never
+reused across delete, expiry, or recreation.
 
 Primary paths:
 
 - `backend/src/modules/appStorage/public.ts` — the only import surface
-- `backend/src/modules/appStorage/domain/` — record validation, quota, query bounds, expiry, compatibility
-- `backend/src/modules/appStorage/ports/appStorageService.ts` — the capability port and the disposition port
-- `backend/src/modules/appStorage/repositories/appStorageRepository.ts` — the generic Postgres model
-- `backend/src/app/composition/appStorage.ts` — repository, service, sweeper, and the `app.data.*` audit sink
+- `backend/src/modules/appStorage/domain/` — record validation, indexed-value bounds, quota, query bounds, expiry, retention policy, failure classification, compatibility
+- `backend/src/modules/appStorage/ports/appStorageService.ts` — the capability, disposition, sweeper, and index-rebuild ports
+- `backend/src/modules/appStorage/repositories/appStorageRepository.ts` — the generic Postgres model and the lock order
+- `backend/src/modules/appStorage/services/appStorageSweeper.ts` — expiry reclamation and the retention deadline
+- `backend/src/modules/appStorage/services/appStorageIndexRebuilder.ts` — builds an added index over records already stored
+- `backend/src/app/composition/appStorage.ts` — repository, service, disposition, rebuilder, sweeper, and the `app.data.*` audit sink
 - `backend/src/db/migrations/172_app_storage.sql`
 
 Useful searches:
@@ -1333,7 +1346,7 @@ Useful searches:
 Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/appStorage`
-- `cd backend && pnpm exec vitest run tests/integration/appStorage --no-file-parallelism`
+- `cd backend && pnpm exec vitest run tests/integration/appStorage --no-file-parallelism` — includes the forced-interleaving cases that hold a lock on a second connection
 
 Related docs and specs:
 

@@ -4,14 +4,16 @@ import type { AuditService } from "../../modules/audit/contracts/index.js";
 import {
   AppStorageRepository,
   createAppStorageDisposition,
-  createAppStorageExpirySweeper,
+  createAppStorageIndexRebuilder,
   createAppStorageService,
+  createAppStorageSweeper,
   type AppStorageAuditEvent,
   type AppStorageAuditPort,
   type AppStorageDisposition,
-  type AppStorageExpirySweeper,
+  type AppStorageIndexRebuilder,
   type AppStorageRepositoryPort,
   type AppStorageService,
+  type AppStorageSweeper,
 } from "../../modules/appStorage/public.js";
 import type { DB } from "../../shared/infra/kysely/types.js";
 
@@ -39,17 +41,25 @@ export interface AppStorageComposition {
   service: AppStorageService;
   disposition: AppStorageDisposition;
   /**
-   * Exposed, not scheduled. Reads already hide an expired record, so a sweep
-   * reclaims space rather than enforcing expiry, and the runtime that owns
-   * background work decides when to run one.
+   * Builds a declared index over records written before it was declared. Release
+   * admission reports which indexes a candidate needs rebuilt; running them is
+   * what makes the candidate's queries answer about older records.
    */
-  expirySweeper: AppStorageExpirySweeper;
+  indexRebuilder: AppStorageIndexRebuilder;
+  /**
+   * Exposed, not scheduled. The runtime that owns background work decides when a
+   * pass runs; what each pass is for differs. Expiry reclaims space a read and a
+   * write already ignore, so it can run late. Retention is the only thing that
+   * makes an operator's bounded hold end, so it cannot.
+   */
+  sweeper: AppStorageSweeper;
 }
 
 /**
  * Assembles managed App Storage: the generic Postgres repository, the capability
  * service the App gateway calls through, the disposition operations an operator
- * drives, and the expiry sweeper. It wires implementations and holds no rules —
+ * drives, the index rebuilder release admission requires, and the maintenance
+ * sweeper. It wires implementations and holds no rules —
  * every decision about what a record may contain, which operations a collection
  * permits, and what a quota admits lives in `modules/appStorage`.
  */
@@ -64,6 +74,7 @@ export const createAppStorageComposition = (options: {
     repository,
     service: createAppStorageService({ repository }),
     disposition: createAppStorageDisposition({ repository, audit }),
-    expirySweeper: createAppStorageExpirySweeper({ repository }),
+    indexRebuilder: createAppStorageIndexRebuilder({ repository }),
+    sweeper: createAppStorageSweeper({ repository, audit }),
   };
 };

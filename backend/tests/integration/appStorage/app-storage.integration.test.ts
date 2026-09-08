@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import type { BoundedJsonRecord } from "@radioso/app-contract";
+import type { BoundedJsonRecord, StorageCollection } from "@radioso/app-contract";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -9,17 +9,34 @@ import { createAppStorageAuditSink } from "../../../src/app/composition/appStora
 import {
   AppStorageRepository,
   createAppStorageDisposition,
-  createAppStorageExpirySweeper,
+  createAppStorageIndexRebuilder,
   createAppStorageService,
+  createAppStorageSweeper,
 } from "../../../src/modules/appStorage/public.js";
+import type { AuditEventInput, AuditService } from "../../../src/modules/audit/contracts/index.js";
 import { Database } from "../../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "../support/integrationDatabase.js";
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
+// Events are collected as the audit spine receives them, so the identity a test
+// looks for is the one an operator would actually read back.
+const collectAudit = (events: AuditEventInput[]): AuditService => ({
+  async record(event) {
+    events.push(event);
+  },
+  async getLatestSuccessfulChatAnswerMetadata() {
+    return null;
+  },
+  async updateChatAnswerSuggestions() {
+    // The storage disposition writes no chat metadata.
+  },
+});
+
 // Managed App Storage against real Postgres. The unit suite proves the rules; what
-// only a database can show is that the rules hold under the primary key that carries
-// them — isolation, the quota counter, the version fence, and the expiry predicate.
+// only a database can show is that they hold where they are actually enforced — the
+// scoped predicate, the counter row every write locks, the version the counter hands
+// out, the expiry predicate, and the state row that fences a disposition.
 describeIntegration("Managed App Storage (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl);
   const repository = new AppStorageRepository(database.kysely);
@@ -27,12 +44,13 @@ describeIntegration("Managed App Storage (Postgres)", () => {
 
   const accountId = randomUUID();
   const workspaceId = randomUUID();
-  const installationId = randomUUID();
-  const otherInstallationId = randomUUID();
   const collection = buildStorageCollection();
 
-  const scope = { workspaceId, installationId, collection };
-  const otherScope = { workspaceId, installationId: otherInstallationId, collection };
+  const installation = (): { workspaceId: string; installationId: string; collection: StorageCollection } => ({
+    workspaceId,
+    installationId: randomUUID(),
+    collection,
+  });
 
   beforeAll(async () => {
     await database.query(`INSERT INTO accounts (id, name, email, password_hash) VALUES ($1, $2, $3, $4)`, [
@@ -53,7 +71,7 @@ describeIntegration("Managed App Storage (Postgres)", () => {
   });
 
   const put = (
-    target: typeof scope,
+    target: { workspaceId: string; installationId: string; collection: StorageCollection },
     key: string,
     record: BoundedJsonRecord,
     expectedVersion?: number,
@@ -61,37 +79,89 @@ describeIntegration("Managed App Storage (Postgres)", () => {
     service.put({
       ...target,
       request: {
-        collection: collection.id,
+        collection: target.collection.id,
         key,
         record,
         ...(expectedVersion === undefined ? {} : { expectedVersion }),
       },
     });
 
-  it("round-trips a record and versions each write", async () => {
-    const first = await put(scope, "round_trip", { external_id: "a", sequence: 1 });
-    expect(first).toEqual({ ok: true, value: { version: 1 } });
+  /** Moves a stored record's deadline into the past without waiting for one. */
+  const expireNow = async (target: { workspaceId: string; installationId: string }, key: string): Promise<void> => {
+    await database.query(
+      `UPDATE app_storage_records SET expires_at = now() - interval '1 second'
+       WHERE workspace_id = $1 AND installation_id = $2 AND record_key = $3`,
+      [target.workspaceId, target.installationId, key],
+    );
+  };
 
+  const versionOf = (result: Awaited<ReturnType<typeof put>>): number =>
+    result.ok ? result.value.version : -1;
+
+  it("round-trips a record and gives every write a version that only moves forward", async () => {
+    const scope = installation();
+    const first = await put(scope, "round_trip", { external_id: "a", sequence: 1 });
     const second = await put(scope, "round_trip", { external_id: "a", sequence: 2 });
-    expect(second).toEqual({ ok: true, value: { version: 2 } });
+
+    expect(versionOf(second)).toBeGreaterThan(versionOf(first));
 
     const read = await service.get({ ...scope, request: { collection: collection.id, key: "round_trip" } });
     expect(read).toMatchObject({
       ok: true,
-      value: { record: { key: "round_trip", version: 2, record: { external_id: "a", sequence: 2 } } },
+      value: { record: { key: "round_trip", version: versionOf(second), record: { external_id: "a", sequence: 2 } } },
+    });
+  });
+
+  it("never reuses a version across deletion and recreation, so a stale fence cannot match again", async () => {
+    const scope = installation();
+    const first = versionOf(await put(scope, "aba", { external_id: "v1" }));
+
+    expect(await service.delete({ ...scope, request: { collection: collection.id, key: "aba" } })).toEqual({
+      ok: true,
+      value: { deleted: true },
+    });
+
+    const recreated = versionOf(await put(scope, "aba", { external_id: "v2" }));
+    expect(recreated).toBeGreaterThan(first);
+
+    // The client that read the first version writes with it after the record was
+    // deleted and written again. Under a per-record counter this would land.
+    expect(await put(scope, "aba", { external_id: "clobber" }, first)).toMatchObject({
+      ok: false,
+      error: { code: "version_conflict" },
+    });
+    expect(
+      await service.get({ ...scope, request: { collection: collection.id, key: "aba" } }),
+    ).toMatchObject({ ok: true, value: { record: { record: { external_id: "v2" } } } });
+  });
+
+  it("never reuses a version across expiry either", async () => {
+    const scope = { ...installation(), collection: buildStorageCollection({ retention: { kind: "ttl", seconds: 60 } }) };
+    const first = versionOf(await put(scope, "aba_ttl", { external_id: "v1" }));
+    await expireNow(scope, "aba_ttl");
+
+    const recreated = versionOf(await put(scope, "aba_ttl", { external_id: "v2" }));
+    expect(recreated).toBeGreaterThan(first);
+    expect(await put(scope, "aba_ttl", { external_id: "clobber" }, first)).toMatchObject({
+      ok: false,
+      error: { code: "version_conflict" },
     });
   });
 
   it("hides another installation's record even when the collection and key match", async () => {
-    await put(scope, "shared_key", { external_id: "mine" });
-    await put(otherScope, "shared_key", { external_id: "theirs" });
+    const mineScope = installation();
+    const theirScope = installation();
+    await put(mineScope, "shared_key", { external_id: "mine" });
+    await put(theirScope, "shared_key", { external_id: "theirs" });
 
-    const mine = await service.get({ ...scope, request: { collection: collection.id, key: "shared_key" } });
-    expect(mine).toMatchObject({ ok: true, value: { record: { record: { external_id: "mine" } } } });
+    expect(
+      await service.get({ ...mineScope, request: { collection: collection.id, key: "shared_key" } }),
+    ).toMatchObject({ ok: true, value: { record: { record: { external_id: "mine" } } } });
 
-    const third = { workspaceId, installationId: randomUUID(), collection };
-    const stranger = await service.get({ ...third, request: { collection: collection.id, key: "shared_key" } });
-    expect(stranger).toEqual({ ok: true, value: { record: null } });
+    const third = installation();
+    expect(
+      await service.get({ ...third, request: { collection: collection.id, key: "shared_key" } }),
+    ).toEqual({ ok: true, value: { record: null } });
 
     // A fenced write from an installation that holds no such record is not_found,
     // never a write into the record another installation holds under that key.
@@ -99,70 +169,85 @@ describeIntegration("Managed App Storage (Postgres)", () => {
       ok: false,
       error: { code: "not_found" },
     });
-    const untouched = await service.get({ ...scope, request: { collection: collection.id, key: "shared_key" } });
-    expect(untouched).toMatchObject({ ok: true, value: { record: { record: { external_id: "mine" } } } });
+    expect(
+      await service.get({ ...mineScope, request: { collection: collection.id, key: "shared_key" } }),
+    ).toMatchObject({ ok: true, value: { record: { record: { external_id: "mine" } } } });
   });
 
   it("fences a stale expectedVersion and leaves the stored record unchanged", async () => {
-    await put(scope, "fenced", { external_id: "v1" });
-    expect(await put(scope, "fenced", { external_id: "v2" }, 1)).toEqual({ ok: true, value: { version: 2 } });
-    expect(await put(scope, "fenced", { external_id: "v3" }, 1)).toMatchObject({
+    const scope = installation();
+    const first = versionOf(await put(scope, "fenced", { external_id: "v1" }));
+    const second = versionOf(await put(scope, "fenced", { external_id: "v2" }, first));
+    expect(second).toBeGreaterThan(first);
+
+    expect(await put(scope, "fenced", { external_id: "v3" }, first)).toMatchObject({
       ok: false,
       error: { code: "version_conflict" },
     });
-
-    const read = await service.get({ ...scope, request: { collection: collection.id, key: "fenced" } });
-    expect(read).toMatchObject({ ok: true, value: { record: { version: 2, record: { external_id: "v2" } } } });
+    expect(
+      await service.get({ ...scope, request: { collection: collection.id, key: "fenced" } }),
+    ).toMatchObject({ ok: true, value: { record: { version: second, record: { external_id: "v2" } } } });
   });
 
   it("refuses a write past the collection's record quota and keeps the counter exact", async () => {
-    const installation = randomUUID();
     const tiny = buildStorageCollection({ id: "tiny", quotas: { maxRecords: 2, maxRecordBytes: 4096 } });
-    const tinyScope = { workspaceId, installationId: installation, collection: tiny };
+    const scope = { ...installation(), collection: tiny };
 
     for (const key of ["one", "two"]) {
-      expect(
-        await service.put({ ...tinyScope, request: { collection: "tiny", key, record: { external_id: key } } }),
-      ).toMatchObject({ ok: true });
+      expect(await put(scope, key, { external_id: key })).toMatchObject({ ok: true });
     }
-
-    expect(
-      await service.put({
-        ...tinyScope,
-        request: { collection: "tiny", key: "three", record: { external_id: "three" } },
-      }),
-    ).toMatchObject({ ok: false, error: { code: "quota_exceeded" } });
-
-    // Rewriting a key already stored consumes no slot.
-    expect(
-      await service.put({ ...tinyScope, request: { collection: "tiny", key: "one", record: { external_id: "again" } } }),
-    ).toMatchObject({ ok: true });
-
-    expect(await service.usage({ workspaceId, installationId: installation, collection: tiny })).toMatchObject({
-      ok: true,
-      value: { recordCount: 2 },
+    expect(await put(scope, "three", { external_id: "three" })).toMatchObject({
+      ok: false,
+      error: { code: "quota_exceeded" },
     });
 
+    // Rewriting a key already stored consumes no slot.
+    expect(await put(scope, "one", { external_id: "again" })).toMatchObject({ ok: true });
+    expect(await service.usage(scope)).toMatchObject({ ok: true, value: { recordCount: 2 } });
+
     // A delete returns the slot, so the quota is a ceiling rather than a ratchet.
-    expect(
-      await service.delete({ ...tinyScope, request: { collection: "tiny", key: "two" } }),
-    ).toEqual({ ok: true, value: { deleted: true } });
-    expect(
-      await service.put({ ...tinyScope, request: { collection: "tiny", key: "three", record: { external_id: "3" } } }),
-    ).toMatchObject({ ok: true });
+    expect(await service.delete({ ...scope, request: { collection: "tiny", key: "two" } })).toEqual({
+      ok: true,
+      value: { deleted: true },
+    });
+    expect(await put(scope, "three", { external_id: "3" })).toMatchObject({ ok: true });
+  });
+
+  it("gives an expired record's quota slot back to the very next write, with no sweep in between", async () => {
+    const tiny = buildStorageCollection({
+      id: "tiny_ttl",
+      quotas: { maxRecords: 1, maxRecordBytes: 4096 },
+      retention: { kind: "ttl", seconds: 60 },
+    });
+    const scope = { ...installation(), collection: tiny };
+
+    expect(await put(scope, "first", { external_id: "first" })).toMatchObject({ ok: true });
+    await expireNow(scope, "first");
+
+    // A different key, so the write needs a slot rather than reusing one.
+    expect(await put(scope, "second", { external_id: "second" })).toMatchObject({ ok: true });
+    expect(await service.usage(scope)).toMatchObject({ ok: true, value: { recordCount: 1 } });
+  });
+
+  it("reports usage live rather than as of the last sweep", async () => {
+    const ttl = buildStorageCollection({ id: "usage_ttl", retention: { kind: "ttl", seconds: 60 } });
+    const scope = { ...installation(), collection: ttl };
+    await put(scope, "a", { external_id: "a" });
+    await put(scope, "b", { external_id: "b" });
+    await expireNow(scope, "a");
+
+    expect(await service.usage(scope)).toMatchObject({ ok: true, value: { recordCount: 1 } });
   });
 
   it("queries by a declared index, in the indexed field's own type, and pages by key", async () => {
-    const installation = randomUUID();
-    const indexed = { workspaceId, installationId: installation, collection };
-
+    const scope = installation();
     for (const key of ["a_1", "a_2", "a_3"]) {
-      await put(indexed, key, { external_id: "group_a", sequence: 1 });
+      await put(scope, key, { external_id: "group_a", sequence: 1 });
     }
-    await put(indexed, "b_1", { external_id: "group_b" });
+    await put(scope, "b_1", { external_id: "group_b" });
 
     const page = await service.query({
-      ...indexed,
+      ...scope,
       request: { collection: collection.id, index: "by_external_id", equals: "group_a", limit: 2 },
     });
     expect(page).toMatchObject({ ok: true, value: { cursor: "a_2" } });
@@ -170,7 +255,7 @@ describeIntegration("Managed App Storage (Postgres)", () => {
     expect(page.value.records.map((record) => record.key)).toEqual(["a_1", "a_2"]);
 
     const rest = await service.query({
-      ...indexed,
+      ...scope,
       request: { collection: collection.id, index: "by_external_id", equals: "group_a", limit: 2, cursor: "a_2" },
     });
     expect(rest).toMatchObject({ ok: true, value: { cursor: undefined } });
@@ -179,9 +264,9 @@ describeIntegration("Managed App Storage (Postgres)", () => {
 
     // An index entry follows its record: rewriting the field moves the row out of
     // the group it used to match, rather than leaving a stale entry behind.
-    await put(indexed, "a_1", { external_id: "group_b" });
+    await put(scope, "a_1", { external_id: "group_b" });
     const moved = await service.query({
-      ...indexed,
+      ...scope,
       request: { collection: collection.id, index: "by_external_id", equals: "group_a", limit: 10 },
     });
     if (!moved.ok) return;
@@ -189,102 +274,213 @@ describeIntegration("Managed App Storage (Postgres)", () => {
   });
 
   it("hides an expired record from reads and queries before any sweep runs", async () => {
-    const installation = randomUUID();
     const ttl = buildStorageCollection({ id: "ephemeral", retention: { kind: "ttl", seconds: 60 } });
-    const past = new Date(Date.now() - 3_600_000);
-    const ttlScope = { workspaceId, installationId: installation, collection: ttl };
+    const scope = { ...installation(), collection: ttl };
+    await put(scope, "gone", { external_id: "gone" });
+    await expireNow(scope, "gone");
 
-    // The clock the write reads is the one that sets the deadline, so a write dated
-    // an hour ago produces a record that was already past its TTL when it landed.
-    const expiringService = createAppStorageService({ repository, now: () => past });
-    await expiringService.put({
-      ...ttlScope,
-      request: { collection: "ephemeral", key: "gone", record: { external_id: "gone" } },
+    expect(await service.get({ ...scope, request: { collection: "ephemeral", key: "gone" } })).toEqual({
+      ok: true,
+      value: { record: null },
     });
-
     expect(
-      await service.get({ ...ttlScope, request: { collection: "ephemeral", key: "gone" } }),
-    ).toEqual({ ok: true, value: { record: null } });
+      await service.query({
+        ...scope,
+        request: { collection: "ephemeral", index: "by_external_id", equals: "gone", limit: 10 },
+      }),
+    ).toMatchObject({ ok: true, value: { records: [] } });
+  });
 
-    const query = await service.query({
-      ...ttlScope,
-      request: { collection: "ephemeral", index: "by_external_id", equals: "gone", limit: 10 },
+  it("reclaims expired rows in the sweep and leaves the counter describing what is there", async () => {
+    const ttl = buildStorageCollection({ id: "swept", retention: { kind: "ttl", seconds: 60 } });
+    const scope = { ...installation(), collection: ttl };
+    for (const key of ["x", "y"]) await put(scope, key, { external_id: key });
+    await expireNow(scope, "x");
+    await expireNow(scope, "y");
+
+    const swept = await createAppStorageSweeper({
+      repository,
+      audit: { async record() {} },
+      batchSize: 100,
+    }).runExpirySweep();
+
+    expect(swept.deletedCount).toBeGreaterThanOrEqual(2);
+    expect(await service.usage(scope)).toMatchObject({ ok: true, value: { recordCount: 0 } });
+  });
+
+  it("makes records written before an index existed queryable once the index is rebuilt", async () => {
+    const before = buildStorageCollection({ id: "rebuilt", indexes: [{ id: "by_external_id", field: "external_id" }] });
+    const scope = { ...installation(), collection: before };
+    for (const key of ["r1", "r2", "r3"]) {
+      await put(scope, key, { external_id: "shared", sequence: 7 });
+    }
+
+    // The candidate release declares a second index. Its entries do not exist for
+    // records the earlier release wrote, so the query answers nothing until the
+    // rebuild has run over them.
+    const after = buildStorageCollection({
+      id: "rebuilt",
+      indexes: [
+        { id: "by_external_id", field: "external_id" },
+        { id: "by_sequence", field: "sequence" },
+      ],
     });
-    expect(query).toMatchObject({ ok: true, value: { records: [] } });
+    const candidateScope = { ...scope, collection: after };
 
-    const swept = await createAppStorageExpirySweeper({ repository, batchSize: 100 }).runExpirySweep();
-    expect(swept.deletedCount).toBeGreaterThanOrEqual(1);
-    expect(
-      await service.usage({ workspaceId, installationId: installation, collection: ttl }),
-    ).toMatchObject({ ok: true, value: { recordCount: 0 } });
+    const beforeRebuild = await service.query({
+      ...candidateScope,
+      request: { collection: "rebuilt", index: "by_sequence", equals: 7, limit: 10 },
+    });
+    expect(beforeRebuild).toMatchObject({ ok: true, value: { records: [] } });
+
+    const rebuilt = await createAppStorageIndexRebuilder({ repository, batchSize: 2 }).rebuildIndex({
+      workspaceId: scope.workspaceId,
+      installationId: scope.installationId,
+      collection: after,
+      indexId: "by_sequence",
+    });
+    expect(rebuilt).toMatchObject({ ok: true, value: { rebuiltCount: 3 } });
+
+    const afterRebuild = await service.query({
+      ...candidateScope,
+      request: { collection: "rebuilt", index: "by_sequence", equals: 7, limit: 10 },
+    });
+    if (!afterRebuild.ok) return;
+    expect(afterRebuild.value.records.map((record) => record.key)).toEqual(["r1", "r2", "r3"]);
   });
 
   describe("disposition", () => {
-    const auditEvents: { eventType: string; workspaceId: string | null }[] = [];
-    const disposition = createAppStorageDisposition({
-      repository,
-      audit: createAppStorageAuditSink({
-        async record(event) {
-          auditEvents.push({ eventType: event.eventType, workspaceId: event.workspaceId ?? null });
-        },
-        async getLatestSuccessfulChatAnswerMetadata() {
-          return null;
-        },
-        async updateChatAnswerSuggestions() {
-          // The storage disposition writes no chat metadata.
-        },
-      }),
-    });
+    const auditEvents: AuditEventInput[] = [];
+    const audit = createAppStorageAuditSink(collectAudit(auditEvents));
+    const disposition = createAppStorageDisposition({ repository, audit });
+
+    const eventTypes = (): string[] => auditEvents.map((event) => event.eventType);
 
     it("revokes access without deleting, and restoring brings the record back", async () => {
-      const installation = randomUUID();
-      const revoked = { workspaceId, installationId: installation, collection };
-      await put(revoked, "kept", { external_id: "kept" });
+      const scope = installation();
+      await put(scope, "kept", { external_id: "kept" });
 
-      await disposition.revokeAccess({ workspaceId, installationId: installation });
+      await disposition.revokeAccess(scope);
       expect(
-        await service.get({ ...revoked, request: { collection: collection.id, key: "kept" } }),
+        await service.get({ ...scope, request: { collection: collection.id, key: "kept" } }),
       ).toMatchObject({ ok: false, error: { code: "denied" } });
-      expect(
-        await put(revoked, "kept", { external_id: "changed" }),
-      ).toMatchObject({ ok: false, error: { code: "denied" } });
+      expect(await put(scope, "kept", { external_id: "changed" })).toMatchObject({
+        ok: false,
+        error: { code: "denied" },
+      });
+      // Usage goes through the same admission, so a revoked App learns nothing
+      // about how much it stored either.
+      expect(await service.usage(scope)).toMatchObject({ ok: false, error: { code: "denied" } });
 
-      await disposition.restoreAccess({ workspaceId, installationId: installation });
+      await disposition.restoreAccess(scope);
       expect(
-        await service.get({ ...revoked, request: { collection: collection.id, key: "kept" } }),
+        await service.get({ ...scope, request: { collection: collection.id, key: "kept" } }),
       ).toMatchObject({ ok: true, value: { record: { record: { external_id: "kept" } } } });
     });
 
-    it("exports one JSON line per record and then deletes the installation's data", async () => {
-      const installation = randomUUID();
-      const exported = { workspaceId, installationId: installation, collection };
-      await put(exported, "one", { external_id: "one" });
-      await put(exported, "two", { external_id: "two" });
+    it("exports every collection over several batches, at one snapshot, skipping expired rows", async () => {
+      const ttl = buildStorageCollection({ id: "export_ttl", retention: { kind: "ttl", seconds: 60 } });
+      const scope = installation();
+      for (const key of ["one", "two", "three"]) await put(scope, key, { external_id: key });
+      await put({ ...scope, collection: ttl }, "kept", { external_id: "kept" });
+      await put({ ...scope, collection: ttl }, "stale", { external_id: "stale" });
+      await expireNow(scope, "stale");
 
-      const lines: unknown[] = [];
-      for await (const line of disposition.exportRecords({ workspaceId, installationId: installation })) {
-        lines.push(JSON.parse(line.line));
+      const batched = createAppStorageDisposition({ repository, audit, exportBatchSize: 2 });
+      const lines: { collection: string; key: string }[] = [];
+      for await (const line of batched.exportRecords(scope)) {
+        lines.push(JSON.parse(line.line) as { collection: string; key: string });
       }
-      expect(lines).toEqual([
-        expect.objectContaining({ collection: collection.id, key: "one", record: { external_id: "one" } }),
-        expect.objectContaining({ collection: collection.id, key: "two", record: { external_id: "two" } }),
-      ]);
 
-      await disposition.retain({
-        workspaceId,
-        installationId: installation,
-        until: new Date(Date.now() + 86_400_000),
+      expect(lines.map((line) => `${line.collection}/${line.key}`)).toEqual([
+        "export_ttl/kept",
+        "sync_state/one",
+        "sync_state/three",
+        "sync_state/two",
+      ]);
+      expect(eventTypes()).toContain("app.data.export.completed");
+    });
+
+    it("audits an export whose consumer stops early as cancelled", async () => {
+      const scope = installation();
+      await put(scope, "one", { external_id: "one" });
+      await put(scope, "two", { external_id: "two" });
+
+      const batched = createAppStorageDisposition({ repository, audit, exportBatchSize: 1 });
+      for await (const _line of batched.exportRecords(scope)) {
+        break;
+      }
+
+      expect(eventTypes()).toContain("app.data.export.cancelled");
+    });
+
+    it("leaves a tombstone that refuses every later operation, including a recreation", async () => {
+      const scope = installation();
+      await put(scope, "one", { external_id: "one" });
+      await put(scope, "two", { external_id: "two" });
+
+      expect(await disposition.deleteInstallationStorage(scope)).toEqual({
+        ok: true,
+        value: { recordCount: 2, collectionCount: 1 },
       });
 
-      const summary = await disposition.deleteInstallationStorage({ workspaceId, installationId: installation });
-      expect(summary).toEqual({ recordCount: 2, collectionCount: 1 });
-      expect(
-        await service.get({ ...exported, request: { collection: collection.id, key: "one" } }),
-      ).toEqual({ ok: true, value: { record: null } });
+      const denied = { ok: false, error: { code: "denied" } };
+      expect(await service.get({ ...scope, request: { collection: collection.id, key: "one" } })).toMatchObject(denied);
+      expect(await put(scope, "three", { external_id: "three" })).toMatchObject(denied);
+      expect(await service.usage(scope)).toMatchObject(denied);
+      expect(await disposition.revokeAccess(scope)).toMatchObject(denied);
 
-      expect(auditEvents.map((event) => event.eventType)).toContain("app.data.export.completed");
-      expect(auditEvents.map((event) => event.eventType)).toContain("app.data.retention.changed");
-      expect(auditEvents.map((event) => event.eventType)).toContain("app.data.deletion.completed");
+      const rows = await database.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM app_storage_records WHERE installation_id = $1`,
+        [scope.installationId],
+      );
+      expect(rows[0]?.count).toBe("0");
+    });
+
+    it("refuses a retention deadline outside policy and audits the refusal", async () => {
+      const scope = installation();
+      const beyond = new Date(Date.now() + 200 * 86_400_000);
+      expect(await disposition.retain({ ...scope, until: beyond })).toMatchObject({
+        ok: false,
+        error: { code: "invalid_input" },
+      });
+      expect(
+        auditEvents.some(
+          (event) => event.eventType === "app.data.retention.changed" && event.eventStatus === "failure",
+        ),
+      ).toBe(true);
+    });
+
+    it("deletes a retained installation once its deadline passes, and audits the counts", async () => {
+      const scope = installation();
+      await put(scope, "held", { external_id: "held" });
+      await disposition.retain({ ...scope, until: new Date(Date.now() + 86_400_000) });
+
+      // The deadline is the operator's, so a test moves it rather than waiting a day.
+      await database.query(
+        `UPDATE app_storage_installation_state SET retain_until = now() - interval '1 minute'
+         WHERE workspace_id = $1 AND installation_id = $2`,
+        [scope.workspaceId, scope.installationId],
+      );
+
+      const before = auditEvents.length;
+      const swept = await createAppStorageSweeper({ repository, audit }).runRetentionSweep();
+      expect(swept.installationCount).toBeGreaterThanOrEqual(1);
+
+      const completed = auditEvents
+        .slice(before)
+        .find((event) => event.metadata?.installationId === scope.installationId);
+      expect(completed).toMatchObject({
+        eventType: "app.data.deletion.completed",
+        eventStatus: "success",
+        metadata: expect.objectContaining({ reason: "retention_elapsed", recordCount: 1 }),
+      });
+
+      // The tombstone the reclamation left outranks every later operation.
+      expect(await put(scope, "held", { external_id: "again" })).toMatchObject({
+        ok: false,
+        error: { code: "denied" },
+      });
     });
 
     it("removes every installation's records when a workspace's storage is deleted", async () => {
@@ -293,33 +489,44 @@ describeIntegration("Managed App Storage (Postgres)", () => {
         `INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1, $2, $3, $4)`,
         [disposable, accountId, "Disposable", `route-${disposable}`],
       );
-      const first = randomUUID();
-      const second = randomUUID();
-      await put({ workspaceId: disposable, installationId: first, collection }, "x", { external_id: "x" });
-      await put({ workspaceId: disposable, installationId: second, collection }, "y", { external_id: "y" });
+      const first = { workspaceId: disposable, installationId: randomUUID(), collection };
+      const second = { workspaceId: disposable, installationId: randomUUID(), collection };
+      await put(first, "x", { external_id: "x" });
+      await put(second, "y", { external_id: "y" });
 
       expect(await disposition.deleteWorkspaceStorage({ workspaceId: disposable })).toEqual({
         recordCount: 2,
         installationCount: 2,
       });
+
+      // The workspace-wide deletion clears the state rows too, so a reinstall in
+      // this workspace starts from nothing rather than from a tombstone.
+      expect(await put(first, "x", { external_id: "again" })).toMatchObject({ ok: true });
     });
 
-    it("cascades through the workspace row when the workspace itself is deleted", async () => {
+    it("cascades out of all four tables when the workspace row itself is deleted", async () => {
       const doomed = randomUUID();
       await database.query(
         `INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1, $2, $3, $4)`,
         [doomed, accountId, "Doomed", `route-${doomed}`],
       );
-      const installation = randomUUID();
-      await put({ workspaceId: doomed, installationId: installation, collection }, "z", { external_id: "z" });
+      const scope = { workspaceId: doomed, installationId: randomUUID(), collection };
+      await put(scope, "z", { external_id: "z" });
 
+      const counts = async (): Promise<Record<string, string | undefined>> => {
+        const rows = await database.query<{ table_name: string; count: string }>(
+          `SELECT 'records' AS table_name, count(*)::text AS count FROM app_storage_records WHERE workspace_id = $1
+           UNION ALL SELECT 'index_entries', count(*)::text FROM app_storage_index_entries WHERE workspace_id = $1
+           UNION ALL SELECT 'usage', count(*)::text FROM app_storage_collection_usage WHERE workspace_id = $1
+           UNION ALL SELECT 'state', count(*)::text FROM app_storage_installation_state WHERE workspace_id = $1`,
+          [doomed],
+        );
+        return Object.fromEntries(rows.map((row) => [row.table_name, row.count]));
+      };
+
+      expect(await counts()).toEqual({ records: "1", index_entries: "1", usage: "1", state: "1" });
       await database.query(`DELETE FROM workspaces WHERE id = $1`, [doomed]);
-
-      const remaining = await database.query<{ count: string }>(
-        `SELECT count(*)::text AS count FROM app_storage_records WHERE workspace_id = $1`,
-        [doomed],
-      );
-      expect(remaining[0]?.count).toBe("0");
+      expect(await counts()).toEqual({ records: "0", index_entries: "0", usage: "0", state: "0" });
     });
   });
 });

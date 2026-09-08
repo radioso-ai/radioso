@@ -1,7 +1,7 @@
 ---
 title: "Managed App Storage"
 description: "How an App keeps state in Radioso: declaring collections, writing and reading records, querying by a declared index, quotas and expiry, the error codes storage returns, what a new release may change, and how an operator exports, retains, or deletes the data."
-last_updated: 2026-09-07
+last_updated: 2026-09-08
 ---
 
 # Managed App Storage
@@ -55,6 +55,10 @@ characters.
 workspace hold two separate sets of records, and a key that exists in both is
 two different records. An installation asking for a key it never wrote gets
 `{ "record": null }`, whatever another installation stores under that name.
+Every call Radioso makes on your behalf carries the workspace and the
+installation, and each one holds the installation's state row while it runs — so
+a call decides whether your access still stands at the moment it takes effect,
+not before it queued.
 
 ## The record schema
 
@@ -74,6 +78,12 @@ required field, a value of the wrong type, and a key you never declared are all
 `invalid_input`. There is no partial write: a record that fails validation
 leaves the stored record exactly as it was.
 
+A field an index points at is held to a tighter bound: at most 2048 characters
+and 2048 bytes. That is the longest value `storage.query` can compare against, so
+a longer one would be a record its own index could never find. Keep long text in
+an unindexed field — a `json` payload, say — and index a short identifier beside
+it.
+
 Size is checked the same way. A record that serializes past the collection's
 `maxRecordBytes` comes back as `quota_exceeded`, and `maxRecordBytes` itself
 stops at 65536 — the ceiling every message on the runtime protocol shares, so a
@@ -88,7 +98,11 @@ The four operations are host capability calls, described in full in the
 `null`.
 
 `storage.put` takes a collection, a key, and a record, and answers with the
-record's new version. Versions start at 1 and increase by one per write.
+record's new version. Versions come from a counter the collection keeps, so every
+write in a collection gets a higher number than the one before and no number is
+ever handed out twice. A record you delete and write again comes back with a
+version above the one it had, which is what makes the version you are holding
+safe to fence with: it cannot start matching a different record later.
 
 `storage.delete` takes a collection and a key and answers with whether it
 removed anything. Deleting a key that is not there succeeds, having deleted
@@ -155,11 +169,13 @@ they are part of what they approve.
 { "kind": "ttl", "seconds": 86400 }
 ```
 
-A TTL is measured from each write, so touching a record renews it. Once the
-deadline passes the record is gone from every read and every query immediately —
-Radioso reclaims the row on its own schedule, but nothing you can observe depends
-on when that happens. `{ "kind": "none" }` keeps records until something removes
-them.
+A TTL is measured from each write, so touching a record renews it, and the
+deadline is set by the database as the write lands rather than by a clock read
+before it. Once the deadline passes the record is gone from every read and every
+query, and its quota slot comes back with it: the very next write can use the
+space, and `storage.usage` counts what is live. Radioso reclaims the row itself
+on its own schedule, but nothing you can observe waits for that.
+`{ "kind": "none" }` keeps records until something removes them.
 
 ## Allowed operations
 
@@ -176,40 +192,68 @@ Storage answers a failed call with one of these:
 | Code | What happened |
 |---|---|
 | `invalid_input` | The collection is not one this installation declares, the record does not match its schema, or the query names an index or a value type the collection does not have |
-| `denied` | The collection does not allow this operation, or the installation's storage access is revoked |
+| `denied` | The collection does not allow this operation, the installation's storage access is revoked, or its storage is deleted |
 | `not_found` | A write or delete carrying `expectedVersion` found no record under that key |
 | `version_conflict` | The stored record's version is not the one the call expected |
 | `quota_exceeded` | The record is larger than `maxRecordBytes`, or the collection already holds `maxRecords` records |
 | `unavailable` | Storage could not be reached for this call |
 | `internal` | The host failed for a reason it cannot attribute to the call |
 
-Messages name declarations — a collection id, a field key, an index id — and
-never a record key or a stored value, so a message is safe to log and safe to
-show.
+Messages name declarations you wrote in the manifest — a collection id, a
+declared field key, an index id — and never a record key, a field name you
+invented, or a stored value, so a message is safe to log and safe to show. A
+failure inside Radioso's own storage arrives as `unavailable` or `internal`
+carrying none of the underlying error, for the same reason.
 
 ## What a new release may change
 
 Records outlive the release that wrote them, and Radioso runs no migration code
-of yours over them. So a candidate release is checked against the active one
-before it can be activated, and the policy is additive.
+of yours over them. So a candidate release is checked before it can be activated,
+and the check is a matrix rather than a comparison of two manifests. It reads
+four things:
+
+- the **candidate** declaration and the **active** one
+- the declarations of **releases the operator can still roll back to**
+- the **schema versions stored records actually carry**
+- the **schema versions jobs already enqueued will be read back under**
+
+Both directions have to hold. The candidate must read everything that is already
+there: its `compatibleReaderVersions` covers every version stored records carry
+and the version the active release writes. And every reader that outlives the
+activation — the active release during a rolling change, a rollback release, a
+queued job — must be able to read what the candidate writes: either it declared
+the candidate's `schemaVersion` readable, or the candidate differs from what it
+reads only by added optional fields.
+
+That second direction is what makes dropping an old reader version legal. The
+contract caps `compatibleReaderVersions` at eight entries, so a long-lived App
+eventually has to drop the oldest one; it is admitted exactly when no stored
+record carries that version.
 
 A candidate may:
 
 - add a collection
 - add an optional field
-- add an index
+- add an index, together with the rebuild below
 - widen `allowedOperations`
-- raise `schemaVersion`, as long as `compatibleReaderVersions` still lists every
-  version the active release declared
+- raise `schemaVersion`
+- drop a reader version no stored record uses
 
 A candidate is rejected when it removes a collection, removes a field, changes a
-field's type, makes an existing optional field required, adds a required field,
-removes an index, moves an index to a different field, lowers `schemaVersion`, or
-drops a reader version the active release supported. Each of these changes the
+field's type, makes an optional field required **or** a required field optional,
+adds a required field, removes an index, moves an index to a different field,
+narrows `allowedOperations`, or lowers `schemaVersion`. Each of these changes the
 meaning of records nobody is going to rewrite: a retyped field makes stored
-values unreadable, a newly required field makes every existing record invalid,
-and a removed index takes away the only access path a queued job — which keeps
-the schema version it was enqueued under — may have been planned against.
+values unreadable, a newly required field makes every existing record invalid, a
+newly optional one makes a field an older reader still requires disappear, a
+removed index takes away the only access path a queued job may have been planned
+against, and a narrowed operation list turns that job's next call into `denied`.
+
+**An added index is built before the release serves a query.** An index entry
+exists per record, so a new index answers nothing about records earlier releases
+wrote. The compatibility report names each added index as a rebuild, and
+activation runs it over the collection in batches. Until it finishes, a query by
+that index would return part of the collection and look correct doing it.
 
 The practical shape of a schema change is therefore: add the new field as
 optional, write both fields for a release, and stop reading the old one. The old
@@ -235,27 +279,39 @@ three dispositions:
   the App held.
 - **Retain until a date** holds the data for a bounded period, for a support
   investigation or a compliance window, without leaving the App able to reach it.
+  The date is a real instant in the future, at most 90 days out; Radioso deletes
+  the installation's data when it passes, in one transaction, and records the
+  counts it removed. A hold you set is a hold that ends.
 - **Delete** removes the installation's records, its index entries, and its usage
-  accounting.
+  accounting, and leaves a marker in place of the installation. Every later call
+  against it — a read, a write, another disposition — answers `denied`, so a call
+  that was already in flight when you deleted cannot put a record back. The marker
+  goes when the workspace does.
 
 **Deleting a workspace deletes its App storage.** Every installation's records go
 with it, through the same guarantee that covers the rest of the workspace's data.
 
 Each of these leaves an audit event in the `app.data.*` family — export
-requested and completed, retention changed, deletion requested and completed.
-The events carry the workspace, the installation, and counts. They do not carry
+requested, completed, or cancelled; retention changed; deletion requested and
+completed. The events carry the workspace, the installation, and counts. An
+export whose consumer stopped part-way is recorded as cancelled with what had
+been handed over, a retention date outside policy as a failed change, and a
+deletion that did not finish as a failed deletion — because a trail that shows
+only the successful half cannot answer where the data went. They do not carry
 record keys or stored values, because the point of the trail is to show that a
 disposition happened, not to become a second copy of what was in it.
 
 ## Common failure modes
 
 **Every write comes back `invalid_input`.** The record carries a key the
-collection does not declare, or a field key is not lower-case snake case. The
-message names the field.
+collection does not declare, a field key is not lower-case snake case, or a field
+an index points at is longer than 2048 characters.
 
 **A query returns nothing though the records are there.** Check that the record
 actually carries the indexed field. A record that omits an optional indexed field
-produces no index entry, so it cannot match a query on that index.
+produces no index entry, so it cannot match a query on that index. If the index
+is one your release added, the records written before it exist under it only once
+the rebuild that activation runs has covered them.
 
 **A put returns `version_conflict` on every retry.** Something else is writing
 the same key in a loop. Re-read the record on each attempt rather than reusing

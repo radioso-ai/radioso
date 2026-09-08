@@ -25,9 +25,12 @@ const release = z.object({
   currentCompatibility: z.object({
     runningVersion: z.string().nullable(),
     range: z.string(),
-    result: z.enum(["compatible", "incompatible", "unknown"]),
+    // `undetermined` is what a host that cannot read its own version reports. It is the
+    // domain's word for it, and the two surfaces have to use the one word.
+    result: z.enum(["compatible", "incompatible", "undetermined"]),
   }),
-  admittedAt: z.string().datetime(),
+  // The instant admission recorded, or `null` for a release that was never admitted.
+  admittedAt: z.string().datetime().nullable(),
 });
 
 const releaseDetail = release.extend({
@@ -166,6 +169,7 @@ export const registerAppsPaths = (
     403: json("App administration permission required", schemas.ErrorResponseSchema),
     404: json("Release, plan, or installation not available in this workspace", schemas.ErrorResponseSchema),
     409: json("Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible", schemas.ErrorResponseSchema),
+    500: json("A stored release no longer matches the admission decision recorded for it", schemas.ErrorResponseSchema),
     503: json("No App runtime or secret encryption key is configured, or App administration permission could not be checked", schemas.ErrorResponseSchema),
   };
   const body = <T extends z.ZodTypeAny>(schema: T) =>
@@ -173,13 +177,13 @@ export const registerAppsPaths = (
 
   registry.registerPath({
     method: "get", path: "/api/v1/apps/releases", tags: ["Apps"],
-    summary: "List the App releases admission has admitted", operationId: "listAppReleases", security: session,
-    responses: { 200: json("Installable releases", z.object({ items: z.array(release) })), ...errors },
+    summary: "List the App releases an operator can install now", operationId: "listAppReleases", security: session,
+    responses: { 200: json("Releases that are admitted and compatible with this host", z.object({ items: z.array(release) })), ...errors },
   });
 
   registry.registerPath({
     method: "get", path: "/api/v1/apps/releases/{releaseId}", tags: ["Apps"],
-    summary: "Inspect an admitted App release", operationId: "getAppRelease", security: session,
+    summary: "Inspect an installable App release", operationId: "getAppRelease", security: session,
     request: { params: releaseParams },
     responses: { 200: json("The admitted release and its App Spec", releaseDetail), ...errors },
   });
@@ -272,8 +276,8 @@ export const registerAppsPaths = (
     },
     responses: {
       201: json(
-        "The bound connection. `generatedSecret` is present only for a host-minted slot and is returned exactly once.",
-        z.object({ connection, generatedSecret: z.string().nullable() }),
+        "The bound connection. `generatedSecret` is present only for a host-minted slot and is returned exactly once; a retry under the same idempotency key answers with `replayed: true` and no secret.",
+        z.object({ connection, generatedSecret: z.string().nullable(), replayed: z.boolean() }),
       ),
       ...errors,
     },

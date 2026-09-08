@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { toJsonb } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../../shared/infra/kysely/types.js";
 import { AppsError } from "../domain/errors.js";
-import type { AppInstallationRecord } from "../domain/records.js";
+import type { AppInstallationRecord, AppReleaseState } from "../domain/records.js";
 import type { AppInstallationState } from "../domain/lifecycle.js";
 
 export interface CreateAppInstallationInput {
@@ -20,6 +20,7 @@ export interface AppInstallationMutation {
   readonly configuration?: Readonly<Record<string, unknown>>;
   readonly candidateConfiguration?: Readonly<Record<string, unknown>> | null;
   readonly candidateRevision?: string | null;
+  readonly activeRevision?: string | null;
   readonly executionDeniedAt?: Date | null;
   readonly health?: Readonly<Record<string, unknown>>;
 }
@@ -33,6 +34,14 @@ export interface ActivateAppInstallationInput {
   readonly releaseId: string;
   readonly admissionPolicyVersion: string;
   readonly manifestDigest: string;
+  /** The mapping revision going live with this activation. */
+  readonly activeRevision: string;
+  /**
+   * Which release states may go live here. A first activation admits only `admitted`; a
+   * re-enable of an installation that already exists also admits `deprecated`, because
+   * deprecation stops new installs rather than the App an operator already runs.
+   */
+  readonly allowedReleaseStates: readonly AppReleaseState[];
 }
 
 export interface AppInstallationRepositoryPort {
@@ -56,8 +65,9 @@ export interface AppInstallationRepositoryPort {
     mutation: AppInstallationMutation,
   ): Promise<AppInstallationRecord | null>;
   /**
-   * `null` when the version no longer matches *or* the release is no longer eligible. The
-   * caller distinguishes the two by re-reading the release inside the same transaction.
+   * Moves the active pointer and reopens execution in the same statement. `null` when the
+   * version no longer matches *or* the release is no longer eligible; the caller
+   * distinguishes the two by re-reading the release inside the same transaction.
    */
   activateRelease(
     workspaceId: string,
@@ -77,6 +87,7 @@ const COLUMNS = [
   "configuration",
   "candidate_configuration",
   "candidate_revision",
+  "active_revision",
   "execution_denied_at",
   "version",
   "health",
@@ -98,6 +109,7 @@ const QUALIFIED_COLUMNS = [
   "app_installations.configuration as configuration",
   "app_installations.candidate_configuration as candidate_configuration",
   "app_installations.candidate_revision as candidate_revision",
+  "app_installations.active_revision as active_revision",
   "app_installations.execution_denied_at as execution_denied_at",
   "app_installations.version as version",
   "app_installations.health as health",
@@ -115,6 +127,7 @@ interface AppInstallationRow {
   configuration: unknown;
   candidate_configuration: unknown;
   candidate_revision: string | null;
+  active_revision: string | null;
   execution_denied_at: Date | null;
   version: number;
   health: unknown;
@@ -150,6 +163,7 @@ const mapRecord = (row: AppInstallationRow): AppInstallationRecord => ({
     ? null
     : asObject(row.candidate_configuration),
   candidateRevision: row.candidate_revision,
+  activeRevision: row.active_revision,
   executionDeniedAt: row.execution_denied_at ? new Date(row.execution_denied_at) : null,
   version: Number(row.version),
   health: asObject(row.health),
@@ -244,6 +258,7 @@ export class AppInstallationRepository implements AppInstallationRepositoryPort 
           ? {}
           : { candidate_configuration: mutation.candidateConfiguration === null ? null : toJsonb(mutation.candidateConfiguration) }),
         ...(mutation.candidateRevision === undefined ? {} : { candidate_revision: mutation.candidateRevision }),
+        ...(mutation.activeRevision === undefined ? {} : { active_revision: mutation.activeRevision }),
         ...(mutation.executionDeniedAt === undefined ? {} : { execution_denied_at: mutation.executionDeniedAt }),
         ...(mutation.health === undefined ? {} : { health: toJsonb(mutation.health) }),
         version: expectedVersion + 1,
@@ -270,6 +285,12 @@ export class AppInstallationRepository implements AppInstallationRepositoryPort 
         state: "active",
         active_release_id: input.releaseId,
         candidate_release_id: null,
+        active_revision: input.activeRevision,
+        // Disable and removal close the execution gate in their first transaction. Going
+        // live is what reopens it, and it has to be the same commit that says the
+        // installation is active — an installation that is `active` and still denied would
+        // report itself healthy while refusing every invocation.
+        execution_denied_at: null,
         version: expectedVersion + 1,
         updated_at: new Date(),
       })
@@ -277,7 +298,7 @@ export class AppInstallationRepository implements AppInstallationRepositoryPort 
       .where("app_installations.id", "=", id)
       .where("app_installations.version", "=", expectedVersion)
       .where("app_releases.id", "=", input.releaseId)
-      .where("app_releases.state", "=", "admitted")
+      .where("app_releases.state", "in", [...input.allowedReleaseStates])
       .where("app_releases.admission_policy_version", "=", input.admissionPolicyVersion)
       .where("app_releases.manifest_digest", "=", input.manifestDigest)
       .returning(QUALIFIED_COLUMNS)

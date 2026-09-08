@@ -200,15 +200,22 @@ export const assertAppCommandSourceState = (
   );
 };
 
+/**
+ * The edges back to `planned` are what a rolled-back activation travels. An activation
+ * that provisioned and then hit an unavailable provider is a failed *attempt*, not a
+ * broken installation: once its compensators have run, nothing of it survives, so the
+ * installation returns to the state the operator started from and can be activated again.
+ * `failed` is reserved for the case a rollback could not finish, which needs a person.
+ */
 const allowedTransitions: Readonly<Record<AppInstallationState, readonly AppInstallationState[]>> = {
   planned: ["provisioning", "failed", "removing"],
-  provisioning: ["staged", "failed", "removing"],
-  staged: ["testing", "failed", "removing"],
-  testing: ["ready", "failed", "removing"],
-  ready: ["active", "failed", "removing"],
+  provisioning: ["staged", "planned", "disabled", "failed", "removing"],
+  staged: ["testing", "planned", "disabled", "failed", "removing"],
+  testing: ["ready", "planned", "disabled", "failed", "removing"],
+  ready: ["active", "planned", "disabled", "failed", "removing"],
   active: ["disabled", "failed", "removing"],
   disabled: ["provisioning", "active", "failed", "removing"],
-  failed: ["provisioning", "disabled", "removing"],
+  failed: ["provisioning", "planned", "disabled", "removing"],
   removing: ["removed", "failed"],
   removed: [],
 };

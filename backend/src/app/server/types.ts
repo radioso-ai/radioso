@@ -260,6 +260,14 @@ export interface AppDependencies {
   appInstallationLifecycleService: AppInstallationLifecycleService;
   appInstallationQueryService: AppInstallationQueryService;
   appConnectionService: AppConnectionService;
+  /**
+   * Start-up recovery for the Apps control plane: drains durable audit intents and
+   * re-drives lifecycle operations whose driver died.
+   */
+  appControlPlaneRecovery: {
+    drainAuditOutbox(): Promise<number>;
+    recoverStalledAppOperations(): Promise<number>;
+  };
   agentBundleExportService: AgentBundleExportService;
   agentBundleImportService: AgentBundleImportService;
   agentBundleImportCleanupWorker: AgentBundleImportCleanupWorker;

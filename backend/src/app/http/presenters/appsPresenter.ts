@@ -38,6 +38,7 @@ const statusByReason: Readonly<Record<AppsErrorReason, number>> = {
   // retry rather than telling them they lost access.
   authorization_unavailable: 503,
   release_not_eligible: 409,
+  invalid_release_transition: 409,
   // A stored release that no longer passes its own recorded admission policy is
   // stored-state corruption, not a client mistake, so this is a 500 rather than a 409.
   release_not_admitted: 500,
@@ -64,7 +65,9 @@ export const presentAppRelease = (view: AppReleaseView) => {
   state: release.state,
   admissionEvidence: view.admissionEvidence,
   currentCompatibility: view.currentCompatibility,
-  admittedAt: release.updatedAt.toISOString(),
+  // The instant admission recorded, not the row's last write: revoking a release must not
+  // be reported back as the moment it was admitted.
+  admittedAt: release.admittedAt?.toISOString() ?? null,
   });
 };
 

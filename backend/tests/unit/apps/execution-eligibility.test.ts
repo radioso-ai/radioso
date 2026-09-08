@@ -9,6 +9,13 @@ import {
 
 const activeInstallation = async (harness: AppsHarness) => (await harness.install()).installation;
 
+/** The digest a caller's projection would have been built from. The fence is not optional. */
+const digestOf = async (
+  harness: AppsHarness,
+  installation: { readonly activeReleaseId: string | null },
+): Promise<string> =>
+  (await harness.repositories.releases.findById(installation.activeReleaseId!))!.manifestDigest;
+
 /**
  * The Apps-owned execution decision every runtime path asks before it grants authority.
  * Each case here is a rule a caller would otherwise have had to reconstruct against Apps
@@ -22,7 +29,7 @@ describe("app execution eligibility", () => {
     const decision = await harness.eligibility.evaluate({
       installationId: installation.id,
       contributionId: "site_content",
-      expectedReleaseDigest: null,
+      expectedReleaseDigest: await digestOf(harness, installation),
     });
 
     expect(decision).toMatchObject({ eligible: true });
@@ -38,7 +45,7 @@ describe("app execution eligibility", () => {
     await expect(harness.eligibility.evaluate({
       installationId: installation.id,
       contributionId: "content_poll",
-      expectedReleaseDigest: null,
+      expectedReleaseDigest: await digestOf(harness, installation),
     })).resolves.toEqual({ eligible: false, reason: "contribution_not_active" });
   });
 
@@ -56,7 +63,7 @@ describe("app execution eligibility", () => {
     await expect(harness.eligibility.evaluate({
       installationId: installation.id,
       contributionId: "site_content",
-      expectedReleaseDigest: null,
+      expectedReleaseDigest: await digestOf(harness, installation),
     })).resolves.toEqual({ eligible: false, reason: "execution_denied" });
   });
 
@@ -74,7 +81,7 @@ describe("app execution eligibility", () => {
     await expect(harness.eligibility.evaluate({
       installationId: installation.id,
       contributionId: "site_content",
-      expectedReleaseDigest: null,
+      expectedReleaseDigest: await digestOf(harness, installation),
     })).resolves.toEqual({ eligible: false, reason: "release_not_usable" });
   });
 
@@ -115,7 +122,7 @@ describe("app execution eligibility", () => {
     await expect(harness.eligibility.evaluate({
       installationId: installation.id,
       contributionId: "not_a_contribution",
-      expectedReleaseDigest: null,
+      expectedReleaseDigest: await digestOf(harness, installation),
     })).resolves.toEqual({ eligible: false, reason: "contribution_not_granted" });
   });
 
@@ -127,7 +134,7 @@ describe("app execution eligibility", () => {
     await expect(harness.eligibility.evaluate({
       installationId: installation.id,
       contributionId: "site_content",
-      expectedReleaseDigest: null,
+      expectedReleaseDigest: await digestOf(harness, installation),
     })).resolves.toEqual({ eligible: false, reason: "connections_unbound" });
   });
 
@@ -137,7 +144,7 @@ describe("app execution eligibility", () => {
     await expect(harness.eligibility.evaluate({
       installationId: "11111111-1111-4111-8111-111111111111",
       contributionId: "site_content",
-      expectedReleaseDigest: null,
+      expectedReleaseDigest: "sha256:whatever",
     })).resolves.toEqual({ eligible: false, reason: "installation_not_found" });
   });
 
@@ -151,7 +158,7 @@ describe("app execution eligibility", () => {
     await expect(harness.eligibility.evaluate({
       installationId: installation.id,
       contributionId: "site_content",
-      expectedReleaseDigest: null,
+      expectedReleaseDigest: await digestOf(harness, installation),
     })).resolves.toEqual({ eligible: false, reason: "eligibility_unavailable" });
   });
 });

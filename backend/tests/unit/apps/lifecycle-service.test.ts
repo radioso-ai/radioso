@@ -32,6 +32,7 @@ const crashDuringActivation = async (
     slotId: "webhook_secret",
     values: {},
     expectedVersion: applied.installation.version,
+    idempotencyKey: "bind-1",
     principal,
   });
   const current = await harness.repositories.installations.findById(workspaceId, applied.installation.id);
@@ -214,6 +215,10 @@ describe("app lifecycle operation serialization", () => {
       payload: {},
     });
     // Another driver advanced the operation between this one reading it and committing.
+    // This covers the control flow only: that the loss also rolls the step's database
+    // effects back is proved against a real transaction in
+    // tests/integration/apps/app-lifecycle-atomicity.integration.test.ts, because the
+    // in-memory unit of work has no rollback to observe.
     vi.spyOn(operations, "advance").mockResolvedValueOnce(null);
     harness.provisioning.deprovision.mockClear();
 
@@ -331,7 +336,9 @@ describe("app lifecycle recovery", () => {
     const resumed = await harness.lifecycle.resumeById(workspaceId, crashed.id);
 
     expect(resumed.operation.state).toBe("failed");
-    expect(resumed.installation.state).toBe("failed");
+    // A rollback that finished undid everything the operation committed, so the
+    // installation is what it was before it started — not damaged.
+    expect(resumed.installation.state).toBe("planned");
     // The forward path was never re-entered: nothing was staged, tested, or activated on
     // an installation whose runtime was already being torn down.
     expect(harness.staging.stage).not.toHaveBeenCalled();
@@ -381,6 +388,7 @@ describe("app lifecycle recovery", () => {
       slotId: "webhook_secret",
       values: {},
       expectedVersion: applied.installation.version,
+      idempotencyKey: "bind-2",
       principal,
     });
     const current = await harness.repositories.installations.findById(workspaceId, applied.installation.id);
@@ -395,7 +403,7 @@ describe("app lifecycle recovery", () => {
     });
 
     expect(failed.operation.state).toBe("failed");
-    expect(failed.installation.state).toBe("failed");
+    expect(failed.installation.state).toBe("planned");
     expect(harness.provisioning.deprovision).toHaveBeenCalledTimes(1);
 
     const resumed = await harness.lifecycle.resumeById(workspaceId, failed.operation.id);
@@ -466,6 +474,7 @@ describe("app lifecycle authority", () => {
       slotId: "webhook_secret",
       values: {},
       expectedVersion: installed.installation.version,
+      idempotencyKey: "bind-3",
       principal,
     })).rejects.toThrow();
     await expect(harness.lifecycle.reconfigure({
@@ -565,6 +574,7 @@ describe("app installation removal", () => {
       slotId: "webhook_secret",
       values: {},
       expectedVersion: removed.installation.version,
+      idempotencyKey: "bind-4",
       principal,
     })).rejects.toMatchObject({ reason: "installation_removing" });
 
@@ -605,6 +615,7 @@ describe("app installation reconfiguration", () => {
       slotId: "site_credentials",
       values: { wp_username: "editor", wp_application_password: "hunter2" },
       expectedVersion: installed.installation.version,
+      idempotencyKey: "bind-5",
       principal,
     });
     const current = await harness.repositories.installations.findById(workspaceId, installed.installation.id);
@@ -684,6 +695,7 @@ describe("app installation reconfiguration", () => {
       slotId: "site_credentials",
       values: { wp_username: "editor", wp_application_password: "hunter2" },
       expectedVersion: installed.installation.version,
+      idempotencyKey: "bind-6",
       principal,
     })).rejects.toMatchObject({ reason: "operation_in_progress" });
   });
@@ -700,6 +712,7 @@ describe("app connections through the service", () => {
       slotId: "webhook_secret",
       values: {},
       expectedVersion: applied.installation.version,
+      idempotencyKey: "bind-7",
       principal,
     });
 
@@ -726,6 +739,7 @@ describe("app connections through the service", () => {
       slotId: "site_credentials",
       values: { wp_username: "editor", wp_application_password: "hunter2" },
       expectedVersion: applied.installation.version,
+      idempotencyKey: "bind-8",
       principal,
     });
 
@@ -745,6 +759,7 @@ describe("app connections through the service", () => {
       slotId: "nonexistent",
       values: {},
       expectedVersion: applied.installation.version,
+      idempotencyKey: "bind-9",
       principal,
     })).rejects.toMatchObject({ reason: "connection_slot_unknown" });
   });
@@ -759,6 +774,7 @@ describe("app connections through the service", () => {
       slotId: "webhook_secret",
       values: {},
       expectedVersion: applied.installation.version + 3,
+      idempotencyKey: "bind-10",
       principal,
     })).rejects.toMatchObject({ reason: "plan_stale", details: { cause: "version_mismatch" } });
   });

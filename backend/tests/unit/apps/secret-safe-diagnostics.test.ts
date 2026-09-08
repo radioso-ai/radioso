@@ -26,6 +26,7 @@ describe("secret-safe diagnostics", () => {
       slotId: "webhook_secret",
       values: {},
       expectedVersion: applied.installation.version,
+      idempotencyKey: "bind-11",
       principal,
     });
     const current = await harness.repositories.installations.findById(workspaceId, applied.installation.id);
@@ -42,7 +43,7 @@ describe("secret-safe diagnostics", () => {
     });
 
     expect(outcome.operation.state).toBe("failed");
-    expect(outcome.installation.state).toBe("failed");
+    expect(outcome.installation.state).toBe("planned");
     // The failure is still legible: a reason code and a message written in this repository.
     expect(outcome.operation.error?.message).toContain("App platform adapter failed");
     expect(outcome.installation.health).toMatchObject({ reason: "runtime_unavailable" });
@@ -65,6 +66,7 @@ describe("secret-safe diagnostics", () => {
       slotId: "webhook_secret",
       values: {},
       expectedVersion: applied.installation.version,
+      idempotencyKey: "bind-12",
       principal,
     });
     const current = await harness.repositories.installations.findById(workspaceId, applied.installation.id);
@@ -93,6 +95,7 @@ describe("secret-safe diagnostics", () => {
       slotId: "webhook_secret",
       values: {},
       expectedVersion: applied.installation.version,
+      idempotencyKey: "bind-13",
       principal,
     });
     const current = await harness.repositories.installations.findById(workspaceId, applied.installation.id);

@@ -89,17 +89,28 @@ manifest.
 ## Release states
 
 ```text
-admitted ──▶ deprecated
-    │
-    ├──────▶ revoked
-    └──────▶ quarantined
+admitted ──┬──▶ deprecated ──┬──▶ revoked
+           │       ▲         │
+           ├───────┼─────────┘
+           │       │
+           └──▶ quarantined ──┘
+                   │
+                   └──▶ admitted
 ```
 
 An admitted release is what workspaces install. `deprecated` still serves
 existing installations but drops out of new installation offers; `revoked` and
 `quarantined` both stop new execution everywhere the release runs, without
-touching a workspace's own configuration or data. Each of those three
-transitions is an explicit, audited decision.
+touching a workspace's own configuration or data. Each transition is an
+explicit, audited decision that names the person who made it and their reason.
+
+The graph is closed, and Radioso refuses anything outside it with
+`invalid_release_transition`. `revoked` is terminal: revoking a release means it
+stops running, and a path back out of it would put it into a state that executes
+again. `quarantined` is the reversible one — it is what an incident opens while
+the answer is still unknown — so it has an explicit way back to `admitted` or on
+to `deprecated`, and the release from quarantine is audited like every other
+decision.
 
 Starting the platform is not one of them. Registry synchronisation only inserts
 releases that do not exist yet; it never rewrites the state of a row it finds,
@@ -107,9 +118,12 @@ so a revoked release stays revoked across a restart.
 
 Because state can change under an approval, installing and activating recheck
 it. A plan records the admission policy version and release state it was built
-against, and apply, activation, and every resumed step ask again whether the
-release is admitted and compatible right now. A release revoked between the
-review and the click is refused with `release_not_eligible`, and nothing runs.
+against, and apply, activation, and every resumed step that depends on the
+release ask again whether it is usable and compatible right now. Founding a new
+installation needs an admitted release; an installation that already exists also
+runs, reconfigures, re-enables, and binds connections on a deprecated one. A
+release revoked between the review and the click is refused with
+`release_not_eligible`, and nothing runs.
 
 ## `admissionPolicyVersion`
 

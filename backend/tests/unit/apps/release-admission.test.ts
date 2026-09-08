@@ -163,7 +163,10 @@ describe("app release version immutability", () => {
       const harness = await createAppsHarness();
       const releaseId = await harness.admitReference();
       const original = await harness.repositories.releases.findById(releaseId);
-      await harness.repositories.releases.transitionState(releaseId, state);
+      await harness.repositories.releases.transitionState(releaseId, {
+        expectedStates: ["admitted", "deprecated", "revoked", "quarantined"],
+        state,
+      });
 
       const registry = new AppReleaseAdmissionService({
         releases: harness.repositories.releases,
@@ -294,6 +297,7 @@ describe("current release eligibility", () => {
       slotId: "webhook_secret",
       values: {},
       expectedVersion: applied.installation.version,
+      idempotencyKey: "bind-14",
       principal,
     });
     await harness.releaseAdmission.transitionSecurityState({ releaseId: applied.installation.candidateReleaseId!, state: "quarantined", ...APPS_TEST_PRINCIPAL, actorUserId: APPS_TEST_PRINCIPAL.userId, reason: "test quarantine" });

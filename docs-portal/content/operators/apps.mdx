@@ -40,12 +40,19 @@ is bound before anything has been stored for it.
 | `ready` | The test passed; the installation is one step from going live. |
 | `active` | The App's approved contributions are live together. |
 | `disabled` | You've turned the installation off; nothing runs, but everything is still configured. |
-| `failed` | An operation could not finish. The installation's health carries the reason code. |
+| `failed` | An operation's rollback could not finish, so the installation needs repair. Its health carries the reason code, and removal is the command that repairs it. |
 | `removing` | You've asked to remove the App; Radioso is revoking runtime authority and applying your data choice. |
 | `removed` | The installation is gone. |
 
-`active` and `disabled` move back and forth — disabling doesn't lose
-configuration, so re-enabling returns straight to `active`.
+`active` and `disabled` move back and forth. Disabling doesn't lose
+configuration, so re-enabling returns straight to `active` — and re-enabling
+also reopens execution, in the same commit that makes the installation active,
+so contributions run again the moment the state says they do.
+
+An operation that fails and rolls back cleanly leaves the installation in the
+state you issued the command from, with the reason on its health. A failed
+activation returns to `planned` and can be activated again once the cause is
+fixed; it does not become `failed`.
 
 ## Every command carries the version you read
 
@@ -66,17 +73,19 @@ while one is in flight is refused with `operation_in_progress`.
 
 ## The plan review
 
-Before anything runs, Radioso builds a plan and shows it to you: the publisher
-and version, compatibility with your Radioso deployment, every contribution the
-release offers, the permissions it asks for, every external destination it
-would reach with the credential each one uses and how that credential is sent,
-the storage collections it would use, and anything it needs that isn't resolved
-yet — a configuration value you haven't filled in, a connection that isn't
-bound.
+Before anything runs, Radioso builds a plan and shows it to you: the release
+identity and version, every contribution the release offers, the permissions it
+asks for, every external destination it would reach with the credential each one
+uses and how that credential is sent, the storage collections it would use, and
+anything it needs that isn't resolved yet — a configuration value you haven't
+filled in, a connection that isn't bound.
 
 The response contains the plan checksum, release identity and digest, resolved
 non-secret configuration, grants, destinations, collections, contributions,
-connection-slot status, and unresolved requirements. The plan you approve is
+connection-slot status, the admission policy version and release state the plan
+was built against, and unresolved requirements. The publisher and the
+release's compatibility with your deployment are on the release itself, which
+you read before you plan. The plan you approve is
 bound to exactly what you saw: that release, that workspace, that grant set,
 and the admission judgement that made the release installable. If anything relevant changes
 before you apply it, the plan goes stale and Radioso asks for a fresh review.
@@ -92,6 +101,10 @@ a generated secret, Radioso mints it and shows it to you once at binding; copy
 it into the App or the external service at that point, because the dashboard
 doesn't display it again. Lost it? Rebind the slot to rotate.
 
+Every bind carries an idempotency key. Sending the same bind twice with the same
+key answers with the connection the first one created and no secret, so a retry
+can never mint a second secret and leave the first one stranded.
+
 Once an installation is being removed, its credentials are marked for deletion
 and binding is closed. A bind that arrives late is refused rather than
 resurrecting stored credentials on an installation that is on its way out.
@@ -101,9 +114,11 @@ resurrecting stored credentials on an installation that is on its way out.
 A configuration change holds your current configuration in place and stores the
 proposed values as a candidate. Radioso validates the candidate, sends the
 frozen effective configuration and typed contribution descriptors to staging
-and test ports, then adopts it only after those ports succeed. If a value would
-switch on a contribution whose connection isn't bound, the change is refused
-and the current configuration remains in force.
+and test ports, then promotes the candidate and adopts its configuration in one
+commit once those ports succeed. If a value would switch on a contribution whose
+connection isn't bound, the change is refused and the current configuration
+remains in force. A failed change leaves the installation exactly as it was —
+same state, same configuration, same health.
 
 ## The safe test
 
@@ -115,10 +130,11 @@ owners can add their work behind that boundary.
 A failure stops the operation. Provisioning and staged candidates have
 best-effort compensators; persisted grants can be revoked. Safe tests, stopped
 runtimes, and data disposition have no guessed reversal. Radioso records the
-outcome as a reason code on the operation and on
-the installation's health. It is a code and a fixed message, never the
-provider's own error text, because that text can carry a credential, a command
-line, or a response body.
+outcome as a reason code on the operation, and on the installation's health for
+every operation except a configuration change — a change that never applied says
+nothing about the health of the installation still running the old one. The
+reason is a code and a fixed message, never the provider's own error text,
+because that text can carry a credential, a command line, or a response body.
 
 ## Disable or remove
 

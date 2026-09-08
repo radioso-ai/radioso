@@ -1,7 +1,11 @@
 import { resolveInstallation } from "@radioso/app-contract";
 
 import { findAppContributionDescriptor, type AppContributionDescriptor } from "../domain/contributionDescriptor.js";
-import { admittedManifestOf, appCompatibilityEvidence } from "../domain/releaseAdmission.js";
+import {
+  admittedManifestOf,
+  appCompatibilityEvidence,
+  existingInstallationReleaseStates,
+} from "../domain/releaseAdmission.js";
 import type { AppsTransactionalRepositories, AppsUnitOfWork } from "../repositories/appsUnitOfWork.js";
 
 /** Why a contribution may not run. Every refusal names exactly one of these. */
@@ -23,11 +27,12 @@ export interface AppExecutionEligibilityQuery {
   /** The contribution the caller is about to grant authority to. */
   readonly contributionId: string;
   /**
-   * The manifest digest the caller's projection was built from. A stale projection for
-   * release X must not be evaluated against the release Y that now carries the same
-   * contribution id, so a mismatch is a refusal rather than a silent upgrade.
+   * The manifest digest the caller's projection was built from. It is required, not
+   * optional: an optional fence is one every caller may quietly decline, and a stale
+   * projection for release X evaluated against the release Y that now carries the same
+   * contribution id is exactly the confusion this exists to refuse.
    */
-  readonly expectedReleaseDigest: string | null;
+  readonly expectedReleaseDigest: string;
 }
 
 export type AppExecutionEligibility =
@@ -71,7 +76,13 @@ export class AppExecutionEligibilityService implements AppExecutionEligibilityPo
 
   async evaluate(query: AppExecutionEligibilityQuery): Promise<AppExecutionEligibility> {
     try {
-      return await this.dependencies.unitOfWork.run((repositories) => this.decide(query, repositories));
+      // One snapshot for the whole decision. Under the default per-statement view a
+      // disable landing between the installation read and the connection read produces an
+      // answer that describes no instant that ever existed.
+      return await this.dependencies.unitOfWork.run(
+        (repositories) => this.decide(query, repositories),
+        { snapshot: true },
+      );
     } catch {
       return { eligible: false, reason: "eligibility_unavailable" };
     }
@@ -91,10 +102,10 @@ export class AppExecutionEligibilityService implements AppExecutionEligibilityPo
     const releaseId = installation.activeReleaseId;
     const release = releaseId ? await repositories.releases.findById(releaseId) : null;
     if (!release) return { eligible: false, reason: "release_missing" };
-    if (release.state !== "admitted" && release.state !== "deprecated") {
+    if (!(existingInstallationReleaseStates as readonly string[]).includes(release.state)) {
       return { eligible: false, reason: "release_not_usable" };
     }
-    if (query.expectedReleaseDigest !== null && query.expectedReleaseDigest !== release.manifestDigest) {
+    if (query.expectedReleaseDigest !== release.manifestDigest) {
       return { eligible: false, reason: "release_changed" };
     }
 

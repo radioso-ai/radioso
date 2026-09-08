@@ -921,6 +921,10 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     appInstallationLifecycleService: appsServices.appInstallationLifecycleService,
     appInstallationQueryService: appsServices.appInstallationQueryService,
     appConnectionService: appsServices.appConnectionService,
+    appControlPlaneRecovery: {
+      drainAuditOutbox: appsServices.drainAuditOutbox,
+      recoverStalledAppOperations: appsServices.recoverStalledAppOperations,
+    },
     agentBundleExportService: agentBundleServices.exportService,
     agentBundleImportService: agentBundleServices.importService,
     agentBundleImportCleanupWorker: agentBundleServices.cleanupWorker,

@@ -19,10 +19,11 @@ import {
   type AppSecretCipherPort,
 } from "../../../src/modules/apps/public.js";
 import { createLogger } from "../../../src/shared/observability/logger.js";
+import type { AppLeaseTimer } from "../../../src/modules/apps/services/appStepLease.js";
 import { AppAuditOutboxDispatcher } from "../../../src/modules/apps/services/appAuditOutboxDispatcher.js";
 import {
   createInMemoryAppRepositories,
-  createInMemoryAppsUnitOfWork,
+  createNonTransactionalInMemoryAppsUnitOfWork,
   type InMemoryAppRepositories,
 } from "../../support/inMemoryApps.js";
 
@@ -69,6 +70,7 @@ export interface AppsHarness {
     stage: Mock<AppContributionStagingPort["stage"]>;
     runSafeTests: Mock<AppContributionStagingPort["runSafeTests"]>;
     detach: Mock<AppContributionStagingPort["detach"]>;
+    promote: Mock<AppContributionStagingPort["promote"]>;
     discardCandidate: Mock<AppContributionStagingPort["discardCandidate"]>;
   };
   readonly provisioning: {
@@ -92,7 +94,17 @@ export interface AppsHarness {
 
 interface AppsHarnessOptions {
   readonly runningRadiosoVersion?: string | null;
+  /**
+   * Drives the step heartbeat. The default is the real one, whose first tick is minutes
+   * away; a test that needs a lease to lapse mid-call supplies one that ticks at once.
+   */
+  readonly leaseTimer?: AppLeaseTimer;
 }
+
+/** Every heartbeat interval elapses immediately, so a test never waits out a real lease. */
+export const immediateLeaseTimer = (): AppLeaseTimer => ({
+  delay: () => ({ elapsed: Promise.resolve(), cancel: () => {} }),
+});
 
 /**
  * One assembled Apps control plane over in-memory persistence. Every test that exercises
@@ -101,7 +113,7 @@ interface AppsHarnessOptions {
  */
 export const createAppsHarness = async (options: AppsHarnessOptions = {}): Promise<AppsHarness> => {
   const repositories = createInMemoryAppRepositories();
-  const unitOfWork = createInMemoryAppsUnitOfWork(repositories);
+  const unitOfWork = createNonTransactionalInMemoryAppsUnitOfWork(repositories);
   const audit = { record: vi.fn(async () => {}) };
   const logs: Array<Record<string, unknown>> = [];
   const logger = createLogger("warn", {
@@ -126,6 +138,7 @@ export const createAppsHarness = async (options: AppsHarnessOptions = {}): Promi
     stage: vi.fn(async () => ({ ok: true as const })),
     runSafeTests: vi.fn(async () => ({ ok: true as const })),
     detach: vi.fn(async () => ({ ok: true as const })),
+    promote: vi.fn(async () => ({ ok: true as const })),
     discardCandidate: vi.fn(async () => ({ ok: true as const })),
   };
   const provisioning = {
@@ -172,6 +185,7 @@ export const createAppsHarness = async (options: AppsHarnessOptions = {}): Promi
     auditDelivery,
     logger,
     runningRadiosoVersion,
+    leaseTimer: options.leaseTimer,
   });
 
   const connections = new AppConnectionService({
@@ -183,6 +197,7 @@ export const createAppsHarness = async (options: AppsHarnessOptions = {}): Promi
     cipher,
     authorization,
     auditDelivery,
+    runningRadiosoVersion,
   });
 
   const installations = new AppInstallationQueryService({
@@ -230,6 +245,7 @@ export const createAppsHarness = async (options: AppsHarnessOptions = {}): Promi
       slotId: "webhook_secret",
       values: {},
       expectedVersion: applied.installation.version,
+      idempotencyKey: "bind-15",
       principal: APPS_TEST_PRINCIPAL,
     });
     void bound;

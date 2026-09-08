@@ -5,7 +5,7 @@ import { resolveRunningRadiosoVersion } from "../../src/app/config/radiosoVersio
 import type { AppRuntimeProvisioningPort, BuiltInAppRelease } from "../../src/modules/apps/public.js";
 import {
   createInMemoryAppRepositories,
-  createInMemoryAppsUnitOfWork,
+  createNonTransactionalInMemoryAppsUnitOfWork,
   type InMemoryAppRepositories,
 } from "./inMemoryApps.js";
 import { setTimeout as delay } from "node:timers/promises";
@@ -2136,7 +2136,7 @@ export const createTestDependencies = (overrides: {
   const appRepositories = createInMemoryAppRepositories();
   const appsServices = createAppsServices({
     repositories: appRepositories,
-    unitOfWork: createInMemoryAppsUnitOfWork(appRepositories),
+    unitOfWork: createNonTransactionalInMemoryAppsUnitOfWork(appRepositories),
     audit: auditService,
     logger,
     accountAccessService,
@@ -2168,6 +2168,10 @@ export const createTestDependencies = (overrides: {
     appInstallationLifecycleService: appsServices.appInstallationLifecycleService,
     appInstallationQueryService: appsServices.appInstallationQueryService,
     appConnectionService: appsServices.appConnectionService,
+    appControlPlaneRecovery: {
+      drainAuditOutbox: appsServices.drainAuditOutbox,
+      recoverStalledAppOperations: appsServices.recoverStalledAppOperations,
+    },
     agentBundleExportService: agentBundleServices.exportService,
     agentBundleImportService: agentBundleServices.importService,
     agentBundleImportCleanupWorker: agentBundleServices.cleanupWorker,

@@ -44,6 +44,21 @@ export interface AppCandidateDiscardRequest {
 }
 
 /**
+ * Makes a staged candidate the mapping that answers. Staging promises a candidate is
+ * invisible to live conversations, schedules, webhooks, and UI slots until this call, so
+ * without it a control plane can only overwrite its own copy of the configuration and hope
+ * the projection follows — there is no moment at which the new mapping becomes visible and
+ * the old one stops. The installation's `active_revision` is moved to `candidateRevision`
+ * in the transaction that follows a successful promotion, so the two agree on which
+ * revision is live.
+ */
+export interface AppCandidatePromotionRequest {
+  readonly effect: AppLifecycleEffect;
+  readonly installationId: string;
+  readonly candidateRevision: string;
+}
+
+/**
  * Staged contributions are invisible to live conversations, schedules, webhooks, and UI
  * slots until activation (FR-028). The owning modules create those projections; the
  * Apps domain only asks, and only through this port. Every implementation MUST
@@ -54,6 +69,8 @@ export interface AppContributionStagingPort {
   stage(request: AppContributionStagingRequest): Promise<AppPortResult>;
   runSafeTests(request: AppContributionStagingRequest): Promise<AppPortResult>;
   detach(request: AppContributionDetachRequest): Promise<AppPortResult>;
+  /** Adopts a staged candidate as the live mapping. */
+  promote(request: AppCandidatePromotionRequest): Promise<AppPortResult>;
   /** Compensator for a staged candidate the operation went on to abandon. */
   discardCandidate(request: AppCandidateDiscardRequest): Promise<AppPortResult>;
 }
@@ -63,5 +80,6 @@ export const createNoopAppContributionStaging = (): AppContributionStagingPort =
   stage: async () => ({ ok: true }),
   runSafeTests: async () => ({ ok: true }),
   detach: async () => ({ ok: true }),
+  promote: async () => ({ ok: true }),
   discardCandidate: async () => ({ ok: true }),
 });

@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 import { AppsError, type AppsErrorReason } from "./errors.js";
 
 /**
@@ -17,6 +19,13 @@ export const appPortFailureCodes = [
   "data_disposition_failed",
   /** An adapter threw instead of answering. The thrown value is never read for text. */
   "adapter_error",
+  /**
+   * An adapter answered with something that is not a port result at all — a missing `ok`,
+   * an unknown code, a bare string. The value is discarded rather than narrowed, because a
+   * `code` an adapter invented would otherwise reach a log line and a failure mapping that
+   * assume this module wrote it.
+   */
+  "adapter_protocol_violation",
 ] as const;
 export type AppPortFailureCode = (typeof appPortFailureCodes)[number];
 
@@ -75,6 +84,34 @@ const failureMeanings: Readonly<Record<AppPortFailureCode, AppPortFailureMeaning
     reason: "runtime_unavailable",
     message: "An App platform adapter failed. Retry the operation, and check the platform logs for the failing step.",
   },
+  adapter_protocol_violation: {
+    reason: "runtime_unavailable",
+    message: "An App platform adapter answered with something this platform cannot read as a result. Retry the operation, and check the platform logs for the failing step.",
+  },
+};
+
+/**
+ * The wire shape of a port answer, checked at runtime.
+ *
+ * A port is an interface, and an interface is a compile-time promise: an adapter compiled
+ * against another version of this module, or written in JavaScript, can still return
+ * anything at all. Everything downstream — the failure mapping, the operator-visible
+ * reason, the log line — is indexed by `code`, so the code has to be one this module
+ * defined rather than one an adapter supplied.
+ */
+const appPortResultSchema = z.union([
+  z.object({ ok: z.literal(true) }),
+  z.object({ ok: z.literal(false), code: z.enum(appPortFailureCodes) }),
+]);
+
+/**
+ * Narrows whatever an adapter returned to the closed result. Anything else becomes
+ * `adapter_protocol_violation`; the raw value is deliberately not carried anywhere, because
+ * it is the one thing about this failure that no part of this platform wrote.
+ */
+export const parseAppPortResult = (value: unknown): AppPortResult => {
+  const parsed = appPortResultSchema.safeParse(value);
+  return parsed.success ? parsed.data : appPortFailure("adapter_protocol_violation");
 };
 
 /** Turns a port refusal into the one typed, secret-safe failure the control plane records. */

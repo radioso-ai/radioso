@@ -23,6 +23,7 @@ export const appsErrorReasons = [
   "authorization_unavailable",
   "release_not_admitted",
   "release_not_eligible",
+  "invalid_release_transition",
 ] as const;
 
 export type AppsErrorReason = (typeof appsErrorReasons)[number];

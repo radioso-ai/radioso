@@ -151,6 +151,10 @@ const createDependencies = () =>
       stop: vi.fn().mockResolvedValue(undefined),
     },
     appReleaseAdmissionService: { syncBuiltInReleases: vi.fn().mockResolvedValue(undefined) },
+    appControlPlaneRecovery: {
+      drainAuditOutbox: vi.fn().mockResolvedValue(0),
+      recoverStalledAppOperations: vi.fn().mockResolvedValue(0),
+    },
     logger: createLogger().logger,
     documentProcessingWorker: {
       start: vi.fn().mockResolvedValue(undefined),

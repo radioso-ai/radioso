@@ -18569,13 +18569,13 @@ paths:
     get:
       tags:
         - Apps
-      summary: List the App releases admission has admitted
+      summary: List the App releases an operator can install now
       operationId: listAppReleases
       security: &a66
         - sessionCookie: []
       responses:
         "200":
-          description: Installable releases
+          description: Releases that are admitted and compatible with this host
           content:
             application/json:
               schema:
@@ -18641,13 +18641,15 @@ paths:
                               enum: &a68
                                 - compatible
                                 - incompatible
-                                - unknown
+                                - undetermined
                           required:
                             - runningVersion
                             - range
                             - result
                         admittedAt:
-                          type: string
+                          type:
+                            - string
+                            - "null"
                           format: date-time
                       required:
                         - id
@@ -18695,6 +18697,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: A stored release no longer matches the admission decision recorded for it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "503":
           description: No App runtime or secret encryption key is configured, or App administration permission could not be checked
           content:
@@ -18705,7 +18713,7 @@ paths:
     get:
       tags:
         - Apps
-      summary: Inspect an admitted App release
+      summary: Inspect an installable App release
       operationId: getAppRelease
       security: *a66
       parameters:
@@ -18773,7 +18781,9 @@ paths:
                       - range
                       - result
                   admittedAt:
-                    type: string
+                    type:
+                      - string
+                      - "null"
                     format: date-time
                   manifest:
                     type: object
@@ -18819,6 +18829,12 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
           description: Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: A stored release no longer matches the admission decision recorded for it
           content:
             application/json:
               schema:
@@ -19087,6 +19103,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: A stored release no longer matches the admission decision recorded for it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "503":
           description: No App runtime or secret encryption key is configured, or App administration permission could not be checked
           content:
@@ -19328,6 +19350,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: A stored release no longer matches the admission decision recorded for it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "503":
           description: No App runtime or secret encryption key is configured, or App administration permission could not be checked
           content:
@@ -19534,6 +19562,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: A stored release no longer matches the admission decision recorded for it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "503":
           description: No App runtime or secret encryption key is configured, or App administration permission could not be checked
           content:
@@ -19636,6 +19670,12 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
           description: Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: A stored release no longer matches the admission decision recorded for it
           content:
             application/json:
               schema:
@@ -19889,6 +19929,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: A stored release no longer matches the admission decision recorded for it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "503":
           description: No App runtime or secret encryption key is configured, or App administration permission could not be checked
           content:
@@ -19998,6 +20044,12 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
           description: Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: A stored release no longer matches the admission decision recorded for it
           content:
             application/json:
               schema:
@@ -20190,6 +20242,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: A stored release no longer matches the admission decision recorded for it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "503":
           description: No App runtime or secret encryption key is configured, or App administration permission could not be checked
           content:
@@ -20235,7 +20293,7 @@ paths:
                 - idempotencyKey
       responses:
         "201":
-          description: The bound connection. `generatedSecret` is present only for a host-minted slot and is returned exactly once.
+          description: "The bound connection. `generatedSecret` is present only for a host-minted slot and is returned exactly once; a retry under the same idempotency key answers with `replayed: true` and no secret."
           content:
             application/json:
               schema:
@@ -20288,9 +20346,12 @@ paths:
                     type:
                       - string
                       - "null"
+                  replayed:
+                    type: boolean
                 required:
                   - connection
                   - generatedSecret
+                  - replayed
         "400":
           description: Invalid configuration, connection, or request shape
           content:
@@ -20317,6 +20378,12 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
           description: Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: A stored release no longer matches the admission decision recorded for it
           content:
             application/json:
               schema:
@@ -20501,6 +20568,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: A stored release no longer matches the admission decision recorded for it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "503":
           description: No App runtime or secret encryption key is configured, or App administration permission could not be checked
           content:
@@ -20681,6 +20754,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: A stored release no longer matches the admission decision recorded for it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "503":
           description: No App runtime or secret encryption key is configured, or App administration permission could not be checked
           content:
@@ -20857,6 +20936,12 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
           description: Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: A stored release no longer matches the admission decision recorded for it
           content:
             application/json:
               schema:
@@ -21044,6 +21129,12 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
           description: Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: A stored release no longer matches the admission decision recorded for it
           content:
             application/json:
               schema:

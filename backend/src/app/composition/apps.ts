@@ -77,7 +77,8 @@ export const createAppRepositories = (db: Db): AppsRepositories => ({
  * effects and the cursor that records them commit or roll back together.
  */
 export const createAppsUnitOfWork = (db: Kysely<DB>): AppsUnitOfWork => ({
-  run: (work) => db.transaction().execute((transaction: Transaction<DB>) => work(createAppRepositories(transaction))),
+  run: (work, options) => (options?.snapshot ? db.transaction().setIsolationLevel("repeatable read") : db.transaction())
+    .execute((transaction: Transaction<DB>) => work(createAppRepositories(transaction))),
 });
 
 interface AppsCompositionDependencies {
@@ -114,6 +115,11 @@ interface AppsServices {
   readonly appExecutionEligibility: AppExecutionEligibilityPort;
   /** Startup and post-commit recovery hook for durable App audit intents. */
   drainAuditOutbox(): Promise<number>;
+  /**
+   * Re-drives lifecycle operations whose driver died. Called once at start-up here; the
+   * recurring schedule that also calls it arrives with the App runtime.
+   */
+  recoverStalledAppOperations(): Promise<number>;
 }
 
 /**
@@ -216,6 +222,7 @@ export const createAppsServices = (dependencies: AppsCompositionDependencies): A
     cipher,
     authorization,
     auditDelivery,
+    runningRadiosoVersion,
   });
 
   const appExecutionEligibility = new AppExecutionEligibilityService({
@@ -230,6 +237,10 @@ export const createAppsServices = (dependencies: AppsCompositionDependencies): A
     appInstallationQueryService,
     appConnectionService,
     appExecutionEligibility,
-    drainAuditOutbox: () => auditDelivery.drain(),
+    // Start-up is exactly when a backlog larger than one batch exists and nothing else
+    // would come along to drain it, so this is the batching drain rather than the
+    // single-batch one every request runs after its commit.
+    drainAuditOutbox: () => auditDelivery.drainAll(),
+    recoverStalledAppOperations: () => appInstallationLifecycleService.recoverStalledOperations(),
   };
 };

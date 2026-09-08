@@ -273,6 +273,7 @@ export interface AppInstallations {
 }
 
 export interface AppLifecycleOperations {
+  compensation_step: string | null;
   created_at: Generated<Timestamp>;
   error: Json | null;
   id: string;
@@ -281,6 +282,7 @@ export interface AppLifecycleOperations {
   installation_id: string;
   kind: string;
   payload: Generated<Json>;
+  request_fingerprint: string;
   state: string;
   step: string | null;
   updated_at: Generated<Timestamp>;

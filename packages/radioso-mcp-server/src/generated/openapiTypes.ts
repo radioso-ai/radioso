@@ -1204,7 +1204,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Apply an approved installation plan */
+        /** Apply an approved plan and create the installation */
         post: operations["applyAppInstallationPlan"];
         delete?: never;
         options?: never;
@@ -1276,7 +1276,7 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** Change an installation's configuration values */
+        /** Reconfigure an installation, re-staging and re-testing before the change applies */
         patch: operations["updateAppInstallationConfiguration"];
         trace?: never;
     };
@@ -1291,6 +1291,23 @@ export interface paths {
         put?: never;
         /** Bind a connection slot */
         post: operations["bindAppConnection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/apps/installations/{installationId}/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Provision, stage, test, and activate an installation */
+        post: operations["activateAppInstallation"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1323,7 +1340,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Enable an installation */
+        /** Enable a disabled installation */
         post: operations["enableAppInstallation"];
         delete?: never;
         options?: never;
@@ -13286,7 +13303,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Stale plan or installation version, conflicting installation, or an unbound connection this change needs */
+            /** @description Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -13295,7 +13312,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description No App runtime or secret encryption key is configured */
+            /** @description No App runtime or secret encryption key is configured, or App administration permission could not be checked */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -13381,7 +13398,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Stale plan or installation version, conflicting installation, or an unbound connection this change needs */
+            /** @description Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -13390,7 +13407,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description No App runtime or secret encryption key is configured */
+            /** @description No App runtime or secret encryption key is configured, or App administration permission could not be checked */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -13416,7 +13433,6 @@ export interface operations {
                     configuration?: {
                         [key: string]: string | number | boolean;
                     };
-                    targetAgentIds?: string[];
                 };
             };
         };
@@ -13476,7 +13492,8 @@ export interface operations {
                                 required: boolean;
                                 bound: boolean;
                             }[];
-                            targetAgentIds: string[];
+                            admissionPolicyVersion: string;
+                            releaseState: string;
                             unresolvedRequirements: {
                                 /** @enum {string} */
                                 code: "configuration_required" | "connection_unbound" | "destination_host_unresolved";
@@ -13529,7 +13546,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Stale plan or installation version, conflicting installation, or an unbound connection this change needs */
+            /** @description Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -13538,7 +13555,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description No App runtime or secret encryption key is configured */
+            /** @description No App runtime or secret encryption key is configured, or App administration permission could not be checked */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -13615,7 +13632,8 @@ export interface operations {
                                 required: boolean;
                                 bound: boolean;
                             }[];
-                            targetAgentIds: string[];
+                            admissionPolicyVersion: string;
+                            releaseState: string;
                             unresolvedRequirements: {
                                 /** @enum {string} */
                                 code: "configuration_required" | "connection_unbound" | "destination_host_unresolved";
@@ -13668,7 +13686,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Stale plan or installation version, conflicting installation, or an unbound connection this change needs */
+            /** @description Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -13677,7 +13695,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description No App runtime or secret encryption key is configured */
+            /** @description No App runtime or secret encryption key is configured, or App administration permission could not be checked */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -13707,7 +13725,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The installation and the lifecycle operation that ran */
+            /** @description The installation, created in `planned` with its grants recorded and nothing running yet, and the operation that recorded it */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -13742,10 +13760,11 @@ export interface operations {
                             /** Format: uuid */
                             installationId: string;
                             /** @enum {string} */
-                            kind: "install" | "disable" | "enable" | "remove" | "dispose_data";
+                            kind: "install" | "activate" | "reconfigure" | "disable" | "enable" | "remove" | "dispose_data";
                             /** @enum {string} */
-                            state: "running" | "completed" | "failed" | "compensating";
+                            state: "running" | "completed" | "failed" | "compensating" | "compensation_failed";
                             step: string | null;
+                            compensationStep: string | null;
                             error: {
                                 reason: string;
                                 message: string;
@@ -13794,7 +13813,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Stale plan or installation version, conflicting installation, or an unbound connection this change needs */
+            /** @description Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -13803,7 +13822,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description No App runtime or secret encryption key is configured */
+            /** @description No App runtime or secret encryption key is configured, or App administration permission could not be checked */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -13891,7 +13910,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Stale plan or installation version, conflicting installation, or an unbound connection this change needs */
+            /** @description Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -13900,7 +13919,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description No App runtime or secret encryption key is configured */
+            /** @description No App runtime or secret encryption key is configured, or App administration permission could not be checked */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -13987,10 +14006,11 @@ export interface operations {
                             /** Format: uuid */
                             installationId: string;
                             /** @enum {string} */
-                            kind: "install" | "disable" | "enable" | "remove" | "dispose_data";
+                            kind: "install" | "activate" | "reconfigure" | "disable" | "enable" | "remove" | "dispose_data";
                             /** @enum {string} */
-                            state: "running" | "completed" | "failed" | "compensating";
+                            state: "running" | "completed" | "failed" | "compensating" | "compensation_failed";
                             step: string | null;
+                            compensationStep: string | null;
                             error: {
                                 reason: string;
                                 message: string;
@@ -14039,7 +14059,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Stale plan or installation version, conflicting installation, or an unbound connection this change needs */
+            /** @description Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14048,7 +14068,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description No App runtime or secret encryption key is configured */
+            /** @description No App runtime or secret encryption key is configured, or App administration permission could not be checked */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -14083,10 +14103,11 @@ export interface operations {
                             /** Format: uuid */
                             installationId: string;
                             /** @enum {string} */
-                            kind: "install" | "disable" | "enable" | "remove" | "dispose_data";
+                            kind: "install" | "activate" | "reconfigure" | "disable" | "enable" | "remove" | "dispose_data";
                             /** @enum {string} */
-                            state: "running" | "completed" | "failed" | "compensating";
+                            state: "running" | "completed" | "failed" | "compensating" | "compensation_failed";
                             step: string | null;
+                            compensationStep: string | null;
                             error: {
                                 reason: string;
                                 message: string;
@@ -14135,7 +14156,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Stale plan or installation version, conflicting installation, or an unbound connection this change needs */
+            /** @description Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14144,7 +14165,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description No App runtime or secret encryption key is configured */
+            /** @description No App runtime or secret encryption key is configured, or App administration permission could not be checked */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -14171,37 +14192,60 @@ export interface operations {
                         [key: string]: string | number | boolean;
                     };
                     expectedVersion: number;
+                    idempotencyKey?: string;
                 };
             };
         };
         responses: {
-            /** @description The updated installation */
+            /** @description The installation and the reconfigure operation that ran */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": {
-                        /** Format: uuid */
-                        id: string;
-                        appId: string;
-                        /** @enum {string} */
-                        state: "planned" | "provisioning" | "staged" | "testing" | "ready" | "active" | "disabled" | "failed" | "removing" | "removed";
-                        /** Format: uuid */
-                        activeReleaseId: string | null;
-                        /** Format: uuid */
-                        candidateReleaseId: string | null;
-                        configuration: {
-                            [key: string]: string | number | boolean;
+                        installation: {
+                            /** Format: uuid */
+                            id: string;
+                            appId: string;
+                            /** @enum {string} */
+                            state: "planned" | "provisioning" | "staged" | "testing" | "ready" | "active" | "disabled" | "failed" | "removing" | "removed";
+                            /** Format: uuid */
+                            activeReleaseId: string | null;
+                            /** Format: uuid */
+                            candidateReleaseId: string | null;
+                            configuration: {
+                                [key: string]: string | number | boolean;
+                            };
+                            health: {
+                                [key: string]: unknown;
+                            };
+                            version: number;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
                         };
-                        health: {
-                            [key: string]: unknown;
+                        operation: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            installationId: string;
+                            /** @enum {string} */
+                            kind: "install" | "activate" | "reconfigure" | "disable" | "enable" | "remove" | "dispose_data";
+                            /** @enum {string} */
+                            state: "running" | "completed" | "failed" | "compensating" | "compensation_failed";
+                            step: string | null;
+                            compensationStep: string | null;
+                            error: {
+                                reason: string;
+                                message: string;
+                            } | null;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
                         };
-                        version: number;
-                        /** Format: date-time */
-                        createdAt: string;
-                        /** Format: date-time */
-                        updatedAt: string;
                     };
                 };
             };
@@ -14241,7 +14285,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Stale plan or installation version, conflicting installation, or an unbound connection this change needs */
+            /** @description Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14250,7 +14294,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description No App runtime or secret encryption key is configured */
+            /** @description No App runtime or secret encryption key is configured, or App administration permission could not be checked */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -14277,6 +14321,7 @@ export interface operations {
                     values?: {
                         [key: string]: unknown;
                     };
+                    expectedVersion: number;
                 };
             };
         };
@@ -14347,7 +14392,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Stale plan or installation version, conflicting installation, or an unbound connection this change needs */
+            /** @description Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14356,7 +14401,133 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description No App runtime or secret encryption key is configured */
+            /** @description No App runtime or secret encryption key is configured, or App administration permission could not be checked */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    activateAppInstallation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                installationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    expectedVersion: number;
+                    idempotencyKey?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The installation and the lifecycle operation that ran */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        installation: {
+                            /** Format: uuid */
+                            id: string;
+                            appId: string;
+                            /** @enum {string} */
+                            state: "planned" | "provisioning" | "staged" | "testing" | "ready" | "active" | "disabled" | "failed" | "removing" | "removed";
+                            /** Format: uuid */
+                            activeReleaseId: string | null;
+                            /** Format: uuid */
+                            candidateReleaseId: string | null;
+                            configuration: {
+                                [key: string]: string | number | boolean;
+                            };
+                            health: {
+                                [key: string]: unknown;
+                            };
+                            version: number;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                        };
+                        operation: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            installationId: string;
+                            /** @enum {string} */
+                            kind: "install" | "activate" | "reconfigure" | "disable" | "enable" | "remove" | "dispose_data";
+                            /** @enum {string} */
+                            state: "running" | "completed" | "failed" | "compensating" | "compensation_failed";
+                            step: string | null;
+                            compensationStep: string | null;
+                            error: {
+                                reason: string;
+                                message: string;
+                            } | null;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+            /** @description Invalid configuration, connection, or request shape */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive workspace session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description App administration permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Release, plan, or installation not available in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No App runtime or secret encryption key is configured, or App administration permission could not be checked */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -14379,6 +14550,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    expectedVersion: number;
                     idempotencyKey?: string;
                 };
             };
@@ -14419,10 +14591,11 @@ export interface operations {
                             /** Format: uuid */
                             installationId: string;
                             /** @enum {string} */
-                            kind: "install" | "disable" | "enable" | "remove" | "dispose_data";
+                            kind: "install" | "activate" | "reconfigure" | "disable" | "enable" | "remove" | "dispose_data";
                             /** @enum {string} */
-                            state: "running" | "completed" | "failed" | "compensating";
+                            state: "running" | "completed" | "failed" | "compensating" | "compensation_failed";
                             step: string | null;
+                            compensationStep: string | null;
                             error: {
                                 reason: string;
                                 message: string;
@@ -14471,7 +14644,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Stale plan or installation version, conflicting installation, or an unbound connection this change needs */
+            /** @description Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14480,7 +14653,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description No App runtime or secret encryption key is configured */
+            /** @description No App runtime or secret encryption key is configured, or App administration permission could not be checked */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -14503,6 +14676,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    expectedVersion: number;
                     idempotencyKey?: string;
                 };
             };
@@ -14543,10 +14717,11 @@ export interface operations {
                             /** Format: uuid */
                             installationId: string;
                             /** @enum {string} */
-                            kind: "install" | "disable" | "enable" | "remove" | "dispose_data";
+                            kind: "install" | "activate" | "reconfigure" | "disable" | "enable" | "remove" | "dispose_data";
                             /** @enum {string} */
-                            state: "running" | "completed" | "failed" | "compensating";
+                            state: "running" | "completed" | "failed" | "compensating" | "compensation_failed";
                             step: string | null;
+                            compensationStep: string | null;
                             error: {
                                 reason: string;
                                 message: string;
@@ -14595,7 +14770,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Stale plan or installation version, conflicting installation, or an unbound connection this change needs */
+            /** @description Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14604,7 +14779,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description No App runtime or secret encryption key is configured */
+            /** @description No App runtime or secret encryption key is configured, or App administration permission could not be checked */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -14629,6 +14804,7 @@ export interface operations {
                 "application/json": {
                     /** @enum {string} */
                     disposition: "export" | "retain" | "delete";
+                    expectedVersion: number;
                     idempotencyKey?: string;
                 };
             };
@@ -14669,10 +14845,11 @@ export interface operations {
                             /** Format: uuid */
                             installationId: string;
                             /** @enum {string} */
-                            kind: "install" | "disable" | "enable" | "remove" | "dispose_data";
+                            kind: "install" | "activate" | "reconfigure" | "disable" | "enable" | "remove" | "dispose_data";
                             /** @enum {string} */
-                            state: "running" | "completed" | "failed" | "compensating";
+                            state: "running" | "completed" | "failed" | "compensating" | "compensation_failed";
                             step: string | null;
+                            compensationStep: string | null;
                             error: {
                                 reason: string;
                                 message: string;
@@ -14721,7 +14898,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Stale plan or installation version, conflicting installation, or an unbound connection this change needs */
+            /** @description Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14730,7 +14907,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description No App runtime or secret encryption key is configured */
+            /** @description No App runtime or secret encryption key is configured, or App administration permission could not be checked */
             503: {
                 headers: {
                     [name: string]: unknown;

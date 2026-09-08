@@ -84,7 +84,13 @@ export interface AppInstallationPlan {
   readonly storageCollections: readonly string[];
   readonly contributions: readonly AppPlannedContribution[];
   readonly connectionSlots: readonly AppPlannedConnectionSlot[];
-  readonly targetAgentIds: readonly string[];
+  /**
+   * The admission judgement this approval is bound to (FR-024). Apply and activation
+   * re-check the release against the policy named here rather than trusting that an
+   * approval taken minutes ago still describes an eligible release.
+   */
+  readonly admissionPolicyVersion: string;
+  readonly releaseState: string;
   readonly unresolvedRequirements: readonly AppUnresolvedRequirement[];
 }
 
@@ -95,7 +101,8 @@ interface AppInstallationPlanRelease {
   readonly manifestDigest: string;
   /** Persisted shape. Re-admitted through `admittedManifestOf` before it drives a plan. */
   readonly manifest: AppManifest;
-  readonly admissionPolicyVersion?: string;
+  readonly state: string;
+  readonly admissionPolicyVersion: string;
 }
 
 interface AppInstallationPlanInput {
@@ -103,7 +110,6 @@ interface AppInstallationPlanInput {
   readonly release: AppInstallationPlanRelease;
   readonly configuration: Readonly<Record<string, unknown>>;
   readonly boundConnectionSlotIds: readonly string[];
-  readonly targetAgentIds: readonly string[];
   readonly now: Date;
 }
 
@@ -226,14 +232,11 @@ export const buildAppInstallationPlan = (input: AppInstallationPlanInput): AppIn
   const unresolvedRequirements = [...resolved.unresolved];
 
   const activeIds = new Set(readiness.activeContributionIds);
-  const requiredSlotIds = new Set<string>([
-    ...readiness.requiredConnectionSlots,
-    // A destination whose credentials are not optional cannot be called at all until its
-    // slot is bound, so it is a hole in the same sense a contribution's slot is.
-    ...manifest.destinations
-      .filter((destination) => destination.credentials?.required === true)
-      .map((destination) => destination.credentials!.slot),
-  ]);
+  // Readiness is the contract's answer, consumed unchanged. A destination whose
+  // credentials are required is already reflected there when a contribution that can
+  // call it is active; adding it here would block an install on a slot that
+  // `resolveInstallation` has already decided this configuration does not need.
+  const requiredSlotIds = new Set<string>(readiness.requiredConnectionSlots);
   const boundSlotIds = new Set(input.boundConnectionSlotIds);
   const connectionSlots = byKey(manifest.connections.slots, (slot) => slot.id).map((slot) => {
     const required = requiredSlotIds.has(slot.id);
@@ -307,7 +310,8 @@ export const buildAppInstallationPlan = (input: AppInstallationPlanInput): AppIn
     storageCollections,
     contributions,
     connectionSlots,
-    targetAgentIds: [...input.targetAgentIds].sort(),
+    admissionPolicyVersion: input.release.admissionPolicyVersion,
+    releaseState: input.release.state,
     unresolvedRequirements: byKey(unresolvedRequirements, (requirement) => requirement.path),
   };
 
@@ -350,3 +354,15 @@ export const assertAppPlanApplicable = (input: AppPlanApplicabilityInput): void 
     stale("version_mismatch", "The installation changed since this plan was reviewed.");
   }
 };
+
+/**
+ * What still blocks apply. An unbound connection does not: apply creates the durable
+ * installation an operator then binds against, and activation is what refuses while a
+ * required slot has no connection record. A missing configuration value or an
+ * unresolvable destination host has no such later moment — nothing downstream can supply
+ * them — so they stop the apply itself.
+ */
+export const appPlanBlockingRequirements = (
+  plan: AppInstallationPlan,
+): readonly AppUnresolvedRequirement[] =>
+  plan.unresolvedRequirements.filter((requirement) => requirement.code !== "connection_unbound");

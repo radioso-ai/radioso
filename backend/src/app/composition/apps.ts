@@ -1,6 +1,9 @@
+import type { Kysely, Transaction } from "kysely";
+
 import {
   AppConnectionRepository,
   AppConnectionService,
+  AppExecutionEligibilityService,
   AppGrantRepository,
   AppInstallationLifecycleService,
   AppInstallationPlanRepository,
@@ -16,6 +19,7 @@ import {
   createUnavailableAppSecretCipher,
   type AppConnectionRepositoryPort,
   type AppContributionStagingPort,
+  type AppExecutionEligibilityPort,
   type AppGrantRepositoryPort,
   type AppInstallationPlanRepositoryPort,
   type AppInstallationRepositoryPort,
@@ -25,11 +29,14 @@ import {
   type AppReleaseRepositoryPort,
   type AppRuntimeProvisioningPort,
   type AppSecretCipherPort,
+  type AppsUnitOfWork,
   type BuiltInAppRelease,
 } from "../../modules/apps/public.js";
 import type { AccountPermission, AuthenticatedPrincipal } from "../../modules/account/public.js";
 import type { AuditPort } from "../../modules/audit/contracts/index.js";
+import { AppError } from "../../shared/domain/errors.js";
 import { encryptField } from "../../shared/infra/crypto/fieldEncryption.js";
+import type { DB } from "../../shared/infra/kysely/schema.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 
@@ -60,8 +67,17 @@ export const createAppRepositories = (db: Db): AppsRepositories => ({
   operations: new AppLifecycleOperationRepository(db),
 });
 
+/**
+ * Binds the Apps repositories to one Postgres transaction, so a saga step's database
+ * effects and the cursor that records them commit or roll back together.
+ */
+export const createAppsUnitOfWork = (db: Kysely<DB>): AppsUnitOfWork => ({
+  run: (work) => db.transaction().execute((transaction: Transaction<DB>) => work(createAppRepositories(transaction))),
+});
+
 interface AppsCompositionDependencies {
   readonly repositories: AppsRepositories;
+  readonly unitOfWork: AppsUnitOfWork;
   readonly audit: Pick<AuditPort, "record">;
   readonly logger: AppLogger;
   readonly accountAccessService: {
@@ -77,6 +93,8 @@ interface AppsCompositionDependencies {
   readonly secretEncryptionKey?: string;
   /** The releases Radioso ships. Empty until a first-party App registers itself. */
   readonly builtInReleases?: readonly BuiltInAppRelease[];
+  /** `null` when this host cannot determine its own version, which fails admission closed. */
+  readonly runningRadiosoVersion: string | null;
   readonly runtimeProvisioning?: AppRuntimeProvisioningPort;
   readonly contributionStaging?: AppContributionStagingPort;
   readonly dataDisposition?: AppManagedDataDispositionPort;
@@ -88,6 +106,7 @@ interface AppsServices {
   readonly appInstallationLifecycleService: AppInstallationLifecycleService;
   readonly appInstallationQueryService: AppInstallationQueryService;
   readonly appConnectionService: AppConnectionService;
+  readonly appExecutionEligibility: AppExecutionEligibilityPort;
 }
 
 /**
@@ -98,18 +117,33 @@ interface AppsServices {
  * the absence means.
  */
 export const createAppsServices = (dependencies: AppsCompositionDependencies): AppsServices => {
-  const { repositories, audit, logger } = dependencies;
+  const { repositories, unitOfWork, audit, logger, runningRadiosoVersion } = dependencies;
 
   // A closure, not the service instance: a port method held as a value loses its
-  // receiver, and this one is called from inside a durable saga.
+  // receiver, and this one is called from inside a durable saga. It also separates a
+  // refusal from a failure to answer, because only the first is a statement about the
+  // operator and only the first may compensate a running installation.
   const authorization: AppOperatorAuthorizationPort = {
-    requireAppAdministration: (principal, workspaceId) =>
-      dependencies.accountAccessService.requirePermission({
-        accountId: principal.accountId,
-        userId: principal.userId,
-        workspaceId,
-        permission: APP_ADMINISTRATION_PERMISSION,
-      }),
+    authorizeAppAdministration: async (principal, workspaceId) => {
+      try {
+        await dependencies.accountAccessService.requirePermission({
+          accountId: principal.accountId,
+          userId: principal.userId,
+          workspaceId,
+          permission: APP_ADMINISTRATION_PERMISSION,
+        });
+        return { ok: true };
+      } catch (error) {
+        const denied = error instanceof AppError && (error.statusCode === 403 || error.statusCode === 404);
+        if (!denied) {
+          logger.warn(
+            { workspaceId, err: { name: error instanceof Error ? error.name : "unknown" } },
+            "App administration permission could not be evaluated",
+          );
+        }
+        return { ok: false, outcome: denied ? "denied" : "indeterminate" };
+      }
+    },
   };
 
   const cipher: AppSecretCipherPort = dependencies.secretEncryptionKey
@@ -126,6 +160,7 @@ export const createAppsServices = (dependencies: AppsCompositionDependencies): A
     builtInReleases: dependencies.builtInReleases ?? [],
     audit,
     logger,
+    runningRadiosoVersion,
   });
 
   const appInstallationPlanService = new AppInstallationPlanService({
@@ -135,21 +170,23 @@ export const createAppsServices = (dependencies: AppsCompositionDependencies): A
     plans: repositories.plans,
     authorization,
     audit,
+    runningRadiosoVersion,
   });
 
   const appInstallationLifecycleService = new AppInstallationLifecycleService({
     installations: repositories.installations,
     plans: repositories.plans,
     releases: repositories.releases,
-    grants: repositories.grants,
     connections: repositories.connections,
     operations: repositories.operations,
+    unitOfWork,
     runtimeProvisioning: dependencies.runtimeProvisioning ?? createUnavailableAppRuntimeProvisioning(),
     contributionStaging: dependencies.contributionStaging ?? createNoopAppContributionStaging(),
     dataDisposition: dependencies.dataDisposition ?? createNoopAppManagedDataDisposition(),
     authorization,
     audit,
     logger,
+    runningRadiosoVersion,
   });
 
   const appInstallationQueryService = new AppInstallationQueryService({
@@ -158,17 +195,25 @@ export const createAppsServices = (dependencies: AppsCompositionDependencies): A
     grants: repositories.grants,
     connections: repositories.connections,
     operations: repositories.operations,
-    authorization,
-    audit,
   });
 
   const appConnectionService = new AppConnectionService({
     installations: repositories.installations,
     releases: repositories.releases,
     connections: repositories.connections,
+    operations: repositories.operations,
+    unitOfWork,
     cipher,
     authorization,
     audit,
+  });
+
+  const appExecutionEligibility = new AppExecutionEligibilityService({
+    installations: repositories.installations,
+    releases: repositories.releases,
+    grants: repositories.grants,
+    connections: repositories.connections,
+    runningRadiosoVersion,
   });
 
   return {
@@ -177,5 +222,6 @@ export const createAppsServices = (dependencies: AppsCompositionDependencies): A
     appInstallationLifecycleService,
     appInstallationQueryService,
     appConnectionService,
+    appExecutionEligibility,
   };
 };

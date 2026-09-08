@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { toJsonb } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../../shared/infra/kysely/types.js";
+import { AppsError } from "../domain/errors.js";
 import type {
   AppLifecycleOperationKind,
   AppLifecycleOperationState,
@@ -14,6 +15,7 @@ export interface StartAppLifecycleOperationInput {
   readonly installationId: string;
   readonly kind: AppLifecycleOperationKind;
   readonly idempotencyKey: string;
+  readonly requestFingerprint: string;
   readonly initiatedBy: AppOperatorPrincipal;
   readonly payload: Readonly<Record<string, unknown>>;
 }
@@ -21,13 +23,31 @@ export interface StartAppLifecycleOperationInput {
 export interface AppLifecycleOperationMutation {
   readonly state?: AppLifecycleOperationState;
   readonly step?: AppSagaStepId | null;
+  readonly compensationStep?: AppSagaStepId | null;
   readonly error?: { readonly reason: string; readonly message: string } | null;
+}
+
+/**
+ * A compare-and-set advance. The driver states the cursor and state it believes it holds;
+ * an update that matches nothing means another driver owns this operation and this one
+ * must stop rather than run the next step twice.
+ */
+export interface AdvanceAppLifecycleOperationInput {
+  readonly expectedState: AppLifecycleOperationState;
+  readonly expectedStep: AppSagaStepId | null;
+  readonly step: AppSagaStepId;
+}
+
+export interface AdvanceAppLifecycleCompensationInput {
+  readonly expectedCompensationStep: AppSagaStepId | null;
+  readonly compensationStep: AppSagaStepId;
 }
 
 export interface AppLifecycleOperationRepositoryPort {
   /**
-   * Returns the existing operation when the idempotency key was already used, so a
-   * retried apply resumes one saga instead of starting a second.
+   * Refuses with `operation_in_progress` when the installation already has an operation
+   * in flight, and returns the existing record when this exact idempotency key was
+   * already used, so a retried command resumes one saga instead of starting a second.
    */
   start(input: StartAppLifecycleOperationInput): Promise<{
     readonly operation: AppLifecycleOperationRecord;
@@ -35,6 +55,12 @@ export interface AppLifecycleOperationRepositoryPort {
   }>;
   findById(id: string): Promise<AppLifecycleOperationRecord | null>;
   update(id: string, mutation: AppLifecycleOperationMutation): Promise<AppLifecycleOperationRecord>;
+  /** `null` when the compare-and-set matched no row. */
+  advance(id: string, input: AdvanceAppLifecycleOperationInput): Promise<AppLifecycleOperationRecord | null>;
+  advanceCompensation(
+    id: string,
+    input: AdvanceAppLifecycleCompensationInput,
+  ): Promise<AppLifecycleOperationRecord | null>;
   listByInstallation(installationId: string, limit: number): Promise<AppLifecycleOperationRecord[]>;
   findByIdempotencyKey(idempotencyKey: string): Promise<AppLifecycleOperationRecord | null>;
   /**
@@ -50,7 +76,9 @@ const COLUMNS = [
   "kind",
   "state",
   "step",
+  "compensation_step",
   "idempotency_key",
+  "request_fingerprint",
   "initiated_by",
   "payload",
   "error",
@@ -64,7 +92,9 @@ interface AppLifecycleOperationRow {
   kind: string;
   state: string;
   step: string | null;
+  compensation_step: string | null;
   idempotency_key: string;
+  request_fingerprint: string;
   initiated_by: unknown;
   payload: unknown;
   error: unknown;
@@ -87,7 +117,9 @@ const mapRecord = (row: AppLifecycleOperationRow): AppLifecycleOperationRecord =
     kind: row.kind as AppLifecycleOperationKind,
     state: row.state as AppLifecycleOperationState,
     step: row.step as AppSagaStepId | null,
+    compensationStep: row.compensation_step as AppSagaStepId | null,
     idempotencyKey: row.idempotency_key,
+    requestFingerprint: row.request_fingerprint,
     initiatedBy: {
       accountId: asText(initiatedBy.accountId),
       userId: asText(initiatedBy.userId),
@@ -99,6 +131,18 @@ const mapRecord = (row: AppLifecycleOperationRow): AppLifecycleOperationRecord =
   };
 };
 
+// Migration 171 allows one `running`/`compensating` operation per installation. Its
+// violation is the one Postgres error this insert expects to see and translates, rather
+// than letting a raw SQLSTATE leak out of the repository.
+const IN_FLIGHT_UNIQUE_CONSTRAINT = "idx_app_lifecycle_operations_in_flight";
+
+const uniqueViolationConstraint = (error: unknown): string | null => {
+  if (!error || typeof error !== "object") return null;
+  const candidate = error as { code?: unknown; constraint?: unknown };
+  if (candidate.code !== "23505") return null;
+  return typeof candidate.constraint === "string" ? candidate.constraint : "";
+};
+
 export class AppLifecycleOperationRepository implements AppLifecycleOperationRepositoryPort {
   constructor(private readonly db: Db) {}
 
@@ -106,29 +150,43 @@ export class AppLifecycleOperationRepository implements AppLifecycleOperationRep
     operation: AppLifecycleOperationRecord;
     created: boolean;
   }> {
-    const inserted = await this.db
-      .insertInto("app_lifecycle_operations")
-      .values({
-        id: randomUUID(),
-        installation_id: input.installationId,
-        kind: input.kind,
-        state: "running",
-        step: null,
-        idempotency_key: input.idempotencyKey,
-        initiated_by: toJsonb(input.initiatedBy),
-        payload: toJsonb(input.payload),
-      })
-      .onConflict((conflict) => conflict.column("idempotency_key").doNothing())
-      .returning(COLUMNS)
-      .executeTakeFirst();
-    if (inserted) return { operation: mapRecord(inserted), created: true };
+    const existing = await this.findByIdempotencyKey(input.idempotencyKey);
+    if (existing) return { operation: existing, created: false };
 
-    const existing = await this.db
-      .selectFrom("app_lifecycle_operations")
-      .select(COLUMNS)
-      .where("idempotency_key", "=", input.idempotencyKey)
-      .executeTakeFirstOrThrow();
-    return { operation: mapRecord(existing), created: false };
+    try {
+      const inserted = await this.db
+        .insertInto("app_lifecycle_operations")
+        .values({
+          id: randomUUID(),
+          installation_id: input.installationId,
+          kind: input.kind,
+          state: "running",
+          step: null,
+          compensation_step: null,
+          idempotency_key: input.idempotencyKey,
+          request_fingerprint: input.requestFingerprint,
+          initiated_by: toJsonb(input.initiatedBy),
+          payload: toJsonb(input.payload),
+        })
+        .returning(COLUMNS)
+        .executeTakeFirstOrThrow();
+      return { operation: mapRecord(inserted), created: true };
+    } catch (error) {
+      const constraint = uniqueViolationConstraint(error);
+      if (constraint === null) throw error;
+      if (constraint === IN_FLIGHT_UNIQUE_CONSTRAINT) {
+        throw new AppsError(
+          "operation_in_progress",
+          "Another lifecycle operation is already running for this installation.",
+          { installationId: input.installationId },
+        );
+      }
+      // The idempotency key was taken between the read above and this insert: that is a
+      // concurrent retry of the same command, so it resolves to the same operation.
+      const raced = await this.findByIdempotencyKey(input.idempotencyKey);
+      if (raced) return { operation: raced, created: false };
+      throw error;
+    }
   }
 
   async findById(id: string): Promise<AppLifecycleOperationRecord | null> {
@@ -146,6 +204,7 @@ export class AppLifecycleOperationRepository implements AppLifecycleOperationRep
       .set({
         ...(mutation.state === undefined ? {} : { state: mutation.state }),
         ...(mutation.step === undefined ? {} : { step: mutation.step }),
+        ...(mutation.compensationStep === undefined ? {} : { compensation_step: mutation.compensationStep }),
         ...(mutation.error === undefined ? {} : { error: mutation.error === null ? null : toJsonb(mutation.error) }),
         updated_at: new Date(),
       })
@@ -153,6 +212,38 @@ export class AppLifecycleOperationRepository implements AppLifecycleOperationRep
       .returning(COLUMNS)
       .executeTakeFirstOrThrow();
     return mapRecord(row);
+  }
+
+  async advance(
+    id: string,
+    input: AdvanceAppLifecycleOperationInput,
+  ): Promise<AppLifecycleOperationRecord | null> {
+    let query = this.db
+      .updateTable("app_lifecycle_operations")
+      .set({ step: input.step, updated_at: new Date() })
+      .where("id", "=", id)
+      .where("state", "=", input.expectedState);
+    query = input.expectedStep === null
+      ? query.where("step", "is", null)
+      : query.where("step", "=", input.expectedStep);
+    const row = await query.returning(COLUMNS).executeTakeFirst();
+    return row ? mapRecord(row) : null;
+  }
+
+  async advanceCompensation(
+    id: string,
+    input: AdvanceAppLifecycleCompensationInput,
+  ): Promise<AppLifecycleOperationRecord | null> {
+    let query = this.db
+      .updateTable("app_lifecycle_operations")
+      .set({ compensation_step: input.compensationStep, updated_at: new Date() })
+      .where("id", "=", id)
+      .where("state", "=", "compensating");
+    query = input.expectedCompensationStep === null
+      ? query.where("compensation_step", "is", null)
+      : query.where("compensation_step", "=", input.expectedCompensationStep);
+    const row = await query.returning(COLUMNS).executeTakeFirst();
+    return row ? mapRecord(row) : null;
   }
 
   async listByInstallation(installationId: string, limit: number): Promise<AppLifecycleOperationRecord[]> {

@@ -1,8 +1,13 @@
 import { createAgentBundleServices } from "../../src/app/composition/agentBundleComposition.js";
 import { InMemoryAgentBundleImportRepository } from "./inMemoryAgentBundleImports.js";
 import { createAppsServices } from "../../src/app/composition/apps.js";
+import { resolveRunningRadiosoVersion } from "../../src/app/config/radiosoVersion.js";
 import type { AppRuntimeProvisioningPort, BuiltInAppRelease } from "../../src/modules/apps/public.js";
-import { createInMemoryAppRepositories, type InMemoryAppRepositories } from "./inMemoryApps.js";
+import {
+  createInMemoryAppRepositories,
+  createInMemoryAppsUnitOfWork,
+  type InMemoryAppRepositories,
+} from "./inMemoryApps.js";
 import { setTimeout as delay } from "node:timers/promises";
 
 import request from "supertest";
@@ -2131,11 +2136,13 @@ export const createTestDependencies = (overrides: {
   const appRepositories = createInMemoryAppRepositories();
   const appsServices = createAppsServices({
     repositories: appRepositories,
+    unitOfWork: createInMemoryAppsUnitOfWork(appRepositories),
     audit: auditService,
     logger,
     accountAccessService,
     secretEncryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
     builtInReleases: overrides.appBuiltInReleases ?? [],
+    runningRadiosoVersion: resolveRunningRadiosoVersion(env.RADIOSO_RELEASE),
     runtimeProvisioning: overrides.appRuntimeProvisioning,
   });
 

@@ -28136,7 +28136,7 @@
             }
           },
           "409": {
-            "description": "Stale plan or installation version, conflicting installation, or an unbound connection this change needs",
+            "description": "Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible",
             "content": {
               "application/json": {
                 "schema": {
@@ -28146,7 +28146,7 @@
             }
           },
           "503": {
-            "description": "No App runtime or secret encryption key is configured",
+            "description": "No App runtime or secret encryption key is configured, or App administration permission could not be checked",
             "content": {
               "application/json": {
                 "schema": {
@@ -28296,7 +28296,7 @@
             }
           },
           "409": {
-            "description": "Stale plan or installation version, conflicting installation, or an unbound connection this change needs",
+            "description": "Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible",
             "content": {
               "application/json": {
                 "schema": {
@@ -28306,7 +28306,7 @@
             }
           },
           "503": {
-            "description": "No App runtime or secret encryption key is configured",
+            "description": "No App runtime or secret encryption key is configured, or App administration permission could not be checked",
             "content": {
               "application/json": {
                 "schema": {
@@ -28356,18 +28356,12 @@
                         }
                       ]
                     }
-                  },
-                  "targetAgentIds": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "format": "uuid"
-                    }
                   }
                 },
                 "required": [
                   "releaseId"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -28578,12 +28572,11 @@
                             ]
                           }
                         },
-                        "targetAgentIds": {
-                          "type": "array",
-                          "items": {
-                            "type": "string",
-                            "format": "uuid"
-                          }
+                        "admissionPolicyVersion": {
+                          "type": "string"
+                        },
+                        "releaseState": {
+                          "type": "string"
                         },
                         "unresolvedRequirements": {
                           "type": "array",
@@ -28626,7 +28619,8 @@
                         "storageCollections",
                         "contributions",
                         "connectionSlots",
-                        "targetAgentIds",
+                        "admissionPolicyVersion",
+                        "releaseState",
                         "unresolvedRequirements"
                       ]
                     },
@@ -28700,7 +28694,7 @@
             }
           },
           "409": {
-            "description": "Stale plan or installation version, conflicting installation, or an unbound connection this change needs",
+            "description": "Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible",
             "content": {
               "application/json": {
                 "schema": {
@@ -28710,7 +28704,7 @@
             }
           },
           "503": {
-            "description": "No App runtime or secret encryption key is configured",
+            "description": "No App runtime or secret encryption key is configured, or App administration permission could not be checked",
             "content": {
               "application/json": {
                 "schema": {
@@ -28951,12 +28945,11 @@
                             ]
                           }
                         },
-                        "targetAgentIds": {
-                          "type": "array",
-                          "items": {
-                            "type": "string",
-                            "format": "uuid"
-                          }
+                        "admissionPolicyVersion": {
+                          "type": "string"
+                        },
+                        "releaseState": {
+                          "type": "string"
                         },
                         "unresolvedRequirements": {
                           "type": "array",
@@ -28999,7 +28992,8 @@
                         "storageCollections",
                         "contributions",
                         "connectionSlots",
-                        "targetAgentIds",
+                        "admissionPolicyVersion",
+                        "releaseState",
                         "unresolvedRequirements"
                       ]
                     },
@@ -29073,7 +29067,7 @@
             }
           },
           "409": {
-            "description": "Stale plan or installation version, conflicting installation, or an unbound connection this change needs",
+            "description": "Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible",
             "content": {
               "application/json": {
                 "schema": {
@@ -29083,7 +29077,7 @@
             }
           },
           "503": {
-            "description": "No App runtime or secret encryption key is configured",
+            "description": "No App runtime or secret encryption key is configured, or App administration permission could not be checked",
             "content": {
               "application/json": {
                 "schema": {
@@ -29100,7 +29094,7 @@
         "tags": [
           "Apps"
         ],
-        "summary": "Apply an approved installation plan",
+        "summary": "Apply an approved plan and create the installation",
         "operationId": "applyAppInstallationPlan",
         "security": [
           {
@@ -29151,7 +29145,7 @@
         },
         "responses": {
           "201": {
-            "description": "The installation and the lifecycle operation that ran",
+            "description": "The installation, created in `planned` with its grants recorded and nothing running yet, and the operation that recorded it",
             "content": {
               "application/json": {
                 "schema": {
@@ -29257,6 +29251,8 @@
                           "type": "string",
                           "enum": [
                             "install",
+                            "activate",
+                            "reconfigure",
                             "disable",
                             "enable",
                             "remove",
@@ -29269,10 +29265,17 @@
                             "running",
                             "completed",
                             "failed",
-                            "compensating"
+                            "compensating",
+                            "compensation_failed"
                           ]
                         },
                         "step": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "compensationStep": {
                           "type": [
                             "string",
                             "null"
@@ -29311,6 +29314,7 @@
                         "kind",
                         "state",
                         "step",
+                        "compensationStep",
                         "error",
                         "createdAt",
                         "updatedAt"
@@ -29366,7 +29370,7 @@
             }
           },
           "409": {
-            "description": "Stale plan or installation version, conflicting installation, or an unbound connection this change needs",
+            "description": "Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible",
             "content": {
               "application/json": {
                 "schema": {
@@ -29376,7 +29380,7 @@
             }
           },
           "503": {
-            "description": "No App runtime or secret encryption key is configured",
+            "description": "No App runtime or secret encryption key is configured, or App administration permission could not be checked",
             "content": {
               "application/json": {
                 "schema": {
@@ -29545,7 +29549,7 @@
             }
           },
           "409": {
-            "description": "Stale plan or installation version, conflicting installation, or an unbound connection this change needs",
+            "description": "Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible",
             "content": {
               "application/json": {
                 "schema": {
@@ -29555,7 +29559,7 @@
             }
           },
           "503": {
-            "description": "No App runtime or secret encryption key is configured",
+            "description": "No App runtime or secret encryption key is configured, or App administration permission could not be checked",
             "content": {
               "application/json": {
                 "schema": {
@@ -29811,6 +29815,8 @@
                           "type": "string",
                           "enum": [
                             "install",
+                            "activate",
+                            "reconfigure",
                             "disable",
                             "enable",
                             "remove",
@@ -29823,10 +29829,17 @@
                             "running",
                             "completed",
                             "failed",
-                            "compensating"
+                            "compensating",
+                            "compensation_failed"
                           ]
                         },
                         "step": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "compensationStep": {
                           "type": [
                             "string",
                             "null"
@@ -29865,6 +29878,7 @@
                         "kind",
                         "state",
                         "step",
+                        "compensationStep",
                         "error",
                         "createdAt",
                         "updatedAt"
@@ -29924,7 +29938,7 @@
             }
           },
           "409": {
-            "description": "Stale plan or installation version, conflicting installation, or an unbound connection this change needs",
+            "description": "Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible",
             "content": {
               "application/json": {
                 "schema": {
@@ -29934,7 +29948,7 @@
             }
           },
           "503": {
-            "description": "No App runtime or secret encryption key is configured",
+            "description": "No App runtime or secret encryption key is configured, or App administration permission could not be checked",
             "content": {
               "application/json": {
                 "schema": {
@@ -29994,6 +30008,8 @@
                             "type": "string",
                             "enum": [
                               "install",
+                              "activate",
+                              "reconfigure",
                               "disable",
                               "enable",
                               "remove",
@@ -30006,10 +30022,17 @@
                               "running",
                               "completed",
                               "failed",
-                              "compensating"
+                              "compensating",
+                              "compensation_failed"
                             ]
                           },
                           "step": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "compensationStep": {
                             "type": [
                               "string",
                               "null"
@@ -30048,6 +30071,7 @@
                           "kind",
                           "state",
                           "step",
+                          "compensationStep",
                           "error",
                           "createdAt",
                           "updatedAt"
@@ -30103,7 +30127,7 @@
             }
           },
           "409": {
-            "description": "Stale plan or installation version, conflicting installation, or an unbound connection this change needs",
+            "description": "Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible",
             "content": {
               "application/json": {
                 "schema": {
@@ -30113,7 +30137,7 @@
             }
           },
           "503": {
-            "description": "No App runtime or secret encryption key is configured",
+            "description": "No App runtime or secret encryption key is configured, or App administration permission could not be checked",
             "content": {
               "application/json": {
                 "schema": {
@@ -30130,7 +30154,7 @@
         "tags": [
           "Apps"
         ],
-        "summary": "Change an installation's configuration values",
+        "summary": "Reconfigure an installation, re-staging and re-testing before the change applies",
         "operationId": "updateAppInstallationConfiguration",
         "security": [
           {
@@ -30174,6 +30198,11 @@
                   "expectedVersion": {
                     "type": "integer",
                     "exclusiveMinimum": 0
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
                   }
                 },
                 "required": [
@@ -30186,92 +30215,185 @@
         },
         "responses": {
           "200": {
-            "description": "The updated installation",
+            "description": "The installation and the reconfigure operation that ran",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "id": {
-                      "type": "string",
-                      "format": "uuid"
-                    },
-                    "appId": {
-                      "type": "string"
-                    },
-                    "state": {
-                      "type": "string",
-                      "enum": [
-                        "planned",
-                        "provisioning",
-                        "staged",
-                        "testing",
-                        "ready",
-                        "active",
-                        "disabled",
-                        "failed",
-                        "removing",
-                        "removed"
+                    "installation": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "appId": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "planned",
+                            "provisioning",
+                            "staged",
+                            "testing",
+                            "ready",
+                            "active",
+                            "disabled",
+                            "failed",
+                            "removing",
+                            "removed"
+                          ]
+                        },
+                        "activeReleaseId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "candidateReleaseId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "configuration": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "boolean"
+                              }
+                            ]
+                          }
+                        },
+                        "health": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "version": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "appId",
+                        "state",
+                        "activeReleaseId",
+                        "candidateReleaseId",
+                        "configuration",
+                        "health",
+                        "version",
+                        "createdAt",
+                        "updatedAt"
                       ]
                     },
-                    "activeReleaseId": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
-                      "format": "uuid"
-                    },
-                    "candidateReleaseId": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
-                      "format": "uuid"
-                    },
-                    "configuration": {
+                    "operation": {
                       "type": "object",
-                      "additionalProperties": {
-                        "anyOf": [
-                          {
-                            "type": "string"
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "installationId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "install",
+                            "activate",
+                            "reconfigure",
+                            "disable",
+                            "enable",
+                            "remove",
+                            "dispose_data"
+                          ]
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "running",
+                            "completed",
+                            "failed",
+                            "compensating",
+                            "compensation_failed"
+                          ]
+                        },
+                        "step": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "compensationStep": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "error": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "reason": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
                           },
-                          {
-                            "type": "number"
-                          },
-                          {
-                            "type": "boolean"
-                          }
-                        ]
-                      }
-                    },
-                    "health": {
-                      "type": "object",
-                      "additionalProperties": {}
-                    },
-                    "version": {
-                      "type": "integer",
-                      "exclusiveMinimum": 0
-                    },
-                    "createdAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "updatedAt": {
-                      "type": "string",
-                      "format": "date-time"
+                          "required": [
+                            "reason",
+                            "message"
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "installationId",
+                        "kind",
+                        "state",
+                        "step",
+                        "compensationStep",
+                        "error",
+                        "createdAt",
+                        "updatedAt"
+                      ]
                     }
                   },
                   "required": [
-                    "id",
-                    "appId",
-                    "state",
-                    "activeReleaseId",
-                    "candidateReleaseId",
-                    "configuration",
-                    "health",
-                    "version",
-                    "createdAt",
-                    "updatedAt"
+                    "installation",
+                    "operation"
                   ]
                 }
               }
@@ -30318,7 +30440,7 @@
             }
           },
           "409": {
-            "description": "Stale plan or installation version, conflicting installation, or an unbound connection this change needs",
+            "description": "Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible",
             "content": {
               "application/json": {
                 "schema": {
@@ -30328,7 +30450,7 @@
             }
           },
           "503": {
-            "description": "No App runtime or secret encryption key is configured",
+            "description": "No App runtime or secret encryption key is configured, or App administration permission could not be checked",
             "content": {
               "application/json": {
                 "schema": {
@@ -30376,10 +30498,15 @@
                   "values": {
                     "type": "object",
                     "additionalProperties": {}
+                  },
+                  "expectedVersion": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
                   }
                 },
                 "required": [
-                  "slotId"
+                  "slotId",
+                  "expectedVersion"
                 ]
               }
             }
@@ -30510,7 +30637,7 @@
             }
           },
           "409": {
-            "description": "Stale plan or installation version, conflicting installation, or an unbound connection this change needs",
+            "description": "Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible",
             "content": {
               "application/json": {
                 "schema": {
@@ -30520,7 +30647,303 @@
             }
           },
           "503": {
-            "description": "No App runtime or secret encryption key is configured",
+            "description": "No App runtime or secret encryption key is configured, or App administration permission could not be checked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/apps/installations/{installationId}/activate": {
+      "post": {
+        "tags": [
+          "Apps"
+        ],
+        "summary": "Provision, stage, test, and activate an installation",
+        "operationId": "activateAppInstallation",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "installationId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "expectedVersion"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The installation and the lifecycle operation that ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "installation": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "appId": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "planned",
+                            "provisioning",
+                            "staged",
+                            "testing",
+                            "ready",
+                            "active",
+                            "disabled",
+                            "failed",
+                            "removing",
+                            "removed"
+                          ]
+                        },
+                        "activeReleaseId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "candidateReleaseId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "configuration": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "boolean"
+                              }
+                            ]
+                          }
+                        },
+                        "health": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "version": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "appId",
+                        "state",
+                        "activeReleaseId",
+                        "candidateReleaseId",
+                        "configuration",
+                        "health",
+                        "version",
+                        "createdAt",
+                        "updatedAt"
+                      ]
+                    },
+                    "operation": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "installationId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "install",
+                            "activate",
+                            "reconfigure",
+                            "disable",
+                            "enable",
+                            "remove",
+                            "dispose_data"
+                          ]
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "running",
+                            "completed",
+                            "failed",
+                            "compensating",
+                            "compensation_failed"
+                          ]
+                        },
+                        "step": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "compensationStep": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "error": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "reason": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "reason",
+                            "message"
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "installationId",
+                        "kind",
+                        "state",
+                        "step",
+                        "compensationStep",
+                        "error",
+                        "createdAt",
+                        "updatedAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "installation",
+                    "operation"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid configuration, connection, or request shape",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Interactive workspace session required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "App administration permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Release, plan, or installation not available in this workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "No App runtime or secret encryption key is configured, or App administration permission could not be checked",
             "content": {
               "application/json": {
                 "schema": {
@@ -30562,12 +30985,19 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
                   "idempotencyKey": {
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 200
                   }
-                }
+                },
+                "required": [
+                  "expectedVersion"
+                ]
               }
             }
           }
@@ -30680,6 +31110,8 @@
                           "type": "string",
                           "enum": [
                             "install",
+                            "activate",
+                            "reconfigure",
                             "disable",
                             "enable",
                             "remove",
@@ -30692,10 +31124,17 @@
                             "running",
                             "completed",
                             "failed",
-                            "compensating"
+                            "compensating",
+                            "compensation_failed"
                           ]
                         },
                         "step": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "compensationStep": {
                           "type": [
                             "string",
                             "null"
@@ -30734,6 +31173,7 @@
                         "kind",
                         "state",
                         "step",
+                        "compensationStep",
                         "error",
                         "createdAt",
                         "updatedAt"
@@ -30789,7 +31229,7 @@
             }
           },
           "409": {
-            "description": "Stale plan or installation version, conflicting installation, or an unbound connection this change needs",
+            "description": "Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible",
             "content": {
               "application/json": {
                 "schema": {
@@ -30799,7 +31239,7 @@
             }
           },
           "503": {
-            "description": "No App runtime or secret encryption key is configured",
+            "description": "No App runtime or secret encryption key is configured, or App administration permission could not be checked",
             "content": {
               "application/json": {
                 "schema": {
@@ -30816,7 +31256,7 @@
         "tags": [
           "Apps"
         ],
-        "summary": "Enable an installation",
+        "summary": "Enable a disabled installation",
         "operationId": "enableAppInstallation",
         "security": [
           {
@@ -30841,12 +31281,19 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
                   "idempotencyKey": {
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 200
                   }
-                }
+                },
+                "required": [
+                  "expectedVersion"
+                ]
               }
             }
           }
@@ -30959,6 +31406,8 @@
                           "type": "string",
                           "enum": [
                             "install",
+                            "activate",
+                            "reconfigure",
                             "disable",
                             "enable",
                             "remove",
@@ -30971,10 +31420,17 @@
                             "running",
                             "completed",
                             "failed",
-                            "compensating"
+                            "compensating",
+                            "compensation_failed"
                           ]
                         },
                         "step": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "compensationStep": {
                           "type": [
                             "string",
                             "null"
@@ -31013,6 +31469,7 @@
                         "kind",
                         "state",
                         "step",
+                        "compensationStep",
                         "error",
                         "createdAt",
                         "updatedAt"
@@ -31068,7 +31525,7 @@
             }
           },
           "409": {
-            "description": "Stale plan or installation version, conflicting installation, or an unbound connection this change needs",
+            "description": "Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible",
             "content": {
               "application/json": {
                 "schema": {
@@ -31078,7 +31535,7 @@
             }
           },
           "503": {
-            "description": "No App runtime or secret encryption key is configured",
+            "description": "No App runtime or secret encryption key is configured, or App administration permission could not be checked",
             "content": {
               "application/json": {
                 "schema": {
@@ -31128,6 +31585,10 @@
                       "delete"
                     ]
                   },
+                  "expectedVersion": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
                   "idempotencyKey": {
                     "type": "string",
                     "minLength": 1,
@@ -31135,7 +31596,8 @@
                   }
                 },
                 "required": [
-                  "disposition"
+                  "disposition",
+                  "expectedVersion"
                 ]
               }
             }
@@ -31249,6 +31711,8 @@
                           "type": "string",
                           "enum": [
                             "install",
+                            "activate",
+                            "reconfigure",
                             "disable",
                             "enable",
                             "remove",
@@ -31261,10 +31725,17 @@
                             "running",
                             "completed",
                             "failed",
-                            "compensating"
+                            "compensating",
+                            "compensation_failed"
                           ]
                         },
                         "step": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "compensationStep": {
                           "type": [
                             "string",
                             "null"
@@ -31303,6 +31774,7 @@
                         "kind",
                         "state",
                         "step",
+                        "compensationStep",
                         "error",
                         "createdAt",
                         "updatedAt"
@@ -31358,7 +31830,7 @@
             }
           },
           "409": {
-            "description": "Stale plan or installation version, conflicting installation, or an unbound connection this change needs",
+            "description": "Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible",
             "content": {
               "application/json": {
                 "schema": {
@@ -31368,7 +31840,7 @@
             }
           },
           "503": {
-            "description": "No App runtime or secret encryption key is configured",
+            "description": "No App runtime or secret encryption key is configured, or App administration permission could not be checked",
             "content": {
               "application/json": {
                 "schema": {

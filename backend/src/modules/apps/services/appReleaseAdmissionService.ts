@@ -1,7 +1,8 @@
+import { notFound } from "../../../shared/domain/errors.js";
 import type { AuditPort } from "../../audit/contracts/index.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { admitAppRelease } from "../domain/releaseAdmission.js";
-import type { AppReleaseRecord } from "../domain/records.js";
+import type { AppReleaseRecord, AppReleaseState } from "../domain/records.js";
 import type { AppReleaseRepositoryPort } from "../repositories/appReleaseRepository.js";
 
 /**
@@ -13,17 +14,26 @@ export interface BuiltInAppRelease {
   readonly artifactDigests: readonly string[];
 }
 
+/** The states an operator or a security response moves an admitted release into. */
+type AppReleaseSecurityState = "deprecated" | "revoked" | "quarantined";
+
 interface AppReleaseAdmissionDependencies {
   readonly releases: AppReleaseRepositoryPort;
   readonly builtInReleases: readonly BuiltInAppRelease[];
   readonly audit: Pick<AuditPort, "record">;
   readonly logger: AppLogger;
+  /** The Radioso version this host runs, or `null` when it cannot be determined. */
+  readonly runningRadiosoVersion: string | null;
 }
 
 /**
- * Admits the built-in registry's releases. Release A has no publisher submission path:
- * a release exists because Radioso ships it, so admission runs once at start-up and is
- * idempotent on (app id, version).
+ * Admits the built-in registry's releases. Release A has no publisher submission path: a
+ * release exists because Radioso ships it, so admission runs once at start-up.
+ *
+ * Synchronisation only ever inserts. A release that already exists is left exactly as it
+ * is, whatever state it is in, because a restart is not a security decision: deprecation,
+ * revocation, and quarantine are made through {@link AppReleaseAdmissionService.transitionSecurityState}
+ * and must survive the next boot.
  */
 export class AppReleaseAdmissionService {
   constructor(private readonly dependencies: AppReleaseAdmissionDependencies) {}
@@ -52,7 +62,10 @@ export class AppReleaseAdmissionService {
     const decision = admitAppRelease({
       manifest: builtIn.manifest,
       artifactCatalogue: new Set(builtIn.artifactDigests),
-      admittedManifestDigest: existing?.state === "admitted" ? existing.manifestDigest : null,
+      // Immutability holds in every state, so this compares against whatever digest the
+      // version already has rather than only against an admitted one.
+      recordedManifestDigest: existing?.manifestDigest ?? null,
+      runningRadiosoVersion: this.dependencies.runningRadiosoVersion,
     });
 
     if (decision.outcome === "rejected") {
@@ -74,7 +87,7 @@ export class AppReleaseAdmissionService {
       return;
     }
 
-    const record = await this.dependencies.releases.upsert({
+    const record = await this.dependencies.releases.insertIfAbsent({
       appId: decision.manifest.app.id,
       version: decision.manifest.version,
       manifest: decision.manifest,
@@ -83,10 +96,9 @@ export class AppReleaseAdmissionService {
       publisherId: decision.manifest.app.publisher.id,
       state: "admitted",
       admissionPolicyVersion: decision.policyVersion,
-      admissionDecision: { provenance: decision.provenance, evidence: decision.evidence },
+      admissionDecision: { evidence: decision.evidence },
     });
-
-    if (existing?.state === "admitted" && existing.manifestDigest === record.manifestDigest) return;
+    if (!record) return;
 
     await this.dependencies.audit.record({
       eventType: "app.release.admitted",
@@ -97,10 +109,34 @@ export class AppReleaseAdmissionService {
         releaseId: record.id,
         publisherId: record.publisherId,
         admissionPolicyVersion: record.admissionPolicyVersion,
-        provenance: decision.provenance.kind,
+        provenance: decision.evidence.provenance,
         evidence: decision.evidence,
       },
     });
+  }
+
+  /**
+   * The only writer of a release's security state. It is deliberately not a route yet:
+   * Release A has no publisher console, but revocation has to be expressible and audited
+   * so an incident response is a recorded decision rather than a manual row edit.
+   */
+  async transitionSecurityState(
+    releaseId: string,
+    state: AppReleaseSecurityState,
+  ): Promise<AppReleaseRecord> {
+    const record = await this.dependencies.releases.transitionState(releaseId, state satisfies AppReleaseState);
+    if (!record) throw notFound("App release not found");
+    await this.dependencies.audit.record({
+      eventType: `app.release.${state}`,
+      eventStatus: "success",
+      metadata: {
+        appId: record.appId,
+        version: record.version,
+        releaseId: record.id,
+        state: record.state,
+      },
+    });
+    return record;
   }
 
   listInstallable(): Promise<AppReleaseRecord[]> {

@@ -96,9 +96,18 @@ export interface AppLifecycleOperationRecord {
   readonly kind: AppLifecycleOperationKind;
   readonly state: AppLifecycleOperationState;
   readonly step: AppSagaStepId | null;
+  /** Where a reverse runner has got to. `null` means no compensator has completed. */
+  readonly compensationStep: AppSagaStepId | null;
   readonly idempotencyKey: string;
+  /**
+   * A digest of what the request asked for. The same key with the same fingerprint is a
+   * retry and replays; the same key with a different fingerprint is a mistake, and
+   * answering it with the earlier operation would report success for work never done.
+   */
+  readonly requestFingerprint: string;
   readonly initiatedBy: AppOperatorPrincipal;
   readonly payload: Readonly<Record<string, unknown>>;
+  /** A reason code and a static message. Never an adapter's own exception text. */
   readonly error: { readonly reason: string; readonly message: string } | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;

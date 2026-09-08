@@ -1,22 +1,37 @@
 import { describe, expect, it } from "vitest";
 
-import type { AppManifest } from "@radioso/app-contract";
+import {
+  releaseAValidationPolicy,
+  resolveInstallation,
+  validateManifest,
+  type AppManifest,
+} from "@radioso/app-contract";
 
 import {
+  APP_ADMISSION_POLICY_VERSION,
   APP_INSTALLATION_PLAN_TTL_MS,
   AppsError,
+  appManifestDigest,
   assertAppPlanApplicable,
   buildAppInstallationPlan,
 } from "../../../src/modules/apps/public.js";
 import { wordpressManifest } from "./support.js";
 
-const release = () => ({
+/**
+ * The digest is what re-admission checks the stored manifest against, so a release
+ * fixture computes it from the manifest it actually carries.
+ */
+const releaseOf = (manifest: AppManifest) => ({
   id: "11111111-1111-4111-8111-111111111111",
   appId: "ai.radioso.wordpress",
   version: "1.0.0",
-  manifestDigest: "sha256:".padEnd(71, "a"),
-  manifest: wordpressManifest(),
+  manifestDigest: appManifestDigest(manifest),
+  manifest,
+  state: "admitted",
+  admissionPolicyVersion: APP_ADMISSION_POLICY_VERSION,
 });
+
+const release = () => releaseOf(wordpressManifest());
 
 const now = new Date("2026-09-06T10:00:00.000Z");
 
@@ -25,7 +40,6 @@ const planInput = (overrides: Partial<Parameters<typeof buildAppInstallationPlan
   release: release(),
   configuration: { site_url: "https://example.com", poll_interval_sec: 120 },
   boundConnectionSlotIds: ["webhook_secret"],
-  targetAgentIds: [],
   now,
   ...overrides,
 });
@@ -200,12 +214,45 @@ describe("app installation plan", () => {
   // stops a stored row from drifting away from what the release was admitted under. The
   // plan builder re-admits it through `admittedManifestOf` rather than trust the cast a
   // repository takes on read, so corruption here is a typed refusal, not a crash.
-  it("refuses to build a plan when the stored release manifest no longer passes admission", () => {
+  it("refuses to build a plan when the stored release manifest no longer matches its recorded digest", () => {
     const { name: _name, ...appWithoutName } = wordpressManifest().app;
     const tamperedRelease = { ...release(), manifest: { ...wordpressManifest(), app: appWithoutName } as AppManifest };
 
     expect(() => buildAppInstallationPlan(planInput({ release: tamperedRelease })))
-      .toThrow(expect.objectContaining({ reason: "release_not_admitted" }));
+      .toThrow(expect.objectContaining({
+        reason: "release_not_admitted",
+        details: { cause: "manifest_digest_mismatch" },
+      }));
+  });
+
+  it("binds the admission judgement the approval was taken against", () => {
+    const { plan } = buildAppInstallationPlan(planInput());
+
+    expect(plan.admissionPolicyVersion).toBe(APP_ADMISSION_POLICY_VERSION);
+    expect(plan.releaseState).toBe("admitted");
+  });
+
+  /**
+   * Readiness is the contract's answer and the plan consumes it unchanged. The contract
+   * already accounts for destination credentials — it refuses a manifest whose required
+   * credentials are not declared by the contribution that can reach them — so recomputing
+   * them here could only ever over-require a slot the operator does not need.
+   */
+  it.each([
+    { site_url: "https://example.com", poll_interval_sec: 0 },
+    { site_url: "https://example.com", poll_interval_sec: 300 },
+  ])("requires exactly the slots the contract's own readiness names", (configuration) => {
+    const manifest = validateManifest(wordpressManifest(), releaseAValidationPolicy);
+    expect(manifest.ok).toBe(true);
+    if (!manifest.ok) return;
+    const resolved = resolveInstallation(manifest.manifest, configuration);
+    expect(resolved.ok).toBe(true);
+    if (!resolved.ok) return;
+
+    const { plan } = buildAppInstallationPlan(planInput({ configuration, boundConnectionSlotIds: [] }));
+
+    expect(plan.connectionSlots.filter((slot) => slot.required).map((slot) => slot.slotId).sort())
+      .toEqual([...resolved.readiness.requiredConnectionSlots].sort());
   });
 });
 

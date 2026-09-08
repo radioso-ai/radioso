@@ -24,6 +24,11 @@ export interface AppInstallationMutation {
 export interface AppInstallationRepositoryPort {
   create(input: CreateAppInstallationInput): Promise<AppInstallationRecord>;
   findById(workspaceId: string, id: string): Promise<AppInstallationRecord | null>;
+  /**
+   * Workspace-free read for the execution path, which is handed an installation id by a
+   * runtime and has no workspace scope of its own to check it against.
+   */
+  findAnyById(id: string): Promise<AppInstallationRecord | null>;
   findLiveByAppId(workspaceId: string, appId: string): Promise<AppInstallationRecord | null>;
   listByWorkspace(workspaceId: string): Promise<AppInstallationRecord[]>;
   /**
@@ -130,6 +135,15 @@ export class AppInstallationRepository implements AppInstallationRepositoryPort 
       .selectFrom("app_installations")
       .select(COLUMNS)
       .where("workspace_id", "=", workspaceId)
+      .where("id", "=", id)
+      .executeTakeFirst();
+    return row ? mapRecord(row) : null;
+  }
+
+  async findAnyById(id: string): Promise<AppInstallationRecord | null> {
+    const row = await this.db
+      .selectFrom("app_installations")
+      .select(COLUMNS)
       .where("id", "=", id)
       .executeTakeFirst();
     return row ? mapRecord(row) : null;

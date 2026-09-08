@@ -1,106 +1,146 @@
 ---
 title: "Release Admission"
-description: "What a Radioso App release is, the states it moves through, and what Release A's admission policy checks before a release becomes installable."
-last_updated: 2026-09-06
+description: "What a Radioso App release is, the states it moves through, and what admission establishes — and records that it did not establish — before a release becomes installable."
+last_updated: 2026-09-08
 ---
 
 # Release Admission
 
 A release is the unit a workspace installs. It bundles one manifest, one
 executable artifact pinned by digest, and the admission decision that made it
-installable — and once admitted, none of that changes. A new build, a widened
-permission, a changed destination, a new storage collection: each becomes a
-new version and a new release, checked from scratch. Nothing patches a release
-in place.
+installable — and once that version exists, none of it changes. A new build, a
+widened permission, a changed destination, a new storage collection: each
+becomes a new version and a new release, checked from scratch.
+
+## Where a release comes from
+
+Radioso ships a built-in registry, and that registry is the trust root. A
+release exists because Radioso built it, listed its artifact digests, and
+shipped it; admission runs over that list when the platform starts. The
+WordPress reference App is published through the same registry, written and
+admitted exactly the way any App is, so what the registry enforces is the real
+protocol rather than a shortcut taken because the publisher happens to be
+Radioso.
+
+Trusting a second publisher's key means distributing and rotating that key
+safely, revoking it across every installation that used it, and reviewing what
+that publisher submits before it reaches a workspace. Radioso operates one
+signing chain, one build pipeline, and one policy, and admission says so
+explicitly in the evidence it records.
+
+## What admission establishes
+
+Admission runs one pass and records everything it checked:
+
+- **The manifest validates under the Release A policy.** Admission runs
+  `validateManifest` from `@radioso/app-contract` and requires `ok: true` —
+  see [how validation issues surface](#how-validation-issues-surface-in-a-decision)
+  below.
+- **Every digest resolves against the registry.** The executable artifact and,
+  when the manifest declares one, the UI asset digest must match content the
+  built-in registry vouches for. A mutable tag or an unpinned reference fails
+  outright.
+- **Every contribution kind is one Release A runs.** `document_source`,
+  `external_webhook_handler`, and `scheduled_task` pass. A manifest can carry
+  the reserved kinds' headers, but a release that depends on one to function is
+  rejected.
+- **Resource bounds hold.** `resourceProfile`, storage quotas, schedule
+  intervals, and body and response size limits sit inside the ranges the policy
+  defines. A release asking outside them is rejected rather than silently
+  clamped.
+- **The release supports the Radioso version this host runs.** The manifest's
+  `radiosoCompatibility` range is matched against the host's own version, read
+  from `RADIOSO_RELEASE` and falling back to the backend package version. A host
+  that cannot determine its own version admits nothing: compatibility that
+  cannot be established is not compatibility.
+- **The version's content has not changed.** If the same app id and version
+  already exist, the manifest digest must match the one recorded for that row,
+  whatever state the row is in. Publish a new version to change content.
+
+## What the decision records
+
+Each admitted release stores an evidence record beside it, and that record
+names both the checks that ran and the checks that did not:
+
+```json
+{
+  "signature": "built_in_registry",
+  "provenance": "built_in_registry",
+  "softwareInventory": "not_evaluated",
+  "vulnerabilityPolicy": "not_evaluated",
+  "conformance": "not_evaluated",
+  "compatibility": { "runningVersion": "0.1.0", "range": ">=0.1.0", "result": "compatible" },
+  "contributionCount": 3,
+  "permissionCount": 5,
+  "destinationCount": 1,
+  "storageCollectionCount": 1,
+  "connectionSlotCount": 2,
+  "verifiedDigestCount": 2
+}
+```
+
+`signature` and `provenance` name the built-in registry because that is what
+actually vouched for the artifact — there is one trust root, and the record
+points at it rather than at a publisher key. `softwareInventory`,
+`vulnerabilityPolicy`, and `conformance` read `not_evaluated`, and they are
+written down for the same reason a blank line in a checklist is worse than an
+explicit "not checked": a decision that quietly omitted them would read later
+as though they had passed.
+
+The counts are counts. An admission decision never becomes a second copy of the
+manifest.
 
 ## Release states
 
 ```text
-submitted → validating → admitted
-     │           │           │
-     │           └──────▶ rejected
-     │
-     └──────────────────▶ withdrawn
-
 admitted ──▶ deprecated
     │
     ├──────▶ revoked
     └──────▶ quarantined
 ```
 
-A submitted release moves to `validating` while the admission policy runs
-against it, and comes out `admitted` or `rejected`. A publisher can withdraw a
-submitted release before that finishes. An admitted release is what workspaces
-install; `deprecated` still serves existing installations but drops out of new
-installation offers; `revoked` and `quarantined` both stop new execution
-everywhere the release runs, without touching a workspace's own configuration
-or data. Rollback eligibility is rechecked against current admission policy
-every time, not assumed from the release's original decision.
+An admitted release is what workspaces install. `deprecated` still serves
+existing installations but drops out of new installation offers; `revoked` and
+`quarantined` both stop new execution everywhere the release runs, without
+touching a workspace's own configuration or data. Each of those three
+transitions is an explicit, audited decision.
 
-## What Release A's admission policy checks
+Starting the platform is not one of them. Registry synchronisation only inserts
+releases that do not exist yet; it never rewrites the state of a row it finds,
+so a revoked release stays revoked across a restart.
 
-Admission runs one pass over a submitted release and records every check it
-ran, so the decision explains itself later:
-
-- **The release comes from the built-in registry.** Release A's registry is a
-  fixed, Radioso-owned list. Admission does not accept a release from
-  anywhere else.
-- **The signature verifies against a registry-approved key.** A release
-  signed with an unrecognized or revoked key never reaches the later checks.
-- **Every digest resolves.** The executable artifact and, when the manifest
-  declares one, the UI asset digest must match content Radioso's own registry
-  holds. A mutable tag or an unpinned reference fails this check outright.
-- **The manifest validates under the Release A policy.** Admission runs
-  `validateManifest` from `@radioso/app-contract` with the policy this release
-  is being measured against, and requires `ok: true` — see
-  [how validation issues surface](#how-validation-issues-surface-in-a-decision)
-  below.
-- **Every contribution kind is one Release A supports.** `document_source`,
-  `external_webhook_handler`, and `scheduled_task` pass; a manifest can carry
-  the reserved kinds' headers, but admission rejects a release that depends on
-  one to function.
-- **Resource bounds hold.** `resourceProfile`, storage quotas, schedule
-  intervals, and body/response size limits all sit inside the ranges the
-  policy defines; a release asking outside them fails admission rather than
-  being silently clamped.
-
-The decision this pass produces is recorded with the release, not
-recomputed later from memory. Installing, updating to, or rolling back to a
-release always rechecks current admission and revocation status at that
-moment — an old `admitted` decision does not by itself mean a release stays
-installable forever.
+Because state can change under an approval, installing and activating recheck
+it. A plan records the admission policy version and release state it was built
+against, and apply, activation, and every resumed step ask again whether the
+release is admitted and compatible right now. A release revoked between the
+review and the click is refused with `release_not_eligible`, and nothing runs.
 
 ## `admissionPolicyVersion`
 
 Every admission decision names the exact policy it was measured against. A
-release admitted under policy version 3 keeps that number even after Radioso
-ships policy version 4; the recorded version is what an operator or a security
-review reads to know which rules actually applied. Tightening the policy
-does not retroactively re-admit or reject an already-admitted release —
-revocation and quarantine are the explicit tools for acting on one.
+release admitted under `release-a.1` keeps that number even after Radioso ships
+a later policy; the recorded version is what an operator or a security review
+reads to know which rules actually applied. Tightening the policy does not
+retroactively re-admit or reject an already-admitted release — revocation and
+quarantine are the tools for acting on one.
 
-## Why Release A does not admit external publishers
-
-Admission in Release A trusts one signing chain: Radioso's own registry keys,
-Radioso's own build pipeline, and a policy Radioso operates directly. Trusting
-a second publisher's key means distributing and rotating that key safely,
-revoking it across every installation that used it, and reviewing what that
-publisher submits before it reaches a workspace — none of which the initial
-registry builds. The WordPress reference App is published through this same
-built-in registry, written and admitted exactly the way a third party's App
-would be, so the protocol the registry enforces is real and not a shortcut
-taken because the publisher happens to be Radioso.
+The recorded version is also what re-reading a stored release goes through.
+Before a stored manifest drives a plan, a configuration decision, or a
+connection rule, Radioso recomputes its canonical digest, compares it to the
+digest admission recorded, and re-runs the named policy over it. A row edited
+by hand or damaged by a migration surfaces as `release_not_admitted` rather
+than quietly earning a fresh judgement.
 
 ## How validation issues surface in a decision
 
-`validateManifest` returns every issue it finds in one pass — schema
-failures, unresolved references, and unsupported kinds or permissions — each
-with a stable `code` and a `path` into the manifest. Admission calls it with
-the Release A policy and treats any non-empty issue list as a rejection: the
-release moves to `rejected`, and the recorded decision carries the full issue
-list rather than only the first failure. A publisher fixing a rejected
-release resubmits a new version; the previous submission's issues stay on its
-own record as evidence of why it did not pass.
+`validateManifest` returns every issue it finds in one pass — schema failures,
+unresolved references, and unsupported kinds or permissions — each with a
+stable `code` and a `path` into the manifest. Admission treats any non-empty
+issue list as a rejection, and the rejection is recorded with the issue codes
+and their count rather than only the first failure. Compatibility and
+immutability produce issues in the same shape:
+`radioso_version_incompatible`, `radioso_version_undetermined`, and
+`release_version_immutable`.
 
 See [Validating a manifest](./app-manifest.md#validating-a-manifest) for the
 full table of issue codes.

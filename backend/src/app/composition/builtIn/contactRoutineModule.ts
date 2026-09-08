@@ -34,8 +34,11 @@ import {
 } from "../../../modules/slack/public.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { Database } from "../../../shared/infra/database.js";
+import type { Env } from "../../config/env.js";
 import type { ApplicationModule, MailTransportPort } from "../applicationModule.js";
 import { fetchPublicUrl } from "../../../shared/infra/http/publicUrlFetch.js";
+import { conversationPermalink } from "../../../shared/domain/dashboardLinks.js";
+import type { ConversationLinkResolver } from "../../../modules/chat/services/actions/emailWebhookSink.js";
 
 /** Reads the per-agent contact-requests flag and delivery config for the advertiser. */
 interface AgentContactFlagLookup {
@@ -75,8 +78,33 @@ const isContactIntentClick = (metadata: Record<string, unknown> | undefined): bo
     (intent as { skillName?: unknown }).skillName === CONTACT_INTENT_SKILL_NAME;
 };
 
+/**
+ * Turns a workspace id into the dashboard link an operator can actually click. The workspace's
+ * public route key is not on the notification — a routine action step has no reason to know the
+ * dashboard's URL shape — so it is resolved here, at the delivery edge.
+ */
+const buildConversationLinkResolver = (input: {
+  database: Database;
+  appBaseUrl?: string;
+}): ConversationLinkResolver => {
+  const workspaces = new WorkspaceRepository(input.database.kysely);
+  return {
+    async resolve({ workspaceId, conversationId }) {
+      const workspace = await workspaces.findById(workspaceId);
+      if (!workspace) {
+        return null;
+      }
+      return conversationPermalink(
+        { workspacePublicRouteKey: workspace.publicRouteKey, conversationId },
+        input.appBaseUrl,
+      );
+    },
+  };
+};
+
 const buildOperatorNotificationDispatcher = (input: {
   database: Database;
+  env: Env;
   logger: AppLogger;
   mailService: MailTransportPort;
   assertPublicWebsiteUrl: (url: string) => Promise<void>;
@@ -97,6 +125,7 @@ const buildOperatorNotificationDispatcher = (input: {
       recipients,
       input.logger,
       new FetchContactWebhookHttpClient(input.assertPublicWebsiteUrl, { fetchImpl: fetchPublicUrl }),
+      buildConversationLinkResolver({ database: input.database, appBaseUrl: input.env.APP_BASE_URL }),
     ),
     new SlackOperatorNotificationSink({
       installations: new SlackInstallationRepository(input.database.kysely),
@@ -160,18 +189,18 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
     context.registerActionHandler({
       type: HANDOFF_NOTIFY_ACTION_TYPE,
       requiredCapabilities: [capabilityNames.humanContact.request],
-      handler: ({ database, logger, mailService, assertPublicWebsiteUrl }) => {
+      handler: ({ database, env, logger, mailService, assertPublicWebsiteUrl }) => {
         return new HandoffNotifyActionHandler(
-          buildOperatorNotificationDispatcher({ database, logger, mailService, assertPublicWebsiteUrl }),
+          buildOperatorNotificationDispatcher({ database, env, logger, mailService, assertPublicWebsiteUrl }),
         );
       },
     });
     context.registerActionHandler({
       type: APPROVAL_REQUEST_ACTION_TYPE,
       requiredCapabilities: [capabilityNames.humanContact.request],
-      handler: ({ database, logger, mailService, assertPublicWebsiteUrl }) => {
+      handler: ({ database, env, logger, mailService, assertPublicWebsiteUrl }) => {
         return new ApprovalRequestActionHandler(
-          buildOperatorNotificationDispatcher({ database, logger, mailService, assertPublicWebsiteUrl }),
+          buildOperatorNotificationDispatcher({ database, env, logger, mailService, assertPublicWebsiteUrl }),
         );
       },
     });

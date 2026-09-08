@@ -111,6 +111,10 @@ jobs:
               packages/radioso-mcp-server/*)
                 mcp_server=true
                 ;;
+              packages/product-docs/*)
+                backend=true
+                mcp_server=true
+                ;;
               packages/crawler/*)
                 backend=true
                 crawler=true
@@ -404,7 +408,12 @@ jobs:
           path: backend
 
       - name: Install docs portal dependencies
-        run: pnpm install --frozen-lockfile --filter radioso-docs-portal...
+        run: pnpm install --frozen-lockfile --filter radioso-docs-portal... --filter @radioso/product-docs...
+
+      # The corpus Ray and MCP read is compiled from these pages, so a portal edit that skips the
+      # resync has to fail in the job a portal edit actually runs.
+      - name: Check the compiled product documentation corpus
+        run: pnpm --filter @radioso/product-docs run sync:check
 
       - name: Lint docs portal
         working-directory: docs-portal

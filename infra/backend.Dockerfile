@@ -40,6 +40,7 @@ COPY packages/document-parser/*.d.ts ./packages/document-parser/
 COPY packages/document-parser/*.js ./packages/document-parser/
 COPY packages/document-parser/parsers ./packages/document-parser/parsers
 COPY packages/mcp-source-proof/package.json ./packages/mcp-source-proof/package.json
+COPY packages/product-docs/package.json ./packages/product-docs/package.json
 COPY packages/radioso-mcp-server/package.json ./packages/radioso-mcp-server/package.json
 COPY packages/routine-definition/package.json ./packages/routine-definition/package.json
 COPY packages/routine-document/package.json ./packages/routine-document/package.json
@@ -73,6 +74,7 @@ COPY packages/usage-contract ./packages/usage-contract
 COPY packages/crawler ./packages/crawler
 COPY packages/document-parser ./packages/document-parser
 COPY packages/mcp-source-proof ./packages/mcp-source-proof
+COPY packages/product-docs ./packages/product-docs
 COPY packages/radioso-mcp-server ./packages/radioso-mcp-server
 COPY packages/routine-definition ./packages/routine-definition
 COPY packages/routine-document ./packages/routine-document
@@ -111,6 +113,7 @@ COPY packages/document-parser/*.d.ts ./packages/document-parser/
 COPY packages/document-parser/*.js ./packages/document-parser/
 COPY packages/document-parser/parsers ./packages/document-parser/parsers
 COPY packages/mcp-source-proof/package.json ./packages/mcp-source-proof/package.json
+COPY packages/product-docs/package.json ./packages/product-docs/package.json
 COPY packages/radioso-mcp-server/package.json ./packages/radioso-mcp-server/package.json
 COPY packages/routine-definition/package.json ./packages/routine-definition/package.json
 COPY packages/routine-document/package.json ./packages/routine-document/package.json
@@ -132,6 +135,7 @@ RUN if [ "$RADIOSO_EDITION" = "enterprise" ]; then \
 COPY --chown=node:node --from=build /app/backend/dist ./backend/dist
 COPY --chown=node:node --from=build /app/packages/crawler/dist ./packages/crawler/dist
 COPY --chown=node:node --from=build /app/packages/mcp-source-proof/dist ./packages/mcp-source-proof/dist
+COPY --chown=node:node --from=build /app/packages/product-docs/dist ./packages/product-docs/dist
 COPY --chown=node:node --from=build /app/packages/radioso-mcp-server/dist ./packages/radioso-mcp-server/dist
 COPY --chown=node:node --from=build /app/packages/routine-definition/dist ./packages/routine-definition/dist
 COPY --chown=node:node --from=build /app/packages/routine-document/dist ./packages/routine-document/dist

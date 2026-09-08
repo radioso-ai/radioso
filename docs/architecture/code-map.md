@@ -429,6 +429,7 @@ Public and tool surfaces:
 - `backend/src/modules/operatorCopilot/tools/escalationSources.ts` (per-source permissions, the authorized read both operator queues compose, and the wait clock)
 - `backend/src/modules/operatorCopilot/tools/triage.ts` and `triageDigest.ts` (`workspace_triage`: the six source reads and the ranking they feed)
 - `backend/src/modules/operatorCopilot/tools/needsAttention.ts` (`needs_attention`: the working list and the action handles its rows carry)
+- `backend/src/modules/operatorCopilot/tools/productDocs.ts` (`product_docs`, `product_doc_page`), over `backend/src/modules/productDocs/` and the corpus in `packages/product-docs`; the pair of `product-docs-explanation` / `workspace-knowledge-not-product-docs` eval cases pins the boundary against `document_search` in both directions
 - `backend/src/modules/operatorCopilot/tools/quality.ts` (`quality_signals`, `set_triage_state`; the resolution vocabulary arrives on the port from `backend/src/modules/quality/domain/resolution.ts`)
 - `backend/src/modules/operatorCopilot/tools/replyDraft.ts`, `contracts/replyDraft.ts`, and `services/replyDraftProbeService.ts` (`draft_reply`), over `backend/src/modules/chat/services/replyDraftRunner.ts` (the ephemeral run) and `neverList.ts` (the send, ownership, and decision boundaries it stops at)
 - `backend/src/modules/operatorCopilot/contracts/evalCases.ts`, `services/evalCaseCaptureService.ts`, `services/evalSuiteProbeService.ts`, and `services/evalCaseReplayService.ts` (eval verification boundary)
@@ -1225,6 +1226,8 @@ Primary paths:
 - `packages/radioso-mcp-server/scripts/`
 - `packages/radioso-mcp-server/testing/`
 - `packages/radioso-mcp-server/tests/`
+- `packages/radioso-mcp-server/src/tools/productDocsTools.ts` (`radioso_docs`, `radioso_doc_page`)
+- `packages/product-docs/` (the documentation corpus both surfaces read; `scripts/buildCorpus.ts` compiles `docs-portal/content` into the committed `src/generated/corpus.json` through `@radioso/docs-importer`'s MDX converter, and `pnpm --filter @radioso/product-docs run sync` refreshes it — the CI docs job and `backend`'s contract suite both fail on drift)
 - `packages/mcp-source-proof/src/index.ts`
 - `packages/mcp-source-proof/tests/`
 

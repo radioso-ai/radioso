@@ -19,7 +19,13 @@ describe("converse MCP tools", () => {
       serverName: "radioso-converse-test",
     });
 
-    expect(server.toolDefinitions.map((tool) => tool.name)).toEqual(["ask_agent"]);
+    // Radioso's own documentation joins the converse tool on this surface; the workspace's
+    // documents stay behind ask_agent.
+    expect(server.toolDefinitions.map((tool) => tool.name)).toEqual([
+      "ask_agent",
+      "radioso_docs",
+      "radioso_doc_page",
+    ]);
     expect(server.toolDefinitions.map((tool) => tool.name)).not.toEqual(expect.arrayContaining([
       "list_documents",
       "get_document",

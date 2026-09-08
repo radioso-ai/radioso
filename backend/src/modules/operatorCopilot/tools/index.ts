@@ -39,6 +39,8 @@ import { createWorkspaceTriageCopilotTools } from "./triage.js";
 import { createNeedsAttentionCopilotTools } from "./needsAttention.js";
 import type { WorkspaceTriageCopilotToolDependencies } from "./triage.js";
 import type { CopilotPendingApprovalsPort, CopilotTriageLogPort } from "./escalationSources.js";
+import { createProductDocsCopilotTools } from "./productDocs.js";
+import type { CopilotProductDocsPort, ProductDocsCopilotToolDependencies } from "./productDocs.js";
 import { createWorkspaceSettingsCopilotTools } from "./settings.js";
 import type { CopilotWorkspaceSettingsPort } from "./settings.js";
 
@@ -71,6 +73,7 @@ export type CopilotToolCatalogDependencies = AgentConfigurationCopilotToolDepend
   & WebsiteAnalysisProbeCopilotToolDependencies
   & DocumentProposalCopilotToolDependencies
   & IngestionSettingsProposalCopilotToolDependencies
+  & ProductDocsCopilotToolDependencies
   & WebsiteCrawlProposalCopilotToolDependencies;
 
 /** Composition-only barrel; each descriptor remains published from its owner module. */
@@ -94,6 +97,7 @@ export const createCopilotToolDescriptors = (
   ...createAgentSkillsCopilotTools(deps),
   ...createContextVariablesCopilotTools(deps),
   ...createWorkspaceSettingsCopilotTools(deps),
+  ...createProductDocsCopilotTools(deps),
   ...createWorkspaceTriageCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createNeedsAttentionCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createDirectiveProposalCopilotTools({ ...deps, agentLookup: deps.agentService }),
@@ -120,5 +124,6 @@ export type { CopilotEvalResultsPort } from "./eval.js";
 export type { CopilotQualitySignalsPort, CopilotQualityTriagePort } from "./quality.js";
 export type { CopilotRetrievalProbePort } from "./retrievalProbe.js";
 export type { CopilotRoutineDefinitionPort } from "./routines.js";
+export type { CopilotProductDocsPort } from "./productDocs.js";
 export type { CopilotWorkspaceSettingsPort } from "./settings.js";
 export type { CopilotPendingApproval, CopilotPendingApprovalsPort, CopilotTriageLogPort } from "./escalationSources.js";

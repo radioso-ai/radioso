@@ -114,6 +114,10 @@ export type RoutineDefinitionDraft = {
     gateRef?: string | null
     priority: number
     reentryMode?: RoutineReentryMode
+    coverageCriteria?: {
+      coverage: Array<'answered' | 'partial' | 'unanswered' | 'unclear'>
+      reasons?: Array<'sufficient_evidence' | 'insufficient_evidence' | 'conflicting_evidence' | 'ambiguous_request' | 'intentional_scope_boundary'>
+    }
   }
   slots: RoutineSlot[]
   steps: RoutineStep[]

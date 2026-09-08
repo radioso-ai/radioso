@@ -17,6 +17,7 @@ import {
   type AnswerSegment,
   type Citation,
   type ChatSuggestion,
+  type ChatResponse,
   type ChatStreamCompletion,
   type ChatUserInputMetadata,
   type ActivitySummary,
@@ -39,6 +40,8 @@ export interface ChatMessage {
   activitySummary?: ActivitySummary
   activityTrace?: ActivityTrace
   turnTrace?: TurnTraceEnvelope
+  answerCoverage?: NonNullable<ChatResponse['debug']>['answerCoverage']
+  interactionTrace?: NonNullable<ChatResponse['debug']>['interactionTrace']
   persistedAssistantMessageId?: string
   status: 'complete' | 'streaming' | 'error'
   skill?: SkillStreamPayload
@@ -234,6 +237,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 activitySummary: completion.debug?.activitySummary,
                 activityTrace: completion.debug?.activityTrace,
                 turnTrace: completion.debug?.turnTrace,
+                answerCoverage: completion.debug?.answerCoverage,
+                interactionTrace: completion.debug?.interactionTrace,
                 skill: completion.skill ?? message.skill,
                 status: 'complete',
               }

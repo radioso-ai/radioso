@@ -50,4 +50,26 @@ describe('streamChatEvents', () => {
     expect(cancelledPayload).toEqual(cancelled)
     expect(result).toMatchObject({ conversationId: 'conversation-1', answer: '' })
   })
+
+  it('retains coverage debug from the terminal SSE event in the awaited response', async () => {
+    const completion = {
+      type: 'done',
+      conversationId: 'conversation-1',
+      answer: 'A grounded answer.',
+      debug: {
+        answerCoverage: {
+          availability: 'assessed', coverage: 'partial', reason: 'insufficient_evidence',
+          contextualizedRequest: 'Can I attend?', originatingTurnId: 'turn-1', originatingRequestId: 'request-1', schemaVersion: 1,
+        },
+        interactionTrace: { state: 'evaluated', decisions: [] },
+      },
+    }
+    const response = new Response(`event: done\ndata: ${JSON.stringify(completion)}\n\n`, {
+      headers: { 'content-type': 'text/event-stream' },
+    })
+
+    const result = await streamChatEvents(response, {})
+
+    expect(result.debug).toEqual(completion.debug)
+  })
 })

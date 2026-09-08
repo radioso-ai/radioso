@@ -135,6 +135,81 @@ describe("ChatAnswerPresenter.presentWithoutSuggestions", () => {
     expect(result.answerOutcome).toBe("grounded_success");
   });
 
+  it("never presents an assessed unresolved retrieval turn as grounded success", async () => {
+    const presenter = new ChatAnswerPresenter(stubExpansionService);
+    const session = buildSession();
+    session.answerCoverage = {
+      availability: "assessed",
+      coverage: "unanswered",
+      reason: "insufficient_evidence",
+      unresolvedRequest: "Attendance permission",
+      schemaVersion: 1,
+    };
+
+    const result = await presenter.presentWithoutSuggestions(
+      session,
+      "The course runs on Saturday[[1]], but I cannot confirm attendance permission[[?]].",
+      "Can I attend for one day?",
+    );
+
+    expect(result.skillOutcome).toBe("grounded");
+    expect(result.answerOutcome).toBe("coverage_unanswered");
+  });
+
+  it("preserves green legacy presentation only when coverage was not recorded", async () => {
+    const presenter = new ChatAnswerPresenter(stubExpansionService);
+    const session = buildSession();
+    session.answerCoverage = { availability: "not_recorded" };
+
+    const result = await presenter.presentWithoutSuggestions(session, "The course runs on Saturday[[1]].", "When?");
+
+    expect(result.answerOutcome).toBe("grounded_success");
+  });
+
+  it("does not report a green result when coverage assessment failed", async () => {
+    const presenter = new ChatAnswerPresenter(stubExpansionService);
+    const session = buildSession();
+    session.answerCoverage = { availability: "failed" };
+
+    const result = await presenter.presentWithoutSuggestions(session, "The course runs on Saturday[[1]].", "When?");
+
+    expect(result.answerOutcome).toBe("coverage_unavailable");
+  });
+
+  it("keeps a partial answer distinct from a retrieval refusal", async () => {
+    const presenter = new ChatAnswerPresenter(stubExpansionService);
+    const session = buildSession();
+    session.answerCoverage = {
+      availability: "assessed",
+      coverage: "partial",
+      reason: "insufficient_evidence",
+      unresolvedRequest: "Attendance permission",
+      schemaVersion: 1,
+    };
+
+    const result = await presenter.presentWithoutSuggestions(session, "The course runs Saturday[[1]].", "Can I attend?");
+
+    expect(result.answerOutcome).toBe("coverage_partial");
+    expect(result.answerOutcome).not.toBe("no_context_refusal");
+  });
+
+  it("keeps a clarification-needed request distinct from a retrieval refusal", async () => {
+    const presenter = new ChatAnswerPresenter(stubExpansionService);
+    const session = buildSession();
+    session.answerCoverage = {
+      availability: "assessed",
+      coverage: "unclear",
+      reason: "ambiguous_request",
+      unresolvedRequest: "Which course?",
+      schemaVersion: 1,
+    };
+
+    const result = await presenter.presentWithoutSuggestions(session, "Which course do you mean?[[?]]", "Can I attend?");
+
+    expect(result.answerOutcome).toBe("coverage_unclear");
+    expect(result.answerOutcome).not.toBe("no_context_refusal");
+  });
+
   it("reports a degraded outcome from the computed grounding verdict", async () => {
     const presenter = new ChatAnswerPresenter(stubExpansionService);
 

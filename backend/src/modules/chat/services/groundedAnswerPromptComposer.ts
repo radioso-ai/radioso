@@ -7,8 +7,9 @@ import {
 import { renderSteeringBlock } from "../../../shared/infra/prompts/steeringPromptRenderer.js";
 import { GENERATION_SURFACE } from "../../../shared/domain/generationSurface.js";
 import { steeringForSurface } from "../../../shared/domain/steeringRule.js";
+import type { AnswerCoverageAssessment } from "../../answerCoverage/public.js";
 
-export interface GroundedAnswerSystemPromptInput {
+interface GroundedAnswerSystemPromptInput {
   baseSystemPrompt: string;
   suggestedQuestionsEnabled: boolean;
   suggestedQuestionsCount: number;
@@ -20,6 +21,7 @@ export interface GroundedAnswerSystemPromptInput {
   steering?: SteeringRule[];
   /** Labels/descriptions for retrieval-sense alternatives to offer after the grounded answer. */
   retrievalSenseOfferAlternatives?: Array<{ label: string; description?: string }>;
+  answerCoverage?: AnswerCoverageAssessment;
 }
 
 /**
@@ -27,7 +29,7 @@ export interface GroundedAnswerSystemPromptInput {
  * owns static/operator instruction assembly; its caller assigns the dynamic
  * conversation data to the gateway's user prompt.
  */
-export interface GroundedAnswerPromptResult {
+interface GroundedAnswerPromptResult {
   systemPrompt: string;
   /**
    * Conversation-derived material for the user/data role. It must never be
@@ -81,11 +83,14 @@ export const composeGroundedAnswerSystemPrompt = (
     : withSteering;
 
   const envelopeBlock = renderPromptTemplate("chat/answer-envelope.md", {});
-  const withEnvelope = joinBlocks(grounded, envelopeBlock);
+  const coverageGuidance = input.answerCoverage
+    ? renderPromptTemplate("chat/answer-coverage-response-guidance.md", {})
+    : "";
+  const withEnvelope = joinBlocks(coverageGuidance ? joinBlocks(grounded, coverageGuidance) : grounded, envelopeBlock);
   if (!suggestionsExpected) {
     return {
       systemPrompt: withEnvelope,
-      conversationContextPrompt: input.conversationSummary?.trim() || alternatives
+      conversationContextPrompt: input.conversationSummary?.trim() || alternatives || input.answerCoverage
         ? renderConversationContextPrompt(input)
         : "",
       suggestionsExpected: false,
@@ -110,10 +115,12 @@ export const composeGroundedAnswerSystemPrompt = (
 };
 
 const renderConversationContextPrompt = (input: GroundedAnswerSystemPromptInput): string =>
-  renderPromptTemplate("chat/grounded-answer-conversation-context.md", {
+  [renderPromptTemplate("chat/grounded-answer-conversation-context.md", {
     conversation_summary: input.conversationSummary?.trim() || "None",
     recent_turns_json: formatConversationIntentSnapshot(input.conversationIntentSnapshot),
     active_subject: input.conversationIntentSnapshot.activeSubject ?? "None",
     active_goal: input.conversationIntentSnapshot.activeGoal ?? "None",
     retrieval_sense_offer_alternatives: formatOfferAlternatives(input.retrievalSenseOfferAlternatives) || "None",
-  });
+  }), input.answerCoverage ? renderPromptTemplate("chat/answer-coverage-composition-context.md", {
+    answer_coverage: JSON.stringify(input.answerCoverage),
+  }) : ""].filter(Boolean).join("\n\n");

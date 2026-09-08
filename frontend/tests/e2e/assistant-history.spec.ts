@@ -163,6 +163,40 @@ test("shared activity navigation shows assistant route diagnostics", async ({ pa
           stream: false,
           citationCount: 1,
           answerOutcome: "grounded_success",
+          answerCoverage: {
+            availability: "assessed",
+            coverage: "unanswered",
+            reason: "insufficient_evidence",
+            contextualizedRequest: "What courses are coming up next month, and can I attend for one day?",
+            unresolvedRequest: "The attendance rule is not recorded.",
+            originatingTurnId: assistantMessageId,
+            originatingRequestId: "user-message-1",
+            schemaVersion: 1,
+            assessedAt: nowIso,
+          },
+          interactionTrace: {
+            state: "evaluated",
+            consumedAssessment: { coverage: "unanswered", reason: "insufficient_evidence" },
+            decisions: [
+              {
+                assessmentRequestId: "user-message-1",
+                target: "directive",
+                targetId: "directive-explain-gap",
+                decision: "applied",
+                reasonCode: "matched",
+                targetMessageId: "user-message-1",
+              },
+              {
+                assessmentRequestId: "user-message-1",
+                target: "routine",
+                targetId: "routine-attendance-support",
+                decision: "suppressed",
+                reasonCode: "already_offered",
+                routineExecutionId: "routine-exec-1",
+                targetMessageId: "user-message-1",
+              },
+            ],
+          },
           activitySummary: {
             execution: {
               surface: "assistant",
@@ -224,6 +258,10 @@ test("shared activity navigation shows assistant route diagnostics", async ({ pa
   await page.getByRole("button", { name: "Open in debug view" }).click();
   await page.getByRole("button", { name: "Debug" }).click();
   await expect(page.getByText("Outcome summary").first()).toBeVisible();
+  await expect(page.getByTestId("answer-coverage-diagnostics")).toContainText("Unanswered");
+  await expect(page.getByTestId("answer-coverage-diagnostics")).toContainText("The attendance rule is not recorded.");
+  await expect(page.getByTestId("answer-coverage-diagnostics")).toContainText("suppressed");
+  await expect(page.getByTestId("answer-coverage-diagnostics")).toContainText("routine-exec-1");
 
   // The full turn flow opens full-screen from the header Flow button:
   // inputs → engine → skill path → outcome.
@@ -245,6 +283,92 @@ test("shared activity navigation shows assistant route diagnostics", async ({ pa
 
   await page.getByRole("button", { name: "Close turn flow" }).click();
   await expect(page.getByText("Turn flow", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Open linked turn" }).first().click();
+  await expect(page.getByText("What courses are coming up next month").first()).toBeVisible();
+});
+
+test("turn debug distinguishes a failed assessment and an evaluated coverage signal with no matching rule", async ({ page }) => {
+  const conversationId = "coverage-failed-conversation";
+  const assistantMessageId = "coverage-failed-assistant";
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyList: {
+      conversations: [{
+        id: conversationId, sourceChannel: null, sourceOrigin: null, anonymousSessionId: null,
+        createdAt: nowIso, updatedAt: nowIso, messageCount: 2, userMessageCount: 1,
+        assistantMessageCount: 1, preview: "Can I attend for one day?",
+      }], total: 1, nextCursor: null, hasMore: false,
+    },
+    conversationDetail: {
+      conversationId, workspaceId, sourceChannel: null, sourceOrigin: null, createdAt: nowIso,
+      updatedAt: nowIso, messageCount: 2, userMessageCount: 1, assistantMessageCount: 1,
+      messagesTotal: 2, messageWindowOffset: 0, messageWindowLimit: 50, hasOlderMessages: false,
+      nextCursor: null,
+      messages: [
+        { id: "coverage-failed-user", role: "user", content: "Can I attend for one day?", createdAt: nowIso },
+        {
+          id: assistantMessageId, role: "assistant", content: "I could not verify the attendance rule.", createdAt: nowIso,
+          debug: {
+            eventStatus: "success", recordedAt: nowIso, stream: false, citationCount: 1,
+            answerOutcome: "grounded_success",
+            answerCoverage: {
+              availability: "failed", originatingTurnId: assistantMessageId,
+              originatingRequestId: "coverage-failed-user",
+            },
+            interactionTrace: { state: "evaluated", decisions: [] },
+          },
+        },
+      ],
+    },
+  });
+
+  await page.goto(`/w/${workspaceKey}/activity?tab=all`);
+  await page.getByRole("button", { name: /Can I attend for one day/ }).click();
+  await page.getByRole("button", { name: "Open in debug view" }).click();
+  await page.getByRole("button", { name: "Debug" }).click();
+
+  await expect(page.getByText("Answer coverage was not assessed").first()).toBeVisible();
+  const coverage = page.getByTestId("answer-coverage-diagnostics");
+  await expect(coverage).toContainText("Not assessed");
+  await expect(coverage).toContainText("Assessment failed");
+  await expect(coverage).toContainText("Evaluated · no match");
+});
+
+test("turn debug labels an absent assessment as legacy evidence", async ({ page }) => {
+  const conversationId = "coverage-legacy-conversation";
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyList: {
+      conversations: [{
+        id: conversationId, sourceChannel: null, sourceOrigin: null, anonymousSessionId: null,
+        createdAt: nowIso, updatedAt: nowIso, messageCount: 2, userMessageCount: 1,
+        assistantMessageCount: 1, preview: "What are the course dates?",
+      }], total: 1, nextCursor: null, hasMore: false,
+    },
+    conversationDetail: {
+      conversationId, workspaceId, sourceChannel: null, sourceOrigin: null, createdAt: nowIso,
+      updatedAt: nowIso, messageCount: 2, userMessageCount: 1, assistantMessageCount: 1,
+      messagesTotal: 2, messageWindowOffset: 0, messageWindowLimit: 50, hasOlderMessages: false,
+      nextCursor: null,
+      messages: [
+        { id: "coverage-legacy-user", role: "user", content: "What are the course dates?", createdAt: nowIso },
+        {
+          id: "coverage-legacy-assistant", role: "assistant", content: "The next course begins in May.", createdAt: nowIso,
+          debug: { eventStatus: "success", recordedAt: nowIso, stream: false, citationCount: 1, answerOutcome: "grounded_success" },
+        },
+      ],
+    },
+  });
+
+  await page.goto(`/w/${workspaceKey}/activity?tab=all`);
+  await page.getByRole("button", { name: /What are the course dates/ }).click();
+  await page.getByRole("button", { name: "Open in debug view" }).click();
+  await page.getByRole("button", { name: "Debug" }).click();
+
+  await expect(page.getByText("Answer coverage was not assessed").first()).toBeVisible();
+  const coverage = page.getByTestId("answer-coverage-diagnostics");
+  await expect(coverage).toContainText("Not recorded");
+  await expect(coverage).toContainText("Legacy evidence");
 });
 
 test("the All lens row shows the visitor label and location as plain text; the reading pane header carries the real, tracking-stripped link", async ({ page }) => {

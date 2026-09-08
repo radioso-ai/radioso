@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { sendChatSse } from "../../src/app/http/presenters/chatPresenter.js";
+import { presentChatPayload, sendChatSse } from "../../src/app/http/presenters/chatPresenter.js";
 import type { ChatStreamEvent } from "../../src/modules/chat/services/chatService.js";
 
 const createMockResponse = () => {
@@ -38,6 +38,27 @@ const createMockResponse = () => {
 };
 
 describe("chat presenter", () => {
+  it("keeps coverage diagnostics on a non-streaming operator debug response", () => {
+    const response = presentChatPayload({
+      conversationId: "conversation-1",
+      assistantMessageId: "assistant-message-1",
+      route: { type: "retrieval", reason: "evidence_required" },
+      answer: "I cannot confirm that.",
+      activitySummary: { status: "completed", outcome: "no_context_refusal", retrievalSkipped: false },
+      activityTrace: { traceId: "trace-1", startedAt: new Date().toISOString(), stages: [], links: [] },
+      answerCoverage: {
+        availability: "failed",
+        contextualizedRequest: "Can I attend for one day?",
+        originatingTurnId: "message-1",
+        originatingRequestId: "message-1",
+      },
+      interactionTrace: { state: "not_evaluated", decisions: [] },
+    }, { includeDebug: true });
+
+    expect(response.debug?.answerCoverage?.availability).toBe("failed");
+    expect(response.debug?.interactionTrace).toEqual({ state: "not_evaluated", decisions: [] });
+  });
+
   it("writes an exact machine-readable status frame without display copy", async () => {
     const { response, writes } = createMockResponse();
     const status: ChatStreamEvent = { type: "status", stage: "searching" };
@@ -250,6 +271,57 @@ describe("chat presenter", () => {
     expect(publicDone).not.toContain("turnTrace");
     expect(publicDone).not.toContain("openTelemetry");
     expect(publicDone).not.toContain("\"debug\"");
+  });
+
+  it("surfaces the same coverage assessment and reaction trace on streamed debug completion", async () => {
+    const doneEvent: ChatStreamEvent = {
+      type: "done",
+      conversationId: "conversation-1",
+      assistantMessageId: "assistant-message-1",
+      route: { type: "retrieval", reason: "evidence_required" },
+      answer: "I cannot confirm one-day attendance.",
+      citations: [],
+      activitySummary: { status: "completed", outcome: "no_context_refusal", retrievalSkipped: false },
+      activityTrace: { traceId: "trace-1", startedAt: new Date().toISOString(), stages: [], links: [] },
+      answerCoverage: {
+        availability: "assessed",
+        coverage: "unanswered",
+        reason: "insufficient_evidence",
+        unresolvedRequest: "One-day attendance permission",
+        contextualizedRequest: "Can I attend for one day?",
+        originatingTurnId: "message-1",
+        originatingRequestId: "message-1",
+        schemaVersion: 1,
+      },
+      interactionTrace: {
+        state: "evaluated",
+        consumedAssessment: { coverage: "unanswered", reason: "insufficient_evidence" },
+        decisions: [{
+          assessmentRequestId: "message-1",
+          target: "directive",
+          targetId: "directive-1",
+          decision: "applied",
+          reasonCode: "coverage_criteria_matched",
+          targetMessageId: "message-1",
+        }],
+      },
+    };
+
+    const withDebug = createMockResponse();
+    await sendChatSse(withDebug.response as never, (async function* () {
+      yield doneEvent;
+    })(), { includeDebug: true });
+    const debugDone = withDebug.writes.find((entry) => entry.includes("one-day attendance"));
+    expect(debugDone).toContain('"answerCoverage":');
+    expect(debugDone).toContain('"interactionTrace":');
+    expect(debugDone).toContain('"reason":"insufficient_evidence"');
+
+    const noDebug = createMockResponse();
+    await sendChatSse(noDebug.response as never, (async function* () {
+      yield doneEvent;
+    })());
+    expect(noDebug.writes.join("")).not.toContain("answerCoverage");
+    expect(noDebug.writes.join("")).not.toContain("interactionTrace");
   });
 
   it("includes skill display metadata in streamed skill events", async () => {

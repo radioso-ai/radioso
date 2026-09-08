@@ -52,6 +52,7 @@ const completedReport: AudiencePulseHydratedReport = {
         { weekStart: "2026-04-22T00:00:00.000Z", count: 3 },
       ],
       grounding: { grounded: 2, degraded: 4, noSupport: 3, unknown: 3, contentGapEligible: 6 },
+      coverage: { answered: 2, partial: 4, unanswered: 3, unclear: 1, unassessed: 2, legacy: 2, reasons: { insufficient_evidence: 3 } },
       evidence: [
         {
           reference: "ev-1",
@@ -59,6 +60,7 @@ const completedReport: AudiencePulseHydratedReport = {
           messageId: evidenceMessageOne,
           question: "How long until I get my refund after returning?",
           occurrenceCount: 1,
+          answerCoverage: { availability: "assessed", coverage: "unanswered", reason: "insufficient_evidence" },
         },
         {
           reference: "ev-2",
@@ -205,6 +207,10 @@ test.describe("Audience Pulse dashboard", () => {
     const topicsSection = page.locator('section[aria-labelledby="audience-pulse-topics"]');
     await expect(topicsSection.getByText("Refund timing", { exact: true })).toBeVisible();
     await expect(page.getByText("Explain refund timelines end-to-end")).toBeVisible();
+    await topicsSection.getByRole("button", { name: /Refund timing/ }).click();
+    await expect(page.getByLabel("Answer coverage summary")).toContainText("Unanswered");
+    await expect(page.getByLabel("Answer coverage summary")).toContainText("Not assessed");
+    await expect(page.getByText("Legacy evidence 2")).toBeVisible();
     // Census coverage line states plainly that every question in the window was read.
     await expect(page.getByText("Read all 240 questions.")).toBeVisible();
     // The sampling caveat is specific to the legacy sampled path and must not appear for a census report.

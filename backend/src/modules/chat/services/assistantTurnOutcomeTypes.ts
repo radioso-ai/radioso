@@ -2,6 +2,10 @@ export const ASSISTANT_TURN_OUTCOME = {
   GROUNDED_SUCCESS: "grounded_success",
   NO_CONTEXT_REFUSAL: "no_context_refusal",
   NON_RETRIEVAL_RESPONSE: "non_retrieval_response",
+  COVERAGE_PARTIAL: "coverage_partial",
+  COVERAGE_UNANSWERED: "coverage_unanswered",
+  COVERAGE_UNCLEAR: "coverage_unclear",
+  COVERAGE_UNAVAILABLE: "coverage_unavailable",
 } as const;
 
 export type AssistantTurnOutcome = (typeof ASSISTANT_TURN_OUTCOME)[keyof typeof ASSISTANT_TURN_OUTCOME];

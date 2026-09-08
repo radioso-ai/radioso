@@ -1195,9 +1195,14 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
       dependsOn: input.dependsOn ?? existing.dependsOn,
       excludes: input.excludes ?? existing.excludes,
       routes: input.routes ?? existing.routes,
+      surfaces: input.surfaces ?? existing.surfaces,
       tags: input.tags ?? existing.tags,
       description: input.description ?? existing.description,
       binding: Object.prototype.hasOwnProperty.call(input, "binding") ? input.binding : existing.binding,
+      lifecycle: Object.prototype.hasOwnProperty.call(input, "lifecycle") ? input.lifecycle : existing.lifecycle,
+      coverageCriteria: Object.prototype.hasOwnProperty.call(input, "coverageCriteria")
+        ? input.coverageCriteria
+        : existing.coverageCriteria,
       enabled: Object.prototype.hasOwnProperty.call(input, "enabled") ? input.enabled : existing.enabled,
       metadata: input.metadata ?? existing.metadata,
     });

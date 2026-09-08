@@ -1,7 +1,7 @@
 ---
 title: "Agents and skills"
 description: "Configure workspace agents, directives, named agent skills, and inspect the read-only skills catalog exposed by the API."
-last_updated: 2026-09-04
+last_updated: 2026-09-08
 ---
 
 # Agents and skills
@@ -63,6 +63,12 @@ can claim the terminal turn and produce a user-facing chat reply. Retrieval
 skills (`kind: retrieve`) are staged into the agentic retrieval loop as
 directive-scoped lookup tools. Action-only skill kinds are rejected. Invalid
 bindings return `400` and name the offending skill.
+
+To change an existing directive, use `PATCH /api/v1/agents/{agentId}/directives/{directiveId}`.
+Leave `coverageCriteria` out to keep its saved values, or send
+`"coverageCriteria": null` to remove the answer-coverage condition. A non-null
+criterion needs at least one coverage value; its optional `reasons` list is
+omitted when it has no restrictions.
 
 In the dashboard, the binding is a chip in the directive's **Instruction** field:
 type `#` to pick from the skills this agent can bind, and the chip you insert is
@@ -312,6 +318,10 @@ The bundle looks like this, trimmed:
 ```
 
 `routines` carries only [routines](/concepts) with `published` status — a draft is unfinished work the source agent isn't running, and superseded or archived versions are history, so neither exports. A routine names its own skills and context variables (`toolRef`, slot bindings) rather than a database id, so nothing in it needs remapping on import. `contextVariables` re-keys each enablement to `variableName` and `resolverSkillName` in place of the ids the source database used. `agent.contactRequestDelivery` is always redacted: its recipients and webhook URL stay in the source workspace, because an imported agent that kept them would quietly route contact requests to the original workspace's people and endpoint. `agentSkills` carries only the config fields the skill's capability marked portable — a webhook URL or delivery recipient stays home — and replaces `target.id`, the workspace connection the skill points at, with a `{ "__ref": "agentSkillTarget" }` placeholder, because that connection is where the credential lives. Each skill also carries `omittedConfigKeys`: the names — never the values — of the settings that stayed behind, so import can tell you exactly what to re-enter.
+
+Authored directives travel with the agent configuration, including any
+`coverageCriteria`. Import preserves those values, so a directive conditioned on
+an unanswered answer keeps the same condition in its destination workspace.
 
 Move the file wherever you're importing into — a different workspace, a different Radioso deployment — and post it:
 

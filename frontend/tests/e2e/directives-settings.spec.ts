@@ -32,6 +32,73 @@ const openDirectives = async (page: Page) => {
 // keystroke at a time, which runs past the default 30s budget on a loaded machine.
 test.describe.configure({ timeout: 60_000 });
 
+test("directive coverage criteria round-trip through the authored API payload", async ({ page }) => {
+  const directiveUpdates: Array<{ method: "POST" | "PATCH" | "DELETE"; directiveId?: string; body?: unknown }> = [];
+  const directiveId = "44444444-4444-4444-8444-000000000114";
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    directiveUpdates,
+    directives: [{
+      id: directiveId,
+      name: "explain-attendance-gap",
+      action: "Explain which attendance detail is unavailable.",
+      coverageCriteria: {
+        coverage: ["unanswered"],
+        reasons: ["insufficient_evidence"],
+      },
+    }],
+  });
+  await openDirectives(page);
+
+  await page.getByRole("button", { name: "Edit explain-attendance-gap" }).click();
+  await expect(page.getByRole("checkbox", { name: "unanswered" })).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByRole("checkbox", { name: "insufficient evidence" })).toHaveAttribute("aria-checked", "true");
+  await page.getByRole("checkbox", { name: "unanswered" }).click();
+  await page.getByRole("checkbox", { name: "partial" }).click();
+  await page.getByRole("checkbox", { name: "insufficient evidence" }).click();
+  await page.getByRole("checkbox", { name: "conflicting evidence" }).click();
+  await page.getByRole("button", { name: "Save directive" }).click();
+
+  await expect.poll(() => directiveUpdates.length).toBe(1);
+  expect(directiveUpdates[0]).toMatchObject({
+    method: "PATCH",
+    directiveId,
+    body: {
+      coverageCriteria: {
+        coverage: ["partial"],
+        reasons: ["conflicting_evidence"],
+      },
+    },
+  });
+
+  await page.reload();
+  await page.getByRole("button", { name: "Edit explain-attendance-gap" }).click();
+  await expect(page.getByRole("checkbox", { name: "partial" })).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByRole("checkbox", { name: "conflicting evidence" })).toHaveAttribute("aria-checked", "true");
+  await page.getByRole("checkbox", { name: "conflicting evidence" }).click();
+  await page.getByRole("button", { name: "Save directive" }).click();
+
+  await expect.poll(() => directiveUpdates.length).toBe(2);
+  expect(directiveUpdates[1]).toMatchObject({
+    method: "PATCH",
+    directiveId,
+    body: { coverageCriteria: { coverage: ["partial"] } },
+  });
+
+  await page.reload();
+  await page.getByRole("button", { name: "Edit explain-attendance-gap" }).click();
+  await page.getByRole("checkbox", { name: "partial" }).click();
+  await page.getByRole("button", { name: "Save directive" }).click();
+
+  await expect.poll(() => directiveUpdates.length).toBe(3);
+  expect(directiveUpdates[2]).toMatchObject({
+    method: "PATCH",
+    directiveId,
+    body: { coverageCriteria: null },
+  });
+});
+
 // Instruction is a chip-capable editor (typing `#` inserts a skill chip), so it is driven by
 // keystrokes rather than a value assignment.
 const fillInstruction = async (page: Page, text: string) => {

@@ -16,6 +16,12 @@ import {
   routineTurnSignalFromSpine,
   turnTraceRollup,
 } from '@/lib/turn-trace'
+import {
+  answerCoverageOutcomePresentation,
+  normalizeAnswerCoverage,
+  normalizeAnswerCoverageInteractionTrace,
+} from '@/lib/answer-coverage'
+import { AnswerCoverageSection } from './answer-coverage-section'
 
 type ChatConversationTurnDebug = NonNullable<ChatConversationTurn['debug']>
 
@@ -36,6 +42,8 @@ export interface TurnDiagnosticsInput {
   /** Turn spine envelope; drives routine/clarification signals and the flow graph. */
   turnTrace?: TurnTraceEnvelope
   visitorContext?: unknown
+  answerCoverage?: unknown
+  interactionTrace?: unknown
 }
 
 const toneStyles: Record<DiagnosticPresentation['tone'], string> = {
@@ -104,11 +112,13 @@ export function TurnDiagnosticsPanel({
   routineNamesById,
   selectedStageId,
   onSelectLeafStage,
+  onOpenTargetMessage,
 }: {
   diagnostics: TurnDiagnosticsInput | null
   routineNamesById?: ReadonlyMap<string, string>
   selectedStageId?: string
   onSelectLeafStage: (stageId: string) => void
+  onOpenTargetMessage?: (messageId: string) => void
 }) {
   if (!diagnostics) {
     return (
@@ -135,6 +145,21 @@ export function TurnDiagnosticsPanel({
   })
   const runParameters = presentRunParameters(resolvedActivityTrace)
   const rollup = turnTraceRollup(activeEnvelope)
+  const normalizedAnswerCoverage = normalizeAnswerCoverage(diagnostics.answerCoverage)
+  const answerCoverage = normalizedAnswerCoverage ?? { availability: 'not_recorded' as const, originatingTurnId: '', originatingRequestId: '' }
+  const interactionTrace = normalizeAnswerCoverageInteractionTrace(diagnostics.interactionTrace)
+  const displayedOutcome = answerCoverage.availability !== 'assessed'
+    ? {
+        ...outcomePresentation,
+        title: 'Answer coverage was not assessed',
+        summary: normalizedAnswerCoverage
+          ? 'This turn has no semantic coverage verdict. Retrieval and citation diagnostics remain available below.'
+          : 'This legacy turn has no semantic coverage verdict. Its recorded grounding diagnostics remain available below.',
+        tone: 'warning' as const,
+      }
+    : answerCoverage.coverage && answerCoverage.coverage !== 'answered'
+    ? { ...outcomePresentation, ...answerCoverageOutcomePresentation(answerCoverage.coverage) }
+    : outcomePresentation
 
   return (
     <div className="space-y-4">
@@ -146,7 +171,9 @@ export function TurnDiagnosticsPanel({
         </div>
       ) : null}
 
-      <DiagnosticPresentationSection label="Outcome summary" presentation={outcomePresentation} />
+      <DiagnosticPresentationSection label="Outcome summary" presentation={displayedOutcome} />
+
+      <AnswerCoverageSection assessment={answerCoverage} interaction={interactionTrace} isLegacy={!normalizedAnswerCoverage} onOpenTargetMessage={onOpenTargetMessage} />
 
       {rollup ? (
         <section className="rounded-lg border border-border/70 bg-background/60 p-3">

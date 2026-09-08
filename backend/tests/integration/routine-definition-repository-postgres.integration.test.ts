@@ -111,6 +111,7 @@ const createRoutineSchema = async (client: PoolClient, schema: string): Promise<
       activation_gate_ref TEXT NULL,
       activation_priority INTEGER NOT NULL DEFAULT 0,
       activation_reentry_mode TEXT NOT NULL DEFAULT 'once_per_conversation',
+      activation_coverage_criteria JSONB NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE(agent_id, name, version),
@@ -581,6 +582,7 @@ describeIfDatabase("RoutineDefinitionRepository Postgres integration", () => {
           activation_trigger_description TEXT NOT NULL,
           activation_gate_ref TEXT NULL,
           activation_priority INTEGER NOT NULL DEFAULT 0,
+          activation_coverage_criteria JSONB NULL,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           UNIQUE(agent_id, name, version)
@@ -668,6 +670,7 @@ describeIfDatabase("RoutineDefinitionRepository Postgres integration", () => {
           agent_id UUID NOT NULL,
           version INTEGER NOT NULL,
           name TEXT NOT NULL,
+          activation_coverage_criteria JSONB NULL,
           UNIQUE(agent_id, name, version)
         )
       `);

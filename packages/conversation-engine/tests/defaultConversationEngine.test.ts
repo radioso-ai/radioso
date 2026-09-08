@@ -88,6 +88,167 @@ const createInput = (overrides: Partial<ProcessTurnInput> = {}): ProcessTurnInpu
 };
 
 describe("DefaultConversationEngine", () => {
+  it("assesses admitted evidence before coverage directives influence composition", async () => {
+    const order: string[] = [];
+    const record = vi.fn(async () => { order.push("record-reaction"); });
+    const input = createInput({
+      directives: [
+        { name: "legacy", condition: { kind: "always" }, action: "Use the regular policy." },
+        {
+          name: "evidence-gap",
+          condition: { kind: "always" },
+          action: "Explain the evidence limit.",
+          coverageCriteria: { coverage: ["unanswered"], reasons: ["insufficient_evidence"] },
+        },
+      ],
+      turnInterpreter: {
+        interpret: vi.fn(async () => ({ route: "retrieval" as const })),
+      },
+      retrievalWork: {
+        run: vi.fn(async () => {
+          order.push("retrieval");
+          return { stagedContext: [{ kind: "retrieval", data: { evidence: "admitted" } }] };
+        }),
+      },
+      coverageAssessor: {
+        assess: vi.fn(async ({ turn }) => {
+          order.push(`assessment:${turn.stagedContext.length}`);
+          return {
+            availability: "assessed" as const,
+            coverage: "unanswered" as const,
+            reason: "insufficient_evidence" as const,
+            unresolvedRequest: "Delivery date",
+            schemaVersion: 1,
+          };
+        }),
+      },
+      coverageReactionRecorder: { record },
+      directiveMatcher: {
+        match: vi.fn(async ({ directives }) => {
+          order.push(`directives:${directives.map((directive) => directive.name).join(",")}`);
+          return directives.map((directive) => ({
+            directive,
+            selectionMode: "deterministic" as const,
+            selectionReason: "test",
+          }));
+        }),
+      },
+      composer: {
+        compose: vi.fn(async ({ turn, outcomes }) => {
+          order.push(`compose:${turn.steering.map((rule) => rule.action).join("|")}`);
+          return { answer: outcomes[0]?.outcome.answer ?? "" };
+        }),
+      },
+    });
+
+    await new DefaultConversationEngine().processTurn(input);
+
+    expect(order).toEqual([
+      "directives:legacy",
+      "retrieval",
+      "assessment:1",
+      "directives:evidence-gap",
+      "record-reaction",
+      "compose:Use the regular policy.|Explain the evidence limit.|Mention shipment timing.",
+    ]);
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({
+      evaluationState: "evaluated",
+      reactions: [expect.objectContaining({ decision: "applied", reasonCode: "coverage_criteria_applied" })],
+    }));
+  });
+
+  it("runs common precedence once across legacy and coverage directive matches", async () => {
+    const resolver = vi.fn((rules: import("@radioso/conversation-contract").SteeringRule[]) => [rules[0]]);
+    const record = vi.fn(async () => undefined);
+    const input = createInput({
+      directives: [
+        { name: "legacy", condition: { kind: "always" }, action: "Legacy action", priority: 1 },
+        {
+          name: "coverage", condition: { kind: "always" }, action: "Coverage action", priority: 100,
+          coverageCriteria: { coverage: ["unanswered"] },
+        },
+      ],
+      coverageAssessor: {
+        assess: vi.fn(async () => ({
+          availability: "assessed" as const,
+          coverage: "unanswered" as const,
+          reason: "insufficient_evidence" as const,
+          unresolvedRequest: "The requested policy",
+          schemaVersion: 1,
+        })),
+      },
+      directiveMatcher: {
+        match: vi.fn(async ({ directives }) => directives.map((directive) => ({
+          directive, selectionMode: "deterministic" as const, selectionReason: "test",
+        }))),
+      },
+      steeringResolver: { resolve: resolver },
+      coverageReactionRecorder: { record },
+    });
+
+    const result = await new DefaultConversationEngine().processTurn(input);
+
+    expect(resolver).toHaveBeenLastCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ action: "Legacy action" }),
+        expect.objectContaining({ action: "Coverage action" }),
+      ]),
+      expect.anything(),
+    );
+    expect(result.trace.stages.find((stage) => stage.kind === "compose")?.outputs?.steeringCount).toBeUndefined();
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({
+      reactions: [expect.objectContaining({ decision: "suppressed", reasonCode: "coverage_steering_conflict" })],
+    }));
+  });
+
+  it("keeps the safe answer path when a host assessor throws", async () => {
+    const input = createInput({
+      directives: [{
+        name: "coverage", condition: { kind: "always" }, action: "Never applies after failure",
+        coverageCriteria: { coverage: ["unanswered"] },
+      }],
+      coverageAssessor: { assess: vi.fn(async () => { throw new Error("assessment unavailable"); }) },
+      directiveMatcher: { match: vi.fn(async () => []) },
+    });
+
+    await expect(new DefaultConversationEngine().processTurn(input)).resolves.toMatchObject({
+      response: { answer: "Your order ships tomorrow." },
+    });
+  });
+
+  it("finishes post-evidence assessment before emitting the first stream delta", async () => {
+    const order: string[] = [];
+    const base = createInput({
+      coverageAssessor: { assess: vi.fn(async () => {
+        order.push("assess");
+        return {
+          availability: "assessed" as const,
+          coverage: "answered" as const,
+          reason: "sufficient_evidence" as const,
+          schemaVersion: 1,
+        };
+      }) },
+      directiveMatcher: { match: vi.fn(async () => []) },
+    });
+    const input: ProcessTurnStreamInput = {
+      ...base,
+      composer: {
+        async compose() { throw new Error("stream expected"); },
+        async *stream() {
+          order.push("compose");
+          yield { type: "delta", text: "First" };
+          yield { type: "final", response: { answer: "First" } };
+        },
+      },
+    };
+
+    for await (const event of new DefaultConversationEngine().processTurnStream(input)) {
+      if (event.type === "delta") order.push("delta");
+    }
+
+    expect(order).toEqual(["assess", "compose", "delta"]);
+  });
+
   it("resolves every declared selection from one immutable snapshot before preserving staged dispatch sequencing", async () => {
     const skills = [
       { name: "first", inputSchema: { fields: [{ name: "id", type: "string" as const, required: true }] } },
@@ -788,6 +949,244 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
       clear: vi.fn(async () => {}),
     },
     routineRunner: runner,
+  });
+
+  it("activates an opted-in routine only after an assessed coverage signal", async () => {
+    const input = withRoutine({
+      resume: vi.fn(async () => ({ response: { answer: "I can connect you with support." }, nextState: activeState })),
+    }, null);
+    input.coverageAssessor = {
+      assess: vi.fn(async () => ({
+        availability: "assessed",
+        coverage: "unanswered",
+        reason: "insufficient_evidence",
+        unresolvedRequest: "One-day attendance permission",
+        schemaVersion: 1,
+      })),
+    };
+    input.coverageRoutineActivator = {
+      evaluateCandidates: vi.fn(() => [{ routineId: "support", decision: "candidate", reasonCode: "coverage_criteria_candidate" }]),
+      activate: vi.fn(async () => ({ kind: "activate", routineId: "support" })),
+    };
+
+    const result = await new DefaultConversationEngine().processTurn(input);
+
+    expect(input.coverageRoutineActivator.activate).toHaveBeenCalledOnce();
+    expect(input.routineRunner?.resume).toHaveBeenCalledWith(expect.objectContaining({ activationTurn: true }));
+    expect(input.selector.select).not.toHaveBeenCalled();
+    expect(result.response.answer).toBe("I can connect you with support.");
+  });
+
+  it("keeps post-evidence coverage and reaction stages when a routine short-circuits composition", async () => {
+    const input = withRoutine({
+      resume: vi.fn(async () => ({ response: { answer: "I can connect you with support." }, nextState: activeState })),
+    }, null);
+    input.coverageAssessor = {
+      assess: vi.fn(async () => ({
+        availability: "assessed",
+        coverage: "unanswered",
+        reason: "insufficient_evidence",
+        unresolvedRequest: "One-day attendance permission",
+        schemaVersion: 1,
+      })),
+    };
+    input.coverageRoutineActivator = {
+      evaluateCandidates: () => [{ routineId: "support", decision: "candidate", reasonCode: "coverage_criteria_candidate" }],
+      activate: vi.fn(async () => ({ kind: "activate", routineId: "support" })),
+    };
+    input.coverageReactionRecorder = { record: vi.fn(async () => { throw new Error("storage unavailable"); }) };
+
+    const result = await new DefaultConversationEngine().processTurn(input);
+    const stageIds = result.trace.stages.map((entry) => entry.id);
+
+    expect(stageIds).toContain("answer_coverage_assessment");
+    expect(stageIds).toContain("answer_coverage_reaction_recording");
+    expect(stageIds).toContain("routine:support");
+    expect(stageIds.indexOf("answer_coverage_assessment")).toBeLessThan(stageIds.indexOf("routine:support"));
+    expect(stageIds.indexOf("routine:support")).toBeLessThan(stageIds.indexOf("answer_coverage_reaction_recording"));
+    expect(stageIds.filter((id) => id === "message")).toHaveLength(1);
+    expect(stageIds.filter((id) => id === "gather")).toHaveLength(1);
+    expect(new Set(stageIds).size).toBe(stageIds.length);
+    expect(result.events.map((event) => event.id)).toEqual(expect.arrayContaining(["input_1"]));
+    expect(new Set(result.events.map((event) => event.id)).size).toBe(result.events.length);
+  });
+
+  it("keeps the same post-evidence trace stages for a streamed routine result", async () => {
+    const input = withRoutine({
+      resume: vi.fn(async () => ({ response: { answer: "I can connect you with support." }, nextState: activeState })),
+    }, null);
+    input.coverageAssessor = {
+      assess: vi.fn(async () => ({
+        availability: "assessed",
+        coverage: "unanswered",
+        reason: "insufficient_evidence",
+        schemaVersion: 1,
+      })),
+    };
+    input.coverageRoutineActivator = {
+      evaluateCandidates: () => [{ routineId: "support", decision: "candidate", reasonCode: "coverage_criteria_candidate" }],
+      activate: vi.fn(async () => ({ kind: "activate", routineId: "support" })),
+    };
+    const streamed = { ...input, composer: { stream: async function* () { yield { type: "final" as const, response: { answer: "unused" } }; } } } as ProcessTurnStreamInput;
+    const events: ProcessTurnStreamEvent[] = [];
+    for await (const event of new DefaultConversationEngine().processTurnStream(streamed)) events.push(event);
+    const result = events.at(-1);
+
+    expect(result).toMatchObject({ type: "final" });
+    if (!result || result.type !== "final") throw new Error("expected streamed final result");
+    const stageIds = result.result.trace.stages.map((entry) => entry.id);
+    expect(stageIds).toContain("answer_coverage_assessment");
+    expect(stageIds).toContain("routine:support");
+    expect(new Set(stageIds).size).toBe(stageIds.length);
+  });
+
+  it.each([false, true])("does not resume or replace an active routine that yielded before the %s coverage pass", async (stream) => {
+    const active = { ...activeState, path: ["ask_email"], variables: { email: "visitor@example.test" } };
+    const routineStore = {
+      loadActive: vi.fn(async () => active),
+      save: vi.fn(async () => {}),
+      clear: vi.fn(async () => {}),
+    };
+    const runner = {
+      resume: vi.fn(async () => ({ yielded: true, response: { answer: "" }, nextState: active })),
+    };
+    const input = createInput({
+      routineStore,
+      routineRunner: runner,
+      coverageAssessor: {
+        assess: vi.fn(async () => ({
+          availability: "assessed" as const,
+          coverage: "unanswered" as const,
+          reason: "insufficient_evidence" as const,
+          schemaVersion: 1,
+        })),
+      },
+      coverageRoutineActivator: {
+        evaluateCandidates: vi.fn(() => [{ routineId: "coverage-follow-up", decision: "candidate" as const, reasonCode: "coverage_criteria_candidate" }]),
+        activate: vi.fn(async () => ({ kind: "activate" as const, routineId: "coverage-follow-up" })),
+      },
+      composer: {
+        compose: vi.fn(async () => ({ answer: "Grounded answer." })),
+        async *stream() { yield { type: "final" as const, response: { answer: "Grounded answer." } }; },
+      },
+    });
+
+    if (stream) {
+      for await (const _event of new DefaultConversationEngine().processTurnStream(input as ProcessTurnStreamInput)) {
+        // Drain the public stream.
+      }
+    } else {
+      const result = await new DefaultConversationEngine().processTurn(input);
+      expect(result.response.answer).toBe("Grounded answer.");
+    }
+
+    expect(runner.resume).toHaveBeenCalledOnce();
+    expect(input.coverageRoutineActivator!.activate).not.toHaveBeenCalled();
+    expect(routineStore.save).not.toHaveBeenCalled();
+    expect(routineStore.clear).not.toHaveBeenCalled();
+    expect(active).toEqual({ ...activeState, path: ["ask_email"], variables: { email: "visitor@example.test" } });
+  });
+
+  it("reenters a completed coverage routine only through the fresh assessed coverage gate", async () => {
+    const completed: RoutineState = { ...activeState, status: "completed" };
+    const input = withRoutine({
+      resume: vi.fn(async () => ({ response: { answer: "Support can help." }, nextState: activeState })),
+    }, null);
+    input.routineStore = {
+      loadActive: vi.fn(async () => null),
+      loadCompleted: vi.fn(async () => [completed]),
+      save: vi.fn(async () => {}),
+      clear: vi.fn(async () => {}),
+    };
+    const preEvidenceDecide = vi.fn(async () => ({ kind: "suppress" as const }));
+    const coverageDecide = vi.fn(async ({ turn }) => {
+      expect(turn.metadata?.answerCoverage).toMatchObject({ availability: "assessed", coverage: "unanswered" });
+      return { kind: "start_new" as const };
+    });
+    input.routineReentryGate = { decide: preEvidenceDecide };
+    input.coverageAssessor = {
+      assess: vi.fn(async () => ({
+        availability: "assessed",
+        coverage: "unanswered",
+        reason: "insufficient_evidence",
+        schemaVersion: 1,
+      })),
+    };
+    input.coverageRoutineActivator = {
+      evaluateCandidates: () => [{ routineId: "contact", decision: "candidate", reasonCode: "coverage_criteria_candidate" }],
+      activate: vi.fn(async () => null),
+      reentryGate: { decide: coverageDecide },
+    };
+
+    await new DefaultConversationEngine().processTurn(input);
+
+    expect(preEvidenceDecide).toHaveBeenCalledOnce();
+    expect(coverageDecide).toHaveBeenCalledOnce();
+    expect(input.routineRunner?.resume).toHaveBeenCalledWith(expect.objectContaining({ activationTurn: true }));
+    expect(input.coverageRoutineActivator.activate).not.toHaveBeenCalled();
+  });
+
+  it("records a bounded failed activation trace without marking coverage evaluation complete", async () => {
+    const input = withRoutine({
+      resume: vi.fn(async () => ({ response: { answer: "unused" }, nextState: activeState })),
+    }, null);
+    const record = vi.fn(async () => undefined);
+    input.coverageAssessor = {
+      assess: vi.fn(async () => ({
+        availability: "assessed",
+        coverage: "unanswered",
+        reason: "insufficient_evidence",
+        unresolvedRequest: "Delivery date",
+        schemaVersion: 1,
+      })),
+    };
+    input.coverageRoutineActivator = {
+      evaluateCandidates: () => [{ routineId: "support", decision: "candidate", reasonCode: "coverage_criteria_candidate" }],
+      activate: vi.fn(async () => { throw new TypeError("internal routine adapter detail"); }),
+    };
+    input.coverageReactionRecorder = { record };
+
+    const result = await new DefaultConversationEngine().processTurn(input);
+
+    expect(record).not.toHaveBeenCalled();
+    expect(result.trace.stages).toContainEqual(expect.objectContaining({
+      id: "answer_coverage_routine_activation",
+      kind: "answer_coverage_routine_activation",
+      status: "fallback",
+      outputs: { availability: "failed", failureKind: "routine_selection_failed" },
+    }));
+  });
+
+  it("records an evaluated skipped coverage routine instead of fabricating a no-match", async () => {
+    const input = withRoutine({
+      resume: vi.fn(async () => ({ response: { answer: "unused" }, nextState: activeState })),
+    }, null);
+    const record = vi.fn(async () => undefined);
+    input.coverageAssessor = {
+      assess: vi.fn(async () => ({
+        availability: "assessed",
+        coverage: "unanswered",
+        reason: "insufficient_evidence",
+        unresolvedRequest: "Delivery date",
+        schemaVersion: 1,
+      })),
+    };
+    input.coverageRoutineActivator = {
+      evaluateCandidates: () => [{ routineId: "support", decision: "candidate", reasonCode: "coverage_criteria_candidate" }],
+      activate: vi.fn(async () => null),
+    };
+    input.coverageReactionRecorder = { record };
+
+    await new DefaultConversationEngine().processTurn(input);
+
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({
+      evaluationState: "evaluated",
+      reactions: [expect.objectContaining({
+        routineId: "support",
+        decision: "skipped",
+        reasonCode: "coverage_activation_not_selected",
+      })],
+    }));
   });
 
   it("resumes an active routine before normal selection and short-circuits select/dispatch/compose", async () => {

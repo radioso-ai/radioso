@@ -72,12 +72,13 @@ type DirectiveFormState = {
   // Carried invisibly through the dialog: the row toggle is the only control that changes this,
   // so editing a disabled directive's text must not flip it back on as a side effect of saving.
   enabled: boolean
+  coverageCriteria: { coverage: Array<'answered' | 'partial' | 'unanswered' | 'unclear'>; reasons?: Array<'sufficient_evidence' | 'insufficient_evidence' | 'conflicting_evidence' | 'ambiguous_request' | 'intentional_scope_boundary'> }
 }
 
 // `default` mirrors AUTHORED_DIRECTIVE_STEERING_DEFAULT_PRIORITY in
 // backend/src/modules/agents/authoredDirectiveMapper.ts. The directives API does not report it, so
 // the priority scale would have to invent a number without this copy.
-export const DIRECTIVE_PRIORITY = { min: 0, max: 100, default: 50 } as const
+const DIRECTIVE_PRIORITY = { min: 0, max: 100, default: 50 } as const
 
 // A directive binds a skill that can answer the turn it claims: an external MCP tool, or a
 // retrieval skill staged as a lookup. Mirrors what the API accepts, so an offered skill is
@@ -146,6 +147,7 @@ const emptyForm: DirectiveFormState = {
   priority: '',
   replaces: [],
   enabled: true,
+  coverageCriteria: { coverage: [] },
 }
 
 // The binding names the one mention the stored action is known to carry. Everything else in the
@@ -176,6 +178,7 @@ const directiveToForm = (directive: Directive): DirectiveFormState => ({
   replaces: directive.excludes ?? [],
   surfaces: directiveSurfacesToForm(directive.surfaces),
   enabled: directive.enabled,
+  coverageCriteria: directive.coverageCriteria ?? { coverage: [] },
 })
 
 const overrideNameFor = (builtInName: string): string => `Override: ${builtInName}`
@@ -214,6 +217,7 @@ const formToPayload = (form: DirectiveFormState): DirectiveCreateRequest => {
     // omission must never be read as "leave it as the API found it" — the API has no other
     // signal, and the field is never touched by anything else in this form.
     enabled: form.enabled,
+    coverageCriteria: form.coverageCriteria.coverage.length > 0 ? form.coverageCriteria : undefined,
   }
   return payload
 }
@@ -237,6 +241,7 @@ const directiveToPayload = (
   // directive that wins a conflict must stay disabled rather than come back to life as a
   // side effect of the resend.
   enabled: directive.enabled,
+  coverageCriteria: directive.coverageCriteria,
 })
 
 const dedupeNames = (names: string[]): string[] => Array.from(new Set(names))
@@ -956,7 +961,10 @@ export function AssistantDirectivesSection({
     setError(null)
     try {
       const response = editingDirective
-        ? await directivesApi.updateDirective(agentId, editingDirective.id, payload satisfies DirectiveUpdateRequest)
+        ? await directivesApi.updateDirective(agentId, editingDirective.id, {
+            ...payload,
+            ...(form.coverageCriteria.coverage.length === 0 ? { coverageCriteria: null } : {}),
+          } satisfies DirectiveUpdateRequest)
         : await directivesApi.createDirective(agentId, payload)
       if (!isCurrentSave(saveId)) return
       mergeSavedDirective(response.directive)
@@ -1153,6 +1161,46 @@ export function AssistantDirectivesSection({
                 }}
                 maxLength={120}
               />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Answer coverage signal</Label>
+              <p className="text-xs text-muted-foreground">Run this directive only when the recorded assessment matches these statuses and reasons.</p>
+              <div className="flex flex-wrap gap-2">
+                {(['answered', 'partial', 'unanswered', 'unclear'] as const).map((coverage) => {
+                  const selected = form.coverageCriteria.coverage.includes(coverage)
+                  return (
+                    <button key={coverage} type="button" role="checkbox" aria-checked={selected}
+                      onClick={() => setForm((current) => ({
+                        ...current,
+                        coverageCriteria: {
+                          ...current.coverageCriteria,
+                          coverage: selected
+                            ? current.coverageCriteria.coverage.filter((item) => item !== coverage)
+                            : [...current.coverageCriteria.coverage, coverage],
+                        },
+                      }))}
+                      className={cn('rounded-full border px-3 py-1.5 text-sm', selected ? 'border-primary bg-muted/40' : 'border-border text-muted-foreground')}
+                    >{coverage.replaceAll('_', ' ')}</button>
+                  )
+                })}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {(['sufficient_evidence', 'insufficient_evidence', 'conflicting_evidence', 'ambiguous_request', 'intentional_scope_boundary'] as const).map((reason) => {
+                  const selected = form.coverageCriteria.reasons?.includes(reason) ?? false
+                  return <button key={reason} type="button" role="checkbox" aria-checked={selected}
+                    onClick={() => setForm((current) => {
+                      const reasons = selected
+                        ? (current.coverageCriteria.reasons ?? []).filter((item) => item !== reason)
+                        : [...(current.coverageCriteria.reasons ?? []), reason]
+                      const coverageCriteria = { ...current.coverageCriteria }
+                      if (reasons.length > 0) coverageCriteria.reasons = reasons
+                      else delete coverageCriteria.reasons
+                      return { ...current, coverageCriteria }
+                    })}
+                    className={cn('rounded-full border px-3 py-1.5 text-xs', selected ? 'border-primary bg-muted/40' : 'border-border text-muted-foreground')}
+                  >{reason.replaceAll('_', ' ')}</button>
+                })}
+              </div>
             </div>
             <div className="space-y-1.5">
               <Label>When this applies</Label>

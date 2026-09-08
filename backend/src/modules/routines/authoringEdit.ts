@@ -6,6 +6,7 @@ import {
   type RoutineDefinition,
   type RoutineDefinitionDraftAuthoringInput,
 } from "./domain.js";
+import { answerCoverageCriteriaSchema } from "../answerCoverage/public.js";
 
 /**
  * What an authoring surface outside the routine editor may change about a routine.
@@ -34,6 +35,7 @@ export const routineFieldPatchSchema = z.object({
     triggerDescription: z.string().trim().min(1).max(ROUTINE_DEFINITION_LIMITS.triggerDescription).optional(),
     priority: z.number().int().optional(),
     reentryMode: z.enum(routineReentryModes).optional(),
+    coverageCriteria: answerCoverageCriteriaSchema.optional(),
   }).strict().partial().refine((activation) => Object.keys(activation).length > 0, {
     message: "activation must change at least one field",
   }).optional(),
@@ -58,7 +60,7 @@ export const routineFieldPatchSchema = z.object({
   message: "a routine edit must change at least one field",
 });
 
-export type RoutineFieldPatch = z.infer<typeof routineFieldPatchSchema>;
+type RoutineFieldPatch = z.infer<typeof routineFieldPatchSchema>;
 
 /** An edit that named an element the routine does not have. The message lists what it does have. */
 export class RoutineFieldPatchError extends Error {

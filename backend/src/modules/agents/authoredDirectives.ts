@@ -3,8 +3,9 @@ import { z } from "zod";
 import { CHAT_TURN_ROUTE, type ChatTurnRoute } from "../../shared/domain/chatTurnRoute.js";
 import { GENERATION_SURFACE, type GenerationSurface } from "../../shared/domain/generationSurface.js";
 import { defaultAnswerDirectives } from "../directives/public.js";
+import { answerCoverageCriteriaSchema, type AnswerCoverageCriteria } from "../answerCoverage/public.js";
 
-export const AUTHORED_DIRECTIVE_LIMITS = {
+const AUTHORED_DIRECTIVE_LIMITS = {
   name: 200,
   action: 4000,
   conditionDescription: 2000,
@@ -22,7 +23,7 @@ export const AUTHORED_DIRECTIVE_LIMITS = {
  * the steering default (see authoredDirectiveMapper). Built-in answer directives
  * currently occupy 60–90.
  */
-export const AUTHORED_DIRECTIVE_PRIORITY = { min: 0, max: 100 } as const;
+const AUTHORED_DIRECTIVE_PRIORITY = { min: 0, max: 100 } as const;
 
 export const authoredDirectiveRouteValues = Object.values(CHAT_TURN_ROUTE) as [ChatTurnRoute, ...ChatTurnRoute[]];
 
@@ -60,7 +61,7 @@ const uniqueTextArray = (maxItemLength: number) =>
     .default([])
     .transform((values) => [...new Set(values)]);
 
-export const authoredDirectiveConditionSchema = z.discriminatedUnion("kind", [
+const authoredDirectiveConditionSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("always"),
   }).strict(),
@@ -70,7 +71,7 @@ export const authoredDirectiveConditionSchema = z.discriminatedUnion("kind", [
   }).strict(),
 ]);
 
-export const authoredDirectiveBindingSchema = z.object({
+const authoredDirectiveBindingSchema = z.object({
   kind: z.literal("skill"),
   skillName: trimmedText(AUTHORED_DIRECTIVE_LIMITS.bindingSkillName),
 }).strict();
@@ -80,7 +81,7 @@ export const authoredDirectiveBindingSchema = z.object({
  * behavior — the directive may render on every turn its condition holds. See
  * `directiveLifecycle` for the runtime memory that enforces once/cooldown.
  */
-export const authoredDirectiveLifecycleSchema = z.discriminatedUnion("kind", [
+const authoredDirectiveLifecycleSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("repeatable") }).strict(),
   z.object({ kind: z.literal("once_per_conversation") }).strict(),
   z.object({
@@ -112,6 +113,7 @@ export const authoredDirectiveInputSchema = z.object({
   description: optionalTrimmedText(AUTHORED_DIRECTIVE_LIMITS.description),
   binding: authoredDirectiveBindingSchema.nullable().optional().transform((value) => value ?? null),
   lifecycle: authoredDirectiveLifecycleSchema.nullable().optional().transform((value) => value ?? null),
+  coverageCriteria: answerCoverageCriteriaSchema.optional(),
   // Reversible off switch: a disabled directive keeps its authored text but is never
   // converted into a runtime Directive (see authoredDirectiveMapper.steeringDirectivesFromAuthored).
   enabled: z.boolean().optional().default(true),
@@ -144,22 +146,23 @@ export interface AuthoredDirective {
   description: string | null;
   binding: AuthoredDirectiveBinding;
   lifecycle: AuthoredDirectiveLifecycle;
+  coverageCriteria?: AnswerCoverageCriteria;
   enabled: boolean;
   metadata: Record<string, unknown>;
   createdAt: Date;
   updatedAt: Date;
 }
 
-export interface AuthoredDirectiveCapabilityValidationOk {
+interface AuthoredDirectiveCapabilityValidationOk {
   ok: true;
 }
 
-export interface AuthoredDirectiveCapabilityValidationError {
+interface AuthoredDirectiveCapabilityValidationError {
   ok: false;
   unknown: string[];
 }
 
-export type AuthoredDirectiveCapabilityValidationResult =
+type AuthoredDirectiveCapabilityValidationResult =
   | AuthoredDirectiveCapabilityValidationOk
   | AuthoredDirectiveCapabilityValidationError;
 

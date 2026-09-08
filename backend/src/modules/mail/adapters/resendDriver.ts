@@ -31,6 +31,7 @@ export class ResendEmailDriver implements EmailDriver {
         subject: message.subject,
         text: message.text,
         html: message.html,
+        tags: message.kind ? [{ name: "kind", value: message.kind }] : undefined,
       }),
     });
 

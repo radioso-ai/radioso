@@ -11,6 +11,14 @@ import type {
 } from "./contactSendActionHandler.js";
 
 /**
+ * Resolves the operator-facing dashboard link for a conversation. Injected because the dashboard's
+ * URL shape is host routing knowledge — this module knows only that a link may exist.
+ */
+export interface ConversationLinkResolver {
+  resolve(input: { workspaceId: string; conversationId: string }): Promise<string | null>;
+}
+
+/**
  * Delivers operator notifications over the existing contact transport (workspace recipient emails +
  * signed webhook). It lives in the chat module — alongside the contact mailer/recipients/webhook it
  * wraps — and implements the neutral `OperatorNotificationSink` port, so the `operatorNotifications`
@@ -23,6 +31,7 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
     private readonly recipients: ContactRecipientResolver,
     private readonly logger?: { warn(payload: Record<string, unknown>, message: string): void },
     private readonly webhookClient?: ContactWebhookHttpClient,
+    private readonly conversationLinks?: ConversationLinkResolver,
   ) {}
 
   async deliver(notification: OperatorNotification, context: OperatorNotificationContext): Promise<void> {
@@ -47,6 +56,9 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
       return;
     }
 
+    const conversationUrl = await this.resolveConversationUrl(notification);
+    const openLine = conversationUrl ? [`Open: ${conversationUrl}`] : [];
+
     const baseIdempotencyKey = context.idempotencyKey ?? context.requestId;
     const delivery = notification.kind === "approval"
       ? {
@@ -58,7 +70,7 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
             `Workspace: ${notification.workspaceId}`,
             `Agent: ${notification.agentId}`,
             `Decision: ${notification.handle}`,
-            `Open: ${notification.dashboardPath}`,
+            ...openLine,
           ].join("\n"),
           webhookPayload: {
             workspaceId: notification.workspaceId,
@@ -78,7 +90,7 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
             `Workspace: ${notification.workspaceId}`,
             `Agent: ${notification.agentId}`,
             `Reason: ${notification.reason}`,
-            `Open: ${notification.dashboardPath}`,
+            ...openLine,
           ].join("\n"),
           webhookPayload: {
             workspaceId: notification.workspaceId,
@@ -107,6 +119,33 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
           : "Handoff webhook delivery is not configured",
       }) : Promise.resolve(),
     ]);
+  }
+
+  /**
+   * A missing or failing link must not cost the operator the notification itself: an escalation
+   * that never arrives is worse than one without a link, so this degrades instead of throwing.
+   */
+  private async resolveConversationUrl(notification: OperatorNotification): Promise<string | null> {
+    if (!this.conversationLinks) {
+      return null;
+    }
+    try {
+      return await this.conversationLinks.resolve({
+        workspaceId: notification.workspaceId,
+        conversationId: notification.conversationId,
+      });
+    } catch (error) {
+      this.logger?.warn(
+        {
+          event: "operator_notification_link_unresolved",
+          workspaceId: notification.workspaceId,
+          conversationId: notification.conversationId,
+          errorClass: error instanceof Error ? error.name : typeof error,
+        },
+        "Could not resolve the conversation permalink for an operator notification",
+      );
+      return null;
+    }
   }
 
   private async postWebhook(input: {

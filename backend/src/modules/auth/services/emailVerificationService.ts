@@ -7,13 +7,12 @@ import type { AuditService } from "../../audit/contracts/index.js";
 import type { EmailService } from "../../mail/public.js";
 import { renderEmailVerificationEmail } from "../../mail/templates/emailVerificationEmail.js";
 import { normalizeEmail, sha256 } from "../domain/authPrimitives.js";
+import { appUrl } from "../../../shared/domain/appUrl.js";
 import { unauthorized } from "../../../shared/domain/errors.js";
 import { logAuthMailDeliveryFailure, type AuthMailDeliveryLogger } from "./authMailDeliveryLogging.js";
 import { DEFAULT_AUTH_EMAIL_FLOW_MIN_RESPONSE_MS, waitForMinimumElapsed } from "./responsePadding.js";
 
 const generateVerificationToken = (): string => randomBytes(32).toString("base64url");
-
-const appBaseUrl = (env: Env): string => env.APP_BASE_URL ?? "http://localhost:3000";
 
 export class EmailVerificationService {
   constructor(private readonly dependencies: {
@@ -57,7 +56,7 @@ export class EmailVerificationService {
         requestIp: input.requestIp ?? null,
         requestUserAgent: input.requestUserAgent ?? null,
       });
-      const verificationUrl = new URL("/verify-email", appBaseUrl(this.dependencies.env));
+      const verificationUrl = appUrl("/verify-email", this.dependencies.env.APP_BASE_URL);
       verificationUrl.searchParams.set("token", token);
 
       let sent = true;
@@ -65,6 +64,7 @@ export class EmailVerificationService {
         await this.dependencies.mailService.send(renderEmailVerificationEmail({
           to: email,
           verificationUrl: verificationUrl.toString(),
+          appBaseUrl: this.dependencies.env.APP_BASE_URL,
         }));
       } catch (error) {
         sent = false;

@@ -1,12 +1,19 @@
-Radioso is dual-licensed.
+Radioso
+Copyright (c) 2026 Radioso AI
 
-  * The open-source edition — everything in this repository EXCEPT the ee/
-    directory — is licensed under the Apache License, Version 2.0, the full
-    text of which follows below.
+Portions of this software are licensed as follows:
 
-  * The Radioso Enterprise Edition — the files under the ee/ directory — is
-    commercial source-available software and is NOT covered by the Apache
-    License, Version 2.0. It is governed solely by ee/LICENSE.
+  * All content that resides under the "ee/" directory of this repository, if
+    that directory exists, is the Radioso Enterprise Edition: commercial
+    source-available software governed solely by "ee/LICENSE". It is NOT
+    covered by the Apache License, Version 2.0.
+
+  * All third-party components incorporated into the Radioso software are
+    licensed under the original license provided by the owner of the
+    applicable component.
+
+  * All other content is licensed under the Apache License, Version 2.0, the
+    full text of which follows below.
 
 See the NOTICE file for attribution and this Enterprise Edition carve-out.
 
@@ -105,8 +112,8 @@ See the NOTICE file for attribution and this Enterprise Edition carve-out.
       modifications, and in Source or Object form, provided that You
       meet the following conditions:
 
-      (a) You must give any other recipients of the Work or Derivative
-          Works a copy of this License; and
+      (a) You must give any other recipients of the Work or
+          Derivative Works a copy of this License; and
 
       (b) You must cause any modified files to carry prominent notices
           stating that You changed the files; and

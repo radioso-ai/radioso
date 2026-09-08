@@ -15,6 +15,29 @@ export const buildPublicAssistantLogoUrl = (input: {
   return input.cacheKey ? `${url}?v=${encodeURIComponent(input.cacheKey)}` : url;
 };
 
+/**
+ * The operator-facing logo URL. It names the agent instead of a public launch token, so
+ * it resolves for an agent whose visitor channels are all switched off — a launch token
+ * only exists once a channel is enabled. The workspace travels in the query because the
+ * dashboard renders this in an `<img>`, which cannot send the workspace header; it selects
+ * a workspace and is still checked against the caller's account before anything is served.
+ */
+export const buildOperatorAssistantLogoUrl = (input: {
+  agentId: string;
+  workspaceId: string;
+  hasLogo: boolean;
+  cacheKey?: string | null;
+}): string | null => {
+  if (!input.hasLogo) {
+    return null;
+  }
+  const query = new URLSearchParams({ workspaceId: input.workspaceId });
+  if (input.cacheKey) {
+    query.set("v", input.cacheKey);
+  }
+  return `/api/v1/agents/${encodeURIComponent(input.agentId)}/assistant-logo?${query.toString()}`;
+};
+
 const hashCacheKeyPart = (value: string): string => {
   let hash = 5381;
   for (let index = 0; index < value.length; index += 1) {

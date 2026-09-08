@@ -10,7 +10,7 @@ import { attributeMachinePrincipalToRequestAudit } from "./requestAuditContextMi
 import type { MachineAccessSecurityObserver } from "../../../modules/machineAccess/public.js";
 import { onSuccessfulHttpResponse } from "./httpResponseCompletion.js";
 
-const WORKSPACE_HEADER = "x-workspace-id";
+export const WORKSPACE_HEADER = "x-workspace-id";
 const BEARER_PREFIX = "Bearer ";
 
 export interface WorkspaceSessionDependencies {

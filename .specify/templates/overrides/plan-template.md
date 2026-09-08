@@ -80,9 +80,13 @@ tests/
 # [REMOVE IF UNUSED] Option 2: Web application (when "frontend" + "backend" detected)
 backend/
 ├── src/
+│   ├── app/http/openapi/   # Code-first OpenAPI registry and document builder
 │   ├── models/
 │   ├── services/
 │   └── api/
+├── openapi.yaml            # Generated from the code-first registry
+├── openapi.json            # Generated from the code-first registry
+├── scripts/generateOpenApi.ts
 └── tests/
 
 frontend/
@@ -100,8 +104,20 @@ ios/ or android/
 └── [platform-specific structure: feature modules, UI flows, platform tests]
 ```
 
-**Structure Decision**: [Document the selected structure and reference the real
-directories captured above]
+**Structure Decision**: [Document the selected structure, reference the real
+directories captured above, and name the specific files/modules that will own
+orchestration, domain logic, persistence, and UI concerns]
+
+## Module Ownership & Seams
+
+- **Transport Layer**: [Routes/controllers/handlers that translate requests but do not own business rules]
+- **Orchestration Layer**: [Services/controllers that coordinate workflow but delegate domain decisions]
+- **Domain Layer**: [Focused services/modules containing feature rules and decision-making]
+- **Persistence/Integration Layer**: [Repositories/clients/gateways that talk to DBs or external systems]
+- **Application Composition**: [Whether `backend/src/app/composition/` must wire new replaceable infrastructure, defaults, registries, lifecycle hooks, or capability policies; write N/A if not relevant]
+- **Files Kept Small**: [Existing files that must not absorb new concerns]
+- **Planned Extractions**: [New modules/interfaces/ports to introduce so responsibilities stay separated]
+- **Required Refactor Stories**: [Architecture stories that must be completed first when structure is unclear or files are already too large]
 
 ## Complexity Tracking
 

@@ -9,9 +9,13 @@ description: "Task list template for feature implementation"
 
 **Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, contracts/
 
-**Tests**: The examples below include test tasks. Tests are OPTIONAL - only include them if explicitly requested in the feature specification.
+**Tests**: The examples below include test tasks. Backend tests are REQUIRED and MUST appear before implementation tasks. Frontend user-visible flows SHOULD default to Playwright tasks, while frontend unit tests should only cover non-visual logic called for by the feature specification.
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
+
+**Architecture**: Tasks MUST preserve the module ownership defined in `plan.md`. Prefer explicit extraction tasks for new domain logic, interfaces, and persistence seams over silently extending the largest existing file. If backend work touches replaceable runtime infrastructure, tasks MUST include any required updates to `backend/src/app/composition/` for default wiring and lifecycle while keeping product rules in modules or shared domain files. If the plan identifies unclear structure or oversized files, tasks MUST include architecture/refactor stories that are completed before feature implementation in the affected area.
+
+**Contracts and docs**: Backend HTTP contract changes MUST include tasks for the code-first OpenAPI registry and regenerated artifacts. Public APIs, SDK contracts, MCP contracts, connector contracts, worker payloads, and other cross-service contract changes MUST include a message-queue impact review and any required AMQP payload, worker dispatch, retry, test, and documentation updates. Contract or functionality changes MUST include the affected documentation updates.
 
 ## Format: `[ID] [P?] [Story] Description`
 
@@ -80,7 +84,7 @@ Examples of foundational tasks (adjust based on your project):
 
 **Independent Test**: [How to verify this story works on its own]
 
-### Tests for User Story 1 (OPTIONAL - only if tests requested) ⚠️
+### Tests for User Story 1 (REQUIRED for backend) ⚠️
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
@@ -106,7 +110,7 @@ Examples of foundational tasks (adjust based on your project):
 
 **Independent Test**: [How to verify this story works on its own]
 
-### Tests for User Story 2 (OPTIONAL - only if tests requested) ⚠️
+### Tests for User Story 2 (REQUIRED for backend) ⚠️
 
 - [ ] T018 [P] [US2] Contract test for [endpoint] in tests/contract/test_[name].py
 - [ ] T019 [P] [US2] Integration test for [user journey] in tests/integration/test_[name].py
@@ -128,7 +132,7 @@ Examples of foundational tasks (adjust based on your project):
 
 **Independent Test**: [How to verify this story works on its own]
 
-### Tests for User Story 3 (OPTIONAL - only if tests requested) ⚠️
+### Tests for User Story 3 (REQUIRED for backend) ⚠️
 
 - [ ] T024 [P] [US3] Contract test for [endpoint] in tests/contract/test_[name].py
 - [ ] T025 [P] [US3] Integration test for [user journey] in tests/integration/test_[name].py
@@ -179,7 +183,12 @@ Examples of foundational tasks (adjust based on your project):
 
 ### Within Each User Story
 
-- Tests (if included) MUST be written and FAIL before implementation
+- Backend tests MUST be written and FAIL before implementation
+- Frontend Playwright coverage comes first for user-visible behavior; add frontend unit tests only for non-visual logic
+- Complete required architecture/refactor stories first when the plan flags unclear structure or oversized files
+- Extract or create focused modules before wiring orchestration
+- Update `backend/src/app/composition/` when the story introduces or replaces app-wide adapters, registries, sinks, lifecycle hooks, capability policies, storage/dispatcher implementations, or cross-module runtime infrastructure
+- For public APIs, SDK contracts, MCP contracts, connector contracts, worker payloads, or other cross-service contract changes, complete a message-queue impact review and add any needed AMQP payload, document worker dispatch, retry semantics, queue test, or queue documentation tasks
 - Models before services
 - Services before endpoints
 - Core implementation before integration
@@ -250,3 +259,5 @@ With multiple developers:
 - Commit after each task or logical group
 - Stop at any checkpoint to validate story independently
 - Avoid: vague tasks, same file conflicts, cross-story dependencies that break independence
+- Avoid: monolithic tasks that make one route, service, or page own unrelated concerns
+- Avoid: hiding app-wide runtime wiring inside feature services when it belongs in `backend/src/app/composition/`

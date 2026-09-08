@@ -15,6 +15,8 @@ import { ConversationRepository } from "../../../db/repositories/conversationRep
 import { ConversationOwnershipRepository } from "../../../db/repositories/conversationOwnershipRepository.js";
 import { HistoryItemsRepository } from "../../../db/repositories/historyItemsRepository.js";
 import { MessageRepository } from "../../../db/repositories/messageRepository.js";
+import { AnswerCoverageRepository } from "../../../db/repositories/answerCoverageRepository.js";
+import { ChatAnswerCoverageAssessorFactory } from "../../../modules/chat/services/chatAnswerCoverageAssessor.js";
 import { WorkspaceRepository } from "../../../db/repositories/workspaceRepository.js";
 import { LlmResponseLanguageDetector } from "../../../shared/services/responseLanguageDetector.js";
 import { LlmHandoffWaitingMessageGenerator } from "../../../shared/services/handoffWaitingMessageGenerator.js";
@@ -792,6 +794,10 @@ export const buildChatServices = (input: {
     agentSkillTurnSkillProvider,
     recordClarificationDecision: clarificationDecisionRecorder,
     workspaceInvalidationPublisher: input.workspaceInvalidationPublisher,
+    coverageAssessorFactory: new ChatAnswerCoverageAssessorFactory(
+      chatGateway,
+      new AnswerCoverageRepository(input.database.kysely),
+    ),
   });
   const chatBootstrapService = new ChatBootstrapService(
     input.workspaceRepository,
@@ -810,6 +816,7 @@ export const buildChatServices = (input: {
     contactHistoryProvider,
     answerFeedbackHistoryProvider,
     input.conversationOwnershipRepository,
+    new AnswerCoverageRepository(input.database.kysely),
   );
   const conversationForkService = new ConversationForkService(
     input.conversationRepository,

@@ -124,7 +124,7 @@ const traceIncludesRetrievalSkillDispatch = (trace?: ConversationTrace): boolean
     );
   }) ?? false;
 
-export const getChatTurnRoute = (session: PreparedSession, engineTrace?: ConversationTrace): ChatRoute => {
+const getChatTurnRoute = (session: PreparedSession, engineTrace?: ConversationTrace): ChatRoute => {
   if (traceIncludesRetrievalSkillDispatch(engineTrace)) {
     return {
       type: "retrieval",
@@ -147,7 +147,7 @@ export const getChatTurnRoute = (session: PreparedSession, engineTrace?: Convers
   };
 };
 
-export interface CompletedAssistantTurn {
+interface CompletedAssistantTurn {
   response: ChatResponse;
   assistantMessageId: string;
   postCommitReceipt: PostCommitInvalidationReceipt;
@@ -222,11 +222,11 @@ export interface AssistantTurnPersistencePort {
   }): Promise<AssistantTurnPersistenceReceipt>;
 }
 
-export interface PendingDecisionWriterPort {
+interface PendingDecisionWriterPort {
   create(input: PendingDecisionCreateInput): Promise<unknown>;
 }
 
-export interface ConversationOwnershipWriterPort {
+interface ConversationOwnershipWriterPort {
   requestHandoff(input: ConversationOwnershipRequestHandoffInput): Promise<ConversationOwnershipRequestHandoffResult>;
 }
 
@@ -258,7 +258,7 @@ interface AssistantTurnSuccessInput {
   groundingDiagnostics?: ChatPresentedAnswer["groundingDiagnostics"];
 }
 
-export interface BuildTurnTraceForPresentationInput {
+interface BuildTurnTraceForPresentationInput {
   workspaceId: string;
   accountId?: string;
   session: PreparedSession;
@@ -269,7 +269,7 @@ export interface BuildTurnTraceForPresentationInput {
   modelCallTrace?: ModelCallTraceCollector;
 }
 
-export interface TurnTracePresentation {
+interface TurnTracePresentation {
   route: ChatRoute;
   skillTurnOutcome: SkillTurnOutcome;
   activityTrace: ActivityTrace;
@@ -712,8 +712,12 @@ export class ChatTurnLifecycle {
         accountId: input.accountId,
         conversationId: input.session.conversation.id,
       });
-      await input.commitRoutineState?.();
       assistantMessage = await this.messageRepository.create(presentation.assistantMessage);
+      // The fallback has no cross-store transaction. Advance a routine only after
+      // its assistant reply exists; otherwise a message-write failure could skip a
+      // recoverable routine step. The durable production path writes this state in
+      // AssistantTurnPersistencePort's transaction.
+      await input.commitRoutineState?.();
       let pendingDecisionCreated = false;
       if (input.pendingDecisionTransition && this.pendingDecisionRepository) {
         await this.pendingDecisionRepository.create(input.pendingDecisionTransition);
@@ -819,6 +823,10 @@ export class ChatTurnLifecycle {
         activitySummary: presentation.resolvedActivitySummary,
         activityTrace: presentation.activityTrace,
         turnTrace: presentation.turnTrace,
+        ...(input.session.answerCoverageDebug ? { answerCoverage: input.session.answerCoverageDebug } : {}),
+        ...(input.session.answerCoverageInteractionTrace
+          ? { interactionTrace: input.session.answerCoverageInteractionTrace }
+          : {}),
       },
     };
   }

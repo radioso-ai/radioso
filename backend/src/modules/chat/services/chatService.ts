@@ -64,6 +64,7 @@ import {
   buildChatTurnContext,
   type ChatRoutineProvider,
   type ChatTurnAssemblyCoordinationHook,
+  type ChatTurnAssemblyRoutineResult,
 } from "./chatTurnAssembly.js";
 import type { RetrievalTurnPort } from "./retrievalTurnDispatch.js";
 import {
@@ -146,13 +147,14 @@ import {
   type ConversationTurnRegistry,
   type ConversationTurnStage,
 } from "./conversationTurnRegistry.js";
+import { ChatAnswerCoverageAssessorFactory } from "./chatAnswerCoverageAssessor.js";
 
 export type { ChatGateway } from "../contracts/chatGateway.js";
 export type { ChatStreamEvent } from "../contracts/streamEvents.js";
 export type { ChatRoutineProvider } from "./chatTurnAssembly.js";
 export { buildRoutinePendingDecisionTransition } from "./chatTurnAssembly.js";
 export { BlankChatAnswerError } from "./chatAnswerErrors.js";
-export { ModelChatGateway, OpenAIChatGateway } from "./chatGateways.js";
+export { ModelChatGateway } from "./chatGateways.js";
 export type { SuspendedRoutineReader } from "./approvalResumeTurn.js";
 export { ChatTurnSupersededError } from "./conversationTurnRegistry.js";
 
@@ -238,13 +240,15 @@ export interface ChatServiceOptions {
   /** Per-conversation turn coordinator; application composition wires one process-wide instance. */
   conversationTurnRegistry?: ConversationTurnRegistry;
   workspaceInvalidationPublisher?: WorkspaceInvalidationPublisher;
+  /** Optional durable semantic assessment store; absent leaves legacy turns unchanged. */
+  coverageAssessorFactory?: ChatAnswerCoverageAssessorFactory;
 }
 
 interface TurnCoordinationState {
   lease?: ConversationTurnLease;
 }
 
-export interface ChatAnswerInput {
+interface ChatAnswerInput {
   workspaceId: string;
   agentId?: string | null;
   accountId?: string;
@@ -270,7 +274,7 @@ export interface ChatAnswerInput {
   executionMode?: TurnExecutionMode;
 }
 
-export interface ChatTurnReceipt {
+interface ChatTurnReceipt {
   response: ChatResponse;
   userMessageId: string;
 }
@@ -352,6 +356,7 @@ export class ChatService {
       turnPlanInterpretationContextSettings,
       conversationTurnRegistry = new InMemoryConversationTurnRegistry(),
       workspaceInvalidationPublisher,
+      coverageAssessorFactory,
     } = options;
     this.conversationRepository = conversationRepository;
     this.messageRepository = messageRepository;
@@ -416,6 +421,7 @@ export class ChatService {
       chatSessionPreparer: this.chatSessionPreparer,
       directiveStateStore,
       routineStore,
+      coverageAssessorFactory,
     }) ?? new ChatTurnAssembly({
       chatGateway,
       chatAnswerPresenter: this.chatAnswerPresenter,
@@ -435,6 +441,7 @@ export class ChatService {
       retrievalSenseClarificationPolicy: effectiveRetrievalSenseClarificationPolicy,
       agentSkillTurnSkillProvider,
       logger,
+      coverageAssessorFactory,
     });
     this.approvalResumeTurn = new ApprovalResumeTurn({
       conversationRepository,
@@ -1028,11 +1035,28 @@ export class ChatService {
       const renderedTurn = preparedTurn;
       const { presentation, actions } = renderedTurn;
       const engineTrace = renderedTurn.engineTrace;
+      const coverageOwnershipHandoff = renderedTurn.handoff
+        ? { reason: "routine_handoff" as const, ...renderedTurn.handoff }
+        : null;
+      const coverageActions = renderedTurn.handoff
+        ? [
+            ...(actions ?? []),
+            buildHandoffNotifyAction({
+              conversationId: session.conversation.id,
+              workspaceId: input.workspaceId,
+              agentId: session.agent.id,
+              userMessageId: session.userMessage.id,
+              reason: "routine_handoff",
+              routineId: renderedTurn.handoff.routineId,
+              stepId: renderedTurn.handoff.stepId,
+            }),
+          ]
+        : actions;
       const retrievalMissHandoff = retrievalMissHandoffForTurn({
         session,
         presentation,
         workspaceId: input.workspaceId,
-        actions,
+        actions: coverageActions,
       });
       this.beginTurnEmission(coordination);
       const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
@@ -1046,10 +1070,31 @@ export class ChatService {
         engineTrace,
         modelCallTrace,
         actions: retrievalMissHandoff.actions,
-        ownershipHandoff: retrievalMissHandoff.ownershipHandoff,
+        ownershipHandoff: coverageOwnershipHandoff ?? retrievalMissHandoff.ownershipHandoff,
+        routineStateTransition: renderedTurn.routineStateTransition,
+        pendingDecisionTransition: renderedTurn.pendingDecisionTransition,
+        suspended: renderedTurn.suspended,
+        commitRoutineState: renderedTurn.commitRoutineState,
         clarificationTransition: clarification.store?.getTransition(),
         commitClarificationState: clarification.store ? () => clarification.store!.commit() : undefined,
       });
+      // Diagnostics are intentionally post-commit. On success the recorder's
+      // callback advances the live session to evaluated; copy that canonical
+      // projection onto the already-built response. On failure it remains the
+      // truthful not_evaluated state and never fails a durable chat turn.
+      try {
+        await renderedTurn.commitCoverageReactions?.();
+        if (session.answerCoverageInteractionTrace) {
+          completedTurn.response.interactionTrace = session.answerCoverageInteractionTrace;
+        }
+      } catch {
+        // The persisted assessment remains not_evaluated when diagnostics fail.
+        this.logger?.warn({
+          workspaceId: input.workspaceId,
+          conversationId: session.conversation.id,
+          reasonCode: "coverage_reaction_persistence_failed",
+        }, "Answer coverage reaction recording failed after assistant turn commit");
+      }
       assistantMessageId = completedTurn.assistantMessageId;
       await usageReservation.commit();
 
@@ -1446,6 +1491,7 @@ export class ChatService {
       let suggestions: TurnStreamSuggestions | null = null;
       let engineTrace: ConversationTrace | undefined;
       let actions: RoutineActionRequest[] | undefined;
+      let coverageRoutineEffects: Partial<ChatTurnAssemblyRoutineResult> = {};
       let emissionStarted = false;
       if (useSenseCompatiblePath) {
         this.checkTurnCancellation(coordination, "rendering");
@@ -1493,6 +1539,7 @@ export class ChatService {
         suggestions = event.suggestions;
         engineTrace = event.engineTrace;
         actions = event.actions;
+        coverageRoutineEffects = event;
         const eventSession = (event as { session?: PreparedSession }).session;
         if (eventSession) {
           session = eventSession;
@@ -1534,11 +1581,28 @@ export class ChatService {
           ? persistedQuestionSuggestions
           : undefined,
       };
+      const coverageOwnershipHandoff = coverageRoutineEffects.handoff
+        ? { reason: "routine_handoff" as const, ...coverageRoutineEffects.handoff }
+        : null;
+      const coverageActions = coverageRoutineEffects.handoff
+        ? [
+            ...(actions ?? []),
+            buildHandoffNotifyAction({
+              conversationId: preparedSession.conversation.id,
+              workspaceId: input.workspaceId,
+              agentId: preparedSession.agent.id,
+              userMessageId: preparedSession.userMessage.id,
+              reason: "routine_handoff",
+              routineId: coverageRoutineEffects.handoff.routineId,
+              stepId: coverageRoutineEffects.handoff.stepId,
+            }),
+          ]
+        : actions;
       const retrievalMissHandoff = retrievalMissHandoffForTurn({
         session: preparedSession,
         presentation,
         workspaceId: input.workspaceId,
-        actions,
+        actions: coverageActions,
       });
 
       if (!emissionStarted) {
@@ -1554,10 +1618,27 @@ export class ChatService {
         engineTrace,
         modelCallTrace,
         actions: retrievalMissHandoff.actions,
-        ownershipHandoff: retrievalMissHandoff.ownershipHandoff,
+        ownershipHandoff: coverageOwnershipHandoff ?? retrievalMissHandoff.ownershipHandoff,
+        routineStateTransition: coverageRoutineEffects.routineStateTransition,
+        pendingDecisionTransition: coverageRoutineEffects.pendingDecisionTransition,
+        suspended: coverageRoutineEffects.suspended,
+        commitRoutineState: coverageRoutineEffects.commitRoutineState,
         clarificationTransition: clarification.store?.getTransition(),
         commitClarificationState: clarification.store ? () => clarification.store!.commit() : undefined,
       });
+      try {
+        await coverageRoutineEffects.commitCoverageReactions?.();
+        if (preparedSession.answerCoverageInteractionTrace) {
+          completedTurn.response.interactionTrace = preparedSession.answerCoverageInteractionTrace;
+        }
+      } catch {
+        // The persisted assessment remains not_evaluated when diagnostics fail.
+        this.logger?.warn({
+          workspaceId: input.workspaceId,
+          conversationId: preparedSession.conversation.id,
+          reasonCode: "coverage_reaction_persistence_failed",
+        }, "Answer coverage reaction recording failed after assistant turn commit");
+      }
       assistantMessageId = completedTurn.assistantMessageId;
       await usageReservation.commit();
       usageReservationCommitted = true;

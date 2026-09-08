@@ -56,6 +56,11 @@ import type { TurnRouting } from "./turnRouter.js";
 import type { ChatTurnPlanHandle } from "./turnPlanCoordinator.js";
 import type { ModelCallUsageAttribution } from "../../../shared/domain/modelCallUsageContext.js";
 import type { TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
+import type { AnswerCoverageAssessment } from "../../answerCoverage/public.js";
+import type {
+  ChatAnswerCoverageAssessment,
+  ChatAnswerCoverageInteractionTrace,
+} from "../contracts/answerCoverage.js";
 
 interface ChatAnswerAuditMetadata {
   rewriteContinuityState?: RewriteContinuityState;
@@ -108,6 +113,12 @@ export interface PreparedSession {
   responseLanguage?: string;
   /** Behavioral steering matched for this turn; consumed by the answer composer and the trace. */
   directiveSteering?: DirectiveSteeringResult;
+  /** Ephemeral semantic assessment for this turn's admitted retrieval evidence. */
+  answerCoverage?: AnswerCoverageAssessment;
+  /** Authorized live projection of the same assessment shown by saved history. */
+  answerCoverageDebug?: ChatAnswerCoverageAssessment;
+  /** Recorded coverage-rule decisions for this live turn, in execution order. */
+  answerCoverageInteractionTrace?: ChatAnswerCoverageInteractionTrace;
   /**
    * Per-turn directive firing memory, bound lazily by the directive matcher (issue
    * #865). Rides on the session like {@link directiveSteering} so the routine
@@ -196,7 +207,7 @@ export interface PrepareChatSessionInput {
   previewRoutineIds?: string[];
 }
 
-export interface PrepareChatSessionOptions {
+interface PrepareChatSessionOptions {
   skipRetrieval?: boolean;
   preResolvedAgent?: AgentRecord;
   preResolvedHistory?: MessageRecord[];

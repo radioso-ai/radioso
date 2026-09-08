@@ -142,6 +142,10 @@ export const resumeRoutine = async (input: {
     handoff: result.terminal?.kind === "handoff"
       ? { routineId: state.routineId, stepId: result.terminal.stepId }
       : undefined,
+    routineExecution: {
+      routineId: state.routineId,
+      ...(state.executionId ? { executionId: state.executionId } : {}),
+    },
     awaitingDecision: result.awaitingDecision,
     trace: createTrace(routineTraceStages),
   });

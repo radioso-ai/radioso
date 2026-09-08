@@ -25,6 +25,14 @@ const definition: RoutineDefinition = {
 type SourceRepository = Pick<RoutineDefinitionRepository, "listPublishedByAgent" | "listByAgent" | "findPinnedById" | "findById">;
 
 describe("DB-backed routine composition source", () => {
+  it("carries persisted coverage criteria into the engine activation", async () => {
+    const repository = {
+      listPublishedByAgent: vi.fn(async () => [{ ...definition, activation: { ...definition.activation, coverageCriteria: { coverage: ["partial"], reasons: ["insufficient_evidence"] } } }]),
+      listByAgent: vi.fn(async () => []), findPinnedById: vi.fn(async () => null), findById: vi.fn(async () => null),
+    } as SourceRepository;
+    const registrations = await createPublishedRoutineRegistrationSource(repository).load({ agentId: "agent_1" });
+    expect(registrations[0].routine.activation?.coverageCriteria).toEqual({ coverage: ["partial"], reasons: ["insufficient_evidence"] });
+  });
   it("compiles published definitions with the definition id as the routine id (scope-tag identity)", async () => {
     const repository = {
       listPublishedByAgent: vi.fn(async () => [definition]),

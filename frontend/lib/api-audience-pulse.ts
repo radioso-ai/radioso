@@ -1,4 +1,7 @@
 import { request, type ErrorResponse } from './api-client'
+import type { components } from '../../typescript-sdk/src/generated/types'
+
+type ApiSchemas = components['schemas']
 
 export interface AudiencePulsePeriod {
   start: string
@@ -32,6 +35,16 @@ export interface AudiencePulseGroundingSummary {
   contentGapEligible: number
 }
 
+export type AudiencePulseCoverageSummary = ApiSchemas['AudiencePulseSemanticCoverage']
+
+export interface AudiencePulseCoverageReasonSummary {
+  sufficient_evidence: number
+  insufficient_evidence: number
+  conflicting_evidence: number
+  ambiguous_request: number
+  intentional_scope_boundary: number
+}
+
 export interface AudiencePulseTopicTransition {
   kind: 'survived' | 'split' | 'merged' | 'emerged' | 'dissolved'
   parentTopicIds: string[]
@@ -49,6 +62,11 @@ export interface AudiencePulseThemeEvidence {
   messageId: string
   question: string
   occurrenceCount: number
+  coverage?: 'answered' | 'partial' | 'unanswered' | 'unclear'
+  coverageReason?: keyof AudiencePulseCoverageReasonSummary
+  unresolvedRequest?: string
+  routineProgress?: { executionId: string; state: string }
+  answerCoverage?: ApiSchemas['AnswerCoverage']
 }
 
 export interface AudiencePulseTheme {
@@ -65,6 +83,7 @@ export interface AudiencePulseTheme {
   distinctQuestionCount: number
   weeklyPulse: Array<{ weekStart: string; count: number }>
   grounding: AudiencePulseGroundingSummary
+  coverage?: AudiencePulseCoverageSummary
   evidence: AudiencePulseThemeEvidence[]
 }
 

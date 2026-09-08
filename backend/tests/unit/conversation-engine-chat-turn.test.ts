@@ -12,7 +12,7 @@ import {
   runPreparedChatTurnStreamWithConversationEngine,
   runPreparedChatTurnWithConversationEngine,
 } from "../../src/modules/chat/services/conversationEngineChatTurn.js";
-import type { ChatPresentedAnswer } from "../../src/modules/chat/services/chatAnswerPresenter.js";
+import type { ChatAnswerPresenter, ChatPresentedAnswer } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import type { ProcessTurnResult } from "@radioso/conversation-contract";
 import type { TurnSkill } from "../../src/modules/chat/services/turnOutcome.js";
 import {
@@ -157,6 +157,11 @@ const session = (): PreparedSession => {
     turnTrace: toConversationTrace(retrieval.trace),
   };
 };
+
+// These adapter tests render through injected terminal skills. A presenter is
+// still part of the host contract for the routine-only fallback, which none of
+// these cases exercise.
+const chatAnswerPresenter = {} as ChatAnswerPresenter;
 
 describe("attemptRoutineTurnWithConversationEngine", () => {
   const routinePorts = {
@@ -307,6 +312,7 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
     const events = runPreparedChatTurnStreamWithConversationEngine({
       engine,
       session: session(),
+      chatAnswerPresenter,
       turnSkillSelector: new ChatTurnSkillSelector([turnSkill], new DefaultTurnSelectionStrategy()),
       turnSkills: [turnSkill],
       query: "Question",
@@ -349,6 +355,7 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
     const events = runPreparedChatTurnStreamWithConversationEngine({
       engine: new DefaultConversationEngine(),
       session: session(),
+      chatAnswerPresenter,
       turnSkillSelector: new ChatTurnSkillSelector([turnSkill], new DefaultTurnSelectionStrategy()),
       turnSkills: [turnSkill],
       query: "Question",
@@ -395,6 +402,7 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
     const events = runPreparedChatTurnStreamWithConversationEngine({
       engine: new DefaultConversationEngine(),
       session: session(),
+      chatAnswerPresenter,
       turnSkillSelector: new ChatTurnSkillSelector([turnSkill], new DefaultTurnSelectionStrategy()),
       turnSkills: [turnSkill],
       query: "Question",
@@ -457,6 +465,7 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
     const events = runPreparedChatTurnStreamWithConversationEngine({
       engine,
       session: session(),
+      chatAnswerPresenter,
       turnSkillSelector: new ChatTurnSkillSelector([turnSkill], new DefaultTurnSelectionStrategy()),
       turnSkills: [turnSkill],
       query: "Question",
@@ -535,6 +544,7 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
       const events = runPreparedChatTurnStreamWithConversationEngine({
         engine,
         session: session(),
+      chatAnswerPresenter,
         turnSkillSelector: new ChatTurnSkillSelector([turnSkill], new DefaultTurnSelectionStrategy()),
         turnSkills: [turnSkill],
         query: "Question",
@@ -618,6 +628,7 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
       runPreparedChatTurnWithConversationEngine({
         engine,
         session: session(),
+      chatAnswerPresenter,
         turnSkillSelector: new ChatTurnSkillSelector([answerSkill], new DefaultTurnSelectionStrategy()),
         turnSkills: [answerSkill],
         query: "Answer directly",
@@ -670,6 +681,7 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
     const { presentation, result } = await runPreparedChatTurnWithConversationEngine({
       engine,
       session: session(),
+      chatAnswerPresenter,
       turnSkillSelector: new ChatTurnSkillSelector(turnSkills, new DefaultTurnSelectionStrategy()),
       turnSkills,
       query: "Where is my order?",
@@ -725,6 +737,7 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
     const { presentation } = await runPreparedChatTurnWithConversationEngine({
       engine,
       session: session(),
+      chatAnswerPresenter,
       turnSkillSelector: new ChatTurnSkillSelector(turnSkills, new DefaultTurnSelectionStrategy()),
       turnSkills,
       query: "Book me a slot",
@@ -826,6 +839,7 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
     const { presentation, result } = await runPreparedChatTurnWithConversationEngine({
       engine: new DefaultConversationEngine(),
       session: prepared,
+      chatAnswerPresenter,
       directiveRuntime,
       turnSkillSelector: new ChatTurnSkillSelector([retrievalSkill], strategy),
       turnSkills: [retrievalSkill],
@@ -921,6 +935,7 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
       runPreparedChatTurnStreamWithConversationEngine({
         engine,
         session: session(),
+      chatAnswerPresenter,
         turnSkillSelector: new ChatTurnSkillSelector([streamingSkill], new DefaultTurnSelectionStrategy()),
         turnSkills: [streamingSkill],
         query: "Book me a slot",

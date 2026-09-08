@@ -3,6 +3,9 @@ import type {
   ConversationProgressPhase,
   ConversationProgressPort,
   ConversationClarificationStore,
+  ConversationCoverageAssessor,
+  ConversationCoverageRoutineActivator,
+  ConversationCoverageReactionRecorder,
   ConversationClarifier,
   Directive,
   DirectiveAdherenceEntry,
@@ -18,7 +21,7 @@ import type {
   RenderableTurn,
 } from "@radioso/conversation-contract";
 
-import type { ChatPresentedAnswer } from "./chatAnswerPresenter.js";
+import type { ChatAnswerPresenter, ChatPresentedAnswer } from "./chatAnswerPresenter.js";
 import type { PreparedSession } from "./chatSessionPreparer.js";
 import {
   createAttemptRoutineInput,
@@ -37,10 +40,12 @@ import {
 } from "./turnOutcome.js";
 import type { ChatTurnSkillSelector } from "./turnSkillSelector.js";
 import type { ChatStatusStage } from "../contracts/streamEvents.js";
+import { presentRoutineRenderableAnswer } from "./routines/routineGroundedAnswerRenderer.js";
 
-export interface RunPreparedChatTurnWithConversationEngineInput {
+interface RunPreparedChatTurnWithConversationEngineInput {
   engine: ConversationEngine;
   session: PreparedSession;
+  chatAnswerPresenter: ChatAnswerPresenter;
   /** The shared seam that resolves which terminal skill claims this turn. */
   turnSkillSelector: ChatTurnSkillSelector;
   /** The registered turn skills the engine selects, dispatches, and renders. */
@@ -57,9 +62,14 @@ export interface RunPreparedChatTurnWithConversationEngineInput {
   getSession?: () => PreparedSession;
   beforeRender?: () => Promise<void>;
   signal?: AbortSignal;
+  coverageAssessor?: ConversationCoverageAssessor;
+  coverageReactionRecorder?: ConversationCoverageReactionRecorder;
+  coverageRoutineActivator?: ConversationCoverageRoutineActivator;
+  routineStore?: ConversationRoutineStore;
+  routineRunner?: ConversationRoutineRunner;
 }
 
-export interface RunPreparedChatTurnWithConversationEngineResult {
+interface RunPreparedChatTurnWithConversationEngineResult {
   /** The Radioso-rendered presentation the host persists and returns. */
   presentation: ChatPresentedAnswer;
   /** The engine's turn result — its selection/dispatch trace and events. */
@@ -82,7 +92,7 @@ export type RunPreparedChatTurnStreamWithConversationEngineEvent =
       engineTrace: ConversationTrace;
     };
 
-export const toChatStatusStage = (phase: ConversationProgressPhase): ChatStatusStage => {
+const toChatStatusStage = (phase: ConversationProgressPhase): ChatStatusStage => {
   switch (phase) {
     case "preparing":
     case "interpreting":
@@ -150,6 +160,11 @@ export const runPreparedChatTurnWithConversationEngine = async (
     directiveStateStore: input.directiveStateStore,
     turnInterpreter: input.turnInterpreter,
     retrievalWork: input.retrievalWork,
+    coverageAssessor: input.coverageAssessor,
+    coverageReactionRecorder: input.coverageReactionRecorder,
+    coverageRoutineActivator: input.coverageRoutineActivator,
+    routineStore: input.routineStore,
+    routineRunner: input.routineRunner,
     selector: {
       async select() {
         const { decision } = input.turnSkillSelector.select(readSession());
@@ -184,6 +199,12 @@ export const runPreparedChatTurnWithConversationEngine = async (
   });
 
   const result = await input.engine.processTurn(processTurnInput);
+  if (!rendered && result.routineExecution) {
+    rendered = presentRoutineRenderableAnswer(
+      input.chatAnswerPresenter,
+      result.response,
+    );
+  }
   if (!rendered) {
     throw new Error("conversation_engine_rendered_no_chat_presentation");
   }
@@ -220,6 +241,11 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
     directiveStateStore: input.directiveStateStore,
     turnInterpreter: input.turnInterpreter,
     retrievalWork: input.retrievalWork,
+    coverageAssessor: input.coverageAssessor,
+    coverageReactionRecorder: input.coverageReactionRecorder,
+    coverageRoutineActivator: input.coverageRoutineActivator,
+    routineStore: input.routineStore,
+    routineRunner: input.routineRunner,
     progress: {
       report({ phase }) {
         if (input.signal?.aborted) {
@@ -336,15 +362,21 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
           });
           continue;
         }
+        const result = event.result;
         const streamResult = streamState.result;
-        if (!streamResult) {
+        const presentation = streamResult?.finalPresentation ?? (result.routineExecution
+          ? presentRoutineRenderableAnswer(
+              input.chatAnswerPresenter,
+              result.response,
+            )
+          : null);
+        if (!presentation) {
           throw new Error("conversation_engine_stream_missing_chat_result");
         }
-        const result = event.result;
         enqueue({
           type: "final",
-          presentation: streamResult.finalPresentation,
-          suggestions: streamResult.suggestions,
+          presentation,
+          suggestions: streamResult?.suggestions ?? { mode: "presentation" },
           result,
           engineTrace: result.trace,
         });

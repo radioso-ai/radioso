@@ -3,6 +3,11 @@ import type { ConversationChannelContext } from "@radioso/conversation-contract"
 
 import { ChatHistoryService } from "../../src/modules/chat/services/chatHistoryService.js";
 import type {
+  AnswerCoverageReactionTrace,
+  AnswerCoverageRecord,
+} from "../../src/modules/answerCoverage/public.js";
+import type { AnswerCoverageHistoryReader } from "../../src/modules/chat/services/answerCoverageHistoryProvider.js";
+import type {
   ContactHistoryDetail,
   ContactHistoryProviderPort,
   ContactHistorySummary,
@@ -67,6 +72,29 @@ class InMemoryContactHistoryProvider implements ContactHistoryProviderPort {
 
   async getById(workspaceId: string, requestId: string) {
     return this.contacts.find((contact) => contact.workspaceId === workspaceId && contact.id === requestId) ?? null;
+  }
+}
+
+class InMemoryAnswerCoverageHistoryReader implements AnswerCoverageHistoryReader {
+  readonly assessments = new Map<string, AnswerCoverageRecord>();
+  readonly reactions = new Map<string, AnswerCoverageReactionTrace[]>();
+  assessmentReads = 0;
+  reactionReads = 0;
+
+  async listByRequestMessageIds(input: { requestMessageIds: readonly string[] }) {
+    this.assessmentReads += 1;
+    return new Map(input.requestMessageIds.flatMap((id) => {
+      const record = this.assessments.get(id);
+      return record ? [[id, record] as const] : [];
+    }));
+  }
+
+  async listByAssessmentIds(input: { assessmentIds: readonly string[] }) {
+    this.reactionReads += 1;
+    return new Map(input.assessmentIds.flatMap((id) => {
+      const records = this.reactions.get(id);
+      return records ? [[id, records] as const] : [];
+    }));
   }
 }
 
@@ -653,6 +681,138 @@ describe("chat history service turn failure debug", () => {
 });
 
 describe("chat history service", () => {
+  it("projects persisted coverage and recorded reactions onto its correlated assistant turn in two bounded reads", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditRepository = new InMemoryAuditEventRepository();
+    const historyItemsRepository = new InMemoryHistoryItemsRepository(conversationRepository, auditRepository);
+    const coverageReader = new InMemoryAnswerCoverageHistoryReader();
+    const service = new ChatHistoryService(
+      conversationRepository,
+      messageRepository,
+      auditRepository,
+      historyItemsRepository,
+      undefined,
+      undefined,
+      undefined,
+      coverageReader,
+    );
+    const conversation = await conversationRepository.create("workspace-1");
+    const user = await messageRepository.create({
+      workspaceId: "workspace-1",
+      conversationId: conversation.id,
+      role: "user",
+      content: "What remains unresolved?",
+    });
+    const assistant = await messageRepository.create({
+      workspaceId: "workspace-1",
+      conversationId: conversation.id,
+      role: "assistant",
+      content: "Part of the answer is available.",
+    });
+    await auditRepository.create({
+      workspaceId: "workspace-1",
+      eventType: "chat.answer",
+      eventStatus: "success",
+      metadata: {
+        conversationId: conversation.id,
+        userMessageId: user.id,
+        assistantMessageId: assistant.id,
+      },
+    });
+    coverageReader.assessments.set(user.id, {
+      id: "assessment-1",
+      workspaceId: "workspace-1",
+      conversationId: conversation.id,
+      requestMessageId: user.id,
+      originatingTurnId: user.id,
+      contextualizedRequest: "user: What remains unresolved?",
+      availability: "assessed",
+      coverage: "partial",
+      reason: "insufficient_evidence",
+      unresolvedRequest: "The policy exception.",
+      schemaVersion: 1,
+      interactionEvaluationState: "evaluated",
+      assessedAt: new Date("2026-09-08T10:00:00.000Z"),
+      createdAt: new Date("2026-09-08T10:00:00.000Z"),
+    });
+    coverageReader.reactions.set("assessment-1", [{
+      id: "reaction-1",
+      assessmentId: "assessment-1",
+      workspaceId: "workspace-1",
+      conversationId: conversation.id,
+      reactionKey: "routine-execution-1",
+      routineId: "routine-1",
+      routineExecutionId: "routine-execution-1",
+      targetMessageId: assistant.id,
+      evaluationState: "evaluated",
+      evaluationIndex: 1,
+      decision: "matched",
+      reasonCode: "coverage_criteria_matched",
+      createdAt: new Date("2026-09-08T10:00:01.000Z"),
+    }]);
+
+    const detail = await service.getConversation("workspace-1", conversation.id);
+    const debug = detail.messages.find((message) => message.id === assistant.id)?.debug;
+
+    expect(debug?.answerCoverage).toEqual({
+      availability: "assessed",
+      coverage: "partial",
+      reason: "insufficient_evidence",
+      contextualizedRequest: "user: What remains unresolved?",
+      unresolvedRequest: "The policy exception.",
+      originatingTurnId: user.id,
+      originatingRequestId: user.id,
+      schemaVersion: 1,
+      assessedAt: "2026-09-08T10:00:00.000Z",
+    });
+    expect(debug?.interactionTrace).toEqual({
+      state: "evaluated",
+      consumedAssessment: { coverage: "partial", reason: "insufficient_evidence" },
+      decisions: [{
+        assessmentRequestId: user.id,
+        target: "routine",
+        targetId: "routine-1",
+        decision: "matched",
+        reasonCode: "coverage_criteria_matched",
+        routineExecutionId: "routine-execution-1",
+        targetMessageId: assistant.id,
+      }],
+    });
+    expect(coverageReader.assessmentReads).toBe(1);
+    expect(coverageReader.reactionReads).toBe(1);
+  });
+
+  it("keeps evaluated no-match separate from unavailable assessment", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditRepository = new InMemoryAuditEventRepository();
+    const historyItemsRepository = new InMemoryHistoryItemsRepository(conversationRepository, auditRepository);
+    const coverageReader = new InMemoryAnswerCoverageHistoryReader();
+    const service = new ChatHistoryService(
+      conversationRepository, messageRepository, auditRepository, historyItemsRepository,
+      undefined, undefined, undefined, coverageReader,
+    );
+    const conversation = await conversationRepository.create("workspace-1");
+    const user = await messageRepository.create({ workspaceId: "workspace-1", conversationId: conversation.id, role: "user", content: "Question" });
+    const assistant = await messageRepository.create({ workspaceId: "workspace-1", conversationId: conversation.id, role: "assistant", content: "Answer" });
+    await auditRepository.create({ workspaceId: "workspace-1", eventType: "chat.answer", eventStatus: "success", metadata: { conversationId: conversation.id, userMessageId: user.id, assistantMessageId: assistant.id } });
+    coverageReader.assessments.set(user.id, {
+      id: "assessment-2", workspaceId: "workspace-1", conversationId: conversation.id,
+      requestMessageId: user.id, originatingTurnId: user.id, contextualizedRequest: "Question",
+      availability: "assessed", coverage: "answered", reason: "sufficient_evidence", schemaVersion: 1,
+      interactionEvaluationState: "evaluated",
+      assessedAt: new Date("2026-09-08T10:00:00.000Z"), createdAt: new Date("2026-09-08T10:00:00.000Z"),
+    });
+
+    const debug = (await service.getConversation("workspace-1", conversation.id)).messages.find((message) => message.id === assistant.id)?.debug;
+    expect(debug?.interactionTrace).toEqual({
+      state: "evaluated",
+      consumedAssessment: { coverage: "answered", reason: "sufficient_evidence" },
+      decisions: [],
+    });
+  });
+
   it("replays activity trace metadata for assistant turns", async () => {
     const { conversationRepository, messageRepository, auditRepository, service } = createService();
 

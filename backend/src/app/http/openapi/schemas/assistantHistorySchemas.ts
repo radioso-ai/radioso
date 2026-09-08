@@ -186,6 +186,45 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       activitySummary: schemas.ActivitySummarySchema,
       activityTrace: schemas.ActivityTraceSchema,
       turnTrace: TurnTraceEnvelopeSchema.optional(),
+      answerCoverage: z.object({
+        availability: z.enum(["assessed", "not_recorded", "failed", "invalid"]),
+        coverage: z.enum(["answered", "partial", "unanswered", "unclear"]).optional(),
+        reason: z.enum([
+          "sufficient_evidence",
+          "insufficient_evidence",
+          "conflicting_evidence",
+          "ambiguous_request",
+          "intentional_scope_boundary",
+        ]).optional(),
+        contextualizedRequest: z.string().optional(),
+        unresolvedRequest: z.string().optional(),
+        originatingTurnId: z.string(),
+        originatingRequestId: z.string(),
+        schemaVersion: z.number().int().positive().optional(),
+        assessedAt: z.string().datetime().optional(),
+      }).optional(),
+      interactionTrace: z.object({
+        state: z.enum(["not_evaluated", "evaluated"]),
+        consumedAssessment: z.object({
+          coverage: z.enum(["answered", "partial", "unanswered", "unclear"]),
+          reason: z.enum([
+            "sufficient_evidence",
+            "insufficient_evidence",
+            "conflicting_evidence",
+            "ambiguous_request",
+            "intentional_scope_boundary",
+          ]),
+        }).optional(),
+        decisions: z.array(z.object({
+          assessmentRequestId: z.string(),
+          target: z.enum(["directive", "routine"]),
+          targetId: z.string().optional(),
+          decision: z.enum(["matched", "applied", "offered", "activated", "skipped", "suppressed"]),
+          reasonCode: z.string(),
+          routineExecutionId: z.string().optional(),
+          targetMessageId: z.string().uuid(),
+        })),
+      }).optional(),
     }),
   );
 
@@ -358,6 +397,57 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     }),
   );
 
+  const AnswerCoverageAssessmentSchema = registry.register(
+    "AnswerCoverageAssessment",
+    z.object({
+      availability: z.enum(["assessed", "not_recorded", "failed", "invalid"]),
+      coverage: z.enum(["answered", "partial", "unanswered", "unclear"]).optional(),
+      reason: z.enum([
+        "sufficient_evidence",
+        "insufficient_evidence",
+        "conflicting_evidence",
+        "ambiguous_request",
+        "intentional_scope_boundary",
+      ]).optional(),
+      contextualizedRequest: z.string().optional(),
+      unresolvedRequest: z.string().optional(),
+      originatingTurnId: z.string(),
+      originatingRequestId: z.string(),
+      schemaVersion: z.number().int().positive().optional(),
+      assessedAt: z.string().datetime().optional(),
+    }).openapi({
+      description: "Persisted semantic coverage for this assistant turn. It is independent from retrieval evidence, citation validation, and the response outcome.",
+    }),
+  );
+
+  const AnswerCoverageInteractionTraceSchema = registry.register(
+    "AnswerCoverageInteractionTrace",
+    z.object({
+      state: z.enum(["not_evaluated", "evaluated"]),
+      consumedAssessment: z.object({
+        coverage: z.enum(["answered", "partial", "unanswered", "unclear"]),
+        reason: z.enum([
+          "sufficient_evidence",
+          "insufficient_evidence",
+          "conflicting_evidence",
+          "ambiguous_request",
+          "intentional_scope_boundary",
+        ]),
+      }).optional(),
+      decisions: z.array(z.object({
+        assessmentRequestId: z.string(),
+        target: z.enum(["directive", "routine"]),
+        targetId: z.string().optional(),
+        decision: z.enum(["matched", "applied", "offered", "activated", "skipped", "suppressed"]),
+        reasonCode: z.string(),
+        routineExecutionId: z.string().optional(),
+        targetMessageId: z.string().uuid(),
+      })),
+    }).openapi({
+      description: "Recorded coverage-dependent directive and routine evaluation in execution order. `evaluated` with an empty decisions list means no rule matched; `not_evaluated` means no coverage rule ran.",
+    }),
+  );
+
   const ChatConversationMessageDebugSchema = registry.register(
     "ChatConversationMessageDebug",
     z.object({
@@ -368,7 +458,15 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       recordedAt: z.string().datetime(),
       stream: z.boolean(),
       citationCount: z.number().int().min(0),
-      answerOutcome: z.enum(["grounded_success", "no_context_refusal", "non_retrieval_response"]).optional(),
+      answerOutcome: z.enum([
+        "grounded_success",
+        "no_context_refusal",
+        "non_retrieval_response",
+        "coverage_partial",
+        "coverage_unanswered",
+        "coverage_unclear",
+        "coverage_unavailable",
+      ]).optional(),
       skillName: z.string().optional(),
       skillOutcome: z.string().optional(),
       skillStatus: z.enum([
@@ -385,6 +483,8 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       activitySummary: schemas.ActivitySummarySchema.optional(),
       activityTrace: schemas.ActivityTraceSchema.optional(),
       turnTrace: TurnTraceEnvelopeSchema.optional(),
+      answerCoverage: AnswerCoverageAssessmentSchema.optional(),
+      interactionTrace: AnswerCoverageInteractionTraceSchema.optional(),
       errorMessage: z.string().nullable().optional(),
     }),
   );

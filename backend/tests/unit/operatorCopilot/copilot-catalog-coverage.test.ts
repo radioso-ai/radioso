@@ -48,7 +48,8 @@ describe("operator copilot catalog coverage", () => {
   //               Release A an App's lifecycle is a signed-in administrator's decision and the
   //               routes refuse machine credentials, so none of them has a Ray shape yet; the
   //               reads land with the Apps dashboard.
-  const maxDeferredCatalogExclusions = 106;
+  //   106 -> 107  the Apps setup phase added an explicit activate command (same reason as the other Apps operations)
+  const maxDeferredCatalogExclusions = 107;
 
   it("states each permanent exclusion's own ground rather than one conflated reason", () => {
     // A permanent exclusion is the strongest claim this map makes, so a wrong one either blocks

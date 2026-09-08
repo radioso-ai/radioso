@@ -220,6 +220,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "disableAppInstallation",
     "enableAppInstallation",
     "removeAppInstallation",
+    "activateAppInstallation",
   ], appLifecycleIsAdministratorAction),
 
   ...coverage([

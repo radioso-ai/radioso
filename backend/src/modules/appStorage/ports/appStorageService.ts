@@ -13,11 +13,7 @@ import type {
 import type { z } from "zod";
 
 import type { AppStorageResult } from "../domain/results.js";
-import type {
-  AppStorageCollectionScope,
-  AppStorageInstallationScope,
-  AppStorageLiveUsage,
-} from "./appStorageRepository.js";
+import type { AppStorageInstallationScope, AppStorageLiveUsage } from "./appStorageRepository.js";
 
 /**
  * Result shapes come from the contract's own schemas rather than being restated
@@ -48,13 +44,6 @@ export interface AppStorageService {
   usage(
     input: AppStorageInstallationScope & { collection: StorageCollection },
   ): Promise<AppStorageResult<AppStorageLiveUsage>>;
-  /**
-   * The schema versions this collection's rows carry, for the compatibility
-   * matrix's stored-writer observation. It lives here because the answer is a
-   * storage fact: a release admission that had to derive it would be a caller
-   * reading storage tables it does not own.
-   */
-  storedSchemaVersions(scope: AppStorageCollectionScope): Promise<AppStorageResult<number[]>>;
 }
 
 /**
@@ -67,13 +56,26 @@ export type AppStorageExportEvent =
   | { kind: "error"; error: AppError };
 
 /**
+ * An admitted export, and the snapshot the caller now owns.
+ *
+ * Owning it is the point. `stream` opens the database snapshot on the first read
+ * and holds it until the data runs out; an export that is admitted and never read
+ * therefore holds nothing, and one whose consumer walks away is closed either by
+ * `close` or by the snapshot's own idle timeout rather than left open.
+ */
+export interface AppStorageExportSnapshotStream {
+  stream(): AsyncIterable<AppStorageExportEvent>;
+  close(): Promise<void>;
+}
+
+/**
  * Admission and streaming are separate answers. Whether an export may run at all
- * is decided once, under the installation's state row, and reported as a result;
+ * is decided once, against the installation's state, and reported as a result;
  * what follows is the data.
  */
 export type AppStorageExportAdmission =
   | { ok: false; error: AppError }
-  | { ok: true; stream: AsyncIterable<AppStorageExportEvent> };
+  | { ok: true; snapshot: AppStorageExportSnapshotStream };
 
 export interface AppStorageDeletionSummary {
   recordCount: number;
@@ -97,11 +99,25 @@ export interface AppStorageDeletionSummary {
  */
 export interface AppStorageDisposition {
   revokeAccess(scope: AppStorageInstallationScope): Promise<AppStorageResult<void>>;
+  /**
+   * Gives the App its storage back. It is refused while a retention hold stands:
+   * a hold is a promise that the data stops existing at a named instant, and an
+   * App writing into data scheduled for destruction is the state the promise
+   * exists to prevent. Lifting the hold is `cancelRetention`, on purpose.
+   */
   restoreAccess(scope: AppStorageInstallationScope): Promise<AppStorageResult<void>>;
   export(scope: AppStorageInstallationScope): Promise<AppStorageExportAdmission>;
   retain(
     input: AppStorageInstallationScope & { until: Date },
   ): Promise<AppStorageResult<{ retainUntil: Date }>>;
+  /**
+   * Lifts a retention hold and says so in the trail. Access stays revoked: ending
+   * a scheduled destruction and handing the data back to the App are two
+   * decisions, and an operator makes them one at a time.
+   */
+  cancelRetention(
+    scope: AppStorageInstallationScope,
+  ): Promise<AppStorageResult<{ retainUntil: Date | null }>>;
   deleteInstallationStorage(
     scope: AppStorageInstallationScope,
   ): Promise<AppStorageResult<AppStorageDeletionSummary>>;
@@ -110,18 +126,37 @@ export interface AppStorageDisposition {
    * Exposed rather than scheduled: the runtime that owns background work decides
    * the cadence, and a trail that is a few seconds behind is still a trail that
    * agrees with the data.
+   *
+   * Delivery is at-least-once. Entries are leased, published outside any
+   * transaction, and only then acknowledged, so a publish whose acknowledgement
+   * did not commit is published again under the same event id.
    */
-  drainAuditOutbox(): Promise<{ publishedCount: number }>;
+  drainAuditOutbox(): Promise<AppStorageAuditDrainResult>;
+}
+
+export interface AppStorageAuditDrainResult {
+  publishedCount: number;
+  /** Entries whose publish failed. Their lease expires and the next pass retries them. */
+  failureCount: number;
 }
 
 export interface AppStorageExpirySweepResult {
   deletedCount: number;
   batchCount: number;
+  /** Collections another worker's live lease already covered. */
+  skippedCount: number;
 }
 
 export interface AppStorageRetentionSweepResult {
   installationCount: number;
   recordCount: number;
+  /**
+   * Installations whose reclamation failed. A pass that reported these the same
+   * way as installations that were merely no longer due would leave an operator
+   * unable to tell a hold that was extended from data that is past its deadline
+   * and still here.
+   */
+  failureCount: number;
 }
 
 /**
@@ -141,10 +176,18 @@ export interface AppStorageSweeper {
  * field was indexed was never measured against the index's bounds, so a rebuild
  * can meet one the index cannot hold; it reports that as a deterministic outcome
  * with a count, rather than raising the database's own error at the operator.
+ *
+ * A finished rebuild carries the token activation presents to clear the pending
+ * marker inside its own transaction. The marker stays up until then on purpose:
+ * an older release can still rewrite a record between the last batch and the
+ * activation, and the marker is the only thing making that write maintain the
+ * index the candidate is about to query.
  */
 export type AppStorageIndexRebuildResult =
-  | { outcome: "rebuilt"; rebuiltCount: number; batchCount: number }
-  | { outcome: "incompatible_records"; indexId: string; incompatibleCount: number };
+  | { outcome: "rebuilt"; rebuiltCount: number; batchCount: number; completionToken: string }
+  | { outcome: "incompatible_records"; indexId: string; incompatibleCount: number }
+  /** Another rebuild of the same index took the marker over; this run owns nothing. */
+  | { outcome: "superseded"; indexId: string };
 
 /**
  * Builds a declared index over records written before it was declared. An index

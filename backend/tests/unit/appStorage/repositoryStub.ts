@@ -1,6 +1,14 @@
+import { randomUUID } from "node:crypto";
+
 import { vi } from "vitest";
 
-import type { AppStorageRepositoryPort } from "../../../src/modules/appStorage/public.js";
+import type {
+  AppStorageRepositoryPort,
+  AppStorageTransactionHandle,
+} from "../../../src/modules/appStorage/public.js";
+
+/** A stand-in for the opaque handle the repository hands work that shares its transaction. */
+const transactionHandle = {} as unknown as AppStorageTransactionHandle;
 
 /**
  * A repository that admits everything and stores nothing. Every method answers
@@ -10,11 +18,15 @@ import type { AppStorageRepositoryPort } from "../../../src/modules/appStorage/p
  */
 export const buildRepositoryStub = (): AppStorageRepositoryPort => ({
   findInstallationState: vi.fn(async () => null),
-  setAccessRevoked: vi.fn(async () => ({ admitted: true as const, value: undefined })),
+  setAccessRevoked: vi.fn(async () => ({
+    admitted: true as const,
+    value: { outcome: "applied" as const },
+  })),
   setRetention: vi.fn(async (input) => ({
     admitted: true as const,
     value: { retainUntil: input.retainUntil, accessRevokedAt: new Date("2026-01-01T00:00:00.000Z") },
   })),
+  cancelRetention: vi.fn(async () => ({ admitted: true as const, value: { retainUntil: null } })),
   findRecord: vi.fn(async () => ({ admitted: true as const, value: null })),
   putRecord: vi.fn(async () => ({
     admitted: true as const,
@@ -30,13 +42,29 @@ export const buildRepositoryStub = (): AppStorageRepositoryPort => ({
     value: { recordCount: 0, byteSize: 0, reclaimPending: false },
   })),
   listStoredSchemaVersions: vi.fn(async () => ({ admitted: true as const, value: [] })),
-  beginIndexRebuild: vi.fn(async () => ({ admitted: true as const, value: { startVersion: 1 } })),
+  beginIndexRebuild: vi.fn(async () => ({
+    admitted: true as const,
+    value: { startVersion: 1, generation: 1 },
+  })),
   rebuildIndexBatch: vi.fn(async () => ({
     admitted: true as const,
-    value: { rebuiltCount: 0, lastKey: null, incompatibleCount: 0 },
+    value: { rebuiltCount: 0, lastKey: null, visitedKeys: [], incompatibleKeys: [] },
   })),
-  finishIndexRebuild: vi.fn(async () => ({ admitted: true as const, value: undefined })),
-  claimCollectionsForExpirySweep: vi.fn(async () => []),
+  finishIndexRebuild: vi.fn(async () => ({
+    admitted: true as const,
+    value: { outcome: "finished" as const, completionToken: "sync_state:by_external_id:1" },
+  })),
+  completeIndexRebuild: vi.fn(async () => ({ outcome: "completed" as const })),
+  cancelIndexRebuild: vi.fn(async () => ({
+    admitted: true as const,
+    value: { outcome: "cancelled" as const },
+  })),
+  runInTransaction: vi.fn(async (work) => work(transactionHandle)),
+  listExpirySweepCandidates: vi.fn(async () => []),
+  claimCollectionForExpirySweep: vi.fn(async () => ({
+    claimed: true as const,
+    leaseToken: randomUUID(),
+  })),
   reclaimExpiredRecords: vi.fn(async () => 0),
   listInstallationsDueForRetention: vi.fn(async () => []),
   reclaimRetainedInstallation: vi.fn(async () => ({
@@ -45,7 +73,7 @@ export const buildRepositoryStub = (): AppStorageRepositoryPort => ({
   })),
   openInstallationExport: vi.fn(async () => ({
     admitted: true as const,
-    value: { records: (async function* () {})() },
+    value: { read: () => (async function* () {})(), close: async (): Promise<void> => undefined },
   })),
   deleteInstallationRecords: vi.fn(async () => ({
     recordCount: 0,
@@ -53,7 +81,8 @@ export const buildRepositoryStub = (): AppStorageRepositoryPort => ({
     alreadyDeleted: false,
   })),
   enqueueAuditEvent: vi.fn(async () => {}),
-  drainAuditOutbox: vi.fn(async () => 0),
+  claimAuditOutboxBatch: vi.fn(async () => ({ claimToken: randomUUID(), entries: [] })),
+  acknowledgeAuditOutbox: vi.fn(async () => 0),
 });
 
 /** The transient failure a driver raises when the connection is gone. */

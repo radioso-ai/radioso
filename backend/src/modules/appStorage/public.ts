@@ -29,10 +29,12 @@ export type {
   AppStorageAuditIntent,
   AppStorageAuditPort,
 } from "./ports/appStorageAudit.js";
+export type { AppStorageCompatibilityFactsPort } from "./ports/appStorageCompatibilityFacts.js";
 export type {
   AppStorageCollectionScope,
   AppStorageInstallationScope,
   AppStorageRepositoryPort,
+  AppStorageTransactionHandle,
   StoredAppStorageRecord,
 } from "./ports/appStorageRepository.js";
 export type {
@@ -43,7 +45,10 @@ export type {
   AppStorageSweeper,
 } from "./ports/appStorageService.js";
 
-export { createAppStorageService } from "./services/appStorageService.js";
+export {
+  createAppStorageCompatibilityFacts,
+  createAppStorageService,
+} from "./services/appStorageService.js";
 export { createAppStorageDisposition } from "./services/appStorageDisposition.js";
 export { createAppStorageIndexRebuilder } from "./services/appStorageIndexRebuilder.js";
 export { createAppStorageSweeper } from "./services/appStorageSweeper.js";

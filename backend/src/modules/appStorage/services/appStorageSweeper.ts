@@ -48,26 +48,48 @@ export const createAppStorageSweeper = (options: AppStorageSweeperOptions): AppS
   const maxInstallations = options.maxInstallations ?? DEFAULT_MAX_INSTALLATIONS;
 
   /**
-   * Works one collection at a time. Each pass claims the collections it works —
-   * least recently swept first, skipping whatever another pass already holds — so
-   * a collection whose expired rows keep arriving cannot be picked over and over
-   * while another keeps its own backlog forever. Inside a collection the reclaim
-   * approaches the installation's state row first, the counter row second, and
-   * record rows third, which is the order every write takes, so a sweep, a put,
-   * and an installation deletion queue behind each other instead of deadlocking.
+   * Works one collection at a time, and claims one at a time.
+   *
+   * Listing and claiming are separate steps because they answer different
+   * questions under different constraints. The listing is fairness — least
+   * recently swept first, so a collection whose expired rows keep arriving cannot
+   * be picked every round while another keeps its own backlog forever — and it
+   * takes no locks, because taking counter rows in fairness order is exactly how a
+   * sweep meets an installation deletion holding them in collection order. The
+   * claim is authority: it takes the installation's fence, then that one
+   * collection's counter row, and writes a lease that outlives its own
+   * transaction, so a second worker cannot take the collection in the moment
+   * between the claim committing and the reclamation starting.
+   *
+   * The reclaim then approaches the installation's state row first, the counter
+   * row second, and record rows third, which is the order every write takes, so a
+   * sweep, a put, and an installation deletion queue behind each other instead of
+   * deadlocking.
    */
   const sweepCollections = async (): Promise<AppStorageExpirySweepResult> => {
     let deletedCount = 0;
     let batchCount = 0;
+    let skippedCount = 0;
 
     while (batchCount < maxBatches) {
-      const collections = await repository.claimCollectionsForExpirySweep(maxBatches - batchCount);
-      if (collections.length === 0) break;
+      const candidates = await repository.listExpirySweepCandidates(maxBatches - batchCount);
+      if (candidates.length === 0) break;
 
       let progressed = false;
-      for (const scope of collections) {
+      for (const scope of candidates) {
         if (batchCount >= maxBatches) break;
-        const deleted = await repository.reclaimExpiredRecords({ scope, limit: batchSize });
+
+        const claim = await repository.claimCollectionForExpirySweep({ scope });
+        if (!claim.claimed) {
+          skippedCount += 1;
+          continue;
+        }
+
+        const deleted = await repository.reclaimExpiredRecords({
+          scope,
+          limit: batchSize,
+          leaseToken: claim.leaseToken,
+        });
         batchCount += 1;
         deletedCount += deleted;
         if (deleted > 0) progressed = true;
@@ -78,7 +100,7 @@ export const createAppStorageSweeper = (options: AppStorageSweeperOptions): AppS
       if (!progressed) break;
     }
 
-    return { deletedCount, batchCount };
+    return { deletedCount, batchCount, skippedCount };
   };
 
   /**
@@ -93,7 +115,7 @@ export const createAppStorageSweeper = (options: AppStorageSweeperOptions): AppS
    */
   const reclaimInstallation = async (
     scope: AppStorageInstallationScope,
-  ): Promise<{ recordCount: number; reclaimed: boolean }> => {
+  ): Promise<{ recordCount: number; reclaimed: boolean; failed: boolean }> => {
     try {
       const removed = await repository.reclaimRetainedInstallation({
         scope,
@@ -108,41 +130,57 @@ export const createAppStorageSweeper = (options: AppStorageSweeperOptions): AppS
         }),
       });
 
-      if (removed.outcome !== "reclaimed") return { recordCount: 0, reclaimed: false };
-      return { recordCount: removed.summary.recordCount, reclaimed: true };
+      if (removed.outcome !== "reclaimed") return { recordCount: 0, reclaimed: false, failed: false };
+      return { recordCount: removed.summary.recordCount, reclaimed: true, failed: false };
     } catch {
       // A failed reclamation is the case the trail exists for: the deadline
       // passed and the data is still here, and the next pass has to try again.
       // This event has no state change to ride along with — nothing committed —
       // so it goes to the outbox on its own.
-      await repository.enqueueAuditEvent({
-        scope,
-        intent: {
-          eventType: "app.data.deletion.completed",
-          eventStatus: "failure",
-          metadata: { reason: "retention_elapsed" },
-        },
-      });
-      return { recordCount: 0, reclaimed: false };
+      //
+      // Recording it is itself allowed to fail. The pass has already learned what
+      // it needs to report about this installation, and an outbox write that
+      // failed must not take the remaining installations down with it.
+      try {
+        await repository.enqueueAuditEvent({
+          scope,
+          intent: {
+            eventType: "app.data.deletion.completed",
+            eventStatus: "failure",
+            metadata: { reason: "retention_elapsed" },
+          },
+        });
+      } catch {
+        // The failure is still reported through `failureCount`.
+      }
+      return { recordCount: 0, reclaimed: false, failed: true };
     }
   };
 
   return {
     runExpirySweep: sweepCollections,
 
+    /**
+     * A pass that reported a failed reclamation the same way as one that was
+     * merely no longer due would leave an operator unable to tell an extended
+     * hold from data that is past its deadline and still here, so the two are
+     * counted apart.
+     */
     async runRetentionSweep(): Promise<AppStorageRetentionSweepResult> {
       const due = await repository.listInstallationsDueForRetention(maxInstallations);
       let installationCount = 0;
       let recordCount = 0;
+      let failureCount = 0;
 
       for (const scope of due) {
         const outcome = await reclaimInstallation(scope);
+        if (outcome.failed) failureCount += 1;
         if (!outcome.reclaimed) continue;
         installationCount += 1;
         recordCount += outcome.recordCount;
       }
 
-      return { installationCount, recordCount };
+      return { installationCount, recordCount, failureCount };
     },
   };
 };

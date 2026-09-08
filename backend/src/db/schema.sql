@@ -749,7 +749,12 @@ CREATE TABLE public.app_storage_audit_outbox (
     event_type text NOT NULL,
     event_status text NOT NULL,
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    claim_token uuid,
+    claimed_until timestamp with time zone,
+    attempt_count integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT app_storage_audit_outbox_attempt_count_check CHECK ((attempt_count >= 0)),
+    CONSTRAINT app_storage_audit_outbox_claim CHECK (((claim_token IS NULL) = (claimed_until IS NULL)))
 );
 
 
@@ -765,8 +770,11 @@ CREATE TABLE public.app_storage_collection_usage (
     byte_size bigint DEFAULT 0 NOT NULL,
     next_version bigint DEFAULT 1 NOT NULL,
     last_swept_at timestamp with time zone DEFAULT to_timestamp((0)::double precision) NOT NULL,
+    sweep_lease_token uuid,
+    sweep_lease_until timestamp with time zone,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT app_storage_collection_usage_byte_size_check CHECK ((byte_size >= 0)),
+    CONSTRAINT app_storage_collection_usage_lease CHECK (((sweep_lease_token IS NULL) = (sweep_lease_until IS NULL))),
     CONSTRAINT app_storage_collection_usage_next_version_check CHECK (((next_version > 0) AND (next_version <= '9007199254740991'::bigint))),
     CONSTRAINT app_storage_collection_usage_record_count_check CHECK ((record_count >= 0))
 );
@@ -804,8 +812,10 @@ CREATE TABLE public.app_storage_installation_state (
     deleted_record_count integer,
     deleted_collection_count integer,
     pending_indexes jsonb DEFAULT '{}'::jsonb NOT NULL,
+    rebuild_generation bigint DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT app_storage_installation_state_rebuild_generation_check CHECK ((rebuild_generation >= 0))
 );
 
 
@@ -6437,10 +6447,10 @@ CREATE INDEX idx_api_credentials_workspace_created ON public.api_credentials USI
 
 
 --
--- Name: idx_app_storage_audit_outbox_created; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_app_storage_audit_outbox_claimable; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_app_storage_audit_outbox_created ON public.app_storage_audit_outbox USING btree (created_at, id);
+CREATE INDEX idx_app_storage_audit_outbox_claimable ON public.app_storage_audit_outbox USING btree (claimed_until, created_at, id);
 
 
 --
@@ -8776,14 +8786,6 @@ ALTER TABLE ONLY public.api_credentials
 
 ALTER TABLE ONLY public.api_credentials
     ADD CONSTRAINT api_credentials_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
-
-
---
--- Name: app_storage_audit_outbox app_storage_audit_outbox_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.app_storage_audit_outbox
-    ADD CONSTRAINT app_storage_audit_outbox_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

@@ -12,6 +12,7 @@ import {
   storageSuccess,
   type AppStorageResult,
 } from "../domain/results.js";
+import type { AppStorageCompatibilityFactsPort } from "../ports/appStorageCompatibilityFacts.js";
 import type {
   AppStorageAdmitted,
   AppStorageCollectionScope,
@@ -258,12 +259,29 @@ export const createAppStorageService = (options: AppStorageServiceOptions): AppS
         return mapAdmitted(read, (usage) => storageSuccess(usage));
       });
     },
-
-    async storedSchemaVersions(scope): Promise<AppStorageResult<number[]>> {
-      return attempt(async () => {
-        const found = await repository.listStoredSchemaVersions(scope);
-        return mapAdmitted(found, (versions) => storageSuccess(versions));
-      });
-    },
   };
 };
+
+/**
+ * The one storage fact release admission needs, on its own port.
+ *
+ * It is not part of the capability service, because the capability service is
+ * what the App gateway exposes: a release's view of which schema versions a
+ * collection's rows carry is host business, and a surface that carried it would
+ * be one operation away from exposing it to an App. Keeping it separate is what
+ * makes "expose `AppStorageService`" a safe instruction.
+ */
+export const createAppStorageCompatibilityFacts = (
+  options: AppStorageServiceOptions,
+): AppStorageCompatibilityFactsPort => ({
+  async storedSchemaVersions(scope): Promise<AppStorageResult<number[]>> {
+    try {
+      const found = await options.repository.listStoredSchemaVersions(scope);
+      return found.admitted
+        ? storageSuccess(found.value)
+        : storageFailure("denied", "Storage access for this installation is not available");
+    } catch (error) {
+      return classifyStorageFailure(error);
+    }
+  },
+});

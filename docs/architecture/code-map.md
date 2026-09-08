@@ -1332,25 +1332,54 @@ recreation; the counter has a ceiling at the last safe JSON integer and refuses
 further writes rather than repeat a version.
 
 Foreground reclamation is bounded: a put clears its own key and a fixed number of
-batches, and the sweep owns the rest, claiming the least recently swept
-collections with `SKIP LOCKED`. An export reads one repeatable-read snapshot for
-its whole stream and is the one operation that does not lock the state row —
-holding one for an operator's read would stop the App writing for that long.
+batches, and when that stops with expired rows left it counts live records
+exactly — bounded by the collection's own `maxRecords` — so the quota decision is
+true rather than a reflection of a counter still charging for unreclaimed rows.
+The counter itself keeps meaning rows present, live or not yet reclaimed, because
+every reclaim's arithmetic subtracts against that meaning; `usage` reports
+`reclaimPending` when the two differ.
+
+The sweep owns the rest, and separates listing from claiming: the fairness listing
+(least recently swept first) takes no locks, and each claim takes one
+installation's fence and exactly one collection's counter row before writing a
+durable lease. Holding several counter rows in fairness order is what used to meet
+an installation deletion holding them in collection order.
+
+An export is admitted without opening anything; the returned snapshot opens its
+repeatable-read transaction on the first read, re-reads the state row inside it,
+and captures the expiry cutoff there. It is the one operation that does not lock
+the state row — holding one for an operator's read would stop the App writing for
+that long — and it closes on completion, on `close`, or on an idle timeout.
+
+A retention hold cannot be restored around: `setAccessRevoked` refuses to clear
+the revocation while `retain_until` is set, and `cancelRetention` is the explicit
+operation that lifts it. Index rebuilds carry a generation; finishing and
+cancelling are compare-and-set against it, and `completeIndexRebuild` takes a
+caller-owned transaction so activation clears the marker in the same commit that
+starts serving the index.
+
 Irreversible dispositions commit their audit intent to `app_storage_audit_outbox`
-in the same transaction as the change; `drainAuditOutbox` publishes afterwards.
-There is no workspace-wide cleanup helper: workspace deletion cascades.
+in the same transaction as the change. The drain leases a batch, publishes outside
+any transaction, then acknowledges by token — publishing under the claim would
+need a second pooled connection for the audit store and would hold row locks
+across the publisher. Delivery is therefore at-least-once with a stable event id.
+The outbox is the one table here with no workspace foreign key, so undrained
+disposition evidence survives workspace deletion; everything else cascades, and
+there is no workspace-wide cleanup helper.
 
 Primary paths:
 
 - `backend/src/modules/appStorage/public.ts` — the only import surface
 - `backend/src/modules/appStorage/domain/` — record validation, indexed-value bounds, quota, query bounds, expiry, retention policy, failure classification, compatibility
+- `backend/src/modules/appStorage/domain/compatibility.ts` — the two-direction reader matrix over a candidate and every surviving reader's declaration
 - `backend/src/modules/appStorage/ports/appStorageService.ts` — the capability, disposition, sweeper, and index-rebuild ports
+- `backend/src/modules/appStorage/ports/appStorageCompatibilityFacts.ts` — `storedSchemaVersions`, apart from the gateway-facing capability service
 - `backend/src/modules/appStorage/repositories/appStorageRepository.ts` — the generic Postgres model and the lock order
 - `backend/src/modules/appStorage/ports/appStorageRepository.ts` — the persistence port and the lock order it owns
-- `backend/src/modules/appStorage/services/appStorageDisposition.ts` — revoke, export admission and stream, retention, deletion, audit drain
-- `backend/src/modules/appStorage/services/appStorageSweeper.ts` — expiry reclamation and the retention deadline
-- `backend/src/modules/appStorage/services/appStorageIndexRebuilder.ts` — builds an added index over records already stored
-- `backend/src/app/composition/appStorage.ts` — repository, service, disposition, rebuilder, sweeper, and the `app.data.*` audit sink
+- `backend/src/modules/appStorage/services/appStorageDisposition.ts` — revoke, restore, export snapshots, retention and its cancellation, deletion, audit drain
+- `backend/src/modules/appStorage/services/appStorageSweeper.ts` — expiry claim/lease/reclaim and the retention deadline
+- `backend/src/modules/appStorage/services/appStorageIndexRebuilder.ts` — builds an added index over records already stored, under its own generation
+- `backend/src/app/composition/appStorage.ts` — repository, service, compatibility facts, disposition, rebuilder, sweeper, and the `app.data.*` audit sink
 - `backend/src/db/migrations/172_app_storage.sql`
 
 Useful searches:

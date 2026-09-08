@@ -23,42 +23,78 @@ const enqueuedIntents = (repository: ReturnType<typeof buildRepositoryStub>) =>
   (repository.enqueueAuditEvent as ReturnType<typeof vi.fn>).mock.calls.map(([call]) => call.intent);
 
 describe("app storage expiry sweep", () => {
-  it("reclaims one collection at a time and stops when a round reclaims nothing", async () => {
+  it("claims one collection at a time and reclaims it under that claim's lease", async () => {
     const repository = buildRepositoryStub();
-    const claimed = [[collectionScope("sync_state"), collectionScope("cursors")], []];
-    repository.claimCollectionsForExpirySweep = vi.fn(async () => claimed.shift() ?? []);
+    const listed = [[collectionScope("sync_state"), collectionScope("cursors")], []];
+    repository.listExpirySweepCandidates = vi.fn(async () => listed.shift() ?? []);
+    repository.claimCollectionForExpirySweep = vi.fn(async () => ({
+      claimed: true as const,
+      leaseToken: "lease-1",
+    }));
     const reclaimed = [50, 7];
     repository.reclaimExpiredRecords = vi.fn(async () => reclaimed.shift() ?? 0);
 
     const sweeper = createAppStorageSweeper({ repository, batchSize: 50, maxBatches: 10 });
 
-    await expect(sweeper.runExpirySweep()).resolves.toEqual({ deletedCount: 57, batchCount: 2 });
-    // Each batch names a collection, because the reclaim takes the installation's
-    // state row and then that collection's counter; a sweep spanning collections
-    // would take locks in an order no write takes them in.
+    await expect(sweeper.runExpirySweep()).resolves.toEqual({
+      deletedCount: 57,
+      batchCount: 2,
+      skippedCount: 0,
+    });
+    // One claim per collection, and the reclaim carries the lease that claim
+    // wrote: the claim commits before the work runs, so without a lease a second
+    // worker could take the collection in between.
+    expect(repository.claimCollectionForExpirySweep).toHaveBeenNthCalledWith(1, {
+      scope: collectionScope("sync_state"),
+    });
     expect(repository.reclaimExpiredRecords).toHaveBeenCalledWith({
       scope: collectionScope("sync_state"),
       limit: 50,
+      leaseToken: "lease-1",
     });
+  });
+
+  it("leaves a collection another worker already leased alone", async () => {
+    const repository = buildRepositoryStub();
+    repository.listExpirySweepCandidates = vi.fn(async () => [collectionScope("sync_state")]);
+    repository.claimCollectionForExpirySweep = vi.fn(async () => ({ claimed: false as const }));
+
+    const sweeper = createAppStorageSweeper({ repository, maxBatches: 5 });
+
+    await expect(sweeper.runExpirySweep()).resolves.toEqual({
+      deletedCount: 0,
+      batchCount: 0,
+      skippedCount: 1,
+    });
+    expect(repository.reclaimExpiredRecords).not.toHaveBeenCalled();
   });
 
   it("stops at the batch ceiling rather than sweeping without bound", async () => {
     const repository = buildRepositoryStub();
-    repository.claimCollectionsForExpirySweep = vi.fn(async (limit: number) =>
+    repository.listExpirySweepCandidates = vi.fn(async (limit: number) =>
       Array.from({ length: limit }, (_unused, offset) => collectionScope(`c${offset}`)),
     );
     repository.reclaimExpiredRecords = vi.fn(async () => 50);
 
     const sweeper = createAppStorageSweeper({ repository, batchSize: 50, maxBatches: 3 });
 
-    await expect(sweeper.runExpirySweep()).resolves.toEqual({ deletedCount: 150, batchCount: 3 });
+    await expect(sweeper.runExpirySweep()).resolves.toEqual({
+      deletedCount: 150,
+      batchCount: 3,
+      skippedCount: 0,
+    });
   });
 
   it("does nothing when no collection holds an expired row", async () => {
     const repository = buildRepositoryStub();
     const sweeper = createAppStorageSweeper({ repository });
 
-    await expect(sweeper.runExpirySweep()).resolves.toEqual({ deletedCount: 0, batchCount: 0 });
+    await expect(sweeper.runExpirySweep()).resolves.toEqual({
+      deletedCount: 0,
+      batchCount: 0,
+      skippedCount: 0,
+    });
+    expect(repository.claimCollectionForExpirySweep).not.toHaveBeenCalled();
     expect(repository.reclaimExpiredRecords).not.toHaveBeenCalled();
   });
 });
@@ -82,7 +118,7 @@ describe("app storage retention sweep", () => {
 
     const result = await createAppStorageSweeper({ repository }).runRetentionSweep();
 
-    expect(result).toEqual({ installationCount: 2, recordCount: 6 });
+    expect(result).toEqual({ installationCount: 2, recordCount: 6, failureCount: 0 });
     const intents = (repository.reclaimRetainedInstallation as ReturnType<typeof vi.fn>).mock.calls.map(
       ([call]) => call.audit({ recordCount: 3, collectionCount: 1 }),
     );
@@ -104,6 +140,7 @@ describe("app storage retention sweep", () => {
     await expect(createAppStorageSweeper({ repository }).runRetentionSweep()).resolves.toEqual({
       installationCount: 0,
       recordCount: 0,
+      failureCount: 0,
     });
     expect(enqueuedIntents(repository)).toEqual([]);
   });
@@ -116,6 +153,7 @@ describe("app storage retention sweep", () => {
     await expect(createAppStorageSweeper({ repository }).runRetentionSweep()).resolves.toEqual({
       installationCount: 0,
       recordCount: 0,
+      failureCount: 0,
     });
     expect(enqueuedIntents(repository)).toEqual([]);
   });
@@ -132,7 +170,9 @@ describe("app storage retention sweep", () => {
 
     const result = await createAppStorageSweeper({ repository }).runRetentionSweep();
 
-    expect(result).toEqual({ installationCount: 1, recordCount: 2 });
+    // A failed reclamation is not the same answer as a hold that was extended:
+    // the deadline passed and the data is still here.
+    expect(result).toEqual({ installationCount: 1, recordCount: 2, failureCount: 1 });
     // Nothing committed, so this event has no state change to ride along with and
     // goes to the outbox on its own.
     expect(enqueuedIntents(repository)[0]).toMatchObject({
@@ -141,5 +181,28 @@ describe("app storage retention sweep", () => {
       metadata: { reason: "retention_elapsed" },
     });
     expect(JSON.stringify(enqueuedIntents(repository))).not.toContain("customer-secret");
+  });
+
+  it("keeps working through the rest when recording a failure itself fails", async () => {
+    // The pass has already learned what it has to report about this installation.
+    // An outbox write that failed afterwards must not take the remaining
+    // installations down with it.
+    const repository = buildRepositoryStub();
+    repository.listInstallationsDueForRetention = vi.fn(async () => due);
+    let call = 0;
+    repository.reclaimRetainedInstallation = vi.fn(async () => {
+      call += 1;
+      if (call === 1) throw statementFailure();
+      return { outcome: "reclaimed" as const, summary: { recordCount: 2, collectionCount: 1 } };
+    });
+    repository.enqueueAuditEvent = vi.fn(async () => {
+      throw statementFailure();
+    });
+
+    await expect(createAppStorageSweeper({ repository }).runRetentionSweep()).resolves.toEqual({
+      installationCount: 1,
+      recordCount: 2,
+      failureCount: 1,
+    });
   });
 });

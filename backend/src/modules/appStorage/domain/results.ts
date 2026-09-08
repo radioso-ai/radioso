@@ -31,6 +31,31 @@ export const storageFailure = (code: AppErrorCode, message: string): AppStorageF
 });
 
 /**
+ * Two things an export snapshot can discover only once it is reading, and neither
+ * is a database failure.
+ *
+ * A snapshot is admitted before it opens anything, and the first read inside its
+ * transaction is what fixes the database state it belongs to. A tombstone
+ * committed before that read means the export must not run, and a snapshot that
+ * was closed or timed out cannot produce the rest of the data. Both reach the
+ * caller as raised errors because they happen mid-iteration, and both are
+ * classified into the codes they actually are rather than into `internal`.
+ */
+export class AppStorageExportDeniedError extends Error {
+  constructor() {
+    super("This installation's storage is deleted");
+    this.name = "AppStorageExportDeniedError";
+  }
+}
+
+export class AppStorageExportClosedError extends Error {
+  constructor() {
+    super("This export snapshot is closed");
+    this.name = "AppStorageExportClosedError";
+  }
+}
+
+/**
  * SQLSTATE classes a caller can retry into: a connection that dropped, a server
  * out of a resource, an operator intervention, and the two concurrency failures
  * Postgres resolves by asking for the transaction again.
@@ -70,7 +95,14 @@ const isTransient = (error: unknown): boolean => {
  * reaches the message: a driver error carries the statement, and a statement
  * carries the record.
  */
-export const classifyStorageFailure = (error: unknown): AppStorageFailure =>
-  isTransient(error)
+export const classifyStorageFailure = (error: unknown): AppStorageFailure => {
+  if (error instanceof AppStorageExportDeniedError) {
+    return storageFailure("denied", "This installation's storage is deleted");
+  }
+  if (error instanceof AppStorageExportClosedError) {
+    return storageFailure("unavailable", "This export snapshot is closed");
+  }
+  return isTransient(error)
     ? storageFailure("unavailable", "Storage could not be reached for this call")
     : storageFailure("internal", "Storage failed for a reason it cannot attribute to this call");
+};

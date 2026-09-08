@@ -45,6 +45,7 @@ export class InMemoryAppReleaseRepository implements AppReleaseRepositoryPort {
       state: input.state,
       admissionPolicyVersion: input.admissionPolicyVersion,
       admissionDecision: input.admissionDecision,
+      admittedAt: input.admittedAt,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -54,11 +55,16 @@ export class InMemoryAppReleaseRepository implements AppReleaseRepositoryPort {
 
   async transitionState(
     id: string,
-    state: Parameters<AppReleaseRepositoryPort["transitionState"]>[1],
+    input: Parameters<AppReleaseRepositoryPort["transitionState"]>[1],
   ): Promise<AppReleaseRecord | null> {
     const row = this.rows.get(id);
-    if (!row) return null;
-    const updated: AppReleaseRecord = { ...row, state, updatedAt: new Date() };
+    if (!row || !input.expectedStates.includes(row.state)) return null;
+    const updated: AppReleaseRecord = {
+      ...row,
+      state: input.state,
+      ...(input.admittedAt === undefined ? {} : { admittedAt: input.admittedAt }),
+      updatedAt: new Date(),
+    };
     this.rows.set(id, updated);
     return updated;
   }
@@ -91,6 +97,9 @@ export class InMemoryAppReleaseRepository implements AppReleaseRepositoryPort {
 export class InMemoryAppInstallationRepository implements AppInstallationRepositoryPort {
   readonly rows = new Map<string, AppInstallationRecord>();
 
+  /** Set by the factory, so the activation fence can read the release it names. */
+  releases: InMemoryAppReleaseRepository | undefined;
+
   async create(input: Parameters<AppInstallationRepositoryPort["create"]>[0]): Promise<AppInstallationRecord> {
     const record: AppInstallationRecord = {
       id: randomUUID(),
@@ -102,6 +111,7 @@ export class InMemoryAppInstallationRepository implements AppInstallationReposit
       configuration: input.configuration,
       candidateConfiguration: null,
       candidateRevision: null,
+      activeRevision: null,
       executionDeniedAt: null,
       version: 1,
       health: {},
@@ -147,6 +157,7 @@ export class InMemoryAppInstallationRepository implements AppInstallationReposit
       ...(mutation.configuration === undefined ? {} : { configuration: mutation.configuration }),
       ...(mutation.candidateConfiguration === undefined ? {} : { candidateConfiguration: mutation.candidateConfiguration }),
       ...(mutation.candidateRevision === undefined ? {} : { candidateRevision: mutation.candidateRevision }),
+      ...(mutation.activeRevision === undefined ? {} : { activeRevision: mutation.activeRevision }),
       ...(mutation.executionDeniedAt === undefined ? {} : { executionDeniedAt: mutation.executionDeniedAt }),
       ...(mutation.health === undefined ? {} : { health: mutation.health }),
       version: expectedVersion + 1,
@@ -164,11 +175,14 @@ export class InMemoryAppInstallationRepository implements AppInstallationReposit
   ): Promise<AppInstallationRecord | null> {
     const row = this.rows.get(id);
     if (!row || row.workspaceId !== workspaceId || row.version !== expectedVersion) return null;
+    const release = this.releases?.rows.get(input.releaseId);
+    if (release && !input.allowedReleaseStates.includes(release.state)) return null;
     const updated: AppInstallationRecord = {
       ...row,
       state: "active",
       activeReleaseId: input.releaseId,
       candidateReleaseId: null,
+      activeRevision: input.activeRevision,
       executionDeniedAt: null,
       version: expectedVersion + 1,
       updatedAt: new Date(),
@@ -259,6 +273,26 @@ export class InMemoryAppGrantRepository implements AppGrantRepositoryPort {
 
 export class InMemoryAppConnectionRepository implements AppConnectionRepositoryPort {
   readonly rows: Array<AppConnectionRecord & { secretCiphertext: string | null }> = [];
+  readonly bindRequests = new Map<string, { connectionId: string; requestFingerprint: string }>();
+
+  async findById(id: string): Promise<AppConnectionRecord | null> {
+    const row = this.rows.find((candidate) => candidate.id === id);
+    if (!row) return null;
+    const { secretCiphertext: _ciphertext, ...safe } = row;
+    return safe;
+  }
+
+  async reserveBind(input: Parameters<AppConnectionRepositoryPort["reserveBind"]>[0]) {
+    const key = `${input.workspaceId}:${input.idempotencyKey}`;
+    if (this.bindRequests.has(key)) return null;
+    const reservation = { connectionId: input.connectionId, requestFingerprint: input.requestFingerprint };
+    this.bindRequests.set(key, reservation);
+    return reservation;
+  }
+
+  async findBindByIdempotencyKey(workspaceId: string, idempotencyKey: string) {
+    return this.bindRequests.get(`${workspaceId}:${idempotencyKey}`) ?? null;
+  }
 
   async bind(input: Parameters<AppConnectionRepositoryPort["bind"]>[0]): Promise<AppConnectionRecord> {
     const now = new Date();
@@ -459,6 +493,14 @@ export class InMemoryAppLifecycleOperationRepository implements AppLifecycleOper
     ) ?? null;
   }
 
+  async listStalled(input: { now: Date; limit: number }): Promise<AppLifecycleOperationRecord[]> {
+    return [...this.rows.values()]
+      .filter((row) => (row.state === "running" || row.state === "compensating")
+        && (row.leaseExpiresAt === null || row.leaseExpiresAt <= input.now))
+      .sort((left, right) => left.updatedAt.getTime() - right.updatedAt.getTime())
+      .slice(0, input.limit);
+  }
+
   async findActiveByInstallation(installationId: string): Promise<AppLifecycleOperationRecord | null> {
     const active = [...this.rows.values()]
       .filter((row) => row.installationId === installationId
@@ -468,26 +510,54 @@ export class InMemoryAppLifecycleOperationRepository implements AppLifecycleOper
   }
 }
 
+interface InMemoryAppAuditOutboxRow extends AppAuditOutboxRecord {
+  deliveredAt: Date | null;
+  claimToken: string | null;
+  claimExpiresAt: Date | null;
+}
+
 export class InMemoryAppAuditOutboxRepository implements AppAuditOutboxRepositoryPort {
-  readonly rows: Array<AppAuditOutboxRecord & { deliveredAt: Date | null }> = [];
+  readonly rows: InMemoryAppAuditOutboxRow[] = [];
 
   async enqueue(intents: readonly AppAuditIntent[]): Promise<readonly string[]> {
     return intents.map((intent) => {
       const id = randomUUID();
-      this.rows.push({ id, intent, deliveredAt: null });
+      this.rows.push({ id, intent, deliveredAt: null, claimToken: null, claimExpiresAt: null });
       return id;
     });
   }
 
-  async listUndelivered(limit: number): Promise<AppAuditOutboxRecord[]> {
-    return this.rows.filter((row) => row.deliveredAt === null).slice(0, limit);
+  async claimUndelivered(
+    input: Parameters<AppAuditOutboxRepositoryPort["claimUndelivered"]>[0],
+  ): Promise<AppAuditOutboxRecord[]> {
+    const claimable = this.rows
+      .filter((row) => row.deliveredAt === null
+        && (row.claimToken === null || (row.claimExpiresAt !== null && row.claimExpiresAt <= input.now)))
+      .slice(0, input.limit);
+    for (const row of claimable) {
+      row.claimToken = input.token;
+      row.claimExpiresAt = input.expiresAt;
+    }
+    return claimable.map((row) => ({ id: row.id, intent: row.intent }));
   }
 
-  async markDelivered(ids: readonly string[], deliveredAt: Date): Promise<void> {
+  async acknowledge(ids: readonly string[], token: string, deliveredAt: Date): Promise<void> {
     const wanted = new Set(ids);
-    this.rows.forEach((row, index) => {
-      if (wanted.has(row.id)) this.rows[index] = { ...row, deliveredAt };
-    });
+    for (const row of this.rows) {
+      if (!wanted.has(row.id) || row.claimToken !== token) continue;
+      row.deliveredAt = deliveredAt;
+      row.claimToken = null;
+      row.claimExpiresAt = null;
+    }
+  }
+
+  async releaseClaim(ids: readonly string[], token: string): Promise<void> {
+    const wanted = new Set(ids);
+    for (const row of this.rows) {
+      if (!wanted.has(row.id) || row.claimToken !== token || row.deliveredAt !== null) continue;
+      row.claimToken = null;
+      row.claimExpiresAt = null;
+    }
   }
 }
 
@@ -502,20 +572,30 @@ export interface InMemoryAppRepositories {
 }
 
 /**
- * The in-memory repositories share one object graph, so running work "in a transaction"
- * is running it against the same repositories. What this double cannot reproduce is
- * rollback, so a test that needs to prove atomicity uses the integration suite.
+ * The in-memory repositories share one object graph, so running work "in a transaction" is
+ * running it against the same repositories.
+ *
+ * The name says what it cannot do. There is no rollback here: work that throws leaves
+ * every write it already made in place. Anything that has to prove a lost compare-and-set
+ * leaves nothing behind belongs in the integration suite, against a real transaction.
  */
-export const createInMemoryAppsUnitOfWork = (repositories: InMemoryAppRepositories): AppsUnitOfWork => ({
+export const createNonTransactionalInMemoryAppsUnitOfWork = (
+  repositories: InMemoryAppRepositories,
+): AppsUnitOfWork => ({
   run: (work) => work(repositories),
 });
 
-export const createInMemoryAppRepositories = (): InMemoryAppRepositories => ({
-  releases: new InMemoryAppReleaseRepository(),
-  installations: new InMemoryAppInstallationRepository(),
-  plans: new InMemoryAppInstallationPlanRepository(),
-  grants: new InMemoryAppGrantRepository(),
-  connections: new InMemoryAppConnectionRepository(),
-  operations: new InMemoryAppLifecycleOperationRepository(),
-  auditOutbox: new InMemoryAppAuditOutboxRepository(),
-});
+export const createInMemoryAppRepositories = (): InMemoryAppRepositories => {
+  const releases = new InMemoryAppReleaseRepository();
+  const installations = new InMemoryAppInstallationRepository();
+  installations.releases = releases;
+  return {
+    releases,
+    installations,
+    plans: new InMemoryAppInstallationPlanRepository(),
+    grants: new InMemoryAppGrantRepository(),
+    connections: new InMemoryAppConnectionRepository(),
+    operations: new InMemoryAppLifecycleOperationRepository(),
+    auditOutbox: new InMemoryAppAuditOutboxRepository(),
+  };
+};

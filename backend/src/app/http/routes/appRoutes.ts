@@ -237,10 +237,13 @@ export const createAppRoutes = (dependencies: AppDependencies): Router => {
           principal: operatorPrincipal(res),
         });
         // The only response that ever carries the minted secret. There is no read path
-        // that returns it again, so an operator who loses it rotates the slot.
+        // that returns it again, so an operator who loses it rotates the slot — and a
+        // retry under the same key answers with the same connection and no secret rather
+        // than minting a second one.
         res.status(201).json({
           connection: presentAppConnection(result.connection),
           generatedSecret: result.generatedSecret,
+          replayed: result.replayed,
         });
       } catch (error) {
         next(presentAppsError(error));

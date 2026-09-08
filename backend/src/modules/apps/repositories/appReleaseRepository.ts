@@ -16,6 +16,21 @@ export interface InsertAppReleaseInput {
   readonly state: AppReleaseState;
   readonly admissionPolicyVersion: string;
   readonly admissionDecision: Readonly<Record<string, unknown>>;
+  /** When admission admitted it. `null` for a row recorded in any other state. */
+  readonly admittedAt: Date | null;
+}
+
+/**
+ * A security-state change, stated as a compare-and-set on the states it may legally start
+ * from. Two incident responders and a restart can all touch the same release, so the
+ * legal-transition check and the write have to be the same statement rather than a read
+ * followed by a hopeful update.
+ */
+export interface TransitionAppReleaseStateInput {
+  readonly expectedStates: readonly AppReleaseState[];
+  readonly state: AppReleaseState;
+  /** Set when the transition is into `admitted`, which is the only way that column moves. */
+  readonly admittedAt?: Date;
 }
 
 /**
@@ -39,8 +54,12 @@ export interface AppReleaseRepositoryPort {
    * so a registry re-sync at start-up can never resurrect a revoked or quarantined row.
    */
   insertIfAbsent(input: InsertAppReleaseInput): Promise<AppReleaseRecord | null>;
-  /** The one writer of a release's state, used by explicit deprecate/revoke/quarantine. */
-  transitionState(id: string, state: AppReleaseState): Promise<AppReleaseRecord | null>;
+  /**
+   * The one writer of a release's state, used by explicit deprecate/revoke/quarantine and
+   * by the audited release from quarantine. `null` when the release is no longer in one of
+   * the states the transition was decided against.
+   */
+  transitionState(id: string, input: TransitionAppReleaseStateInput): Promise<AppReleaseRecord | null>;
   /** `null` when the release no longer satisfies the fence, which is a refusal, not an error. */
   lockEligible(input: AppReleaseEligibilityFence): Promise<AppReleaseRecord | null>;
   findByAppIdAndVersion(appId: string, version: string): Promise<AppReleaseRecord | null>;
@@ -59,6 +78,7 @@ const COLUMNS = [
   "state",
   "admission_policy_version",
   "admission_decision",
+  "admitted_at",
   "created_at",
   "updated_at",
 ] as const;
@@ -74,6 +94,7 @@ interface AppReleaseRow {
   state: string;
   admission_policy_version: string;
   admission_decision: unknown;
+  admitted_at: Date | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -92,6 +113,7 @@ const mapRecord = (row: AppReleaseRow): AppReleaseRecord => ({
   state: row.state as AppReleaseState,
   admissionPolicyVersion: row.admission_policy_version,
   admissionDecision: asObject(row.admission_decision),
+  admittedAt: row.admitted_at ? new Date(row.admitted_at) : null,
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
 });
@@ -113,6 +135,7 @@ export class AppReleaseRepository implements AppReleaseRepositoryPort {
         state: input.state,
         admission_policy_version: input.admissionPolicyVersion,
         admission_decision: toJsonb(input.admissionDecision),
+        admitted_at: input.admittedAt,
       })
       .onConflict((conflict) => conflict.columns(["app_id", "version"]).doNothing())
       .returning(COLUMNS)
@@ -120,11 +143,16 @@ export class AppReleaseRepository implements AppReleaseRepositoryPort {
     return row ? mapRecord(row) : null;
   }
 
-  async transitionState(id: string, state: AppReleaseState): Promise<AppReleaseRecord | null> {
+  async transitionState(id: string, input: TransitionAppReleaseStateInput): Promise<AppReleaseRecord | null> {
     const row = await this.db
       .updateTable("app_releases")
-      .set({ state, updated_at: new Date() })
+      .set({
+        state: input.state,
+        ...(input.admittedAt === undefined ? {} : { admitted_at: input.admittedAt }),
+        updated_at: new Date(),
+      })
       .where("id", "=", id)
+      .where("state", "in", [...input.expectedStates])
       .returning(COLUMNS)
       .executeTakeFirst();
     return row ? mapRecord(row) : null;

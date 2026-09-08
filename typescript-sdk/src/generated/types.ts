@@ -1139,7 +1139,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List the App releases admission has admitted */
+        /** List the App releases an operator can install now */
         get: operations["listAppReleases"];
         put?: never;
         post?: never;
@@ -1156,7 +1156,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Inspect an admitted App release */
+        /** Inspect an installable App release */
         get: operations["getAppRelease"];
         put?: never;
         post?: never;
@@ -13245,7 +13245,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Installable releases */
+            /** @description Releases that are admitted and compatible with this host */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -13275,10 +13275,10 @@ export interface operations {
                                 runningVersion: string | null;
                                 range: string;
                                 /** @enum {string} */
-                                result: "compatible" | "incompatible" | "unknown";
+                                result: "compatible" | "incompatible" | "undetermined";
                             };
                             /** Format: date-time */
-                            admittedAt: string;
+                            admittedAt: string | null;
                         }[];
                     };
                 };
@@ -13321,6 +13321,15 @@ export interface operations {
             };
             /** @description Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A stored release no longer matches the admission decision recorded for it */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -13379,10 +13388,10 @@ export interface operations {
                             runningVersion: string | null;
                             range: string;
                             /** @enum {string} */
-                            result: "compatible" | "incompatible" | "unknown";
+                            result: "compatible" | "incompatible" | "undetermined";
                         };
                         /** Format: date-time */
-                        admittedAt: string;
+                        admittedAt: string | null;
                         manifest: {
                             [key: string]: unknown;
                         };
@@ -13427,6 +13436,15 @@ export interface operations {
             };
             /** @description Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A stored release no longer matches the admission decision recorded for it */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -13582,6 +13600,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description A stored release no longer matches the admission decision recorded for it */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description No App runtime or secret encryption key is configured, or App administration permission could not be checked */
             503: {
                 headers: {
@@ -13722,6 +13749,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description A stored release no longer matches the admission decision recorded for it */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description No App runtime or secret encryption key is configured, or App administration permission could not be checked */
             503: {
                 headers: {
@@ -13849,6 +13885,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description A stored release no longer matches the admission decision recorded for it */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description No App runtime or secret encryption key is configured, or App administration permission could not be checked */
             503: {
                 headers: {
@@ -13939,6 +13984,15 @@ export interface operations {
             };
             /** @description Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A stored release no longer matches the admission decision recorded for it */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -14095,6 +14149,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description A stored release no longer matches the admission decision recorded for it */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description No App runtime or secret encryption key is configured, or App administration permission could not be checked */
             503: {
                 headers: {
@@ -14185,6 +14248,15 @@ export interface operations {
             };
             /** @description Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A stored release no longer matches the admission decision recorded for it */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -14321,6 +14393,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description A stored release no longer matches the admission decision recorded for it */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description No App runtime or secret encryption key is configured, or App administration permission could not be checked */
             503: {
                 headers: {
@@ -14354,7 +14435,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The bound connection. `generatedSecret` is present only for a host-minted slot and is returned exactly once. */
+            /** @description The bound connection. `generatedSecret` is present only for a host-minted slot and is returned exactly once; a retry under the same idempotency key answers with `replayed: true` and no secret. */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -14381,6 +14462,7 @@ export interface operations {
                             deletionRequestedAt: string | null;
                         };
                         generatedSecret: string | null;
+                        replayed: boolean;
                     };
                 };
             };
@@ -14422,6 +14504,15 @@ export interface operations {
             };
             /** @description Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A stored release no longer matches the admission decision recorded for it */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -14555,6 +14646,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description A stored release no longer matches the admission decision recorded for it */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description No App runtime or secret encryption key is configured, or App administration permission could not be checked */
             503: {
                 headers: {
@@ -14674,6 +14774,15 @@ export interface operations {
             };
             /** @description Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A stored release no longer matches the admission decision recorded for it */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -14807,6 +14916,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description A stored release no longer matches the admission decision recorded for it */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description No App runtime or secret encryption key is configured, or App administration permission could not be checked */
             503: {
                 headers: {
@@ -14928,6 +15046,15 @@ export interface operations {
             };
             /** @description Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A stored release no longer matches the admission decision recorded for it */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };

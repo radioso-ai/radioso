@@ -8,13 +8,16 @@ import { requireAppAdministration } from "../domain/authorization.js";
 import { appContributionDescriptors } from "../domain/contributionDescriptor.js";
 import { AppsError } from "../domain/errors.js";
 import {
+  appInstallationStates,
   assertAppCommandSourceState,
   assertAppInstallationTransition,
+  canTransitionAppInstallation,
   remainingAppSagaCompensationSteps,
   remainingAppSagaSteps,
   type AppInstallationState,
   type AppLifecycleOperationKind,
   type AppSagaStep,
+  type AppSagaStepId,
 } from "../domain/lifecycle.js";
 import {
   appPlanBlockingRequirements,
@@ -25,14 +28,21 @@ import {
 import {
   appPortFailure,
   appPortFailureAsError,
+  parseAppPortResult,
   type AppPortFailureCode,
   type AppPortResult,
 } from "../domain/portOutcome.js";
-import { assertAppReleaseEligible } from "../domain/releaseAdmission.js";
+import {
+  assertExistingInstallationReleaseUsable,
+  assertNewInstallReleaseEligible,
+  existingInstallationReleaseStates,
+  newInstallReleaseStates,
+} from "../domain/releaseAdmission.js";
 import type {
   AppInstallationRecord,
   AppLifecycleOperationRecord,
   AppReleaseRecord,
+  AppReleaseState,
 } from "../domain/records.js";
 import type { AppContributionStagingPort, AppContributionStagingRequest } from "../ports/contributionStaging.js";
 import type { AppDataDisposition, AppManagedDataDispositionPort } from "../ports/managedDataDisposition.js";
@@ -46,13 +56,16 @@ import type { AppReleaseRepositoryPort } from "../repositories/appReleaseReposit
 import type { AppLifecycleOperationRepositoryPort } from "../repositories/appLifecycleOperationRepository.js";
 import type { AppsTransactionalRepositories, AppsUnitOfWork } from "../repositories/appsUnitOfWork.js";
 import { appLifecycleRequestFingerprint } from "./appLifecycleFingerprint.js";
+import {
+  APP_STEP_HEARTBEAT_MS,
+  APP_STEP_LEASE_MS,
+  callUnderAppStepLease,
+  createAppLeaseTimer,
+  type AppLeaseTimer,
+} from "./appStepLease.js";
 
-/**
- * How long a driver's claim on a step lasts. It bounds how long a crashed driver keeps an
- * operation to itself, so it has to outlast a slow provider call and still be short enough
- * that recovery is not an outage.
- */
-const STEP_LEASE_MS = 5 * 60_000;
+/** How many stalled operations one recovery pass re-drives. */
+const RECOVERY_BATCH_SIZE = 20;
 
 interface AppInstallationLifecycleDependencies {
   readonly installations: AppInstallationRepositoryPort;
@@ -71,6 +84,8 @@ interface AppInstallationLifecycleDependencies {
   /** The Radioso version this host runs, or `null` when it cannot be determined. */
   readonly runningRadiosoVersion: string | null;
   readonly clock?: () => Date;
+  /** Injectable so a test can drive a heartbeat without waiting out a real lease. */
+  readonly leaseTimer?: AppLeaseTimer;
 }
 
 interface ApplyAppInstallationPlanRequest {
@@ -130,10 +145,37 @@ const releaseBoundSteps = new Set([
  */
 const kindsThatPreserveTheInstallation = new Set<AppLifecycleOperationKind>(["reconfigure"]);
 
+/**
+ * Operations every committed effect of which a clean rollback undoes, so the installation
+ * can be returned to the state the command was issued against. Removal and data
+ * disposition are deliberately absent: revoked grants, deleted credentials, and disposed
+ * data are not restored by a compensator, so there is nothing to return them to.
+ */
+const kindsThatRestoreTheirSourceState = new Set<AppLifecycleOperationKind>([
+  "install",
+  "activate",
+  "enable",
+  "disable",
+]);
+
 /** Thrown inside a claim transaction when the request turns out to be a retry of one already open. */
 class ReplayExistingOperation extends Error {
   constructor(readonly operationId: string) {
     super("replay");
+  }
+}
+
+/**
+ * Thrown inside a unit of work when this driver turns out not to own the operation any
+ * more. It exists so the loss rolls the transaction back: a lost compare-and-set that
+ * merely returned `null` would let the effects written before it commit, leaving grants,
+ * installation state, or a discarded candidate visible with no cursor and no audit record
+ * saying they happened. Outside the transaction it becomes the ordinary "another driver
+ * owns this" answer.
+ */
+class AppOperationHandover extends Error {
+  constructor() {
+    super("handover");
   }
 }
 
@@ -142,10 +184,47 @@ interface StepCommit {
   readonly operation: AppLifecycleOperationRecord;
 }
 
+/** A driver's claim on one step, and the one thing it can do with it while a call runs. */
+interface AppStepHold {
+  renew(): Promise<boolean>;
+}
+
+/** A port answer this driver is still entitled to act on, or the fact that it is not. */
+type AppStepCall =
+  | { readonly held: true; readonly result: AppPortResult }
+  | { readonly held: false };
+
+/**
+ * What one compensator produced. `held: false` is not a failed rollback — it is a driver
+ * that stopped owning the operation while the compensator ran, which must not be recorded
+ * as a rollback that could not finish.
+ */
+type CompensationStepOutcome =
+  | {
+    readonly ok: true;
+    readonly operation: AppLifecycleOperationRecord | null;
+    readonly installation: AppInstallationRecord;
+  }
+  | { readonly ok: false; readonly held: true; readonly code: AppPortFailureCode }
+  | { readonly ok: false; readonly held: false };
+
 interface AppReleaseContext {
   readonly record: AppReleaseRecord;
   readonly manifest: AdmittedManifest;
+  /** The release states this operation's kind may act through. */
+  readonly allowedStates: readonly AppReleaseState[];
 }
+
+/**
+ * Which release rule an operation answers to.
+ *
+ * Founding an installation and keeping one working are different questions. `install` and
+ * the first `activate` create something new, so they need a release that is still offered;
+ * a reconfigure, a re-enable, and a removal act on an installation an operator already has,
+ * and deprecation must not take that away from them.
+ */
+const releaseUsageForKind = (kind: AppLifecycleOperationKind): "new_install" | "existing_installation" =>
+  kind === "install" || kind === "activate" ? "new_install" : "existing_installation";
 
 /**
  * The durable half of the Apps control plane. Apply, activation, reconfiguration,
@@ -157,14 +236,23 @@ interface AppReleaseContext {
  * lapsed authority.
  */
 export class AppInstallationLifecycleService {
-  constructor(private readonly dependencies: AppInstallationLifecycleDependencies) {}
+  private timer: AppLeaseTimer | undefined;
+
+  constructor(private readonly dependencies: AppInstallationLifecycleDependencies) {
+    this.timer = dependencies.leaseTimer;
+  }
 
   private now(): Date {
     return this.dependencies.clock?.() ?? new Date();
   }
 
   private leaseExpiry(): Date {
-    return new Date(this.now().getTime() + STEP_LEASE_MS);
+    return new Date(this.now().getTime() + APP_STEP_LEASE_MS);
+  }
+
+  private get leaseTimer(): AppLeaseTimer {
+    this.timer ??= createAppLeaseTimer();
+    return this.timer;
   }
 
   /**
@@ -189,6 +277,9 @@ export class AppInstallationLifecycleService {
       expectedVersion: request.expectedInstallationVersion,
     });
 
+    const resumed = await this.resumeIfAlreadyClaimed(request.workspaceId, request.idempotencyKey, fingerprint);
+    if (resumed) return resumed;
+
     const planRecord = await this.dependencies.plans.findById(request.workspaceId, request.planId);
     if (!planRecord) throw notFound("App installation plan not found");
     // The stored document has to still be the document its checksum names before any rule
@@ -206,7 +297,7 @@ export class AppInstallationLifecycleService {
         admissionPolicyVersion: release.admissionPolicyVersion,
       });
     }
-    assertAppReleaseEligible(release, this.dependencies.runningRadiosoVersion);
+    assertNewInstallReleaseEligible(release, this.dependencies.runningRadiosoVersion);
 
     const blocking = appPlanBlockingRequirements(plan);
     if (blocking.length > 0) {
@@ -235,6 +326,18 @@ export class AppInstallationLifecycleService {
         now,
       });
 
+      // Locking the release row before the conditional update is what makes the two agree.
+      // The update's own predicates read a snapshot; a revocation committing between that
+      // read and this write would leave a plan consumed against authority that had already
+      // been withdrawn.
+      await this.fenceRelease(
+        repositories,
+        plan.releaseId,
+        plan.admissionPolicyVersion,
+        plan.manifestDigest,
+        newInstallReleaseStates,
+      );
+
       // One statement, one instant: unconsumed, unexpired, still the approved checksum, and
       // still joined to a release admission has not withdrawn.
       const consumed = await repositories.plans.consume({
@@ -247,9 +350,13 @@ export class AppInstallationLifecycleService {
         now,
       });
       if (!consumed) {
-        const current = await repositories.releases.findById(plan.releaseId);
-        if (!current) throw notFound("App release not found");
-        assertAppReleaseEligible(current, this.dependencies.runningRadiosoVersion);
+        // Two retries of the same request can both pass the lookup above and race here.
+        // The loser blocks on the winner's row lock and only then sees the plan consumed,
+        // so the winner's operation is visible: it is the same attempt, and answering
+        // "this plan is stale" for a request that succeeded would be a lie.
+        const raced = await repositories.operations
+          .findByIdempotencyKey(request.workspaceId, request.idempotencyKey);
+        if (raced) throw this.replayOrRefuse(raced, fingerprint);
         throw new AppsError("plan_stale", "This plan has already been applied.", { cause: "consumed" });
       }
 
@@ -266,7 +373,12 @@ export class AppInstallationLifecycleService {
         idempotencyKey: request.idempotencyKey,
         requestFingerprint: fingerprint,
         initiatedBy: request.principal,
-        payload: { planId: planRecord.id, checksum: planRecord.checksum, releaseId: plan.releaseId },
+        payload: {
+          planId: planRecord.id,
+          checksum: planRecord.checksum,
+          releaseId: plan.releaseId,
+          sourceState: installation.state,
+        },
       });
       if (!operation) {
         const raced = await repositories.operations
@@ -325,6 +437,61 @@ export class AppInstallationLifecycleService {
   }
 
   /**
+   * Re-drives the operations nobody is driving.
+   *
+   * An operation only moves while a driver holds it, and a driver is a request or a
+   * process that can die. What it leaves behind is a running or compensating operation
+   * with a lapsed claim, and until something picks it up the installation's in-flight
+   * fence refuses every command — including the removal that would clear it. This is
+   * Apps-owned rather than a caller's loop because what counts as stalled, and what
+   * resuming means in each direction, is this module's rule.
+   */
+  async recoverStalledOperations(limit: number = RECOVERY_BATCH_SIZE): Promise<number> {
+    const stalled = await this.dependencies.operations.listStalled({ now: this.now(), limit });
+    let resumed = 0;
+    for (const operation of stalled) {
+      try {
+        await this.resumeById(operation.workspaceId, operation.id);
+        resumed += 1;
+      } catch (error) {
+        // One operation that cannot be resumed must not stop the rest. An `AppsError`
+        // carries a reason written in this repository; anything else contributes only
+        // that it failed.
+        this.dependencies.logger.warn(
+          {
+            operationId: operation.id,
+            operationKind: operation.kind,
+            installationId: operation.installationId,
+            reason: error instanceof AppsError ? error.reason : "internal",
+          },
+          "Stalled App lifecycle operation could not be resumed",
+        );
+      }
+    }
+    if (resumed > 0) {
+      this.dependencies.logger.info({ resumed }, "Resumed stalled App lifecycle operations");
+    }
+    return resumed;
+  }
+
+  /**
+   * The answer to "have I already been asked this", asked before anything mutable is read.
+   * A matching fingerprint is the same attempt and is resumed or reported; a different one
+   * is a reused key and is refused.
+   */
+  private async resumeIfAlreadyClaimed(
+    workspaceId: string,
+    idempotencyKey: string,
+    fingerprint: string,
+  ): Promise<AppLifecycleOutcome | null> {
+    const existing = await this.dependencies.operations.findByIdempotencyKey(workspaceId, idempotencyKey);
+    if (!existing) return null;
+    const replay = this.replayOrRefuse(existing, fingerprint);
+    if (!(replay instanceof ReplayExistingOperation)) throw replay;
+    return this.resumeById(workspaceId, replay.operationId);
+  }
+
+  /**
    * Runs a claim transaction and separates its two outcomes: a claim that succeeded, and a
    * request that turned out to be a retry of an operation already open. The second rolls
    * the transaction back, because a losing retry must leave nothing behind.
@@ -375,6 +542,21 @@ export class AppInstallationLifecycleService {
       expectedVersion: request.expectedVersion,
     });
 
+    // The scoped key is asked before anything mutable is read. An operation that crashed
+    // mid-flight has to stay reachable by the key that started it, even after the release
+    // it was using was revoked — otherwise the one retry that could resume and compensate
+    // it is refused by a preflight, and the in-flight fence stays occupied for good.
+    const resumed = await this.resumeIfAlreadyClaimed(request.workspaceId, request.idempotencyKey, fingerprint);
+    if (resumed) return resumed;
+
+    // A rollback that could not finish is repaired by finishing it, not by starting a new
+    // operation that guesses which compensator was owed. The repair writes to the
+    // installation, so the version the operator read is stale afterwards through no fault
+    // of theirs — and no other writer can have touched it, because the unfinished rollback
+    // held the in-flight fence the whole time. So the repair's own version carries forward.
+    const repaired = await this.repairUnfinishedRollback(request.workspaceId, request.installationId, kind);
+    const expectedVersion = repaired?.version ?? request.expectedVersion;
+
     if (kind === "activate") await this.assertRequiredConnectionsBound(request.workspaceId, request.installationId);
 
     const now = this.now();
@@ -385,8 +567,6 @@ export class AppInstallationLifecycleService {
 
       const current = await repositories.installations.findById(request.workspaceId, request.installationId);
       if (!current) throw notFound("App installation not found");
-
-      const repair = await this.admitRepair(repositories, current.id, kind);
 
       // What a command may be issued against is decided here, before any port is called.
       // Provisioning first and discovering the transition afterwards costs a compensation
@@ -400,7 +580,9 @@ export class AppInstallationLifecycleService {
         idempotencyKey: request.idempotencyKey,
         requestFingerprint: fingerprint,
         initiatedBy: request.principal,
-        payload: { ...payload, ...(repair ? { repair } : {}) },
+        // The state this command was issued against. A clean rollback puts the
+        // installation back into it, so an attempt that failed is an attempt, not damage.
+        payload: { ...payload, sourceState: current.state },
       });
       if (!operation) {
         const raced = await repositories.operations
@@ -417,7 +599,7 @@ export class AppInstallationLifecycleService {
       const installation = await repositories.installations.update(
         request.workspaceId,
         current.id,
-        request.expectedVersion,
+        expectedVersion,
         (kind === "disable" || kind === "remove") ? { executionDeniedAt: now } : {},
       );
       if (!installation) {
@@ -433,17 +615,21 @@ export class AppInstallationLifecycleService {
   }
 
   /**
-   * A rollback that could not finish keeps its installation fenced: a runtime may still be
-   * alive under a known effect id, so admitting a fresh `activate` would start a second
-   * one. Removal is the repair, and it inherits that effect id so the provider it talks to
-   * recognises what it is being asked to tear down.
+   * Finishes a rollback that stopped, using the operation that stopped it.
+   *
+   * A compensation cursor names the compensator that was owed, and every compensator's
+   * effect id is `(that operation, compensate:<step>)`. Starting a fresh operation to
+   * repair the damage would call the provider with an id it has never seen, so an external
+   * effect that was already reversed can be reversed twice and one that was not can be
+   * missed entirely. So the failed operation is reopened where it stopped and driven to
+   * the end; only when it finishes is the installation free for the removal to proceed.
    */
-  private async admitRepair(
-    repositories: AppsTransactionalRepositories,
+  private async repairUnfinishedRollback(
+    workspaceId: string,
     installationId: string,
     kind: AppLifecycleOperationKind,
-  ): Promise<{ operationId: string; stepId: string } | null> {
-    const holding = await repositories.operations.findActiveByInstallation(installationId);
+  ): Promise<AppInstallationRecord | null> {
+    const holding = await this.dependencies.operations.findActiveByInstallation(installationId);
     if (holding?.state !== "compensation_failed") return null;
     if (kind !== "remove") {
       throw new AppsError(
@@ -452,21 +638,34 @@ export class AppInstallationLifecycleService {
         { operationId: holding.id },
       );
     }
-    const resolved = await repositories.operations.finish(holding.id, {
+
+    const installation = await this.loadInstallation(workspaceId, installationId);
+    const failure = holding.error ?? { reason: "internal", message: "This operation was abandoned." };
+    const reopened = await this.dependencies.operations.finish(holding.id, {
       expectedState: "compensation_failed",
       expectedStep: holding.step,
-      leaseOwner: holding.leaseOwner ?? "",
-      state: "failed",
+      expectedCompensationStep: holding.compensationStep,
+      // A stopped operation owns no driver, so the empty token requires the NULL lease
+      // rather than bypassing the state and cursor compare-and-set.
+      leaseOwner: "",
+      state: "compensating",
       error: holding.error,
     });
-    if (!resolved) {
+    if (!reopened) {
       throw new AppsError(
         "operation_in_progress",
         "This installation's unfinished rollback changed while it was being repaired. Retry.",
         { operationId: holding.id },
       );
     }
-    return { operationId: holding.id, stepId: "compensate:provision_runtime" };
+
+    const outcome = await this.compensate(workspaceId, reopened, installation, randomUUID(), failure);
+    if (outcome.operation.state === "failed") return outcome.installation;
+    throw new AppsError(
+      "operation_in_progress",
+      "This installation's rollback still could not finish, so the removal did not start. Retry it.",
+      { operationId: holding.id },
+    );
   }
 
   /**
@@ -475,7 +674,7 @@ export class AppInstallationLifecycleService {
    */
   private async assertRequiredConnectionsBound(workspaceId: string, installationId: string): Promise<void> {
     const installation = await this.loadInstallation(workspaceId, installationId);
-    const { manifest } = await this.releaseContextFor(installation);
+    const { manifest } = await this.releaseContextFor(installation, "new_install");
     const resolved = resolveInstallation(manifest, installation.configuration);
     const required = resolved.ok ? resolved.readiness.requiredConnectionSlots : [];
     if (required.length === 0) return;
@@ -588,22 +787,37 @@ export class AppInstallationLifecycleService {
         );
       }
 
+      const hold = this.holdOn(operation, leaseOwner, {
+        expectedState: "running",
+        expectedStep: operation.step,
+      });
+
       let committed: StepCommit | null;
       try {
-        const release = releaseBoundSteps.has(step.id) ? await this.releaseContextFor(installation) : null;
-        const external = await this.runExternalEffect(step, workspaceId, installation, operation, plan, release);
-        if (!external.ok) {
-          this.logPortFailure(step, installation, operation, external.code);
+        const release = releaseBoundSteps.has(step.id)
+          ? await this.releaseContextFor(installation, releaseUsageForKind(operation.kind))
+          : null;
+        const external = await this.runExternalEffect(step, workspaceId, installation, operation, plan, release, hold);
+        // The claim lapsed, or could not be renewed, while the port call was in flight.
+        // The result is discarded and nothing is written: another driver may already be
+        // acting on this step, and the effect id is stable, so whoever owns it reconciles
+        // the same single external effect.
+        if (!external.held) return this.handedOver(installation, operation);
+        if (!external.result.ok) {
+          this.logPortFailure(step, installation, operation, external.result.code);
           return this.abandon(
             workspaceId,
             operation,
             installation,
             leaseOwner,
-            appPortFailureAsError(external.code, { step: step.id }),
+            appPortFailureAsError(external.result.code, { step: step.id }),
           );
         }
         committed = await this.commitStep(step, workspaceId, installation, operation, plan, release, leaseOwner);
       } catch (error) {
+        // Another driver advanced this operation and the commit rolled back. Stopping here
+        // is what keeps two concurrent retries from running the same step twice.
+        if (error instanceof AppOperationHandover) return this.handedOver(installation, operation);
         // A database/process failure after an external effect is deliberately allowed to
         // escape. The durable cursor and stable effect id make a later driver reconcile
         // it; turning an unknown crash into compensation would let one failing driver
@@ -612,11 +826,7 @@ export class AppInstallationLifecycleService {
         return this.abandon(workspaceId, operation, installation, leaseOwner, error);
       }
 
-      if (!committed) {
-        // Another driver advanced this operation. Stopping here is what keeps two
-        // concurrent retries from running the same step twice.
-        return this.handedOver(installation, operation);
-      }
+      if (!committed) return this.handedOver(installation, operation);
       installation = committed.installation;
       operation = committed.operation;
       await this.dependencies.auditDelivery.drain();
@@ -656,12 +866,13 @@ export class AppInstallationLifecycleService {
     operation: AppLifecycleOperationRecord,
     plan: AppInstallationPlan | null,
     release: AppReleaseContext | null,
-  ): Promise<AppPortResult> {
+    hold: AppStepHold,
+  ): Promise<AppStepCall> {
     const effect: AppLifecycleEffect = { operationId: operation.id, stepId: step.id };
 
     switch (step.id) {
       case "provision_runtime":
-        return this.invoke(step, installation, operation, () => this.dependencies.runtimeProvisioning.provision({
+        return this.invoke(step, installation, operation, hold, () => this.dependencies.runtimeProvisioning.provision({
           effect,
           installationId: installation.id,
           workspaceId,
@@ -677,47 +888,107 @@ export class AppInstallationLifecycleService {
         }));
       case "stage_contributions": {
         const request = this.stagingRequest(effect, workspaceId, installation, release!, operation, plan);
-        return this.invoke(step, installation, operation, () => this.dependencies.contributionStaging.stage(request));
+        return this.invoke(step, installation, operation, hold, () =>
+          this.dependencies.contributionStaging.stage(request));
       }
       case "run_safe_tests": {
         const request = this.stagingRequest(effect, workspaceId, installation, release!, operation, plan);
-        return this.invoke(step, installation, operation, () =>
+        return this.invoke(step, installation, operation, hold, () =>
           this.dependencies.contributionStaging.runSafeTests(request));
       }
-      case "stop_runtime": {
-        // A repair removal deprovisions the effect the unfinished rollback left behind, so
-        // the provider recognises the runtime it is being asked to stop.
-        const target = readRepairEffect(operation.payload) ?? effect;
-        return this.invoke(step, installation, operation, () =>
-          this.dependencies.runtimeProvisioning.deprovision({ effect: target, installationId: installation.id }));
-      }
+      case "apply_configuration":
+        // Adoption is the port's decision to make the staged mapping the one that answers.
+        // The transaction that follows moves `activeRevision` to the same revision, so the
+        // projection and the installation never disagree about which one is live.
+        return this.invoke(step, installation, operation, hold, () =>
+          this.dependencies.contributionStaging.promote({
+            effect,
+            installationId: installation.id,
+            candidateRevision: candidateRevisionOf(operation),
+          }));
+      case "stop_runtime":
+        return this.invoke(step, installation, operation, hold, () =>
+          this.dependencies.runtimeProvisioning.deprovision({ effect, installationId: installation.id }));
       case "detach_contributions":
-        return this.invoke(step, installation, operation, () =>
+        return this.invoke(step, installation, operation, hold, () =>
           this.dependencies.contributionStaging.detach({ effect, installationId: installation.id }));
       case "dispose_data":
-        return this.invoke(step, installation, operation, () => this.dependencies.dataDisposition.dispose({
+        return this.invoke(step, installation, operation, hold, () => this.dependencies.dataDisposition.dispose({
           effect,
           workspaceId,
           installationId: installation.id,
           disposition: readDisposition(operation.payload.disposition),
         }));
       default:
-        return Promise.resolve({ ok: true });
+        return Promise.resolve({ held: true, result: { ok: true } });
     }
   }
 
-  /** An adapter that throws instead of answering contributes only the fact that it failed. */
+  /**
+   * What this driver believes it holds, and how it says so again. Renewal is a claim on
+   * the exact same state and cursor, so it succeeds only while nobody else has taken over.
+   */
+  private holdOn(
+    operation: AppLifecycleOperationRecord,
+    leaseOwner: string,
+    ownership: {
+      readonly expectedState: AppLifecycleOperationRecord["state"];
+      readonly expectedStep: AppSagaStepId | null;
+      readonly expectedCompensationStep?: AppSagaStepId | null;
+    },
+  ): AppStepHold {
+    return {
+      renew: async () => (await this.dependencies.operations.claim(operation.id, {
+        ...ownership,
+        leaseOwner,
+        leaseExpiresAt: this.leaseExpiry(),
+        now: this.now(),
+      })) !== null,
+    };
+  }
+
+  /**
+   * One port call, kept inside the claim it was made under.
+   *
+   * Three things can come back: a result this driver may act on, a refusal, or the fact
+   * that the claim is gone. An adapter that throws contributes only that it failed, and an
+   * adapter that answers with something that is not a port result contributes only that it
+   * broke the protocol — neither value is read for text or for a code.
+   */
   private async invoke(
     step: AppSagaStep,
     installation: AppInstallationRecord,
     operation: AppLifecycleOperationRecord,
+    hold: AppStepHold,
     call: () => Promise<AppPortResult>,
-  ): Promise<AppPortResult> {
+  ): Promise<AppStepCall> {
     try {
-      return await call();
+      const outcome = await callUnderAppStepLease({
+        renew: hold.renew,
+        call,
+        heartbeatMs: APP_STEP_HEARTBEAT_MS,
+        // The deadline is the lease: a call this driver can no longer keep its claim alive
+        // through is one whose result it may not act on.
+        deadlineMs: APP_STEP_LEASE_MS,
+        timer: this.leaseTimer,
+      });
+      if (!outcome.held) {
+        this.dependencies.logger.warn(
+          {
+            installationId: installation.id,
+            operationId: operation.id,
+            operationKind: operation.kind,
+            step: step.id,
+            reason: outcome.reason,
+          },
+          "App lifecycle step result discarded: this driver no longer holds the operation",
+        );
+        return { held: false };
+      }
+      return { held: true, result: parseAppPortResult(outcome.value) };
     } catch {
       this.logAdapterThrow(step, installation, operation);
-      return appPortFailure("adapter_error");
+      return { held: true, result: appPortFailure("adapter_error") };
     }
   }
 
@@ -766,8 +1037,9 @@ export class AppInstallationLifecycleService {
 
   /**
    * Commits the step's database effects, its audit intent, and its cursor together. When
-   * the compare-and-set matches nothing the whole transaction rolls back, so a driver that
-   * lost the operation leaves no half-written effect behind.
+   * the compare-and-set matches nothing this throws inside the transaction, so the whole
+   * unit rolls back and a driver that lost the operation leaves no half-written effect
+   * behind. The caller translates the throw into the ordinary handover answer.
    */
   private async commitStep(
     step: AppSagaStep,
@@ -794,7 +1066,10 @@ export class AppInstallationLifecycleService {
         leaseOwner,
         step: step.id,
       });
-      if (!advanced) return null;
+      // The effects above are already written in this transaction. Returning here would
+      // commit them without the cursor that says they happened, so the loss is thrown and
+      // the whole unit rolls back.
+      if (!advanced) throw new AppOperationHandover();
       await repositories.auditOutbox.enqueue(
         applied.audit.map((intent) => this.auditIntent(workspaceId, advanced, applied.installation, intent)),
       );
@@ -820,7 +1095,13 @@ export class AppInstallationLifecycleService {
           // The approval is fenced on the release it was given for. Reading the release row
           // here takes a share lock on it, so a revocation racing this commit waits for it
           // instead of landing between the check and the write.
-          await this.fenceRelease(repositories, plan.releaseId, plan.admissionPolicyVersion, plan.manifestDigest);
+          await this.fenceRelease(
+            repositories,
+            plan.releaseId,
+            plan.admissionPolicyVersion,
+            plan.manifestDigest,
+            newInstallReleaseStates,
+          );
           await repositories.grants.approve({
             installationId: current.id,
             releaseId: plan.releaseId,
@@ -850,7 +1131,8 @@ export class AppInstallationLifecycleService {
         break;
       }
       case "apply_configuration": {
-        const manifest = release?.manifest ?? (await this.releaseContextFor(current)).manifest;
+        const manifest = release?.manifest
+          ?? (await this.releaseContextFor(current, releaseUsageForKind(operation.kind))).manifest;
         const resolved = resolveInstallation(
           manifest,
           current.candidateConfiguration ?? readConfiguration(operation.payload.configuration),
@@ -861,8 +1143,13 @@ export class AppInstallationLifecycleService {
             field: issue?.path ?? "configuration",
           });
         }
+        // The candidate the staging port just promoted becomes the live revision in the
+        // same commit that makes its configuration the live configuration. Split across
+        // two writes, an interruption would leave a projection serving one revision and an
+        // installation naming another.
         current = await this.write(repositories, workspaceId, current, {
           configuration: resolved.configuration,
+          activeRevision: candidateRevisionOf(operation),
           candidateConfiguration: null,
           candidateRevision: null,
         });
@@ -875,9 +1162,21 @@ export class AppInstallationLifecycleService {
       }
       case "activate": {
         const releaseId = current.candidateReleaseId ?? current.activeReleaseId;
-        const context = release ?? (await this.releaseContextFor(current));
+        const context = release
+          ?? (await this.releaseContextFor(current, releaseUsageForKind(operation.kind)));
         if (!releaseId) throw notFound("App release not found");
         assertAppInstallationTransition(current.state, "active");
+        // Locking the release before the pointer moves is what makes a revocation racing
+        // this commit wait for it. The conditional update repeats the predicates, but its
+        // own read is a snapshot: without the lock a revocation can commit first and
+        // become visible only after an active pointer has already been written to it.
+        await this.fenceRelease(
+          repositories,
+          releaseId,
+          context.record.admissionPolicyVersion,
+          context.record.manifestDigest,
+          context.allowedStates,
+        );
         const activated = await repositories.installations.activateRelease(
           workspaceId,
           current.id,
@@ -886,17 +1185,11 @@ export class AppInstallationLifecycleService {
             releaseId,
             admissionPolicyVersion: context.record.admissionPolicyVersion,
             manifestDigest: context.record.manifestDigest,
+            activeRevision: candidateRevisionOf(operation),
+            allowedReleaseStates: context.allowedStates,
           },
         );
         if (!activated) {
-          // The pointer did not move. Either the release stopped being the one that was
-          // approved, or somebody else wrote the installation first.
-          await this.fenceRelease(
-            repositories,
-            releaseId,
-            context.record.admissionPolicyVersion,
-            context.record.manifestDigest,
-          );
           throw new AppsError("plan_stale", "The installation changed while this operation was running.", {
             cause: "version_mismatch",
           });
@@ -921,23 +1214,28 @@ export class AppInstallationLifecycleService {
     return { installation: current, audit };
   }
 
-  /** Refuses unless the release is still exactly the one the authority was granted for. */
+  /**
+   * Refuses unless the release is still exactly the one the authority was granted for, and
+   * takes a share lock on it for the rest of the transaction so it stays that way until
+   * the commit.
+   */
   private async fenceRelease(
     repositories: AppsTransactionalRepositories,
     releaseId: string,
     admissionPolicyVersion: string,
     manifestDigest: string,
+    allowedStates: readonly AppReleaseState[],
   ): Promise<void> {
     const fenced = await repositories.releases.lockEligible({
       releaseId,
       admissionPolicyVersion,
       manifestDigest,
-      allowedStates: ["admitted"],
+      allowedStates,
     });
     if (fenced) return;
     throw new AppsError(
       "release_not_eligible",
-      "This release is no longer admitted, so it cannot be installed or activated.",
+      "This release is no longer usable, so this operation cannot act on it.",
       { releaseId },
     );
   }
@@ -947,7 +1245,7 @@ export class AppInstallationLifecycleService {
     installation: AppInstallationRecord,
     operation: AppLifecycleOperationRecord,
   ): Promise<void> {
-    const { manifest } = await this.releaseContextFor(installation);
+    const { manifest } = await this.releaseContextFor(installation, "existing_installation");
     const submitted = readConfiguration(operation.payload.configuration);
     const resolved = resolveInstallation(manifest, submitted);
     if (!resolved.ok) {
@@ -993,6 +1291,7 @@ export class AppInstallationLifecycleService {
       configuration?: Readonly<Record<string, unknown>>;
       candidateConfiguration?: Readonly<Record<string, unknown>> | null;
       candidateRevision?: string | null;
+      activeRevision?: string | null;
     },
   ): Promise<AppInstallationRecord> {
     if (mutation.state !== undefined) assertAppInstallationTransition(installation.state, mutation.state);
@@ -1010,12 +1309,25 @@ export class AppInstallationLifecycleService {
     return updated;
   }
 
-  /** The release this installation is acting on, re-established as currently eligible. */
-  private async releaseContextFor(installation: AppInstallationRecord): Promise<AppReleaseContext> {
+  /** The release this installation is acting on, re-established as currently usable. */
+  private async releaseContextFor(
+    installation: AppInstallationRecord,
+    usage: "new_install" | "existing_installation",
+  ): Promise<AppReleaseContext> {
     const releaseId = installation.candidateReleaseId ?? installation.activeReleaseId;
     const record = releaseId ? await this.dependencies.releases.findById(releaseId) : null;
     if (!record) throw notFound("App release not found");
-    return { record, manifest: assertAppReleaseEligible(record, this.dependencies.runningRadiosoVersion) };
+    return usage === "new_install"
+      ? {
+        record,
+        manifest: assertNewInstallReleaseEligible(record, this.dependencies.runningRadiosoVersion),
+        allowedStates: newInstallReleaseStates,
+      }
+      : {
+        record,
+        manifest: assertExistingInstallationReleaseUsable(record, this.dependencies.runningRadiosoVersion),
+        allowedStates: existingInstallationReleaseStates,
+      };
   }
 
   /**
@@ -1052,7 +1364,7 @@ export class AppInstallationLifecycleService {
     failure: { readonly reason: string; readonly message: string },
   ): Promise<AppLifecycleOutcome> {
     let operation = startingOperation;
-    const installation = startingInstallation;
+    let installation = startingInstallation;
     let cursor = operation.compensationStep;
 
     for (const step of remainingAppSagaCompensationSteps(operation.kind, operation.step, cursor)) {
@@ -1067,13 +1379,23 @@ export class AppInstallationLifecycleService {
       if (!claimed) return this.handedOver(installation, operation);
       operation = claimed;
 
-      const result = await this.compensateStep(step, installation, operation, cursor, leaseOwner);
+      let result: CompensationStepOutcome;
+      try {
+        result = await this.compensateStep(step, installation, operation, cursor, leaseOwner);
+      } catch (error) {
+        if (error instanceof AppOperationHandover) return this.handedOver(installation, operation);
+        throw error;
+      }
       if (!result.ok) {
+        if (!result.held) return this.handedOver(installation, operation);
         this.logPortFailure(step, installation, operation, result.code);
         return this.stopUnfinished(workspaceId, operation, installation, leaseOwner, cursor, failure);
       }
       if (result.operation === null) return this.handedOver(installation, operation);
       operation = result.operation;
+      // The compensator's own write is the authority on what the installation now is; the
+      // record this runner carried in is one revision behind it from here on.
+      installation = result.installation;
       cursor = step.id;
     }
 
@@ -1149,14 +1471,13 @@ export class AppInstallationLifecycleService {
         error: failure,
       });
       if (!finished) return null;
-      // A reconfigure is a candidate beside a working installation. Once its candidate
-      // compensator has discarded that proposal, the prior active/disabled/planned state
-      // and effective configuration remain authoritative; only the operation records the
-      // failed attempt. Treating a failed candidate as a failed runtime would take a
-      // healthy App out of service for a change that never applied.
-      const outcomeInstallation = operation.kind === "reconfigure"
-        ? installation
-        : await this.markFailed(repositories, workspaceId, operation.kind, installation, failure);
+      const outcomeInstallation = await this.restoreSourceState(
+        repositories,
+        workspaceId,
+        operation,
+        installation,
+        failure,
+      );
       await repositories.auditOutbox.enqueue([this.auditIntent(workspaceId, finished, outcomeInstallation, {
         eventType: operation.kind === "reconfigure" ? "app.installation.reconfigure_failed" : "app.installation.failed",
         metadata: { step: finished.step, reason: failure.reason, compensated: true },
@@ -1183,10 +1504,7 @@ export class AppInstallationLifecycleService {
     operation: AppLifecycleOperationRecord,
     cursor: AppLifecycleOperationRecord["compensationStep"],
     leaseOwner: string,
-  ): Promise<
-    | { ok: true; operation: AppLifecycleOperationRecord | null }
-    | { ok: false; code: AppPortFailureCode }
-  > {
+  ): Promise<CompensationStepOutcome> {
     const effect: AppLifecycleEffect = { operationId: operation.id, stepId: `compensate:${step.id}` };
     const ownership = {
       expectedState: "compensating" as const,
@@ -1194,6 +1512,11 @@ export class AppInstallationLifecycleService {
       expectedCompensationStep: cursor,
       leaseOwner,
     };
+    const hold = this.holdOn(operation, leaseOwner, {
+      expectedState: "compensating",
+      expectedStep: operation.step,
+      expectedCompensationStep: cursor,
+    });
     const advance = async (): Promise<AppLifecycleOperationRecord | null> =>
       this.dependencies.operations.advanceCompensation(operation.id, { ...ownership, compensationStep: step.id });
 
@@ -1201,52 +1524,111 @@ export class AppInstallationLifecycleService {
       case "persist_grants_and_connections": {
         const advanced = await this.dependencies.unitOfWork.run(async (repositories) => {
           await repositories.grants.revokeAll(installation.id, this.now());
-          return repositories.operations.advanceCompensation(operation.id, {
+          const moved = await repositories.operations.advanceCompensation(operation.id, {
             ...ownership,
             compensationStep: step.id,
           });
+          if (!moved) throw new AppOperationHandover();
+          return moved;
         });
-        return { ok: true, operation: advanced };
+        return { ok: true, operation: advanced, installation };
       }
       case "open_candidate": {
         // The proposal is dropped, so the installation goes back to answering with the
         // configuration it was already running.
-        const discarded = await this.invoke(step, installation, operation, () =>
+        const discarded = await this.invoke(step, installation, operation, hold, () =>
           this.dependencies.contributionStaging.discardCandidate({
             effect,
             installationId: installation.id,
             candidateRevision: candidateRevisionOf(operation),
           }));
-        if (!discarded.ok) return discarded;
-        const advanced = await this.dependencies.unitOfWork.run(async (repositories) => {
-          await repositories.installations.update(
+        if (!discarded.held) return { ok: false, held: false };
+        if (!discarded.result.ok) return { ok: false, held: true, code: discarded.result.code };
+        const committed = await this.dependencies.unitOfWork.run(async (repositories) => {
+          const cleared = await repositories.installations.update(
             operation.workspaceId,
             installation.id,
             installation.version,
             { candidateConfiguration: null, candidateRevision: null },
           );
-          return repositories.operations.advanceCompensation(operation.id, {
+          // The candidate is gone from the staging projection; failing to clear it here
+          // would leave the installation naming a revision that no longer exists.
+          if (!cleared) throw new AppOperationHandover();
+          const moved = await repositories.operations.advanceCompensation(operation.id, {
             ...ownership,
             compensationStep: step.id,
           });
+          if (!moved) throw new AppOperationHandover();
+          return { operation: moved, installation: cleared };
         });
-        return { ok: true, operation: advanced };
+        return { ok: true, operation: committed.operation, installation: committed.installation };
       }
       case "provision_runtime": {
-        const result = await this.invoke(step, installation, operation, () =>
+        const result = await this.invoke(step, installation, operation, hold, () =>
           this.dependencies.runtimeProvisioning.deprovision({ effect, installationId: installation.id }));
-        if (!result.ok) return result;
-        return { ok: true, operation: await advance() };
+        if (!result.held) return { ok: false, held: false };
+        if (!result.result.ok) return { ok: false, held: true, code: result.result.code };
+        return { ok: true, operation: await advance(), installation };
       }
       case "stage_contributions": {
-        const result = await this.invoke(step, installation, operation, () =>
+        const result = await this.invoke(step, installation, operation, hold, () =>
           this.dependencies.contributionStaging.detach({ effect, installationId: installation.id }));
-        if (!result.ok) return result;
-        return { ok: true, operation: await advance() };
+        if (!result.held) return { ok: false, held: false };
+        if (!result.result.ok) return { ok: false, held: true, code: result.result.code };
+        return { ok: true, operation: await advance(), installation };
       }
       default:
-        return { ok: true, operation: await advance() };
+        return { ok: true, operation: await advance(), installation };
     }
+  }
+
+  /**
+   * A rollback that finished undid everything the operation committed, so the installation
+   * is what it was before the operation started — not damaged.
+   *
+   * `failed` is what an operator has to repair, and reserving it for the case a rollback
+   * could *not* finish is what makes it mean that. A transient provider outage during a
+   * first activation would otherwise permanently strand the installation: `activate` is
+   * only issuable from `planned`, so one failed attempt would leave removal and
+   * reinstallation as the only way back.
+   *
+   * The health record is written either way, because a code and a message are what an
+   * operator reads to know why the attempt did not take.
+   */
+  private async restoreSourceState(
+    repositories: AppsTransactionalRepositories,
+    workspaceId: string,
+    operation: AppLifecycleOperationRecord,
+    installation: AppInstallationRecord,
+    failure: { readonly reason: string; readonly message: string },
+  ): Promise<AppInstallationRecord> {
+    if (kindsThatPreserveTheInstallation.has(operation.kind)) return installation;
+    const source = readSourceState(operation.payload);
+    // Removal's steps revoke grants, mark credentials for deletion, and dispose of data;
+    // none of them is reversible, so there is no earlier state to return to. The
+    // installation stays where it stopped, still fenced against execution, and removal is
+    // reissuable against it.
+    const restores = source !== null
+      && kindsThatRestoreTheirSourceState.has(operation.kind)
+      && (source === installation.state || canTransitionAppInstallation(installation.state, source));
+    const restored = await repositories.installations.update(
+      workspaceId,
+      installation.id,
+      installation.version,
+      {
+        ...(restores
+          ? {
+            state: source,
+            // Whatever this operation closed, it closed for work that has now been undone.
+            // A disable that could not stop the runtime must not leave an installation that
+            // reads as active and refuses every invocation.
+            executionDeniedAt: null,
+          }
+          : {}),
+        health: { reason: failure.reason, message: failure.message },
+      },
+    );
+    return restored ?? installation;
   }
 
   private async markFailed(
@@ -1351,12 +1733,12 @@ const failureOf = (error: unknown): { reason: string; message: string } =>
  */
 const candidateRevisionOf = (operation: AppLifecycleOperationRecord): string => operation.id;
 
-const readRepairEffect = (payload: Readonly<Record<string, unknown>>): AppLifecycleEffect | null => {
-  const repair = payload.repair;
-  if (!repair || typeof repair !== "object") return null;
-  const candidate = repair as { operationId?: unknown; stepId?: unknown };
-  if (typeof candidate.operationId !== "string" || typeof candidate.stepId !== "string") return null;
-  return { operationId: candidate.operationId, stepId: candidate.stepId };
+/** The installation state the command was issued against, if this operation recorded one. */
+const readSourceState = (payload: Readonly<Record<string, unknown>>): AppInstallationState | null => {
+  const value = payload.sourceState;
+  return typeof value === "string" && (appInstallationStates as readonly string[]).includes(value)
+    ? value as AppInstallationState
+    : null;
 };
 
 const readDisposition = (value: unknown): AppDataDisposition =>

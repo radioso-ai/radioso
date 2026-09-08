@@ -20,6 +20,9 @@ CREATE TABLE IF NOT EXISTS app_releases (
   )),
   admission_policy_version TEXT NOT NULL,
   admission_decision JSONB NOT NULL DEFAULT '{}'::jsonb,
+  -- When this release was admitted, and only that. `updated_at` moves on every write, so
+  -- reading admission time from it would report a revocation as an admission.
+  admitted_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (app_id, version)
@@ -48,6 +51,10 @@ CREATE TABLE IF NOT EXISTS app_installations (
   -- Names the candidate, so a staging implementation can tell one proposal from the next
   -- and discard the one it was asked to drop.
   candidate_revision TEXT,
+  -- Names the mapping that is currently live. Promotion is the transition from the
+  -- candidate revision to this one, so a staging implementation can make a new projection
+  -- visible atomically and can tell which of two projections it should be serving.
+  active_revision TEXT,
   -- Set in the first transaction of a disable or a remove. Execution eligibility denies
   -- while it is set, so no new invocation is admitted during the teardown window.
   execution_denied_at TIMESTAMPTZ,
@@ -165,6 +172,29 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_app_lifecycle_operations_in_flight
   ON app_lifecycle_operations (installation_id)
   WHERE state IN ('running', 'compensating', 'compensation_failed');
 
+-- Recovery reads this: an operation still travelling whose driver's claim has lapsed is
+-- one nobody is driving, so a scheduled sweep re-drives it from its durable cursor.
+CREATE INDEX IF NOT EXISTS idx_app_lifecycle_operations_stalled
+  ON app_lifecycle_operations (lease_expires_at)
+  WHERE state IN ('running', 'compensating');
+
+-- A bind is a mutation that can mint a secret handed over exactly once, so a retry has to
+-- be answerable without minting a second one. The reservation is inserted in the same
+-- transaction as the connection it names, so a replay either finds the whole bind or none
+-- of it.
+CREATE TABLE IF NOT EXISTS app_connection_bind_requests (
+  id UUID PRIMARY KEY,
+  workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  installation_id UUID NOT NULL REFERENCES app_installations(id) ON DELETE CASCADE,
+  connection_id UUID NOT NULL REFERENCES app_connections(id) ON DELETE CASCADE,
+  idempotency_key TEXT NOT NULL,
+  -- Identity and shape of the request, never its values: a bind carries secret material,
+  -- and a digest over it stored beside the ciphertext would be an oracle for it.
+  request_fingerprint TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (workspace_id, idempotency_key)
+);
+
 -- Audit intents written in the same transaction as the state or cursor change they
 -- describe. A sink that is down must not roll back a runtime that is already running, and
 -- must not silently lose the record either, so the intent is durable and a dispatcher
@@ -176,7 +206,13 @@ CREATE TABLE IF NOT EXISTS app_audit_outbox (
   workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
   event JSONB NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  delivered_at TIMESTAMPTZ
+  delivered_at TIMESTAMPTZ,
+  -- Which dispatcher currently owns this row, and until when. Two request-driven drains
+  -- run concurrently all the time, so the batch is claimed before it is published and
+  -- acknowledged only by the token that claimed it; a dispatcher that dies leaves a claim
+  -- that lapses rather than a row nobody delivers.
+  claim_token TEXT,
+  claim_expires_at TIMESTAMPTZ
 );
 
 CREATE INDEX IF NOT EXISTS idx_app_audit_outbox_undelivered

@@ -2,7 +2,7 @@ import { notFound } from "../../../shared/domain/errors.js";
 import { requireAppAdministration } from "../domain/authorization.js";
 import { buildAppInstallationPlan } from "../domain/installationPlan.js";
 import type { AppInstallationPlanRecord } from "../domain/records.js";
-import { assertAppReleaseEligible } from "../domain/releaseAdmission.js";
+import { assertNewInstallReleaseEligible } from "../domain/releaseAdmission.js";
 import type { AppOperatorAuthorizationPort, AppOperatorPrincipal } from "../ports/operatorAuthorization.js";
 import type { AppConnectionRepositoryPort } from "../repositories/appConnectionRepository.js";
 import type { AppInstallationPlanRepositoryPort } from "../repositories/appInstallationPlanRepository.js";
@@ -45,7 +45,9 @@ export class AppInstallationPlanService {
 
     const release = await this.dependencies.releases.findById(request.releaseId);
     if (!release) throw notFound("App release not found");
-    assertAppReleaseEligible(release, this.dependencies.runningRadiosoVersion);
+    // Planning is the first step of a new installation, so a deprecated release is not
+    // offered here even though the installations that already have it keep working.
+    assertNewInstallReleaseEligible(release, this.dependencies.runningRadiosoVersion);
 
     const existing = await this.dependencies.installations.findLiveByAppId(request.workspaceId, release.appId);
     const existingConnections = existing

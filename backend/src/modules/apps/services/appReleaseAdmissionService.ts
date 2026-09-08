@@ -1,7 +1,15 @@
 import { notFound } from "../../../shared/domain/errors.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
-import { admitAppRelease, appCompatibilityEvidence, assertAppReleaseEligible } from "../domain/releaseAdmission.js";
-import type { AppReleaseRecord, AppReleaseState } from "../domain/records.js";
+import { AppsError } from "../domain/errors.js";
+import {
+  admitAppRelease,
+  admittedManifestOf,
+  appCompatibilityEvidence,
+  appReleaseSecuritySourceStates,
+  assertAppReleaseSecurityTransition,
+  assertNewInstallReleaseEligible,
+} from "../domain/releaseAdmission.js";
+import type { AppReleaseRecord } from "../domain/records.js";
 import type { AppReleaseRepositoryPort } from "../repositories/appReleaseRepository.js";
 import type { AppsUnitOfWork } from "../repositories/appsUnitOfWork.js";
 
@@ -14,8 +22,12 @@ export interface BuiltInAppRelease {
   readonly artifactDigests: readonly string[];
 }
 
-/** The states an operator or a security response moves an admitted release into. */
-type AppReleaseSecurityState = "deprecated" | "revoked" | "quarantined";
+/**
+ * The states an operator or a security response moves a release into. `admitted` is here
+ * because quarantine is the reversible decision: an incident opens one while the answer is
+ * unknown, and releasing it is a decision that deserves the same audited path.
+ */
+type AppReleaseSecurityState = "admitted" | "deprecated" | "revoked" | "quarantined";
 
 /**
  * A release as it stands right now, not only as it was admitted.
@@ -49,6 +61,7 @@ interface AppReleaseAdmissionDependencies {
   readonly logger: AppLogger;
   /** The Radioso version this host runs, or `null` when it cannot be determined. */
   readonly runningRadiosoVersion: string | null;
+  readonly clock?: () => Date;
 }
 
 /**
@@ -91,6 +104,7 @@ export class AppReleaseAdmissionService {
       recordedManifestDigest: existing?.manifestDigest ?? null,
       runningRadiosoVersion: this.dependencies.runningRadiosoVersion,
     });
+    const now = this.dependencies.clock?.() ?? new Date();
 
     if (decision.outcome === "rejected") {
       await this.dependencies.unitOfWork.run((repositories) => repositories.auditOutbox.enqueue([{
@@ -124,6 +138,7 @@ export class AppReleaseAdmissionService {
         state: "admitted",
         admissionPolicyVersion: decision.policyVersion,
         admissionDecision: { evidence: decision.evidence },
+        admittedAt: now,
       });
       if (!record) return;
       await repositories.auditOutbox.enqueue([{
@@ -149,12 +164,33 @@ export class AppReleaseAdmissionService {
    * Release A has no publisher console, but revocation has to be expressible and audited
    * so an incident response is a recorded decision — with a person and a reason attached —
    * rather than a manual row edit.
+   *
+   * Which moves are legal is a rule, not a caller's choice. Without it, `revoked ->
+   * deprecated` would put a release the platform stopped back into a state that executes
+   * for every installation that still has it, which is the opposite of what revoking one
+   * means.
    */
   async transitionSecurityState(input: AppReleaseSecurityTransition): Promise<AppReleaseRecord> {
     const record = await this.dependencies.unitOfWork.run(async (repositories) => {
-      const transitioned = await repositories.releases
-        .transitionState(input.releaseId, input.state satisfies AppReleaseState);
-      if (!transitioned) return null;
+      const current = await repositories.releases.findById(input.releaseId);
+      if (!current) return null;
+      assertAppReleaseSecurityTransition(current.state, input.state);
+      const transitioned = await repositories.releases.transitionState(input.releaseId, {
+        // The legal-source check and the write are the same statement, so a second
+        // responder deciding from the same starting state cannot apply both decisions.
+        expectedStates: appReleaseSecuritySourceStates(input.state),
+        state: input.state,
+        // Releasing from quarantine is an admission, and admission time is what an
+        // operator reads to know when this release last became installable.
+        ...(input.state === "admitted" ? { admittedAt: this.dependencies.clock?.() ?? new Date() } : {}),
+      });
+      if (!transitioned) {
+        throw new AppsError(
+          "invalid_release_transition",
+          "This release's state changed while the decision was being applied. Read it again and decide again.",
+          { releaseId: input.releaseId },
+        );
+      }
       await repositories.auditOutbox.enqueue([{
         workspaceId: null,
         accountId: input.accountId,
@@ -164,6 +200,7 @@ export class AppReleaseAdmissionService {
           appId: transitioned.appId,
           version: transitioned.version,
           releaseId: transitioned.id,
+          previousState: current.state,
           state: transitioned.state,
           actorUserId: input.actorUserId,
           reason: input.reason,
@@ -186,17 +223,20 @@ export class AppReleaseAdmissionService {
     return releases.filter((release) => this.isCurrentlyEligible(release)).map((release) => this.view(release));
   }
 
+  /**
+   * One installable release, or nothing. It answers the same question the list does, for
+   * one id: a release an operator cannot install must not be presented as one they can,
+   * and a plan built against it would be refused at apply anyway.
+   */
   async findInstallable(releaseId: string): Promise<AppReleaseView | null> {
     const release = await this.dependencies.releases.findById(releaseId);
-    // Inspection is not an admission grant: operators need to see a revoked or
-    // quarantined release's present state and historical evidence during an incident.
-    if (!release) return null;
+    if (!release || !this.isCurrentlyEligible(release)) return null;
     return this.view(release);
   }
 
   private isCurrentlyEligible(release: AppReleaseRecord): boolean {
     try {
-      assertAppReleaseEligible(release, this.dependencies.runningRadiosoVersion);
+      assertNewInstallReleaseEligible(release, this.dependencies.runningRadiosoVersion);
       return true;
     } catch {
       return false;
@@ -207,8 +247,11 @@ export class AppReleaseAdmissionService {
     const evidence = release.admissionDecision.evidence;
     return {
       release,
+      // Through the admitted manifest, not the raw stored document: compatibility is a
+      // rule read off the manifest, and a row whose content no longer matches the digest
+      // admission recorded has no compatibility to report.
       currentCompatibility: appCompatibilityEvidence(
-        release.manifest.radiosoCompatibility,
+        admittedManifestOf(release).radiosoCompatibility,
         this.dependencies.runningRadiosoVersion,
       ),
       admissionEvidence: evidence && typeof evidence === "object" && !Array.isArray(evidence)

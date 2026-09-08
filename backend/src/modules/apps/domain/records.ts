@@ -34,6 +34,8 @@ export interface AppReleaseRecord {
   readonly admissionPolicyVersion: string;
   /** Issue list or evidence summary. Never a copy of the manifest. */
   readonly admissionDecision: Readonly<Record<string, unknown>>;
+  /** When admission admitted this release. `null` for a row that was never admitted. */
+  readonly admittedAt: Date | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -50,6 +52,8 @@ export interface AppInstallationRecord {
   readonly candidateConfiguration: Readonly<Record<string, unknown>> | null;
   /** Names the staged candidate so staging can discard exactly the one it was given. */
   readonly candidateRevision: string | null;
+  /** Names the mapping that is live. Promotion moves this to the candidate's revision. */
+  readonly activeRevision: string | null;
   /** Set the moment a disable or a remove is claimed. Execution eligibility denies while it is set. */
   readonly executionDeniedAt: Date | null;
   readonly version: number;

@@ -35,3 +35,27 @@ export const appLifecycleRequestFingerprint = (
   configuration: input.configuration,
   expectedVersion: input.expectedVersion,
 });
+
+interface AppConnectionBindFingerprintInput {
+  readonly workspaceId: string;
+  readonly installationId: string;
+  readonly slotId: string;
+  readonly expectedVersion: number;
+  /**
+   * The field *names* the request carried, never their values. A bind carries secret
+   * material, and a digest of it stored beside the ciphertext it protects would be an
+   * offline oracle for that secret. Identity, slot, version, and shape are what separate
+   * one bind request from another; a retry that changed a value under the same key is a
+   * rotation, and a rotation is what a fresh key is for.
+   */
+  readonly valueKeys: readonly string[];
+}
+
+export const appConnectionBindFingerprint = (input: AppConnectionBindFingerprintInput): string =>
+  canonicalDigest({
+    workspaceId: input.workspaceId,
+    installationId: input.installationId,
+    slotId: input.slotId,
+    expectedVersion: input.expectedVersion,
+    valueKeys: [...input.valueKeys].sort(),
+  });

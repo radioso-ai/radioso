@@ -10,6 +10,7 @@ import {
 
 import { canonicalDigest } from "./canonicalJson.js";
 import { AppsError } from "./errors.js";
+import type { AppReleaseState } from "./records.js";
 import { satisfiesSemanticVersionRange } from "./semanticVersion.js";
 
 /**
@@ -20,10 +21,12 @@ import { satisfiesSemanticVersionRange } from "./semanticVersion.js";
 export const APP_ADMISSION_POLICY_VERSION = "release-a.1";
 
 /**
- * What admission actually established, said plainly. Release A runs one check — manifest
- * compatibility with the running host — and every other check it does not run is recorded
- * as `not_evaluated`, because a decision that omits a check, or that names its trust root
- * in the check's own field, reads later as though the check passed. Which root vouched for
+ * What admission actually established, said plainly. Release A runs the contract policy,
+ * digest provenance, host compatibility, and version immutability; the five named
+ * hardening checks below — signature, provenance attestation, software inventory,
+ * vulnerability policy, and conformance execution — are deferred, and each is recorded as
+ * `not_evaluated`, because a decision that omits a check, or that names its trust root in
+ * the check's own field, reads later as though the check passed. Which root vouched for
  * the release is a separate fact, so it has a separate field.
  */
 type AppAdmissionEvidenceOutcome = "not_evaluated";
@@ -253,21 +256,27 @@ interface EligibleAppRelease extends AdmittableAppRelease {
 }
 
 /**
- * Whether a release may be acted on right now (FR-049c). Planning binds the admission
- * policy version and the state it saw; apply, activation, and every resumed release
- * effect ask this again, because a release can be revoked or quarantined between the
- * approval and the effect.
+ * The release states a *new* installation may be created or first activated against.
+ * Deprecation is a decision to stop offering a release, so it excludes exactly this.
  */
-export const assertAppReleaseEligible = (
+export const newInstallReleaseStates = ["admitted"] as const satisfies readonly AppReleaseState[];
+
+/**
+ * The release states an installation that already exists may keep working against.
+ * Deprecation stops new installs; it is not a stop-work order for the operators who
+ * already have the App, so reconfiguring, re-enabling, binding a connection, and executing
+ * a contribution all still hold. Revocation and quarantine are the stop-work orders.
+ */
+export const existingInstallationReleaseStates = ["admitted", "deprecated"] as const satisfies readonly AppReleaseState[];
+
+const assertReleaseUsable = (
   release: EligibleAppRelease,
   runningRadiosoVersion: string | null,
+  allowedStates: readonly AppReleaseState[],
+  refusal: string,
 ): AdmittedManifest => {
-  if (release.state !== "admitted") {
-    throw new AppsError(
-      "release_not_eligible",
-      "This release is no longer admitted, so it cannot be installed or activated.",
-      { releaseState: release.state },
-    );
+  if (!(allowedStates as readonly string[]).includes(release.state)) {
+    throw new AppsError("release_not_eligible", refusal, { releaseState: release.state });
   }
   const manifest = admittedManifestOf(release);
   const compatibility = appCompatibilityEvidence(manifest.radiosoCompatibility, runningRadiosoVersion);
@@ -275,10 +284,75 @@ export const assertAppReleaseEligible = (
     throw new AppsError(
       "release_not_eligible",
       compatibility.result === "undetermined"
-        ? "This host cannot determine which Radioso version it runs, so this release cannot be installed or activated."
+        ? "This host cannot determine which Radioso version it runs, so this release cannot be used."
         : "This release does not support the Radioso version this host runs.",
       { compatibility: compatibility.result },
     );
   }
   return manifest;
+};
+
+/**
+ * Whether a release may found a *new* installation right now (FR-049c). Planning binds the
+ * admission policy version and the state it saw; apply and first activation ask again,
+ * because a release can be deprecated, revoked, or quarantined between the approval and
+ * the effect.
+ */
+export const assertNewInstallReleaseEligible = (
+  release: EligibleAppRelease,
+  runningRadiosoVersion: string | null,
+): AdmittedManifest => assertReleaseUsable(
+  release,
+  runningRadiosoVersion,
+  newInstallReleaseStates,
+  "This release is no longer admitted, so it cannot be installed or activated.",
+);
+
+/**
+ * Whether an installation that already exists may keep acting on its release. Every
+ * release-dependent step of a reconfigure, an enable, a connection bind, and every
+ * execution asks this rather than new-install eligibility.
+ */
+export const assertExistingInstallationReleaseUsable = (
+  release: EligibleAppRelease,
+  runningRadiosoVersion: string | null,
+): AdmittedManifest => assertReleaseUsable(
+  release,
+  runningRadiosoVersion,
+  existingInstallationReleaseStates,
+  "This release has been withdrawn from use, so this installation cannot act on it.",
+);
+
+/**
+ * The security decisions a release may move through, and only these.
+ *
+ * `revoked` is terminal: the whole point of revoking a release is that it stops running
+ * everywhere, and an unconstrained state column would let a later `revoked -> deprecated`
+ * put it back into the set of states that execute. Quarantine is the reversible one — it
+ * is what an incident opens while the answer is still unknown — so it has an explicit,
+ * audited way back to `admitted` or on to `deprecated`.
+ */
+const appReleaseSecurityTransitions: Readonly<Record<AppReleaseState, readonly AppReleaseState[]>> = {
+  submitted: [],
+  validating: [],
+  admitted: ["deprecated", "revoked", "quarantined"],
+  rejected: [],
+  withdrawn: [],
+  deprecated: ["revoked", "quarantined"],
+  revoked: [],
+  quarantined: ["admitted", "deprecated"],
+};
+
+/** The states a transition into `state` may legally start from. */
+export const appReleaseSecuritySourceStates = (state: AppReleaseState): readonly AppReleaseState[] =>
+  (Object.keys(appReleaseSecurityTransitions) as AppReleaseState[])
+    .filter((from) => appReleaseSecurityTransitions[from].includes(state));
+
+export const assertAppReleaseSecurityTransition = (from: AppReleaseState, to: AppReleaseState): void => {
+  if (appReleaseSecurityTransitions[from].includes(to)) return;
+  throw new AppsError(
+    "invalid_release_transition",
+    `A release cannot move from ${from} to ${to}.`,
+    { from, to },
+  );
 };

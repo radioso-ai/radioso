@@ -221,11 +221,23 @@ export interface ApiCredentials {
 }
 
 export interface AppAuditOutbox {
+  claim_expires_at: Timestamp | null;
+  claim_token: string | null;
   created_at: Generated<Timestamp>;
   delivered_at: Timestamp | null;
   event: Json;
   id: string;
   workspace_id: string | null;
+}
+
+export interface AppConnectionBindRequests {
+  connection_id: string;
+  created_at: Generated<Timestamp>;
+  id: string;
+  idempotency_key: string;
+  installation_id: string;
+  request_fingerprint: string;
+  workspace_id: string;
 }
 
 export interface AppConnections {
@@ -268,6 +280,7 @@ export interface AppInstallationPlans {
 
 export interface AppInstallations {
   active_release_id: string | null;
+  active_revision: string | null;
   app_id: string;
   candidate_configuration: Json | null;
   candidate_release_id: string | null;
@@ -305,6 +318,7 @@ export interface AppLifecycleOperations {
 export interface AppReleases {
   admission_decision: Generated<Json>;
   admission_policy_version: string;
+  admitted_at: Timestamp | null;
   app_id: string;
   artifact_digest: string;
   created_at: Generated<Timestamp>;
@@ -1577,6 +1591,7 @@ export interface DB {
   api_credential_expiry_warnings: ApiCredentialExpiryWarnings;
   api_credentials: ApiCredentials;
   app_audit_outbox: AppAuditOutbox;
+  app_connection_bind_requests: AppConnectionBindRequests;
   app_connections: AppConnections;
   app_grants: AppGrants;
   app_installation_plans: AppInstallationPlans;

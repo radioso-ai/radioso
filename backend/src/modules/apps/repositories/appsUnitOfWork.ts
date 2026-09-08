@@ -32,5 +32,20 @@ export interface AppsTransactionalRepositories {
  * learns what a transaction is made of.
  */
 export interface AppsUnitOfWork {
-  run<T>(work: (repositories: AppsTransactionalRepositories) => Promise<T>): Promise<T>;
+  run<T>(
+    work: (repositories: AppsTransactionalRepositories) => Promise<T>,
+    options?: AppsUnitOfWorkOptions,
+  ): Promise<T>;
+}
+
+export interface AppsUnitOfWorkOptions {
+  /**
+   * One consistent view for the whole unit, rather than the default per-statement one.
+   *
+   * A decision assembled from several reads — is this installation active, is its release
+   * still usable, is this contribution granted, are its connections bound — is only an
+   * answer if all of it describes the same instant. Read committed lets a disable land
+   * between the first read and the last, which produces an answer that was never true.
+   */
+  readonly snapshot?: boolean;
 }

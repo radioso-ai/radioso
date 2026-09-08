@@ -104,6 +104,12 @@ export interface AppLifecycleOperationRepositoryPort {
    * let two sagas run at once, and to find the installation that needs repair.
    */
   findActiveByInstallation(installationId: string): Promise<AppLifecycleOperationRecord | null>;
+  /**
+   * Operations still travelling that nobody is driving: no claim, or a claim that lapsed
+   * before `now`. A crashed driver leaves exactly this, and until something re-drives it
+   * the installation's in-flight fence stays occupied.
+   */
+  listStalled(input: { readonly now: Date; readonly limit: number }): Promise<AppLifecycleOperationRecord[]>;
 }
 
 const COLUMNS = [
@@ -371,6 +377,21 @@ export class AppLifecycleOperationRepository implements AppLifecycleOperationRep
       .where("idempotency_key", "=", idempotencyKey)
       .executeTakeFirst();
     return row ? mapRecord(row) : null;
+  }
+
+  async listStalled(input: { now: Date; limit: number }): Promise<AppLifecycleOperationRecord[]> {
+    const rows = await this.db
+      .selectFrom("app_lifecycle_operations")
+      .select(COLUMNS)
+      .where("state", "in", ["running", "compensating"])
+      .where((eb) => eb.or([
+        eb("lease_expires_at", "is", null),
+        eb("lease_expires_at", "<=", input.now),
+      ]))
+      .orderBy("updated_at")
+      .limit(input.limit)
+      .execute();
+    return rows.map((row) => mapRecord(row as AppLifecycleOperationRow));
   }
 
   async findActiveByInstallation(installationId: string): Promise<AppLifecycleOperationRecord | null> {

@@ -18,14 +18,31 @@ export interface AppAuditIntent {
 }
 
 export interface AppAuditOutboxRecord {
+  /** Stable across every delivery attempt, so a sink can deduplicate on it. */
   readonly id: string;
   readonly intent: AppAuditIntent;
 }
 
+export interface ClaimAppAuditOutboxInput {
+  readonly limit: number;
+  /** Names this dispatcher's claim. Only the token that claimed a row may acknowledge it. */
+  readonly token: string;
+  readonly expiresAt: Date;
+  readonly now: Date;
+}
+
 export interface AppAuditOutboxRepositoryPort {
   enqueue(intents: readonly AppAuditIntent[]): Promise<readonly string[]>;
-  listUndelivered(limit: number): Promise<AppAuditOutboxRecord[]>;
-  markDelivered(ids: readonly string[], deliveredAt: Date): Promise<void>;
+  /**
+   * Takes a bounded batch of undelivered rows for this dispatcher alone. Two request-driven
+   * drains run concurrently all the time, so an unclaimed read would hand the same rows to
+   * both and emit each event twice.
+   */
+  claimUndelivered(input: ClaimAppAuditOutboxInput): Promise<AppAuditOutboxRecord[]>;
+  /** Marks delivered, but only the rows this token still holds. */
+  acknowledge(ids: readonly string[], token: string, deliveredAt: Date): Promise<void>;
+  /** Hands a claim back undelivered, so the next drain retries without waiting it out. */
+  releaseClaim(ids: readonly string[], token: string): Promise<void>;
 }
 
 const asObject = (value: unknown): Record<string, unknown> =>
@@ -69,23 +86,47 @@ export class AppAuditOutboxRepository implements AppAuditOutboxRepositoryPort {
     return rows.map((row) => row.id);
   }
 
-  async listUndelivered(limit: number): Promise<AppAuditOutboxRecord[]> {
+  async claimUndelivered(input: ClaimAppAuditOutboxInput): Promise<AppAuditOutboxRecord[]> {
     const rows = await this.db
-      .selectFrom("app_audit_outbox")
-      .select(["id", "workspace_id", "event"])
-      .where("delivered_at", "is", null)
-      .orderBy("created_at")
-      .limit(limit)
+      .updateTable("app_audit_outbox")
+      .set({ claim_token: input.token, claim_expires_at: input.expiresAt })
+      .where("id", "in", (eb) => eb
+        .selectFrom("app_audit_outbox")
+        .select("id")
+        .where("delivered_at", "is", null)
+        .where((claim) => claim.or([
+          claim("claim_token", "is", null),
+          claim("claim_expires_at", "<=", input.now),
+        ]))
+        .orderBy("created_at")
+        .limit(input.limit)
+        // Skipping rows another dispatcher already holds is what makes two concurrent
+        // drains split the backlog instead of blocking on each other.
+        .forUpdate()
+        .skipLocked())
+      .returning(["id", "workspace_id", "event"])
       .execute();
     return rows.map((row) => mapRecord(row as { id: string; workspace_id: string | null; event: unknown }));
   }
 
-  async markDelivered(ids: readonly string[], deliveredAt: Date): Promise<void> {
+  async acknowledge(ids: readonly string[], token: string, deliveredAt: Date): Promise<void> {
     if (ids.length === 0) return;
     await this.db
       .updateTable("app_audit_outbox")
-      .set({ delivered_at: deliveredAt })
+      .set({ delivered_at: deliveredAt, claim_token: null, claim_expires_at: null })
       .where("id", "in", [...ids])
+      .where("claim_token", "=", token)
+      .execute();
+  }
+
+  async releaseClaim(ids: readonly string[], token: string): Promise<void> {
+    if (ids.length === 0) return;
+    await this.db
+      .updateTable("app_audit_outbox")
+      .set({ claim_token: null, claim_expires_at: null })
+      .where("id", "in", [...ids])
+      .where("claim_token", "=", token)
+      .where("delivered_at", "is", null)
       .execute();
   }
 }

@@ -384,7 +384,9 @@ describe("app routes", () => {
       .send({ expectedVersion: view.body.installation.version, idempotencyKey: "activate-1" })
       .expect(200);
 
-    expect(activated.body.installation.state).toBe("failed");
+    // The attempt failed and rolled back cleanly, so the installation is back where the
+    // operator started and can be activated again once a runtime provider exists.
+    expect(activated.body.installation.state).toBe("planned");
     expect(activated.body.operation.error.reason).toBe("runtime_unavailable");
   });
 

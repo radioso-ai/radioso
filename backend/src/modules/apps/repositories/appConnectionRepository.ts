@@ -15,6 +15,23 @@ export interface BindAppConnectionInput {
 }
 
 /**
+ * What one bind request already produced. A generated secret is handed over exactly once,
+ * so a retry has to be answerable from the reservation rather than by minting a second one.
+ */
+export interface AppConnectionBindReservation {
+  readonly connectionId: string;
+  readonly requestFingerprint: string;
+}
+
+export interface ReserveAppConnectionBindInput {
+  readonly workspaceId: string;
+  readonly installationId: string;
+  readonly connectionId: string;
+  readonly idempotencyKey: string;
+  readonly requestFingerprint: string;
+}
+
+/**
  * There is no read path for `secret_ciphertext` here. The control plane writes secret
  * material and never reads it back; the invocation path that will lives in `appRuntime`
  * and gets its own port.
@@ -22,7 +39,18 @@ export interface BindAppConnectionInput {
 export interface AppConnectionRepositoryPort {
   bind(input: BindAppConnectionInput): Promise<AppConnectionRecord>;
   listByInstallation(installationId: string): Promise<AppConnectionRecord[]>;
+  findById(id: string): Promise<AppConnectionRecord | null>;
   markAllForDeletion(installationId: string, requestedAt: Date): Promise<number>;
+  /**
+   * Claims `(workspaceId, idempotencyKey)` for the connection it names, or reports that the
+   * key is already claimed. Like the lifecycle reservation it never throws on that
+   * conflict: the caller reads the winner in the same healthy transaction.
+   */
+  reserveBind(input: ReserveAppConnectionBindInput): Promise<AppConnectionBindReservation | null>;
+  findBindByIdempotencyKey(
+    workspaceId: string,
+    idempotencyKey: string,
+  ): Promise<AppConnectionBindReservation | null>;
 }
 
 const COLUMNS = [
@@ -102,6 +130,49 @@ export class AppConnectionRepository implements AppConnectionRepositoryPort {
       .returning([...COLUMNS, (eb) => eb("secret_ciphertext", "is not", null).as("has_secret")])
       .executeTakeFirstOrThrow();
     return mapRecord(row as AppConnectionRow);
+  }
+
+  async findById(id: string): Promise<AppConnectionRecord | null> {
+    const row = await this.db
+      .selectFrom("app_connections")
+      .select([...COLUMNS, (eb) => eb("secret_ciphertext", "is not", null).as("has_secret")])
+      .where("id", "=", id)
+      .executeTakeFirst();
+    return row ? mapRecord(row as AppConnectionRow) : null;
+  }
+
+  async reserveBind(input: ReserveAppConnectionBindInput): Promise<AppConnectionBindReservation | null> {
+    const row = await this.db
+      .insertInto("app_connection_bind_requests")
+      .values({
+        id: randomUUID(),
+        workspace_id: input.workspaceId,
+        installation_id: input.installationId,
+        connection_id: input.connectionId,
+        idempotency_key: input.idempotencyKey,
+        request_fingerprint: input.requestFingerprint,
+      })
+      .onConflict((conflict) => conflict.columns(["workspace_id", "idempotency_key"]).doNothing())
+      .returning(["connection_id", "request_fingerprint"])
+      .executeTakeFirst();
+    return row
+      ? { connectionId: row.connection_id, requestFingerprint: row.request_fingerprint }
+      : null;
+  }
+
+  async findBindByIdempotencyKey(
+    workspaceId: string,
+    idempotencyKey: string,
+  ): Promise<AppConnectionBindReservation | null> {
+    const row = await this.db
+      .selectFrom("app_connection_bind_requests")
+      .select(["connection_id", "request_fingerprint"])
+      .where("workspace_id", "=", workspaceId)
+      .where("idempotency_key", "=", idempotencyKey)
+      .executeTakeFirst();
+    return row
+      ? { connectionId: row.connection_id, requestFingerprint: row.request_fingerprint }
+      : null;
   }
 
   async listByInstallation(installationId: string): Promise<AppConnectionRecord[]> {

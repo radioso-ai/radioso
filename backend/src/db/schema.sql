@@ -747,7 +747,24 @@ CREATE TABLE public.app_audit_outbox (
     workspace_id uuid,
     event jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    delivered_at timestamp with time zone
+    delivered_at timestamp with time zone,
+    claim_token text,
+    claim_expires_at timestamp with time zone
+);
+
+
+--
+-- Name: app_connection_bind_requests; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.app_connection_bind_requests (
+    id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    installation_id uuid NOT NULL,
+    connection_id uuid NOT NULL,
+    idempotency_key text NOT NULL,
+    request_fingerprint text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -821,6 +838,7 @@ CREATE TABLE public.app_installations (
     configuration jsonb DEFAULT '{}'::jsonb NOT NULL,
     candidate_configuration jsonb,
     candidate_revision text,
+    active_revision text,
     execution_denied_at timestamp with time zone,
     version integer DEFAULT 1 NOT NULL,
     health jsonb DEFAULT '{}'::jsonb NOT NULL,
@@ -872,6 +890,7 @@ CREATE TABLE public.app_releases (
     state text NOT NULL,
     admission_policy_version text NOT NULL,
     admission_decision jsonb DEFAULT '{}'::jsonb NOT NULL,
+    admitted_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT app_releases_state_check CHECK ((state = ANY (ARRAY['submitted'::text, 'validating'::text, 'admitted'::text, 'rejected'::text, 'withdrawn'::text, 'deprecated'::text, 'revoked'::text, 'quarantined'::text])))
@@ -3897,6 +3916,22 @@ ALTER TABLE ONLY public.app_audit_outbox
 
 
 --
+-- Name: app_connection_bind_requests app_connection_bind_requests_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_connection_bind_requests
+    ADD CONSTRAINT app_connection_bind_requests_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: app_connection_bind_requests app_connection_bind_requests_workspace_id_idempotency_key_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_connection_bind_requests
+    ADD CONSTRAINT app_connection_bind_requests_workspace_id_idempotency_key_key UNIQUE (workspace_id, idempotency_key);
+
+
+--
 -- Name: app_connections app_connections_installation_id_slot_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6559,6 +6594,13 @@ CREATE UNIQUE INDEX idx_app_lifecycle_operations_in_flight ON public.app_lifecyc
 
 
 --
+-- Name: idx_app_lifecycle_operations_stalled; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_app_lifecycle_operations_stalled ON public.app_lifecycle_operations USING btree (lease_expires_at) WHERE (state = ANY (ARRAY['running'::text, 'compensating'::text]));
+
+
+--
 -- Name: idx_app_releases_installable; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8850,6 +8892,30 @@ ALTER TABLE ONLY public.api_credentials
 
 ALTER TABLE ONLY public.app_audit_outbox
     ADD CONSTRAINT app_audit_outbox_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: app_connection_bind_requests app_connection_bind_requests_connection_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_connection_bind_requests
+    ADD CONSTRAINT app_connection_bind_requests_connection_id_fkey FOREIGN KEY (connection_id) REFERENCES public.app_connections(id) ON DELETE CASCADE;
+
+
+--
+-- Name: app_connection_bind_requests app_connection_bind_requests_installation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_connection_bind_requests
+    ADD CONSTRAINT app_connection_bind_requests_installation_id_fkey FOREIGN KEY (installation_id) REFERENCES public.app_installations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: app_connection_bind_requests app_connection_bind_requests_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_connection_bind_requests
+    ADD CONSTRAINT app_connection_bind_requests_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

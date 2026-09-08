@@ -57,6 +57,7 @@ describeIntegration("Apps control-plane repositories (Postgres)", () => {
       state: "admitted",
       admissionPolicyVersion: "release-a.1",
       admissionDecision: { evidence: { provenance: "built_in_registry" } },
+      admittedAt: new Date(),
     });
     return inserted ?? (await releases.findByAppIdAndVersion(appId, version))!;
   };
@@ -83,7 +84,7 @@ describeIntegration("Apps control-plane repositories (Postgres)", () => {
 
     // A second sync of a version that already exists changes nothing about it. Start-up is
     // not a security decision, so a revoked release must not come back admitted.
-    await releases.transitionState(first.id, "revoked");
+    await releases.transitionState(first.id, { expectedStates: ["admitted"], state: "revoked" });
     const again = await releases.insertIfAbsent({
       appId,
       version: "1.0.0",
@@ -94,6 +95,7 @@ describeIntegration("Apps control-plane repositories (Postgres)", () => {
       state: "admitted",
       admissionPolicyVersion: "release-a.1",
       admissionDecision: {},
+      admittedAt: new Date(),
     });
     expect(again).toBeNull();
 
@@ -101,7 +103,10 @@ describeIntegration("Apps control-plane repositories (Postgres)", () => {
     expect(stored).toMatchObject({ id: first.id, state: "revoked", manifestDigest: first.manifestDigest });
     expect((await releases.listInstallable()).map((release) => release.id)).not.toContain(first.id);
 
-    await releases.transitionState(first.id, "admitted");
+    // Revocation is terminal, so the row is quarantined first: that is the reversible
+    // decision, and releasing from it is the only audited way back to admitted.
+    await database.query(`UPDATE app_releases SET state = 'quarantined' WHERE id = $1`, [first.id]);
+    await releases.transitionState(first.id, { expectedStates: ["quarantined"], state: "admitted" });
     expect((await releases.listInstallable()).map((release) => release.id)).toContain(first.id);
   });
 

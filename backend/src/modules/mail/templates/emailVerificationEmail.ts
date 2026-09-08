@@ -3,6 +3,8 @@ import { renderEmail, renderEmailText, type EmailContent } from "./layout.js";
 
 interface EmailVerificationInput {
   to: string;
+  /** Public frontend origin; the layout serves the brand lockup from it. */
+  appBaseUrl?: string | null;
   verificationUrl: string;
 }
 
@@ -23,7 +25,7 @@ export const renderEmailVerificationEmail = (
     to: input.to,
     subject: "Verify your email",
     text: renderEmailText(content),
-    html: renderEmail(content),
+    html: renderEmail(content, { appBaseUrl: input.appBaseUrl }),
     kind: "email_verification",
     metadata: {
       verificationUrl: input.verificationUrl,

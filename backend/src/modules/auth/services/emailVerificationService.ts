@@ -64,6 +64,7 @@ export class EmailVerificationService {
         await this.dependencies.mailService.send(renderEmailVerificationEmail({
           to: email,
           verificationUrl: verificationUrl.toString(),
+          appBaseUrl: this.dependencies.env.APP_BASE_URL,
         }));
       } catch (error) {
         sent = false;

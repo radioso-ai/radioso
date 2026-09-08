@@ -82,6 +82,7 @@ export class PasswordResetService {
         await this.dependencies.mailService.send(renderPasswordResetEmail({
           to: email,
           resetUrl: resetUrl.toString(),
+          appBaseUrl: this.dependencies.env.APP_BASE_URL,
         }));
       } catch (error) {
         logAuthMailDeliveryFailure(this.dependencies.logger, {

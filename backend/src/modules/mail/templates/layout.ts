@@ -1,3 +1,4 @@
+import { appUrl } from "../../../shared/domain/appUrl.js";
 import { emailTheme as t } from "./theme.js";
 
 /**
@@ -5,8 +6,8 @@ import { emailTheme as t } from "./theme.js";
  * Radioso email looks, so a new message inherits the brand instead of restating it.
  *
  * Constraints this encodes, none of them obvious from the markup:
- * - Mail clients strip `<svg>`, so the wordmark is live text over the brand accent bar. An image
- *   blocked by the client still leaves a branded header.
+ * - Mail clients strip `<svg>` and every logo asset in the repo is SVG, so the header uses a
+ *   rasterised lockup. Its `alt` carries the wordmark for anyone blocking images.
  * - Layout is table-based with inline styles because Outlook renders through Word, which ignores
  *   most block-level CSS. The `<style>` block is progressive enhancement only.
  * - Every value reaching the markup is escaped here. Templates pass plain strings.
@@ -35,6 +36,12 @@ export interface EmailContent {
 }
 
 const MARKETING_URL = "https://radioso.ai";
+const TAGLINE = "All your conversational agents. One platform you own.";
+
+interface EmailLayoutOptions {
+  /** Public frontend origin. The logo is served from it, so links and art share one host. */
+  appBaseUrl?: string | null;
+}
 
 const escapeHtml = (value: string): string =>
   value
@@ -70,16 +77,22 @@ const metaTable = (rows: EmailMetaRow[]): string => `
         <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px 0;">${rows.map(metaRow).join("")}
         </table>`;
 
-/** The brand device from the docs OG card: a wide brand bar followed by a short accent bar. */
-const accentBar = (): string => `
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px 0;">
-          <tr>
-            <td width="160" height="10" bgcolor="${t.color.brand}" style="width:160px;height:10px;line-height:10px;font-size:0;">&nbsp;</td>
-            <td width="48" height="10" bgcolor="${t.color.accent}" style="width:48px;height:10px;line-height:10px;font-size:0;">&nbsp;</td>
-          </tr>
-        </table>`;
+/**
+ * Light and dark lockups, both emitted. The dark one is inline `display:none` and only the
+ * media query reveals it, so a client that strips `<style>` shows exactly one logo rather than two.
+ */
+const logo = (appBaseUrl?: string | null): string => {
+  const light = appUrl(t.logo.lightPath, appBaseUrl).toString();
+  const dark = appUrl(t.logo.darkPath, appBaseUrl).toString();
+  const shared = `width="${t.logo.widthPx}" height="${t.logo.heightPx}" alt="Radioso"`;
+  return `<img src="${escapeHtml(light)}" ${shared} class="r-logo-light" style="display:block;width:${t.logo.widthPx}px;height:${t.logo.heightPx}px;border:0;outline:none;text-decoration:none;" />
+            <img src="${escapeHtml(dark)}" ${shared} class="r-logo-dark" style="display:none;width:${t.logo.widthPx}px;height:${t.logo.heightPx}px;border:0;outline:none;text-decoration:none;" />`;
+};
 
-export const renderEmail = (content: EmailContent): string => `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+const divider = (): string =>
+  `<div style="height:1px;line-height:1px;font-size:0;background:${t.divider};margin:0 0 20px 0;" class="r-divider">&nbsp;</div>`;
+
+export const renderEmail = (content: EmailContent, options: EmailLayoutOptions = {}): string => `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en">
 <head>
 <meta charset="utf-8" />
@@ -91,11 +104,14 @@ export const renderEmail = (content: EmailContent): string => `<!DOCTYPE html PU
   @media (prefers-color-scheme: dark) {
     .r-canvas { background:${t.color.darkCanvas} !important; }
     .r-card { background:${t.color.darkCard} !important; border-color:${t.color.darkBorder} !important; }
-    .r-text, .r-wordmark { color:${t.color.darkInk} !important; }
+    .r-text { color:${t.color.darkInk} !important; }
     .r-muted { color:${t.color.darkMutedInk} !important; }
+    .r-divider { background:${t.color.darkBorder} !important; }
+    .r-logo-light { display:none !important; }
+    .r-logo-dark { display:block !important; }
   }
   @media only screen and (max-width:620px) {
-    .r-card { padding:24px !important; }
+    .r-card { padding:28px !important; }
   }
 </style>
 </head>
@@ -106,22 +122,22 @@ export const renderEmail = (content: EmailContent): string => `<!DOCTYPE html PU
     <td align="center" style="padding:32px 16px;">
       <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="${t.contentWidthPx}" style="width:${t.contentWidthPx}px;max-width:100%;">
         <tr>
-          <td style="padding:0 0 20px 0;">${accentBar()}
-            <div style="font-family:${t.font.display};font-size:20px;line-height:24px;font-weight:700;letter-spacing:-0.01em;color:${t.color.ink};" class="r-wordmark">Radioso</div>
+          <td style="padding:0 0 24px 0;">
+            ${logo(options.appBaseUrl)}
           </td>
         </tr>
         <tr>
-          <td bgcolor="${t.color.card}" style="background:${t.color.card};border:1px solid ${t.color.border};border-radius:8px;padding:32px;" class="r-card">
-            <h1 style="margin:0 0 16px 0;font-family:${t.font.display};font-size:24px;line-height:32px;font-weight:600;color:${t.color.ink};" class="r-text">${escapeHtml(content.heading)}</h1>
+          <td bgcolor="${t.color.card}" style="background:${t.color.card};border:1px solid ${t.color.border};border-radius:12px;padding:40px;box-shadow:0 1px 2px rgba(20,35,23,0.04);" class="r-card">
+            <h1 style="margin:0 0 20px 0;font-family:${t.font.display};font-size:26px;line-height:34px;font-weight:600;letter-spacing:-0.015em;color:${t.color.ink};" class="r-text">${escapeHtml(content.heading)}</h1>
 ${content.paragraphs.map((text) => `            ${paragraph(text)}`).join("\n")}
 ${content.cta ? callToAction(content.cta) : ""}
 ${content.metaRows?.length ? metaTable(content.metaRows) : ""}
-${content.footnote ? `            <p style="margin:0;font-family:${t.font.body};font-size:13px;line-height:20px;color:${t.color.mutedInk};" class="r-muted">${escapeHtml(content.footnote)}</p>` : ""}
+${content.footnote ? `            ${divider()}\n            <p style="margin:0;font-family:${t.font.body};font-size:13px;line-height:20px;color:${t.color.mutedInk};" class="r-muted">${escapeHtml(content.footnote)}</p>` : ""}
           </td>
         </tr>
         <tr>
           <td style="padding:20px 0 0 0;font-family:${t.font.body};font-size:12px;line-height:18px;color:${t.color.mutedInk};" class="r-muted">
-            <a href="${MARKETING_URL}" style="color:${t.color.mutedInk};text-decoration:none;" class="r-muted">Radioso</a> &mdash; agents that answer, act, and hand off.
+            <a href="${MARKETING_URL}" style="color:${t.color.mutedInk};text-decoration:none;" class="r-muted">Radioso</a> &mdash; ${TAGLINE}
           </td>
         </tr>
       </table>
@@ -143,6 +159,6 @@ export const renderEmailText = (content: EmailContent): string => {
   if (content.footnote) {
     blocks.push(content.footnote);
   }
-  blocks.push(`Radioso — agents that answer, act, and hand off.\n${MARKETING_URL}`);
+  blocks.push(`Radioso — ${TAGLINE}\n${MARKETING_URL}`);
   return blocks.join("\n\n");
 };

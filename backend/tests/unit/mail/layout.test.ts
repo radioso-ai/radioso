@@ -34,16 +34,40 @@ describe("renderEmail", () => {
 
     // Brand blue passes AA on white; the app's lighter #5096E7 does not.
     expect(html).toContain("#2870BD");
-    expect(html).toContain("#FFC720");
     expect(html).toContain("#142317");
     expect(html).not.toContain("#111827");
   });
 
-  it("renders the wordmark as live text so an image-blocking client stays branded", () => {
+  it("serves the brand lockup from the configured app origin", () => {
+    const html = renderEmail(content, { appBaseUrl: "https://app.radioso.ai" });
+
+    expect(html).toContain('src="https://app.radioso.ai/radioso-lockup-email.png"');
+    expect(html).toContain('src="https://app.radioso.ai/radioso-lockup-email-dark.png"');
+  });
+
+  it("names the logo so an image-blocking client still reads the brand", () => {
+    const html = renderEmail(content);
+    const logoTags = html.match(/<img[^>]*>/g) ?? [];
+
+    expect(logoTags).toHaveLength(2);
+    for (const tag of logoTags) {
+      expect(tag).toContain('alt="Radioso"');
+    }
+  });
+
+  it("reveals only one lockup when a client drops the stylesheet", () => {
     const html = renderEmail(content);
 
-    expect(html).toContain("Radioso");
-    expect(html).not.toContain("<img");
+    // The dark lockup is hidden inline and only the media query shows it, so a client that
+    // strips <style> renders the light one alone rather than stacking both.
+    expect(html).toMatch(/class="r-logo-dark"[^>]*style="display:none/);
+    expect(html).toContain(".r-logo-dark { display:block !important; }");
+  });
+
+  it("carries the positioning line in the footer", () => {
+    const html = renderEmail(content);
+
+    expect(html).toContain("All your conversational agents. One platform you own.");
   });
 
   it("links the call to action", () => {
@@ -54,9 +78,10 @@ describe("renderEmail", () => {
   });
 
   it("omits the call to action when a message has none", () => {
-    const html = renderEmail({ ...content, cta: undefined });
+    const html = renderEmail({ ...content, cta: undefined }, { appBaseUrl: "https://app.radioso.ai" });
 
-    expect(html).not.toContain("app.radioso.ai");
+    expect(html).not.toContain("verify-email?token=abc");
+    expect(html).not.toContain("Verify email address");
   });
 
   it("escapes copy and links supplied by a template", () => {
@@ -103,6 +128,7 @@ describe("renderEmailText", () => {
     expect(text).toContain("Welcome to Radioso.");
     expect(text).toContain("https://app.radioso.ai/verify-email?token=abc");
     expect(text).toContain("If you did not create this account, you can ignore this email.");
+    expect(text).toContain("All your conversational agents. One platform you own.");
     expect(text).not.toContain("<");
   });
 });

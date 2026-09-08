@@ -252,6 +252,7 @@ radioso/
 |   |-- integration-test-support/ # shared disposable integration-database policy
 |   |-- radioso-mcp-server/      # standalone MCP server package
 |   |-- document-parser/         # local parser package
+|   |-- product-docs/            # published documentation compiled for Ray and MCP
 |   |-- connector-api/           # connector contract package
 |   `-- ui/                      # shared shadcn primitives (frontend + docs-portal)
 |-- typescript-sdk/              # first-party TypeScript SDK

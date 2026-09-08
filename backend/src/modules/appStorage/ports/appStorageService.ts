@@ -1,4 +1,5 @@
 import type {
+  AppError,
   StorageCollection,
   StorageDeleteRequest,
   StorageGetRequest,
@@ -12,8 +13,11 @@ import type {
 import type { z } from "zod";
 
 import type { AppStorageResult } from "../domain/results.js";
-import type { AppStorageCollectionUsage } from "../domain/quota.js";
-import type { AppStorageInstallationScope } from "./appStorageRepository.js";
+import type {
+  AppStorageCollectionScope,
+  AppStorageInstallationScope,
+  AppStorageLiveUsage,
+} from "./appStorageRepository.js";
 
 /**
  * Result shapes come from the contract's own schemas rather than being restated
@@ -43,14 +47,33 @@ export interface AppStorageService {
   query(input: AppStorageOperation<StorageQueryRequest>): Promise<AppStorageResult<StorageQueryResult>>;
   usage(
     input: AppStorageInstallationScope & { collection: StorageCollection },
-  ): Promise<AppStorageResult<AppStorageCollectionUsage>>;
+  ): Promise<AppStorageResult<AppStorageLiveUsage>>;
+  /**
+   * The schema versions this collection's rows carry, for the compatibility
+   * matrix's stored-writer observation. It lives here because the answer is a
+   * storage fact: a release admission that had to derive it would be a caller
+   * reading storage tables it does not own.
+   */
+  storedSchemaVersions(scope: AppStorageCollectionScope): Promise<AppStorageResult<number[]>>;
 }
 
-/** One JSON Lines record of an export, tagged with the collection it belongs to. */
-export interface AppStorageExportLine {
-  collectionId: string;
-  line: string;
-}
+/**
+ * One line of an export, or the failure that ended it. A stream that simply
+ * stopped would be indistinguishable from one that finished, and the difference
+ * is whether the operator has all of the customer's data or some of it.
+ */
+export type AppStorageExportEvent =
+  | { kind: "line"; collectionId: string; line: string }
+  | { kind: "error"; error: AppError };
+
+/**
+ * Admission and streaming are separate answers. Whether an export may run at all
+ * is decided once, under the installation's state row, and reported as a result;
+ * what follows is the data.
+ */
+export type AppStorageExportAdmission =
+  | { ok: false; error: AppError }
+  | { ok: true; stream: AsyncIterable<AppStorageExportEvent> };
 
 export interface AppStorageDeletionSummary {
   recordCount: number;
@@ -64,22 +87,31 @@ export interface AppStorageDeletionSummary {
  * Revoking takes the App's authority away and leaves the operator's intact, so an
  * export after a revocation is the expected order rather than a hole. What no
  * disposition survives is deletion: the installation keeps a tombstone, and every
- * operation against it is refused until the workspace itself is gone.
+ * operation against it is refused until the workspace itself is gone — except
+ * deletion, which answers with the tombstone's own counts, because a caller that
+ * lost the first response has to be able to ask again.
+ *
+ * Workspace deletion is not here. A workspace's storage goes with the workspace
+ * row through the foreign key cascade, and a second path that removed the same
+ * rows without holding any installation's fence could only race the first.
  */
 export interface AppStorageDisposition {
   revokeAccess(scope: AppStorageInstallationScope): Promise<AppStorageResult<void>>;
   restoreAccess(scope: AppStorageInstallationScope): Promise<AppStorageResult<void>>;
-  exportRecords(scope: AppStorageInstallationScope): AsyncIterable<AppStorageExportLine>;
+  export(scope: AppStorageInstallationScope): Promise<AppStorageExportAdmission>;
   retain(
     input: AppStorageInstallationScope & { until: Date },
   ): Promise<AppStorageResult<{ retainUntil: Date }>>;
   deleteInstallationStorage(
     scope: AppStorageInstallationScope,
   ): Promise<AppStorageResult<AppStorageDeletionSummary>>;
-  deleteWorkspaceStorage(input: { workspaceId: string }): Promise<{
-    recordCount: number;
-    installationCount: number;
-  }>;
+  /**
+   * Publishes the audit intents dispositions committed alongside their changes.
+   * Exposed rather than scheduled: the runtime that owns background work decides
+   * the cadence, and a trail that is a few seconds behind is still a trail that
+   * agrees with the data.
+   */
+  drainAuditOutbox(): Promise<{ publishedCount: number }>;
 }
 
 export interface AppStorageExpirySweepResult {
@@ -104,10 +136,15 @@ export interface AppStorageSweeper {
   runRetentionSweep(): Promise<AppStorageRetentionSweepResult>;
 }
 
-export interface AppStorageIndexRebuildResult {
-  rebuiltCount: number;
-  batchCount: number;
-}
+/**
+ * What a rebuild did, or why it cannot be finished. A value stored before its
+ * field was indexed was never measured against the index's bounds, so a rebuild
+ * can meet one the index cannot hold; it reports that as a deterministic outcome
+ * with a count, rather than raising the database's own error at the operator.
+ */
+export type AppStorageIndexRebuildResult =
+  | { outcome: "rebuilt"; rebuiltCount: number; batchCount: number }
+  | { outcome: "incompatible_records"; indexId: string; incompatibleCount: number };
 
 /**
  * Builds a declared index over records written before it was declared. An index

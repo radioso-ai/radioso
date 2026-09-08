@@ -1,4 +1,3 @@
-import type { AppStorageAuditPort } from "../ports/appStorageAudit.js";
 import type {
   AppStorageInstallationScope,
   AppStorageRepositoryPort,
@@ -11,7 +10,6 @@ import type {
 
 interface AppStorageSweeperOptions {
   repository: AppStorageRepositoryPort;
-  audit: AppStorageAuditPort;
   /** Rows one statement removes. Deleting a whole backlog at once holds the collection's lock for as long as the backlog is large. */
   batchSize?: number;
   /** Batches one expiry pass runs. A sweep is maintenance, not a job that owns the connection until the backlog is empty. */
@@ -39,26 +37,31 @@ const DEFAULT_MAX_INSTALLATIONS = 50;
  * App and chose to hold its data for a bounded period made a promise that the data
  * stops existing at a named instant, and this pass is what keeps it. Each due
  * installation is reclaimed in one transaction that removes its records, their
- * index entries, and its counters and leaves the tombstone behind, and the audit
- * event that follows carries what was removed.
+ * index entries, and its counters, leaves the tombstone behind, and writes the
+ * audit intent describing what it removed — one transaction, so the trail cannot
+ * name a deletion that rolled back or omit one that did not.
  */
 export const createAppStorageSweeper = (options: AppStorageSweeperOptions): AppStorageSweeper => {
-  const { repository, audit } = options;
+  const { repository } = options;
   const batchSize = options.batchSize ?? DEFAULT_BATCH_SIZE;
   const maxBatches = options.maxBatches ?? DEFAULT_MAX_BATCHES;
   const maxInstallations = options.maxInstallations ?? DEFAULT_MAX_INSTALLATIONS;
 
   /**
-   * Works one collection at a time. The pass approaches the counter row first and
-   * the record rows second — the order every write takes — so a sweep and a put
-   * queue behind each other instead of deadlocking.
+   * Works one collection at a time. Each pass claims the collections it works —
+   * least recently swept first, skipping whatever another pass already holds — so
+   * a collection whose expired rows keep arriving cannot be picked over and over
+   * while another keeps its own backlog forever. Inside a collection the reclaim
+   * approaches the installation's state row first, the counter row second, and
+   * record rows third, which is the order every write takes, so a sweep, a put,
+   * and an installation deletion queue behind each other instead of deadlocking.
    */
   const sweepCollections = async (): Promise<AppStorageExpirySweepResult> => {
     let deletedCount = 0;
     let batchCount = 0;
 
     while (batchCount < maxBatches) {
-      const collections = await repository.listCollectionsWithExpiredRecords(maxBatches - batchCount);
+      const collections = await repository.claimCollectionsForExpirySweep(maxBatches - batchCount);
       if (collections.length === 0) break;
 
       let progressed = false;
@@ -78,35 +81,47 @@ export const createAppStorageSweeper = (options: AppStorageSweeperOptions): AppS
     return { deletedCount, batchCount };
   };
 
+  /**
+   * Reclaims one due installation. The listing that produced this scope was a
+   * decision made outside any lock, so the repository rechecks the deadline while
+   * holding the state row: an operator who extended the hold in between keeps the
+   * data, and this pass reports it as not due rather than as a failure.
+   *
+   * The deletion and the event that describes it commit together, which is why
+   * nothing is recorded here on the way out — a trail written afterwards could
+   * describe a deletion that rolled back, or miss one that did not.
+   */
   const reclaimInstallation = async (
     scope: AppStorageInstallationScope,
   ): Promise<{ recordCount: number; reclaimed: boolean }> => {
     try {
-      const removed = await repository.deleteInstallationRecords(scope);
-      if (!removed.admitted) return { recordCount: 0, reclaimed: false };
-
-      await audit.record({
-        workspaceId: scope.workspaceId,
-        installationId: scope.installationId,
-        eventType: "app.data.deletion.completed",
-        eventStatus: "success",
-        metadata: {
-          reason: "retention_elapsed",
-          recordCount: removed.value.recordCount,
-          collectionCount: removed.value.collectionCount,
-        },
+      const removed = await repository.reclaimRetainedInstallation({
+        scope,
+        audit: (summary) => ({
+          eventType: "app.data.deletion.completed",
+          eventStatus: "success",
+          metadata: {
+            reason: "retention_elapsed",
+            recordCount: summary.recordCount,
+            collectionCount: summary.collectionCount,
+          },
+        }),
       });
 
-      return { recordCount: removed.value.recordCount, reclaimed: true };
+      if (removed.outcome !== "reclaimed") return { recordCount: 0, reclaimed: false };
+      return { recordCount: removed.summary.recordCount, reclaimed: true };
     } catch {
       // A failed reclamation is the case the trail exists for: the deadline
       // passed and the data is still here, and the next pass has to try again.
-      await audit.record({
-        workspaceId: scope.workspaceId,
-        installationId: scope.installationId,
-        eventType: "app.data.deletion.completed",
-        eventStatus: "failure",
-        metadata: { reason: "retention_elapsed" },
+      // This event has no state change to ride along with — nothing committed —
+      // so it goes to the outbox on its own.
+      await repository.enqueueAuditEvent({
+        scope,
+        intent: {
+          eventType: "app.data.deletion.completed",
+          eventStatus: "failure",
+          metadata: { reason: "retention_elapsed" },
+        },
       });
       return { recordCount: 0, reclaimed: false };
     }

@@ -15,6 +15,8 @@ import {
 import type {
   AppStorageAdmitted,
   AppStorageCollectionScope,
+  AppStorageDeleteOutcome,
+  AppStorageLiveUsage,
   AppStorageRepositoryPort,
   StoredAppStorageRecord,
 } from "../ports/appStorageRepository.js";
@@ -173,6 +175,15 @@ export const createAppStorageService = (options: AppStorageServiceOptions): AppS
               return storageFailure("version_conflict", "The record changed since the version this write expected");
             case "not_found":
               return storageFailure("not_found", "A fenced write found no record under this key");
+            // The collection's version counter reached the last value a JSON
+            // number carries exactly. Continuing would hand two writes the same
+            // fence, so the collection stops writing and says so in the one way
+            // that does not blame the caller for it.
+            case "version_exhausted":
+              return storageFailure(
+                "internal",
+                "Storage cannot accept further writes to this collection",
+              );
           }
         });
       });
@@ -191,7 +202,7 @@ export const createAppStorageService = (options: AppStorageServiceOptions): AppS
           expectedVersion: input.request.expectedVersion ?? null,
         });
 
-        return mapAdmitted(removed, (outcome) => {
+        return mapAdmitted<AppStorageDeleteOutcome, StorageDeleteResult>(removed, (outcome) => {
           switch (outcome.outcome) {
             case "deleted":
               return storageSuccess({ deleted: true });
@@ -241,10 +252,17 @@ export const createAppStorageService = (options: AppStorageServiceOptions): AppS
       });
     },
 
-    async usage(input): Promise<AppStorageResult<{ recordCount: number; byteSize: number }>> {
+    async usage(input): Promise<AppStorageResult<AppStorageLiveUsage>> {
       return attempt(async () => {
         const read = await repository.readCollectionUsage(scopeOf(input));
         return mapAdmitted(read, (usage) => storageSuccess(usage));
+      });
+    },
+
+    async storedSchemaVersions(scope): Promise<AppStorageResult<number[]>> {
+      return attempt(async () => {
+        const found = await repository.listStoredSchemaVersions(scope);
+        return mapAdmitted(found, (versions) => storageSuccess(versions));
       });
     },
   };

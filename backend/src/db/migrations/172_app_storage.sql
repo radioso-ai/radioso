@@ -11,7 +11,14 @@
 -- installation_id has no foreign key yet. The `apps` domain that owns the
 -- installation row lands beside this one; until it does, an installation's rows
 -- are removed explicitly by the disposition path, and workspace deletion
--- cascades through workspace_id.
+-- cascades through workspace_id: every table here carries workspace_id with an
+-- ON DELETE CASCADE reference, or hangs off one that does.
+--
+-- One lock order holds across every statement any of these tables sees:
+-- installation state row, then the collection's counter row, then record rows.
+-- A sweep, a put, a delete, a rebuild, and an installation deletion all approach
+-- from that side, so none of them waits on a lock another already holds in the
+-- opposite order.
 
 -- The row every storage operation locks before it does anything else. Revocation,
 -- retention, and deletion all move this row, so a runtime operation that holds it
@@ -28,6 +35,15 @@ CREATE TABLE IF NOT EXISTS app_storage_installation_state (
   -- so an operation admitted before the deletion cannot recreate them afterwards;
   -- only workspace deletion takes the row itself.
   deleted_at TIMESTAMPTZ,
+  -- What the deletion removed, kept on the tombstone so a retried deletion
+  -- answers with the counts the committed one did rather than refusing.
+  deleted_record_count INTEGER,
+  deleted_collection_count INTEGER,
+  -- Indexes a rebuild is currently building, as {"<collection_id>": [{"id","field","fieldType"}]}.
+  -- A put maintains entries for these as well as for the indexes its own release
+  -- declares, so a rebuild running beside an older release's writes converges
+  -- instead of losing the keys those writes touched.
+  pending_indexes JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (workspace_id, installation_id)
@@ -66,8 +82,9 @@ CREATE INDEX IF NOT EXISTS idx_app_storage_records_expiry
   ON app_storage_records (expires_at)
   WHERE expires_at IS NOT NULL;
 
--- A put or a delete reclaims its own collection's expired rows before it decides
--- the quota, so that reclaim is a scoped range scan rather than a table scan.
+-- A put reclaims a bounded batch of its own collection's expired rows before it
+-- decides the quota, so that reclaim is a scoped range scan rather than a table
+-- scan.
 CREATE INDEX IF NOT EXISTS idx_app_storage_records_collection_expiry
   ON app_storage_records (workspace_id, installation_id, collection_id, expires_at)
   WHERE expires_at IS NOT NULL;
@@ -92,11 +109,14 @@ CREATE TABLE IF NOT EXISTS app_storage_index_entries (
     + (boolean_value IS NOT NULL)::int
     + (timestamp_value IS NOT NULL)::int = 1
   ),
-  -- An indexed string is bounded to what the query contract can ask for and what
-  -- a B-tree tuple holds. Record validation refuses a longer value first; this is
-  -- the backstop that keeps an unqueryable entry out of the table.
+  -- An indexed string is bounded by what the whole B-tree tuple holds, not by the
+  -- value alone: a page admits roughly 2704 bytes per index tuple, and the entry
+  -- also carries two uuids, a collection id, an index id, and a record key, whose
+  -- contract maxima leave 1464 bytes for the value. Record validation refuses a
+  -- longer value first and a rebuild reports one it finds already stored; this is
+  -- the backstop that keeps an entry the index cannot hold out of the table.
   CONSTRAINT app_storage_index_entries_text_bound CHECK (
-    text_value IS NULL OR octet_length(text_value) <= 2048
+    text_value IS NULL OR octet_length(text_value) <= 1464
   ),
   FOREIGN KEY (workspace_id, installation_id, collection_id, record_key)
     REFERENCES app_storage_records (workspace_id, installation_id, collection_id, record_key)
@@ -128,8 +148,8 @@ CREATE INDEX IF NOT EXISTS idx_app_storage_index_entries_timestamp
 -- a record grow with the number of records already admitted.
 --
 -- It is also the collection's lock: every put, delete, reclaim, and rebuild takes
--- this row first and record rows second, which is the single order that keeps two
--- of them from waiting on each other.
+-- the installation state row first, this row second, and record rows third, which
+-- is the single order that keeps two of them from waiting on each other.
 CREATE TABLE IF NOT EXISTS app_storage_collection_usage (
   workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   installation_id UUID NOT NULL,
@@ -138,8 +158,42 @@ CREATE TABLE IF NOT EXISTS app_storage_collection_usage (
   byte_size BIGINT NOT NULL DEFAULT 0 CHECK (byte_size >= 0),
   -- The version the next write in this collection takes. It only ever increases,
   -- which is what makes an optimistic version unrepeatable across deletion,
-  -- expiry, and recreation.
-  next_version BIGINT NOT NULL DEFAULT 1 CHECK (next_version > 0),
+  -- expiry, and recreation. The ceiling is JavaScript's safe-integer maximum: a
+  -- version crosses the wire as a JSON number, and past that point two versions
+  -- would round to one value, so the counter stops rather than repeat itself.
+  next_version BIGINT NOT NULL DEFAULT 1
+    CHECK (next_version > 0 AND next_version <= 9007199254740991),
+  -- When the expiry sweep last worked this collection. The sweep claims the
+  -- least recently swept collections first, so a busy collection cannot be
+  -- picked over and over while another keeps its expired rows.
+  last_swept_at TIMESTAMPTZ NOT NULL DEFAULT to_timestamp(0),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (workspace_id, installation_id, collection_id)
 );
+
+-- The sweep's claim orders by this column, so it carries the fairness cursor.
+CREATE INDEX IF NOT EXISTS idx_app_storage_collection_usage_sweep
+  ON app_storage_collection_usage (last_swept_at);
+
+-- An irreversible disposition and the audit event that describes it commit in one
+-- transaction, which is what keeps the trail from disagreeing with the data: a
+-- deletion that committed always has its event, and an event never describes a
+-- deletion that rolled back. Publishing is the drain's job afterwards, so a
+-- failure to publish costs a retry rather than the record of what happened.
+--
+-- This is storage's own outbox. The `apps` domain has one for its lifecycle
+-- events, and the two may unify once both sides have settled.
+CREATE TABLE IF NOT EXISTS app_storage_audit_outbox (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  installation_id UUID,
+  event_type TEXT NOT NULL,
+  event_status TEXT NOT NULL,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- The drain takes the oldest entries first, so the trail is published in the
+-- order the dispositions committed.
+CREATE INDEX IF NOT EXISTS idx_app_storage_audit_outbox_created
+  ON app_storage_audit_outbox (created_at, id);

@@ -220,10 +220,21 @@ export interface ApiCredentials {
   workspace_id: string;
 }
 
+export interface AppStorageAuditOutbox {
+  created_at: Generated<Timestamp>;
+  event_status: string;
+  event_type: string;
+  id: Generated<string>;
+  installation_id: string | null;
+  metadata: Generated<Json>;
+  workspace_id: string;
+}
+
 export interface AppStorageCollectionUsage {
   byte_size: Generated<Int8>;
   collection_id: string;
   installation_id: string;
+  last_swept_at: Generated<Timestamp>;
   next_version: Generated<Int8>;
   record_count: Generated<number>;
   updated_at: Generated<Timestamp>;
@@ -246,7 +257,10 @@ export interface AppStorageInstallationState {
   access_revoked_at: Timestamp | null;
   created_at: Generated<Timestamp>;
   deleted_at: Timestamp | null;
+  deleted_collection_count: number | null;
+  deleted_record_count: number | null;
   installation_id: string;
+  pending_indexes: Generated<Json>;
   retain_until: Timestamp | null;
   updated_at: Generated<Timestamp>;
   workspace_id: string;
@@ -1525,6 +1539,7 @@ export interface DB {
   agents: Agents;
   api_credential_expiry_warnings: ApiCredentialExpiryWarnings;
   api_credentials: ApiCredentials;
+  app_storage_audit_outbox: AppStorageAuditOutbox;
   app_storage_collection_usage: AppStorageCollectionUsage;
   app_storage_index_entries: AppStorageIndexEntries;
   app_storage_installation_state: AppStorageInstallationState;

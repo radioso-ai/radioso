@@ -56,6 +56,55 @@ describe("app storage service", () => {
     await expect(service().usage({ workspaceId, installationId, collection })).resolves.toMatchObject(denied);
   });
 
+  it("reports a collection whose version counter is exhausted without blaming the caller", async () => {
+    // A version crosses the wire as a JSON number and comes back as an
+    // expectedVersion. Past the last exactly representable one, two writes would
+    // share a fence, so the collection stops writing instead.
+    repository.putRecord = vi.fn(async () => ({
+      admitted: true as const,
+      value: { outcome: "version_exhausted" as const },
+    }));
+
+    const result = await service().put({
+      ...scope,
+      request: { collection: "sync_state", key: "post-1", record: { external_id: "post-1" } },
+    });
+
+    expect(result).toMatchObject({ ok: false, error: { code: "internal" } });
+    // The message names no key and no stored value; it is the same sentence for
+    // every caller that meets the ceiling.
+    expect(result.ok === false && result.error.message).not.toContain("post-1");
+  });
+
+  it("reports whether a usage read left expired rows behind for the sweep", async () => {
+    // The reclaim a usage read performs is bounded, so a backlog larger than one
+    // call can take leaves the counters ahead of the rows. An operator reading a
+    // number that is quietly high has no way to tell.
+    repository.readCollectionUsage = vi.fn(async () => ({
+      admitted: true as const,
+      value: { recordCount: 40, byteSize: 900, reclaimPending: true },
+    }));
+
+    await expect(service().usage({ workspaceId, installationId, collection })).resolves.toEqual({
+      ok: true,
+      value: { recordCount: 40, byteSize: 900, reclaimPending: true },
+    });
+  });
+
+  it("answers the schema versions stored rows carry, so nothing outside storage reads its tables", async () => {
+    repository.listStoredSchemaVersions = vi.fn(async () => ({
+      admitted: true as const,
+      value: [1, 3],
+    }));
+
+    const collectionScope = { workspaceId, installationId, collectionId: "sync_state" };
+    await expect(service().storedSchemaVersions(collectionScope)).resolves.toEqual({
+      ok: true,
+      value: [1, 3],
+    });
+    expect(repository.listStoredSchemaVersions).toHaveBeenCalledWith(collectionScope);
+  });
+
   it("puts usage through the same admission every record operation goes through", async () => {
     await service().usage({ workspaceId, installationId, collection });
     expect(repository.readCollectionUsage).toHaveBeenCalledWith({

@@ -11,7 +11,10 @@ import type { AppStorageRepositoryPort } from "../../../src/modules/appStorage/p
 export const buildRepositoryStub = (): AppStorageRepositoryPort => ({
   findInstallationState: vi.fn(async () => null),
   setAccessRevoked: vi.fn(async () => ({ admitted: true as const, value: undefined })),
-  setRetention: vi.fn(async () => ({ admitted: true as const, value: undefined })),
+  setRetention: vi.fn(async (input) => ({
+    admitted: true as const,
+    value: { retainUntil: input.retainUntil, accessRevokedAt: new Date("2026-01-01T00:00:00.000Z") },
+  })),
   findRecord: vi.fn(async () => ({ admitted: true as const, value: null })),
   putRecord: vi.fn(async () => ({
     admitted: true as const,
@@ -24,21 +27,33 @@ export const buildRepositoryStub = (): AppStorageRepositoryPort => ({
   queryByIndex: vi.fn(async () => ({ admitted: true as const, value: [] })),
   readCollectionUsage: vi.fn(async () => ({
     admitted: true as const,
-    value: { recordCount: 0, byteSize: 0 },
+    value: { recordCount: 0, byteSize: 0, reclaimPending: false },
   })),
+  listStoredSchemaVersions: vi.fn(async () => ({ admitted: true as const, value: [] })),
+  beginIndexRebuild: vi.fn(async () => ({ admitted: true as const, value: { startVersion: 1 } })),
   rebuildIndexBatch: vi.fn(async () => ({
     admitted: true as const,
-    value: { rebuiltCount: 0, lastKey: null },
+    value: { rebuiltCount: 0, lastKey: null, incompatibleCount: 0 },
   })),
-  listCollectionsWithExpiredRecords: vi.fn(async () => []),
+  finishIndexRebuild: vi.fn(async () => ({ admitted: true as const, value: undefined })),
+  claimCollectionsForExpirySweep: vi.fn(async () => []),
   reclaimExpiredRecords: vi.fn(async () => 0),
   listInstallationsDueForRetention: vi.fn(async () => []),
-  streamInstallationRecords: vi.fn(() => (async function* () {})()),
-  deleteInstallationRecords: vi.fn(async () => ({
-    admitted: true as const,
-    value: { recordCount: 0, collectionCount: 0 },
+  reclaimRetainedInstallation: vi.fn(async () => ({
+    outcome: "reclaimed" as const,
+    summary: { recordCount: 0, collectionCount: 0 },
   })),
-  deleteWorkspaceRecords: vi.fn(async () => ({ recordCount: 0, installationCount: 0 })),
+  openInstallationExport: vi.fn(async () => ({
+    admitted: true as const,
+    value: { records: (async function* () {})() },
+  })),
+  deleteInstallationRecords: vi.fn(async () => ({
+    recordCount: 0,
+    collectionCount: 0,
+    alreadyDeleted: false,
+  })),
+  enqueueAuditEvent: vi.fn(async () => {}),
+  drainAuditOutbox: vi.fn(async () => 0),
 });
 
 /** The transient failure a driver raises when the connection is gone. */

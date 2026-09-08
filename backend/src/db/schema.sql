@@ -739,6 +739,21 @@ CREATE TABLE public.api_credentials (
 
 
 --
+-- Name: app_storage_audit_outbox; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.app_storage_audit_outbox (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workspace_id uuid NOT NULL,
+    installation_id uuid,
+    event_type text NOT NULL,
+    event_status text NOT NULL,
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: app_storage_collection_usage; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -749,9 +764,10 @@ CREATE TABLE public.app_storage_collection_usage (
     record_count integer DEFAULT 0 NOT NULL,
     byte_size bigint DEFAULT 0 NOT NULL,
     next_version bigint DEFAULT 1 NOT NULL,
+    last_swept_at timestamp with time zone DEFAULT to_timestamp((0)::double precision) NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT app_storage_collection_usage_byte_size_check CHECK ((byte_size >= 0)),
-    CONSTRAINT app_storage_collection_usage_next_version_check CHECK ((next_version > 0)),
+    CONSTRAINT app_storage_collection_usage_next_version_check CHECK (((next_version > 0) AND (next_version <= '9007199254740991'::bigint))),
     CONSTRAINT app_storage_collection_usage_record_count_check CHECK ((record_count >= 0))
 );
 
@@ -771,7 +787,7 @@ CREATE TABLE public.app_storage_index_entries (
     boolean_value boolean,
     timestamp_value timestamp with time zone,
     CONSTRAINT app_storage_index_entries_one_value CHECK (((((((text_value IS NOT NULL))::integer + ((numeric_value IS NOT NULL))::integer) + ((boolean_value IS NOT NULL))::integer) + ((timestamp_value IS NOT NULL))::integer) = 1)),
-    CONSTRAINT app_storage_index_entries_text_bound CHECK (((text_value IS NULL) OR (octet_length(text_value) <= 2048)))
+    CONSTRAINT app_storage_index_entries_text_bound CHECK (((text_value IS NULL) OR (octet_length(text_value) <= 1464)))
 );
 
 
@@ -785,6 +801,9 @@ CREATE TABLE public.app_storage_installation_state (
     access_revoked_at timestamp with time zone,
     retain_until timestamp with time zone,
     deleted_at timestamp with time zone,
+    deleted_record_count integer,
+    deleted_collection_count integer,
+    pending_indexes jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
@@ -3823,6 +3842,14 @@ ALTER TABLE ONLY public.api_credentials
 
 
 --
+-- Name: app_storage_audit_outbox app_storage_audit_outbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_storage_audit_outbox
+    ADD CONSTRAINT app_storage_audit_outbox_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: app_storage_collection_usage app_storage_collection_usage_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6410,6 +6437,20 @@ CREATE INDEX idx_api_credentials_workspace_created ON public.api_credentials USI
 
 
 --
+-- Name: idx_app_storage_audit_outbox_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_app_storage_audit_outbox_created ON public.app_storage_audit_outbox USING btree (created_at, id);
+
+
+--
+-- Name: idx_app_storage_collection_usage_sweep; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_app_storage_collection_usage_sweep ON public.app_storage_collection_usage USING btree (last_swept_at);
+
+
+--
 -- Name: idx_app_storage_index_entries_boolean; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8735,6 +8776,14 @@ ALTER TABLE ONLY public.api_credentials
 
 ALTER TABLE ONLY public.api_credentials
     ADD CONSTRAINT api_credentials_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: app_storage_audit_outbox app_storage_audit_outbox_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_storage_audit_outbox
+    ADD CONSTRAINT app_storage_audit_outbox_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

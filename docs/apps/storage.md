@@ -79,10 +79,13 @@ required field, a value of the wrong type, and a key you never declared are all
 leaves the stored record exactly as it was.
 
 A field an index points at is held to a tighter bound: at most 2048 characters
-and 2048 bytes. That is the longest value `storage.query` can compare against, so
-a longer one would be a record its own index could never find. Keep long text in
-an unindexed field — a `json` payload, say — and index a short identifier beside
-it.
+and 1464 bytes. The first is the longest value `storage.query` can compare
+against, so a longer one would be a record its own index could never find. The
+second is what one index entry weighs: the entry carries the workspace, the
+installation, the collection id, the index id, and the record key alongside the
+value, and the budget left for the value is what remains after those are charged
+at the longest each may be. Keep long text in an unindexed field — a `json`
+payload, say — and index a short identifier beside it.
 
 Size is checked the same way. A record that serializes past the collection's
 `maxRecordBytes` comes back as `quota_exceeded`, and `maxRecordBytes` itself
@@ -102,7 +105,10 @@ record's new version. Versions come from a counter the collection keeps, so ever
 write in a collection gets a higher number than the one before and no number is
 ever handed out twice. A record you delete and write again comes back with a
 version above the one it had, which is what makes the version you are holding
-safe to fence with: it cannot start matching a different record later.
+safe to fence with: it cannot start matching a different record later. The
+counter stops at 9007199254740991, the last whole number a JSON value carries
+exactly; past it two versions would round to one, so the collection refuses
+further writes with `internal` rather than hand two of them the same fence.
 
 `storage.delete` takes a collection and a key and answers with whether it
 removed anything. Deleting a key that is not there succeeds, having deleted
@@ -170,11 +176,22 @@ they are part of what they approve.
 ```
 
 A TTL is measured from each write, so touching a record renews it, and the
-deadline is set by the database as the write lands rather than by a clock read
-before it. Once the deadline passes the record is gone from every read and every
-query, and its quota slot comes back with it: the very next write can use the
-space, and `storage.usage` counts what is live. Radioso reclaims the row itself
-on its own schedule, but nothing you can observe waits for that.
+deadline is set from the database's own clock at the moment the row lands. A
+write that waited on a lock gets the full interval it was promised rather than
+what is left of it, and a read that waited is judged by the clock at the moment
+it looks rather than by the one it started with.
+
+Once the deadline passes the record is gone from every read and every query, and
+its quota slot comes back with it: the very next write can use the space. A put
+gives back the key it is about to write and then a bounded batch of the
+collection's remaining expired rows — a capability call is not a maintenance job,
+and one call may not hold the collection while it removes a million rows. Radioso
+sweeps the rest on its own schedule, taking the least recently swept collections
+first so a busy one cannot keep another waiting.
+
+`storage.usage` reclaims the same bounded way and reports `reclaimPending` when
+it stopped with expired rows still to remove, so a count that is ahead of the
+live rows says so rather than looking simply high.
 `{ "kind": "none" }` keeps records until something removes them.
 
 ## Allowed operations
@@ -217,13 +234,30 @@ four things:
 - the **schema versions stored records actually carry**
 - the **schema versions jobs already enqueued will be read back under**
 
-Both directions have to hold. The candidate must read everything that is already
+The observations are per collection, because they are per collection in the
+database: one collection can hold records written under version 1 while another
+holds version 2, and a single list would have each answer for the other's
+history. The stored versions come from Radioso's own count of what the rows
+carry, not from what any release claimed.
+
+Two independent things have to hold, and neither waives the other.
+
+The schema rule is additive-only, in whichever direction the versions run. Of two
+declarations of one collection, the one carrying the higher `schemaVersion` may
+only add optional fields to the other. Removing a field, retyping one, or
+changing whether it is required changes the meaning of records nobody is going to
+rewrite — and no `compatibleReaderVersions` entry makes a removed field readable,
+so a declaration cannot excuse it.
+
+The reader rule is about coverage. The candidate must read everything already
 there: its `compatibleReaderVersions` covers every version stored records carry
 and the version the active release writes. And every reader that outlives the
 activation — the active release during a rolling change, a rollback release, a
-queued job — must be able to read what the candidate writes: either it declared
-the candidate's `schemaVersion` readable, or the candidate differs from what it
-reads only by added optional fields.
+queued job — must declare the candidate's `schemaVersion` readable.
+
+A rollback is admitted the same way. Carrying a lower `schemaVersion` than the
+active release is not by itself a defect; what decides it is whether every
+pairing above still holds.
 
 That second direction is what makes dropping an old reader version legal. The
 contract caps `compatibleReaderVersions` at eight entries, so a long-lived App
@@ -255,6 +289,16 @@ wrote. The compatibility report names each added index as a rebuild, and
 activation runs it over the collection in batches. Until it finishes, a query by
 that index would return part of the collection and look correct doing it.
 
+The rebuild runs beside ordinary writes rather than stopping them. The index is
+marked pending on the installation before the first batch, and while that mark is
+set every write maintains an entry for it — including a write from a release that
+does not declare the index at all. A closing pass then covers the records written
+since the mark went up, which is what catches anything that landed behind the
+batch cursor. A value stored before its field was indexed was never measured
+against the indexed-value bound, so a rebuild that meets one reports it with a
+count rather than activating a release whose query would silently skip those
+records.
+
 The practical shape of a schema change is therefore: add the new field as
 optional, write both fields for a release, and stop reading the old one. The old
 field stays declared.
@@ -276,24 +320,41 @@ three dispositions:
   per record, grouped by collection. Each line carries the collection id, the
   key, the version, the schema version, the last-updated timestamp, and the
   record itself — enough to reload it elsewhere or keep it as a record of what
-  the App held.
+  the App held. Whether the export may run is answered before a record is read,
+  so an installation that is already deleted is refused rather than handed an
+  empty file; and the whole stream reads one database state, so a record written
+  or removed while it runs is wholly in the export or wholly out. A failure
+  part-way through ends the stream with an error rather than with what looks like
+  the end of the data.
 - **Retain until a date** holds the data for a bounded period, for a support
-  investigation or a compliance window, without leaving the App able to reach it.
-  The date is a real instant in the future, at most 90 days out; Radioso deletes
-  the installation's data when it passes, in one transaction, and records the
-  counts it removed. A hold you set is a hold that ends.
+  investigation or a compliance window. Retained data is data the App may no
+  longer reach, so setting a deadline takes the installation's storage access
+  away in the same transaction when it is not already revoked. The date is a real
+  instant in the future, at most 90 days out; Radioso deletes the installation's
+  data when it passes, in one transaction, and records the counts it removed. The
+  deadline is rechecked while the installation is held, so extending a hold at the
+  last moment keeps the data rather than losing it to a decision made a moment
+  earlier. A hold you set is a hold that ends.
 - **Delete** removes the installation's records, its index entries, and its usage
   accounting, and leaves a marker in place of the installation. Every later call
-  against it — a read, a write, another disposition — answers `denied`, so a call
-  that was already in flight when you deleted cannot put a record back. The marker
-  goes when the workspace does.
+  against it — a read, a write, an export, another retention — answers `denied`, so
+  a call that was already in flight when you deleted cannot put a record back.
+  Deleting again is the exception: it answers with the counts the first deletion
+  committed, because a caller whose response was lost to a crashed process or a
+  retried job has to be able to ask what became of the data. The marker goes when
+  the workspace does.
 
 **Deleting a workspace deletes its App storage.** Every installation's records go
-with it, through the same guarantee that covers the rest of the workspace's data.
+with it, through the same cascade that covers the rest of the workspace's data.
+There is no second path that removes them, because one would only race the first.
 
 Each of these leaves an audit event in the `app.data.*` family — export
 requested, completed, or cancelled; retention changed; deletion requested and
-completed. The events carry the workspace, the installation, and counts. An
+completed. The event is written by the same transaction as the change it
+describes, so the trail cannot name a deletion that rolled back or miss one that
+committed; publishing it onto the audit spine happens afterwards, which is why a
+result never reports a failure for an effect that already landed. The events
+carry the workspace, the installation, and counts. An
 export whose consumer stopped part-way is recorded as cancelled with what had
 been handed over, a retention date outside policy as a failed change, and a
 deletion that did not finish as a failed deletion — because a trail that shows
@@ -305,7 +366,7 @@ disposition happened, not to become a second copy of what was in it.
 
 **Every write comes back `invalid_input`.** The record carries a key the
 collection does not declare, a field key is not lower-case snake case, or a field
-an index points at is longer than 2048 characters.
+an index points at is past the indexed-value bound above.
 
 **A query returns nothing though the records are there.** Check that the record
 actually carries the indexed field. A record that omits an optional indexed field

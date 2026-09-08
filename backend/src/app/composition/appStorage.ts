@@ -21,6 +21,11 @@ import type { DB } from "../../shared/infra/kysely/types.js";
  * Puts `app.data.*` on the existing audit spine. The storage domain names the
  * event and its counts; where an audit event is stored, and what an operator
  * reads it through, stays the audit module's business.
+ *
+ * The sink is a publisher rather than a writer on the disposition's path. A
+ * disposition commits its audit intent to storage's own outbox in the same
+ * transaction as the change it describes, and `drainAuditOutbox` hands the
+ * committed intents to this sink afterwards.
  */
 export const createAppStorageAuditSink = (auditService: AuditService): AppStorageAuditPort => ({
   async record(event: AppStorageAuditEvent): Promise<void> {
@@ -50,7 +55,9 @@ export interface AppStorageComposition {
    * Exposed, not scheduled. The runtime that owns background work decides when a
    * pass runs; what each pass is for differs. Expiry reclaims space a read and a
    * write already ignore, so it can run late. Retention is the only thing that
-   * makes an operator's bounded hold end, so it cannot.
+   * makes an operator's bounded hold end, so it cannot. The audit outbox drain on
+   * `disposition` is the third pass with the same property: the trail is already
+   * durable when a disposition returns, and draining is what publishes it.
    */
   sweeper: AppStorageSweeper;
 }
@@ -75,6 +82,6 @@ export const createAppStorageComposition = (options: {
     service: createAppStorageService({ repository }),
     disposition: createAppStorageDisposition({ repository, audit }),
     indexRebuilder: createAppStorageIndexRebuilder({ repository }),
-    sweeper: createAppStorageSweeper({ repository, audit }),
+    sweeper: createAppStorageSweeper({ repository }),
   };
 };

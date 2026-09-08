@@ -1320,12 +1320,25 @@ revocation and the deletion tombstone inside it. The primary key makes the scope
 lookup unique and cheap; it does not by itself keep an unscoped query out.
 
 Locks are taken in one order everywhere — installation state row, then the
-collection's usage row, then record rows — so a put, a delete, a sweep, and an
-index rebuild queue behind each other rather than deadlocking. Liveness and TTL
-deadlines come from SQL `now()` inside the acting transaction, never from a
-timestamp the caller read before it queued. Record versions come from the usage
-row's `next_version` counter, so they are monotonic per collection and never
-reused across delete, expiry, or recreation.
+collection's usage row, then record rows — so a put, a delete, an expiry sweep, a
+retention reclaim, an index rebuild, and an installation deletion queue behind
+each other rather than deadlocking; the deletion walks a collection's counters in
+key order for the same reason. Liveness and TTL deadlines come from
+`clock_timestamp()` read after those locks are held, never from `now()`, which is
+the transaction's start time and so is arbitrarily stale for anything that
+queued. Record versions come from the usage row's `next_version` counter, so they
+are monotonic per collection and never reused across delete, expiry, or
+recreation; the counter has a ceiling at the last safe JSON integer and refuses
+further writes rather than repeat a version.
+
+Foreground reclamation is bounded: a put clears its own key and a fixed number of
+batches, and the sweep owns the rest, claiming the least recently swept
+collections with `SKIP LOCKED`. An export reads one repeatable-read snapshot for
+its whole stream and is the one operation that does not lock the state row —
+holding one for an operator's read would stop the App writing for that long.
+Irreversible dispositions commit their audit intent to `app_storage_audit_outbox`
+in the same transaction as the change; `drainAuditOutbox` publishes afterwards.
+There is no workspace-wide cleanup helper: workspace deletion cascades.
 
 Primary paths:
 
@@ -1333,6 +1346,8 @@ Primary paths:
 - `backend/src/modules/appStorage/domain/` — record validation, indexed-value bounds, quota, query bounds, expiry, retention policy, failure classification, compatibility
 - `backend/src/modules/appStorage/ports/appStorageService.ts` — the capability, disposition, sweeper, and index-rebuild ports
 - `backend/src/modules/appStorage/repositories/appStorageRepository.ts` — the generic Postgres model and the lock order
+- `backend/src/modules/appStorage/ports/appStorageRepository.ts` — the persistence port and the lock order it owns
+- `backend/src/modules/appStorage/services/appStorageDisposition.ts` — revoke, export admission and stream, retention, deletion, audit drain
 - `backend/src/modules/appStorage/services/appStorageSweeper.ts` — expiry reclamation and the retention deadline
 - `backend/src/modules/appStorage/services/appStorageIndexRebuilder.ts` — builds an added index over records already stored
 - `backend/src/app/composition/appStorage.ts` — repository, service, disposition, rebuilder, sweeper, and the `app.data.*` audit sink

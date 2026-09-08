@@ -339,24 +339,79 @@ describeIntegration("Managed App Storage (Postgres)", () => {
       [base.workspaceId, base.installationId],
     );
 
-    const claimed = await repository.claimCollectionsForExpirySweep(100);
-    const mine = claimed
+    const candidates = await repository.listExpirySweepCandidates(100);
+    const mine = candidates
       .filter((row) => row.installationId === base.installationId)
       .map((row) => row.collectionId);
     expect(mine).toEqual(["fair_a", "fair_b"]);
 
-    // The claim moves the cursor on the rows it took, which is what puts them
-    // behind everything else on the next pass.
-    const swept = await database.query<{ collection_id: string; recent: boolean }>(
-      `SELECT collection_id, last_swept_at > to_timestamp(0) AS recent
+    // Listing claims nothing: taking counter rows in fairness order is exactly
+    // how a sweep meets an installation deletion taking them in collection order.
+    const untouched = await database.query<{ leased: boolean }>(
+      `SELECT sweep_lease_token IS NOT NULL AS leased FROM app_storage_collection_usage
+       WHERE workspace_id = $1 AND installation_id = $2`,
+      [base.workspaceId, base.installationId],
+    );
+    expect(untouched.every((row) => row.leased)).toBe(false);
+
+    // Claiming is separate, one collection at a time, and durable: the lease is
+    // what carries the claim past its own commit, and it is released with the
+    // reclamation it authorised.
+    const first = await repository.claimCollectionForExpirySweep({
+      scope: { ...base, collectionId: "fair_a" },
+    });
+    expect(first.claimed).toBe(true);
+
+    const again = await repository.claimCollectionForExpirySweep({
+      scope: { ...base, collectionId: "fair_a" },
+    });
+    expect(again.claimed).toBe(false);
+
+    if (!first.claimed) return;
+    await repository.reclaimExpiredRecords({
+      scope: { ...base, collectionId: "fair_a" },
+      limit: 10,
+      leaseToken: first.leaseToken,
+    });
+
+    const swept = await database.query<{ collection_id: string; recent: boolean; leased: boolean }>(
+      `SELECT collection_id, last_swept_at > to_timestamp(0) AS recent,
+              sweep_lease_token IS NOT NULL AS leased
        FROM app_storage_collection_usage WHERE workspace_id = $1 AND installation_id = $2
        ORDER BY collection_id`,
       [base.workspaceId, base.installationId],
     );
     expect(swept).toEqual([
-      { collection_id: "fair_a", recent: true },
-      { collection_id: "fair_b", recent: true },
+      { collection_id: "fair_a", recent: true, leased: false },
+      { collection_id: "fair_b", recent: true, leased: false },
     ]);
+  });
+
+  it("refuses to reclaim under a lease token that is not the one on the row", async () => {
+    const ttl = buildStorageCollection({ id: "lease_guard", retention: { kind: "ttl", seconds: 60 } });
+    const scope = { ...installation(), collection: ttl };
+    await put(scope, "gone", { external_id: "gone" });
+    await expireNow(scope, "gone");
+
+    const collectionScope = {
+      workspaceId: scope.workspaceId,
+      installationId: scope.installationId,
+      collectionId: "lease_guard",
+    };
+    const claim = await repository.claimCollectionForExpirySweep({ scope: collectionScope });
+    expect(claim.claimed).toBe(true);
+
+    // A worker whose lease expired and was taken over must not go on deleting
+    // rows the new holder is now responsible for.
+    await expect(
+      repository.reclaimExpiredRecords({ scope: collectionScope, limit: 10, leaseToken: randomUUID() }),
+    ).resolves.toBe(0);
+
+    const rows = await database.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM app_storage_records WHERE installation_id = $1`,
+      [scope.installationId],
+    );
+    expect(rows[0]?.count).toBe("1");
   });
 
   it("reclaims expired rows in the sweep and leaves the counter describing what is there", async () => {
@@ -456,7 +511,7 @@ describeIntegration("Managed App Storage (Postgres)", () => {
       if (!admission.ok) return;
 
       const lines: { collection: string; key: string }[] = [];
-      for await (const event of admission.stream) {
+      for await (const event of admission.snapshot.stream()) {
         expect(event.kind).toBe("line");
         if (event.kind === "line") lines.push(JSON.parse(event.line) as { collection: string; key: string });
       }
@@ -481,7 +536,7 @@ describeIntegration("Managed App Storage (Postgres)", () => {
       expect(admission.ok).toBe(true);
       if (!admission.ok) return;
 
-      for await (const _event of admission.stream) {
+      for await (const _event of admission.snapshot.stream()) {
         break;
       }
       await batched.drainAuditOutbox();
@@ -574,7 +629,7 @@ describeIntegration("Managed App Storage (Postgres)", () => {
      * a second path removing the same rows without holding any installation's
      * fence could only race the first.
      */
-    it("cascades out of all four tables when the workspace row itself is deleted", async () => {
+    it("cascades out of the data tables when the workspace row itself is deleted, and keeps the trail", async () => {
       const doomed = randomUUID();
       await database.query(
         `INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1, $2, $3, $4)`,
@@ -583,20 +638,47 @@ describeIntegration("Managed App Storage (Postgres)", () => {
       const scope = { workspaceId: doomed, installationId: randomUUID(), collection };
       await put(scope, "z", { external_id: "z" });
 
+      // An undrained disposition event is the evidence of what happened to the
+      // data. It is committed here and deliberately not published, so the cascade
+      // meets it.
+      await repository.enqueueAuditEvent({
+        scope: { workspaceId: doomed, installationId: scope.installationId },
+        intent: { eventType: "app.data.deletion.requested", eventStatus: "success", metadata: {} },
+      });
+
       const counts = async (): Promise<Record<string, string | undefined>> => {
         const rows = await database.query<{ table_name: string; count: string }>(
           `SELECT 'records' AS table_name, count(*)::text AS count FROM app_storage_records WHERE workspace_id = $1
            UNION ALL SELECT 'index_entries', count(*)::text FROM app_storage_index_entries WHERE workspace_id = $1
            UNION ALL SELECT 'usage', count(*)::text FROM app_storage_collection_usage WHERE workspace_id = $1
-           UNION ALL SELECT 'state', count(*)::text FROM app_storage_installation_state WHERE workspace_id = $1`,
+           UNION ALL SELECT 'state', count(*)::text FROM app_storage_installation_state WHERE workspace_id = $1
+           UNION ALL SELECT 'outbox', count(*)::text FROM app_storage_audit_outbox WHERE workspace_id = $1`,
           [doomed],
         );
         return Object.fromEntries(rows.map((row) => [row.table_name, row.count]));
       };
 
-      expect(await counts()).toEqual({ records: "1", index_entries: "1", usage: "1", state: "1" });
+      expect(await counts()).toEqual({
+        records: "1",
+        index_entries: "1",
+        usage: "1",
+        state: "1",
+        outbox: "1",
+      });
       await database.query(`DELETE FROM workspaces WHERE id = $1`, [doomed]);
-      expect(await counts()).toEqual({ records: "0", index_entries: "0", usage: "0", state: "0" });
+
+      // The data goes. The evidence stays: a cascade would erase exactly the
+      // entries describing the last thing that happened to a workspace being
+      // torn down, which is when an operator most needs to read them.
+      expect(await counts()).toEqual({
+        records: "0",
+        index_entries: "0",
+        usage: "0",
+        state: "0",
+        outbox: "1",
+      });
+
+      await database.query(`DELETE FROM app_storage_audit_outbox WHERE workspace_id = $1`, [doomed]);
     });
   });
 });

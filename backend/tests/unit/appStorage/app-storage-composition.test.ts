@@ -32,6 +32,8 @@ describe("app storage composition", () => {
     });
 
     expect(typeof composition.service.put).toBe("function");
+    expect(typeof composition.compatibilityFacts.storedSchemaVersions).toBe("function");
+    expect(typeof composition.disposition.cancelRetention).toBe("function");
     expect(typeof composition.disposition.export).toBe("function");
     expect(typeof composition.disposition.drainAuditOutbox).toBe("function");
     expect(typeof composition.sweeper.runExpirySweep).toBe("function");
@@ -48,6 +50,7 @@ describe("app storage audit sink", () => {
     const installationId = randomUUID();
 
     await createAppStorageAuditSink(buildAuditService(recorded)).record({
+      eventId: "event-1",
       workspaceId,
       installationId,
       eventType: "app.data.deletion.completed",
@@ -60,7 +63,7 @@ describe("app storage audit sink", () => {
         workspaceId,
         eventType: "app.data.deletion.completed",
         eventStatus: "success",
-        metadata: { recordCount: 4, collectionCount: 2, installationId },
+        metadata: { recordCount: 4, collectionCount: 2, installationId, eventId: "event-1" },
       },
     ]);
   });
@@ -72,6 +75,7 @@ describe("app storage audit sink", () => {
     const spy = vi.spyOn(auditService, "record");
 
     await createAppStorageAuditSink(auditService).record({
+      eventId: "event-2",
       workspaceId,
       installationId: null,
       eventType: "app.data.deletion.requested",
@@ -80,6 +84,10 @@ describe("app storage audit sink", () => {
     });
 
     expect(spy).toHaveBeenCalledTimes(1);
-    expect(recorded[0]?.metadata).toEqual({ reason: "retention_elapsed", installationId: null });
+    expect(recorded[0]?.metadata).toEqual({
+      reason: "retention_elapsed",
+      installationId: null,
+      eventId: "event-2",
+    });
   });
 });

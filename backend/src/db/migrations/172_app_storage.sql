@@ -11,8 +11,9 @@
 -- installation_id has no foreign key yet. The `apps` domain that owns the
 -- installation row lands beside this one; until it does, an installation's rows
 -- are removed explicitly by the disposition path, and workspace deletion
--- cascades through workspace_id: every table here carries workspace_id with an
--- ON DELETE CASCADE reference, or hangs off one that does.
+-- cascades through workspace_id: every table holding data carries workspace_id
+-- with an ON DELETE CASCADE reference, or hangs off one that does. The audit
+-- outbox is the deliberate exception, for the reason stated above it.
 --
 -- One lock order holds across every statement any of these tables sees:
 -- installation state row, then the collection's counter row, then record rows.
@@ -39,11 +40,18 @@ CREATE TABLE IF NOT EXISTS app_storage_installation_state (
   -- answers with the counts the committed one did rather than refusing.
   deleted_record_count INTEGER,
   deleted_collection_count INTEGER,
-  -- Indexes a rebuild is currently building, as {"<collection_id>": [{"id","field","fieldType"}]}.
+  -- Indexes a rebuild is currently building, as
+  -- {"<collection_id>": [{"id","field","fieldType","generation","finishedAt"}]}.
   -- A put maintains entries for these as well as for the indexes its own release
   -- declares, so a rebuild running beside an older release's writes converges
-  -- instead of losing the keys those writes touched.
+  -- instead of losing the keys those writes touched. The generation is the
+  -- rebuild's own identity: finishing and cancelling are compare-and-set against
+  -- it, so one run can never clear the marker another run is still scanning
+  -- under.
   pending_indexes JSONB NOT NULL DEFAULT '{}'::jsonb,
+  -- Hands out the generation each rebuild is identified by. It only increases, so
+  -- a generation names one rebuild of one index for the life of the installation.
+  rebuild_generation BIGINT NOT NULL DEFAULT 0 CHECK (rebuild_generation >= 0),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (workspace_id, installation_id)
@@ -167,11 +175,22 @@ CREATE TABLE IF NOT EXISTS app_storage_collection_usage (
   -- least recently swept collections first, so a busy collection cannot be
   -- picked over and over while another keeps its expired rows.
   last_swept_at TIMESTAMPTZ NOT NULL DEFAULT to_timestamp(0),
+  -- The sweep's durable claim on this collection. A claim commits before the
+  -- reclamation it authorises runs, so `SKIP LOCKED` alone would let a second
+  -- worker take the same collection the moment the first one committed. The
+  -- lease is what carries the claim past that commit; a lease whose deadline has
+  -- passed is reclaimable, so a worker that died holds nothing forever.
+  sweep_lease_token UUID,
+  sweep_lease_until TIMESTAMPTZ,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  PRIMARY KEY (workspace_id, installation_id, collection_id)
+  PRIMARY KEY (workspace_id, installation_id, collection_id),
+  -- A lease is a token and a deadline together; neither half means anything alone.
+  CONSTRAINT app_storage_collection_usage_lease CHECK (
+    (sweep_lease_token IS NULL) = (sweep_lease_until IS NULL)
+  )
 );
 
--- The sweep's claim orders by this column, so it carries the fairness cursor.
+-- The sweep's discovery orders by this column, so it carries the fairness cursor.
 CREATE INDEX IF NOT EXISTS idx_app_storage_collection_usage_sweep
   ON app_storage_collection_usage (last_swept_at);
 
@@ -183,17 +202,39 @@ CREATE INDEX IF NOT EXISTS idx_app_storage_collection_usage_sweep
 --
 -- This is storage's own outbox. The `apps` domain has one for its lifecycle
 -- events, and the two may unify once both sides have settled.
+--
+-- Alone among these tables, workspace_id carries no foreign key. Every other row
+-- here is the data itself and goes with the workspace; an undrained disposition
+-- event is the evidence that the data was exported, retained, or deleted, and a
+-- cascade would erase exactly the entries describing the last thing that happened
+-- to a workspace being torn down. The published audit event keeps itself the same
+-- way, with a null workspace.
 CREATE TABLE IF NOT EXISTS app_storage_audit_outbox (
+  -- The delivery identity. It reaches the sink on every attempt, so a publish
+  -- that succeeded and then failed to be acknowledged is recognisable as the
+  -- same event rather than as a second one.
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  workspace_id UUID NOT NULL,
   installation_id UUID,
   event_type TEXT NOT NULL,
   event_status TEXT NOT NULL,
   metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  -- The drain's lease. Rows are claimed in a short transaction that commits
+  -- before anything is published, so publication never happens while a database
+  -- transaction and its row locks are held. A lease whose deadline passed is
+  -- claimable again, which is what retries a publish that failed.
+  claim_token UUID,
+  claimed_until TIMESTAMPTZ,
+  attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT app_storage_audit_outbox_claim CHECK (
+    (claim_token IS NULL) = (claimed_until IS NULL)
+  )
 );
 
--- The drain takes the oldest entries first, so the trail is published in the
--- order the dispositions committed.
-CREATE INDEX IF NOT EXISTS idx_app_storage_audit_outbox_created
-  ON app_storage_audit_outbox (created_at, id);
+-- The drain claims unleased entries, oldest first. Delivery is at-least-once and
+-- ordering is best-effort: created_at is the claiming transaction's own start
+-- time, and two drainers using SKIP LOCKED interleave further, so a consumer
+-- orders by the event it reads rather than by arrival.
+CREATE INDEX IF NOT EXISTS idx_app_storage_audit_outbox_claimable
+  ON app_storage_audit_outbox (claimed_until, created_at, id);

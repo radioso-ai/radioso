@@ -3,12 +3,14 @@ import type { Kysely } from "kysely";
 import type { AuditService } from "../../modules/audit/contracts/index.js";
 import {
   AppStorageRepository,
+  createAppStorageCompatibilityFacts,
   createAppStorageDisposition,
   createAppStorageIndexRebuilder,
   createAppStorageService,
   createAppStorageSweeper,
   type AppStorageAuditEvent,
   type AppStorageAuditPort,
+  type AppStorageCompatibilityFactsPort,
   type AppStorageDisposition,
   type AppStorageIndexRebuilder,
   type AppStorageRepositoryPort,
@@ -35,8 +37,10 @@ export const createAppStorageAuditSink = (auditService: AuditService): AppStorag
       eventStatus: event.eventStatus,
       // The installation is an identity, so it belongs in the trail; a record key
       // and a stored value are customer data, and the domain never puts either
-      // into an event to begin with.
-      metadata: { ...event.metadata, installationId: event.installationId },
+      // into an event to begin with. The event id travels with it because
+      // delivery is at-least-once: it is what an operator reading the trail twice
+      // recognises one event by.
+      metadata: { ...event.metadata, installationId: event.installationId, eventId: event.eventId },
     });
   },
 });
@@ -44,6 +48,13 @@ export const createAppStorageAuditSink = (auditService: AuditService): AppStorag
 export interface AppStorageComposition {
   repository: AppStorageRepositoryPort;
   service: AppStorageService;
+  /**
+   * The storage facts release admission asks for, deliberately apart from the
+   * capability service. What an App may call and what a release admission may
+   * learn about storage history are two surfaces, and only the first is exposed
+   * through the App gateway.
+   */
+  compatibilityFacts: AppStorageCompatibilityFactsPort;
   disposition: AppStorageDisposition;
   /**
    * Builds a declared index over records written before it was declared. Release
@@ -80,6 +91,7 @@ export const createAppStorageComposition = (options: {
   return {
     repository,
     service: createAppStorageService({ repository }),
+    compatibilityFacts: createAppStorageCompatibilityFacts({ repository }),
     disposition: createAppStorageDisposition({ repository, audit }),
     indexRebuilder: createAppStorageIndexRebuilder({ repository }),
     sweeper: createAppStorageSweeper({ repository }),

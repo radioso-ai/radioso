@@ -1,20 +1,31 @@
+import { randomUUID } from "node:crypto";
+
 import type { BoundedJsonRecord, StorageFieldType } from "@radioso/app-contract";
-import type { Kysely, Transaction } from "kysely";
+import type { ControlledTransaction, Kysely, Transaction } from "kysely";
 
 import { clockTimestamp, currentTimestamp, toJsonb } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { DB } from "../../../shared/infra/kysely/schema.js";
 import { buildStorageIndexEntry, type AppStorageIndexEntry } from "../domain/indexEntries.js";
 import { withinIndexedStringBounds } from "../domain/indexedValueBounds.js";
 import { exceedsRecordQuota, type AppStorageCollectionUsage } from "../domain/quota.js";
-import type { AppStorageAuditEvent, AppStorageAuditIntent } from "../ports/appStorageAudit.js";
+import {
+  AppStorageExportClosedError,
+  AppStorageExportDeniedError,
+} from "../domain/results.js";
+import type { AppStorageAuditIntent } from "../ports/appStorageAudit.js";
 import type {
+  AppStorageAccessTransition,
   AppStorageAdmitted,
+  AppStorageAuditOutboxClaim,
   AppStorageCollectionScope,
   AppStorageDeleteCommand,
   AppStorageDeleteOutcome,
   AppStorageExportSnapshot,
   AppStorageIndexDescriptor,
   AppStorageIndexRebuildBatch,
+  AppStorageIndexRebuildCancel,
+  AppStorageIndexRebuildCompletion,
+  AppStorageIndexRebuildFinish,
   AppStorageIndexRebuildProgress,
   AppStorageIndexRebuildStart,
   AppStorageInstallationDeletion,
@@ -27,6 +38,8 @@ import type {
   AppStorageQuery,
   AppStorageRepositoryPort,
   AppStorageRetentionReclaim,
+  AppStorageSweepClaim,
+  AppStorageTransactionHandle,
   ExportedAppStorageRecord,
   StoredAppStorageRecord,
 } from "../ports/appStorageRepository.js";
@@ -73,10 +86,26 @@ interface FenceOptions {
   denyWhenRevoked: boolean;
 }
 
-/** An index a rebuild is currently building, as the state row carries it. */
+/**
+ * An index a rebuild is currently building, as the state row carries it.
+ *
+ * The generation is the rebuild's identity. Finishing and cancelling compare it
+ * against what is stored, so a run that was superseded cannot clear the marker
+ * the newer run is scanning under, and a `finishedAt` marker distinguishes a
+ * rebuild that converged — and is waiting for its activation to clear it — from
+ * one still in progress.
+ */
 interface PendingIndex extends AppStorageIndexDescriptor {
   collectionId: string;
+  generation: number;
+  finishedAt: string | null;
 }
+
+/** One pending index as the state row's JSON holds it, keyed under its collection. */
+type StoredPendingIndex = Omit<PendingIndex, "collectionId">;
+
+/** The transaction an export snapshot owns: started explicitly, ended explicitly. */
+type ExportTransaction = ControlledTransaction<DB>;
 
 interface FencedState {
   accessRevokedAt: Date | null;
@@ -84,6 +113,8 @@ interface FencedState {
   deletedAt: Date | null;
   deletionSummary: AppStorageInstallationDeletion | null;
   pendingIndexes: PendingIndex[];
+  /** The highest generation this installation has ever handed a rebuild. */
+  rebuildGeneration: number;
 }
 
 type Fenced = { admitted: false } | { admitted: true; state: FencedState };
@@ -121,6 +152,16 @@ const FOREGROUND_RECLAIM_MAX_BATCHES = 4;
  * would hand two writes the same fence.
  */
 const MAX_SAFE_VERSION = Number.MAX_SAFE_INTEGER;
+
+/** How long one claimed collection stays this sweep worker's to reclaim. */
+const SWEEP_LEASE_SECONDS = 60;
+
+/**
+ * How long an admitted export may sit between reads before its snapshot is
+ * aborted. A repeatable-read transaction pins an MVCC snapshot and a pooled
+ * connection, and a consumer that walked away must not pin either indefinitely.
+ */
+const EXPORT_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 
 /**
  * The physical model behind managed App Storage: generic record rows, generic
@@ -177,13 +218,29 @@ export class AppStorageRepository implements AppStorageRepositoryPort {
     };
   }
 
+  /**
+   * Revokes or restores the App's storage access, and refuses restoration while a
+   * retention hold stands.
+   *
+   * The refusal belongs here rather than in the orchestration above, because it is
+   * an invariant of the row and not a step in a procedure: retention revokes
+   * access in the same transaction that sets the deadline, and any path that could
+   * clear the revocation without clearing the deadline would hand a running App
+   * data the sweep is going to destroy. Lifting the hold is
+   * {@link cancelRetention}, which the operator asks for by name.
+   */
   async setAccessRevoked(
     scope: AppStorageInstallationScope,
     revokedAt: Date | null,
-  ): Promise<AppStorageAdmitted<void>> {
+  ): Promise<AppStorageAdmitted<AppStorageAccessTransition>> {
     return this.db.transaction().execute(async (trx) => {
       const fenced = await this.fence(trx, scope, { mode: "update", denyWhenRevoked: false });
       if (!fenced.admitted) return denied;
+
+      const retainUntil = fenced.state.retainUntil;
+      if (revokedAt === null && retainUntil !== null) {
+        return admit({ outcome: "retention_active", retainUntil } as const);
+      }
 
       await trx
         .updateTable("app_storage_installation_state")
@@ -192,7 +249,7 @@ export class AppStorageRepository implements AppStorageRepositoryPort {
         .where("installation_id", "=", scope.installationId)
         .execute();
 
-      return admit(undefined);
+      return admit({ outcome: "applied" } as const);
     });
   }
 
@@ -229,6 +286,40 @@ export class AppStorageRepository implements AppStorageRepositoryPort {
     });
   }
 
+  /**
+   * Lifts the retention hold under the state row's own lock, and audits it. Access
+   * is left revoked: ending a scheduled destruction and handing the data back to
+   * the App are two decisions, and running them together would make cancelling a
+   * hold silently restore an App the operator had also disabled.
+   *
+   * A hold that is not there is not a failure. The end state the caller asked for
+   * is the state, and the trail records nothing that did not happen.
+   */
+  async cancelRetention(input: {
+    scope: AppStorageInstallationScope;
+    audit: (cleared: { retainUntil: Date }) => AppStorageAuditIntent;
+  }): Promise<AppStorageAdmitted<{ retainUntil: Date | null }>> {
+    const { scope } = input;
+
+    return this.db.transaction().execute(async (trx) => {
+      const fenced = await this.fence(trx, scope, { mode: "update", denyWhenRevoked: false });
+      if (!fenced.admitted) return denied;
+
+      const retainUntil = fenced.state.retainUntil;
+      if (retainUntil === null) return admit({ retainUntil: null });
+
+      await trx
+        .updateTable("app_storage_installation_state")
+        .set({ retain_until: null, updated_at: currentTimestamp() })
+        .where("workspace_id", "=", scope.workspaceId)
+        .where("installation_id", "=", scope.installationId)
+        .execute();
+
+      await this.writeAuditIntent(trx, scope, input.audit({ retainUntil }));
+      return admit({ retainUntil });
+    });
+  }
+
   async findRecord(
     scope: AppStorageCollectionScope,
     key: string,
@@ -262,6 +353,21 @@ export class AppStorageRepository implements AppStorageRepositoryPort {
    * ceiling whose records have all expired admits the next write immediately
    * rather than at whatever time a maintenance pass happens to run — bounded,
    * because a capability call is not a maintenance job.
+   *
+   * Bounded reclamation alone would let the quota lie. A collection holding two
+   * thousand expired rows under a ceiling of one would give back a few hundred,
+   * read a counter still above the ceiling, and refuse a write no live record is
+   * standing in the way of. So when reclamation stops with expired rows still
+   * there, the write counts the live rows exactly — bounded by the ceiling it is
+   * being judged against, which is the most it ever has to know — and is admitted
+   * on that number rather than on the counter.
+   *
+   * The counter is not moved to that number. It counts the rows that are there,
+   * live ones and expired ones no pass has reclaimed yet, and every reclaim's
+   * arithmetic subtracts against that meaning; writing a live-only count into it
+   * would make the next reclaim subtract rows it no longer accounted for and
+   * drive it below the truth. What the write commits is the count of rows
+   * present; what it is admitted against is the count of rows alive.
    */
   async putRecord(command: AppStoragePutCommand): Promise<AppStorageAdmitted<AppStoragePutOutcome>> {
     const { scope } = command;
@@ -273,7 +379,10 @@ export class AppStorageRepository implements AppStorageRepositoryPort {
       const usage = await this.lockCollectionUsage(trx, scope);
       const at = await this.freshTimestamp(trx);
       const reclaimed = await this.reclaimBounded(trx, scope, usage, at, { targetKey: command.key });
-      const live = reclaimed.live;
+      const present = reclaimed.live;
+      const live = reclaimed.reclaimPending
+        ? await this.countLiveRecords(trx, scope, at, command.maxRecords)
+        : present;
 
       const existing = await trx
         .selectFrom("app_storage_records")
@@ -342,8 +451,8 @@ export class AppStorageRepository implements AppStorageRepositoryPort {
       ]);
 
       await this.writeCollectionUsage(trx, scope, {
-        recordCount: existing ? live.recordCount : live.recordCount + 1,
-        byteSize: Math.max(0, live.byteSize - Number(existing?.byte_size ?? 0) + command.byteSize),
+        recordCount: existing ? present.recordCount : present.recordCount + 1,
+        byteSize: Math.max(0, present.byteSize - Number(existing?.byte_size ?? 0) + command.byteSize),
         nextVersion: version + 1,
       });
 
@@ -498,11 +607,17 @@ export class AppStorageRepository implements AppStorageRepositoryPort {
   }
 
   /**
-   * Marks the index pending and reports the collection's next version. From here
-   * every put maintains an entry for it as well as for the indexes the writing
-   * release declares, so a rebuild running beside an older release's writes cannot
-   * lose the keys those writes touched; the version is where the closing pass
-   * starts looking.
+   * Marks the index pending under a fresh generation and reports the collection's
+   * next version. From here every put maintains an entry for it as well as for the
+   * indexes the writing release declares, so a rebuild running beside an older
+   * release's writes cannot lose the keys those writes touched; the version is
+   * where the closing pass starts looking.
+   *
+   * The generation is what makes two overlapping rebuilds of one index safe. It
+   * comes from a counter on the state row that only increases, so it names this
+   * rebuild and no other; finishing and cancelling compare against it, and a run
+   * whose generation has been superseded is told so rather than clearing a marker
+   * another run is still scanning under.
    */
   async beginIndexRebuild(input: {
     scope: AppStorageCollectionScope;
@@ -515,15 +630,16 @@ export class AppStorageRepository implements AppStorageRepositoryPort {
       if (!fenced.admitted) return denied;
 
       const usage = await this.lockCollectionUsage(trx, scope);
+      const generation = fenced.state.rebuildGeneration + 1;
       const pending = [
         ...fenced.state.pendingIndexes.filter(
           (entry) => !(entry.collectionId === scope.collectionId && entry.id === input.index.id),
         ),
-        { collectionId: scope.collectionId, ...input.index },
+        { collectionId: scope.collectionId, ...input.index, generation, finishedAt: null },
       ];
-      await this.writePendingIndexes(trx, scope, pending);
+      await this.writePendingIndexes(trx, scope, pending, generation);
 
-      return admit({ startVersion: usage.nextVersion });
+      return admit({ startVersion: usage.nextVersion, generation });
     });
   }
 
@@ -559,7 +675,9 @@ export class AppStorageRepository implements AppStorageRepositoryPort {
         .forUpdate()
         .execute();
 
-      if (rows.length === 0) return admit({ rebuiltCount: 0, lastKey: null, incompatibleCount: 0 });
+      if (rows.length === 0) {
+        return admit({ rebuiltCount: 0, lastKey: null, visitedKeys: [], incompatibleKeys: [] });
+      }
 
       const keys = rows.map((row) => row.record_key);
       await trx
@@ -571,12 +689,12 @@ export class AppStorageRepository implements AppStorageRepositoryPort {
         .where("record_key", "in", keys)
         .execute();
 
-      let incompatibleCount = 0;
+      const incompatibleKeys: string[] = [];
       const values = rows.flatMap((row) => {
         const entry = this.entryForIndex(batch.index, (row.value ?? {}) as BoundedJsonRecord);
         if (!entry) return [];
         if (!this.withinIndexBounds(entry)) {
-          incompatibleCount += 1;
+          incompatibleKeys.push(row.record_key);
           return [];
         }
         return [this.toIndexRow(scope, row.record_key, entry)];
@@ -589,105 +707,261 @@ export class AppStorageRepository implements AppStorageRepositoryPort {
       return admit({
         rebuiltCount: rows.length,
         lastKey: keys[keys.length - 1] ?? null,
-        incompatibleCount,
+        visitedKeys: keys,
+        incompatibleKeys,
       });
     });
   }
 
+  /**
+   * Records that this generation's rebuild converged, and leaves the marker up.
+   *
+   * Clearing it here would open the window the marker exists to close: between the
+   * last batch and the activation, an older release that does not declare this
+   * index can rewrite a record and replace its entries with only the ones it
+   * knows, silently removing what the rebuild built. So finishing is a
+   * compare-and-set that stamps the rebuild as converged and hands back the token
+   * activation presents to {@link completeIndexRebuild} inside its own
+   * transaction.
+   */
   async finishIndexRebuild(input: {
     scope: AppStorageCollectionScope;
     indexId: string;
-  }): Promise<AppStorageAdmitted<void>> {
+    generation: number;
+  }): Promise<AppStorageAdmitted<AppStorageIndexRebuildFinish>> {
     const { scope } = input;
 
     return this.db.transaction().execute(async (trx) => {
       const fenced = await this.fence(trx, scope, { mode: "update", denyWhenRevoked: false });
       if (!fenced.admitted) return denied;
 
+      const owned = this.findPendingIndex(fenced.state, scope.collectionId, input.indexId);
+      if (!owned || owned.generation !== input.generation) {
+        return admit({ outcome: "stale" } as const);
+      }
+
+      const finishedAt = new Date().toISOString();
       await this.writePendingIndexes(
         trx,
         scope,
-        fenced.state.pendingIndexes.filter(
-          (entry) => !(entry.collectionId === scope.collectionId && entry.id === input.indexId),
+        fenced.state.pendingIndexes.map((entry) =>
+          entry === owned ? { ...entry, finishedAt } : entry,
         ),
+        fenced.state.rebuildGeneration,
       );
 
-      return admit(undefined);
+      return admit({
+        outcome: "finished",
+        completionToken: completionToken(scope.collectionId, input.indexId, input.generation),
+      } as const);
     });
   }
 
   /**
-   * Claims the collections the next expiry pass works, least recently swept first
-   * and skipping what another pass already holds. Ordering by a stored cursor is
-   * what keeps a busy collection from being picked every round while another
-   * keeps its expired rows forever; `SKIP LOCKED` is what lets two passes run
-   * without one waiting on the other.
+   * Clears a converged rebuild's marker inside a transaction the caller owns, so
+   * the release that starts querying the index and the moment writes stop
+   * maintaining it for the rebuild are one commit. Split across two, an old
+   * release's write lands in between and takes an entry with it.
+   *
+   * The token names the collection, the index, and the generation, so an
+   * activation carrying a stale one clears nothing.
    */
-  async claimCollectionsForExpirySweep(limit: number): Promise<AppStorageCollectionScope[]> {
-    if (limit <= 0) return [];
+  async completeIndexRebuild(
+    transaction: AppStorageTransactionHandle,
+    input: { scope: AppStorageCollectionScope; indexId: string; completionToken: string },
+  ): Promise<AppStorageIndexRebuildCompletion> {
+    const trx = asTransaction(transaction);
+    const { scope } = input;
+
+    const fenced = await this.fence(trx, scope, { mode: "update", denyWhenRevoked: false });
+    if (!fenced.admitted) return { outcome: "stale" };
+
+    const owned = this.findPendingIndex(fenced.state, scope.collectionId, input.indexId);
+    if (
+      !owned ||
+      owned.finishedAt === null ||
+      completionToken(scope.collectionId, input.indexId, owned.generation) !== input.completionToken
+    ) {
+      return { outcome: "stale" };
+    }
+
+    await this.writePendingIndexes(
+      trx,
+      scope,
+      fenced.state.pendingIndexes.filter((entry) => entry !== owned),
+      fenced.state.rebuildGeneration,
+    );
+
+    return { outcome: "completed" };
+  }
+
+  /**
+   * Drops a rebuild that will not be activated. Without it a failed rebuild leaves
+   * every future write maintaining an index no release is ever going to query.
+   * It is a compare-and-set too: a run that has been superseded cancels nothing.
+   */
+  async cancelIndexRebuild(input: {
+    scope: AppStorageCollectionScope;
+    indexId: string;
+    generation: number;
+  }): Promise<AppStorageAdmitted<AppStorageIndexRebuildCancel>> {
+    const { scope } = input;
 
     return this.db.transaction().execute(async (trx) => {
-      const claimed = await trx
-        .selectFrom("app_storage_collection_usage as u")
-        .select(["u.workspace_id", "u.installation_id", "u.collection_id"])
-        .where((eb) =>
-          eb.exists(
-            eb
-              .selectFrom("app_storage_records as r")
-              .select("r.record_key")
-              .whereRef("r.workspace_id", "=", "u.workspace_id")
-              .whereRef("r.installation_id", "=", "u.installation_id")
-              .whereRef("r.collection_id", "=", "u.collection_id")
-              .where("r.expires_at", "is not", null)
-              .where("r.expires_at", "<=", clockTimestamp()),
-          ),
-        )
-        .where((eb) =>
-          eb.not(
-            eb.exists(
-              eb
-                .selectFrom("app_storage_installation_state as s")
-                .select("s.installation_id")
-                .whereRef("s.workspace_id", "=", "u.workspace_id")
-                .whereRef("s.installation_id", "=", "u.installation_id")
-                .where("s.deleted_at", "is not", null),
-            ),
-          ),
-        )
-        .orderBy("u.last_swept_at", "asc")
-        .limit(limit)
-        .forUpdate()
-        .skipLocked()
-        .execute();
+      const fenced = await this.fence(trx, scope, { mode: "update", denyWhenRevoked: false });
+      if (!fenced.admitted) return denied;
 
-      for (const row of claimed) {
-        await trx
-          .updateTable("app_storage_collection_usage")
-          .set({ last_swept_at: clockTimestamp() })
-          .where("workspace_id", "=", row.workspace_id)
-          .where("installation_id", "=", row.installation_id)
-          .where("collection_id", "=", row.collection_id)
-          .execute();
+      const owned = this.findPendingIndex(fenced.state, scope.collectionId, input.indexId);
+      if (!owned || owned.generation !== input.generation) {
+        return admit({ outcome: "stale" } as const);
       }
 
-      return claimed.map((row) => ({
-        workspaceId: row.workspace_id,
-        installationId: row.installation_id,
-        collectionId: row.collection_id,
-      }));
+      await this.writePendingIndexes(
+        trx,
+        scope,
+        fenced.state.pendingIndexes.filter((entry) => entry !== owned),
+        fenced.state.rebuildGeneration,
+      );
+
+      return admit({ outcome: "cancelled" } as const);
+    });
+  }
+
+  async runInTransaction<TValue>(
+    work: (transaction: AppStorageTransactionHandle) => Promise<TValue>,
+  ): Promise<TValue> {
+    return this.db.transaction().execute(async (trx) => work(asHandle(trx)));
+  }
+
+  /**
+   * Lists the collections the next expiry pass could work, least recently swept
+   * first. It locks nothing and claims nothing: ordering by a stored cursor is
+   * what keeps a busy collection from being picked every round while another
+   * keeps its expired rows forever, and a listing that took locks in that
+   * fairness order would be taking counter rows in an order no write takes them
+   * in. Every decision here is rechecked under a fence by the claim.
+   */
+  async listExpirySweepCandidates(limit: number): Promise<AppStorageCollectionScope[]> {
+    if (limit <= 0) return [];
+
+    const rows = await this.db
+      .selectFrom("app_storage_collection_usage as u")
+      .select(["u.workspace_id", "u.installation_id", "u.collection_id"])
+      .where((eb) =>
+        eb.or([
+          eb("u.sweep_lease_until", "is", null),
+          eb("u.sweep_lease_until", "<=", clockTimestamp()),
+        ]),
+      )
+      .where((eb) =>
+        eb.exists(
+          eb
+            .selectFrom("app_storage_records as r")
+            .select("r.record_key")
+            .whereRef("r.workspace_id", "=", "u.workspace_id")
+            .whereRef("r.installation_id", "=", "u.installation_id")
+            .whereRef("r.collection_id", "=", "u.collection_id")
+            .where("r.expires_at", "is not", null)
+            .where("r.expires_at", "<=", clockTimestamp()),
+        ),
+      )
+      .where((eb) =>
+        eb.not(
+          eb.exists(
+            eb
+              .selectFrom("app_storage_installation_state as s")
+              .select("s.installation_id")
+              .whereRef("s.workspace_id", "=", "u.workspace_id")
+              .whereRef("s.installation_id", "=", "u.installation_id")
+              .where("s.deleted_at", "is not", null),
+          ),
+        ),
+      )
+      .orderBy("u.last_swept_at", "asc")
+      .limit(limit)
+      .execute();
+
+    return rows.map((row) => ({
+      workspaceId: row.workspace_id,
+      installationId: row.installation_id,
+      collectionId: row.collection_id,
+    }));
+  }
+
+  /**
+   * Claims exactly one collection, and never more.
+   *
+   * One unit at a time is the whole point. A claim that locked several counter
+   * rows in sweep order would meet an installation deletion holding its counters
+   * in collection order — one holds B and waits for A while the other holds A and
+   * waits for B, and PostgreSQL aborts one of them. So this takes the
+   * installation's fence first, exactly like every other operation, then that one
+   * collection's counter row, and holds nothing else.
+   *
+   * The claim also has to outlive its own transaction. It commits before the
+   * reclamation it authorises runs, so `SKIP LOCKED` would protect only the claim
+   * itself and a second worker could take the collection the instant this one
+   * committed. What carries the claim across that boundary is a lease: a token and
+   * a deadline written with the claim, honoured by other workers until it passes,
+   * and reclaimable afterwards so a worker that died holds nothing forever.
+   */
+  async claimCollectionForExpirySweep(input: {
+    scope: AppStorageCollectionScope;
+  }): Promise<AppStorageSweepClaim> {
+    const { scope } = input;
+
+    return this.db.transaction().execute(async (trx) => {
+      const fenced = await this.fence(trx, scope, { mode: "share", denyWhenRevoked: false });
+      if (!fenced.admitted) return { claimed: false } as const;
+
+      const row = await trx
+        .selectFrom("app_storage_collection_usage")
+        .select(["sweep_lease_until"])
+        .where("workspace_id", "=", scope.workspaceId)
+        .where("installation_id", "=", scope.installationId)
+        .where("collection_id", "=", scope.collectionId)
+        .forUpdate()
+        .skipLocked()
+        .executeTakeFirst();
+
+      if (!row) return { claimed: false } as const;
+
+      const at = await this.freshTimestamp(trx);
+      if (row.sweep_lease_until !== null && new Date(row.sweep_lease_until).getTime() > at.getTime()) {
+        return { claimed: false } as const;
+      }
+
+      const leaseToken = randomUUID();
+      await trx
+        .updateTable("app_storage_collection_usage")
+        .set({
+          sweep_lease_token: leaseToken,
+          sweep_lease_until: new Date(at.getTime() + SWEEP_LEASE_SECONDS * 1000),
+          updated_at: at,
+        })
+        .where("workspace_id", "=", scope.workspaceId)
+        .where("installation_id", "=", scope.installationId)
+        .where("collection_id", "=", scope.collectionId)
+        .execute();
+
+      return { claimed: true, leaseToken } as const;
     });
   }
 
   /**
-   * Reclaims one bounded batch of a single collection's expired rows. It takes
-   * the installation's state row first like every other operation, so a sweep and
-   * an installation deletion queue behind each other instead of meeting in the
-   * middle, and a tombstoned installation is left alone rather than having a
-   * counter row recreated beneath it.
+   * Reclaims one bounded batch of a single collection's expired rows, under the
+   * lease the claim wrote. It takes the installation's state row first like every
+   * other operation, so a sweep and an installation deletion queue behind each
+   * other instead of meeting in the middle, and a tombstoned installation is left
+   * alone rather than having a counter row recreated beneath it.
+   *
+   * The lease is rechecked here rather than trusted: it may have expired while
+   * this worker was queued, and another worker may already hold it.
    */
   async reclaimExpiredRecords(input: {
     scope: AppStorageCollectionScope;
     limit: number;
+    leaseToken: string;
   }): Promise<number> {
     const { scope } = input;
 
@@ -696,6 +970,16 @@ export class AppStorageRepository implements AppStorageRepositoryPort {
       if (!fenced.admitted) return 0;
 
       const usage = await this.lockCollectionUsage(trx, scope);
+      const leased = await trx
+        .selectFrom("app_storage_collection_usage")
+        .select("sweep_lease_token")
+        .where("workspace_id", "=", scope.workspaceId)
+        .where("installation_id", "=", scope.installationId)
+        .where("collection_id", "=", scope.collectionId)
+        .executeTakeFirst();
+
+      if (leased?.sweep_lease_token !== input.leaseToken) return 0;
+
       const at = await this.freshTimestamp(trx);
       const before = usage.recordCount;
       const { live } = await this.reclaimBounded(trx, scope, usage, at, {
@@ -703,9 +987,11 @@ export class AppStorageRepository implements AppStorageRepositoryPort {
         maxBatches: 1,
       });
 
+      // The lease is released with the work it authorised, so the collection is
+      // available again immediately rather than at the deadline.
       await trx
         .updateTable("app_storage_collection_usage")
-        .set({ last_swept_at: at })
+        .set({ last_swept_at: at, sweep_lease_token: null, sweep_lease_until: null })
         .where("workspace_id", "=", scope.workspaceId)
         .where("installation_id", "=", scope.installationId)
         .where("collection_id", "=", scope.collectionId)
@@ -756,41 +1042,80 @@ export class AppStorageRepository implements AppStorageRepositoryPort {
   }
 
   /**
-   * Admits an export and then streams it from one repeatable-read transaction.
-   * Admission is decided under the state row before a single record is read, so a
-   * tombstoned installation is refused rather than handed an empty file; and
-   * because every page reads inside the same snapshot, a record written, changed,
-   * or expired mid-export is either wholly in it or wholly out.
+   * Admits an export, and hands back a snapshot that has not opened anything yet.
+   *
+   * Admission opens no transaction on purpose. An async generator's body does not
+   * run until something reads from it, so a transaction started here for a caller
+   * that never iterates would never reach its own `finally`: the pooled connection
+   * and the MVCC snapshot it pins would be held until the process ended, and a few
+   * abandoned exports would exhaust the pool.
+   *
+   * So the repeatable-read transaction opens on the first read. The state row is
+   * read again inside it — that read is the snapshot's first observation, so a
+   * tombstone committed before it denies the export while one committed afterwards
+   * cannot change the rows this export was admitted against — and the expiry
+   * cutoff is taken immediately after it and reused for every page, so no row is
+   * live when the snapshot is established and excluded by a later clock.
+   *
+   * An export does not lock the state row. Its transaction lives as long as the
+   * operator is reading, and a lock held that long would stop the App writing for
+   * the length of an export. The snapshot does the same work without the cost.
    */
   async openInstallationExport(input: {
     scope: AppStorageInstallationScope;
     batchSize: number;
+    idleTimeoutMs?: number;
   }): Promise<AppStorageAdmitted<AppStorageExportSnapshot>> {
-    const batchSize = Math.max(EXPORT_PAGE_MINIMUM, input.batchSize);
-    const trx = await this.db.startTransaction().setIsolationLevel("repeatable read").execute();
+    const state = await this.findInstallationState(input.scope);
+    if (state?.deletedAt) return denied;
 
-    // Alone among the operations here, an export does not lock the state row.
-    // Its transaction stays open for as long as the operator is reading, and a
-    // lock held that long would stop the App writing for the length of an export.
-    // The snapshot does the same work: a tombstone that committed before it is
-    // visible and refuses the export, and one that commits after it cannot make
-    // this export wrong, because every page it reads belongs to the state it was
-    // admitted against.
-    let state: AppStorageInstallationState | null;
-    try {
-      state = await this.readState(trx, input.scope);
-    } catch (error) {
-      await trx.rollback().execute();
-      throw error;
-    }
+    return admit(
+      this.buildExportSnapshot(
+        input.scope,
+        Math.max(EXPORT_PAGE_MINIMUM, input.batchSize),
+        input.idleTimeoutMs ?? EXPORT_IDLE_TIMEOUT_MS,
+      ),
+    );
+  }
 
-    if (state?.deletedAt) {
-      await trx.rollback().execute();
-      return denied;
-    }
+  /**
+   * The snapshot's own lifetime. It owns one transaction at most, opens it lazily,
+   * closes it on completion, on failure, on an abandoning consumer, and on an idle
+   * timeout — which is what a caller that admitted an export and walked away is.
+   */
+  private buildExportSnapshot(
+    scope: AppStorageInstallationScope,
+    batchSize: number,
+    idleTimeoutMs: number,
+  ): AppStorageExportSnapshot {
+    let transaction: ExportTransaction | null = null;
+    let closed = false;
+    let idleTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const scope = input.scope;
-    const readPage = async (after: ExportCursor | null, at: Date): Promise<ExportRow[]> =>
+    const release = async (commit: boolean): Promise<void> => {
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = null;
+      closed = true;
+      const open = transaction;
+      transaction = null;
+      if (!open) return;
+      await (commit ? open.commit().execute() : open.rollback().execute());
+    };
+
+    const touch = (): void => {
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        void release(false).catch(() => undefined);
+      }, idleTimeoutMs);
+      // A snapshot waiting to be read is not a reason to keep the process alive.
+      idleTimer.unref?.();
+    };
+
+    const readPage = async (
+      trx: ExportTransaction,
+      after: ExportCursor | null,
+      at: Date,
+    ): Promise<ExportRow[]> =>
       trx
         .selectFrom("app_storage_records")
         .select(["collection_id", "record_key", "version", "schema_version", "updated_at", "value"])
@@ -813,17 +1138,42 @@ export class AppStorageRepository implements AppStorageRepositoryPort {
         .limit(batchSize)
         .execute();
 
-    async function* stream(this: AppStorageRepository): AsyncGenerator<ExportedAppStorageRecord> {
-      let committed = false;
+    const open = async (): Promise<ExportTransaction> =>
+      this.db.startTransaction().setIsolationLevel("repeatable read").execute();
+    const readState = async (trx: ExportTransaction): Promise<AppStorageInstallationState | null> =>
+      this.readState(trx, scope);
+    const freshTimestamp = async (trx: ExportTransaction): Promise<Date> => this.freshTimestamp(trx);
+
+    async function* read(): AsyncGenerator<ExportedAppStorageRecord> {
+      if (closed) throw new AppStorageExportClosedError();
+
+      const trx = await open();
+      transaction = trx;
+      touch();
+
+      let completed = false;
       try {
-        const at = await this.freshTimestamp(trx);
+        // The first read inside the snapshot, and therefore what fixes it.
+        const admitted = await readState(trx);
+        if (admitted?.deletedAt) throw new AppStorageExportDeniedError();
+
+        // Taken immediately after the state read, and reused by every page: a row
+        // that is live in the snapshot must not be excluded by a later clock.
+        const at = await freshTimestamp(trx);
         let after: ExportCursor | null = null;
 
         for (;;) {
-          const rows = await readPage(after, at);
+          // The idle timeout may have ended the transaction between pages. Saying
+          // so is the point: a consumer that resumes has to learn its snapshot is
+          // gone rather than read a driver error about a transaction it never
+          // knew it had.
+          if (closed) throw new AppStorageExportClosedError();
+
+          const rows = await readPage(trx, after, at);
           const last = rows[rows.length - 1];
 
           for (const row of rows) {
+            touch();
             yield { ...mapRecord(row), collectionId: row.collection_id };
           }
 
@@ -831,14 +1181,14 @@ export class AppStorageRepository implements AppStorageRepositoryPort {
           after = { collectionId: last.collection_id, recordKey: last.record_key };
         }
 
-        await trx.commit().execute();
-        committed = true;
+        completed = true;
       } finally {
-        if (!committed) await trx.rollback().execute();
+        await release(completed);
       }
     }
 
-    return admit({ records: stream.call(this) });
+    touch();
+    return { read, close: async (): Promise<void> => release(false) };
   }
 
   /**
@@ -883,21 +1233,38 @@ export class AppStorageRepository implements AppStorageRepositoryPort {
   }
 
   /**
-   * Publishes what the dispositions committed. The entries are claimed and
-   * published inside one transaction, so an entry whose publish failed stays for
-   * the next pass rather than disappearing with it; the trail is at-least-once,
-   * which is the side to be wrong on when the subject is customer data.
+   * Leases a bounded batch of committed intents, and commits the lease before
+   * anything is published.
+   *
+   * Publishing inside this transaction is what a drain must never do. The audit
+   * store is the same database, so `record` needs a second pooled connection while
+   * this one is held: a one-connection pool deadlocks on the first event, and a
+   * larger one is exhausted by enough concurrent drainers. It would also hold row
+   * locks across whatever latency the publisher has. So the claim is short, the
+   * publish happens outside it, and the acknowledgement comes back by token.
    */
-  async drainAuditOutbox(input: {
+  async claimAuditOutboxBatch(input: {
     limit: number;
-    publish: (event: AppStorageAuditEvent) => Promise<void>;
-  }): Promise<number> {
-    if (input.limit <= 0) return 0;
+    leaseSeconds: number;
+  }): Promise<AppStorageAuditOutboxClaim> {
+    const claimToken = randomUUID();
+    if (input.limit <= 0) return { claimToken, entries: [] };
 
-    return this.db.transaction().execute(async (trx) => {
+    const entries = await this.db.transaction().execute(async (trx) => {
       const rows = await trx
         .selectFrom("app_storage_audit_outbox")
-        .select(["id", "workspace_id", "installation_id", "event_type", "event_status", "metadata"])
+        .select([
+          "id",
+          "workspace_id",
+          "installation_id",
+          "event_type",
+          "event_status",
+          "metadata",
+          "attempt_count",
+        ])
+        .where((eb) =>
+          eb.or([eb("claimed_until", "is", null), eb("claimed_until", "<=", clockTimestamp())]),
+        )
         .orderBy("created_at", "asc")
         .orderBy("id", "asc")
         .limit(input.limit)
@@ -905,20 +1272,18 @@ export class AppStorageRepository implements AppStorageRepositoryPort {
         .skipLocked()
         .execute();
 
-      if (rows.length === 0) return 0;
+      if (rows.length === 0) return [];
 
-      for (const row of rows) {
-        await input.publish({
-          workspaceId: row.workspace_id,
-          installationId: row.installation_id,
-          eventType: row.event_type as AppStorageAuditEvent["eventType"],
-          eventStatus: row.event_status as AppStorageAuditEvent["eventStatus"],
-          metadata: (row.metadata ?? {}) as AppStorageAuditEvent["metadata"],
-        });
-      }
-
+      const claimedUntil = await trx
+        .selectNoFrom(clockTimestamp().as("at"))
+        .executeTakeFirstOrThrow();
       await trx
-        .deleteFrom("app_storage_audit_outbox")
+        .updateTable("app_storage_audit_outbox")
+        .set({
+          claim_token: claimToken,
+          claimed_until: new Date(new Date(claimedUntil.at).getTime() + input.leaseSeconds * 1000),
+          attempt_count: (eb) => eb("attempt_count", "+", 1),
+        })
         .where(
           "id",
           "in",
@@ -926,8 +1291,38 @@ export class AppStorageRepository implements AppStorageRepositoryPort {
         )
         .execute();
 
-      return rows.length;
+      return rows.map((row) => ({
+        eventId: row.id,
+        workspaceId: row.workspace_id,
+        installationId: row.installation_id,
+        eventType: row.event_type as AppStorageAuditOutboxClaim["entries"][number]["eventType"],
+        eventStatus: row.event_status as AppStorageAuditOutboxClaim["entries"][number]["eventStatus"],
+        metadata: (row.metadata ?? {}) as AppStorageAuditOutboxClaim["entries"][number]["metadata"],
+        attemptCount: row.attempt_count + 1,
+      }));
     });
+
+    return { claimToken, entries };
+  }
+
+  /**
+   * Removes the entries this claim published. The token is part of the predicate,
+   * so a drain whose lease expired and was taken over by another worker cannot
+   * acknowledge work the other worker is now responsible for.
+   */
+  async acknowledgeAuditOutbox(input: {
+    claimToken: string;
+    eventIds: readonly string[];
+  }): Promise<number> {
+    if (input.eventIds.length === 0) return 0;
+
+    const removed = await this.db
+      .deleteFrom("app_storage_audit_outbox")
+      .where("claim_token", "=", input.claimToken)
+      .where("id", "in", [...input.eventIds])
+      .executeTakeFirst();
+
+    return Number(removed.numDeletedRows ?? 0);
   }
 
   /**
@@ -956,6 +1351,7 @@ export class AppStorageRepository implements AppStorageRepositoryPort {
         "deleted_record_count",
         "deleted_collection_count",
         "pending_indexes",
+        "rebuild_generation",
       ])
       .where("workspace_id", "=", scope.workspaceId)
       .where("installation_id", "=", scope.installationId);
@@ -977,8 +1373,19 @@ export class AppStorageRepository implements AppStorageRepositoryPort {
         deletedAt: null,
         deletionSummary: null,
         pendingIndexes: readPendingIndexes(row.pending_indexes),
+        rebuildGeneration: Number(row.rebuild_generation),
       },
     };
+  }
+
+  private findPendingIndex(
+    state: FencedState,
+    collectionId: string,
+    indexId: string,
+  ): PendingIndex | undefined {
+    return state.pendingIndexes.find(
+      (entry) => entry.collectionId === collectionId && entry.id === indexId,
+    );
   }
 
   private async readState(
@@ -1147,6 +1554,48 @@ export class AppStorageRepository implements AppStorageRepositoryPort {
   }
 
   /**
+   * Counts the collection's live rows exactly, for a write whose reclamation
+   * stopped with expired rows still there. Without it, bounded reclamation and a
+   * counter that still charges for unreclaimed rows would refuse a write no live
+   * record is standing in the way of — a quota failure that is not true.
+   *
+   * The count is bounded by the ceiling plus one, because that is the most the
+   * decision ever needs: at or below the ceiling the answer is exact, and past it
+   * the only fact that matters is that the collection is over. The byte total
+   * comes from the counter rather than from this window, because a truncated
+   * window is not the collection's size.
+   */
+  private async countLiveRecords(
+    trx: Transaction<DB>,
+    scope: AppStorageCollectionScope,
+    at: Date,
+    maxRecords: number,
+  ): Promise<AppStorageCollectionUsage> {
+    const totals = await trx
+      .selectFrom((eb) =>
+        eb
+          .selectFrom("app_storage_records")
+          .select("byte_size")
+          .where("workspace_id", "=", scope.workspaceId)
+          .where("installation_id", "=", scope.installationId)
+          .where("collection_id", "=", scope.collectionId)
+          .where((inner) => inner.or([inner("expires_at", "is", null), inner("expires_at", ">", at)]))
+          .limit(maxRecords + 1)
+          .as("live"),
+      )
+      .select((eb) => [
+        eb.fn.countAll<string>().as("record_count"),
+        eb.fn.sum<string | null>("live.byte_size").as("byte_size"),
+      ])
+      .executeTakeFirst();
+
+    return {
+      recordCount: Number(totals?.record_count ?? 0),
+      byteSize: Number(totals?.byte_size ?? 0),
+    };
+  }
+
+  /**
    * Removes every record, index entry, and counter an installation holds and
    * leaves the tombstone with what it removed. Counters are taken in collection
    * order, which is the order the sweep meets them in, so the two cannot hold
@@ -1218,21 +1667,41 @@ export class AppStorageRepository implements AppStorageRepositoryPort {
       .execute();
   }
 
+  /**
+   * Writes the pending-index marker, keyed by collection id.
+   *
+   * The bucket map has a null prototype because a collection id is the App's, not
+   * ours: the identifier contract admits `constructor`, and on an ordinary object
+   * literal `byCollection["constructor"]` answers with an inherited function that
+   * has no `push`. A `Map` would do as well; what must not happen is a valid
+   * declaration crashing the marker every write depends on.
+   */
   private async writePendingIndexes(
     trx: Transaction<DB>,
     scope: AppStorageInstallationScope,
     pending: readonly PendingIndex[],
+    rebuildGeneration: number,
   ): Promise<void> {
-    const byCollection: Record<string, AppStorageIndexDescriptor[]> = {};
+    const byCollection = Object.create(null) as Record<string, StoredPendingIndex[]>;
     for (const entry of pending) {
       const bucket = byCollection[entry.collectionId] ?? [];
-      bucket.push({ id: entry.id, field: entry.field, fieldType: entry.fieldType });
+      bucket.push({
+        id: entry.id,
+        field: entry.field,
+        fieldType: entry.fieldType,
+        generation: entry.generation,
+        finishedAt: entry.finishedAt,
+      });
       byCollection[entry.collectionId] = bucket;
     }
 
     await trx
       .updateTable("app_storage_installation_state")
-      .set({ pending_indexes: toJsonb(byCollection), updated_at: currentTimestamp() })
+      .set({
+        pending_indexes: toJsonb(byCollection),
+        rebuild_generation: String(rebuildGeneration),
+        updated_at: currentTimestamp(),
+      })
       .where("workspace_id", "=", scope.workspaceId)
       .where("installation_id", "=", scope.installationId)
       .execute();
@@ -1361,11 +1830,38 @@ const readPendingIndexes = (value: unknown): PendingIndex[] => {
     if (!Array.isArray(indexes)) continue;
     for (const entry of indexes) {
       if (typeof entry !== "object" || entry === null) continue;
-      const { id, field, fieldType } = entry as Record<string, unknown>;
+      const { id, field, fieldType, generation, finishedAt } = entry as Record<string, unknown>;
       if (typeof id !== "string" || typeof field !== "string" || typeof fieldType !== "string") continue;
-      pending.push({ collectionId, id, field, fieldType: fieldType as StorageFieldType });
+      pending.push({
+        collectionId,
+        id,
+        field,
+        fieldType: fieldType as StorageFieldType,
+        generation: typeof generation === "number" ? generation : 0,
+        finishedAt: typeof finishedAt === "string" ? finishedAt : null,
+      });
     }
   }
 
   return pending;
 };
+
+/**
+ * The token a finished rebuild hands its activation. It names the collection, the
+ * index, and the generation, so presenting one belonging to a superseded rebuild
+ * clears nothing.
+ */
+const completionToken = (collectionId: string, indexId: string, generation: number): string =>
+  `${collectionId}:${indexId}:${generation}`;
+
+/**
+ * The transaction handle crossing the port is opaque by design — the port says
+ * what may share a transaction, and Kysely stays behind it. These two casts are
+ * where that opacity is created and undone, and they are the only place either
+ * happens.
+ */
+const asHandle = (trx: Transaction<DB>): AppStorageTransactionHandle =>
+  trx as unknown as AppStorageTransactionHandle;
+
+const asTransaction = (handle: AppStorageTransactionHandle): Transaction<DB> =>
+  handle as unknown as Transaction<DB>;

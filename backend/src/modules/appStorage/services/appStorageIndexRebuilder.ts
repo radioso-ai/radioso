@@ -23,6 +23,13 @@ const DEFAULT_BATCH_SIZE = 200;
 const DEFAULT_MAX_BATCHES = 10_000;
 
 /**
+ * How many incompatible records a rebuild names before it stops looking. The
+ * rebuild has already failed by then, and the remaining passes would only make
+ * the count larger and the set of keys held in memory unbounded.
+ */
+const INCOMPATIBLE_CEILING = 1_000;
+
+/**
  * Builds one declared index over records written before it was declared.
  *
  * An index entry is per record, so an index a candidate release adds answers
@@ -46,7 +53,14 @@ const DEFAULT_MAX_BATCHES = 10_000;
  * back. So the rebuild is fenced by a marker on the installation's state row
  * instead of by a lock held for its whole length — while the marker is set every
  * put maintains the index, and a closing pass over the records written since
- * catches whatever landed behind the cursor before the marker was cleared.
+ * catches whatever landed behind the cursor.
+ *
+ * The marker has an owner and an end. Each rebuild takes a generation, so two
+ * overlapping rebuilds of one index cannot clear each other's marker; converging
+ * stamps the rebuild rather than clearing it, and hands back the token the
+ * activation presents to clear it in the same transaction that starts serving the
+ * index. A rebuild that will not be activated cancels its own marker, so a
+ * failure does not leave every future write maintaining an index nobody queries.
  */
 export const createAppStorageIndexRebuilder = (
   options: AppStorageIndexRebuilderOptions,
@@ -89,9 +103,21 @@ export const createAppStorageIndexRebuilder = (
           return storageFailure("denied", "Storage for this installation is not available");
         }
 
+        const generation = started.value.generation;
         let rebuiltCount = 0;
         let batchCount = 0;
-        let incompatibleCount = 0;
+
+        /**
+         * The records whose stored value the index cannot hold, as of the last
+         * time each one was looked at. A running count would accumulate history:
+         * a record that was too long in the first pass and was corrected before
+         * the convergence pass would still be charged against the rebuild, and the
+         * candidate would be refused over a value that is no longer there. Every
+         * write since the marker went up carries a version at or past it, so the
+         * convergence pass revisits exactly the records that could have changed —
+         * which makes the latest observation of each key its current state.
+         */
+        const incompatible = new Set<string>();
 
         /** One key-ordered sweep of the collection, optionally limited to what a version marks as new. */
         const pass = async (
@@ -116,7 +142,10 @@ export const createAppStorageIndexRebuilder = (
 
             batchCount += 1;
             rebuiltCount += progress.value.rebuiltCount;
-            incompatibleCount += progress.value.incompatibleCount;
+            for (const key of progress.value.visitedKeys) incompatible.delete(key);
+            for (const key of progress.value.incompatibleKeys) incompatible.add(key);
+            if (incompatible.size >= INCOMPATIBLE_CEILING) return null;
+
             if (progress.value.rebuiltCount < batchSize || progress.value.lastKey === null) return null;
             after = progress.value.lastKey;
           }
@@ -134,27 +163,46 @@ export const createAppStorageIndexRebuilder = (
         // so a write could land behind the cursor while they were running; every
         // such write carries a version at or past the marker, which is exactly
         // the set this pass revisits.
-        const converged = await pass(started.value.startVersion);
-        if (converged) return converged;
+        if (incompatible.size < INCOMPATIBLE_CEILING) {
+          const converged = await pass(started.value.startVersion);
+          if (converged) return converged;
+        }
 
         // A value stored before its field was indexed was never measured against
-        // the index's bounds. Leaving the marker set keeps writes maintaining the
-        // index while an operator decides, and the outcome names the count rather
-        // than activating a release whose query would silently skip those records.
-        if (incompatibleCount > 0) {
+        // the index's bounds, and one is still there now. The rebuild will not be
+        // activated, so its marker comes down: leaving it up would make every
+        // future write maintain an index no release is ever going to query.
+        if (incompatible.size > 0) {
+          await repository.cancelIndexRebuild({ scope, indexId: index.id, generation });
           return storageSuccess({
             outcome: "incompatible_records",
             indexId: index.id,
-            incompatibleCount,
+            incompatibleCount: incompatible.size,
           });
         }
 
-        const finished = await repository.finishIndexRebuild({ scope, indexId: index.id });
+        const finished = await repository.finishIndexRebuild({ scope, indexId: index.id, generation });
         if (!finished.admitted) {
           return storageFailure("denied", "Storage for this installation is not available");
         }
 
-        return storageSuccess({ outcome: "rebuilt", rebuiltCount, batchCount });
+        // Another rebuild of this index took the marker over while this one ran.
+        // It owns the convergence now, and this run has nothing to hand an
+        // activation.
+        if (finished.value.outcome === "stale") {
+          return storageSuccess({ outcome: "superseded", indexId: index.id });
+        }
+
+        // The marker stays up until activation clears it with this token, in one
+        // transaction with the release taking over: between here and there an
+        // older release can still rewrite a record, and the marker is the only
+        // thing making that write maintain the index.
+        return storageSuccess({
+          outcome: "rebuilt",
+          rebuiltCount,
+          batchCount,
+          completionToken: finished.value.completionToken,
+        });
       } catch (error) {
         return classifyStorageFailure(error);
       }

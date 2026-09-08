@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { buildRepositoryStub, statementFailure } from "./repositoryStub.js";
+import { buildRepositoryStub, connectionFailure, statementFailure } from "./repositoryStub.js";
 import {
   createAppStorageDisposition,
   MAX_RETENTION_DAYS,
@@ -32,10 +32,12 @@ const buildRepository = (): AppStorageRepositoryPort => {
   repository.openInstallationExport = vi.fn(async () => ({
     admitted: true as const,
     value: {
-      records: (async function* () {
-        yield record("sync_state", "post-1");
-        yield record("cursors", "cursor-1");
-      })(),
+      read: () =>
+        (async function* () {
+          yield record("sync_state", "post-1");
+          yield record("cursors", "cursor-1");
+        })(),
+      close: async (): Promise<void> => undefined,
     },
   }));
   repository.deleteInstallationRecords = vi.fn(async () => ({
@@ -73,7 +75,7 @@ describe("app storage disposition", () => {
     if (!admission.ok) throw new Error("export was not admitted");
 
     const events: AppStorageExportEvent[] = [];
-    for await (const event of admission.stream) {
+    for await (const event of admission.snapshot.stream()) {
       events.push(event);
       if (stop !== undefined && events.length >= stop) break;
     }
@@ -87,8 +89,51 @@ describe("app storage disposition", () => {
   });
 
   it("restores storage access by clearing the revocation", async () => {
-    await disposition().restoreAccess(scope);
+    await expect(disposition().restoreAccess(scope)).resolves.toEqual({ ok: true, value: undefined });
     expect(repository.setAccessRevoked).toHaveBeenCalledWith(scope, null);
+  });
+
+  it("refuses to restore access while a retention hold stands", async () => {
+    // Restoring here would hand a running App data the retention sweep is going
+    // to destroy. The repository decides it under the state row; what this layer
+    // owes is a refusal the operator can act on.
+    repository.setAccessRevoked = vi.fn(async () => ({
+      admitted: true as const,
+      value: { outcome: "retention_active" as const, retainUntil: new Date("2026-10-07T10:00:00.000Z") },
+    }));
+
+    await expect(disposition().restoreAccess(scope)).resolves.toMatchObject({
+      ok: false,
+      error: { code: "denied" },
+    });
+  });
+
+  it("cancels a retention hold, audits it, and leaves access revoked", async () => {
+    const held = new Date("2026-10-07T10:00:00.000Z");
+    repository.cancelRetention = vi.fn(async (input) => {
+      input.audit({ retainUntil: held });
+      return { admitted: true as const, value: { retainUntil: held } };
+    });
+
+    await expect(disposition().cancelRetention(scope)).resolves.toEqual({
+      ok: true,
+      value: { retainUntil: held },
+    });
+    expect(repository.setAccessRevoked).not.toHaveBeenCalled();
+
+    const [call] = (repository.cancelRetention as ReturnType<typeof vi.fn>).mock.calls;
+    expect(call?.[0].audit({ retainUntil: held })).toMatchObject({
+      eventType: "app.data.retention.changed",
+      eventStatus: "success",
+      metadata: { cancelled: true, retainUntil: held.toISOString() },
+    });
+  });
+
+  it("treats cancelling a hold that is not there as the state the caller asked for", async () => {
+    await expect(disposition().cancelRetention(scope)).resolves.toEqual({
+      ok: true,
+      value: { retainUntil: null },
+    });
   });
 
   it("refuses revocation and retention against an installation the tombstone covers", async () => {
@@ -155,10 +200,12 @@ describe("app storage disposition", () => {
     repository.openInstallationExport = vi.fn(async () => ({
       admitted: true as const,
       value: {
-        records: (async function* () {
-          yield record("sync_state", "post-1");
-          throw statementFailure();
-        })(),
+        read: () =>
+          (async function* () {
+            yield record("sync_state", "post-1");
+            throw statementFailure();
+          })(),
+        close: async (): Promise<void> => undefined,
       },
     }));
 
@@ -251,7 +298,7 @@ describe("app storage disposition", () => {
     });
   });
 
-  it("reports a deletion that failed as a failure rather than as zero records removed", async () => {
+  it("reports a deletion that failed as a failure and records it as one", async () => {
     repository.deleteInstallationRecords = vi.fn(async () => {
       throw statementFailure();
     });
@@ -260,25 +307,159 @@ describe("app storage disposition", () => {
 
     expect(result).toMatchObject({ ok: false, error: { code: "internal" } });
     expect(JSON.stringify(result)).not.toContain("customer-secret");
-    // Nothing committed, so nothing claims a deletion completed.
-    expect(eventTypes()).toEqual(["app.data.deletion.requested"]);
+    // A trail showing a deletion requested and nothing afterwards cannot
+    // distinguish a deletion that failed from one whose event was never written.
+    expect(eventTypes()).toEqual(["app.data.deletion.requested", "app.data.deletion.completed"]);
+    expect(enqueued()[1]).toMatchObject({ eventStatus: "failure", metadata: { reason: "internal" } });
+    expect(JSON.stringify(enqueued())).not.toContain("customer-secret");
   });
 
-  it("publishes committed intents through the audit sink when the outbox is drained", async () => {
-    repository.drainAuditOutbox = vi.fn(async (input) => {
-      await input.publish({
-        workspaceId,
-        installationId,
-        eventType: "app.data.deletion.completed",
-        eventStatus: "success",
-        metadata: { recordCount: 4, collectionCount: 2 },
-      });
-      return 1;
+  it("keeps the deletion's own failure when recording it fails too", async () => {
+    // A secondary audit write must never replace the primary answer: the caller
+    // asked what became of the data, not whether the outbox was reachable.
+    repository.deleteInstallationRecords = vi.fn(async () => {
+      throw statementFailure();
+    });
+    repository.enqueueAuditEvent = vi.fn(async (input) => {
+      if (input.intent.eventStatus === "failure") throw connectionFailure();
     });
 
-    await expect(disposition().drainAuditOutbox()).resolves.toEqual({ publishedCount: 1 });
+    await expect(disposition().deleteInstallationStorage(scope)).resolves.toMatchObject({
+      ok: false,
+      error: { code: "internal" },
+    });
+  });
+
+  it("keeps an invalid retention deadline's own refusal when recording it fails", async () => {
+    repository.enqueueAuditEvent = vi.fn(async () => {
+      throw connectionFailure();
+    });
+
+    await expect(
+      disposition().retain({ ...scope, until: new Date("2026-09-06T10:00:00.000Z") }),
+    ).resolves.toMatchObject({ ok: false, error: { code: "invalid_input" } });
+  });
+
+  it("keeps a refused export's own refusal when recording the cancellation fails", async () => {
+    repository.openInstallationExport = vi.fn(async () => ({ admitted: false as const }));
+    repository.enqueueAuditEvent = vi.fn(async (input) => {
+      if (input.intent.eventType === "app.data.export.cancelled") throw connectionFailure();
+    });
+
+    await expect(disposition().export(scope)).resolves.toMatchObject({
+      ok: false,
+      error: { code: "denied" },
+    });
+  });
+
+  it("closes the snapshot when the consumer walks away mid-stream", async () => {
+    // A repeatable-read snapshot pins a connection and an MVCC snapshot. The
+    // consumer's `break` is what has to end it, not the idle timeout.
+    const close = vi.fn(async () => undefined);
+    repository.openInstallationExport = vi.fn(async () => ({
+      admitted: true as const,
+      value: {
+        read: () =>
+          (async function* () {
+            yield record("sync_state", "post-1");
+            yield record("sync_state", "post-2");
+          })(),
+        close,
+      },
+    }));
+
+    await drain(1);
+
+    expect(close).toHaveBeenCalled();
+  });
+
+  it("opens nothing when an admitted export is never read", async () => {
+    const read = vi.fn(() => (async function* () {})());
+    repository.openInstallationExport = vi.fn(async () => ({
+      admitted: true as const,
+      value: { read, close: async (): Promise<void> => undefined },
+    }));
+
+    const admission = await disposition().export(scope);
+
+    expect(admission.ok).toBe(true);
+    // Admission is a decision, not a transaction. Reading is what opens one.
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it("publishes claimed intents outside the claim, then acknowledges them by token", async () => {
+    // The audit store is the same database, so publishing while the claim's
+    // transaction is open needs a second pooled connection and holds row locks
+    // across the publisher. The claim commits first; the acknowledgement carries
+    // the token that leased the rows.
+    repository.claimAuditOutboxBatch = vi.fn(async () => ({
+      claimToken: "claim-1",
+      entries: [
+        {
+          eventId: "event-1",
+          workspaceId,
+          installationId,
+          eventType: "app.data.deletion.completed" as const,
+          eventStatus: "success" as const,
+          metadata: { recordCount: 4, collectionCount: 2 },
+          attemptCount: 1,
+        },
+      ],
+    }));
+
+    await expect(disposition().drainAuditOutbox()).resolves.toEqual({
+      publishedCount: 1,
+      failureCount: 0,
+    });
     expect(audit.record).toHaveBeenCalledWith(
-      expect.objectContaining({ eventType: "app.data.deletion.completed", workspaceId }),
+      expect.objectContaining({ eventId: "event-1", eventType: "app.data.deletion.completed", workspaceId }),
     );
+    expect(repository.acknowledgeAuditOutbox).toHaveBeenCalledWith({
+      claimToken: "claim-1",
+      eventIds: ["event-1"],
+    });
+  });
+
+  it("leaves an entry whose publish failed unacknowledged, for the next pass to retry", async () => {
+    repository.claimAuditOutboxBatch = vi.fn(async () => ({
+      claimToken: "claim-1",
+      entries: [
+        {
+          eventId: "kept",
+          workspaceId,
+          installationId,
+          eventType: "app.data.export.requested" as const,
+          eventStatus: "success" as const,
+          metadata: {},
+          attemptCount: 1,
+        },
+        {
+          eventId: "published",
+          workspaceId,
+          installationId,
+          eventType: "app.data.export.completed" as const,
+          eventStatus: "success" as const,
+          metadata: {},
+          attemptCount: 1,
+        },
+      ],
+    }));
+    let firstPublish = true;
+    audit.record = vi.fn(async () => {
+      if (!firstPublish) return;
+      firstPublish = false;
+      throw statementFailure();
+    });
+
+    await expect(disposition().drainAuditOutbox()).resolves.toEqual({
+      publishedCount: 1,
+      failureCount: 1,
+    });
+    // Only the one that landed is acknowledged; the other keeps its lease and is
+    // claimed again once the lease expires.
+    expect(repository.acknowledgeAuditOutbox).toHaveBeenCalledWith({
+      claimToken: "claim-1",
+      eventIds: ["published"],
+    });
   });
 });

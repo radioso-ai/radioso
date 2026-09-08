@@ -221,6 +221,9 @@ export interface ApiCredentials {
 }
 
 export interface AppStorageAuditOutbox {
+  attempt_count: Generated<number>;
+  claim_token: string | null;
+  claimed_until: Timestamp | null;
   created_at: Generated<Timestamp>;
   event_status: string;
   event_type: string;
@@ -237,6 +240,8 @@ export interface AppStorageCollectionUsage {
   last_swept_at: Generated<Timestamp>;
   next_version: Generated<Int8>;
   record_count: Generated<number>;
+  sweep_lease_token: string | null;
+  sweep_lease_until: Timestamp | null;
   updated_at: Generated<Timestamp>;
   workspace_id: string;
 }
@@ -261,6 +266,7 @@ export interface AppStorageInstallationState {
   deleted_record_count: number | null;
   installation_id: string;
   pending_indexes: Generated<Json>;
+  rebuild_generation: Generated<Int8>;
   retain_until: Timestamp | null;
   updated_at: Generated<Timestamp>;
   workspace_id: string;

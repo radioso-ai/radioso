@@ -29,6 +29,13 @@ export interface AppStorageAuditIntent {
 }
 
 export interface AppStorageAuditEvent extends AppStorageAuditIntent {
+  /**
+   * The event's own identity, stable across delivery attempts. Delivery is
+   * at-least-once — a publish that succeeded and whose acknowledgement did not
+   * commit is published again — so a sink that must not record an event twice
+   * has something to recognise it by.
+   */
+  eventId: string;
   workspaceId: string;
   installationId: string | null;
 }

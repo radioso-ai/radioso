@@ -13,6 +13,7 @@ import type {
   ExportedAppStorageRecord,
 } from "../ports/appStorageRepository.js";
 import type {
+  AppStorageAuditDrainResult,
   AppStorageDeletionSummary,
   AppStorageDisposition,
   AppStorageExportAdmission,
@@ -25,12 +26,23 @@ interface AppStorageDispositionOptions {
   now?: () => Date;
   /** Rows read per round trip while an export streams; never the whole installation at once. */
   exportBatchSize?: number;
+  /** How long an admitted export may sit unread before its snapshot is aborted. */
+  exportIdleTimeoutMs?: number;
   /** Outbox entries one drain publishes, so a backlog is worked in passes rather than in one call. */
   auditDrainLimit?: number;
+  /** How long a claimed batch stays this drain's before another pass may retry it. */
+  auditLeaseSeconds?: number;
 }
 
 const DEFAULT_EXPORT_BATCH_SIZE = 200;
 const DEFAULT_AUDIT_DRAIN_LIMIT = 200;
+
+/**
+ * How long a claimed batch of audit events stays this drain's. It has to outlast
+ * a slow publisher and expire soon enough that a drain that died does not hold
+ * the trail back for long.
+ */
+const DEFAULT_AUDIT_LEASE_SECONDS = 60;
 
 /**
  * One line of the export. The shape is the App's own vocabulary — the collection
@@ -80,6 +92,7 @@ export const createAppStorageDisposition = (
   const clock = options.now ?? ((): Date => new Date());
   const batchSize = options.exportBatchSize ?? DEFAULT_EXPORT_BATCH_SIZE;
   const drainLimit = options.auditDrainLimit ?? DEFAULT_AUDIT_DRAIN_LIMIT;
+  const leaseSeconds = options.auditLeaseSeconds ?? DEFAULT_AUDIT_LEASE_SECONDS;
 
   const attempt = async <TValue>(
     operation: () => Promise<AppStorageResult<TValue>>,
@@ -98,6 +111,26 @@ export const createAppStorageDisposition = (
     await repository.enqueueAuditEvent({ scope, intent });
   };
 
+  /**
+   * Records an intent alongside a result the caller has already decided, and
+   * classifies its own failure instead of raising it.
+   *
+   * A secondary audit write must never replace a primary answer. An export that
+   * was refused, a retention deadline outside policy, a deletion that failed —
+   * each of those is what the caller has to be told, and letting the enqueue
+   * rejection propagate would substitute "the outbox is unreachable" for it. The
+   * enqueue failure is not lost either: it stays on this side of the boundary as
+   * a classified result the caller may inspect.
+   */
+  const enqueueBeside = async (
+    scope: AppStorageInstallationScope,
+    intent: AppStorageAuditIntent,
+  ): Promise<AppStorageResult<void>> =>
+    attempt(async () => {
+      await enqueue(scope, intent);
+      return storageSuccess(undefined);
+    });
+
   return {
     async revokeAccess(scope: AppStorageInstallationScope): Promise<AppStorageResult<void>> {
       return attempt(async () => {
@@ -106,10 +139,23 @@ export const createAppStorageDisposition = (
       });
     },
 
+    /**
+     * Hands the App its storage back, unless a retention hold stands. The
+     * repository decides that while holding the state row rather than trusting a
+     * check made here: an App reading and writing data the retention sweep is
+     * going to destroy is precisely the state the hold exists to prevent.
+     */
     async restoreAccess(scope: AppStorageInstallationScope): Promise<AppStorageResult<void>> {
       return attempt(async () => {
         const applied = await repository.setAccessRevoked(scope, null);
-        return applied.admitted ? storageSuccess(undefined) : tombstoned();
+        if (!applied.admitted) return tombstoned();
+        if (applied.value.outcome === "retention_active") {
+          return storageFailure(
+            "denied",
+            "This installation's storage is held for retention; cancel the hold before restoring access",
+          );
+        }
+        return storageSuccess(undefined);
       });
     },
 
@@ -125,26 +171,32 @@ export const createAppStorageDisposition = (
      * customer's data or some of it.
      */
     async export(scope: AppStorageInstallationScope): Promise<AppStorageExportAdmission> {
-      // The request is recorded before the snapshot is opened rather than after.
-      // Admission holds a transaction open for the life of the stream, and an
-      // audit write that failed after it was opened would have to abandon one.
-      const requested = await attempt(async () => {
-        await enqueue(scope, {
-          eventType: "app.data.export.requested",
-          eventStatus: "success",
-          metadata: {},
-        });
-        return storageSuccess(undefined);
+      // The request is recorded before the snapshot is admitted rather than
+      // after, so an export nobody ever reads still leaves the operator's
+      // request in the trail.
+      const requested = await enqueueBeside(scope, {
+        eventType: "app.data.export.requested",
+        eventStatus: "success",
+        metadata: {},
       });
       if (!requested.ok) return { ok: false, error: requested.error };
 
       const admitted = await attempt(async () => {
-        const opened = await repository.openInstallationExport({ scope, batchSize });
+        const opened = await repository.openInstallationExport({
+          scope,
+          batchSize,
+          ...(options.exportIdleTimeoutMs === undefined
+            ? {}
+            : { idleTimeoutMs: options.exportIdleTimeoutMs }),
+        });
         return opened.admitted ? storageSuccess(opened.value) : tombstoned<AppStorageExportSnapshot>();
       });
 
       if (!admitted.ok) {
-        await enqueue(scope, {
+        // The cancellation belongs in the trail, but the refusal above is what
+        // the caller asked about; an outbox that is unreachable must not answer
+        // in its place.
+        await enqueueBeside(scope, {
           eventType: "app.data.export.cancelled",
           eventStatus: "failure",
           metadata: { recordCount: 0, collectionCount: 0, reason: admitted.error.code },
@@ -167,7 +219,9 @@ export const createAppStorageDisposition = (
 
         try {
           try {
-            for await (const record of snapshot.records) {
+            // Reading is what opens the database snapshot; admission opened
+            // nothing, so an export that is never consumed holds nothing.
+            for await (const record of snapshot.read()) {
               collections.add(record.collectionId);
               recordCount += 1;
               yield toExportLine(record);
@@ -179,7 +233,7 @@ export const createAppStorageDisposition = (
             // customer's data or some of it.
             const failure = classifyStorageFailure(error);
             settled = true;
-            await enqueue(scope, closing(failure.error.code));
+            await enqueueBeside(scope, closing(failure.error.code));
             yield { kind: "error", error: failure.error };
             return;
           }
@@ -188,20 +242,26 @@ export const createAppStorageDisposition = (
           // The trail entry is written where it can still be reported. A
           // completed export whose event did not land is an export the operator
           // cannot prove happened, so it is said out loud rather than dropped.
-          const recorded = await attempt(async () => {
-            await enqueue(scope, closing(null));
-            return storageSuccess(undefined);
-          });
+          const recorded = await enqueueBeside(scope, closing(null));
           if (!recorded.ok) yield { kind: "error", error: recorded.error };
         } finally {
           // The consumer walked away mid-stream. There is no line left to hand
-          // it, so the cancellation goes to the trail and any failure to record
-          // it surfaces at the caller's own `break`.
-          if (!settled) await enqueue(scope, closing("consumer_stopped"));
+          // it, so the cancellation goes to the trail and the snapshot is closed
+          // rather than left to its idle timeout.
+          if (!settled) await enqueueBeside(scope, closing("consumer_stopped"));
+          await snapshot.close().catch(() => undefined);
         }
       }
 
-      return { ok: true, stream: stream() };
+      return {
+        ok: true,
+        snapshot: {
+          stream,
+          close: async (): Promise<void> => {
+            await snapshot.close();
+          },
+        },
+      };
     },
 
     /**
@@ -217,7 +277,8 @@ export const createAppStorageDisposition = (
       const deadline = validateRetentionDeadline(until, clock());
 
       if (!deadline.ok) {
-        await enqueue(scope, {
+        // The refusal is the answer; recording it must not become one.
+        await enqueueBeside(scope, {
           eventType: "app.data.retention.changed",
           eventStatus: "failure",
           metadata: { reason: deadline.reason, maxRetentionDays: MAX_RETENTION_DAYS },
@@ -248,48 +309,127 @@ export const createAppStorageDisposition = (
     },
 
     /**
+     * Lifts the hold and says so in the trail. Access stays revoked: ending a
+     * scheduled destruction and giving the App its data back are two decisions,
+     * and cancelling a hold that silently re-enabled a disabled App would be the
+     * operator making the second one without saying so.
+     */
+    async cancelRetention(
+      scope: AppStorageInstallationScope,
+    ): Promise<AppStorageResult<{ retainUntil: Date | null }>> {
+      return attempt(async () => {
+        const cleared = await repository.cancelRetention({
+          scope,
+          audit: (state) => ({
+            eventType: "app.data.retention.changed",
+            eventStatus: "success",
+            metadata: { cancelled: true, retainUntil: state.retainUntil.toISOString() },
+          }),
+        });
+
+        if (!cleared.admitted) return tombstoned();
+        return storageSuccess({ retainUntil: cleared.value.retainUntil });
+      });
+    },
+
+    /**
      * Removes the installation's data and leaves a tombstone. A repeat answers the
      * same way rather than refusing: deletion is irreversible and its caller may
      * have lost the first response to a crashed process or a retried job, so the
      * counts live on the tombstone and are given back as often as they are asked
      * for. The completion event is written by the transaction that did the work,
      * so only the first of those calls adds one to the trail.
+     *
+     * A deletion that did not commit leaves a failure of its own. The trail is
+     * how an operator answers what became of the data, and a trail showing a
+     * deletion requested and nothing afterwards cannot distinguish a deletion
+     * that failed from one whose event was never written.
      */
     async deleteInstallationStorage(
       scope: AppStorageInstallationScope,
     ): Promise<AppStorageResult<AppStorageDeletionSummary>> {
-      return attempt(async () => {
-        await enqueue(scope, {
-          eventType: "app.data.deletion.requested",
-          eventStatus: "success",
-          metadata: {},
-        });
+      const requested = await enqueueBeside(scope, {
+        eventType: "app.data.deletion.requested",
+        eventStatus: "success",
+        metadata: {},
+      });
+      if (!requested.ok) return requested;
 
-        const removed = await repository.deleteInstallationRecords({
-          scope,
-          audit: (summary) => ({
-            eventType: "app.data.deletion.completed",
-            eventStatus: "success",
-            metadata: {
-              recordCount: summary.recordCount,
-              collectionCount: summary.collectionCount,
-            },
+      const removed = await attempt(async () =>
+        storageSuccess(
+          await repository.deleteInstallationRecords({
+            scope,
+            audit: (summary) => ({
+              eventType: "app.data.deletion.completed",
+              eventStatus: "success",
+              metadata: {
+                recordCount: summary.recordCount,
+                collectionCount: summary.collectionCount,
+              },
+            }),
           }),
-        });
+        ),
+      );
 
-        return storageSuccess({
-          recordCount: removed.recordCount,
-          collectionCount: removed.collectionCount,
+      if (!removed.ok) {
+        await enqueueBeside(scope, {
+          eventType: "app.data.deletion.completed",
+          eventStatus: "failure",
+          metadata: { reason: removed.error.code },
         });
+        return removed;
+      }
+
+      return storageSuccess({
+        recordCount: removed.value.recordCount,
+        collectionCount: removed.value.collectionCount,
       });
     },
 
-    async drainAuditOutbox(): Promise<{ publishedCount: number }> {
-      const publishedCount = await repository.drainAuditOutbox({
+    /**
+     * Leases a batch, publishes it outside any transaction, then acknowledges
+     * what landed.
+     *
+     * Publishing under the claim's own transaction is the shape this avoids: the
+     * audit store is the same database, so the sink needs a second pooled
+     * connection while the first is held — a one-connection pool deadlocks
+     * immediately and a larger one is exhausted by enough drainers — and the
+     * claim's row locks would be held across whatever latency the publisher has.
+     *
+     * What that costs is exactly-once delivery, which the outbox never had:
+     * a publish that succeeded and whose acknowledgement did not commit is
+     * published again. Every event carries a stable id for the sink to recognise
+     * it by, and at-least-once is the side to be wrong on when the subject is
+     * what became of customer data.
+     */
+    async drainAuditOutbox(): Promise<AppStorageAuditDrainResult> {
+      const claim = await repository.claimAuditOutboxBatch({
         limit: drainLimit,
-        publish: (event) => audit.record(event),
+        leaseSeconds: leaseSeconds,
       });
-      return { publishedCount };
+      if (claim.entries.length === 0) return { publishedCount: 0, failureCount: 0 };
+
+      const published: string[] = [];
+      let failureCount = 0;
+
+      for (const entry of claim.entries) {
+        try {
+          await audit.record(entry);
+          published.push(entry.eventId);
+        } catch {
+          // The lease keeps this entry out of other drains until it expires, and
+          // the next pass reclaims it. One publisher failure does not abandon the
+          // rest of the batch.
+          failureCount += 1;
+        }
+      }
+
+      await repository.acknowledgeAuditOutbox({
+        claimToken: claim.claimToken,
+        eventIds: published,
+      });
+
+      return { publishedCount: published.length, failureCount };
     },
   };
 };

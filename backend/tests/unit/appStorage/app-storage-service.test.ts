@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildStorageCollection } from "../../support/appStorageCollections.js";
 import { buildRepositoryStub, connectionFailure, statementFailure } from "./repositoryStub.js";
 import {
+  createAppStorageCompatibilityFacts,
   createAppStorageService,
   INDEXED_STRING_CHARACTER_BOUND,
   type AppStorageRepositoryPort,
@@ -89,20 +90,6 @@ describe("app storage service", () => {
       ok: true,
       value: { recordCount: 40, byteSize: 900, reclaimPending: true },
     });
-  });
-
-  it("answers the schema versions stored rows carry, so nothing outside storage reads its tables", async () => {
-    repository.listStoredSchemaVersions = vi.fn(async () => ({
-      admitted: true as const,
-      value: [1, 3],
-    }));
-
-    const collectionScope = { workspaceId, installationId, collectionId: "sync_state" };
-    await expect(service().storedSchemaVersions(collectionScope)).resolves.toEqual({
-      ok: true,
-      value: [1, 3],
-    });
-    expect(repository.listStoredSchemaVersions).toHaveBeenCalledWith(collectionScope);
   });
 
   it("puts usage through the same admission every record operation goes through", async () => {
@@ -329,5 +316,56 @@ describe("app storage service failure classification", () => {
       "unavailable",
       "unavailable",
     ]);
+  });
+});
+
+/**
+ * The one storage fact release admission needs, and the reason it is not on the
+ * capability service: what an App may call and what a release admission may
+ * learn about storage history are two surfaces, and only the first is exposed
+ * through the App gateway.
+ */
+describe("app storage compatibility facts", () => {
+  it("answers the schema versions stored rows carry, so nothing outside storage reads its tables", async () => {
+    const repository = buildRepositoryStub();
+    repository.listStoredSchemaVersions = vi.fn(async () => ({
+      admitted: true as const,
+      value: [1, 3],
+    }));
+
+    const collectionScope = { workspaceId, installationId, collectionId: "sync_state" };
+    await expect(
+      createAppStorageCompatibilityFacts({ repository }).storedSchemaVersions(collectionScope),
+    ).resolves.toEqual({ ok: true, value: [1, 3] });
+    expect(repository.listStoredSchemaVersions).toHaveBeenCalledWith(collectionScope);
+  });
+
+  it("refuses against an installation the tombstone covers", async () => {
+    const repository = buildRepositoryStub();
+    repository.listStoredSchemaVersions = vi.fn(async () => ({ admitted: false as const }));
+
+    await expect(
+      createAppStorageCompatibilityFacts({ repository }).storedSchemaVersions({
+        workspaceId,
+        installationId,
+        collectionId: "sync_state",
+      }),
+    ).resolves.toMatchObject({ ok: false, error: { code: "denied" } });
+  });
+
+  it("turns a database failure into a typed result rather than a rejected promise", async () => {
+    const repository = buildRepositoryStub();
+    repository.listStoredSchemaVersions = vi.fn(async () => {
+      throw statementFailure();
+    });
+
+    const result = await createAppStorageCompatibilityFacts({ repository }).storedSchemaVersions({
+      workspaceId,
+      installationId,
+      collectionId: "sync_state",
+    });
+
+    expect(result).toMatchObject({ ok: false, error: { code: "internal" } });
+    expect(JSON.stringify(result)).not.toContain("customer-secret");
   });
 });

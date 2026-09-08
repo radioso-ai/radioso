@@ -185,9 +185,20 @@ Once the deadline passes the record is gone from every read and every query, and
 its quota slot comes back with it: the very next write can use the space. A put
 gives back the key it is about to write and then a bounded batch of the
 collection's remaining expired rows — a capability call is not a maintenance job,
-and one call may not hold the collection while it removes a million rows. Radioso
-sweeps the rest on its own schedule, taking the least recently swept collections
-first so a busy one cannot keep another waiting.
+and one call may not hold the collection while it removes a million rows.
+
+When that bounded work stops with expired rows still to remove, the put counts
+the collection's live records exactly before it decides the quota, so a
+collection whose records have all expired admits the next write even though its
+running count is still high. The count is bounded by the collection's own
+`maxRecords`, because that is the most the decision ever needs to know.
+
+Radioso sweeps the rest on its own schedule. A pass lists the least recently
+swept collections first so a busy one cannot keep another waiting, then claims
+them one at a time: each claim takes the installation and that single collection,
+and writes a lease that survives the claim's own commit, so two passes running at
+once work on different collections instead of duplicating each other. A lease
+whose deadline passes is claimable again, so a pass that died holds nothing.
 
 `storage.usage` reclaims the same bounded way and reports `reclaimPending` when
 it stopped with expired rows still to remove, so a count that is ahead of the
@@ -227,18 +238,23 @@ carrying none of the underlying error, for the same reason.
 Records outlive the release that wrote them, and Radioso runs no migration code
 of yours over them. So a candidate release is checked before it can be activated,
 and the check is a matrix rather than a comparison of two manifests. It reads
-four things:
+three things per collection:
 
-- the **candidate** declaration and the **active** one
-- the declarations of **releases the operator can still roll back to**
+- the **candidate** declaration
+- the full declarations of every **reader that survives the activation** — the
+  active release during a rolling change, every release the operator can still
+  roll back to, and the release each already-enqueued job is read back under
 - the **schema versions stored records actually carry**
-- the **schema versions jobs already enqueued will be read back under**
 
-The observations are per collection, because they are per collection in the
-database: one collection can hold records written under version 1 while another
-holds version 2, and a single list would have each answer for the other's
-history. The stored versions come from Radioso's own count of what the rows
-carry, not from what any release claimed.
+Surviving readers are declarations rather than version numbers, because the
+question asked of each of them is whether it can read what the candidate writes,
+and a bare version number cannot answer that. The observations are per
+collection, because they are per collection in the database: one collection can
+hold records written under version 1 while another holds version 2, and a single
+list would have each answer for the other's history. Every declaration in an
+observation has to be the collection the observation names. The stored versions
+come from Radioso's own count of what the rows carry, not from what any release
+claimed.
 
 Two independent things have to hold, and neither waives the other.
 
@@ -249,17 +265,25 @@ changing whether it is required changes the meaning of records nobody is going t
 rewrite — and no `compatibleReaderVersions` entry makes a removed field readable,
 so a declaration cannot excuse it.
 
-The reader rule is about coverage. The candidate must read everything already
-there: its `compatibleReaderVersions` covers every version stored records carry
-and the version the active release writes. And every reader that outlives the
-activation — the active release during a rolling change, a rollback release, a
-queued job — must declare the candidate's `schemaVersion` readable.
+The reader rule runs in both directions, and this is the part a one-sided check
+misses.
+
+Forwards: the candidate must read everything already there. Its
+`compatibleReaderVersions` covers every version stored records carry and every
+version a surviving reader writes.
+
+Backwards: every surviving reader must be able to read what the candidate writes.
+A reader proves that by listing the candidate's `schemaVersion` in its own
+`compatibleReaderVersions`, or by differing from the candidate only by optional
+fields — which is the same proof made structurally. A release still serving
+beside the candidate meets the records it writes, and a reader that never said it
+could read them has not said it.
 
 A rollback is admitted the same way. Carrying a lower `schemaVersion` than the
-active release is not by itself a defect; what decides it is whether every
+release it replaces is not by itself a defect; what decides it is whether every
 pairing above still holds.
 
-That second direction is what makes dropping an old reader version legal. The
+The forward direction is what makes dropping an old reader version legal. The
 contract caps `compatibleReaderVersions` at eight entries, so a long-lived App
 eventually has to drop the oldest one; it is admitted exactly when no stored
 record carries that version.
@@ -272,16 +296,18 @@ A candidate may:
 - widen `allowedOperations`
 - raise `schemaVersion`
 - drop a reader version no stored record uses
+- lower `schemaVersion`, when every pairing still holds
 
 A candidate is rejected when it removes a collection, removes a field, changes a
 field's type, makes an optional field required **or** a required field optional,
 adds a required field, removes an index, moves an index to a different field,
-narrows `allowedOperations`, or lowers `schemaVersion`. Each of these changes the
-meaning of records nobody is going to rewrite: a retyped field makes stored
+narrows `allowedOperations`, writes a version a surviving reader has not declared
+readable, or fails to read a version stored records carry. Each of these changes
+the meaning of records nobody is going to rewrite: a retyped field makes stored
 values unreadable, a newly required field makes every existing record invalid, a
 newly optional one makes a field an older reader still requires disappear, a
-removed index takes away the only access path a queued job may have been planned
-against, and a narrowed operation list turns that job's next call into `denied`.
+removed index takes away the only access path a surviving reader may have been
+planned against, and a narrowed operation list turns its next call into `denied`.
 
 **An added index is built before the release serves a query.** An index entry
 exists per record, so a new index answers nothing about records earlier releases
@@ -294,10 +320,24 @@ marked pending on the installation before the first batch, and while that mark i
 set every write maintains an entry for it — including a write from a release that
 does not declare the index at all. A closing pass then covers the records written
 since the mark went up, which is what catches anything that landed behind the
-batch cursor. A value stored before its field was indexed was never measured
-against the indexed-value bound, so a rebuild that meets one reports it with a
-count rather than activating a release whose query would silently skip those
-records.
+batch cursor.
+
+The mark has an owner and an end. Each rebuild takes a generation of its own, so
+two rebuilds of the same index cannot clear each other's mark; the run that
+converges stamps the mark rather than clearing it, and activation takes it down
+in the same transaction that starts serving the index. That single transaction is
+what closes the last window: between a rebuild finishing and a release taking
+over, an older release can still rewrite a record, and the mark is the only thing
+making that write maintain the index. A rebuild that will not be activated clears
+its own mark, so a failure does not leave every later write maintaining an index
+nobody queries.
+
+A value stored before its field was indexed was never measured against the
+indexed-value bound, so a rebuild that meets one reports it with a count rather
+than activating a release whose query would silently skip those records. The
+count is of records that are past the bound now: one that was too long when the
+rebuild first read it and was corrected before the closing pass is not held
+against the candidate.
 
 The practical shape of a schema change is therefore: add the new field as
 optional, write both fields for a release, and stop reading the old one. The old
@@ -322,10 +362,13 @@ three dispositions:
   record itself — enough to reload it elsewhere or keep it as a record of what
   the App held. Whether the export may run is answered before a record is read,
   so an installation that is already deleted is refused rather than handed an
-  empty file; and the whole stream reads one database state, so a record written
-  or removed while it runs is wholly in the export or wholly out. A failure
-  part-way through ends the stream with an error rather than with what looks like
-  the end of the data.
+  empty file. What comes back is a snapshot you own: reading from it is what opens
+  the database snapshot, so every line belongs to one database state and a record
+  written or removed while it runs is wholly in the export or wholly out. A
+  failure part-way through ends the stream with an error rather than with what
+  looks like the end of the data. Close the snapshot when you stop reading; one
+  that sits unread for five minutes closes itself, so an export nobody consumed
+  holds nothing open.
 - **Retain until a date** holds the data for a bounded period, for a support
   investigation or a compliance window. Retained data is data the App may no
   longer reach, so setting a deadline takes the installation's storage access
@@ -335,6 +378,13 @@ three dispositions:
   deadline is rechecked while the installation is held, so extending a hold at the
   last moment keeps the data rather than losing it to a decision made a moment
   earlier. A hold you set is a hold that ends.
+
+  While a hold stands, restoring the App's storage access is refused: an App
+  writing into data scheduled for destruction is exactly what the hold exists to
+  prevent. **Cancel the retention** to lift the deadline. Cancelling leaves
+  access revoked — ending a scheduled deletion and handing the data back to the
+  App are two decisions, and you make them one at a time — so restore access as a
+  second step when that is what you want.
 - **Delete** removes the installation's records, its index entries, and its usage
   accounting, and leaves a marker in place of the installation. Every later call
   against it — a read, a write, an export, another retention — answers `denied`, so
@@ -352,15 +402,29 @@ Each of these leaves an audit event in the `app.data.*` family — export
 requested, completed, or cancelled; retention changed; deletion requested and
 completed. The event is written by the same transaction as the change it
 describes, so the trail cannot name a deletion that rolled back or miss one that
-committed; publishing it onto the audit spine happens afterwards, which is why a
-result never reports a failure for an effect that already landed. The events
-carry the workspace, the installation, and counts. An
+committed. The events carry the workspace, the installation, and counts. An
 export whose consumer stopped part-way is recorded as cancelled with what had
 been handed over, a retention date outside policy as a failed change, and a
 deletion that did not finish as a failed deletion — because a trail that shows
-only the successful half cannot answer where the data went. They do not carry
-record keys or stored values, because the point of the trail is to show that a
-disposition happened, not to become a second copy of what was in it.
+only the successful half cannot answer where the data went. Recording an event is
+never allowed to replace the answer to what you asked: an unreachable trail is
+reported as itself, not in place of the export that was refused or the deletion
+that failed. The events do not carry record keys or stored values, because the
+point of the trail is to show that a disposition happened, not to become a second
+copy of what was in it.
+
+Publishing onto the audit spine happens after the disposition commits, which is
+why a result never reports a failure for an effect that already landed. Each
+event is leased, published, and then acknowledged, so delivery is at-least-once:
+a publish that succeeded and whose acknowledgement did not land is published
+again. Every event carries a stable `eventId` for exactly that reason, and the
+order events reach the spine is the order they were published rather than a
+guarantee about the order they were committed.
+
+Events still waiting to be published survive workspace deletion. An undrained
+event is the evidence of what happened to the data, and a cascade would erase
+exactly the entries describing the last thing done to a workspace being torn
+down.
 
 ## Common failure modes
 

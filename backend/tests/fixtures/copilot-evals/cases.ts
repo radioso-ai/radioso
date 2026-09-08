@@ -97,6 +97,48 @@ export const copilotEvalCases: CopilotEvalCase[] = [
     ],
   },
   {
+    id: "product-docs-explanation",
+    name: "A question about how Radioso works reads the product documentation",
+    description:
+      "The boundary the documentation tools exist to hold: Radioso's own manual answers this, not "
+      + "the documents this workspace ingested.",
+    tags: ["tool_selection"],
+    permissions: FULL_OPERATOR,
+    pageContext: page("agent", { agentId: COPILOT_EVAL_AGENT_ID }),
+    message: "How do directives decide which one applies to a turn?",
+    plan: [
+      { tool: "product_docs", input: {} },
+      { tool: "product_doc_page", input: { slug: "guides/authoring-directives" } },
+    ],
+    finalMessage: "A directive states when it applies, and the matcher picks from the ones that fit the turn.",
+    assertions: [
+      { type: "tool_called", tool: "product_doc_page" },
+      { type: "tool_not_called", tool: "document_search" },
+      { type: "no_proposal_drafted" },
+      { type: "turn_outcome", outcome: "completed" },
+    ],
+  },
+  {
+    id: "workspace-knowledge-not-product-docs",
+    name: "A question about the workspace's own content stays out of the product documentation",
+    description:
+      "The same boundary from the other side. Ray reading its own manual when the operator asked "
+      + "what their documents say is the failure the pair of cases is here to catch.",
+    tags: ["tool_selection"],
+    permissions: FULL_OPERATOR,
+    pageContext: page("documents"),
+    message: "What do our uploaded documents say about refunds?",
+    requires: ["document"],
+    plan: [{ tool: "document_search", input: { query: "refunds" } }],
+    finalMessage: "Your refund policy document sets a 30-day window.",
+    assertions: [
+      { type: "tool_called", tool: "document_search" },
+      { type: "tool_not_called", tool: "product_docs" },
+      { type: "tool_not_called", tool: "product_doc_page" },
+      { type: "turn_outcome", outcome: "completed" },
+    ],
+  },
+  {
     id: "agent-configuration-read",
     name: "A configuration question reads the agent, not the transcripts",
     tags: ["tool_selection"],

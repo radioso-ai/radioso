@@ -19,6 +19,7 @@ import {
   FacetExtractionWorkspaceDrainService,
 } from "../../modules/facets/composition.js";
 import { RoutineTriggerEmbeddingService } from "../../modules/routines/public.js";
+import { ProductDocsService } from "../../modules/productDocs/public.js";
 import { MetadataRuleFieldReferenceService } from "../../modules/retrieval/public.js";
 import { MetadataFieldSuggestionService } from "../../modules/settings/composition.js";
 import { resolveEmbedConfigCacheInvalidator } from "../composition/builtIn/cloudCdnEmbedConfigCacheInvalidator.js";
@@ -709,6 +710,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     agentSkillsService,
     skillCapabilityRegistry,
     contextVariables: contextVariableService,
+    productDocs: new ProductDocsService(),
     workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver,
     workspaceSettings: {
       async getRetrievalDefaults(workspaceId) {

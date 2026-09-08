@@ -94,6 +94,7 @@ import type {
   EmbeddingModelTransitionState,
 } from "../../src/modules/settings/contracts/services.js";
 import { PlatformSettingsService } from "../../src/modules/settings/services/platformSettingsService.js";
+import { ProductDocsService } from "../../src/modules/productDocs/public.js";
 import type { RetrievedChunk, VectorSearchPort } from "../../src/modules/retrieval/public.js";
 import type { QueryEmbeddingPort } from "../../src/modules/embeddingProfiles/contracts/embeddingConsumers.js";
 import type { VectorCandidateSearchPort } from "../../src/modules/retrieval/domain/vectorAdapter.js";
@@ -2059,6 +2060,7 @@ export const createTestDependencies = (overrides: {
     proposalRecovery: { recoverOperatorMcpProposal: async () => ({ status: "conflict" }) },
     proposalAdapters: copilotProposalAdapters,
     auditService,
+    productDocs: new ProductDocsService(),
     workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver,
   });
   const operatorCopilotService = new OperatorCopilotService({

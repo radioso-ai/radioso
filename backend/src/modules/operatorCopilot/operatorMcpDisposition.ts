@@ -23,6 +23,8 @@ export const operatorMcpDispositions: Readonly<Record<string, CopilotMcpDisposit
   document_status: deferredRead,
   eval_results: deferredRead,
   needs_attention: contextDependent,
+  product_doc_page: deferredRead,
+  product_docs: deferredRead,
   propose_agent: deferredProposal,
   propose_agent_setting: deferredProposal,
   propose_context_variable: deferredProposal,

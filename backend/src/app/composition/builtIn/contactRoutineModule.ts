@@ -7,6 +7,7 @@ import {
   CONTACT_INTENT_NAME,
   ConfiguredContactDeliveryResolver,
   ContactSendActionHandler,
+  type ConversationLinkResolver,
   EmailWebhookOperatorNotificationSink,
   FetchContactWebhookHttpClient,
   HandoffNotifyActionHandler,
@@ -38,7 +39,6 @@ import type { Env } from "../../config/env.js";
 import type { ApplicationModule, MailTransportPort } from "../applicationModule.js";
 import { fetchPublicUrl } from "../../../shared/infra/http/publicUrlFetch.js";
 import { conversationPermalink } from "../../../shared/domain/dashboardLinks.js";
-import type { ConversationLinkResolver } from "../../../modules/chat/services/actions/emailWebhookSink.js";
 
 /** Reads the per-agent contact-requests flag and delivery config for the advertiser. */
 interface AgentContactFlagLookup {

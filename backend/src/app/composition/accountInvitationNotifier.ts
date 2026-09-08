@@ -32,6 +32,7 @@ export const createMailAccountInvitationNotifier = (input: {
       const { dispatched } = await input.mailService.send(renderAccountInvitationEmail({
         to: notification.email,
         acceptanceUrl,
+        appBaseUrl: input.env.APP_BASE_URL,
         invitedByEmail: notification.invitedByEmail,
         expiresAt: notification.expiresAt,
       }));

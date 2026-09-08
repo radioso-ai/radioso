@@ -3,6 +3,8 @@ import { renderEmail, renderEmailText, type EmailContent } from "./layout.js";
 
 interface PasswordResetEmailInput {
   to: string;
+  /** Public frontend origin; the layout serves the brand lockup from it. */
+  appBaseUrl?: string | null;
   resetUrl: string;
 }
 
@@ -23,7 +25,7 @@ export const renderPasswordResetEmail = (
     to: input.to,
     subject: "Reset your password",
     text: renderEmailText(content),
-    html: renderEmail(content),
+    html: renderEmail(content, { appBaseUrl: input.appBaseUrl }),
     kind: "password_reset",
     metadata: {
       resetUrl: input.resetUrl,

@@ -28,4 +28,13 @@ export const emailTheme = {
   },
   /** The docs text column, and a width every mail client renders without horizontal scroll. */
   contentWidthPx: 600,
+  logo: {
+    /** Served from `frontend/public`, so these resolve against APP_BASE_URL. */
+    lightPath: "/radioso-lockup-email.png",
+    darkPath: "/radioso-lockup-email-dark.png",
+    /** Rendered at 3x (396x101) so the mark stays crisp when a client scales it. */
+    widthPx: 132,
+    heightPx: 34,
+  },
+  divider: "#E8EAE8",
 } as const;

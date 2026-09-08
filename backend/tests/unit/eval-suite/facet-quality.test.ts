@@ -92,7 +92,7 @@ const score = (choice: VectorChoice, clusterCount = facetQualityTopicCount): Sco
   }));
   const { assignments } = clusterDeterministically(items, { clusterCount, seed: CLUSTER_SEED });
   const labels = assignments.map((cluster) => `c${cluster}`);
-  const clusterOf = new Map(facetQualityQuestions.map((entry, index) => [entry.id, labels[index]!]));
+  const clusterOf = new Map(facetQualityQuestions.map((entry, index) => [entry.id, labels[index]]));
 
   const groups = new Map<string, Set<string>>();
   for (const entry of multilingual) {

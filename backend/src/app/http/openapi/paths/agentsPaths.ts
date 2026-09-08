@@ -17,6 +17,22 @@ export const registerAgentsPaths = (
 
   registry.registerPath({
     method: "get",
+    path: "/api/v1/agents/bundle/imports/{importId}",
+    tags: ["Agents"],
+    summary: "Get an agent bundle import job",
+    description: "Returns the durable state of an import attempt, including any compensated orphan cleanup.",
+    operationId: "getAgentBundleImport",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: { params: schemas.AgentBundleImportParamsSchema },
+    responses: {
+      200: { description: "Import job returned", content: { "application/json": { schema: schemas.AgentBundleImportStatusSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Import job not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
     path: "/api/v1/agents",
     tags: ["Agents"],
     summary: "List workspace agents",
@@ -529,6 +545,33 @@ export const registerAgentsPaths = (
   });
 
   registry.registerPath({
+    method: "get",
+    path: "/api/v1/agents/{agentId}/assistant-logo",
+    tags: ["Agents"],
+    summary: "Read the assistant logo image",
+    description: "Dashboard session only; bearer API tokens are rejected. The optional workspaceId query selects the workspace for browser image requests.",
+    operationId: "getAgentAssistantLogo",
+    security: security.workspaceAdminSecurity,
+    request: {
+      params: schemas.AgentParamsSchema,
+      query: schemas.AgentAssistantLogoQuerySchema,
+    },
+    responses: {
+      200: {
+        description: "Logo image",
+        content: {
+          "image/png": { schema: { type: "string", format: "binary" } },
+          "image/jpeg": { schema: { type: "string", format: "binary" } },
+          "image/webp": { schema: { type: "string", format: "binary" } },
+          "image/gif": { schema: { type: "string", format: "binary" } },
+        },
+      },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent or logo not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
     method: "post",
     path: "/api/v1/agents/{agentId}/assistant-logo",
     tags: ["Agents"],
@@ -581,6 +624,45 @@ export const registerAgentsPaths = (
       200: { description: "Default agent updated", content: { "application/json": { schema: schemas.ConversationAgentSchema } } },
       401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       404: { description: "Agent not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
+    path: "/api/v1/agents/{agentId}/bundle",
+    tags: ["Agents"],
+    summary: "Export a portable agent bundle",
+    description: "Composes the agent's config, routines, context-variable enablements and skills into one portable bundle for import into another workspace.",
+    operationId: "exportAgentBundle",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: { params: schemas.AgentParamsSchema },
+    responses: {
+      200: { description: "Agent bundle returned", content: { "application/json": { schema: schemas.AgentBundleSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/agents/bundle",
+    tags: ["Agents"],
+    summary: "Import a portable agent bundle as a new agent",
+    description: "Creates a new agent from a previously exported bundle. References that cannot travel between workspaces (credential-bearing skill targets, missing context variables, unresolved document sources) import unbound and are reported in `unresolved` rather than dropped silently.",
+    operationId: "importAgentBundle",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      body: {
+        required: true,
+        content: { "application/json": { schema: schemas.AgentBundleImportRequestSchema } },
+      },
+    },
+    responses: {
+      201: { description: "Agent created from bundle", content: { "application/json": { schema: schemas.AgentBundleImportResponseSchema } } },
+      200: { description: "Existing completed import replayed", content: { "application/json": { schema: schemas.AgentBundleImportResponseSchema } } },
+      400: { description: "Unsupported bundle version or agent schema version", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      409: { description: "An import with this idempotency key is still applying", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
     },
   });
 };

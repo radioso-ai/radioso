@@ -6,11 +6,11 @@ import { buildCopilotDashboardLink } from "../../../src/modules/operatorCopilot/
 import type { CopilotToolDescriptor } from "../../../src/modules/operatorCopilot/public.js";
 import { createAgentConfigurationCopilotTools } from "../../../src/modules/operatorCopilot/tools/agents.js";
 
-const context = (permissions: ReadonlySet<string>) => ({
+const context = (permissions: ReadonlySet<string>, surface: "dashboard" | "mcp" = "dashboard") => ({
   workspaceId: "workspace-1",
   accountId: "account-1",
   operatorUserId: "operator-1",
-  surface: "dashboard" as const,
+  surface,
   permissions,
   currentAuthorization: {
     hasAllPermissions: async ({ requiredPermissions }: { requiredPermissions: readonly string[] }) =>
@@ -50,7 +50,7 @@ describe("MCP-compatible copilot catalog", () => {
       resolveWorkspaceKey: async () => "acme",
     });
 
-    const result = await tool!.createTool(context(new Set())).invoke({ name: "Secret support agent" }, {} as never);
+    const result = await tool.createTool(context(new Set())).invoke({ name: "Secret support agent" }, {} as never);
 
     expect(resolve).not.toHaveBeenCalled();
     expect(result).toEqual({
@@ -69,7 +69,7 @@ describe("MCP-compatible copilot catalog", () => {
       resolveWorkspaceKey: async () => "acme",
     });
 
-    const result = await tool!.createTool(context(new Set(["workspace.agents.read"]))).invoke({ name: "Nonexistent" }, {} as never);
+    const result = await tool.createTool(context(new Set(["workspace.agents.read"]))).invoke({ name: "Nonexistent" }, {} as never);
 
     expect(result).toEqual({
       dashboardUrl: "/w/acme/agents",
@@ -88,7 +88,7 @@ describe("MCP-compatible copilot catalog", () => {
       resolveWorkspaceKey: async () => "acme",
     });
 
-    const result = await tool!.createTool(context(new Set(["workspace.agents.read"]))).invoke({ name: "Support" }, {} as never);
+    const result = await tool.createTool(context(new Set(["workspace.agents.read"]))).invoke({ name: "Support" }, {} as never);
 
     expect(result).toEqual({
       dashboardUrl: "/w/acme/agents",
@@ -112,11 +112,11 @@ describe("MCP-compatible copilot catalog", () => {
         resolve: vi.fn(),
       },
     });
-    const [tool] = enrichCopilotToolCatalog([agentConfiguration!], {
+    const [tool] = enrichCopilotToolCatalog([agentConfiguration], {
       resolveWorkspaceKey: async () => "acme",
     });
 
-    const result = await tool!.createTool(context(new Set(["workspace.agents.read"]))).invoke({ agentName: "Support" }, {} as never);
+    const result = await tool.createTool(context(new Set(["workspace.agents.read"]))).invoke({ agentName: "Support" }, {} as never);
 
     expect(result).toMatchObject({
       resolution: {
@@ -136,14 +136,14 @@ describe("dashboard handoff subject", () => {
     resolvedEntity: { type: string; id: string; agentId?: string },
   ): CopilotToolDescriptor<{ name: string }> => ({
     ...descriptor(async () => ({ kind: "resolved", entity: resolvedEntity, input: { name: "Support" } })),
-    dashboardSubject: dashboardSubject as never,
+    dashboardSubject: dashboardSubject,
   });
 
   const linkFor = async (dashboardSubject: { type: string }, resolvedEntity: { type: string; id: string; agentId?: string }) => {
     const [tool] = enrichCopilotToolCatalog([linkedDescriptor(dashboardSubject, resolvedEntity)], {
       resolveWorkspaceKey: async () => "acme",
     });
-    const result = await tool!.createTool(context(new Set(["workspace.agents.read"]))).invoke({ name: "Support" }, {} as never);
+    const result = await tool.createTool(context(new Set(["workspace.agents.read"]))).invoke({ name: "Support" }, {} as never);
     return (result as { dashboardUrl: string }).dashboardUrl;
   };
 
@@ -158,6 +158,29 @@ describe("dashboard handoff subject", () => {
     expect(await linkFor({ type: "proposal" }, { type: "agent", id: "agent-1" })).toBe("/w/acme/copilot");
     expect(await linkFor({ type: "eval" }, { type: "agent", id: "agent-1" })).toBe("/w/acme/eval");
     expect(await linkFor({ type: "quality_turn" }, { type: "agent", id: "agent-1" })).toBe("/w/acme/quality");
+  });
+
+  it("links MCP proposal results to the standalone review page", async () => {
+    const proposalId = "33333333-3333-4333-8333-333333333333";
+    const proposalDescriptor = {
+      ...linkedDescriptor({ type: "proposal" }, { type: "agent", id: "agent-1" }),
+      createTool: () => ({
+        name: "propose_ingestion_settings",
+        description: "Draft ingestion settings.",
+        inputSchema: z.object({ name: z.string() }),
+        outputSchema: z.object({ proposalId: z.string() }),
+        invoke: async () => ({ proposalId }),
+      }),
+    } satisfies CopilotToolDescriptor<{ name: string }>;
+    const [tool] = enrichCopilotToolCatalog([proposalDescriptor], { resolveWorkspaceKey: async () => "acme" });
+
+    const result = await tool.createTool(context(new Set(["workspace.agents.read"]), "mcp"))
+      .invoke({ name: "Support" }, {} as never);
+
+    expect(result).toMatchObject({
+      proposalId,
+      dashboardUrl: `/oauth/operator-mcp/proposal/${proposalId}`,
+    });
   });
 });
 

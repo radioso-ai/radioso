@@ -79,6 +79,7 @@ import type { PublicChatActionAdvertiserPort, ContactHistoryProviderPort } from 
 import type { UserRepositoryPort } from "../../db/repositories/userRepository.js";
 import type { SkillAuthoringCatalog, SkillCatalogService } from "../../modules/skills/public.js";
 import type { AgentSkillsService } from "../../modules/agentSkills/public.js";
+import type { AgentBundleExportService, AgentBundleImportCleanupWorker, AgentBundleImportService } from "../../modules/agentBundle/public.js";
 import type { SkillCapabilityRegistry } from "../../modules/skills/public.js";
 import type { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService, DirectiveAuthorService } from "../../modules/agents/public.js";
 import type { RoutineDefinitionService, RoutineDraftAssistService } from "../../modules/routines/public.js";
@@ -112,6 +113,7 @@ import type {
   EmbeddingCoverageReadPort,
 } from "../../modules/embeddingProfiles/public.js";
 import type { OperatorCopilotService } from "../../modules/operatorCopilot/public.js";
+import type { OperatorMcpApplicationService } from "../../modules/operatorCopilot/public.js";
 import type { CopilotRepositoryPort } from "../../modules/operatorCopilot/public.js";
 import type { CopilotRetentionWorker } from "../../modules/operatorCopilot/public.js";
 import type { CopilotToolDescriptor, CopilotWorkspaceRouteKeyResolver } from "../../modules/operatorCopilot/public.js";
@@ -130,6 +132,12 @@ import type {
 import type { MachineAccessSecurityObserver } from "../../modules/machineAccess/public.js";
 import type { ApiPrincipalRouteInventory } from "../http/apiPrincipalRoutePolicy.js";
 import type { AgentConverseSessionMappingPort } from "../../modules/settings/contracts/agentConverseSession.js";
+import type {
+  OperatorMcpAuthorizationService,
+  OperatorMcpCredentialValidationService,
+  OperatorMcpGrantService,
+} from "../../modules/operatorMcpAuthorization/public.js";
+import type { PersistedOperatorMcpClient } from "../../modules/operatorMcpAuthorization/contracts.js";
 
 export interface AppDependencies {
   env: Env;
@@ -240,6 +248,9 @@ export interface AppDependencies {
   skillCapabilityRegistry: SkillCapabilityRegistry;
   agentSkillsService: AgentSkillsService;
   agentService: AgentService;
+  agentBundleExportService: AgentBundleExportService;
+  agentBundleImportService: AgentBundleImportService;
+  agentBundleImportCleanupWorker: AgentBundleImportCleanupWorker;
   authoredDirectiveService: AuthoredDirectiveService;
   routineDefinitionService: RoutineDefinitionService;
   routineDraftAssistService: RoutineDraftAssistService;
@@ -314,4 +325,10 @@ export interface AppDependencies {
     defaultLimit: number;
     maxLimit: number;
   };
+  operatorMcpAuthorizationService?: OperatorMcpAuthorizationService;
+  operatorMcpCredentialValidationService?: OperatorMcpCredentialValidationService;
+  operatorMcpGrantService: OperatorMcpGrantService;
+  operatorMcpReadiness: Promise<boolean>;
+  operatorMcpClientResolver: { resolve(clientId: string, redirectUri: string): Promise<PersistedOperatorMcpClient> };
+  operatorMcpApplicationService?: OperatorMcpApplicationService;
 }

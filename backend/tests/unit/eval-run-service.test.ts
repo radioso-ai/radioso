@@ -528,7 +528,7 @@ describe("EvalRunService.execute (retrieval_only)", () => {
     expect(run.outcomeReason).toContain("doc-refund");
     expect(run.observedOutput.activityTrace?.summary?.retrievalSkipped).toBe(false);
     expect(run.assertionVerdicts).toHaveLength(1);
-    expect(run.assertionVerdicts[0]!.status).toBe("pass");
+    expect(run.assertionVerdicts[0].status).toBe("pass");
     expect(updated?.status).toBe("passing");
     expect(updated?.lastRunId).toBe(run.id);
   });
@@ -1222,7 +1222,7 @@ describe("EvalRunService.execute (retrieval_only)", () => {
     );
     const service = new EvalRunService(repo, legacyRunner, passJudge(), workbench);
 
-    const { run } = await service.execute({
+    await service.execute({
       workspaceId: "ws-1",
       snapshotId: snapshot.id,
       mode: "full_assistant",
@@ -1423,7 +1423,7 @@ describe("EvalRunService.execute (retrieval_only)", () => {
       workbench,
       {
         info(fields: Record<string, unknown>, message: string) {
-          logs.push({ fields: fields as Record<string, unknown>, message });
+          logs.push({ fields: fields, message });
         },
       },
     );
@@ -1461,7 +1461,7 @@ describe("EvalRunService.execute (retrieval_only)", () => {
         overrideKeys: ["customInstruction", "skillSettings"],
       },
     });
-    expect(logs[0]!.fields.latencyMs).toEqual(expect.any(Number));
+    expect(logs[0].fields.latencyMs).toEqual(expect.any(Number));
     const serialized = JSON.stringify(logs);
     expect(serialized).not.toContain("Sensitive override instruction");
     expect(serialized).not.toContain("vectorTopK");
@@ -1506,9 +1506,9 @@ describe("EvalRunService.execute (retrieval_only)", () => {
     });
 
     expect(judge.calls).toHaveLength(1);
-    expect(judge.calls[0]!.observedAnswer).toBe("Replay answer.");
+    expect(judge.calls[0].observedAnswer).toBe("Replay answer.");
     expect(run.status).toBe("pass");
-    expect(run.assertionVerdicts[0]!.status).toBe("pass");
+    expect(run.assertionVerdicts[0].status).toBe("pass");
   });
 
   it("fails when the judge rejects the answer", async () => {
@@ -1568,7 +1568,7 @@ describe("EvalRunService.execute (retrieval_only)", () => {
 
     expect(judge.calls).toHaveLength(0);
     expect(run.status).toBe("error");
-    expect(run.assertionVerdicts[0]!.reason).toMatch(/full_assistant/);
+    expect(run.assertionVerdicts[0].reason).toMatch(/full_assistant/);
   });
 });
 

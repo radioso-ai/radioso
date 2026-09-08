@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 
-import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type {
   QueryEmbeddingPort,
 } from "../../embeddingProfiles/contracts/embeddingConsumers.js";

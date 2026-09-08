@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 const configSchema = z.object({
+  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   RADIOSO_BASE_URL: z
     .string()
     .trim()
@@ -17,7 +18,62 @@ const configSchema = z.object({
   RADIOSO_MCP_SERVER_NAME: z.string().trim().min(1).optional(),
   RADIOSO_MCP_SIGNING_SECRET: z.string().trim().min(32).optional(),
   RADIOSO_TRUSTED_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(0),
+  OPERATOR_MCP_RESOURCE_URL: z.string().trim().url().optional(),
+  OPERATOR_MCP_ISSUER_URL: z.string().trim().url().optional(),
+  OPERATOR_MCP_INTERNAL_SECRET: z.string().min(32).optional(),
+  OPERATOR_MCP_CREDENTIAL_EPOCH: z.string().regex(/^[1-9]\d*$/u).optional(),
+}).superRefine((value, context) => {
+  const fields = [
+    "OPERATOR_MCP_RESOURCE_URL",
+    "OPERATOR_MCP_ISSUER_URL",
+    "OPERATOR_MCP_INTERNAL_SECRET",
+    "OPERATOR_MCP_CREDENTIAL_EPOCH",
+  ] as const;
+  if (!fields.some((field) => value[field] !== undefined)) return;
+  for (const field of fields) {
+    if (value[field] === undefined) context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `${field} must be set when Operator MCP is configured.`,
+      path: [field],
+    });
+  }
+  if (value.OPERATOR_MCP_RESOURCE_URL) {
+    const resource = new URL(value.OPERATOR_MCP_RESOURCE_URL);
+    if (resource.pathname !== "/operator/mcp" || resource.search || resource.hash) context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "OPERATOR_MCP_RESOURCE_URL must be the canonical /operator/mcp resource without query or fragment.",
+      path: ["OPERATOR_MCP_RESOURCE_URL"],
+    });
+    if (resource.protocol !== "https:" && !(["development", "test"].includes(value.NODE_ENV) && resource.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]", "::1"].includes(resource.hostname))) context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "OPERATOR_MCP_RESOURCE_URL must use HTTPS outside local development and loopback HTTP only in development.",
+      path: ["OPERATOR_MCP_RESOURCE_URL"],
+    });
+  }
+  if (value.OPERATOR_MCP_ISSUER_URL) {
+    const issuer = new URL(value.OPERATOR_MCP_ISSUER_URL);
+    if ((issuer.pathname !== "/" && issuer.pathname !== "") || issuer.search || issuer.hash) context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "OPERATOR_MCP_ISSUER_URL must be an origin without path, query, or fragment.",
+      path: ["OPERATOR_MCP_ISSUER_URL"],
+    });
+    if (issuer.protocol !== "https:" && !(["development", "test"].includes(value.NODE_ENV) && issuer.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]", "::1"].includes(issuer.hostname))) context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "OPERATOR_MCP_ISSUER_URL must use HTTPS outside local development and loopback HTTP only in development.",
+      path: ["OPERATOR_MCP_ISSUER_URL"],
+    });
+  }
 });
+
+export type OperatorMcpConfig =
+  | { enabled: false }
+  | {
+      credentialEpoch: string;
+      enabled: true;
+      internalSecret: string;
+      issuerUrl: string;
+      resourceUrl: string;
+    };
 
 export interface RadiosoMcpConfig {
   auditLogPath?: string;
@@ -29,6 +85,8 @@ export interface RadiosoMcpConfig {
   requestTimeoutMs: number;
   serverName: string;
   signingSecret?: string;
+  /** Optional for callers constructing configs programmatically; loadConfig always materializes it. */
+  operatorMcp?: OperatorMcpConfig;
   trustedProxyHops: number;
 }
 
@@ -55,6 +113,15 @@ const buildConfig = (parsed: ParsedConfig): RadiosoMcpConfig => {
     requestTimeoutMs: parsed.RADIOSO_MCP_REQUEST_TIMEOUT_MS ?? 30_000,
     serverName: parsed.RADIOSO_MCP_SERVER_NAME ?? "radioso-context",
     signingSecret: parsed.RADIOSO_MCP_SIGNING_SECRET,
+    operatorMcp: parsed.OPERATOR_MCP_RESOURCE_URL
+      ? {
+          credentialEpoch: parsed.OPERATOR_MCP_CREDENTIAL_EPOCH!,
+          enabled: true,
+          internalSecret: parsed.OPERATOR_MCP_INTERNAL_SECRET!,
+          issuerUrl: parsed.OPERATOR_MCP_ISSUER_URL!.replace(/\/+$/, ""),
+          resourceUrl: parsed.OPERATOR_MCP_RESOURCE_URL.replace(/\/+$/, ""),
+        }
+      : { enabled: false },
     trustedProxyHops: parsed.RADIOSO_TRUSTED_PROXY_HOPS,
   };
 
@@ -76,4 +143,6 @@ export const loadRemoteConfig = (
   return buildConfig(parsed);
 };
 
-export const loadConfig = loadRemoteConfig;
+export const loadConfig = (
+  env: NodeJS.ProcessEnv | Record<string, string | undefined>,
+): RadiosoMcpConfig => loadRemoteConfig(env);

@@ -16,8 +16,6 @@ import type {
   ApplyContextVariableProposalInput,
   ApplyContextVariableProposalResult,
   ContextVariableCreateRecord,
-  ContextVariableDefinitionWrite,
-  ContextVariableEnablementWrite,
   ContextVariableRepositoryPort,
   ContextVariableUpdateRecord,
 } from "../../modules/context-variables/public.js";
@@ -237,7 +235,7 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
       })
       .returning(contextVariableColumns)
       .executeTakeFirstOrThrow();
-    return mapContextVariableRow(row as ContextVariableRow);
+    return mapContextVariableRow(row);
   }
 
   async update(workspaceId: string, id: string, input: ContextVariableUpdateRecord): Promise<ContextVariable | null> {
@@ -256,7 +254,7 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
       .where("id", "=", id)
       .returning(contextVariableColumns)
       .executeTakeFirst();
-    return row ? mapContextVariableRow(row as ContextVariableRow) : null;
+    return row ? mapContextVariableRow(row) : null;
   }
 
   async delete(workspaceId: string, id: string): Promise<boolean> {
@@ -285,7 +283,7 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
       .where("workspace_id", "=", workspaceId)
       .where("id", "=", id)
       .executeTakeFirst();
-    return row ? mapContextVariableRow(row as ContextVariableRow) : null;
+    return row ? mapContextVariableRow(row) : null;
   }
 
   async upsertEnablement(input: AgentContextVariableEnablementRecord): Promise<AgentContextVariableEnablement> {
@@ -330,7 +328,7 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
         )
         .returning(agentContextVariableColumns)
         .executeTakeFirstOrThrow();
-      return mapAgentContextVariableRow(row as AgentContextVariableRow);
+      return mapAgentContextVariableRow(row);
     });
   }
 
@@ -403,7 +401,7 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
       )
       .returning(contextVariableValueColumns)
       .executeTakeFirstOrThrow();
-    return mapContextVariableValueRow(row as ContextVariableValueRow);
+    return mapContextVariableValueRow(row);
   }
 
   async readValue(variableId: string, scope: ContextVariableScope): Promise<ContextVariableValue | null> {
@@ -414,7 +412,7 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
       .where("scope_type", "=", scope.type)
       .where("scope_id", "=", scope.id)
       .executeTakeFirst();
-    return row ? mapContextVariableValueRow(row as ContextVariableValueRow) : null;
+    return row ? mapContextVariableValueRow(row) : null;
   }
 
   async deleteValue(variableId: string, scope: ContextVariableScope): Promise<boolean> {

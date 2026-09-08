@@ -12,7 +12,7 @@ const baseSession = (overrides: Partial<AccessSessionRecord>): AccessSessionReco
   expiresAt: new Date("2030-01-01T00:00:00.000Z"),
   issuedAt: new Date("2029-12-31T00:00:00.000Z"),
   ...overrides,
-} as AccessSessionRecord);
+});
 
 describe("redis session secrets are encrypted at rest", () => {
   it("never stores the converseSessionToken as plaintext", () => {

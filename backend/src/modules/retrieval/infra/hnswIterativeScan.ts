@@ -48,6 +48,7 @@ export class HnswIterativeScanRunner {
           await client.query("SET LOCAL hnsw.iterative_scan = strict_order");
         } catch (error) {
           if (isHnswSettingUnsupported(error)) {
+            // eslint-disable-next-line @typescript-eslint/only-throw-error -- internal control-flow sentinel: caught by reference below and never escapes this method
             throw HNSW_SETTINGS_UNSUPPORTED;
           }
           throw error;

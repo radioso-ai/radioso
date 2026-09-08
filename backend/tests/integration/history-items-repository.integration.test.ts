@@ -14,7 +14,7 @@ import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
 describeIntegration("HistoryItemsRepository source scope (Postgres)", () => {
-  const database = new Database(integrationDatabaseUrl as string);
+  const database = new Database(integrationDatabaseUrl);
   const repository = new HistoryItemsRepository(database.kysely);
   const accountId = randomUUID();
   const workspaceId = randomUUID();
@@ -89,7 +89,7 @@ describeIntegration("HistoryItemsRepository source scope (Postgres)", () => {
 // toolbar's search and filters server-side. All four compose with the existing
 // pagination/scope filters and stay workspace-scoped.
 describeIntegration("HistoryItemsRepository search and filters (Postgres)", () => {
-  const database = new Database(integrationDatabaseUrl as string);
+  const database = new Database(integrationDatabaseUrl);
   const repository = new HistoryItemsRepository(database.kysely);
   const accountId = randomUUID();
   const workspaceId = randomUUID();
@@ -299,9 +299,9 @@ describeIntegration("HistoryItemsRepository search and filters (Postgres)", () =
     expect(chatIds(page)).toEqual(new Set([bothId]));
   });
 
-  it("excludes search-kind rows once any chat-only filter is active, but includes them with none", async () => {
+  it("excludes document-search audit events from the conversation feed", async () => {
     const unfiltered = await repository.listPageByWorkspaceId(workspaceId, { limit: 50, sourceScope: "all" });
-    expect(kinds(unfiltered)).toContain("search");
+    expect(kinds(unfiltered)).not.toContain("search");
 
     const filteredByQ = await repository.listPageByWorkspaceId(workspaceId, { limit: 50, sourceScope: "all", q: "refund" });
     expect(kinds(filteredByQ)).not.toContain("search");

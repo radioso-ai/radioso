@@ -29,14 +29,16 @@ describe("HTTP startup warnings", () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("bound to all network interfaces"));
   });
 
-  it("logs only bounded purge lifecycle signals without operational material", () => {
+  it("logs only bounded purge lifecycle signals without operational material", async () => {
     const info = vi.fn();
     const observer = createHttpStartupReadinessObserver(info);
 
-    observer.emit({ attempt: 1, type: "attempt" });
-    observer.emit({ attempt: 1, type: "failure" });
-    observer.emit({ attempt: 1, retryDelayMs: 1_000, type: "retry" });
-    observer.emit({ attempt: 2, type: "success" });
+    // `emit` is typed `void | Promise<void>` since other observer implementations may be
+    // async; this one is synchronous, but awaiting keeps the test correct either way.
+    await observer.emit({ attempt: 1, type: "attempt" });
+    await observer.emit({ attempt: 1, type: "failure" });
+    await observer.emit({ attempt: 1, retryDelayMs: 1_000, type: "retry" });
+    await observer.emit({ attempt: 2, type: "success" });
 
     expect(info.mock.calls.map(([message]) => message)).toEqual([
       "MCP runtime readiness purge attempt 1",

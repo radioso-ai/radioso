@@ -13,7 +13,7 @@ import {
 class RecordingDriver implements EmailDriver {
   readonly sent: EmailMessage[] = [];
 
-  constructor(private readonly failure?: unknown) {}
+  constructor(private readonly failure?: Error) {}
 
   async send(message: EmailMessage): Promise<EmailSendResult> {
     if (this.failure) {

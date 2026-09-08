@@ -13,7 +13,6 @@ import { ConversationContextService } from "./services/conversationContextServic
 import { PgLexicalSearch } from "./infra/lexicalSearch.js";
 import { PgTemporalCandidateRepository } from "./infra/temporalCandidateRepository.js";
 import {
-  PostgresChunkCandidateHydrator,
   type ChunkCandidateHydratorPort,
 } from "./infra/chunkCandidateHydrator.js";
 import { PromptBuilder } from "./services/promptBuilder.js";
@@ -34,10 +33,7 @@ export {
   RecursiveTextChunkingStrategy,
 } from "./domain/chunking/recursiveTextChunkingStrategy.js";
 export type {
-  TextChunkingMethod,
-  TextChunkingProviderChunk,
   TextChunkingProviderPort,
-  TextChunkingProviderRequest,
 } from "./domain/chunking/chunkingProvider.js";
 export {
   StructuredSemanticChunkingStrategy,
@@ -49,45 +45,17 @@ export {
 } from "./infra/chunkCandidateHydrator.js";
 export {
   PgLexicalSearch,
-  type LexicalSearchPort,
 } from "./infra/lexicalSearch.js";
-export { PgTemporalCandidateRepository } from "./infra/temporalCandidateRepository.js";
 export { PgVectorAdapter } from "./infra/pgVectorAdapter.js";
 export { VectorIndexReconciler } from "./services/vectorIndexReconciler.js";
-export { CandidatePreparationService } from "./services/candidatePreparationService.js";
-export { ConversationContextService } from "./services/conversationContextService.js";
 export {
   PromptBuilder,
-  type PromptBuildResult,
 } from "./services/promptBuilder.js";
-export { PromptContextSelectorService } from "./services/promptContextSelectorService.js";
-export {
-  ModelQueryRewriteGateway,
-  ModelTriggerAnalysisGateway,
-  OpenAIQueryRewriteGateway,
-  QueryRewriteService,
-  type QueryRewriteGateway,
-  type QueryRewriteGatewayFallbackResult,
-  type QueryRewriteGatewayResult,
-  type TriggerAnalysisGateway,
-  type TriggerAnalysisGatewayInput,
-} from "./services/queryRewriteService.js";
-export {
-  ModelRerankGateway,
-  OpenAISemanticRerankGateway,
-  RerankService,
-  type RerankGateway,
-} from "./services/rerankService.js";
 export {
   RetrievalAnswerService,
-  type RetrievalAnswerServiceDependencies,
 } from "./services/retrievalAnswerService.js";
-export { RetrievalExecutionTelemetryService } from "./services/retrievalExecutionTelemetryService.js";
 export {
-  RetrievalPipelineService,
-  type RetrievalPipelineInterpretationResult,
   type RetrievalPipelinePort,
-  type RetrievalPipelineResult,
 } from "./services/retrievalPipelineService.js";
 export { RetrievalSearchService } from "./services/retrievalSearchService.js";
 export {
@@ -99,12 +67,9 @@ export {
 export { AgenticRetrievalRunner } from "./services/agenticRetrievalRunner.js";
 export {
   AgenticRetrievalPipelineService,
-  type AgenticRetrievalPipelineServiceDeps,
 } from "./services/agenticRetrievalPipelineService.js";
 export {
   RetrievalAnswerExecutor,
-  type RetrievalAnswerExecutorDeps,
-  type RetrievalStrategyPipeline,
 } from "./services/retrievalAnswerExecutor.js";
 export { GatewayQueryRewritePortAdapter } from "./services/gatewayQueryRewritePortAdapter.js";
 export const createDefaultRetrievalServices = (input: {

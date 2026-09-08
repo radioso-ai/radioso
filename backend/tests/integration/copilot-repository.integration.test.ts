@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { CopilotRepository } from "../../src/db/repositories/copilotRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
@@ -10,7 +10,7 @@ import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
 describeIntegration("CopilotRepository apply-claim recovery (Postgres)", () => {
-  const database = new Database(integrationDatabaseUrl as string);
+  const database = new Database(integrationDatabaseUrl);
   const repository = new CopilotRepository(database.kysely);
   const accountId = randomUUID();
   const workspaceId = randomUUID();
@@ -79,6 +79,26 @@ describeIntegration("CopilotRepository apply-claim recovery (Postgres)", () => {
     const recoveredClaim = await repository.claimProposalApply({ id: proposal.id, workspaceId, operatorUserId, claimTtlSeconds: 5 });
     expect(recoveredClaim).not.toBeNull();
     expect(recoveredClaim!.proposal.id).toBe(proposal.id);
+  });
+
+  it("resolves a proposal workspace only for its owning operator and account", async () => {
+    const proposal = await createPendingProposal();
+
+    await expect(repository.findProposalWorkspace({
+      id: proposal.id,
+      accountId,
+      operatorUserId,
+    })).resolves.toBe(workspaceId);
+    await expect(repository.findProposalWorkspace({
+      id: proposal.id,
+      accountId: randomUUID(),
+      operatorUserId,
+    })).resolves.toBeNull();
+    await expect(repository.findProposalWorkspace({
+      id: proposal.id,
+      accountId,
+      operatorUserId: randomUUID(),
+    })).resolves.toBeNull();
   });
 
   it("finalizes an outcome only for the exact claim it holds, so a superseded claim cannot overwrite a newer one's result", async () => {

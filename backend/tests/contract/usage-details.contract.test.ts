@@ -60,7 +60,7 @@ const reportingService = (): UsageDetailsServicePort & DetailServiceMethods => (
     }],
     nextCursor: null,
   }),
-} as UsageDetailsServicePort & DetailServiceMethods);
+});
 
 describe("usage details contract", () => {
   it("returns safe, typed message and internal detail responses for an active member", async () => {

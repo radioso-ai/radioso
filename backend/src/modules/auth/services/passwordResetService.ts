@@ -8,6 +8,7 @@ import type { UserRepositoryPort } from "../../../db/repositories/userRepository
 import type { PasswordResetTokenRepositoryPort } from "../../../db/repositories/passwordResetTokenRepository.js";
 import type {
   AccountRepositoryPort,
+  FederatedIdentityRepositoryPort,
   SessionRepositoryPort,
 } from "./authService.js";
 import type { EmailService } from "../../mail/public.js";
@@ -36,6 +37,7 @@ export class PasswordResetService {
     accountAccessService: AccountAccessService;
     workspaceService: WorkspaceService;
     sessionRepository: SessionRepositoryPort;
+    federatedIdentityRepository: Pick<FederatedIdentityRepositoryPort, "deleteForUser">;
     passwordResetTokenRepository: PasswordResetTokenRepositoryPort;
     mailService: EmailService;
     auditService: AuditService;
@@ -162,6 +164,11 @@ export class PasswordResetService {
     await this.dependencies.userRepository.markEmailVerified(user.id, now);
     await this.dependencies.passwordResetTokenRepository.markAllActiveUsedForUser(user.id, now);
     await this.dependencies.sessionRepository.revokeAllForUser(user.id, now);
+    // A reset is someone reclaiming the account, and provider links are a
+    // credential too — one established while an address was briefly held by
+    // somebody else would otherwise outlive the password it replaced. A
+    // legitimate provider login re-links on its next sign-in.
+    const revokedFederatedIdentities = await this.dependencies.federatedIdentityRepository.deleteForUser(user.id);
 
     const membership = await this.dependencies.accountAccessService.resolveLoginAccount(
       user.id,
@@ -186,7 +193,7 @@ export class PasswordResetService {
       workspaceId: workspace.id,
       eventType: "auth.password_reset.confirm",
       eventStatus: "success",
-      metadata: { userId: user.id, revokedSessions: true },
+      metadata: { userId: user.id, revokedSessions: true, revokedFederatedIdentities },
     });
 
     return {

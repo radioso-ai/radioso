@@ -6,7 +6,6 @@ import {
   noopSkillEmitPort,
   SkillExecutorRegistry,
 } from "@radioso/conversation-defaults";
-import type { SkillDispatchResult } from "@radioso/conversation-defaults";
 
 import {
   CONVERSATION_TOOLS_ADAPTER,
@@ -76,7 +75,7 @@ describe("local function adapter", () => {
           collected: selected.input as Record<string, unknown>,
           context: selected.metadata,
           emit: noopSkillEmitPort,
-        }) as SkillDispatchResult;
+        });
         if (result.disposition !== "settled") {
           throw new Error("unexpected deferred result");
         }

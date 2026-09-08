@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { GeminiEmbeddingClient, GeminiTextGenerationClient } from "../../src/shared/infra/llm/geminiProvider.js";
-import type { LlmCapabilityConfig } from "../../src/shared/infra/llm/providerTypes.js";
+import type {
+  LlmCapabilityConfig,
+  ProviderDispatchRecord,
+} from "../../src/shared/infra/llm/providerTypes.js";
 
 const chatConfig: LlmCapabilityConfig = {
   capability: "chat",
@@ -46,11 +49,58 @@ const sseResponse = (events: string[]) => {
   } as unknown as Response;
 };
 
+const recordingDispatchRecord = () => {
+  let dispatched = false;
+  let assignmentCount = 0;
+  const dispatchRecord: ProviderDispatchRecord = {
+    get dispatched() {
+      return dispatched;
+    },
+    set dispatched(value: boolean) {
+      assignmentCount += 1;
+      dispatched = value;
+    },
+  };
+  return { dispatchRecord, assignmentCount: () => assignmentCount };
+};
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
 
 describe("GeminiTextGenerationClient.complete", () => {
+  it("records one logical call exactly once and only after the transport is invoked", async () => {
+    const { dispatchRecord, assignmentCount } = recordingDispatchRecord();
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      expect(dispatchRecord.dispatched).toBe(false);
+      return jsonResponse({ candidates: [{ content: { parts: [{ text: "Hi" }] } }] });
+    });
+
+    await new GeminiTextGenerationClient(chatConfig).complete({
+      prompt: "Hi",
+      dispatchRecord,
+    });
+
+    expect(dispatchRecord.dispatched).toBe(true);
+    expect(assignmentCount()).toBe(1);
+  });
+
+  it("does not record a call when the signal was already aborted", async () => {
+    const { dispatchRecord, assignmentCount } = recordingDispatchRecord();
+    const controller = new AbortController();
+    controller.abort();
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(controller.signal.reason);
+
+    await expect(new GeminiTextGenerationClient(chatConfig).complete({
+      prompt: "Hi",
+      signal: controller.signal,
+      dispatchRecord,
+    })).rejects.toMatchObject({ name: "AbortError" });
+
+    expect(dispatchRecord.dispatched).toBe(false);
+    expect(assignmentCount()).toBe(0);
+  });
+
   it("forwards JSON schema output through generationConfig", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       jsonResponse({ candidates: [{ content: { parts: [{ text: '{"answer":"Hi"}' }] } }] }),
@@ -59,7 +109,7 @@ describe("GeminiTextGenerationClient.complete", () => {
     await new GeminiTextGenerationClient(chatConfig).complete({ prompt: "Hi", responseFormat });
 
     const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
-    expect(JSON.parse(String(request.body))).toMatchObject({
+    expect(JSON.parse(request.body as string)).toMatchObject({
       generationConfig: {
         responseMimeType: "application/json",
         responseJsonSchema: responseFormat.schema,
@@ -115,6 +165,46 @@ describe("GeminiTextGenerationClient.complete", () => {
 });
 
 describe("GeminiTextGenerationClient.stream", () => {
+  it("records one streamed call exactly once and only after the transport is invoked", async () => {
+    const { dispatchRecord, assignmentCount } = recordingDispatchRecord();
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      expect(dispatchRecord.dispatched).toBe(false);
+      return sseResponse([]);
+    });
+
+    const { textStream } = new GeminiTextGenerationClient(chatConfig).stream({
+      prompt: "Hi",
+      dispatchRecord,
+    });
+    for await (const _chunk of textStream) {
+      // drain
+    }
+
+    expect(dispatchRecord.dispatched).toBe(true);
+    expect(assignmentCount()).toBe(1);
+  });
+
+  it("does not record a streamed call when the signal was already aborted", async () => {
+    const { dispatchRecord, assignmentCount } = recordingDispatchRecord();
+    const controller = new AbortController();
+    controller.abort();
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(controller.signal.reason);
+
+    const { textStream } = new GeminiTextGenerationClient(chatConfig).stream({
+      prompt: "Hi",
+      signal: controller.signal,
+      dispatchRecord,
+    });
+    await expect(async () => {
+      for await (const _chunk of textStream) {
+        // drain
+      }
+    }).rejects.toMatchObject({ name: "AbortError" });
+
+    expect(dispatchRecord.dispatched).toBe(false);
+    expect(assignmentCount()).toBe(0);
+  });
+
   it("passes AbortSignal to streaming fetch", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(sseResponse([]));
     const controller = new AbortController();

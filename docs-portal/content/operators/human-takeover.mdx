@@ -1,7 +1,7 @@
 ---
 title: "Human takeover"
 description: "Let an operator own a conversation while the AI stays silent, reply as a human, and hand back — from the dashboard or the API."
-last_updated: 2026-08-30
+last_updated: 2026-09-05
 ---
 
 # Human takeover
@@ -24,6 +24,8 @@ Handoff is request-driven. The AI does not silently decide to transfer a convers
 
 - A routine reaches a `handoff` terminal — including a branch an LLM-selected transition chooses, such as an authored path for an annoyed user.
 - An agent has `handoffOnRetrievalMiss` enabled and a turn produces a no-context grounded miss. This is opt-in per agent and off by default.
+
+In the agent's **Profile → Answers** settings, turn on **Hand off on retrieval miss** to enable this trigger.
 
 Both request human ownership, notify an operator through the contact-delivery transport with a `handoff.notify` action, and record a `hitl.ownership` audit event.
 

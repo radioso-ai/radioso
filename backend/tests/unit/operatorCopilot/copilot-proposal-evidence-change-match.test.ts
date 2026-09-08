@@ -18,7 +18,9 @@ const record = (
   id: ids.evidence,
   workspaceId: ids.workspace,
   operatorUserId: ids.operator,
+  origin: { type: "conversation", conversationId: "conversation-1" },
   conversationId: "conversation-1",
+  operatorMcpInvocationId: null,
   agentId: ids.agent,
   caseId: "00000000-0000-4000-8000-000000000007",
   caseName: "Refund window",
@@ -39,7 +41,7 @@ const resolve = (
   {
     evidence: { record: vi.fn(), findMany: vi.fn(async () => [record(measured, directivesExcluded)]) },
     agentVersion: { get: vi.fn(async () => ({ updatedAt: new Date("2026-08-24T10:00:00.000Z") })) },
-  } as never,
+  },
   {
     workspaceId: ids.workspace,
     operatorUserId: ids.operator,

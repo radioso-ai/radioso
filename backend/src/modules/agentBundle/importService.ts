@@ -1,0 +1,474 @@
+import { randomUUID } from "node:crypto";
+
+import { AppError, badRequest } from "../../shared/domain/errors.js";
+import type { AppLogger } from "../../shared/observability/logger.js";
+import { AGENT_CONFIG_SCHEMA_VERSION } from "../agents/public.js";
+import {
+  AGENT_BUNDLE_SCHEMA_VERSION,
+  type AgentBundle,
+  type AgentBundleImportResult,
+  type AgentBundleImportFailureCode,
+  type AgentBundleSkill,
+  type AgentBundleUnresolvedReference,
+} from "./domain.js";
+import { projectAgentConfigForImport } from "./importProjection.js";
+import type {
+  AgentBundleAgentWriterPort,
+  AgentBundleContextVariableWriterPort,
+  AgentBundleDirectiveWriterPort,
+  AgentBundleRoutineWriterPort,
+  AgentBundleSkillWriterPort,
+  AgentBundleImportRepositoryPort,
+} from "./ports.js";
+
+interface AgentBundleImportServiceOptions {
+  agents: AgentBundleAgentWriterPort;
+  logger?: AppLogger;
+  directives: AgentBundleDirectiveWriterPort;
+  skills: AgentBundleSkillWriterPort;
+  contextVariables: AgentBundleContextVariableWriterPort;
+  routines: AgentBundleRoutineWriterPort;
+  /** Optional only for narrow module tests that exercise bundle projection without persistence. */
+  imports?: AgentBundleImportRepositoryPort;
+}
+
+interface AgentBundleImportInput {
+  workspaceId: string;
+  actorAccountId: string | null;
+  idempotencyKey?: string | null;
+  bundle: AgentBundle;
+}
+
+/**
+ * Imports a bundle as a NEW agent.
+ *
+ * Import-into-existing is deliberately not offered: it is a merge, and a merge
+ * needs a collision policy (overwrite? keep both? by name or by id?) that the
+ * spec left open. Creating is unambiguous, and a new agent is also what makes the
+ * failure path safe — see the compensating delete below.
+ *
+ * Order is load-bearing. Skills exist before context variables (an enablement's
+ * resolver is a skill) and before routines (a tool step names a skill, and publish
+ * validation checks that name against the agent's skills).
+ */
+export class AgentBundleImportService {
+  private readonly imports: AgentBundleImportRepositoryPort;
+
+  constructor(private readonly options: AgentBundleImportServiceOptions) {
+    this.imports = options.imports ?? untrackedImports;
+  }
+
+  async get(workspaceId: string, importId: string) {
+    return this.imports.findById(workspaceId, importId);
+  }
+
+  async import(input: AgentBundleImportInput): Promise<AgentBundleImportResult> {
+    const { workspaceId, bundle } = input;
+    assertSupportedVersions(bundle);
+
+    const job = await this.imports.createOrGet({
+      workspaceId,
+      actorAccountId: input.actorAccountId,
+      idempotencyKey: input.idempotencyKey ?? null,
+    });
+    if (job.status === "existing") {
+      if (job.job.state === "applied" && job.job.agentId) {
+        return { importId: job.job.id, agentId: job.job.agentId, unresolved: job.job.unresolved, replayed: true };
+      }
+      throw new AppError(
+        409,
+        "agent_bundle_import_in_progress",
+        "An import with this idempotency key is still in progress",
+        { importId: job.job.id },
+      );
+    }
+    const importId = job.job.id;
+    if (await this.imports.markApplying(importId) === false) {
+      throw importReclaimed(importId);
+    }
+
+    let agentId: string | null = null;
+    let agentCreated = false;
+    let cleanupOwnsAgent = false;
+
+    try {
+      const projection = projectAgentConfigForImport(bundle.agent);
+      const unresolved: AgentBundleUnresolvedReference[] = [...projection.unresolved];
+      // Persist the ID before creation. If the process stops after `create` but
+      // before its next await, the stale job still names the exact agent the sweep
+      // must delete.
+      agentId = randomUUID();
+      if (await this.imports.setCreatedAgent(importId, agentId) === false) {
+        cleanupOwnsAgent = true;
+        throw importReclaimed(importId);
+      }
+      const created = await this.options.agents.create(workspaceId, projection.input, agentId);
+      agentCreated = true;
+      if (created.agentId !== agentId && await this.imports.setCreatedAgent(importId, created.agentId) === false) {
+        cleanupOwnsAgent = true;
+        throw importReclaimed(importId);
+      }
+      agentId = created.agentId;
+      // Skills first: a directive's `binding.skillName` and a routine's `toolRef`
+      // are both validated against the agent's skills, and an enablement's resolver
+      // is one. Everything that names a skill has to come after the skills exist.
+      const importedSkillNames = await this.importSkills(
+        workspaceId,
+        agentId,
+        bundle.agentSkills ?? [],
+        unresolved,
+      );
+      await this.importDirectives(
+        workspaceId,
+        agentId,
+        bundle.agent.authoredDirectives ?? [],
+        unresolved,
+      );
+      await this.importContextVariables(
+        workspaceId,
+        agentId,
+        bundle.contextVariables ?? [],
+        importedSkillNames,
+        unresolved,
+      );
+      await this.importRoutines(workspaceId, agentId, bundle.routines ?? [], unresolved);
+
+      const result: AgentBundleImportResult = { agentId, unresolved, importId, replayed: false };
+      if (await this.imports.markApplied(importId, result) === false) {
+        cleanupOwnsAgent = true;
+        throw importReclaimed(importId);
+      }
+
+      // Counts only: a bundle holds the agent's instruction and every directive's
+      // text, none of which belongs in a log line.
+      this.options.logger?.info({
+        workspaceId,
+        importId,
+        agentId,
+        routineCount: bundle.routines?.length ?? 0,
+        skillCount: bundle.agentSkills?.length ?? 0,
+        unresolvedCount: unresolved.length,
+      }, "agent bundle imported");
+
+      return result;
+    } catch (error) {
+      const failureCode = classifyFailure(error);
+      const failed = await this.imports.markFailed(importId, failureCode, { terminal: !agentCreated });
+      if (failed === false) cleanupOwnsAgent = true;
+      if (agentId && agentCreated && !cleanupOwnsAgent) {
+        // Compensation, not a transaction. A crash between the create and this
+        // delete leaves a partial agent; the durable applying job is deliberately
+        // left for the sweep if this delete fails.
+        try {
+          await this.options.agents.delete(workspaceId, agentId);
+          await this.imports.markCompensated(importId);
+        } catch {
+          this.options.logger?.error({
+            workspaceId,
+            importId,
+            orphanedAgentId: agentId,
+            failureCode,
+          }, "agent bundle import compensation left an orphan for cleanup");
+        }
+      }
+      attachImportFailure(error, importId, failureCode);
+      throw error;
+    }
+  }
+
+  /**
+   * A directive is pure authored behavior, so a failure to write one is normally a
+   * bug and stays fatal. The one expected failure is a binding: the directive
+   * service rejects a binding whose skill is missing or disabled, and import
+   * disables exactly those skills whose connection did not travel. Retrying such a
+   * directive disabled keeps the operator's authored text — the service skips
+   * binding validation for a disabled directive, which is what makes the retry
+   * meaningful rather than a second guess at its rules.
+   */
+  private async importDirectives(
+    workspaceId: string,
+    agentId: string,
+    directives: readonly unknown[],
+    unresolved: AgentBundleUnresolvedReference[],
+  ): Promise<void> {
+    for (const directive of directives) {
+      const named = directive as { name?: string; binding?: unknown };
+      try {
+        await this.options.directives.create(workspaceId, agentId, directive);
+        continue;
+      } catch (error) {
+        if (!named.binding) {
+          throw error;
+        }
+        await this.options.directives.create(workspaceId, agentId, {
+          ...(directive as Record<string, unknown>),
+          enabled: false,
+        });
+        unresolved.push({
+          kind: "directive_binding_unbound",
+          element: `directive:${named.name ?? "unnamed"}`,
+          detail: `"${named.name ?? "This directive"}" is bound to a skill that did not survive the import, so it arrives switched off: ${error instanceof Error ? error.message : String(error)}`,
+        });
+      }
+    }
+  }
+
+  private async importSkills(
+    workspaceId: string,
+    agentId: string,
+    skills: readonly AgentBundleSkill[],
+    unresolved: AgentBundleUnresolvedReference[],
+  ): Promise<Set<string>> {
+    const imported = new Set<string>();
+
+    for (const skill of skills) {
+      if (!this.options.skills.hasCapability(skill.capability)) {
+        // Not a failure of the bundle: a deployment may simply not register this
+        // capability. Skipping it and saying so beats failing the whole import.
+        unresolved.push({
+          kind: "skill_capability_unknown",
+          element: `skill:${skill.name}`,
+          detail: `No capability "${skill.capability}" is available in this deployment, so the skill was not created. Anything referencing it stays unbound.`,
+        });
+        continue;
+      }
+
+      // The export placeheld a connection id, so we are deliberately creating this
+      // skill without the target it had.
+      const targetDidNotTravel = skill.target.id !== null;
+      // And it emptied every non-portable config value, naming the keys it took.
+      // Both are create failures this import causes and can explain. A capability
+      // whose whole config is non-portable — `notify`, whose recipient emails and
+      // webhook URL never travel — hits only this second one, and treating it as an
+      // unbuildable bundle meant no agent with a notify skill could be imported.
+      const configDidNotTravel = (skill.omittedConfigKeys?.length ?? 0) > 0;
+      try {
+        await this.options.skills.create(workspaceId, agentId, {
+          ...skill,
+          // A skill whose connection did not travel must not answer with a target it
+          // does not have. It imports disabled and the operator re-binds it.
+          //
+          // Stripped config deliberately does NOT disable: `retrieve` loses only its
+          // `sourceScope` ids and stays a working skill, and disabling it would
+          // cascade — a directive bound to it cannot bind to a disabled skill, so the
+          // directive would arrive switched off too. The omitted keys are reported
+          // instead, which is what tells the operator what to re-enter.
+          enabled: skill.enabled && !targetDidNotTravel,
+          target: { kind: skill.target.kind, id: null },
+        });
+        imported.add(skill.name);
+      } catch (error) {
+        if (!targetDidNotTravel && !configDidNotTravel) {
+          // Anything else — invalid config, a duplicate name, an invocation mode this
+          // deployment does not support, a target-kind mismatch — is a bundle this
+          // deployment cannot build. Reporting it as an unbound target would name the
+          // wrong cause and hand back an agent quietly missing authored behaviour, so
+          // it fails and the compensating delete runs.
+          throw error;
+        }
+        // Still reported rather than fatal: a capability that requires a bound target
+        // rejects the null one we just passed, and aborting would mean an agent with a
+        // single webhook skill could never be imported at all. The underlying message
+        // travels with it so the operator sees the real reason even if it differs.
+        const reason = error instanceof Error ? error.message : String(error);
+        unresolved.push({
+          kind: "skill_target_unbound",
+          element: `skill:${skill.name}`,
+          detail: `"${skill.name}" needs a ${skill.target.kind ?? "connection"} in this workspace before it can be created: ${reason}`,
+        });
+        // A webhook or Slack skill can lose its destination *and* its authored
+        // payload config. Reporting only the target would have the operator rebind it
+        // and believe they were done.
+        reportOmittedConfig(skill, unresolved);
+        continue;
+      }
+
+      if (targetDidNotTravel) {
+        unresolved.push({
+          kind: "skill_target_unbound",
+          element: `skill:${skill.name}`,
+          detail: `Bind "${skill.name}" to a ${skill.target.kind ?? "connection"} in this workspace, then enable it.`,
+        });
+      }
+
+      reportOmittedConfig(skill, unresolved);
+    }
+
+    return imported;
+  }
+
+  private async importContextVariables(
+    workspaceId: string,
+    agentId: string,
+    enablements: readonly AgentBundle["contextVariables"][number][],
+    importedSkillNames: ReadonlySet<string>,
+    unresolved: AgentBundleUnresolvedReference[],
+  ): Promise<void> {
+    for (const enablement of enablements) {
+      const variableId = await this.options.contextVariables.findVariableIdByName(
+        workspaceId,
+        enablement.variableName,
+      );
+      if (!variableId) {
+        unresolved.push({
+          kind: "context_variable_missing",
+          element: `contextVariable:${enablement.variableName}`,
+          detail: `No context variable named "${enablement.variableName}" exists in this workspace. Create it, then enable it on the agent.`,
+        });
+        continue;
+      }
+
+      let resolverSkillId: string | null = null;
+      if (enablement.source === "resolver") {
+        const name = enablement.resolverSkillName;
+        resolverSkillId = name && importedSkillNames.has(name)
+          ? await this.options.contextVariables.findSkillIdByName(workspaceId, agentId, name)
+          : null;
+
+        if (!resolverSkillId) {
+          // A resolver-sourced enablement is invalid without its skill (the table's
+          // own CHECK enforces it), so this one cannot be written at all.
+          unresolved.push({
+            kind: "resolver_skill_missing",
+            element: `contextVariable:${enablement.variableName}`,
+            detail: `"${enablement.variableName}" is resolved by the skill "${name ?? "unknown"}", which is not available on the imported agent. Re-enable the variable once that skill exists.`,
+          });
+          continue;
+        }
+      }
+
+      await this.options.contextVariables.enable(workspaceId, agentId, {
+        variableId,
+        source: enablement.source,
+        resolverSkillId,
+        maxAgeSeconds: enablement.maxAgeSeconds,
+        resolverTimeoutMs: enablement.resolverTimeoutMs,
+        surfacing: enablement.surfacing,
+        enabled: enablement.enabled,
+      });
+    }
+  }
+
+  private async importRoutines(
+    workspaceId: string,
+    agentId: string,
+    routines: readonly AgentBundle["routines"][number][],
+    unresolved: AgentBundleUnresolvedReference[],
+  ): Promise<void> {
+    for (const routine of routines) {
+      let routineId: string;
+      try {
+        ({ routineId } = await this.options.routines.createDraft(
+          workspaceId,
+          agentId,
+          routine.definition,
+        ));
+      } catch (error) {
+        unresolved.push({
+          kind: "routine_invalid",
+          element: `routine:${routine.name}`,
+          detail: `Could not be created: ${error instanceof Error ? error.message : String(error)}`,
+        });
+        continue;
+      }
+
+      const outcome = await this.options.routines.publish(workspaceId, agentId, routineId);
+      if (!outcome.published) {
+        // The routine is kept as a draft rather than deleted: the operator can see
+        // it, read the validator's diagnostics, and fix the binding. Dropping it
+        // would lose authored work to a missing skill.
+        unresolved.push({
+          kind: "routine_invalid",
+          element: `routine:${routine.name}`,
+          detail: `Imported as a draft — publishing was rejected: ${outcome.reason}`,
+        });
+      }
+    }
+  }
+}
+
+/**
+ * Shared by both outcomes of a skill create. A skill that failed for a missing target
+ * and a skill that was created without its non-portable settings need the same thing
+ * said about the settings, and saying it in one place is what stops the two paths
+ * drifting into reporting different halves of the truth.
+ */
+const reportOmittedConfig = (
+  skill: AgentBundleSkill,
+  unresolved: AgentBundleUnresolvedReference[],
+): void => {
+  if (!skill.omittedConfigKeys?.length) {
+    return;
+  }
+  unresolved.push({
+    kind: "skill_config_not_portable",
+    element: `skill:${skill.name}`,
+    detail: `The source agent set ${skill.omittedConfigKeys.join(", ")} on "${skill.name}". Those values stay in their own workspace — re-enter them here.`,
+  });
+};
+
+const classifyFailure = (error: unknown): AgentBundleImportFailureCode =>
+  error instanceof AppError && error.code === "bad_request" ? "invalid_bundle" : "apply_failed";
+
+const importReclaimed = (importId: string): AppError => new AppError(
+  409,
+  "agent_bundle_import_reclaimed",
+  "This import was reclaimed by orphan cleanup before it could complete",
+  { importId },
+);
+
+const attachImportFailure = (error: unknown, importId: string, failureCode: AgentBundleImportFailureCode): void => {
+  if (typeof error !== "object" || error === null) return;
+  Object.assign(error, { importId, failureCode });
+};
+
+// Production composition always supplies the durable repository. This test seam preserves the
+// projection module's focused unit tests without making their fixtures understand job storage.
+const untrackedImports: AgentBundleImportRepositoryPort = {
+  async createOrGet(input) {
+    const now = new Date();
+    return {
+      status: "created",
+      job: {
+        id: randomUUID(), workspaceId: input.workspaceId, actorAccountId: input.actorAccountId,
+        idempotencyKey: input.idempotencyKey, state: "queued", agentId: null, unresolved: [], failureCode: null,
+        createdAt: now, updatedAt: now, appliedAt: null, compensatedAt: null,
+      },
+    };
+  },
+  async findById() { return null; },
+  async markApplying() { return true; },
+  async setCreatedAgent() { return true; },
+  async markApplied() { return true; },
+  async markFailed() { return true; },
+  async claimStaleApplying() { return []; },
+  async markCompensated() { return true; },
+};
+
+/**
+ * Agent-config versions this deployment can read, declared rather than derived.
+ *
+ * An older version stays on this list only while every field it lacks has a default
+ * that reads as the behaviour that version actually had: v3 predates `internalName`
+ * and `handoffOnRetrievalMiss`, and both default to the stored column defaults, so a
+ * v3 bundle imports as the agent it described. A version whose absent fields would
+ * change behaviour must be dropped from this list, not defaulted.
+ */
+const SUPPORTED_AGENT_CONFIG_VERSIONS: readonly number[] = [3, AGENT_CONFIG_SCHEMA_VERSION];
+
+/**
+ * Versions are declared and checked, never guessed. A bundle written against a
+ * future schema is rejected rather than partially understood.
+ */
+const assertSupportedVersions = (bundle: AgentBundle): void => {
+  if (bundle.bundleVersion !== AGENT_BUNDLE_SCHEMA_VERSION) {
+    throw badRequest(
+      `Unsupported bundle version ${String(bundle.bundleVersion)}; this deployment reads version ${String(AGENT_BUNDLE_SCHEMA_VERSION)}.`,
+    );
+  }
+  if (!SUPPORTED_AGENT_CONFIG_VERSIONS.includes(bundle.agent?.schemaVersion)) {
+    throw badRequest(
+      `Unsupported agent config version ${String(bundle.agent?.schemaVersion)}; this deployment reads ${SUPPORTED_AGENT_CONFIG_VERSIONS.join(", ")}.`,
+    );
+  }
+};

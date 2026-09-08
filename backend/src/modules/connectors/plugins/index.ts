@@ -4,7 +4,7 @@ import { SlackPlugin } from "./slack/slackPlugin.js";
 import { WordpressConnector } from "./wordpress/wordpressConnector.js";
 import { WhatsAppPlugin } from "./whatsapp/whatsappPlugin.js";
 
-export interface BuiltInConnectorOptions {
+interface BuiltInConnectorOptions {
   slack?: Partial<Record<RequiredSlackEnvVar, string | undefined>> & {
     signingSecret?: string;
     encryptionKey?: string;

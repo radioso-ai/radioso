@@ -8,6 +8,7 @@ import type {
   PublicationPublisherKind
 } from "../persistence/types.js";
 import type { DocumentPublisher } from "../types.js";
+import { describeError } from "./errorFormatting.js";
 import { processAttachedPage } from "./pageProcessing.js";
 import {
   listPagePublicationStates,
@@ -257,8 +258,7 @@ export const runAttachedCrawler = async (
             runId: run.id,
             url: page.frontierUrl,
             status: "failed_terminal",
-            lastError:
-              error instanceof Error ? error.message || error.name : String(error ?? "Unknown error")
+            lastError: describeError(error)
           });
         }
 

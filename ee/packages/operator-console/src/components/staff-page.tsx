@@ -93,7 +93,7 @@ export function StaffPage() {
           </table>
           {staff.length === 0 ? <EmptyState title="No staff users" detail="Create an owner or staff user through bootstrap first." /> : null}
         </section>
-        <form onSubmit={create} className="rounded-md border border-zinc-800 bg-zinc-900 p-5">
+        <form onSubmit={(event) => { void create(event); }} className="rounded-md border border-zinc-800 bg-zinc-900 p-5">
           <h2 className="text-base font-medium tracking-normal">Create staff user</h2>
           <div className="mt-4 space-y-4">
             <label className="block text-sm font-medium text-zinc-200">

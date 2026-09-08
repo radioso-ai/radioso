@@ -15,7 +15,7 @@ import {
   proposalAdapterFor,
   proposalOutputSchema,
   recordProposalCreated,
-  requiredCopilotConversation,
+  copilotProposalOrigin,
   type CopilotProposalToolDependencies,
 } from "./shared.js";
 
@@ -43,7 +43,7 @@ const removalInputSchema = z.object({
   rationale: rationaleSchema,
 }).strict();
 
-export type DocumentProposalCopilotToolDependencies = CopilotProposalToolDependencies;
+type DocumentProposalCopilotToolDependencies = CopilotProposalToolDependencies;
 
 /** What a tool contributes beyond persisting the draft: the payload it proposes and how it reads. */
 interface DocumentProposalSpec<TInput> {
@@ -109,7 +109,7 @@ const documentProposalDescriptor = <TInput>(
         const proposal = await deps.proposalRepository.createProposal({
           workspaceId: context.workspaceId,
           operatorUserId: context.operatorUserId,
-          conversationId: requiredCopilotConversation(context),
+          origin: copilotProposalOrigin(context),
           targetType: "document",
           targetRef: validated.targetRef,
           payload: copilotDocumentPayloadSchema.parse({ ...payload, summary }),
@@ -129,7 +129,7 @@ const documentProposalDescriptor = <TInput>(
       },
     }),
     describeEntity: (input) => entity("document", spec.targetDocumentId(input as TInput)),
-  } as CopilotToolDescriptor;
+  };
 };
 
 export const createDocumentProposalCopilotTools = (

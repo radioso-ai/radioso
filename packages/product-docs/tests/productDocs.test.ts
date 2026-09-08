@@ -32,9 +32,12 @@ describe("product documentation corpus", () => {
     const bare = readProductDoc("guides/mcp-server");
 
     expect(bare?.title).toBe("MCP server");
+    if (!bare) {
+      throw new Error("Expected guides/mcp-server to exist in the product docs corpus.");
+    }
     expect(readProductDoc("/guides/mcp-server/")?.slug).toBe("guides/mcp-server");
     expect(readProductDoc("https://docs.radioso.ai/guides/mcp-server")?.slug).toBe("guides/mcp-server");
-    expect(readProductDoc(bare!.url)?.slug).toBe("guides/mcp-server");
+    expect(readProductDoc(bare.url)?.slug).toBe("guides/mcp-server");
     expect(normalizeSlug("/")).toBe("index");
     expect(readProductDoc("/")?.slug).toBe("index");
   });
@@ -49,8 +52,11 @@ describe("product documentation corpus", () => {
     const first = page?.sections[0];
 
     expect(first).toBeDefined();
-    expect(readProductDocSection("guides/mcp-server", first!.id)?.heading).toBe(first!.heading);
-    expect(readProductDocSection("guides/mcp-server", first!.heading.toUpperCase())?.id).toBe(first!.id);
+    if (!first) {
+      throw new Error("Expected guides/mcp-server to have at least one section.");
+    }
+    expect(readProductDocSection("guides/mcp-server", first.id)?.heading).toBe(first.heading);
+    expect(readProductDocSection("guides/mcp-server", first.heading.toUpperCase())?.id).toBe(first.id);
   });
 
   it("lists a page's headings so one call is enough to pick a section", () => {

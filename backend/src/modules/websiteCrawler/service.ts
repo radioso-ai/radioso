@@ -1,7 +1,10 @@
 import {
+  classifyWebsiteCrawlerFailure,
   WebsiteCrawlerBadRequestError,
   WebsiteCrawlerProviderError,
+  WebsiteCrawlerStreamCallbackError,
   redactSensitiveText,
+  toWebsiteCrawlerProviderError,
 } from "./errors.js";
 import type {
   WebsiteCrawlCheckpointEvent,
@@ -18,6 +21,7 @@ import {
   type WebsiteCrawlPolicy,
 } from "./policy.js";
 import { isUsageLimitExceededError } from "../../shared/domain/usageLimitPolicy.js";
+import { usageLimitExceeded } from "../../shared/domain/errors.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 
 // Pages exceeding this character count are skipped during ingestion to avoid
@@ -200,12 +204,13 @@ export class WebsiteCrawlerService {
     let documentSource: { id: string } | null = null;
     try {
       await (this.dependencies.assertCrawlUrlAllowed ?? assertPublicWebsiteUrl)(websiteBaseUrl);
-      const resolveSource = this.dependencies.documentIngestionService.resolveSource;
+      // Call through the service so instance resolvers keep their receiver.
+      const ingestionService = this.dependencies.documentIngestionService;
       if (input.sourceId) {
-        if (!resolveSource) {
+        if (!ingestionService.resolveSource) {
           throw new Error("Unable to resolve selected source");
         }
-        documentSource = await resolveSource({
+        documentSource = await ingestionService.resolveSource({
           workspaceId: input.workspaceId,
           source: { id: input.sourceId },
         });
@@ -213,7 +218,7 @@ export class WebsiteCrawlerService {
           throw new Error("Unable to resolve selected source");
         }
       } else {
-        documentSource = await resolveSource?.({
+        documentSource = await ingestionService.resolveSource?.({
           workspaceId: input.workspaceId,
           source: {
             kind: "website",
@@ -448,7 +453,7 @@ export class WebsiteCrawlerService {
       if (remainingLimit === 0) {
         result.status = "completed";
       } else if (this.dependencies.provider.crawlStream) {
-        const streamResult = await this.dependencies.provider.crawlStream(
+        const streamResult = await this.crawlProviderStream(
           {
             url: websiteBaseUrl,
             limit: remainingLimit,
@@ -522,7 +527,11 @@ export class WebsiteCrawlerService {
           status: "failure",
         });
       }
-      throw usageLimitError;
+      // Not expected to be reachable: isUsageLimitExceededError only sets usageLimitError from a
+      // caught value, which is always a real AppError-like Error in practice. Fall back to an
+      // equivalent structured error so downstream duck-typing (errorHandler.ts) still sees the
+      // usage_limit_exceeded code and 429 status if that ever changes.
+      throw usageLimitError instanceof Error ? usageLimitError : usageLimitExceeded("Usage limit exceeded", usageLimitError);
     }
 
     await flushCheckpointPersistence();
@@ -588,15 +597,51 @@ export class WebsiteCrawlerService {
         input.limit,
       );
     } catch (error) {
-      if (error instanceof WebsiteCrawlerProviderError) {
-        throw error;
+      throw toWebsiteCrawlerProviderError(error, this.dependencies.provider.name);
+    }
+  }
+
+  private async crawlProviderStream(
+    input: {
+      url: string;
+      limit: number;
+      signal?: AbortSignal;
+      maxDurationMs?: number;
+      policy?: WebsiteCrawlPolicy;
+      checkpoint?: WebsiteCrawlCheckpoint;
+      onCheckpointEvent?: (event: WebsiteCrawlCheckpointEvent) => Promise<void>;
+    },
+    onPage: (page: WebsiteCrawlPage) => Promise<void>,
+  ): Promise<Omit<WebsiteCrawlResult, "pages">> {
+    const provider = this.dependencies.provider;
+    if (!provider.crawlStream) {
+      throw new Error("Website crawler provider does not support streaming");
+    }
+    try {
+      return await provider.crawlStream(
+        {
+          ...input,
+          onCheckpointEvent: input.onCheckpointEvent && (async (event) => {
+            try {
+              await input.onCheckpointEvent?.(event);
+            } catch (error) {
+              throw new WebsiteCrawlerStreamCallbackError(error);
+            }
+          }),
+        },
+        async (page) => {
+          try {
+            await onPage(page);
+          } catch (error) {
+            throw new WebsiteCrawlerStreamCallbackError(error);
+          }
+        },
+      );
+    } catch (error) {
+      if (error instanceof WebsiteCrawlerStreamCallbackError) {
+        throw error.callbackError;
       }
-      const message = error instanceof Error && error.message.trim()
-        ? error.message
-        : "Website crawler provider failed";
-      throw new WebsiteCrawlerProviderError(message, {
-        provider: this.dependencies.provider.name,
-      });
+      throw toWebsiteCrawlerProviderError(error, this.dependencies.provider.name);
     }
   }
 
@@ -616,7 +661,7 @@ export class WebsiteCrawlerService {
     if (!this.dependencies.auditService) {
       return;
     }
-    const failure = getCrawlFailureAudit(error);
+    const failure = classifyWebsiteCrawlerFailure(error);
     await this.dependencies.auditService.record({
       accountId: input.accountId,
       workspaceId: input.workspaceId,
@@ -797,22 +842,6 @@ const redactWebsiteCrawlerUrl = (value: string): string => {
 
 const isSensitiveQueryParam = (key: string): boolean =>
   SENSITIVE_QUERY_PARAM_PATTERNS.some((pattern) => pattern.test(key));
-
-const getCrawlFailureAudit = (error: unknown): { code: string; statusCode?: number } => {
-  if (error && typeof error === "object") {
-    const candidate = error as { code?: unknown; statusCode?: unknown };
-    if (typeof candidate.code === "string" && candidate.code.trim()) {
-      return {
-        code: candidate.code,
-        ...(typeof candidate.statusCode === "number" ? { statusCode: candidate.statusCode } : {}),
-      };
-    }
-  }
-  return {
-    code: "website_crawler_provider_failed",
-    statusCode: 502,
-  };
-};
 
 const safeFailureSourceUrl = (value: string | null | undefined): string => {
   if (!value) {

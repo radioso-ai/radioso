@@ -14,13 +14,11 @@ import {
   type EvalSnapshotExternalSkillsPort,
 } from "../../src/modules/eval/services/evalSnapshotService.js";
 import type {
-  CreateCaseInput,
   CreateRunInput,
   CreateSnapshotInput,
   EvalRepositoryPort,
 } from "../../src/modules/eval/services/evalRepository.js";
 import type {
-  EvalAssertion,
   EvalCase,
   EvalCaseStatus,
   EvalRun,
@@ -634,7 +632,7 @@ describe("EvalSnapshotService.capture", () => {
 
     expect(snapshot.sourceAgentId).toBe(originalAgent.id);
     expect(snapshot.originalAgent).toBeNull();
-    expect(snapshot.originalAgentConfig?.schemaVersion).toBe(3);
+    expect(snapshot.originalAgentConfig?.schemaVersion).toBe(4);
     expect(snapshot.originalAgentConfig?.name).toBe("Snapshot Bot");
     expect(snapshot.originalAgentConfig?.externalSkills).toEqual({
       connections: [

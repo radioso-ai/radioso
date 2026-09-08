@@ -51,7 +51,7 @@ export class AgentSurfaceExtensionRegistry {
     if (this.extensions.has(extension.key)) {
       throw new Error(`Agent surface extension "${extension.key}" is already registered.`);
     }
-    this.extensions.set(extension.key, extension as AgentSurfaceExtension);
+    this.extensions.set(extension.key, extension);
   }
 
   get(key: string): AgentSurfaceExtension | undefined {

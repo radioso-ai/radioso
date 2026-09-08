@@ -14,7 +14,7 @@ import {
  * module is the only place that models the connection/skill-definition data.
  */
 
-export const EXTERNAL_SKILLS_LIMITS = {
+const EXTERNAL_SKILLS_LIMITS = {
   displayName: 200,
   serverUrl: 2048,
   skillName: 120,
@@ -83,18 +83,14 @@ export type McpConnectionInput = z.infer<typeof mcpConnectionInputSchema>;
 
 export {
   oauthCompleteInputSchema,
-  oauthConfigInputSchema,
 };
 export type {
-  OauthCompleteInput,
-  OauthConfigInput,
   StoredOauthClientConfig,
-  StoredOauthFlow,
   StoredOauthTokens,
 } from "../integrationOauth/public.js";
 
 /** Specification of an input the conversation fills at run time. */
-export const exposedParamSpecSchema = z
+const exposedParamSpecSchema = z
   .object({
     description: trimmedText(1000).optional(),
     // Optional explicit binding to a named routine slot; default = LLM-filled.
@@ -203,7 +199,7 @@ interface ToolInputSchemaShape {
   required?: string[];
 }
 
-export interface ParamCoverageResult {
+interface ParamCoverageResult {
   ok: boolean;
   /** Required tool inputs that are neither bound nor exposed. */
   missingRequired: string[];

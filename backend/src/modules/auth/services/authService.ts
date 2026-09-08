@@ -49,6 +49,17 @@ export interface SessionRecord {
 }
 
 
+/** A signed-in principal plus the account and workspace the session lands on. */
+export interface AuthenticatedAccountSession {
+  userId: string;
+  accountId: string;
+  organizationName: string;
+  workspaceId: string;
+  workspaceName: string;
+  workspacePublicRouteKey: string;
+  sessionCookie: string;
+}
+
 export interface AccountRepositoryPort {
   create(params: { name: string; email: string; passwordHash: string }): Promise<AccountRecord>;
   findById(id: string): Promise<AccountRecord | null>;
@@ -63,11 +74,36 @@ export interface SessionRepositoryPort {
   revokeAllForUser(userId: string, revokedAt: Date): Promise<number>;
 }
 
+/** A login this user holds at an external identity provider. */
+export interface FederatedIdentityRecord {
+  userId: string;
+  provider: string;
+  subject: string;
+  providerEmail: string;
+  lastAuthenticatedAt: Date;
+}
+
+export interface FederatedIdentityRepositoryPort {
+  findByProviderSubject(provider: string, subject: string): Promise<FederatedIdentityRecord | null>;
+  listForUser(userId: string): Promise<FederatedIdentityRecord[]>;
+  /** Links the provider identity to the user, refreshing an existing link. */
+  link(params: {
+    userId: string;
+    provider: string;
+    subject: string;
+    providerEmail: string;
+    authenticatedAt: Date;
+  }): Promise<FederatedIdentityRecord>;
+  /** Drops every provider link a user holds. Returns how many were removed. */
+  deleteForUser(userId: string): Promise<number>;
+}
+
 interface AuthServiceDependencies {
   env: Env;
   accountRepository: AccountRepositoryPort;
   userRepository: UserRepositoryPort;
   sessionRepository: SessionRepositoryPort;
+  federatedIdentityRepository: FederatedIdentityRepositoryPort;
   workspaceService: WorkspaceService;
   accountAccessService: AccountAccessService;
   accountInvitationService: AccountInvitationService;
@@ -219,15 +255,7 @@ export class AuthService {
   async createOrganization(input: {
     userId: string;
     organizationName: string;
-  }): Promise<{
-    userId: string;
-    accountId: string;
-    organizationName: string;
-    workspaceId: string;
-    workspaceName: string;
-    workspacePublicRouteKey: string;
-    sessionCookie: string;
-  }> {
+  }): Promise<AuthenticatedAccountSession> {
     const user = await this.dependencies.userRepository.findById(input.userId);
     if (!user) {
       throw unauthorized("Invalid session");
@@ -347,15 +375,7 @@ export class AuthService {
     password: string;
     preferredWorkspaceId?: string | null;
     preferredAccountId?: string | null;
-  }): Promise<{
-    userId: string;
-    accountId: string;
-    organizationName: string;
-    workspaceId: string;
-    workspaceName: string;
-    workspacePublicRouteKey: string;
-    sessionCookie: string;
-  }> {
+  }): Promise<AuthenticatedAccountSession> {
     const email = normalizeEmail(input.email);
     const user = await this.dependencies.userRepository.findByEmail(email);
 
@@ -408,25 +428,19 @@ export class AuthService {
    * provider-agnostic: callers translate their provider's response into the
    * shared assertion shape, so this service never learns about Google et al.
    *
-   * Linking is by verified email. An existing user (verified or not) is logged
-   * in and, if needed, marked verified — the provider has proven control of the
-   * mailbox. The provider `subject` is recorded in the audit trail only; we do
-   * not yet keep a federated-identity link table.
+   * The provider `subject` is the identifier of record — it is stable for the
+   * life of the provider account, while the address on it can be reassigned.
+   * A known subject therefore wins over the email, which keeps someone whose
+   * work address changed in the account they already have. The email links a
+   * subject the first time it is seen, and an existing user (verified or not)
+   * is marked verified, since the provider has proven control of the mailbox.
    */
   async federatedLogin(input: {
     provider: string;
     subject: string;
     email: string;
     emailVerified: boolean;
-  }): Promise<{
-    userId: string;
-    accountId: string;
-    organizationName: string;
-    workspaceId: string;
-    workspaceName: string;
-    workspacePublicRouteKey: string;
-    sessionCookie: string;
-  }> {
+  }): Promise<AuthenticatedAccountSession> {
     const email = normalizeEmail(input.email);
 
     if (!input.emailVerified) {
@@ -438,7 +452,12 @@ export class AuthService {
       throw unauthorized("Email not verified by the identity provider");
     }
 
-    const existing = await this.dependencies.userRepository.findByEmail(email);
+    const linked = await this.dependencies.federatedIdentityRepository
+      .findByProviderSubject(input.provider, input.subject);
+    const existing = linked
+      ? await this.dependencies.userRepository.findById(linked.userId)
+      : await this.dependencies.userRepository.findByEmail(email);
+
     if (existing) {
       if (!existing.emailVerifiedAt) {
         // The account was created by password registration but never verified,
@@ -453,6 +472,17 @@ export class AuthService {
         await this.dependencies.userRepository.markEmailVerified(existing.id, new Date());
       }
 
+      // The provider's current address is kept on the link, not written back
+      // onto the user: a reassigned address could already belong to another
+      // user, and rewriting the login email would move an account behind the
+      // owner's back.
+      await this.recordFederatedIdentityLink({
+        userId: existing.id,
+        provider: input.provider,
+        subject: input.subject,
+        email,
+      });
+
       const membership = await this.dependencies.accountAccessService.resolveLoginAccount(existing.id);
       const workspace = await this.dependencies.workspaceService.resolveLoginWorkspace(membership.accountId);
       const sessionCookie = await this.createSessionCookie(existing.id, membership.accountId);
@@ -461,7 +491,13 @@ export class AuthService {
         accountId: membership.accountId,
         eventType: "auth.federated_login",
         eventStatus: "success",
-        metadata: { email, provider: input.provider, subject: input.subject, provisioned: false },
+        metadata: {
+          email,
+          provider: input.provider,
+          subject: input.subject,
+          provisioned: false,
+          matchedBy: linked ? "subject" : "email",
+        },
       });
 
       return {
@@ -479,22 +515,51 @@ export class AuthService {
     return this.provisionFederatedAccount({ ...input, email });
   }
 
+  /**
+   * Writes the provider link that later sign-ins match on. It sits on the
+   * critical path deliberately — skipping it would silently degrade every
+   * subsequent login back to email matching — so a failure is named rather than
+   * left to surface as the caller's generic OAuth error.
+   */
+  private async recordFederatedIdentityLink(input: {
+    userId: string;
+    provider: string;
+    subject: string;
+    email: string;
+  }): Promise<void> {
+    try {
+      await this.dependencies.federatedIdentityRepository.link({
+        userId: input.userId,
+        provider: input.provider,
+        subject: input.subject,
+        providerEmail: input.email,
+        authenticatedAt: new Date(),
+      });
+    } catch (error) {
+      await this.dependencies.auditService.record({
+        eventType: "auth.federated_login",
+        eventStatus: "failure",
+        metadata: {
+          email: input.email,
+          provider: input.provider,
+          subject: input.subject,
+          reason: "identity_link_write_failed",
+        },
+      });
+      throw error;
+    }
+  }
+
   private async provisionFederatedAccount(input: {
     provider: string;
     subject: string;
     email: string;
-  }): Promise<{
-    userId: string;
-    accountId: string;
-    organizationName: string;
-    workspaceId: string;
-    workspaceName: string;
-    workspacePublicRouteKey: string;
-    sessionCookie: string;
-  }> {
+  }): Promise<AuthenticatedAccountSession> {
     // Federated users have no password. Store a random, unusable hash so the
     // NOT NULL column is satisfied; they can adopt password login later via the
-    // reset flow. The email is verified by the provider, so mark it verified.
+    // reset flow, and the identity link below is what records that the provider
+    // is how they get in. The email is verified by the provider, so mark it
+    // verified.
     const passwordHash = await hashPassword(generateSessionToken());
     const organizationName = deriveOrganizationName(input.email);
     let organizationCreationReservation: OrganizationCreationReservation;
@@ -515,6 +580,12 @@ export class AuthService {
         email: input.email,
         passwordHash,
         emailVerifiedAt: new Date(),
+      });
+      await this.recordFederatedIdentityLink({
+        userId: core.userId,
+        provider: input.provider,
+        subject: input.subject,
+        email: input.email,
       });
       await this.dependencies.onAccountCreated?.({ accountId: core.account.id });
       const sessionCookie = await this.createSessionCookie(core.userId, core.account.id);
@@ -554,37 +625,83 @@ export class AuthService {
     }
   }
 
+  /**
+   * Describes the account context of an existing session. The session cookie is
+   * the only durable record that someone is signed in — a browser that arrives
+   * with one but no client-side state (a fresh tab, or the return leg of a
+   * provider redirect, which sets the cookie and nothing else) needs this to
+   * recover who it is without asking for a credential it may not have.
+   */
+  async describeSession(input: {
+    userId: string;
+    accountId: string;
+  }): Promise<Omit<AuthenticatedAccountSession, "sessionCookie"> & { email: string }> {
+    const user = await this.dependencies.userRepository.findById(input.userId);
+    if (!user) {
+      throw unauthorized();
+    }
+
+    const membership = await this.dependencies.accountAccessService.resolveLoginAccount(
+      input.userId,
+      input.accountId,
+    );
+    const account = await this.dependencies.accountRepository.findById(membership.accountId);
+    const workspace = await this.dependencies.workspaceService.resolveLoginWorkspace(membership.accountId);
+
+    return {
+      userId: user.id,
+      email: user.email,
+      accountId: membership.accountId,
+      organizationName: account?.name ?? deriveOrganizationName(user.email),
+      workspaceId: workspace.id,
+      workspaceName: workspace.name,
+      workspacePublicRouteKey: workspace.publicRouteKey,
+    };
+  }
+
+  /**
+   * Describes the invitation and, with it, how the invitee can actually get in.
+   * The credential half lives here rather than in the invitation service: an
+   * invitation knows nothing about logins, while auth knows that an existing
+   * user turns the join form into a credential check, and that a linked
+   * provider is a way in that needs no password at all. Disclosing both to the
+   * holder of the token is safe — it was minted for this one mailbox.
+   */
   async getInvitation(input: { invitationToken: string }): Promise<{
     accountId: string;
     email: string;
     status: "pending" | "accepted" | "revoked" | "expired";
     expiresAt: string;
+    requiresExistingPassword: boolean;
+    federatedProviders: string[];
   }> {
-    return this.dependencies.accountInvitationService.getInvitation(input.invitationToken);
+    const invitation = await this.dependencies.accountInvitationService.getInvitation(input.invitationToken);
+    const existingUser = await this.dependencies.userRepository.findByEmail(invitation.email);
+    // A user can hold more than one account at the same provider, so the rows
+    // collapse to the distinct providers the wire contract promises.
+    const federatedProviders = existingUser
+      ? [...new Set(
+        (await this.dependencies.federatedIdentityRepository.listForUser(existingUser.id))
+          .map(({ provider }) => provider),
+      )]
+      : [];
+
+    return {
+      ...invitation,
+      requiresExistingPassword: existingUser !== null,
+      federatedProviders,
+    };
   }
 
   async acceptInvitation(input: {
     invitationToken: string;
     email: string;
     password: string;
-  }): Promise<{
-    userId: string;
-    accountId: string;
-    organizationName: string;
-    workspaceId: string;
-    workspaceName: string;
-    workspacePublicRouteKey: string;
-    sessionCookie: string;
-  }> {
+  }): Promise<AuthenticatedAccountSession> {
     const email = normalizeEmail(input.email);
     const invitation = await this.dependencies.accountInvitationService.getInvitation(input.invitationToken);
     if (invitation.email !== email) {
-      await this.dependencies.auditService.record({
-        accountId: invitation.accountId,
-        eventType: "account.invitation.accept",
-        eventStatus: "failure",
-        metadata: { email, reason: "email_mismatch" },
-      });
+      await this.recordInvitationAcceptFailure(invitation.accountId, email, "email_mismatch");
       throw unauthorized("Invitation email does not match");
     }
 
@@ -593,12 +710,7 @@ export class AuthService {
     if (existingUser) {
       const passwordValid = await verifyPassword(input.password, existingUser.passwordHash);
       if (!passwordValid) {
-        await this.dependencies.auditService.record({
-          accountId: invitation.accountId,
-          eventType: "account.invitation.accept",
-          eventStatus: "failure",
-          metadata: { email, reason: "invalid_password" },
-        });
+        await this.recordInvitationAcceptFailure(invitation.accountId, email, "invalid_password");
         throw unauthorized("Invalid email or password");
       }
     }
@@ -611,18 +723,84 @@ export class AuthService {
           emailVerifiedAt: null,
         });
 
-    const createdUserId: string | null = existingUser ? null : user.id;
+    return this.completeInvitationAcceptance({
+      invitationToken: input.invitationToken,
+      userId: user.id,
+      email,
+      createdUserId: existingUser ? null : user.id,
+    });
+  }
 
+  /**
+   * Accepts an invitation on behalf of an already-authenticated user. The
+   * session itself is the proof of identity, so no password is collected —
+   * which is the only way in for someone whose login is federated and
+   * therefore has no usable password hash to verify.
+   */
+  async acceptInvitationAsUser(input: {
+    invitationToken: string;
+    userId: string;
+  }): Promise<AuthenticatedAccountSession> {
+    const invitation = await this.dependencies.accountInvitationService.getInvitation(input.invitationToken);
+    const user = await this.dependencies.userRepository.findById(input.userId);
+    if (!user) {
+      throw unauthorized();
+    }
+
+    const email = normalizeEmail(user.email);
+    if (invitation.email !== email) {
+      await this.recordInvitationAcceptFailure(invitation.accountId, email, "email_mismatch");
+      throw unauthorized("Invitation email does not match");
+    }
+
+    return this.completeInvitationAcceptance({
+      invitationToken: input.invitationToken,
+      userId: user.id,
+      email,
+      createdUserId: null,
+    });
+  }
+
+  private async recordInvitationAcceptFailure(
+    accountId: string,
+    email: string,
+    reason: "email_mismatch" | "invalid_password",
+  ): Promise<void> {
+    await this.dependencies.auditService.record({
+      accountId,
+      eventType: "account.invitation.accept",
+      eventStatus: "failure",
+      metadata: { email, reason },
+    });
+  }
+
+  /**
+   * Shared tail of both accept paths: claim the invitation, mark the mailbox
+   * verified (following the emailed link proves control of it), and hand back a
+   * session on the joined account. `createdUserId` names a user this call
+   * brought into existence, so a failure downstream can unwind it.
+   */
+  private async completeInvitationAcceptance(input: {
+    invitationToken: string;
+    userId: string;
+    email: string;
+    createdUserId: string | null;
+  }): Promise<AuthenticatedAccountSession> {
     let accountId: string;
     try {
       ({ accountId } = await this.dependencies.accountInvitationService.acceptInvitation(
         input.invitationToken,
-        user.id,
+        input.userId,
       ));
-      await this.dependencies.userRepository.markEmailVerified(user.id, new Date());
+      await this.dependencies.userRepository.markEmailVerified(input.userId, new Date());
     } catch (error) {
-      if (createdUserId) {
-        await this.dependencies.userRepository.deleteById(createdUserId);
+      // The claim may already have succeeded and only the verification failed,
+      // which would otherwise leave the invitation spent while the caller sees
+      // an error and a retry gets "no longer valid". Reverting is a no-op when
+      // the claim itself is what threw.
+      await this.dependencies.accountInvitationService.revertAcceptance(input.invitationToken, input.userId);
+      if (input.createdUserId) {
+        await this.dependencies.userRepository.deleteById(input.createdUserId);
       }
       throw error;
     }
@@ -630,21 +808,21 @@ export class AuthService {
     try {
       const account = await this.dependencies.accountRepository.findById(accountId);
       const workspace = await this.dependencies.workspaceService.resolveLoginWorkspace(accountId);
-      const sessionCookie = await this.createSessionCookie(user.id, accountId);
+      const sessionCookie = await this.createSessionCookie(input.userId, accountId);
 
       return {
-        userId: user.id,
+        userId: input.userId,
         accountId,
-        organizationName: account?.name ?? deriveOrganizationName(email),
+        organizationName: account?.name ?? deriveOrganizationName(input.email),
         workspaceId: workspace.id,
         workspaceName: workspace.name,
         workspacePublicRouteKey: workspace.publicRouteKey,
         sessionCookie,
       };
     } catch (error) {
-      await this.dependencies.accountInvitationService.revertAcceptance(input.invitationToken, user.id);
-      if (createdUserId) {
-        await this.dependencies.userRepository.deleteById(createdUserId);
+      await this.dependencies.accountInvitationService.revertAcceptance(input.invitationToken, input.userId);
+      if (input.createdUserId) {
+        await this.dependencies.userRepository.deleteById(input.createdUserId);
       }
       throw error;
     }
@@ -654,15 +832,7 @@ export class AuthService {
     userId: string;
     targetAccountId: string;
     preferredWorkspaceId?: string | null;
-  }): Promise<{
-    userId: string;
-    accountId: string;
-    organizationName: string;
-    workspaceId: string;
-    workspaceName: string;
-    workspacePublicRouteKey: string;
-    sessionCookie: string;
-  }> {
+  }): Promise<AuthenticatedAccountSession> {
     const membership = await this.dependencies.accountAccessService.requireActiveMembership(
       input.targetAccountId,
       input.userId,

@@ -515,8 +515,6 @@ describe("WorkbenchReplayRunner", () => {
       route: "retrieval",
       isIdentityQuestion: false,
       intentTopic: null,
-      inScopeRequest: null,
-      outsideScopeRequest: null,
       rewrite: {
         rewrittenQuery: "refund processing duration",
         semanticQuery: "refund processing duration",
@@ -636,8 +634,6 @@ describe("WorkbenchReplayRunner", () => {
       route: "direct",
       isIdentityQuestion: false,
       intentTopic: null,
-      inScopeRequest: null,
-      outsideScopeRequest: null,
       rewrite: null,
       responseLanguage: "English",
       routineRankings: [],
@@ -716,7 +712,7 @@ describe("WorkbenchReplayRunner", () => {
     });
 
     expect(plannerComplete).toHaveBeenCalledTimes(1);
-    const prompt = plannerComplete.mock.calls[0]?.[0].prompt as string;
+    const prompt = plannerComplete.mock.calls[0]?.[0].prompt;
     expect(prompt).toContain('"name": "live-tone"');
     expect(prompt).not.toContain("disabled-tone");
   });

@@ -1,7 +1,6 @@
 import { z } from "zod";
 
 import type {
-  CopilotContextVariableProposalAdapter,
   CopilotToolDescriptor,
 } from "../contracts.js";
 import { boundPayload } from "../payloadCompaction.js";
@@ -14,7 +13,7 @@ import {
   proposalEvidenceOutput,
   proposalOutputSchema,
   recordProposalCreated,
-  requiredCopilotConversation,
+  copilotProposalOrigin,
   requiredPageAgent,
   type CopilotAgentLookupPort,
   type CopilotProposalEvidenceDependencies,
@@ -146,7 +145,7 @@ export const createContextVariablesCopilotTools = (
           return boundPayload({
             variables: variables.map(projectDefinition),
             enablements: enablements.map(projectEnablement),
-          }) as z.infer<typeof readerOutputSchema>;
+          });
         },
       }),
       describeEntity: (input, context) => describeContextVariableAgent(deps, input as { agentId?: string; agentName?: string }, context),
@@ -190,7 +189,7 @@ export const createContextVariableProposalCopilotTools = (
           const proposal = await deps.proposalRepository.createProposal({
             workspaceId: context.workspaceId,
             operatorUserId: context.operatorUserId,
-            conversationId: requiredCopilotConversation(context),
+            origin: copilotProposalOrigin(context),
             targetType: "context_variable",
             targetRef: validated.targetRef,
             payload: validated.payload,

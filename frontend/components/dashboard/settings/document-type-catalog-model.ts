@@ -220,7 +220,7 @@ export const validateCatalogDraft = (draft: DocumentTypeCatalogDraft): CatalogVa
 
   const retiredValueTypes = new Map(draft.retiredFields.map((identity) => [identity.key, identity.valueType]))
   const declaredValueTypes = new Map<string, DocumentTypeFieldValueType>(
-    Object.entries(draft.savedFieldValueTypes) as [string, DocumentTypeFieldValueType][],
+    Object.entries(draft.savedFieldValueTypes),
   )
   const seenTypeKeys = new Set<string>()
 

@@ -1,9 +1,6 @@
 export {
   buildPublicAssistantIdentityLines,
   defaultAssistantBootstrapSettings,
-  isAssistantBootstrapActive,
-  isAssistantBootstrapConfigured,
-  normalizeLocaleTag,
   resolveAssistantDisplayName,
   validateAssistantBootstrapSettings,
   type AssistantBootstrapSettingsInput,

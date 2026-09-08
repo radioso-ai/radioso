@@ -1,7 +1,7 @@
 ---
 title: "Deployment"
 description: "Production deployment expectations for Radioso and the standalone docs portal."
-last_updated: 2026-09-01
+last_updated: 2026-09-07
 ---
 
 import { Callout } from 'nextra/components'
@@ -29,6 +29,7 @@ At minimum, a production deployment needs:
 - session and token secrets
 - storage configuration for uploaded files
 - public base URLs for customer-facing flows such as public chat and Enterprise Edition modules
+- Operator MCP resource and issuer URLs when delegated Ray access is enabled
 
 Relevant runtime flags are defined in `.env.example` and enforced by `backend/src/app/config/env.ts`.
 
@@ -51,6 +52,24 @@ Set `REALTIME_INTERNAL_URL` on the frontend to the realtime service's private ba
 The stream uses the signed dashboard session cookie and `x-workspace-id`. It is a browser transport endpoint, so personal/service API credentials, the TypeScript SDK, and MCP do not use it. Frames contain workspace identity and invalidation kinds rather than document or conversation content.
 
 Radioso's MCP server runs as a standalone HTTP process. Configure `RADIOSO_BASE_URL` and the standalone bind settings, then send the original MCP-audience agent credential to its `/mcp` endpoint. Hosted Terraform shares a generated `RADIOSO_MCP_SIGNING_SECRET` with the backend and configures Google's two-hop forwarding suffix so each client keeps a separate pre-authentication budget. Manual deployments leave `RADIOSO_TRUSTED_PROXY_HOPS=0` unless the rightmost proxy chain is controlled by the operator. The process may cache short-lived backend session tokens in memory; Postgres retains the conversation binding for the credential version, so restart and scale-to-zero cache misses resume that conversation. `RADIOSO_MCP_REDIS_URL` is optional for a shared cache, where the signing secret also encrypts cached tokens. See [MCP server](/guides/mcp-server) for the client flow.
+
+## Operator MCP
+
+Operator MCP is the delegated OAuth resource for Ray's workspace tools. It is a separate surface from an authored agent's `/mcp` channel. Set the backend values together, then expose the same canonical resource through the frontend:
+
+```dotenv
+OPERATOR_MCP_RESOURCE_URL=https://mcp.example.com/operator/mcp
+OPERATOR_MCP_ISSUER_URL=https://app.example.com
+OPERATOR_MCP_INTERNAL_SECRET=<at-least-32-character-secret>
+OPERATOR_MCP_CREDENTIAL_EPOCH=1
+RADIOSO_OPERATOR_MCP_PUBLIC_URL=https://mcp.example.com/operator/mcp
+```
+
+`OPERATOR_MCP_RESOURCE_URL` must be the exact `/operator/mcp` URL with no query or fragment. `OPERATOR_MCP_ISSUER_URL` is the public Radioso application origin that serves authorization and consent. The frontend value is read at request time and should match the resource the standalone MCP process serves. Operator MCP starts when those values, the internal secret, and the credential epoch are configured together. The GitHub Terraform workflow discovers the Cloud Run MCP URL unless `MCP_PUBLIC_ORIGIN` supplies a custom domain.
+
+The credential epoch is a deployment-wide monotonic security value. Start at `1`, and increase it when rotating the Operator MCP internal secret or invalidating all issued Operator MCP credentials. Before rolling replicas, load `DATABASE_URL`, `OPERATOR_MCP_RESOURCE_URL`, the new `OPERATOR_MCP_INTERNAL_SECRET`, and the new `OPERATOR_MCP_CREDENTIAL_EPOCH`; set `OPERATOR_MCP_PREVIOUS_CREDENTIAL_EPOCH` to the current persisted epoch; then run `pnpm --dir backend run operator-mcp:rotate-credential-state` once. Roll the same new epoch and secret to every backend and MCP instance before serving traffic. Instances with an older epoch or a different secret fingerprint fail readiness. Tokens and refresh lineages issued under an older epoch stop working, including after a database restore. Keep the epoch value at or above the last value used by the deployment.
+
+The dashboard exposes `operator:read`, `operator:probe`, and `operator:propose` through the current limited catalog in every workspace. Verification is capped at six operations per credential each minute. The API access card reports disabled, misconfigured, or unavailable states without offering a personal-token workaround.
 
 ## Enterprise Edition deployment
 
@@ -84,6 +103,33 @@ The Terraform workflow expects these GitHub environment secrets for each deploye
 Set `MAIL_FROM_EMAIL` to a verified sender address. `MAIL_FROM_NAME` is optional and defaults to `Radioso`. Without `RESEND_MAIL_API_KEY`, the backend writes outbound mail to the log instead of sending it, so password resets, email verification, and [user invitations](/api/accounts-and-users#invite-a-user) reach nobody.
 
 The included staging and live Terraform environments enable PostHog error reporting with `ERROR_SINKS=audit,posthog`. Staging also sends product analytics to PostHog with `PRODUCT_ANALYTICS_SINKS=audit,posthog`. Set `POSTHOG_API_KEY` for each environment. `POSTHOG_HOST` defaults to the US ingestion host and can be overridden for another PostHog region or a self-hosted instance.
+
+## Alerting
+
+Cloud Monitoring alerting is off until an environment asks for it. Set these on the GitHub environment and the next Terraform apply builds an uptime check on the backend `/health` route, a log-based error metric, and alert policies for Cloud Run 5xx rate, backend p95 latency, error-log volume, Cloud SQL saturation, Cloud Tasks backlog, and Cloud Scheduler failures.
+
+| Value | What it does |
+|---|---|
+| `MONITORING_ENABLED` | `true` creates the alerting resources for this environment |
+| `MONITORING_NOTIFICATION_EMAILS` | Comma-separated addresses, one email channel each |
+| `MONITORING_EXTRA_NOTIFICATION_CHANNEL_IDS` | Comma-separated IDs of channels you created in the Cloud Monitoring console |
+
+Give it at least one of the two destinations. When `MONITORING_ENABLED` is `true` and both are empty the workflow stops and names the value to set, because alerting that applies cleanly and delivers nowhere is worse than none.
+
+Slack is a console channel rather than a Terraform one, because it holds an OAuth token that would otherwise sit in Terraform state. Create it once under **Monitoring → Alerting → Edit notification channels**, copy the `projects/<project>/notificationChannels/<id>` value, and put it in `MONITORING_EXTRA_NOTIFICATION_CHANNEL_IDS`. Every policy delivers to the union of the email channels and that list.
+
+## Ops event feed
+
+Signups, chat turns, and errors reach an HTTP endpoint of your choosing — a Slack workflow trigger, n8n, or your own handler — when you add `ops_webhook` to a sink list:
+
+| Value | What it does |
+|---|---|
+| `PRODUCT_ANALYTICS_SINKS` / `ERROR_SINKS` | Add `ops_webhook`, for example `audit,posthog,ops_webhook` |
+| `OPS_EVENT_WEBHOOK_URL` | Where each signed JSON delivery is posted |
+| `OPS_EVENT_WEBHOOK_SECRET` | Environment secret the delivery signature is computed with |
+| `OPS_EVENT_WEBHOOK_EVENTS` | Comma-separated event names to forward; every product event goes out when unset |
+
+The backend refuses to start when a sink list names `ops_webhook` without both a URL and a secret, so the workflow checks for them first and stops the deploy rather than rolling out a revision that crash-loops. `chat.started` and `chat.completed` fire on every conversation, so name the events you want before pointing this at a channel someone reads.
 
 ## Public chat rate limits
 
@@ -122,6 +168,10 @@ Each replayed turn also counts against the same answer meter a live customer tur
 Ray conversations hold operator questions, configuration detail, and excerpts of customer conversations, so they expire on a schedule. A conversation is deleted 90 days after its last activity, along with its messages and proposals. Set `COPILOT_CONVERSATION_RETENTION_DAYS` to change the window, or `0` to keep conversations indefinitely; the Terraform variable is `copilot_conversation_retention_days`.
 
 The sweep runs in the document worker, so retention happens only where that process runs. Under the Cloud Run task runtime the trigger is a scheduled push to `POST /internal/tasks/copilot-retention/sweep`, which the bundled Terraform provisions as a daily Cloud Scheduler job. A deployment that runs neither the worker poll loop nor that schedule keeps Ray conversations forever, whatever the window says.
+
+## Agent bundle import recovery
+
+An interrupted bundle import can leave the newly created agent behind before the request can compensate for a later failure. The document worker checks durable import jobs and removes agents from jobs that have stayed active longer than `AGENT_BUNDLE_IMPORT_ORPHAN_AGE_MS`. The default is `900000` (15 minutes); raise it only when an import can legitimately take longer in your deployment. Imports normally take seconds: once an import exceeds the threshold, cleanup fences it and the request returns a retryable conflict instead of claiming an agent that cleanup may delete. Terraform-managed deployments set the same value with `agent_bundle_import_orphan_age_ms`; Cloud Scheduler calls `POST /internal/tasks/agent-bundle-imports/sweep` every five minutes by default (override with `agent_bundle_import_cleanup_schedule`). Each cleanup writes an audit event and a `agent_bundle_import_compensations_total` metric, with ids but never bundle content.
 
 ## Reverse proxy client IPs
 

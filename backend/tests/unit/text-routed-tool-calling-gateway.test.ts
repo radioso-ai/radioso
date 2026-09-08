@@ -26,7 +26,7 @@ const stubTextClient = (
       return streamResult([]);
     },
     calls,
-  } as TextGenerationClient & { calls: Array<{ prompt: string; systemPrompt?: string }> };
+  };
 };
 
 const buildRequest = (overrides: Partial<ModelToolCallRequest> = {}): ModelToolCallRequest => ({

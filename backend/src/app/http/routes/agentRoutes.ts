@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { Router } from "express";
+import { Router, type RequestHandler } from "express";
 import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
-import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
+import { requireWorkspaceSession, WORKSPACE_HEADER, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { requireSurfaceExtension } from "../shared/requireSurfaceExtension.js";
 import { validateBody } from "../middleware/validate.js";
@@ -18,9 +18,14 @@ import {
   agentChannelCredentialListQuerySchema,
   agentChannelCredentialParamsSchema,
 } from "../schemas/agentChannelSchemas.js";
-import { AppError, badRequest, forbidden, notFound } from "../../../shared/domain/errors.js";
+import { AppError, badRequest, notFound } from "../../../shared/domain/errors.js";
 import {
-  agentSurfacePositions,
+  isMachinePrincipal,
+  rejectMachineLaunchSurfaceInput,
+  type MachineAwareRoutePrincipal,
+} from "../shared/machinePublicSurfacePolicy.js";
+import {
+  agentInputFieldSchemas,
   authoredDirectiveInputSchema,
   directiveAuthorDraftInputSchema,
 } from "../../../modules/agents/public.js";
@@ -28,12 +33,12 @@ import {
   routineDefinitionDraftInputSchema,
   routineDraftAssistRequestSchema,
 } from "../../../modules/routines/public.js";
-import type { AgentInput, AgentSettingsResource } from "../../../modules/agents/public.js";
+import type { AgentSettingsResource } from "../../../modules/agents/public.js";
 import { builtInAnswerDirectiveViews } from "../../../modules/directives/public.js";
 import {
   ASSISTANT_LOGO_MIME_TYPES,
-  assistantThemeSchema,
   createAssistantLogoUploadHandler,
+  sendAssistantLogo,
 } from "../shared/assistantIdentity.js";
 import { resolvePublicLaunchLifecycle } from "../../../modules/accessGrants/public.js";
 import type { AccessGrant, AccessGrantSecret } from "../../../modules/accessGrants/domain.js";
@@ -57,82 +62,28 @@ const authoredDirectiveBodySchema = authoredDirectiveInputSchema.omit({ routes: 
 const authoredDirectivePatchBodySchema = authoredDirectiveBodySchema.partial().strict();
 const routineDefinitionBodySchema = routineDefinitionDraftInputSchema;
 
-const surfaceSettingsSchema = z.object({
-  authenticatedChat: z.object({
-    enabled: z.boolean().optional(),
-  }).optional(),
-  anonymousChat: z.object({
-    enabled: z.boolean().optional(),
-  }).optional(),
-  websiteEmbed: z.object({
-    enabled: z.boolean().optional(),
-    allowedOrigins: z.array(z.string().max(200)).max(20).optional(),
-    launcherLabel: z.string().max(80).optional(),
-    launcherPosition: z.enum(agentSurfacePositions).optional(),
-    theme: assistantThemeSchema.optional(),
-    copy: z.record(z.record(z.string().max(500))).optional(),
-    expertOverrides: z.record(z.string().max(500)).optional(),
-  }).optional(),
-}).optional();
-
-const sourceScopeSchema = z.discriminatedUnion("mode", [
-  z.object({
-    mode: z.literal("all"),
-  }),
-  z.object({
-    mode: z.literal("selected"),
-    sourceIds: z.array(z.string().uuid()).max(200),
-  }),
-]).optional();
-
-const brandingSchema = z.object({
-  hidePoweredBy: z.boolean().optional(),
-  privacyPolicyUrl: z.string().max(2048).nullable().optional(),
-}).optional();
-
-const llmProviderNames = ["openai", "openai-compatible", "gemini", "claude"] as const;
-
-const chatModelOverrideSchema = z.union([
-  z.null(),
-  z.object({
-    provider: z.enum(llmProviderNames),
-    model: z.string().min(1).max(200),
-  }),
-]);
-
-const contactRequestDeliverySchema = z.object({
-  recipientEmails: z.array(z.string().max(320)).max(5).optional(),
-  webhook: z.union([
-    z.null(),
-    z.object({
-      url: z.string().max(2048),
-    }),
-  ]).optional(),
-}).optional();
-
 export const agentBodySchema = z.object({
-  name: z.string().max(200).optional(),
-  internalName: z.string().max(200).optional(),
-  customInstruction: z.string().max(2000).optional(),
-  suggestedQuestionsEnabled: z.boolean().optional(),
-  assistantLinkUtmEnabled: z.boolean().optional(),
-  citationDisplayEnabled: z.boolean().optional(),
-  contactRequestsEnabled: z.boolean().optional(),
-  webhookExportsEnabled: z.boolean().optional(),
-  contactRequestDelivery: contactRequestDeliverySchema,
-  theme: assistantThemeSchema.optional(),
-  branding: brandingSchema,
-  retrievalEnabled: z.boolean().optional(),
-  sourceScope: sourceScopeSchema,
-  greetingInstruction: z.string().max(200).optional(),
-  assistantDefaultLocale: z.string().max(35).nullable().optional(),
-  proactiveGreetingEnabled: z.boolean().optional(),
-  chatModelOverride: chatModelOverrideSchema.optional(),
-  skillSettings: z.record(z.unknown()).optional(),
-  surfaceSettings: surfaceSettingsSchema,
+  name: agentInputFieldSchemas.name.optional(),
+  internalName: agentInputFieldSchemas.internalName.optional(),
+  customInstruction: agentInputFieldSchemas.customInstruction.optional(),
+  suggestedQuestionsEnabled: agentInputFieldSchemas.suggestedQuestionsEnabled.optional(),
+  assistantLinkUtmEnabled: agentInputFieldSchemas.assistantLinkUtmEnabled.optional(),
+  citationDisplayEnabled: agentInputFieldSchemas.citationDisplayEnabled.optional(),
+  contactRequestsEnabled: agentInputFieldSchemas.contactRequestsEnabled.optional(),
+  webhookExportsEnabled: agentInputFieldSchemas.webhookExportsEnabled.optional(),
+  handoffOnRetrievalMiss: agentInputFieldSchemas.handoffOnRetrievalMiss.optional(),
+  contactRequestDelivery: agentInputFieldSchemas.contactRequestDelivery.optional(),
+  theme: agentInputFieldSchemas.theme.optional(),
+  branding: agentInputFieldSchemas.branding.optional(),
+  retrievalEnabled: agentInputFieldSchemas.retrievalEnabled.optional(),
+  sourceScope: agentInputFieldSchemas.sourceScope.optional(),
+  greetingInstruction: agentInputFieldSchemas.greetingInstruction.optional(),
+  assistantDefaultLocale: agentInputFieldSchemas.assistantDefaultLocale.optional(),
+  proactiveGreetingEnabled: agentInputFieldSchemas.proactiveGreetingEnabled.optional(),
+  chatModelOverride: agentInputFieldSchemas.chatModelOverride.optional(),
+  skillSettings: agentInputFieldSchemas.skillSettings.optional(),
+  surfaceSettings: agentInputFieldSchemas.surfaceSettings.omit({ extensions: true }).optional(),
 });
-
-export { llmProviderNames as agentLlmProviderNames, chatModelOverrideSchema as agentChatModelOverrideSchema };
 
 type AgentRouteDependencies = WorkspaceSessionDependencies & Pick<AppDependencies, "accountAccessService" | "accessGrantService" | "agentRepository" | "agentService" | "assistantChatService" | "authoredDirectiveService" | "directiveAuthorService" | "skillAuthoringCatalog" | "routineDefinitionService" | "routineDraftAssistService" | "agentSurfaceExtensions" | "documentStorage" | "logger" | "metricsRegistry" | "abuseControlService" | "auditService">;
 
@@ -191,12 +142,7 @@ const presentAgentChannelCredentialSecret = ({ grant, token }: AccessGrantSecret
   secret: token,
 });
 
-type AgentRoutePrincipal = {
-  type?: string;
-} | null | undefined;
-
-const isMachinePrincipal = (principal: AgentRoutePrincipal): boolean =>
-  principal?.type === "personal_api_credential" || principal?.type === "service_account_credential";
+type AgentRoutePrincipal = MachineAwareRoutePrincipal;
 
 const lifecycleActor = (locals: {
   userId?: string;
@@ -241,13 +187,6 @@ const presentAgentForPrincipal = (agent: AgentSettingsResource, principal: Agent
       ...(safeExtensions ? { extensions: safeExtensions } : {}),
     },
   };
-};
-
-const rejectMachineLaunchSurfaceInput = (principal: AgentRoutePrincipal, input: AgentInput): void => {
-  if (!isMachinePrincipal(principal)) return;
-  if (input.surfaceSettings?.anonymousChat !== undefined || input.surfaceSettings?.websiteEmbed !== undefined) {
-    throw forbidden("Public launch surfaces require an interactive session");
-  }
 };
 
 const assertAgentExists = async (
@@ -749,6 +688,39 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
         dependencies.agentService.withRotatedTokens(current, req.body),
       );
       res.status(200).json(presentAgentForPrincipal(agent, authPrincipal));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  /**
+   * The dashboard renders the logo in an `<img>`, which cannot carry the workspace
+   * header. Accept the workspace as a query selector for this one read and let the
+   * session middleware check it against the caller's account exactly as it does the
+   * header — the query carries a selection, never an authorisation.
+   */
+  const acceptWorkspaceIdFromQuery: RequestHandler = (req, _res, next) => {
+    const selected = req.query.workspaceId;
+    if (typeof selected === "string" && !req.header(WORKSPACE_HEADER)) {
+      req.headers[WORKSPACE_HEADER.toLowerCase()] = selected;
+    }
+    next();
+  };
+
+  router.get("/:agentId/assistant-logo", acceptWorkspaceIdFromQuery, workspaceSession, agentRead, async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const parsed = agentParamsSchema.parse(req.params);
+      const agent = await dependencies.agentRepository.findByIdAndWorkspaceId(parsed.agentId, workspaceId);
+      if (!agent?.logo) {
+        throw notFound("Not found");
+      }
+      await sendAssistantLogo({
+        res,
+        logo: agent.logo,
+        documentStorage: dependencies.documentStorage,
+        cacheControl: "private, max-age=300",
+      });
     } catch (error) {
       next(error);
     }

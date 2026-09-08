@@ -160,6 +160,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Describe the account context of the current session
+         * @description Recovers the signed-in identity from the session cookie. Sign-in paths that redirect the browser, such as provider OAuth, set the cookie without returning a body; this reports who the session belongs to and which account and workspace it lands on.
+         */
+        get: operations["getCurrentSession"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/invitations/{invitationToken}": {
         parameters: {
             query?: never;
@@ -171,6 +191,23 @@ export interface paths {
         get: operations["getAccountInvitation"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/invitations/{invitationToken}/accept-as-current-user": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept an invitation as the signed-in user, without a password */
+        post: operations["acceptAccountInvitationAsCurrentUser"];
         delete?: never;
         options?: never;
         head?: never;
@@ -621,6 +658,108 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspaceId}/operator-mcp/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Operator MCP setup options */
+        get: operations["getOperatorMcpSetup"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/operator-mcp/grants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List visible Operator MCP grants */
+        get: operations["listOperatorMcpGrants"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/operator-mcp/grants/{grantId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read an Operator MCP grant */
+        get: operations["getOperatorMcpGrant"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/operator-mcp/grants/{grantId}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke an Operator MCP grant */
+        post: operations["revokeOperatorMcpGrant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operator-mcp/oauth/transactions/{transactionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read a pending Operator MCP consent transaction */
+        get: operations["getOperatorMcpConsentTransaction"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operator-mcp/oauth/transactions/{transactionId}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve or deny an Operator MCP consent transaction */
+        post: operations["decideOperatorMcpConsentTransaction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspace": {
         parameters: {
             query?: never;
@@ -993,6 +1132,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agents/bundle/imports/{importId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get an agent bundle import job
+         * @description Returns the durable state of an import attempt, including any compensated orphan cleanup.
+         */
+        get: operations["getAgentBundleImport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agents": {
         parameters: {
             query?: never;
@@ -1331,7 +1490,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Read the assistant logo image
+         * @description Dashboard session only; bearer API tokens are rejected. The optional workspaceId query selects the workspace for browser image requests.
+         */
+        get: operations["getAgentAssistantLogo"];
         put?: never;
         /** Upload an assistant logo */
         post: operations["uploadAgentAssistantLogo"];
@@ -1353,6 +1516,46 @@ export interface paths {
         put?: never;
         /** Set the default workspace agent */
         post: operations["setDefaultAgent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/bundle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export a portable agent bundle
+         * @description Composes the agent's config, routines, context-variable enablements and skills into one portable bundle for import into another workspace.
+         */
+        get: operations["exportAgentBundle"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/bundle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import a portable agent bundle as a new agent
+         * @description Creates a new agent from a previously exported bundle. References that cannot travel between workspaces (credential-bearing skill targets, missing context variables, unresolved document sources) import unbound and are reported in `unresolved` rather than dropped silently.
+         */
+        post: operations["importAgentBundle"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3031,7 +3234,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Read a copilot proposal preview */
+        /**
+         * Read a copilot proposal preview
+         * @description Dashboard session only. The proposal resolves its owning workspace before workspace authorization, so an external handoff does not depend on stored dashboard workspace state.
+         */
         get: operations["getCopilotProposal"];
         put?: never;
         post?: never;
@@ -3447,6 +3653,8 @@ export interface components {
         HealthResponse: {
             /** @enum {string} */
             status: "ok";
+            version: string;
+            commit: string;
         };
         /** @enum {string} */
         ChatStatusStage: "interpreting" | "searching" | "composing";
@@ -3484,6 +3692,10 @@ export interface components {
             accepted: true;
         };
         PasswordResetConfirmResponse: components["schemas"]["LoginResponse"] & {
+            /** Format: email */
+            email: string;
+        };
+        SessionResponse: components["schemas"]["LoginResponse"] & {
             /** Format: email */
             email: string;
         };
@@ -3675,6 +3887,10 @@ export interface components {
             status: "pending" | "accepted" | "revoked" | "expired";
             /** Format: date-time */
             expiresAt: string;
+            /** @description True when a login already exists for the invited email, so accepting with a password verifies the existing one instead of setting a new one. */
+            requiresExistingPassword: boolean;
+            /** @description Identity providers the invited login can sign in with, such as "google". A login listed here can accept the invitation through that provider without a password. */
+            federatedProviders: string[];
         };
         RetrievalDefaultsResponse: {
             queryRewriteEnabled: boolean;
@@ -4239,6 +4455,7 @@ export interface components {
             citationDisplayEnabled: boolean;
             contactRequestsEnabled: boolean;
             webhookExportsEnabled: boolean;
+            handoffOnRetrievalMiss: boolean;
             contactRequestDelivery: components["schemas"]["AgentContactRequestDelivery"];
             theme: {
                 brand: string;
@@ -4286,6 +4503,7 @@ export interface components {
             citationDisplayEnabled?: boolean;
             contactRequestsEnabled?: boolean;
             webhookExportsEnabled?: boolean;
+            handoffOnRetrievalMiss?: boolean;
             contactRequestDelivery?: components["schemas"]["AgentContactRequestDeliveryRequest"];
             theme?: {
                 brand?: string;
@@ -5081,6 +5299,468 @@ export interface components {
             /** @enum {string} */
             status: "queued" | "noop";
         };
+        /** @description A workspace-scoped reference that does not travel between workspaces (for example a credential-bearing connection). The bundle carries only the kind so the caller can see what did not come along; `key` links the placeholder back to another entity exported in the same bundle when re-binding on import is possible. */
+        AgentConfigRefPlaceholder: {
+            /** @enum {string} */
+            __ref: "documentSource" | "storageBucket" | "storageObjectPath" | "storageGeneration" | "websiteEmbedAllowedOrigin" | "mcpConnection" | "agentSkillTarget";
+            key?: string;
+        };
+        /** @description Stands in for a credential the export withholds. Only its absence travels, never the value. */
+        AgentConfigSecretPlaceholder: {
+            /** @enum {string} */
+            __redacted: "secret";
+        };
+        /** @description An authored directive as it travels. Every reference is a name — `binding.skillName`, `dependsOn` and `excludes` — so nothing here needs re-keying on import. */
+        AgentBundleAuthoredDirective: {
+            name: string;
+            condition: components["schemas"]["AuthoredDirectiveCondition"];
+            action: string;
+            priority: number | null;
+            requiredCapabilities: string[];
+            dependsOn: string[];
+            excludes: string[];
+            routes: ("retrieval" | "direct")[];
+            surfaces: components["schemas"]["GenerationSurface"][];
+            tags: string[];
+            description: string | null;
+            binding: components["schemas"]["AuthoredDirectiveBinding"] | null;
+            lifecycle: components["schemas"]["AuthoredDirectiveLifecycle"] | null;
+            enabled: boolean;
+            metadata: {
+                [key: string]: unknown;
+            };
+        };
+        /** @description Exported for completeness. Import does not re-create these: an MCP connection cannot serve until its credential is re-entered, so each one comes back in `unresolved` for the operator to rebuild. */
+        AgentBundleExternalSkills: {
+            connections: {
+                /** @description Within-bundle linkage key, never a database id. */
+                key: string;
+                displayName: string;
+                serverUrl: string;
+                authMethod: string;
+                credential: components["schemas"]["AgentConfigSecretPlaceholder"] | null;
+                oauth: {
+                    authorizationEndpoint: string;
+                    tokenEndpoint: string;
+                    clientId: string;
+                    clientSecret: components["schemas"]["AgentConfigSecretPlaceholder"] | null;
+                    scopes: string[];
+                } | null;
+            }[];
+            skills: {
+                skillName: string;
+                connection: components["schemas"]["AgentConfigRefPlaceholder"];
+                toolName: string;
+                boundParams: {
+                    [key: string]: unknown;
+                };
+                exposedParams: {
+                    [key: string]: {
+                        description?: string;
+                        slotBinding?: string;
+                    };
+                };
+                declaredOutcomes: string[] | null;
+                outcomeMap: {
+                    [key: string]: string;
+                } | null;
+                enabled: boolean;
+            }[];
+        };
+        /** @description The agent configuration projection (AgentConfig) at schemaVersion 4. Fields classified `ref` or `secret` in `portability` carry placeholders rather than values, so an exported bundle never contains a credential or a workspace-scoped id. `contactRequestDelivery` is always redacted: its recipients and webhook stay in the source workspace so an imported agent cannot deliver contact requests to another workspace's people, and import reports `contact_delivery_unbound` when contact requests are on. */
+        AgentBundleAgentConfig: {
+            schemaVersion: number;
+            /** @description Per-field classification, keyed by field path. `ref` and `secret` fields carry placeholders. */
+            portability: {
+                [key: string]: "portable" | "ref" | "secret";
+            };
+            name: string;
+            internalName: string | null;
+            customInstruction: string;
+            handoffOnRetrievalMiss: boolean;
+            contactRequestsEnabled: boolean;
+            webhookExportsEnabled: boolean;
+            contactRequestDelivery: components["schemas"]["AgentConfigSecretPlaceholder"];
+            /** @description Metadata only. The image lives in object storage and is not part of the bundle. */
+            logo: {
+                bucket: components["schemas"]["AgentConfigRefPlaceholder"];
+                objectPath: components["schemas"]["AgentConfigRefPlaceholder"];
+                generation: components["schemas"]["AgentConfigRefPlaceholder"] | null;
+                mimeType: string;
+                filename: string;
+                sizeBytes: number;
+            } | null;
+            theme: {
+                brand: string;
+                brandText: string;
+                surface: string;
+                text: string;
+            };
+            branding: {
+                hidePoweredBy: boolean;
+                privacyPolicyUrl: string | null;
+            };
+            greetingInstruction: string;
+            assistantDefaultLocale: string | null;
+            proactiveGreetingEnabled: boolean;
+            surfaceSettings: {
+                authenticatedChat: {
+                    enabled: boolean;
+                };
+                anonymousChat: {
+                    enabled: boolean;
+                    token: components["schemas"]["AgentConfigSecretPlaceholder"] | null;
+                };
+                websiteEmbed: {
+                    enabled: boolean;
+                    token: components["schemas"]["AgentConfigSecretPlaceholder"] | null;
+                    allowedOrigins: components["schemas"]["AgentConfigRefPlaceholder"][];
+                    launcherLabel: string;
+                    /** @enum {string} */
+                    launcherPosition: "bottom-right" | "bottom-left";
+                    theme: {
+                        brand: string;
+                        brandText: string;
+                        surface: string;
+                        text: string;
+                    };
+                    copy: {
+                        [key: string]: {
+                            [key: string]: string;
+                        };
+                    };
+                    expertOverrides: {
+                        [key: string]: string;
+                    };
+                };
+                /** @description Surface extensions keyed by extension id; shape is owned by the contributing extension. */
+                extensions: {
+                    [key: string]: unknown;
+                };
+            };
+            /** @description Per-skill settings keyed by skill name. `retrieval.answer` carries an `{ enabled, settings }` envelope whose `settings.__agentRetrievalDefaults` holds the agent-level retrieval defaults and source scope. */
+            skillSettings: {
+                [key: string]: unknown;
+            };
+            chatModelOverride: {
+                provider: string;
+                model: string;
+            } | null;
+            authoredDirectives: components["schemas"]["AgentBundleAuthoredDirective"][];
+            externalSkills: components["schemas"]["AgentBundleExternalSkills"];
+        };
+        AgentBundleRoutine: {
+            name: string;
+            /** @description Source version, carried for provenance only; import always creates v1. */
+            version: number;
+            definition: {
+                name: string;
+                activation: {
+                    triggerDescription: string;
+                    gateRef?: string | null;
+                    priority: number;
+                    /**
+                     * @default once_per_conversation
+                     * @enum {string}
+                     */
+                    reentryMode: "once_per_conversation" | "always" | "semantic";
+                };
+                /** @default [] */
+                slots: {
+                    stableSlotId: string;
+                    key: string;
+                    /** @enum {string} */
+                    type: "text" | "number" | "boolean" | "email" | "date";
+                    required: boolean;
+                    description?: string | null;
+                    ordinal: number;
+                    mutable?: boolean;
+                }[];
+                steps: {
+                    stableStepId: string;
+                    /** @enum {string} */
+                    kind: "chat" | "tool" | "action" | "approval";
+                    toolRef?: string | null;
+                    actionType?: string | null;
+                    captureKey?: string | null;
+                    ordinal: number;
+                    /** @default {} */
+                    metadata: {
+                        inputBindings?: {
+                            [key: string]: {
+                                /** @enum {string} */
+                                kind: "literal";
+                                value: string | number | boolean;
+                            } | {
+                                /** @enum {string} */
+                                kind: "variableRef";
+                                ref: string;
+                            } | {
+                                /** @enum {string} */
+                                kind: "contextVariableRef";
+                                contextVariable: string;
+                            };
+                        };
+                        outputAssignments?: {
+                            [key: string]: string;
+                        };
+                        /** @enum {string} */
+                        mode?: "typed" | "untyped";
+                    };
+                    instruction: string;
+                    options?: {
+                        id: string;
+                        label: string;
+                        description?: string | null;
+                    }[];
+                }[];
+                /** @default [] */
+                transitions: {
+                    fromStep: string;
+                    toRef: string;
+                    /** @enum {string} */
+                    guardKind: "llm" | "default" | "slot_filled" | "outcome" | "counter" | "field";
+                    guardText?: string | null;
+                    outcomeStatus?: string | null;
+                    counterLimit?: number | null;
+                    fieldRef?: string | null;
+                    /** @enum {string|null} */
+                    fieldOp?: "is_true" | "is_false" | "equals" | "not_equals" | "in" | "is_present" | "is_absent" | "gt" | "gte" | "lt" | "lte" | "older_than" | "within" | null;
+                    fieldValue?: string | number | boolean | null;
+                    fieldValues?: (string | number | boolean)[] | null;
+                    /** @enum {string|null} */
+                    fieldUnit?: "days" | "weeks" | "months" | "years" | null;
+                    ordinal: number;
+                }[];
+                terminals: {
+                    stableStepId: string;
+                    /** @enum {string} */
+                    kind: "complete" | "handoff";
+                    instruction?: string | null;
+                    ordinal: number;
+                }[];
+                completionExport?: {
+                    /** @default false */
+                    enabled: boolean;
+                    /** @default [] */
+                    triggerKinds: ("complete" | "handoff")[];
+                    /** @default  */
+                    destinationRef: string;
+                };
+            };
+        };
+        AgentBundleContextVariable: {
+            variableName: string;
+            /** @enum {string} */
+            source: "pushed" | "browser" | "resolver";
+            resolverSkillName: string | null;
+            maxAgeSeconds: number | null;
+            resolverTimeoutMs: number | null;
+            /** @enum {string} */
+            surfacing: "always" | "on_reference" | "operator_only";
+            enabled: boolean;
+        };
+        AgentBundleSkill: {
+            name: string;
+            capability: string;
+            /** @enum {string} */
+            invocationMode: "default_answer" | "routine_named" | "agent_selectable";
+            enabled: boolean;
+            /** @description Only the fields a capability marked portable. */
+            config: {
+                [key: string]: unknown;
+            };
+            /** @description Settings the source agent had a value for that the capability does not mark portable. Key names only, never values; import reports them so the operator knows what to re-enter. */
+            omittedConfigKeys: string[];
+            /** @description Addresses a workspace connection that holds credentials, so the id is placeheld and the skill imports unbound. */
+            target: {
+                kind: string | null;
+                id: components["schemas"]["AgentConfigRefPlaceholder"] | null;
+            };
+        };
+        /**
+         * @description Why a bundle element could not be fully applied to the target workspace. Every element is reported
+         *     rather than silently dropped: a bundle that imports quietly minus a skill binding is an agent that
+         *     looks configured and answers wrong.
+         *     - context_variable_missing: the bundle names a context variable that does not exist in this workspace.
+         *     - resolver_skill_missing: the enablement's resolver skill did not survive import, so it stays unbound.
+         *     - skill_target_unbound: the skill's connection target is a credential-bearing workspace row.
+         *     - skill_capability_unknown: no capability with this id is registered in this deployment.
+         *     - routine_invalid: the routine imported as a draft because publish validation rejected it.
+         *     - document_source_unresolved: selected document sources cannot be matched; scope imports empty, not "all".
+         *     - surface_credential_unbound: a surface whose token cannot travel; imported disabled so it cannot serve.
+         *     - mcp_connection_unbound: an external MCP connection reference; the skill imports without its server.
+         *     - asset_not_portable: binary stored outside the database (the logo); not part of the bundle.
+         *     - skill_config_not_portable: a skill setting whose value the capability keeps inside its own workspace.
+         *     - directive_binding_unbound: a directive bound to a skill that did not survive import; kept, but disabled.
+         *     - contact_delivery_unbound: contact requests are on but their destination stayed in the source workspace.
+         * @enum {string}
+         */
+        AgentBundleUnresolvedKind: "context_variable_missing" | "resolver_skill_missing" | "skill_target_unbound" | "skill_capability_unknown" | "routine_invalid" | "document_source_unresolved" | "surface_credential_unbound" | "mcp_connection_unbound" | "asset_not_portable" | "skill_config_not_portable" | "directive_binding_unbound" | "contact_delivery_unbound";
+        AgentBundleUnresolvedReference: {
+            kind: components["schemas"]["AgentBundleUnresolvedKind"];
+            /** @description The bundle element the caller must fix, named the way they authored it. */
+            element: string;
+            detail: string;
+        };
+        AgentBundle: {
+            /** @enum {number} */
+            bundleVersion: 1;
+            /** @description Portability of the bundle's own top-level collections, keyed by field path (for example "agentSkills[].config"). */
+            portability: {
+                [key: string]: "portable" | "ref" | "secret";
+            };
+            agent: components["schemas"]["AgentBundleAgentConfig"];
+            routines: components["schemas"]["AgentBundleRoutine"][];
+            contextVariables: components["schemas"]["AgentBundleContextVariable"][];
+            agentSkills: components["schemas"]["AgentBundleSkill"][];
+        };
+        /** @description An agent configuration on any version this deployment reads. Fields introduced after the oldest accepted version are optional; an older bundle that omits them imports with the behaviour that version had. Export always emits the current version, with every field present. */
+        AgentBundleImportAgentConfig: {
+            schemaVersion: number;
+            /** @description Per-field classification, keyed by field path. `ref` and `secret` fields carry placeholders. */
+            portability: {
+                [key: string]: "portable" | "ref" | "secret";
+            };
+            name: string;
+            internalName?: string | null;
+            customInstruction: string;
+            handoffOnRetrievalMiss?: boolean;
+            contactRequestsEnabled: boolean;
+            webhookExportsEnabled: boolean;
+            contactRequestDelivery: components["schemas"]["AgentConfigSecretPlaceholder"];
+            /** @description Metadata only. The image lives in object storage and is not part of the bundle. */
+            logo: {
+                bucket: components["schemas"]["AgentConfigRefPlaceholder"];
+                objectPath: components["schemas"]["AgentConfigRefPlaceholder"];
+                generation: components["schemas"]["AgentConfigRefPlaceholder"] | null;
+                mimeType: string;
+                filename: string;
+                sizeBytes: number;
+            } | null;
+            theme: {
+                brand: string;
+                brandText: string;
+                surface: string;
+                text: string;
+            };
+            branding: {
+                hidePoweredBy: boolean;
+                privacyPolicyUrl: string | null;
+            };
+            greetingInstruction: string;
+            assistantDefaultLocale: string | null;
+            proactiveGreetingEnabled: boolean;
+            surfaceSettings: {
+                authenticatedChat: {
+                    enabled: boolean;
+                };
+                anonymousChat: {
+                    enabled: boolean;
+                    token: components["schemas"]["AgentConfigSecretPlaceholder"] | null;
+                };
+                websiteEmbed: {
+                    enabled: boolean;
+                    token: components["schemas"]["AgentConfigSecretPlaceholder"] | null;
+                    allowedOrigins: components["schemas"]["AgentConfigRefPlaceholder"][];
+                    launcherLabel: string;
+                    /** @enum {string} */
+                    launcherPosition: "bottom-right" | "bottom-left";
+                    theme: {
+                        brand: string;
+                        brandText: string;
+                        surface: string;
+                        text: string;
+                    };
+                    copy: {
+                        [key: string]: {
+                            [key: string]: string;
+                        };
+                    };
+                    expertOverrides: {
+                        [key: string]: string;
+                    };
+                };
+                /** @description Surface extensions keyed by extension id; shape is owned by the contributing extension. */
+                extensions: {
+                    [key: string]: unknown;
+                };
+            };
+            /** @description Per-skill settings keyed by skill name. `retrieval.answer` carries an `{ enabled, settings }` envelope whose `settings.__agentRetrievalDefaults` holds the agent-level retrieval defaults and source scope. */
+            skillSettings: {
+                [key: string]: unknown;
+            };
+            chatModelOverride: {
+                provider: string;
+                model: string;
+            } | null;
+            authoredDirectives: components["schemas"]["AgentBundleAuthoredDirective"][];
+            externalSkills: components["schemas"]["AgentBundleExternalSkills"];
+        };
+        /** @description A skill as accepted on import. `config` and `omittedConfigKeys` default to empty when absent, so a hand-written bundle need not restate them. */
+        AgentBundleImportSkill: {
+            name: string;
+            capability: string;
+            /** @enum {string} */
+            invocationMode: "default_answer" | "routine_named" | "agent_selectable";
+            enabled: boolean;
+            /** @description Only the fields a capability marked portable. */
+            config?: {
+                [key: string]: unknown;
+            };
+            /** @description Settings the source agent had a value for that the capability does not mark portable. Key names only, never values; import reports them so the operator knows what to re-enter. */
+            omittedConfigKeys?: string[];
+            /** @description Addresses a workspace connection that holds credentials, so the id is placeheld and the skill imports unbound. */
+            target: {
+                kind: string | null;
+                id: components["schemas"]["AgentConfigRefPlaceholder"] | null;
+            };
+        };
+        /** @description A previously exported agent bundle. `bundleVersion` and `agent.schemaVersion` are checked against what this deployment supports; an unsupported value fails the whole import with 400 rather than importing partially. Collections default to empty when omitted. */
+        AgentBundleImportRequest: {
+            bundleVersion: number;
+            portability?: {
+                [key: string]: "portable" | "ref" | "secret";
+            };
+            agent: components["schemas"]["AgentBundleImportAgentConfig"];
+            routines?: components["schemas"]["AgentBundleRoutine"][];
+            contextVariables?: components["schemas"]["AgentBundleContextVariable"][];
+            agentSkills?: components["schemas"]["AgentBundleImportSkill"][];
+            /** @description Caller-supplied key that replays a completed import in this workspace instead of creating another agent. A key whose import is still applying returns 409. */
+            idempotencyKey?: string;
+        };
+        AgentBundleImportResponse: {
+            /** Format: uuid */
+            importId: string;
+            /** Format: uuid */
+            agentId: string;
+            /** @description True when this is the completed result of a prior request with the same idempotencyKey. */
+            replayed: boolean;
+            unresolved: components["schemas"]["AgentBundleUnresolvedReference"][];
+        };
+        AgentBundleImportParams: {
+            /** Format: uuid */
+            importId: string;
+        };
+        AgentBundleImportStatus: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            state: "queued" | "applying" | "applied" | "failed" | "compensated";
+            /** Format: uuid */
+            agentId: string | null;
+            unresolved: components["schemas"]["AgentBundleUnresolvedReference"][];
+            /** @enum {string|null} */
+            failureCode: "invalid_bundle" | "apply_failed" | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: date-time */
+            appliedAt: string | null;
+            /** Format: date-time */
+            compensatedAt: string | null;
+        };
         DocumentCreateRequest: {
             title: string;
             content: string;
@@ -5241,10 +5921,10 @@ export interface components {
             metadata: {
                 [key: string]: string | number | boolean | null;
             };
-            enrichment?: components["schemas"]["DocumentEnrichment"] & (Record<string, never> | null);
+            enrichment?: components["schemas"]["DocumentEnrichment"] | null;
             /** Format: uuid */
             sourceId?: string | null;
-            source?: components["schemas"]["DocumentSourceSummary"] & (Record<string, never> | null);
+            source?: components["schemas"]["DocumentSourceSummary"] | null;
             externalDocumentId?: string | null;
             /** @enum {string} */
             sourceKind: "inline_text" | "uploaded_file";
@@ -6625,7 +7305,7 @@ export interface components {
             answerPreview: string;
             skillName: string | null;
             skillOutcome: string | null;
-            skillStatus: components["schemas"]["QualitySkillStatus"] & (string | null);
+            skillStatus: components["schemas"]["QualitySkillStatus"] | null;
             totalLatencyMs: number | null;
             grounding: components["schemas"]["GroundingDiagnostic"] | null;
             /** Format: date-time */
@@ -7054,6 +7734,13 @@ export interface components {
             unknown: number;
             contentGapEligible: number;
         };
+        AudiencePulseTopicTransition: {
+            /** @enum {string} */
+            kind: "survived" | "split" | "merged" | "emerged" | "dissolved";
+            parentTopicIds: string[];
+            viaCentroidFallback: boolean;
+            membershipOverlap: number | null;
+        };
         AudiencePulseCoverage: {
             populationSize: number;
             sampleSize: number;
@@ -7114,6 +7801,9 @@ export interface components {
             title: string;
             description: string;
             memberCount: number;
+            previousMemberCount: number | null;
+            previousShare: number | null;
+            transition: components["schemas"]["AudiencePulseTopicTransition"] | null;
             share: number;
             distinctQuestionCount: number;
             weeklyPulse: {
@@ -7128,6 +7818,10 @@ export interface components {
             themeId: string;
             eligibleEvidenceCount: number;
             distinctConversationCount: number;
+        };
+        AudiencePulseDissolvedTopic: {
+            id: string;
+            title: string;
         };
         AudiencePulseRecommendation: {
             id: string;
@@ -7150,10 +7844,16 @@ export interface components {
             };
             /** Format: date-time */
             generatedAt: string;
+            isFirstCensus: boolean;
+            /** Format: date-time */
+            narrativeGeneratedAt: string;
+            narrativeReuseCount: number;
+            narrativeReuseMaxDrift: number;
             coverage: components["schemas"]["AudiencePulseCoverage"];
             weeklyVolume: components["schemas"]["AudiencePulseWeeklyVolume"][];
             summary?: string;
             unclassifiedQuestionCount: number;
+            dissolvedTopics: components["schemas"]["AudiencePulseDissolvedTopic"][];
             themes: components["schemas"]["AudiencePulseTheme"][];
             contentGaps: components["schemas"]["AudiencePulseContentGap"][];
             recommendations: components["schemas"]["AudiencePulseRecommendation"][];
@@ -7184,7 +7884,7 @@ export interface components {
             /** @enum {string} */
             kind: "unavailable";
             /** @enum {string} */
-            reason: "provider" | "validation" | "cancelled";
+            reason: "provider" | "validation" | "census" | "cancelled";
         } | {
             /** @enum {string} */
             kind: "completed";
@@ -7916,6 +8616,35 @@ export interface operations {
             };
         };
     };
+    getCurrentSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current session described */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionResponse"];
+                };
+            };
+            /** @description No active session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     getAccountInvitation: {
         parameters: {
             query?: never;
@@ -7938,6 +8667,55 @@ export interface operations {
             };
             /** @description Invitation not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    acceptAccountInvitationAsCurrentUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invitationToken: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Invitation accepted and session switched to the joined account */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            /** @description No active session, or the session email does not match the invitation */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invitation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invitation is no longer valid */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10431,6 +11209,523 @@ export interface operations {
             };
         };
     };
+    getOperatorMcpSetup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current setup availability and client artifacts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        availability: "available" | "disabled" | "misconfigured" | "unavailable";
+                        /** Format: uri */
+                        resource: string | null;
+                        artifacts: {
+                            id: string;
+                            displayName: string;
+                            clientVersion: string | null;
+                            /** @enum {string} */
+                            status: "verified" | "unavailable" | "unverified";
+                            description: string;
+                            setupInstructions: string[];
+                            command: string | null;
+                            configuration: string | null;
+                            /** Format: uri */
+                            handoffUrl: string | null;
+                            permittedLaunchTarget: string;
+                            expectedClientId: string | null;
+                            redirectMechanism: string;
+                            failureRecovery: string;
+                        }[];
+                        /** Format: date-time */
+                        checkedAt: string;
+                        message: string | null;
+                    };
+                };
+            };
+            /** @description Invalid Operator MCP request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace access required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Operator MCP resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listOperatorMcpGrants: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description User or workspace grant inventory */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        grants: {
+                            /** Format: uuid */
+                            id: string;
+                            clientId: string;
+                            clientName: string;
+                            clientVersion: string | null;
+                            clientMetadataDigest: string;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            workspaceName: string;
+                            /** Format: uuid */
+                            userId: string;
+                            userName: string | null;
+                            scopes: ("operator:read" | "operator:probe" | "operator:act" | "operator:propose")[];
+                            offlineAccess: boolean;
+                            /** @enum {string} */
+                            status: "active" | "revoked" | "superseded" | "expired";
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            lastUsedAt: string | null;
+                            /** Format: date-time */
+                            revokedAt: string | null;
+                            revokedReason: string | null;
+                            canRevoke: boolean;
+                            isOwner: boolean;
+                        }[];
+                        canViewWorkspace: boolean;
+                    };
+                };
+            };
+            /** @description Invalid Operator MCP request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace access required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Operator MCP resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getOperatorMcpGrant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                grantId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Grant detail */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        clientId: string;
+                        clientName: string;
+                        clientVersion: string | null;
+                        clientMetadataDigest: string;
+                        /** Format: uuid */
+                        workspaceId: string;
+                        workspaceName: string;
+                        /** Format: uuid */
+                        userId: string;
+                        userName: string | null;
+                        scopes: ("operator:read" | "operator:probe" | "operator:act" | "operator:propose")[];
+                        offlineAccess: boolean;
+                        /** @enum {string} */
+                        status: "active" | "revoked" | "superseded" | "expired";
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        lastUsedAt: string | null;
+                        /** Format: date-time */
+                        revokedAt: string | null;
+                        revokedReason: string | null;
+                        canRevoke: boolean;
+                        isOwner: boolean;
+                        redirectHost: string;
+                        /** Format: uri */
+                        resource: string;
+                        credentialCount: number;
+                        recentInvocationCount: number;
+                    };
+                };
+            };
+            /** @description Invalid Operator MCP request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace access required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Operator MCP resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    revokeOperatorMcpGrant: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
+            path: {
+                workspaceId: string;
+                grantId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revoked grant */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        clientId: string;
+                        clientName: string;
+                        clientVersion: string | null;
+                        clientMetadataDigest: string;
+                        /** Format: uuid */
+                        workspaceId: string;
+                        workspaceName: string;
+                        /** Format: uuid */
+                        userId: string;
+                        userName: string | null;
+                        scopes: ("operator:read" | "operator:probe" | "operator:act" | "operator:propose")[];
+                        offlineAccess: boolean;
+                        /** @enum {string} */
+                        status: "active" | "revoked" | "superseded" | "expired";
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        lastUsedAt: string | null;
+                        /** Format: date-time */
+                        revokedAt: string | null;
+                        revokedReason: string | null;
+                        canRevoke: boolean;
+                        isOwner: boolean;
+                    };
+                };
+            };
+            /** @description Invalid Operator MCP request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace access required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Operator MCP resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getOperatorMcpConsentTransaction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                transactionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Consent transaction bound to the current session */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        transactionId: string;
+                        client: {
+                            clientId: string;
+                            displayName: string;
+                            /** Format: uri */
+                            clientUri: string | null;
+                            clientVersion: string | null;
+                            metadataDigest: string;
+                            /** @enum {string} */
+                            applicationType: "web" | "native";
+                        };
+                        requestedScopes: ("operator:read" | "operator:probe" | "operator:act" | "operator:propose")[];
+                        requestedOfflineAccess: boolean;
+                        redirectHost: string;
+                        /** Format: uri */
+                        redirectUri: string;
+                        /** Format: uri */
+                        resource: string;
+                        currentUser: {
+                            /** Format: uuid */
+                            id: string;
+                            displayName: string;
+                            /** Format: email */
+                            email: string | null;
+                        };
+                        workspaces: {
+                            /** Format: uuid */
+                            id: string;
+                            name: string;
+                            /** @enum {string} */
+                            role: "member" | "admin" | "owner";
+                        }[];
+                        /** @enum {string} */
+                        status: "pending" | "approved" | "denied" | "consumed" | "expired";
+                        /** Format: date-time */
+                        expiresAt: string;
+                    };
+                };
+            };
+            /** @description Invalid Operator MCP request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace access required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Operator MCP resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    decideOperatorMcpConsentTransaction: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
+            path: {
+                transactionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    decision: "approve" | "deny";
+                    /** Format: uuid */
+                    workspaceId?: string;
+                    approvedToolScopes?: ("operator:read" | "operator:probe" | "operator:act" | "operator:propose")[];
+                    offlineAccess: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description OAuth redirect for the client */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uri */
+                        redirectUrl: string;
+                    };
+                };
+            };
+            /** @description Invalid Operator MCP request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace access required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Operator MCP resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     listWorkspaces: {
         parameters: {
             query?: never;
@@ -11698,6 +12993,46 @@ export interface operations {
             };
             /** @description Authentication required */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAgentBundleImport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                importId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Import job returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentBundleImportStatus"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Import job not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -13054,6 +14389,52 @@ export interface operations {
             };
         };
     };
+    getAgentAssistantLogo: {
+        parameters: {
+            query?: {
+                workspaceId?: string;
+                v?: string;
+            };
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Logo image */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/png": string;
+                    "image/jpeg": string;
+                    "image/webp": string;
+                    "image/gif": string;
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or logo not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     uploadAgentAssistantLogo: {
         parameters: {
             query?: never;
@@ -13178,6 +14559,106 @@ export interface operations {
             };
             /** @description Agent not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    exportAgentBundle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Agent bundle returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentBundle"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    importAgentBundle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentBundleImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Existing completed import replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentBundleImportResponse"];
+                };
+            };
+            /** @description Agent created from bundle */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentBundleImportResponse"];
+                };
+            };
+            /** @description Unsupported bundle version or agent schema version */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description An import with this idempotency key is still applying */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -21105,6 +22586,8 @@ export interface operations {
                     "application/json": {
                         /** Format: uuid */
                         id: string;
+                        /** Format: uuid */
+                        workspaceId: string;
                         /** @enum {string} */
                         targetType: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl" | "workspace_setting";
                         targetRef?: unknown;

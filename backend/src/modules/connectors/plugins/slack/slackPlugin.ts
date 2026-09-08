@@ -32,7 +32,7 @@ import { connectorKyselyDb } from "../../services/connectorKyselyDb.js";
 import { PostgresSlackPersistence } from "./slackPersistence.js";
 import { createSlackWebhookRouter } from "./slackWebhook.js";
 
-export interface SlackPluginOptions {
+interface SlackPluginOptions {
   signingSecret: string;
   encryptionKey?: string;
   clientFactory?: SlackWebApiClientFactory;
@@ -154,7 +154,7 @@ export class SlackPlugin implements ConnectorPlugin {
           },
           responseUrlClient: new FetchSlackResponseUrlClient({
             assertPublicUrl: extendedContext.assertPublicUrl,
-            fetchImpl: context.publicHttp.fetch,
+            fetchImpl: (input, init) => context.publicHttp.fetch(input, init),
           }),
           audit: extendedContext.auditService,
           metrics: extendedContext.metricsRegistry ?? undefined,

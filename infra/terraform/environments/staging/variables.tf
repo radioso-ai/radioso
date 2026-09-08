@@ -253,6 +253,18 @@ variable "radioso_mcp_enabled" {
   default     = false
 }
 
+variable "mcp_public_origin" {
+  description = "Optional canonical HTTPS origin for standalone MCP in staging. GitHub Actions discovers the Cloud Run URL; set this only for a custom domain or direct Terraform run."
+  type        = string
+  default     = null
+}
+
+variable "operator_mcp_credential_epoch" {
+  description = "Externally monotonic Operator MCP credential generation in staging."
+  type        = string
+  default     = "1"
+}
+
 variable "app_base_url_override" {
   description = "Optional override for the main public app URL."
   type        = string
@@ -287,6 +299,16 @@ variable "copilot_retention_schedule" {
   description = "Optional override for the staging Ray retention sweep schedule. Null uses the root module default."
   type        = string
   default     = null
+}
+
+variable "agent_bundle_import_orphan_age_ms" {
+  type    = number
+  default = 900000
+}
+
+variable "agent_bundle_import_cleanup_schedule" {
+  type    = string
+  default = null
 }
 
 # --- Monitoring and alerting ---

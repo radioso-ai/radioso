@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { DocumentIngestionService } from "../../src/modules/documents/services/documentIngestionService.js";
 import { DocumentImportService } from "../../src/modules/documents/services/documentImportService.js";
@@ -34,12 +34,11 @@ class RecordingUsageLimitPolicy implements UsageLimitPolicy {
 
   async reserveIndexedStorage(input: IndexedStorageReservationInput): Promise<UsageLimitReservation> {
     if (this.failIndexedStorage) {
-      throw {
+      throw Object.assign(new Error("Indexed storage exceeded"), {
         statusCode: 429,
         code: "usage_limit_exceeded",
-        message: "Indexed storage exceeded",
         details: { resource: "stored_indexed_bytes" },
-      };
+      });
     }
     const callIndex = this.indexedStorageCalls.length;
     this.indexedStorageCalls.push(input);

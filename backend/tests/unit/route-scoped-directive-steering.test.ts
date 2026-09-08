@@ -281,7 +281,7 @@ describe("route-scoped directive steering", () => {
     expect(systemPrompt).toContain("Always apply.");
 
     expect(logger.warn).toHaveBeenCalledTimes(1);
-    const [payload] = logger.warn.mock.calls[0]!;
+    const [payload] = logger.warn.mock.calls[0];
     expect(payload).toMatchObject({
       event: "directive_contextual_match_unavailable",
       workspaceId: "w1",
@@ -336,7 +336,7 @@ describe("route-scoped directive steering", () => {
     expect(result.rules.map((rule) => rule.action)).toEqual(["Always apply."]);
 
     expect(logger.warn).toHaveBeenCalledTimes(1);
-    const [payload] = logger.warn.mock.calls[0]!;
+    const [payload] = logger.warn.mock.calls[0];
     expect(payload).toMatchObject({
       event: "directive_contextual_match_unavailable",
       workspaceId: "w1",

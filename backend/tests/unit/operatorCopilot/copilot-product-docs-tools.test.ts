@@ -24,7 +24,7 @@ describe("product documentation copilot tools", () => {
     expect(descriptors.map((descriptor) => descriptor.name)).toEqual(["product_docs", "product_doc_page"]);
     for (const descriptor of descriptors) {
       expect(descriptor.shape).toBe("read");
-      expect(descriptor.verificationCost({} as never)).toBe(0);
+      expect(descriptor.verificationCost({})).toBe(0);
       expect(descriptor.requiredPermissions).toEqual(["workspace.summary.read"]);
       expect(descriptor.dashboardSubject).toEqual({ type: "documentation" });
     }

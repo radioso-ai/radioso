@@ -364,7 +364,7 @@ Chunking behavior.`,
 });
 
 describeIntegration("chunk temporal trigger columns (Postgres)", () => {
-  const database = new Database(integrationDatabaseUrl as string);
+  const database = new Database(integrationDatabaseUrl);
   const accountId = randomUUID();
   const workspaceId = randomUUID();
   const documentId = randomUUID();

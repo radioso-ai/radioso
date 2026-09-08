@@ -118,7 +118,7 @@ export class AgenticRetrievalRunner {
         snippetChars: input.snippetChars,
         callerMetadataFilter: metadataFilter,
         usageContext: input.usageContext,
-      }) as AgentTool,
+      }),
       createLexicalSearchTool({
         workspaceId: input.workspaceId,
         lexicalSearch: this.deps.lexicalSearch,
@@ -126,26 +126,26 @@ export class AgenticRetrievalRunner {
         sourceFilter: input.sourceFilter,
         snippetChars: input.snippetChars,
         callerMetadataFilter: metadataFilter,
-      }) as AgentTool,
+      }),
       createRewriteQueryTool({
         queryRewrite: this.deps.queryRewrite,
         workspaceContext: input.workspaceContext,
         usageContext: input.usageContext,
-      }) as AgentTool,
+      }),
       createRerankTool({
         rerankGateway: this.deps.rerankGateway,
         registry,
         workspaceContext: input.workspaceContext,
         usageContext: input.usageContext,
-      }) as AgentTool,
-      createFetchChunkTool({ registry }) as AgentTool,
+      }),
+      createFetchChunkTool({ registry }),
       ...stagedTools,
       createFinalizeTool({
         registry,
         onFinalized: (selection) => {
           finalized = selection;
         },
-      }) as AgentTool,
+      }),
     ];
 
     const fallbackLimit = input.fallbackChunkLimit ?? DEFAULT_FALLBACK_CHUNK_LIMIT;

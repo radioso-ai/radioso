@@ -35,6 +35,7 @@ import {
 import { CredentialDetailsDialog, CredentialIssuedDialog, RevokeConfirmDialog } from './credential-dialogs'
 import { ServiceAccountsCard } from './service-accounts-card'
 import { SettingsCard } from './settings-card'
+import { OperatorMcpAccessCard } from './operator-mcp-access-card'
 import { useScopedRowMutations } from './use-scoped-row-mutations'
 
 type TokenAction = { type: 'details' | 'rename' | 'rotate' | 'revoke'; credential: ApiCredentialMetadata }
@@ -103,6 +104,7 @@ export function ApiAccessPanel({ workspaceId }: { workspaceId: string | null | u
 
       {summary ? (
         <>
+          <OperatorMcpAccessCard workspaceId={workspaceId} />
           <PersonalTokensCard
             workspaceId={workspaceId}
             canCreate={canManagePersonal}

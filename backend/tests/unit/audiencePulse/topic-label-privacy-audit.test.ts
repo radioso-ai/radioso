@@ -110,7 +110,7 @@ describe("Topic label privacy audit: resolution flow (T021a)", () => {
 
     expect(result).toEqual(regenerated);
     expect(naming.name).toHaveBeenCalledTimes(1);
-    expect(naming.name).toHaveBeenCalledWith(exemplars, undefined);
+    expect(naming.name).toHaveBeenCalledWith(exemplars, undefined, undefined);
     expect(naming.nameFallback).not.toHaveBeenCalled();
     expect(audit.review).toHaveBeenCalledTimes(2);
     expect(telemetryService.emit).not.toHaveBeenCalled();
@@ -153,7 +153,7 @@ describe("Topic label privacy audit: resolution flow (T021a)", () => {
       telemetryService,
     });
 
-    const [payload] = telemetryService.emit.mock.calls[0]!;
+    const [payload] = telemetryService.emit.mock.calls[0];
     const serialized = JSON.stringify(payload);
     expect(serialized).not.toContain(candidate.title);
     expect(serialized).not.toContain(candidate.description);

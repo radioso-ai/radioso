@@ -40,6 +40,7 @@ COPY packages/document-parser/*.d.ts ./packages/document-parser/
 COPY packages/document-parser/*.js ./packages/document-parser/
 COPY packages/document-parser/parsers ./packages/document-parser/parsers
 COPY packages/mcp-source-proof/package.json ./packages/mcp-source-proof/package.json
+COPY packages/operator-mcp-contract/package.json ./packages/operator-mcp-contract/package.json
 COPY packages/product-docs/package.json ./packages/product-docs/package.json
 COPY packages/radioso-mcp-server/package.json ./packages/radioso-mcp-server/package.json
 COPY packages/routine-definition/package.json ./packages/routine-definition/package.json
@@ -74,6 +75,7 @@ COPY packages/usage-contract ./packages/usage-contract
 COPY packages/crawler ./packages/crawler
 COPY packages/document-parser ./packages/document-parser
 COPY packages/mcp-source-proof ./packages/mcp-source-proof
+COPY packages/operator-mcp-contract ./packages/operator-mcp-contract
 COPY packages/product-docs ./packages/product-docs
 COPY packages/radioso-mcp-server ./packages/radioso-mcp-server
 COPY packages/routine-definition ./packages/routine-definition
@@ -113,6 +115,7 @@ COPY packages/document-parser/*.d.ts ./packages/document-parser/
 COPY packages/document-parser/*.js ./packages/document-parser/
 COPY packages/document-parser/parsers ./packages/document-parser/parsers
 COPY packages/mcp-source-proof/package.json ./packages/mcp-source-proof/package.json
+COPY packages/operator-mcp-contract/package.json ./packages/operator-mcp-contract/package.json
 COPY packages/product-docs/package.json ./packages/product-docs/package.json
 COPY packages/radioso-mcp-server/package.json ./packages/radioso-mcp-server/package.json
 COPY packages/routine-definition/package.json ./packages/routine-definition/package.json
@@ -135,6 +138,7 @@ RUN if [ "$RADIOSO_EDITION" = "enterprise" ]; then \
 COPY --chown=node:node --from=build /app/backend/dist ./backend/dist
 COPY --chown=node:node --from=build /app/packages/crawler/dist ./packages/crawler/dist
 COPY --chown=node:node --from=build /app/packages/mcp-source-proof/dist ./packages/mcp-source-proof/dist
+COPY --chown=node:node --from=build /app/packages/operator-mcp-contract/dist ./packages/operator-mcp-contract/dist
 COPY --chown=node:node --from=build /app/packages/product-docs/dist ./packages/product-docs/dist
 COPY --chown=node:node --from=build /app/packages/radioso-mcp-server/dist ./packages/radioso-mcp-server/dist
 COPY --chown=node:node --from=build /app/packages/routine-definition/dist ./packages/routine-definition/dist
@@ -152,5 +156,15 @@ USER node
 
 WORKDIR /app/backend
 EXPOSE 8080
+
+# Last, because both change on every build and would otherwise invalidate the layers above.
+# The deploy passes the release it is shipping; a build without one says so on /health rather
+# than borrowing the previous release's number. OBSERVABILITY_VERSION follows the same value
+# so spans and metrics carry it too, and a runtime env var still overrides it.
+ARG RADIOSO_RELEASE=development
+ARG RADIOSO_COMMIT=unknown
+ENV RADIOSO_RELEASE=${RADIOSO_RELEASE} \
+    RADIOSO_COMMIT=${RADIOSO_COMMIT} \
+    OBSERVABILITY_VERSION=${RADIOSO_RELEASE}
 
 CMD ["node", "./dist/src/httpServer.js"]

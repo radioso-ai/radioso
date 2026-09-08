@@ -15,8 +15,12 @@ import {
 } from "../state/runtimeStores.js";
 
 import { createHttpServer, type RadiosoRemoteHttpServer } from "./createHttpServer.js";
+import { createFixedWindowPreAuthSourceBudget } from "./preAuthSourceBudget.js";
+import { createOperatorBackendAdapter, operatorBackendRequestTimeoutMs } from "../operator/backendAdapter.js";
+import { createOperatorMcpReadiness } from "../operator/runtimeReadiness.js";
+import { createOperatorMcpFloodLimiter, createOperatorMcpMetrics } from "../operator/observability.js";
 
-export interface CreateRemoteHttpRuntimeOptions {
+interface CreateRemoteHttpRuntimeOptions {
   auditLogger?: AuditLogger;
   auditSinks?: AuditSink[];
   config: RadiosoMcpConfig;
@@ -24,7 +28,7 @@ export interface CreateRemoteHttpRuntimeOptions {
   runtimeStores?: RuntimeStoreHandle;
 }
 
-export interface RemoteHttpRuntime {
+interface RemoteHttpRuntime {
   auditLogger: AuditLogger;
   close(): Promise<void>;
   listen(): Promise<void>;
@@ -60,10 +64,28 @@ export const createRemoteHttpRuntime = async ({
       signingSecret: config.signingSecret,
     }),
   });
+  const operatorFloodLimiter = config.operatorMcp?.enabled ? createOperatorMcpFloodLimiter() : undefined;
   const server = createHttpServer({
     authService,
     auditLogger: resolvedAuditLogger,
     config,
+    operatorMcp: config.operatorMcp?.enabled ? {
+      adapter: createOperatorBackendAdapter({
+        baseUrl: config.baseUrl,
+        internalSecret: config.operatorMcp.internalSecret,
+        requestTimeoutMs: operatorBackendRequestTimeoutMs(config.requestTimeoutMs),
+      }),
+      auditLogger: resolvedAuditLogger,
+      metrics: createOperatorMcpMetrics(),
+      principalRateLimit: operatorFloodLimiter?.principal,
+      rateLimit: operatorFloodLimiter?.source ?? createFixedWindowPreAuthSourceBudget({ maxAttempts: 120, windowMs: 60_000 }),
+      readiness: createOperatorMcpReadiness(true),
+      resource: {
+        authorizationServerUrl: config.operatorMcp.issuerUrl,
+        metadataUrl: `${new URL(config.operatorMcp.resourceUrl).origin}/.well-known/oauth-protected-resource/operator/mcp`,
+        resource: config.operatorMcp.resourceUrl,
+      },
+    } : undefined,
     readiness: resolvedRuntimeStores.readiness,
   });
 

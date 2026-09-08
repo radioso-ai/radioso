@@ -1,7 +1,6 @@
 import type {
   EmbeddingModelId,
   IngestionSettingsRecord,
-  IngestionSettingsWriteInput,
   ValidatedIngestionSettingsInput,
 } from "./ingestion.js";
 import type {
@@ -35,10 +34,6 @@ export interface IngestionSettingsRepositoryPort {
     expectedRevision: string,
   ): Promise<IngestionSettingsRecord | null>;
   promotePendingEmbeddingModelIfReady?(workspaceId: string): Promise<IngestionSettingsRecord | null>;
-}
-
-export interface WorkspaceReprocessPort {
-  reprocessWorkspace(workspaceId: string, options?: { documentEnrichmentOverride?: "on" | "off" } | null): Promise<unknown>;
 }
 
 export type EmbeddingModelTransitionStatus =
@@ -115,12 +110,3 @@ export interface DeclaredMetadataFieldSourcePort {
   listDeclaredMetadataFields(workspaceId: string): Promise<readonly DeclaredMetadataField[]>;
 }
 
-export interface IngestionSettingsPort {
-  getForWorkspace(workspaceId: string): Promise<IngestionSettingsRecord>;
-  cancelPendingEmbeddingModel?(workspaceId: string): Promise<IngestionSettingsRecord>;
-  listSupportedEmbeddingModels?(): readonly EmbeddingModelId[];
-  updateForWorkspace(workspaceId: string, input: IngestionSettingsWriteInput): Promise<IngestionSettingsRecord>;
-  promotePendingEmbeddingModelIfReady?(workspaceId: string): Promise<IngestionSettingsRecord | null>;
-}
-
-export type IngestionSettingsService = IngestionSettingsPort;

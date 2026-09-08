@@ -749,7 +749,7 @@ describe("the agent setting adapter's channel boundary", () => {
     // none of the channel audit events the settings service records.
     const get = vi.fn();
     const update = vi.fn();
-    const adapter = createAgentSettingCopilotProposalAdapter({ agentService: { get, update } as never });
+    const adapter = createAgentSettingCopilotProposalAdapter({ agentService: { get, update } });
 
     await expect(adapter.validatePayload("workspace-1", { agentId, settingKey: "surfaceSettings" }, {
       value: { anonymousChat: { enabled: true, token: "known-token" } },
@@ -764,7 +764,7 @@ describe("the agent setting adapter's channel boundary", () => {
     // channel. Both are the reason the guard cannot live on the draft alone.
     const get = vi.fn();
     const update = vi.fn();
-    const adapter = createAgentSettingCopilotProposalAdapter({ agentService: { get, update } as never });
+    const adapter = createAgentSettingCopilotProposalAdapter({ agentService: { get, update } });
     const targetRef = { agentId, settingKey: "surfaceSettings" };
 
     await expect(adapter.preview("workspace-1", targetRef, { value: {} })).rejects.toThrow(/propose_workspace_setting/);
@@ -773,5 +773,40 @@ describe("the agent setting adapter's channel boundary", () => {
     await expect(adapter.readVersionToken("workspace-1", targetRef)).rejects.toThrow(/propose_workspace_setting/);
     expect(get).not.toHaveBeenCalled();
     expect(update).not.toHaveBeenCalled();
+  });
+});
+
+describe("the agent setting adapter's typed value validation", () => {
+  const agentId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const workspaceId = "workspace-1";
+
+  const adapter = () => createAgentSettingCopilotProposalAdapter({
+    agentService: {
+      get: vi.fn(async () => ({
+        id: agentId,
+        updatedAt: new Date("2026-09-01T10:00:00.000Z"),
+      })),
+      update: vi.fn(),
+    } as never,
+  });
+
+  it("accepts a boolean retrieval-miss handoff proposal", async () => {
+    const validated = await adapter().validatePayload(workspaceId, {
+      agentId,
+      settingKey: "handoffOnRetrievalMiss",
+    }, {
+      value: true,
+    });
+
+    expect(validated.payload).toEqual({ value: true });
+  });
+
+  it("rejects a non-boolean retrieval-miss handoff proposal", async () => {
+    await expect(adapter().validatePayload(workspaceId, {
+      agentId,
+      settingKey: "handoffOnRetrievalMiss",
+    }, {
+      value: "true",
+    })).rejects.toMatchObject({ statusCode: 400 });
   });
 });

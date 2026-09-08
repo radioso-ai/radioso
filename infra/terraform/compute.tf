@@ -484,6 +484,39 @@ resource "google_cloud_run_v2_service" "backend" {
         name  = "RADIOSO_TRUSTED_PROXY_HOPS"
         value = "2"
       }
+      dynamic "env" {
+        for_each = local.operator_mcp_configured ? [var.mcp_public_origin] : []
+        content {
+          name  = "OPERATOR_MCP_RESOURCE_URL"
+          value = "${env.value}/operator/mcp"
+        }
+      }
+      dynamic "env" {
+        for_each = local.operator_mcp_configured ? [local.app_base_url] : []
+        content {
+          name  = "OPERATOR_MCP_ISSUER_URL"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = local.operator_mcp_configured ? [var.operator_mcp_credential_epoch] : []
+        content {
+          name  = "OPERATOR_MCP_CREDENTIAL_EPOCH"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = local.operator_mcp_configured ? [true] : []
+        content {
+          name = "OPERATOR_MCP_INTERNAL_SECRET"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.secrets["operator-mcp-internal-secret"].secret_id
+              version = "latest"
+            }
+          }
+        }
+      }
     }
   }
 
@@ -616,8 +649,46 @@ resource "google_cloud_run_v2_service" "mcp" {
         name  = "RADIOSO_TRUSTED_PROXY_HOPS"
         value = "2"
       }
+      dynamic "env" {
+        for_each = local.operator_mcp_configured ? [var.mcp_public_origin] : []
+        content {
+          name  = "OPERATOR_MCP_RESOURCE_URL"
+          value = "${env.value}/operator/mcp"
+        }
+      }
+      dynamic "env" {
+        for_each = local.operator_mcp_configured ? [local.app_base_url] : []
+        content {
+          name  = "OPERATOR_MCP_ISSUER_URL"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = local.operator_mcp_configured ? [var.operator_mcp_credential_epoch] : []
+        content {
+          name  = "OPERATOR_MCP_CREDENTIAL_EPOCH"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = local.operator_mcp_configured ? [true] : []
+        content {
+          name = "OPERATOR_MCP_INTERNAL_SECRET"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.secrets["operator-mcp-internal-secret"].secret_id
+              version = "latest"
+            }
+          }
+        }
+      }
     }
   }
+
+  depends_on = [
+    google_secret_manager_secret_version.secrets,
+    google_secret_manager_secret_iam_member.backend_access,
+  ]
 
   lifecycle {
     precondition {
@@ -676,9 +747,16 @@ resource "google_cloud_run_v2_service" "frontend" {
         value = var.radioso_edition
       }
       dynamic "env" {
-        for_each = var.deploy_services && var.radioso_mcp_enabled ? ["${google_cloud_run_v2_service.mcp[0].uri}/mcp"] : []
+        for_each = var.deploy_services && var.radioso_mcp_enabled ? ["${coalesce(var.mcp_public_origin, google_cloud_run_v2_service.mcp[0].uri)}/mcp"] : []
         content {
           name  = "RADIOSO_MCP_PUBLIC_URL"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = local.operator_mcp_configured ? ["${var.mcp_public_origin}/operator/mcp"] : []
+        content {
+          name  = "RADIOSO_OPERATOR_MCP_PUBLIC_URL"
           value = env.value
         }
       }
@@ -765,6 +843,10 @@ resource "google_cloud_run_v2_service" "document_worker" {
       env {
         name  = "COPILOT_CONVERSATION_RETENTION_DAYS"
         value = tostring(var.copilot_conversation_retention_days)
+      }
+      env {
+        name  = "AGENT_BUNDLE_IMPORT_ORPHAN_AGE_MS"
+        value = tostring(var.agent_bundle_import_orphan_age_ms)
       }
       env {
         name  = "PRODUCT_ANALYTICS_SINKS"
@@ -1454,4 +1536,16 @@ resource "google_cloud_run_v2_service_iam_member" "crawler_worker_invoker" {
   location = var.region
   role     = "roles/run.invoker"
   member   = "serviceAccount:${data.google_service_account.worker_task_invoker.email}"
+}
+check "operator_mcp_configuration" {
+  assert {
+    condition = (
+      !local.operator_mcp_configured || (
+        !can(regex("^https://example\\.invalid(?::[0-9]+)?$", lower(trimspace(var.mcp_public_origin)))) &&
+        can(regex("^https://[^/?#]+/?$", trimspace(var.app_base_url_override))) &&
+        !can(regex("^https://example\\.invalid(?::[0-9]+)?/?$", lower(trimspace(var.app_base_url_override))))
+      )
+    )
+    error_message = "Operator MCP needs real MCP and app HTTPS origins; neither origin may use the example.invalid placeholder."
+  }
 }

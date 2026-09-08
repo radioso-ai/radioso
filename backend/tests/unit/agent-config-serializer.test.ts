@@ -19,7 +19,11 @@ const fullyConfiguredAgent = (): ConversationAgent => ({
   name: "Support Bot",
   createdAt: new Date(0),
   updatedAt: new Date(0),
+  internalName: "Procurement (EU)",
   customInstruction: "Answer with precise procurement guidance.",
+  // Always written by the repository (`?? false`), so a fixture standing in for a
+  // stored agent carries it too.
+  handoffOnRetrievalMiss: true,
   suggestedQuestionsEnabled: false,
   assistantLinkUtmEnabled: false,
   citationDisplayEnabled: false,
@@ -237,12 +241,24 @@ describe("serializeAgentConfig", () => {
     const config = serializeAgentConfig(fullyConfiguredAgent());
 
     expect(config.schemaVersion).toBe(AGENT_CONFIG_SCHEMA_VERSION);
-    expect(config.schemaVersion).toBe(3);
+    // Pinned to a literal on purpose: the field set changed (internalName,
+    // handoffOnRetrievalMiss), so bumping it is a conscious edit rather than a
+    // constant that quietly follows along.
+    expect(config.schemaVersion).toBe(4);
     expect(config.name).toBe("Support Bot");
     expect(config.customInstruction).toBe("Answer with precise procurement guidance.");
     expect(config.contactRequestsEnabled).toBe(true);
     expect(config.webhookExportsEnabled).toBe(true);
-    expect(config.contactRequestDelivery).toEqual({
+    // Redacted in the portable projection: an imported agent that kept these would
+    // deliver contact requests to the source workspace's people, from elsewhere.
+    expect(config.contactRequestDelivery).toEqual({ __redacted: "secret" });
+    expect(config.portability.contactRequestDelivery).toBe("secret");
+    expect(JSON.stringify(config)).not.toContain("help@example.com");
+    expect(JSON.stringify(config)).not.toContain("hooks.example.com");
+
+    // The internal projection still carries the real value, so eval replay rebuilds
+    // the agent it captured rather than one with no contact destination.
+    expect(projectInternalAgentConfig(fullyConfiguredAgent()).contactRequestDelivery).toEqual({
       recipientEmails: ["help@example.com"],
       webhook: { url: "https://hooks.example.com/contact" },
     });

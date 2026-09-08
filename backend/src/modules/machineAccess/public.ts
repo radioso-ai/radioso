@@ -1,12 +1,7 @@
 export * from "./domain.js";
 export type {
-  ApiCredentialRecord,
-  CredentialExpiryWarningClaim,
-  MachineAccessPersistencePort,
   PersonalCredentialLifecyclePort,
   MachineAccessSecurityObserver,
-  ServiceAccountRecord,
-  TransactionalLifecycleAuditEvent,
 } from "./ports.js";
 export { ApiPrincipalAuthenticator } from "./services/apiPrincipalAuthenticator.js";
 export { CredentialExpiryWarningService } from "./services/credentialExpiryWarningService.js";

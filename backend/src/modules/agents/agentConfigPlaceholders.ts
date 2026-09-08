@@ -14,7 +14,10 @@ export type AgentConfigRefKind =
   | "storageObjectPath"
   | "storageGeneration"
   | "websiteEmbedAllowedOrigin"
-  | "mcpConnection";
+  | "mcpConnection"
+  /** A workspace connection an agent skill points at (webhook destination,
+   *  mailbox, Slack install). Holds credentials, so only the kind travels. */
+  | "agentSkillTarget";
 
 export interface AgentConfigSecretPlaceholder {
   __redacted: "secret";

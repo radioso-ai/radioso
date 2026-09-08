@@ -64,8 +64,6 @@ export const assertAssignableRole = (actorRole: "owner" | MachineAccessRole, rol
   if (actorRole === "member" && role === "admin") throw conflict("Role exceeds current workspace access");
 };
 
-export const isServiceAccountActive = (status: ServiceAccountStatus): boolean => status === "enabled";
-
 export const deriveCredentialStatus = (input: {
   kind: MachineCredentialKind;
   expiresAt: Date;

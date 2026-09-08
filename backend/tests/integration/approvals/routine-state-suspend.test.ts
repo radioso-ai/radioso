@@ -40,7 +40,7 @@ const createClientBackedDatabase = (client: PoolClient): Database => {
           const value = Reflect.get(target, property, receiver);
           return typeof value === "function" ? value.bind(target) : value;
         },
-      }) as PoolClient;
+      });
     },
   } as Database["pool"];
 
@@ -79,7 +79,7 @@ const createClientBackedDatabase = (client: PoolClient): Database => {
     }
   },
   async close(): Promise<void> {},
-  } as Database;
+  };
 };
 
 const routineState = (overrides: Partial<RoutineState> = {}): RoutineState => ({

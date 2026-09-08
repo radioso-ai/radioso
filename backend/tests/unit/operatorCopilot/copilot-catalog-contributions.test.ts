@@ -72,6 +72,7 @@ describe("copilot tool contributions", () => {
     ], base);
 
     expect(resolved.descriptors.map((entry) => entry.name)).toEqual(["extension_tool", "second_extension_tool"]);
+    expect(resolved.descriptors.every((entry) => entry.mcpDisposition?.status === "excluded")).toBe(true);
     expect([...resolved.operationIds]).toEqual(["getEnterpriseUsage"]);
     expect([...resolved.applicationPrimitiveIds]).toEqual(["usageLimits.account-usage.read"]);
     expect(resolved.operationPermissions).toEqual({ getEnterpriseUsage: ["workspace.settings.read"] });
@@ -200,14 +201,14 @@ describe("copilot tool contributions", () => {
     const resolveWorkspaceKey = vi.fn(async () => "acme");
     const [enriched] = enrichCopilotToolCatalog([descriptor()], { resolveWorkspaceKey });
 
-    const authorized = enriched!.createTool(invocationContext(new Set(["workspace.settings.read"])));
+    const authorized = enriched.createTool(invocationContext(new Set(["workspace.settings.read"])));
     await expect(authorized.invoke({}, agentToolContext("call-1"))).resolves.toMatchObject({
       value: "extension",
       dashboardUrl: expect.stringContaining("/w/acme"),
     });
 
     // A revoked permission must present as absence, exactly as it does for a first-party tool.
-    const denied = enriched!.createTool(invocationContext(new Set()));
+    const denied = enriched.createTool(invocationContext(new Set()));
     await expect(denied.invoke({}, agentToolContext("call-2"))).resolves.toMatchObject({
       resolution: { status: "not_found" },
     });

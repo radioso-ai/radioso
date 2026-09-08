@@ -361,7 +361,7 @@ describe("copilot eval case replay verdict projection", () => {
     }));
     const service = new EvalCaseReplayService({
       cases: { findCase } as never,
-      runs: { execute } as never,
+      runs: { execute },
       evidence: { record: vi.fn(async () => ({ id: "evidence-1" })), findMany: vi.fn() } as never,
       agentDirectives: { listDirectives: vi.fn(async () => []) },
       abuseControl: { enforce: vi.fn(async () => undefined) },
@@ -387,7 +387,7 @@ describe("copilot eval case replay verdict projection", () => {
     }));
     const service = new EvalCaseReplayService({
       cases: { findCase } as never,
-      runs: { execute } as never,
+      runs: { execute },
       evidence: { record: vi.fn(async () => ({ id: "evidence-1" })), findMany: vi.fn() } as never,
       agentDirectives: { listDirectives: vi.fn(async () => []) },
       abuseControl: { enforce: vi.fn(async () => undefined) },
@@ -433,7 +433,7 @@ describe("copilot eval case replay evidence", () => {
     const listDirectives = vi.fn(async () => options.directives ?? []);
     const service = new EvalCaseReplayService({
       cases: { findCase } as never,
-      runs: { execute } as never,
+      runs: { execute },
       evidence: { record, findMany: vi.fn() } as never,
       agentDirectives: { listDirectives },
       abuseControl: { enforce: vi.fn(async () => undefined) },
@@ -457,7 +457,7 @@ describe("copilot eval case replay evidence", () => {
     expect(record).toHaveBeenCalledWith({
       workspaceId: ids.workspace,
       operatorUserId: ids.operator,
-      conversationId: ids.conversation,
+      origin: { type: "conversation", conversationId: ids.conversation },
       agentId: ids.agent,
       caseId: ids.case,
       caseName: "Refund window",

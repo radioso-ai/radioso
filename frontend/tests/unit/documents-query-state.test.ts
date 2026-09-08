@@ -145,14 +145,14 @@ describe('document query state', () => {
 
   it('gates hidden reads, uses exact workspace/source keys, and retains an optimistic crawl cadence', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    const list = vi.spyOn(documentsApi, 'listDocuments').mockResolvedValue({ documents: [], total: 0, hasMore: false, nextCursor: null } as never)
+    const list = vi.spyOn(documentsApi, 'listDocuments').mockResolvedValue({ documents: [], total: 0, hasMore: false, nextCursor: null })
     const source = vi.spyOn(documentsApi, 'listSourceDocuments').mockResolvedValue({
       documents: [{ id: 'processing-document', status: 'queued' }],
       total: 1,
       hasMore: false,
       nextCursor: null,
     } as never)
-    const crawls = vi.spyOn(documentsApi, 'listCrawlJobs').mockResolvedValue({ jobs: [] } as never)
+    const crawls = vi.spyOn(documentsApi, 'listCrawlJobs').mockResolvedValue({ jobs: [] })
     const root = await renderProbe(client, { enabled: false, workspaceId: 'workspace-a', sourceId: null, optimistic: [] })
     await flush()
     expect(list).not.toHaveBeenCalled()

@@ -49,7 +49,7 @@ export const apiPrincipalRouteInventory: ApiPrincipalRouteInventory = {
   markRouteMount: markApiPrincipalRouteMount,
 };
 
-export type ApiPrincipalRouteEligibility = {
+type ApiPrincipalRouteEligibility = {
   allowedPrincipalKinds: readonly AuthenticatedPrincipal["type"][];
   permission: string;
   sessionOnly: boolean;
@@ -86,6 +86,8 @@ const declarations: readonly PolicyDeclaration[] = [
   sessionOnly("POST", "/api/v1/account/invitations", "account.users.manage"),
   sessionOnly("DELETE", "/api/v1/account/invitations/:invitationId", "account.users.manage"),
   sessionOnly("POST", "/api/v1/account/switch", "account.membership.read"),
+  sessionOnly("GET", "/api/v1/auth/session"),
+  sessionOnly("POST", "/api/v1/auth/invitations/:invitationToken/accept-as-current-user"),
   sessionOnly("DELETE", "/api/v1/account", "account.organization.delete"),
   sessionOnly("PATCH", "/api/v1/account", "account.organization.rename"),
   sessionOnly("PATCH", "/api/v1/account/users/:membershipId", "account.membership.role.update"),
@@ -132,9 +134,13 @@ const declarations: readonly PolicyDeclaration[] = [
   // public-launch values from those responses and reject machine launch-surface input.
   ...["", "/:agentId"]
     .map((path) => allow("GET", `/api/v1/agents${path}`, "workspace.agents.read")),
-  ...["/:agentId/channels/lifecycle", "/:agentId/directives", "/:agentId/routine-skill-catalog", "/:agentId/routines", "/:agentId/routines/:routineId"]
+  ...["/:agentId/channels/lifecycle", "/:agentId/directives", "/:agentId/routine-skill-catalog", "/:agentId/routines", "/:agentId/routines/:routineId", "/:agentId/bundle"]
     .map((path) => allow("GET", `/api/v1/agents${path}`, "workspace.agents.read")),
+  allow("GET", "/api/v1/agents/bundle/imports/:importId", "workspace.agents.read"),
   allow("POST", "/api/v1/agents", "workspace.agents.manage"),
+  // Importing a bundle creates an agent, so it sits with agent creation rather than
+  // with the per-agent authoring routes below.
+  allow("POST", "/api/v1/agents/bundle", "workspace.agents.manage"),
   ...["/:agentId/directives", "/:agentId/directives/draft", "/:agentId/routines", "/:agentId/routines/draft-assist"]
     .map((path) => allow("POST", `/api/v1/agents${path}`, "workspace.agents.manage")),
   allow("POST", "/api/v1/agents/:agentId/routines/:routineId/validate", "workspace.agents.read"),
@@ -194,6 +200,8 @@ const declarations: readonly PolicyDeclaration[] = [
   sessionOnly("POST", "/api/v1/settings/general/website-embed-token/rotate"),
   sessionOnly("POST", "/api/v1/agents/:agentId/anonymous-chat-token/rotate"),
   sessionOnly("POST", "/api/v1/agents/:agentId/website-embed-token/rotate"),
+  // Rendered by the dashboard in an `<img>`, so it must work from a cookie session alone.
+  sessionOnly("GET", "/api/v1/agents/:agentId/assistant-logo", "workspace.agents.read"),
   sessionOnly("POST", "/api/v1/agents/:agentId/assistant-logo", "workspace.agents.manage"),
   sessionOnly("DELETE", "/api/v1/agents/:agentId/assistant-logo", "workspace.agents.manage"),
   sessionOnly("POST", "/api/v1/agents/:agentId/default", "workspace.agents.manage"),
@@ -223,6 +231,12 @@ const declarations: readonly PolicyDeclaration[] = [
     ["PATCH", "/api/v1/account/workspaces/:workspaceId/api-access/service-accounts/:serviceAccountId/credentials/:credentialId", "workspace.api_access.service.manage"],
     ["POST", "/api/v1/account/workspaces/:workspaceId/api-access/service-accounts/:serviceAccountId/credentials/:credentialId/rotate", "workspace.api_access.service.manage"],
     ["POST", "/api/v1/account/workspaces/:workspaceId/api-access/service-accounts/:serviceAccountId/credentials/:credentialId/revoke", "workspace.api_access.service.manage"],
+    ["GET", "/api/v1/workspaces/:workspaceId/operator-mcp/setup", "workspace.api_access.personal.manage"],
+    ["GET", "/api/v1/workspaces/:workspaceId/operator-mcp/grants", "workspace.api_access.personal.manage"],
+    ["GET", "/api/v1/workspaces/:workspaceId/operator-mcp/grants/:grantId", "workspace.api_access.personal.manage"],
+    ["POST", "/api/v1/workspaces/:workspaceId/operator-mcp/grants/:grantId/revoke", "workspace.api_access.personal.manage"],
+    ["GET", "/api/v1/operator-mcp/oauth/transactions/:transactionId", "session"],
+    ["POST", "/api/v1/operator-mcp/oauth/transactions/:transactionId/decision", "session"],
   ].map(([method, path, permission]) => sessionOnly(method, path, permission)),
   ...[
     ["GET", "/api/v1/settings/credentials", "workspace.settings.read"],

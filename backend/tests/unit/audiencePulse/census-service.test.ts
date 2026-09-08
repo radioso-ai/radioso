@@ -58,35 +58,48 @@ const buildClusterableFacets = (): FacetFixture[] => [
   ...groupAIds.map((messageId, index) => ({
     messageId,
     facetText: `group a facet ${index}`,
-    embedding: groupAVectors[index]!,
+    embedding: groupAVectors[index],
     promptVersion: CURRENT_PROMPT_VERSION,
     embeddingProfileId: CURRENT_EMBEDDING_PROFILE_ID,
   })),
   ...groupBIds.map((messageId, index) => ({
     messageId,
     facetText: `group b facet ${index}`,
-    embedding: groupBVectors[index]!,
+    embedding: groupBVectors[index],
     promptVersion: CURRENT_PROMPT_VERSION,
     embeddingProfileId: CURRENT_EMBEDDING_PROFILE_ID,
   })),
 ];
 
 const buildNamingPort = (): TopicNamingPort & {
-  name: ReturnType<typeof vi.fn>;
-  nameFallback: ReturnType<typeof vi.fn>;
+  name: ReturnType<typeof vi.fn<TopicNamingPort["name"]>>;
+  nameFallback: ReturnType<typeof vi.fn<TopicNamingPort["nameFallback"]>>;
 } => ({
-  name: vi.fn(async (exemplars: TopicNamingExemplars): Promise<TopicLabel> => ({
-    title: `Topic for ${exemplars.prototypical[0] ?? "unknown"}`,
-    description: "A generated topic description",
-  })),
-  nameFallback: vi.fn(async (): Promise<TopicLabel> => ({
-    title: "General inquiries",
-    description: "A neutral fallback label",
-  })),
+  name: vi.fn(async (
+    exemplars: TopicNamingExemplars,
+    _signal?: AbortSignal,
+    onModelCallIssued?: () => void,
+  ): Promise<TopicLabel> => {
+    onModelCallIssued?.();
+    return {
+      title: `Topic for ${exemplars.prototypical[0] ?? "unknown"}`,
+      description: "A generated topic description",
+    };
+  }),
+  nameFallback: vi.fn(async (_signal?: AbortSignal, onModelCallIssued?: () => void): Promise<TopicLabel> => {
+    onModelCallIssued?.();
+    return {
+      title: "General inquiries",
+      description: "A neutral fallback label",
+    };
+  }),
 });
 
 const buildPrivacyAuditPort = (): TopicLabelPrivacyAuditPort & { review: ReturnType<typeof vi.fn> } => ({
-  review: vi.fn(async () => ({ flagged: false })),
+  review: vi.fn(async (_label: TopicLabel, _signal?: AbortSignal, onModelCallIssued?: () => void) => {
+    onModelCallIssued?.();
+    return { flagged: false };
+  }),
 });
 
 const buildTopicRepository = (
@@ -128,6 +141,73 @@ const buildDependencies = (input: {
 };
 
 describe("CensusService.run (T020)", () => {
+  it("waits for every concurrent naming task before surfacing the first failure", async () => {
+    const namingPort = buildNamingPort();
+    const firstFailure = new Error("first naming setup failed");
+    let resolveSibling!: (label: TopicLabel) => void;
+    namingPort.name
+      .mockRejectedValueOnce(firstFailure)
+      .mockImplementationOnce(() => new Promise<TopicLabel>((resolve) => {
+        resolveSibling = resolve;
+      }));
+    const service = new CensusService(buildDependencies({
+      eligibleIds: [...groupAIds, ...groupBIds],
+      facets: buildClusterableFacets(),
+      namingPort,
+    }));
+
+    const run = service.run({ workspaceId, windowStart, windowEnd });
+    const observedOutcome = run.then(() => "resolved", () => "rejected");
+    await vi.waitFor(() => expect(namingPort.name).toHaveBeenCalledTimes(2));
+    const outcomeBeforeSiblingSettles = await Promise.race([
+      observedOutcome,
+      new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 0)),
+    ]);
+    resolveSibling({ title: "Sibling topic", description: "The sibling naming task completed." });
+
+    await expect(run).rejects.toBe(firstFailure);
+    expect(outcomeBeforeSiblingSettles).toBe("pending");
+  });
+
+  it("surfaces the first naming failure in time even when an earlier cluster rejects later", async () => {
+    const namingPort = buildNamingPort();
+    const providerFailure = new Error("provider failed first");
+    const laterAbort = Object.assign(new Error("earlier cluster aborted later"), { name: "AbortError" });
+    let rejectEarlierCluster!: (error: unknown) => void;
+    namingPort.name
+      .mockImplementationOnce(() => new Promise<TopicLabel>((_resolve, reject) => {
+        rejectEarlierCluster = reject;
+      }))
+      .mockRejectedValueOnce(providerFailure);
+    const service = new CensusService(buildDependencies({
+      eligibleIds: [...groupAIds, ...groupBIds],
+      facets: buildClusterableFacets(),
+      namingPort,
+    }));
+
+    const run = service.run({ workspaceId, windowStart, windowEnd });
+    await vi.waitFor(() => expect(namingPort.name).toHaveBeenCalledTimes(2));
+    rejectEarlierCluster(laterAbort);
+
+    await expect(run).rejects.toBe(providerFailure);
+  });
+
+  it("reports a naming call before a later persistence failure", async () => {
+    const topicRepository = buildTopicRepository();
+    topicRepository.saveRun.mockRejectedValueOnce(new Error("save failed"));
+    const service = new CensusService(buildDependencies({
+      eligibleIds: groupAIds,
+      facets: buildClusterableFacets().slice(0, groupAIds.length),
+      topicRepository,
+    }));
+    const onModelCallIssued = vi.fn();
+
+    await expect(service.run({ workspaceId, windowStart, windowEnd, onModelCallIssued }))
+      .rejects.toThrow("save failed");
+
+    expect(onModelCallIssued).toHaveBeenCalledTimes(2);
+  });
+
   it("reports every eligible question as a topic member or unclassified, summing to the population", async () => {
     const clusterableFacets = buildClusterableFacets();
     const missingFacetId = randomUUID();
@@ -162,12 +242,14 @@ describe("CensusService.run (T020)", () => {
 
     const result = await service.run({ workspaceId, windowStart, windowEnd });
 
+    expect(result.isFirstCensus).toBe(true);
+    expect(result.membershipBaselineRunId).toBeNull();
     expect(result.populationSize).toBe(11);
     const totalTopicMembers = result.topics.reduce((sum, topic) => sum + topic.memberCount, 0);
     expect(totalTopicMembers + result.unclassifiedCount).toBe(result.populationSize);
     expect(result.unclassifiedCount).toBeGreaterThanOrEqual(3);
 
-    const saved = topicRepository.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
+    const saved = topicRepository.saveRun.mock.calls[0][0] as SaveTopicCensusRunInput;
     expect(saved.run.questionCount).toBe(11);
     expect(saved.run.unclassifiedCount).toBe(result.unclassifiedCount);
     const savedMessageIds = saved.memberships.map((membership) => membership.messageId);
@@ -209,7 +291,7 @@ describe("CensusService.run (T020)", () => {
 
     expect(result.populationSize).toBe(9);
     expect(result.unclassifiedCount).toBeGreaterThanOrEqual(1);
-    const saved = topicRepository.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
+    const saved = topicRepository.saveRun.mock.calls[0][0] as SaveTopicCensusRunInput;
     expect(saved.memberships.map((membership) => membership.messageId)).not.toContain(staleId);
   });
 
@@ -234,7 +316,7 @@ describe("CensusService.run (T020)", () => {
 
     expect(result.populationSize).toBe(9);
     expect(result.unclassifiedCount).toBeGreaterThanOrEqual(1);
-    const saved = topicRepository.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
+    const saved = topicRepository.saveRun.mock.calls[0][0] as SaveTopicCensusRunInput;
     expect(saved.memberships.map((membership) => membership.messageId)).not.toContain(nullEmbeddingId);
   });
 
@@ -250,7 +332,7 @@ describe("CensusService.run (T020)", () => {
 
     const result = await service.run({ workspaceId, windowStart, windowEnd });
 
-    const saved = topicRepository.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
+    const saved = topicRepository.saveRun.mock.calls[0][0] as SaveTopicCensusRunInput;
     for (const topic of result.topics) {
       const actualMemberCount = saved.memberships.filter((membership) => membership.topicId === topic.topicId).length;
       expect(topic.memberCount).toBe(actualMemberCount);
@@ -265,7 +347,7 @@ describe("CensusService.run (T020)", () => {
     const topicRepository = buildTopicRepository();
     const result = await new CensusService(buildDependencies({ eligibleIds, facets: clusterableFacets, topicRepository }))
       .run({ workspaceId, windowStart, windowEnd });
-    const saved = topicRepository.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
+    const saved = topicRepository.saveRun.mock.calls[0][0] as SaveTopicCensusRunInput;
 
     for (const topic of result.topics) {
       const expected = saved.memberships
@@ -293,8 +375,8 @@ describe("CensusService.run (T020)", () => {
       topicRepository: withoutExcludedId,
     })).run({ workspaceId, windowStart, windowEnd });
 
-    const savedWith = withExcludedId.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
-    const savedWithout = withoutExcludedId.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
+    const savedWith = withExcludedId.saveRun.mock.calls[0][0] as SaveTopicCensusRunInput;
+    const savedWithout = withoutExcludedId.saveRun.mock.calls[0][0] as SaveTopicCensusRunInput;
     expect(savedWith.run.seed).toBe(savedWithout.run.seed);
   });
 
@@ -323,8 +405,8 @@ describe("CensusService.run (T020)", () => {
       topicRepository: withExtra,
     })).run({ workspaceId, windowStart, windowEnd });
 
-    const savedBase = base.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
-    const savedWithExtra = withExtra.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
+    const savedBase = base.saveRun.mock.calls[0][0] as SaveTopicCensusRunInput;
+    const savedWithExtra = withExtra.saveRun.mock.calls[0][0] as SaveTopicCensusRunInput;
     expect(savedBase.run.seed).not.toBe(savedWithExtra.run.seed);
   });
 
@@ -339,8 +421,8 @@ describe("CensusService.run (T020)", () => {
     const secondResult = await new CensusService(buildDependencies({ eligibleIds, facets: clusterableFacets, topicRepository: second }))
       .run({ workspaceId, windowStart, windowEnd });
 
-    const savedFirst = first.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
-    const savedSecond = second.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
+    const savedFirst = first.saveRun.mock.calls[0][0] as SaveTopicCensusRunInput;
+    const savedSecond = second.saveRun.mock.calls[0][0] as SaveTopicCensusRunInput;
     expect(savedFirst.run.seed).toBe(savedSecond.run.seed);
 
     const groupsById = (input: SaveTopicCensusRunInput) => {
@@ -382,6 +464,7 @@ describe("CensusService.run facet readiness (spec 956 follow-up)", () => {
 
     expect(result.populationSize).toBe(3);
     expect(result.facetReadyQuestionCount).toBe(0);
+    expect(result.fullyFacetReady).toBe(false);
     expect(result.unclassifiedCount).toBe(3);
     expect(result.topics).toEqual([]);
     expect(namingPort.name).not.toHaveBeenCalled();
@@ -396,13 +479,14 @@ describe("CensusService.run facet readiness (spec 956 follow-up)", () => {
 
     expect(result.populationSize).toBe(8);
     expect(result.facetReadyQuestionCount).toBe(8);
+    expect(result.fullyFacetReady).toBe(true);
   });
 
   it("treats an embedding from a stale clustering space as not facet-ready", async () => {
     const clusterableFacets = buildClusterableFacets();
     const staleSpaceId = randomUUID();
     const staleFacet = {
-      ...clusterableFacets[0]!,
+      ...clusterableFacets[0],
       embeddingProfileId: staleSpaceId,
     };
     const facets = [staleFacet, ...clusterableFacets.slice(1)];
@@ -414,7 +498,7 @@ describe("CensusService.run facet readiness (spec 956 follow-up)", () => {
 
     expect(result.populationSize).toBe(8);
     expect(result.facetReadyQuestionCount).toBe(7);
-    const saved = topicRepository.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
+    const saved = topicRepository.saveRun.mock.calls[0][0] as SaveTopicCensusRunInput;
     expect(saved.memberships.map((membership) => membership.messageId)).not.toContain(staleFacet.messageId);
   });
 
@@ -438,6 +522,7 @@ describe("CensusService.run facet readiness (spec 956 follow-up)", () => {
 
     expect(result.populationSize).toBe(1);
     expect(result.facetReadyQuestionCount).toBe(1);
+    expect(result.fullyFacetReady).toBe(true);
     expect(result.unclassifiedCount).toBe(1);
     expect(result.topics).toEqual([]);
   });
@@ -465,6 +550,7 @@ const buildPriorTopic = (overrides: Partial<ActiveTopicRecord> & { id?: string }
   description: overrides.description ?? "Prior description",
   createdRunId: overrides.createdRunId ?? randomUUID(),
   lastSeenRunId: overrides.lastSeenRunId ?? randomUUID(),
+  dissolvedAt: overrides.dissolvedAt ?? null,
   memberIds: overrides.memberIds ?? [],
 });
 
@@ -480,7 +566,7 @@ describe("CensusService.run identity matching (T028+T029)", () => {
 
     expect(topicRepository.listMatchableTopics).toHaveBeenCalledWith(workspaceId);
     expect(namingPort.name).toHaveBeenCalledTimes(2);
-    const saved = topicRepository.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
+    const saved = topicRepository.saveRun.mock.calls[0][0] as SaveTopicCensusRunInput;
     expect(saved.transitions).toHaveLength(2);
     for (const transition of saved.transitions!) {
       expect(transition.kind).toBe("emerged");
@@ -505,7 +591,7 @@ describe("CensusService.run identity matching (T028+T029)", () => {
 
     await service.run({ workspaceId, windowStart, windowEnd });
 
-    const saved = topicRepository.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
+    const saved = topicRepository.saveRun.mock.calls[0][0] as SaveTopicCensusRunInput;
     expect(saved.topics).toEqual([]);
     expect(saved.memberships).toEqual([]);
     expect(saved.dissolvedTopicIds).toEqual([]);
@@ -518,7 +604,7 @@ describe("CensusService.run identity matching (T028+T029)", () => {
     const clusterableFacets = buildClusterableFacets();
     const eligibleIds = clusterableFacets.map((facet) => facet.messageId);
     const priorTopic = buildPriorTopic({
-      memberIds: [...groupAIds],
+      memberIds: [...groupAIds, randomUUID()],
       centroid: [1, 0, 0],
       title: "Existing title",
       description: "Existing description",
@@ -533,7 +619,7 @@ describe("CensusService.run identity matching (T028+T029)", () => {
     // `priorTopic` and must not trigger a second naming call.
     expect(namingPort.name).toHaveBeenCalledTimes(1);
 
-    const saved = topicRepository.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
+    const saved = topicRepository.saveRun.mock.calls[0][0] as SaveTopicCensusRunInput;
     const survivedTopic = saved.topics.find((topic) => topic.id === priorTopic.id);
     expect(survivedTopic).toBeDefined();
     expect(survivedTopic!.title).toBeUndefined();
@@ -550,12 +636,17 @@ describe("CensusService.run identity matching (T028+T029)", () => {
       kind: "survived",
       parentTopicIds: [priorTopic.id],
       viaCentroidFallback: false,
+      membershipOverlap: 0.8,
     });
     expect(saved.dissolvedTopicIds).toEqual([]);
 
     const reportedTopic = result.topics.find((topic) => topic.topicId === priorTopic.id);
     expect(reportedTopic?.title).toBe("Existing title");
     expect(reportedTopic?.description).toBe("Existing description");
+    expect(reportedTopic?.transition?.membershipOverlap).toBe(0.8);
+    expect(result.isFirstCensus).toBe(false);
+    expect(result.membershipBaselineRunId).toBe(priorTopic.lastSeenRunId);
+    expect(result.namingCallsIssued).toBe(1);
   });
 
   it("marks a topic with no counterpart in the new run as dissolved rather than deleting it", async () => {
@@ -570,10 +661,12 @@ describe("CensusService.run identity matching (T028+T029)", () => {
     const topicRepository = buildTopicRepository([survivor, doomed]);
     const service = new CensusService(buildDependencies({ eligibleIds, facets: clusterableFacets, topicRepository }));
 
-    await service.run({ workspaceId, windowStart, windowEnd });
+    const result = await service.run({ workspaceId, windowStart, windowEnd });
 
-    const saved = topicRepository.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
+    const saved = topicRepository.saveRun.mock.calls[0][0] as SaveTopicCensusRunInput;
     expect(saved.dissolvedTopicIds).toEqual([doomed.id]);
+    expect(result.dissolvedTopicIds).toEqual([doomed.id]);
+    expect(result.dissolvedTopics).toEqual([{ id: doomed.id, title: doomed.title }]);
     expect(saved.topics.some((topic) => topic.id === doomed.id)).toBe(false);
     expect(saved.transitions).toContainEqual({
       topicId: doomed.id,
@@ -581,6 +674,31 @@ describe("CensusService.run identity matching (T028+T029)", () => {
       parentTopicIds: [],
       viaCentroidFallback: false,
     });
+  });
+
+  it("does not emit another dissolved transition for a topic that was already dissolved", async () => {
+    const clusterableFacets = buildClusterableFacets();
+    const eligibleIds = clusterableFacets.map((facet) => facet.messageId);
+    const survivor = buildPriorTopic({ memberIds: [...groupAIds], centroid: [1, 0, 0] });
+    const alreadyDissolved = buildPriorTopic({
+      memberIds: [],
+      centroid: [0, 0, 1],
+      dissolvedAt: new Date("2026-07-15T00:00:00.000Z"),
+      title: "Previously dissolved topic",
+    });
+    const topicRepository = buildTopicRepository([survivor, alreadyDissolved]);
+    const service = new CensusService(buildDependencies({ eligibleIds, facets: clusterableFacets, topicRepository }));
+
+    const result = await service.run({ workspaceId, windowStart, windowEnd });
+
+    const saved = topicRepository.saveRun.mock.calls[0][0] as SaveTopicCensusRunInput;
+    expect(saved.dissolvedTopicIds).not.toContain(alreadyDissolved.id);
+    expect(result.dissolvedTopicIds).not.toContain(alreadyDissolved.id);
+    expect(result.dissolvedTopics).not.toContainEqual(expect.objectContaining({ id: alreadyDissolved.id }));
+    expect(saved.transitions).not.toContainEqual(expect.objectContaining({
+      topicId: alreadyDissolved.id,
+      kind: "dissolved",
+    }));
   });
 
   it("records a split with the prior topic as parent and names both descendants", async () => {
@@ -598,7 +716,7 @@ describe("CensusService.run identity matching (T028+T029)", () => {
     await service.run({ workspaceId, windowStart, windowEnd });
 
     expect(namingPort.name).toHaveBeenCalledTimes(2);
-    const saved = topicRepository.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
+    const saved = topicRepository.saveRun.mock.calls[0][0] as SaveTopicCensusRunInput;
     const splitTransitions = saved.transitions!.filter((transition) => transition.kind === "split");
     expect(splitTransitions).toHaveLength(2);
     for (const transition of splitTransitions) {
@@ -608,6 +726,12 @@ describe("CensusService.run identity matching (T028+T029)", () => {
     const descendantIds = new Set(splitTransitions.map((transition) => transition.topicId));
     expect(descendantIds.size).toBe(2);
     expect(saved.dissolvedTopicIds).toEqual([priorTopic.id]);
+    expect(saved.transitions).toContainEqual({
+      topicId: priorTopic.id,
+      kind: "dissolved",
+      parentTopicIds: [],
+      viaCentroidFallback: false,
+    });
   });
 
   it("records a merge with both prior topics as parents", async () => {
@@ -621,11 +745,13 @@ describe("CensusService.run identity matching (T028+T029)", () => {
 
     await service.run({ workspaceId, windowStart, windowEnd });
 
-    const saved = topicRepository.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
+    const saved = topicRepository.saveRun.mock.calls[0][0] as SaveTopicCensusRunInput;
     const mergedTransitions = saved.transitions!.filter((transition) => transition.kind === "merged");
     expect(mergedTransitions).toHaveLength(1);
-    expect(new Set(mergedTransitions[0]!.parentTopicIds)).toEqual(new Set([parentOne.id, parentTwo.id]));
+    expect(new Set(mergedTransitions[0].parentTopicIds)).toEqual(new Set([parentOne.id, parentTwo.id]));
     expect(new Set(saved.dissolvedTopicIds)).toEqual(new Set([parentOne.id, parentTwo.id]));
+    expect(saved.transitions!.filter((transition) => transition.kind === "dissolved").map((transition) => transition.topicId).sort())
+      .toEqual([parentOne.id, parentTwo.id].sort());
     // Group B never overlapped either parent, so its cluster is unrelated to the merge.
     expect(saved.transitions!.some((transition) => transition.kind === "emerged")).toBe(true);
   });
@@ -643,10 +769,11 @@ describe("CensusService.run identity matching (T028+T029)", () => {
 
     await service.run({ workspaceId, windowStart, windowEnd });
 
-    const saved = topicRepository.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
+    const saved = topicRepository.saveRun.mock.calls[0][0] as SaveTopicCensusRunInput;
     const survivedTransition = saved.transitions!.find((transition) => transition.topicId === priorTopic.id);
     expect(survivedTransition?.kind).toBe("survived");
     expect(survivedTransition?.viaCentroidFallback).toBe(true);
+    expect(survivedTransition?.membershipOverlap).toBeNull();
     // The surviving cluster still gets no naming call; only group B's does.
     expect(namingPort.name).toHaveBeenCalledTimes(1);
   });
@@ -676,7 +803,7 @@ describe("CensusService.run observability (T033)", () => {
 
     const completedCalls = emit.mock.calls.filter(([event]) => event.eventType === "audience_pulse.census_run_completed");
     expect(completedCalls).toHaveLength(1);
-    const event = completedCalls[0]![0];
+    const event = completedCalls[0][0];
 
     expect(event.metrics).toEqual(expect.objectContaining({
       populationSize: 8,
@@ -718,7 +845,7 @@ describe("CensusService.run observability (T033)", () => {
 
     const completedCalls = emit.mock.calls.filter(([event]) => event.eventType === "audience_pulse.census_run_completed");
     expect(completedCalls).toHaveLength(1);
-    expect(completedCalls[0]![0].metrics).toEqual(expect.objectContaining({
+    expect(completedCalls[0][0].metrics).toEqual(expect.objectContaining({
       facetReadyQuestionCount: 0,
       namingCallsIssued: 0,
       namingCallsReused: 0,

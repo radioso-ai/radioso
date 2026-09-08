@@ -12,7 +12,7 @@ import { createRealtimeRolloutPolicy } from "../../modules/realtime/domain/realt
 import { resolveGcpRedisCredentialsProvider } from "../../runtime/gcpMetadataRedisCredentials.js";
 import type { RealtimePublisherComposition } from "../composition/realtimePublisherComposition.js";
 import { AgentService, AgentSurfaceExtensionRegistry, projectInternalAgentConfig, projectInternalAgentExternalSkills, serializeAuthoredDirectivesWithIds } from "../../modules/agents/public.js";
-import { InMemoryPublicConversationEventBus, PostgresAudiencePulseHistorySource } from "../../modules/chat/composition.js";
+import { InMemoryPublicConversationEventBus } from "../../modules/chat/composition.js";
 import {
   createFacetExtractionWorker,
   FacetExtractionService,
@@ -23,7 +23,7 @@ import { ProductDocsService } from "../../modules/productDocs/public.js";
 import { MetadataRuleFieldReferenceService } from "../../modules/retrieval/public.js";
 import { MetadataFieldSuggestionService } from "../../modules/settings/composition.js";
 import { resolveEmbedConfigCacheInvalidator } from "../composition/builtIn/cloudCdnEmbedConfigCacheInvalidator.js";
-import { ContextualStructuredInferenceFactory, createRewriteTierStructuredInferenceFactory } from "../../shared/infra/llm/contextualGateways.js";
+import { createRewriteTierStructuredInferenceFactory } from "../../shared/infra/llm/contextualGateways.js";
 import type { EvalRunOverrides } from "../../modules/eval/composition.js";
 import { CopilotReplayEvidenceRepository } from "../../db/repositories/copilotReplayEvidenceRepository.js";
 import type { AppDependencies } from "./types.js";
@@ -53,6 +53,7 @@ import { noopOrganizationCreationGuard } from "../../shared/domain/organizationC
 import { ContextVariableRepository } from "../../db/repositories/contextVariableRepository.js";
 import { AccessGrantLifecycleUnitOfWork } from "../../db/repositories/accessGrantRepository.js";
 import { ContextVariableService } from "../../modules/context-variables/public.js";
+import { createAgentBundleServices } from "../composition/agentBundleComposition.js";
 import { createConnectorIngestionPort } from "../../modules/connectors/services/connectorIngestionPort.js";
 import { ConnectorManagementService } from "../../modules/connectors/services/connectorManagementService.js";
 import { resolveWebsiteCrawlerConfig } from "../../modules/websiteCrawler/config.js";
@@ -89,15 +90,16 @@ import { QUALITY_TRIAGE_STATES } from "../../modules/quality/contracts/index.js"
 import { ConversationSummaryRepository } from "../../db/repositories/conversationSummaryRepository.js";
 import { RoutineStateRepository } from "../../db/repositories/routineStateRepository.js";
 import { QUALITY_RESOLUTION_REASONS } from "../../modules/quality/domain/resolution.js";
+import { buildOperatorMcpServices } from "./builders/operatorMcp.js";
 
-export interface BuildDependenciesOptions {
+interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
   realtimePublisherComposition?: RealtimePublisherComposition;
 }
 
 export const buildDependencies = (env: Env = getEnv(), options: BuildDependenciesOptions = {}): AppDependencies => {
   const logger = buildLogger();
-  const realtimeConfig = parseRealtimeConfig(env as Record<string, unknown>);
+  const realtimeConfig = parseRealtimeConfig(env);
   const realtimeRolloutPolicy = createRealtimeRolloutPolicy(realtimeConfig.rollout);
   const realtimePublisherComposition = options.realtimePublisherComposition ?? createRealtimePublisherComposition({
     config: realtimeConfig,
@@ -184,7 +186,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     skillSettingsResolver,
     vectorIndexReconciler,
     workspace,
-    workspaceIngestionReprocessService,
     workspaceLlmCapabilitySettingsService,
   } = documentRetrievalGraph;
   // Field suggestions for metadata rules are the catalog's declarations unioned
@@ -741,6 +742,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       },
     },
     proposalRepository: repositories.copilotRepository,
+    proposalRecovery: repositories.copilotRepository,
     proposalAdapters: copilotProposalAdapters,
     auditService: infrastructure.auditService,
     logger,
@@ -773,6 +775,32 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     audit: infrastructure.auditService,
     logger,
     retentionDays: env.COPILOT_CONVERSATION_RETENTION_DAYS,
+  });
+  const operatorMcp = buildOperatorMcpServices({
+    env,
+    database: infrastructure.database,
+    accountAccessService: access.accountAccessService,
+    auditService: infrastructure.auditService,
+    logger,
+    metricsRegistry: infrastructure.metricsRegistry,
+    copilotToolCatalog,
+  });
+
+  const agentBundleServices = createAgentBundleServices({
+    logger,
+    metrics: infrastructure.metricsRegistry,
+    auditService: infrastructure.auditService,
+    imports: repositories.agentBundleImportRepository,
+    importOrphanAgeMs: env.AGENT_BUNDLE_IMPORT_ORPHAN_AGE_MS,
+    agentService,
+    authoredDirectiveService,
+    agentSkillsService,
+    contextVariableService,
+    routineDefinitionService,
+    capabilityRegistry: skillCapabilityRegistry,
+    agentRepository: repositories.agentRepository,
+    mcpConnectionRepository,
+    externalSkillDefinitionRepository,
   });
   return {
     env,
@@ -875,6 +903,9 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     platformSettingsService,
     agentService,
     authoredDirectiveService,
+    agentBundleExportService: agentBundleServices.exportService,
+    agentBundleImportService: agentBundleServices.importService,
+    agentBundleImportCleanupWorker: agentBundleServices.cleanupWorker,
     routineDefinitionService,
     routineDraftAssistService,
     directiveAuthorService,
@@ -913,5 +944,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     assertPublicWebsiteUrl,
     websiteCrawlerLimits,
     agentWizardService,
+    ...operatorMcp,
   };
 };

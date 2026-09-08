@@ -62,7 +62,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(
   value && typeof value === 'object' && !Array.isArray(value),
 )
 
-export interface CopilotProposalDiffRow {
+interface CopilotProposalDiffRow {
   path: string
   current: unknown
   proposed: unknown
@@ -117,7 +117,7 @@ const formatValue = (value: unknown) => {
   try {
     return JSON.stringify(value)
   } catch {
-    return String(value)
+    return '[unserializable value]'
   }
 }
 
@@ -129,7 +129,8 @@ export const targetReference = (
 ): { entity: CopilotEntityReference; agentId?: string } | null => {
   const ref = detail?.targetRef ?? detail?.target ?? {}
   const applied = appliedRef ?? {}
-  const agentId = typeof (applied.agentId ?? ref.agentId ?? defaultAgentId) === 'string' ? String(applied.agentId ?? ref.agentId ?? defaultAgentId) : undefined
+  const rawAgentId = applied.agentId ?? ref.agentId ?? defaultAgentId
+  const agentId = typeof rawAgentId === 'string' ? rawAgentId : undefined
   if (summary.targetType === 'agent_setting' || summary.targetType === 'context_variable') {
     const id = agentId
     return id ? { entity: { type: 'agent', id }, agentId: id } : null
@@ -212,7 +213,7 @@ const statusMessage = (
 const statusFromProposalDetail = (detail: CopilotProposalDetail): CopilotProposalStatus =>
   detail.status === 'pending' && !detail.currentVersionMatches ? 'stale' : detail.status
 
-export type CopilotProposalApplyConfirmationKind = 'irreversible-removal' | 'reach-change' | 'reversible-update'
+type CopilotProposalApplyConfirmationKind = 'irreversible-removal' | 'reach-change' | 'reversible-update'
 
 /**
  * What kind of confirmation an Apply click should show. A removal (e.g. propose_directive_removal)
@@ -234,11 +235,13 @@ export const applyConfirmationKind = (proposal: CopilotProposalSummary): Copilot
 export function CopilotProposalCard({
   proposal,
   canApply,
+  workspaceId,
   defaultAgentId,
   onOpenEntity,
 }: {
   proposal: CopilotProposalSummary
   canApply: boolean
+  workspaceId?: string
   defaultAgentId?: string | null
   onOpenEntity: (entity: CopilotEntityReference, agentId?: string) => void
 }) {
@@ -256,13 +259,16 @@ export function CopilotProposalCard({
   const evidenceSummary = detail?.evidence ?? proposal.evidence
   const entityTarget = targetReference(proposal, detail, effectiveState.appliedRef, defaultAgentId)
   const statusText = statusMessage(effectiveState, detail, proposal.reason)
+  const readProposal = () => workspaceId
+    ? copilotApi.getProposal(proposal.id, undefined, workspaceId)
+    : copilotApi.getProposal(proposal.id)
 
   const loadDetail = async () => {
     if (detail || isLoadingDetail) return
     setIsLoadingDetail(true)
     setDetailError(null)
     try {
-      const nextDetail = await copilotApi.getProposal(proposal.id)
+      const nextDetail = await readProposal()
       setDetail(nextDetail)
       setCardState((current) => reconcileCopilotProposalDetail(current, { ...nextDetail, status: statusFromProposalDetail(nextDetail) }))
     } catch (error) {
@@ -274,7 +280,7 @@ export function CopilotProposalCard({
 
   const reconcileFromServer = async (fallback: string) => {
     try {
-      const nextDetail = await copilotApi.getProposal(proposal.id)
+      const nextDetail = await readProposal()
       setDetail(nextDetail)
       setCardState((current) => reconcileCopilotProposalDetail(current, { ...nextDetail, status: statusFromProposalDetail(nextDetail) }))
     } catch {
@@ -286,7 +292,9 @@ export function CopilotProposalCard({
     setConfirmOpen(false)
     setCardState((current) => optimisticallyApplyCopilotProposal(current))
     try {
-      const result: CopilotProposalApplyResult = await copilotApi.applyProposal(proposal.id)
+      const result: CopilotProposalApplyResult = workspaceId
+        ? await copilotApi.applyProposal(proposal.id, workspaceId)
+        : await copilotApi.applyProposal(proposal.id)
       setCardState((current) => reconcileCopilotProposalApply(current, result))
     } catch (error) {
       if (isCopilotApiErrorStatus(error, 409)) {
@@ -300,7 +308,8 @@ export function CopilotProposalCard({
   const dismiss = async () => {
     setCardState((current) => optimisticallyDismissCopilotProposal(current))
     try {
-      await copilotApi.dismissProposal(proposal.id)
+      if (workspaceId) await copilotApi.dismissProposal(proposal.id, workspaceId)
+      else await copilotApi.dismissProposal(proposal.id)
       setCardState((current) => reconcileCopilotProposalDismiss(current))
     } catch (error) {
       if (isCopilotApiErrorStatus(error, 409)) {

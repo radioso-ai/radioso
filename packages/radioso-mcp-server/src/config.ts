@@ -119,7 +119,7 @@ const buildConfig = (parsed: ParsedConfig): RadiosoMcpConfig => {
           enabled: true,
           internalSecret: parsed.OPERATOR_MCP_INTERNAL_SECRET!,
           issuerUrl: parsed.OPERATOR_MCP_ISSUER_URL!.replace(/\/+$/, ""),
-          resourceUrl: parsed.OPERATOR_MCP_RESOURCE_URL!.replace(/\/+$/, ""),
+          resourceUrl: parsed.OPERATOR_MCP_RESOURCE_URL.replace(/\/+$/, ""),
         }
       : { enabled: false },
     trustedProxyHops: parsed.RADIOSO_TRUSTED_PROXY_HOPS,

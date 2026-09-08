@@ -24,7 +24,7 @@ const buildAuditService = (recorded: AuditEventInput[]): AuditService => ({
 });
 
 describe("app storage composition", () => {
-  it("assembles the repository, service, disposition, and sweeper", () => {
+  it("assembles the repository, service, disposition, rebuilder, and sweeper", () => {
     const composition: AppStorageComposition = createAppStorageComposition({
       // Composition wires implementations; nothing here reaches the connection.
       kysely: {} as Kysely<DB>,
@@ -33,7 +33,9 @@ describe("app storage composition", () => {
 
     expect(typeof composition.service.put).toBe("function");
     expect(typeof composition.disposition.exportRecords).toBe("function");
-    expect(typeof composition.expirySweeper.runExpirySweep).toBe("function");
+    expect(typeof composition.sweeper.runExpirySweep).toBe("function");
+    expect(typeof composition.sweeper.runRetentionSweep).toBe("function");
+    expect(typeof composition.indexRebuilder.rebuildIndex).toBe("function");
     expect(typeof composition.repository.findRecord).toBe("function");
   });
 });

@@ -224,6 +224,7 @@ export interface AppStorageCollectionUsage {
   byte_size: Generated<Int8>;
   collection_id: string;
   installation_id: string;
+  next_version: Generated<Int8>;
   record_count: Generated<number>;
   updated_at: Generated<Timestamp>;
   workspace_id: string;
@@ -244,6 +245,7 @@ export interface AppStorageIndexEntries {
 export interface AppStorageInstallationState {
   access_revoked_at: Timestamp | null;
   created_at: Generated<Timestamp>;
+  deleted_at: Timestamp | null;
   installation_id: string;
   retain_until: Timestamp | null;
   updated_at: Generated<Timestamp>;
@@ -260,7 +262,7 @@ export interface AppStorageRecords {
   schema_version: number;
   updated_at: Generated<Timestamp>;
   value: Json;
-  version: number;
+  version: Int8;
   workspace_id: string;
 }
 

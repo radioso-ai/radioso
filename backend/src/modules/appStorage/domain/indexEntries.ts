@@ -40,10 +40,38 @@ export const indexColumnForFieldType = (type: StorageFieldType): AppStorageIndex
 };
 
 /**
- * The index rows a record produces. A record that omits an indexed optional
+ * The entry one indexed field of one record produces, or `null` when the record
+ * carries nothing the index can compare. A record that omits an indexed optional
  * field produces no entry for it, so a query by that index cannot match a record
  * that never carried the value.
  */
+export const buildStorageIndexEntry = (input: {
+  indexId: string;
+  fieldType: StorageFieldType;
+  value: unknown;
+}): AppStorageIndexEntry | null => {
+  const { indexId, value } = input;
+
+  switch (indexColumnForFieldType(input.fieldType)) {
+    case "text_value":
+      return typeof value === "string" ? { ...emptyEntry(indexId), textValue: value } : null;
+    case "numeric_value":
+      return typeof value === "number" && Number.isFinite(value)
+        ? { ...emptyEntry(indexId), numericValue: value }
+        : null;
+    case "boolean_value":
+      return typeof value === "boolean" ? { ...emptyEntry(indexId), booleanValue: value } : null;
+    case "timestamp_value": {
+      if (typeof value !== "string") return null;
+      const parsed = new Date(value);
+      return Number.isNaN(parsed.getTime()) ? null : { ...emptyEntry(indexId), timestampValue: parsed };
+    }
+    default:
+      return null;
+  }
+};
+
+/** Every index row a record produces, in the order the collection declares them. */
 export const buildStorageIndexEntries = (
   collection: StorageCollection,
   record: BoundedJsonRecord,
@@ -52,34 +80,12 @@ export const buildStorageIndexEntries = (
   const entries: AppStorageIndexEntry[] = [];
 
   for (const index of collection.indexes) {
-    const type = fieldTypes.get(index.field);
-    if (type === undefined) continue;
+    const fieldType = fieldTypes.get(index.field);
+    if (fieldType === undefined) continue;
     if (!Object.hasOwn(record, index.field)) continue;
-    const value = record[index.field];
 
-    switch (indexColumnForFieldType(type)) {
-      case "text_value":
-        if (typeof value === "string") entries.push({ ...emptyEntry(index.id), textValue: value });
-        break;
-      case "numeric_value":
-        if (typeof value === "number" && Number.isFinite(value)) {
-          entries.push({ ...emptyEntry(index.id), numericValue: value });
-        }
-        break;
-      case "boolean_value":
-        if (typeof value === "boolean") entries.push({ ...emptyEntry(index.id), booleanValue: value });
-        break;
-      case "timestamp_value":
-        if (typeof value === "string") {
-          const parsed = new Date(value);
-          if (!Number.isNaN(parsed.getTime())) {
-            entries.push({ ...emptyEntry(index.id), timestampValue: parsed });
-          }
-        }
-        break;
-      default:
-        break;
-    }
+    const entry = buildStorageIndexEntry({ indexId: index.id, fieldType, value: record[index.field] });
+    if (entry) entries.push(entry);
   }
 
   return entries;

@@ -11,6 +11,7 @@ import type {
   FederatedIdentityRepositoryPort,
   SessionRepositoryPort,
 } from "./authService.js";
+import { appUrl } from "../../../shared/domain/appUrl.js";
 import type { EmailService } from "../../mail/public.js";
 import { renderPasswordResetEmail } from "../../mail/templates/passwordResetEmail.js";
 import {
@@ -26,8 +27,6 @@ import { logAuthMailDeliveryFailure, type AuthMailDeliveryLogger } from "./authM
 import { DEFAULT_AUTH_EMAIL_FLOW_MIN_RESPONSE_MS, waitForMinimumElapsed } from "./responsePadding.js";
 
 const generateRecoveryToken = (): string => randomBytes(32).toString("base64url");
-
-const appBaseUrl = (env: Env): string => env.APP_BASE_URL ?? "http://localhost:3000";
 
 export class PasswordResetService {
   constructor(private readonly dependencies: {
@@ -76,7 +75,7 @@ export class PasswordResetService {
         requestIp: input.requestIp ?? null,
         requestUserAgent: input.requestUserAgent ?? null,
       });
-      const resetUrl = new URL("/reset-password", appBaseUrl(this.dependencies.env));
+      const resetUrl = appUrl("/reset-password", this.dependencies.env.APP_BASE_URL);
       resetUrl.searchParams.set("token", token);
 
       try {

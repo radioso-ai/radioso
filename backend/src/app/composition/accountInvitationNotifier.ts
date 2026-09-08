@@ -3,6 +3,7 @@ import type {
   AccountInvitationNotificationResult,
   AccountInvitationNotifier,
 } from "../../modules/account/contracts/accountInvitationNotifier.js";
+import { appUrl } from "../../shared/domain/appUrl.js";
 import {
   readMailErrorClass,
   readMailProviderErrorName,
@@ -10,8 +11,6 @@ import {
   type EmailService,
 } from "../../modules/mail/public.js";
 import { renderAccountInvitationEmail } from "../../modules/mail/templates/accountInvitationEmail.js";
-
-const DEFAULT_APP_BASE_URL = "http://localhost:3000";
 
 interface AccountInvitationNotifierLogger {
   warn(payload: Record<string, unknown>, message: string): void;
@@ -25,10 +24,7 @@ export const createMailAccountInvitationNotifier = (input: {
   async notifyInvited(
     notification: AccountInvitationNotification,
   ): Promise<AccountInvitationNotificationResult> {
-    const acceptanceUrl = new URL(
-      notification.acceptancePath,
-      input.env.APP_BASE_URL ?? DEFAULT_APP_BASE_URL,
-    ).toString();
+    const acceptanceUrl = appUrl(notification.acceptancePath, input.env.APP_BASE_URL).toString();
 
     try {
       // A deployment without a configured mail provider is not a failure, so the driver's own

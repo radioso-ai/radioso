@@ -101,7 +101,7 @@ export const assertCopilotCapabilityProvenanceRegistry = (
  * primitive identities (see `contribution.ts`), so these are assembled per
  * application rather than read from the first-party registries directly.
  */
-export interface CopilotCapabilityIdentityRegistries {
+interface CopilotCapabilityIdentityRegistries {
   readonly publicOperationIds: ReadonlySet<string>;
   readonly operationPermissions?: Readonly<Record<string, readonly string[]>>;
   readonly ownerExportedPrimitiveIds?: ReadonlySet<string>;

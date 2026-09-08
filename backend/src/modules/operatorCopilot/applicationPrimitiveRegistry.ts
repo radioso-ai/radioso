@@ -47,5 +47,3 @@ export const copilotApplicationPrimitiveRegistry = {
   "settings.workspace.read": { owningModule: "settings", exportedPort: "PlatformSettingsService" },
   "settings.workspace.propose": { owningModule: "settings", exportedPort: "PlatformSettingsService" },
 } as const;
-
-export type CopilotApplicationPrimitiveId = keyof typeof copilotApplicationPrimitiveRegistry;

@@ -1,12 +1,5 @@
 import { z } from "zod";
 
-const booleanish = z.preprocess((value) => {
-  if (typeof value !== "string") return value;
-  if (value.toLowerCase() === "true") return true;
-  if (value.toLowerCase() === "false") return false;
-  return value;
-}, z.boolean());
-
 const configSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   RADIOSO_BASE_URL: z
@@ -25,23 +18,22 @@ const configSchema = z.object({
   RADIOSO_MCP_SERVER_NAME: z.string().trim().min(1).optional(),
   RADIOSO_MCP_SIGNING_SECRET: z.string().trim().min(32).optional(),
   RADIOSO_TRUSTED_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(0),
-  OPERATOR_MCP_ENABLED: booleanish.default(false),
   OPERATOR_MCP_RESOURCE_URL: z.string().trim().url().optional(),
   OPERATOR_MCP_ISSUER_URL: z.string().trim().url().optional(),
   OPERATOR_MCP_INTERNAL_SECRET: z.string().min(32).optional(),
   OPERATOR_MCP_CREDENTIAL_EPOCH: z.string().regex(/^[1-9]\d*$/u).optional(),
-  OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS: z.string().trim().optional(),
 }).superRefine((value, context) => {
-  if (!value.OPERATOR_MCP_ENABLED) return;
-  for (const field of [
+  const fields = [
     "OPERATOR_MCP_RESOURCE_URL",
     "OPERATOR_MCP_ISSUER_URL",
     "OPERATOR_MCP_INTERNAL_SECRET",
     "OPERATOR_MCP_CREDENTIAL_EPOCH",
-  ] as const) {
+  ] as const;
+  if (!fields.some((field) => value[field] !== undefined)) return;
+  for (const field of fields) {
     if (value[field] === undefined) context.addIssue({
       code: z.ZodIssueCode.custom,
-      message: `${field} must be set when OPERATOR_MCP_ENABLED is true.`,
+      message: `${field} must be set when Operator MCP is configured.`,
       path: [field],
     });
   }
@@ -71,15 +63,6 @@ const configSchema = z.object({
       path: ["OPERATOR_MCP_ISSUER_URL"],
     });
   }
-  if (value.OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS) {
-    for (const candidate of value.OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS.split(",").map((entry) => entry.trim()).filter(Boolean)) {
-      if (!z.string().uuid().safeParse(candidate).success) context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS must contain only comma-separated UUIDs.",
-        path: ["OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS"],
-      });
-    }
-  }
 });
 
 export type OperatorMcpConfig =
@@ -90,7 +73,6 @@ export type OperatorMcpConfig =
       internalSecret: string;
       issuerUrl: string;
       resourceUrl: string;
-      rolloutWorkspaceIds?: string[];
     };
 
 export interface RadiosoMcpConfig {
@@ -120,11 +102,6 @@ const normalizeEnv = (
 
 type ParsedConfig = z.infer<typeof configSchema>;
 
-const parseOperatorMcpRolloutWorkspaceIds = (value: string | undefined): string[] | undefined => {
-  const workspaceIds = value?.split(",").map((entry) => entry.trim()).filter(Boolean) ?? [];
-  return workspaceIds.length > 0 ? workspaceIds : undefined;
-};
-
 const buildConfig = (parsed: ParsedConfig): RadiosoMcpConfig => {
   const config: RadiosoMcpConfig = {
     auditLogPath: parsed.RADIOSO_MCP_AUDIT_LOG_PATH,
@@ -136,14 +113,13 @@ const buildConfig = (parsed: ParsedConfig): RadiosoMcpConfig => {
     requestTimeoutMs: parsed.RADIOSO_MCP_REQUEST_TIMEOUT_MS ?? 30_000,
     serverName: parsed.RADIOSO_MCP_SERVER_NAME ?? "radioso-context",
     signingSecret: parsed.RADIOSO_MCP_SIGNING_SECRET,
-    operatorMcp: parsed.OPERATOR_MCP_ENABLED
+    operatorMcp: parsed.OPERATOR_MCP_RESOURCE_URL
       ? {
-      credentialEpoch: parsed.OPERATOR_MCP_CREDENTIAL_EPOCH!,
+          credentialEpoch: parsed.OPERATOR_MCP_CREDENTIAL_EPOCH!,
           enabled: true,
           internalSecret: parsed.OPERATOR_MCP_INTERNAL_SECRET!,
           issuerUrl: parsed.OPERATOR_MCP_ISSUER_URL!.replace(/\/+$/, ""),
           resourceUrl: parsed.OPERATOR_MCP_RESOURCE_URL!.replace(/\/+$/, ""),
-          rolloutWorkspaceIds: parseOperatorMcpRolloutWorkspaceIds(parsed.OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS),
         }
       : { enabled: false },
     trustedProxyHops: parsed.RADIOSO_TRUSTED_PROXY_HOPS,

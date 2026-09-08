@@ -28,7 +28,6 @@ const harness = (bound: Partial<typeof transaction> = {}) => {
   const dependencies = {
     env: {
       SESSION_COOKIE_NAME: "session",
-      OPERATOR_MCP_ENABLED: true,
     }, service,
     operatorMcpAuthorizationService: service, operatorMcpReadiness: Promise.resolve(true), operatorMcpClientResolver: { resolve: vi.fn() },
     authService: { authenticateSession: vi.fn(async () => ({ userId: "user", accountId: "account", sessionId: "browser-session" })) },
@@ -69,7 +68,7 @@ describe("operator MCP consent security contract", () => {
     expect(service.decide).toHaveBeenCalledWith(expect.objectContaining({ sessionId: "browser-session", membershipId: "membership" }));
   });
 
-  it("lists a member's workspaces for consent when the rollout list is empty", async () => {
+  it("lists a member's workspaces for consent", async () => {
     const { app } = harness();
     const response = await request(app).get(`/api/v1/operator-mcp/oauth/transactions/${transactionId}`)
       .set("Cookie", "session=value").expect(200);

@@ -12,6 +12,7 @@ import {
   createAppStorageIndexRebuilder,
   createAppStorageService,
   createAppStorageSweeper,
+  INDEXED_STRING_BYTE_BOUND,
 } from "../../../src/modules/appStorage/public.js";
 import type { AuditEventInput, AuditService } from "../../../src/modules/audit/contracts/index.js";
 import { Database } from "../../../src/shared/infra/database.js";
@@ -291,6 +292,73 @@ describeIntegration("Managed App Storage (Postgres)", () => {
     ).toMatchObject({ ok: true, value: { records: [] } });
   });
 
+  it("accepts the largest index entry the contract allows, with the longest key and identifiers", async () => {
+    // The bound is derived from what a whole B-tree tuple holds, so the case that
+    // proves it is the worst tuple the contract admits: an incompressible value at
+    // the ceiling, the longest identifiers, and the longest record key.
+    const longId = "c".repeat(64);
+    const widest = buildStorageCollection({
+      id: longId,
+      indexes: [{ id: "i".repeat(64), field: "external_id" }],
+      quotas: { maxRecords: 10, maxRecordBytes: 65_536 },
+    });
+    const scope = { ...installation(), collection: widest };
+    // Random ASCII rather than a repeated character, so nothing compresses it out
+    // of the tuple the index has to hold.
+    const value = Array.from({ length: INDEXED_STRING_BYTE_BOUND }, () =>
+      String.fromCharCode(33 + Math.floor(Math.random() * 94)),
+    ).join("");
+    const key = "k".repeat(256);
+
+    expect(await put(scope, key, { external_id: value })).toMatchObject({ ok: true });
+    expect(
+      await service.query({
+        ...scope,
+        request: { collection: longId, index: "i".repeat(64), equals: value, limit: 10 },
+      }),
+    ).toMatchObject({ ok: true, value: { records: [{ key }] } });
+  });
+
+  it("claims the least recently swept collections first, so a busy one cannot starve another", async () => {
+    const ttl = buildStorageCollection({ id: "fair_a", retention: { kind: "ttl", seconds: 60 } });
+    const other = buildStorageCollection({ id: "fair_b", retention: { kind: "ttl", seconds: 60 } });
+    const base = installation();
+    for (const declared of [ttl, other]) {
+      const scope = { ...base, collection: declared };
+      await put(scope, "one", { external_id: "one" });
+      await expireNow(scope, "one");
+    }
+
+    // `fair_b` was swept a moment ago and `fair_a` a long time ago, so a claim of
+    // one names `fair_a`. Without the cursor, an unordered LIMIT could return
+    // either — and keep returning the same one every pass.
+    await database.query(
+      `UPDATE app_storage_collection_usage
+       SET last_swept_at = CASE collection_id WHEN 'fair_a' THEN to_timestamp(0) ELSE clock_timestamp() END
+       WHERE workspace_id = $1 AND installation_id = $2`,
+      [base.workspaceId, base.installationId],
+    );
+
+    const claimed = await repository.claimCollectionsForExpirySweep(100);
+    const mine = claimed
+      .filter((row) => row.installationId === base.installationId)
+      .map((row) => row.collectionId);
+    expect(mine).toEqual(["fair_a", "fair_b"]);
+
+    // The claim moves the cursor on the rows it took, which is what puts them
+    // behind everything else on the next pass.
+    const swept = await database.query<{ collection_id: string; recent: boolean }>(
+      `SELECT collection_id, last_swept_at > to_timestamp(0) AS recent
+       FROM app_storage_collection_usage WHERE workspace_id = $1 AND installation_id = $2
+       ORDER BY collection_id`,
+      [base.workspaceId, base.installationId],
+    );
+    expect(swept).toEqual([
+      { collection_id: "fair_a", recent: true },
+      { collection_id: "fair_b", recent: true },
+    ]);
+  });
+
   it("reclaims expired rows in the sweep and leaves the counter describing what is there", async () => {
     const ttl = buildStorageCollection({ id: "swept", retention: { kind: "ttl", seconds: 60 } });
     const scope = { ...installation(), collection: ttl };
@@ -298,11 +366,7 @@ describeIntegration("Managed App Storage (Postgres)", () => {
     await expireNow(scope, "x");
     await expireNow(scope, "y");
 
-    const swept = await createAppStorageSweeper({
-      repository,
-      audit: { async record() {} },
-      batchSize: 100,
-    }).runExpirySweep();
+    const swept = await createAppStorageSweeper({ repository, batchSize: 100 }).runExpirySweep();
 
     expect(swept.deletedCount).toBeGreaterThanOrEqual(2);
     expect(await service.usage(scope)).toMatchObject({ ok: true, value: { recordCount: 0 } });
@@ -387,10 +451,16 @@ describeIntegration("Managed App Storage (Postgres)", () => {
       await expireNow(scope, "stale");
 
       const batched = createAppStorageDisposition({ repository, audit, exportBatchSize: 2 });
+      const admission = await batched.export(scope);
+      expect(admission.ok).toBe(true);
+      if (!admission.ok) return;
+
       const lines: { collection: string; key: string }[] = [];
-      for await (const line of batched.exportRecords(scope)) {
-        lines.push(JSON.parse(line.line) as { collection: string; key: string });
+      for await (const event of admission.stream) {
+        expect(event.kind).toBe("line");
+        if (event.kind === "line") lines.push(JSON.parse(event.line) as { collection: string; key: string });
       }
+      await batched.drainAuditOutbox();
 
       expect(lines.map((line) => `${line.collection}/${line.key}`)).toEqual([
         "export_ttl/kept",
@@ -407,9 +477,14 @@ describeIntegration("Managed App Storage (Postgres)", () => {
       await put(scope, "two", { external_id: "two" });
 
       const batched = createAppStorageDisposition({ repository, audit, exportBatchSize: 1 });
-      for await (const _line of batched.exportRecords(scope)) {
+      const admission = await batched.export(scope);
+      expect(admission.ok).toBe(true);
+      if (!admission.ok) return;
+
+      for await (const _event of admission.stream) {
         break;
       }
+      await batched.drainAuditOutbox();
 
       expect(eventTypes()).toContain("app.data.export.cancelled");
     });
@@ -444,6 +519,9 @@ describeIntegration("Managed App Storage (Postgres)", () => {
         ok: false,
         error: { code: "invalid_input" },
       });
+      // The refusal is committed to storage's own outbox, and draining is what
+      // puts it on the audit spine.
+      await disposition.drainAuditOutbox();
       expect(
         auditEvents.some(
           (event) => event.eventType === "app.data.retention.changed" && event.eventStatus === "failure",
@@ -464,12 +542,19 @@ describeIntegration("Managed App Storage (Postgres)", () => {
       );
 
       const before = auditEvents.length;
-      const swept = await createAppStorageSweeper({ repository, audit }).runRetentionSweep();
+      const swept = await createAppStorageSweeper({ repository }).runRetentionSweep();
       expect(swept.installationCount).toBeGreaterThanOrEqual(1);
+      // The reclaim committed its audit intent with the deletion; publishing it
+      // is the drain's job afterwards.
+      await disposition.drainAuditOutbox();
 
       const completed = auditEvents
         .slice(before)
-        .find((event) => event.metadata?.installationId === scope.installationId);
+        .find(
+          (event) =>
+            event.eventType === "app.data.deletion.completed" &&
+            event.metadata?.installationId === scope.installationId,
+        );
       expect(completed).toMatchObject({
         eventType: "app.data.deletion.completed",
         eventStatus: "success",
@@ -483,27 +568,12 @@ describeIntegration("Managed App Storage (Postgres)", () => {
       });
     });
 
-    it("removes every installation's records when a workspace's storage is deleted", async () => {
-      const disposable = randomUUID();
-      await database.query(
-        `INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1, $2, $3, $4)`,
-        [disposable, accountId, "Disposable", `route-${disposable}`],
-      );
-      const first = { workspaceId: disposable, installationId: randomUUID(), collection };
-      const second = { workspaceId: disposable, installationId: randomUUID(), collection };
-      await put(first, "x", { external_id: "x" });
-      await put(second, "y", { external_id: "y" });
-
-      expect(await disposition.deleteWorkspaceStorage({ workspaceId: disposable })).toEqual({
-        recordCount: 2,
-        installationCount: 2,
-      });
-
-      // The workspace-wide deletion clears the state rows too, so a reinstall in
-      // this workspace starts from nothing rather than from a tombstone.
-      expect(await put(first, "x", { external_id: "again" })).toMatchObject({ ok: true });
-    });
-
+    /**
+     * There is no workspace-wide storage helper. A workspace's storage goes with
+     * the workspace row through the cascade every one of these tables carries, and
+     * a second path removing the same rows without holding any installation's
+     * fence could only race the first.
+     */
     it("cascades out of all four tables when the workspace row itself is deleted", async () => {
       const doomed = randomUUID();
       await database.query(

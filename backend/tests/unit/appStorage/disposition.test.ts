@@ -6,13 +6,16 @@ import { buildRepositoryStub, statementFailure } from "./repositoryStub.js";
 import {
   createAppStorageDisposition,
   MAX_RETENTION_DAYS,
+  type AppStorageAuditIntent,
   type AppStorageAuditPort,
+  type AppStorageExportEvent,
   type AppStorageRepositoryPort,
   type StoredAppStorageRecord,
 } from "../../../src/modules/appStorage/public.js";
 
 const workspaceId = randomUUID();
 const installationId = randomUUID();
+const scope = { workspaceId, installationId };
 const now = new Date("2026-09-07T10:00:00.000Z");
 
 const record = (collectionId: string, key: string): StoredAppStorageRecord & { collectionId: string } => ({
@@ -26,17 +29,20 @@ const record = (collectionId: string, key: string): StoredAppStorageRecord & { c
 
 const buildRepository = (): AppStorageRepositoryPort => {
   const repository = buildRepositoryStub();
-  repository.streamInstallationRecords = vi.fn(() =>
-    (async function* () {
-      yield record("sync_state", "post-1");
-      yield record("cursors", "cursor-1");
-    })(),
-  );
-  repository.deleteInstallationRecords = vi.fn(async () => ({
+  repository.openInstallationExport = vi.fn(async () => ({
     admitted: true as const,
-    value: { recordCount: 4, collectionCount: 2 },
+    value: {
+      records: (async function* () {
+        yield record("sync_state", "post-1");
+        yield record("cursors", "cursor-1");
+      })(),
+    },
   }));
-  repository.deleteWorkspaceRecords = vi.fn(async () => ({ recordCount: 9, installationCount: 3 }));
+  repository.deleteInstallationRecords = vi.fn(async () => ({
+    recordCount: 4,
+    collectionCount: 2,
+    alreadyDeleted: false,
+  }));
   return repository;
 };
 
@@ -51,40 +57,66 @@ describe("app storage disposition", () => {
 
   const disposition = () => createAppStorageDisposition({ repository, audit, now: () => now });
 
-  const eventTypes = (): string[] => audit.record.mock.calls.map(([event]) => event.eventType);
+  /**
+   * What the disposition committed to the trail. An irreversible change writes
+   * its intent inside its own transaction, so the intent is either on the outbox
+   * directly or built by the callback that transaction invoked.
+   */
+  const enqueued = (): AppStorageAuditIntent[] =>
+    (repository.enqueueAuditEvent as ReturnType<typeof vi.fn>).mock.calls.map(([call]) => call.intent);
+
+  const eventTypes = (): string[] => enqueued().map((intent) => intent.eventType);
+
+  /** Drains an admitted export, returning every event it produced. */
+  const drain = async (stop?: number): Promise<AppStorageExportEvent[]> => {
+    const admission = await disposition().export(scope);
+    if (!admission.ok) throw new Error("export was not admitted");
+
+    const events: AppStorageExportEvent[] = [];
+    for await (const event of admission.stream) {
+      events.push(event);
+      if (stop !== undefined && events.length >= stop) break;
+    }
+    return events;
+  };
 
   it("revokes storage access without removing a record", async () => {
-    await disposition().revokeAccess({ workspaceId, installationId });
-    expect(repository.setAccessRevoked).toHaveBeenCalledWith({ workspaceId, installationId }, now);
+    await disposition().revokeAccess(scope);
+    expect(repository.setAccessRevoked).toHaveBeenCalledWith(scope, now);
     expect(repository.deleteInstallationRecords).not.toHaveBeenCalled();
   });
 
   it("restores storage access by clearing the revocation", async () => {
-    await disposition().restoreAccess({ workspaceId, installationId });
-    expect(repository.setAccessRevoked).toHaveBeenCalledWith({ workspaceId, installationId }, null);
+    await disposition().restoreAccess(scope);
+    expect(repository.setAccessRevoked).toHaveBeenCalledWith(scope, null);
   });
 
-  it("refuses every disposition against an installation the tombstone covers", async () => {
+  it("refuses revocation and retention against an installation the tombstone covers", async () => {
     const notAdmitted = { admitted: false as const };
     repository.setAccessRevoked = vi.fn(async () => notAdmitted);
     repository.setRetention = vi.fn(async () => notAdmitted);
-    repository.deleteInstallationRecords = vi.fn(async () => notAdmitted);
 
     const denied = { ok: false, error: { code: "denied", message: expect.any(String) } };
-    await expect(disposition().revokeAccess({ workspaceId, installationId })).resolves.toMatchObject(denied);
+    await expect(disposition().revokeAccess(scope)).resolves.toMatchObject(denied);
     await expect(
-      disposition().retain({ workspaceId, installationId, until: new Date("2026-09-08T10:00:00.000Z") }),
-    ).resolves.toMatchObject(denied);
-    await expect(
-      disposition().deleteInstallationStorage({ workspaceId, installationId }),
+      disposition().retain({ ...scope, until: new Date("2026-09-08T10:00:00.000Z") }),
     ).resolves.toMatchObject(denied);
   });
 
+  it("refuses an export against a tombstoned installation rather than handing back an empty one", async () => {
+    // An empty stream is indistinguishable from an installation that held no
+    // records, and the difference is whether the operator has the data or not.
+    repository.openInstallationExport = vi.fn(async () => ({ admitted: false as const }));
+
+    const admission = await disposition().export(scope);
+
+    expect(admission).toMatchObject({ ok: false, error: { code: "denied" } });
+    expect(eventTypes()).toEqual(["app.data.export.requested", "app.data.export.cancelled"]);
+  });
+
   it("exports one JSON line per record, grouped by collection", async () => {
-    const lines: { collectionId: string; line: string }[] = [];
-    for await (const line of disposition().exportRecords({ workspaceId, installationId })) {
-      lines.push(line);
-    }
+    const events = await drain();
+    const lines = events.flatMap((event) => (event.kind === "line" ? [event] : []));
 
     expect(lines.map((line) => line.collectionId)).toEqual(["sync_state", "cursors"]);
     expect(JSON.parse(lines[0]?.line ?? "{}")).toEqual({
@@ -98,69 +130,74 @@ describe("app storage disposition", () => {
   });
 
   it("audits an export as requested and then completed, carrying counts rather than data", async () => {
-    for await (const _line of disposition().exportRecords({ workspaceId, installationId })) {
-      // drain
-    }
+    await drain();
 
     expect(eventTypes()).toEqual(["app.data.export.requested", "app.data.export.completed"]);
-    const [, completed] = audit.record.mock.calls;
-    expect(completed?.[0]).toMatchObject({
-      workspaceId,
-      installationId,
+    const [, completed] = enqueued();
+    expect(completed).toMatchObject({
       eventStatus: "success",
       metadata: { recordCount: 2, collectionCount: 2 },
     });
-    expect(JSON.stringify(completed?.[0])).not.toContain("post-1");
+    expect(JSON.stringify(completed)).not.toContain("post-1");
   });
 
   it("audits an export whose consumer stops early as cancelled, with what had been handed over", async () => {
-    for await (const _line of disposition().exportRecords({ workspaceId, installationId })) {
-      break;
-    }
+    await drain(1);
 
     expect(eventTypes()).toEqual(["app.data.export.requested", "app.data.export.cancelled"]);
-    expect(audit.record.mock.calls[1]?.[0]).toMatchObject({
+    expect(enqueued()[1]).toMatchObject({
       eventStatus: "failure",
-      metadata: { recordCount: 1, collectionCount: 1 },
+      metadata: { recordCount: 1, collectionCount: 1, reason: "consumer_stopped" },
     });
   });
 
-  it("audits an export that fails part-way as cancelled and lets the failure reach the caller", async () => {
-    repository.streamInstallationRecords = vi.fn(() =>
-      (async function* () {
-        yield record("sync_state", "post-1");
-        throw statementFailure();
-      })(),
-    );
+  it("ends an export that fails part-way with a typed error event rather than with EOF", async () => {
+    repository.openInstallationExport = vi.fn(async () => ({
+      admitted: true as const,
+      value: {
+        records: (async function* () {
+          yield record("sync_state", "post-1");
+          throw statementFailure();
+        })(),
+      },
+    }));
 
-    const drain = async (): Promise<void> => {
-      for await (const _line of disposition().exportRecords({ workspaceId, installationId })) {
-        // drain
-      }
-    };
+    const events = await drain();
 
-    await expect(drain()).rejects.toThrow();
+    expect(events.map((event) => event.kind)).toEqual(["line", "error"]);
+    expect(events[1]).toMatchObject({ kind: "error", error: { code: "internal" } });
+    expect(JSON.stringify(events[1])).not.toContain("customer-secret");
     expect(eventTypes()).toEqual(["app.data.export.requested", "app.data.export.cancelled"]);
-    expect(audit.record.mock.calls[1]?.[0]).toMatchObject({ eventStatus: "failure" });
+    expect(enqueued()[1]).toMatchObject({ eventStatus: "failure", metadata: { recordCount: 1 } });
   });
 
-  it("records a bounded retention deadline", async () => {
+  it("revokes access as part of retaining, so retained data is data the App cannot reach", async () => {
     const until = new Date("2026-10-07T10:00:00.000Z");
-    await disposition().retain({ workspaceId, installationId, until });
+    const revokedAt = new Date("2026-09-07T10:00:00.000Z");
+    repository.setRetention = vi.fn(async (input) => {
+      // The repository builds the trail entry from what it actually applied, and
+      // commits it with the change.
+      input.audit({ retainUntil: input.retainUntil, accessRevokedAt: revokedAt });
+      return { admitted: true as const, value: { retainUntil: input.retainUntil, accessRevokedAt: revokedAt } };
+    });
 
-    expect(repository.setRetention).toHaveBeenCalledWith({ workspaceId, installationId }, until);
-    expect(audit.record).toHaveBeenCalledWith(
-      expect.objectContaining({
-        eventType: "app.data.retention.changed",
-        eventStatus: "success",
-        metadata: expect.objectContaining({ retainUntil: until.toISOString() }),
-      }),
-    );
+    await expect(disposition().retain({ ...scope, until })).resolves.toEqual({
+      ok: true,
+      value: { retainUntil: until },
+    });
+
+    const [call] = (repository.setRetention as ReturnType<typeof vi.fn>).mock.calls;
+    expect(call?.[0]).toMatchObject({ scope, retainUntil: until });
+    expect(call?.[0].audit({ retainUntil: until, accessRevokedAt: revokedAt })).toMatchObject({
+      eventType: "app.data.retention.changed",
+      eventStatus: "success",
+      metadata: { retainUntil: until.toISOString(), accessRevokedAt: revokedAt.toISOString() },
+    });
   });
 
   it("accepts a deadline exactly at the policy ceiling", async () => {
     const until = new Date(now.getTime() + MAX_RETENTION_DAYS * 86_400_000);
-    await expect(disposition().retain({ workspaceId, installationId, until })).resolves.toEqual({
+    await expect(disposition().retain({ ...scope, until })).resolves.toEqual({
       ok: true,
       value: { retainUntil: until },
     });
@@ -169,7 +206,7 @@ describe("app storage disposition", () => {
   it("refuses a deadline that is past, invalid, or beyond the policy ceiling", async () => {
     const beyond = new Date(now.getTime() + (MAX_RETENTION_DAYS + 1) * 86_400_000);
     for (const until of [new Date("2026-09-06T10:00:00.000Z"), new Date(Number.NaN), beyond]) {
-      await expect(disposition().retain({ workspaceId, installationId, until })).resolves.toMatchObject({
+      await expect(disposition().retain({ ...scope, until })).resolves.toMatchObject({
         ok: false,
         error: { code: "invalid_input" },
       });
@@ -181,37 +218,67 @@ describe("app storage disposition", () => {
       "app.data.retention.changed",
       "app.data.retention.changed",
     ]);
-    expect(audit.record.mock.calls.every(([event]) => event.eventStatus === "failure")).toBe(true);
+    expect(enqueued().every((intent) => intent.eventStatus === "failure")).toBe(true);
   });
 
-  it("deletes an installation's records and audits the request and the result", async () => {
-    const result = await disposition().deleteInstallationStorage({ workspaceId, installationId });
+  it("deletes an installation's records and commits the completion with the deletion", async () => {
+    const result = await disposition().deleteInstallationStorage(scope);
 
     expect(result).toEqual({ ok: true, value: { recordCount: 4, collectionCount: 2 } });
-    expect(eventTypes()).toEqual(["app.data.deletion.requested", "app.data.deletion.completed"]);
-    expect(audit.record.mock.calls[1]?.[0]).toMatchObject({ eventStatus: "success" });
+    expect(eventTypes()).toEqual(["app.data.deletion.requested"]);
+
+    const [call] = (repository.deleteInstallationRecords as ReturnType<typeof vi.fn>).mock.calls;
+    expect(call?.[0].audit({ recordCount: 4, collectionCount: 2 })).toMatchObject({
+      eventType: "app.data.deletion.completed",
+      eventStatus: "success",
+      metadata: { recordCount: 4, collectionCount: 2 },
+    });
   });
 
-  it("audits a deletion that failed as a failure rather than as zero records removed", async () => {
+  it("answers a repeated deletion with the counts the committed one recorded", async () => {
+    // Deletion is irreversible and its caller may have lost the first response to
+    // a crashed process or a retried job. Refusing the retry would leave that
+    // caller unable to learn what happened to the data.
+    repository.deleteInstallationRecords = vi.fn(async () => ({
+      recordCount: 4,
+      collectionCount: 2,
+      alreadyDeleted: true,
+    }));
+
+    await expect(disposition().deleteInstallationStorage(scope)).resolves.toEqual({
+      ok: true,
+      value: { recordCount: 4, collectionCount: 2 },
+    });
+  });
+
+  it("reports a deletion that failed as a failure rather than as zero records removed", async () => {
     repository.deleteInstallationRecords = vi.fn(async () => {
       throw statementFailure();
     });
 
-    const result = await disposition().deleteInstallationStorage({ workspaceId, installationId });
+    const result = await disposition().deleteInstallationStorage(scope);
 
     expect(result).toMatchObject({ ok: false, error: { code: "internal" } });
-    expect(audit.record.mock.calls[1]?.[0]).toMatchObject({
-      eventType: "app.data.deletion.completed",
-      eventStatus: "failure",
-    });
-    expect(JSON.stringify(audit.record.mock.calls[1]?.[0])).not.toContain("customer-secret");
+    expect(JSON.stringify(result)).not.toContain("customer-secret");
+    // Nothing committed, so nothing claims a deletion completed.
+    expect(eventTypes()).toEqual(["app.data.deletion.requested"]);
   });
 
-  it("deletes every installation's records when a workspace is deleted", async () => {
-    const result = await disposition().deleteWorkspaceStorage({ workspaceId });
+  it("publishes committed intents through the audit sink when the outbox is drained", async () => {
+    repository.drainAuditOutbox = vi.fn(async (input) => {
+      await input.publish({
+        workspaceId,
+        installationId,
+        eventType: "app.data.deletion.completed",
+        eventStatus: "success",
+        metadata: { recordCount: 4, collectionCount: 2 },
+      });
+      return 1;
+    });
 
-    expect(result).toEqual({ recordCount: 9, installationCount: 3 });
-    expect(repository.deleteWorkspaceRecords).toHaveBeenCalledWith(workspaceId);
-    expect(eventTypes()).toEqual(["app.data.deletion.requested", "app.data.deletion.completed"]);
+    await expect(disposition().drainAuditOutbox()).resolves.toEqual({ publishedCount: 1 });
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: "app.data.deletion.completed", workspaceId }),
+    );
   });
 });

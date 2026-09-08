@@ -80,18 +80,30 @@ describe("validateStorageRecord", () => {
     // own declared index cannot find.
     const wide = buildStorageCollection({ quotas: { maxRecords: 10, maxRecordBytes: 65_536 } });
     expect(
-      validateStorageRecord(wide, { external_id: "x".repeat(INDEXED_STRING_CHARACTER_BOUND) }),
-    ).toMatchObject({ ok: true });
-    expect(
       validateStorageRecord(wide, { external_id: "x".repeat(INDEXED_STRING_CHARACTER_BOUND + 1) }),
     ).toMatchObject({ ok: false, code: "invalid_input" });
   });
 
-  it("bounds an indexed string by bytes too, so a valid put cannot fail inside the index write", () => {
+  it("bounds an indexed string by the bytes a whole B-tree tuple holds", () => {
+    // The entry carries two uuids, a collection id, an index id, and a record key
+    // besides the value, and Postgres refuses the tuple rather than the column. So
+    // the byte ceiling is what is left after the others are charged at their
+    // contract maxima — which for ASCII binds before the character ceiling does.
     const wide = buildStorageCollection({ quotas: { maxRecords: 10, maxRecordBytes: 65_536 } });
-    // Four bytes per character, so the byte ceiling binds well before the
-    // character one and a B-tree tuple can still hold the entry.
-    const wide4 = "\u{1F600}".repeat(INDEXED_STRING_BYTE_BOUND / 4 + 1);
+    expect(
+      validateStorageRecord(wide, { external_id: "x".repeat(INDEXED_STRING_BYTE_BOUND) }),
+    ).toMatchObject({ ok: true });
+    expect(
+      validateStorageRecord(wide, { external_id: "x".repeat(INDEXED_STRING_BYTE_BOUND + 1) }),
+    ).toMatchObject({ ok: false, code: "invalid_input" });
+  });
+
+  it("charges a multi-byte indexed string by its bytes, not by its characters", () => {
+    const wide = buildStorageCollection({ quotas: { maxRecords: 10, maxRecordBytes: 65_536 } });
+    // Four bytes per character, so this is far inside the character ceiling and
+    // one character past the byte one.
+    const wide4 = "\u{1F600}".repeat(Math.floor(INDEXED_STRING_BYTE_BOUND / 4) + 1);
+    expect(wide4.length).toBeLessThan(INDEXED_STRING_CHARACTER_BOUND);
     expect(validateStorageRecord(wide, { external_id: wide4 })).toMatchObject({
       ok: false,
       code: "invalid_input",

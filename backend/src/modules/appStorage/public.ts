@@ -6,6 +6,11 @@
  * What leaves this module is scoped record operations, the compatibility check
  * release admission asks for together with the index rebuild it can require, and
  * the disposition and maintenance operations an operator drives.
+ *
+ * Workspace-wide cleanup is not here. A workspace's storage goes with the
+ * workspace row through the foreign key cascade every one of these tables carries,
+ * and a second path removing the same rows without holding any installation's
+ * fence could only race the first.
  */
 export { evaluateStorageCompatibility } from "./domain/compatibility.js";
 export { resolveTtlSeconds } from "./domain/expiry.js";
@@ -18,8 +23,12 @@ export { resolveStorageQuery } from "./domain/queryBounds.js";
 export { validateStorageRecord } from "./domain/recordValidation.js";
 export { MAX_RETENTION_DAYS } from "./domain/retention.js";
 
-export type { StorageCompatibilityInput } from "./domain/compatibility.js";
-export type { AppStorageAuditEvent, AppStorageAuditPort } from "./ports/appStorageAudit.js";
+export type { StorageCollectionObservation } from "./domain/compatibility.js";
+export type {
+  AppStorageAuditEvent,
+  AppStorageAuditIntent,
+  AppStorageAuditPort,
+} from "./ports/appStorageAudit.js";
 export type {
   AppStorageCollectionScope,
   AppStorageInstallationScope,
@@ -28,6 +37,7 @@ export type {
 } from "./ports/appStorageRepository.js";
 export type {
   AppStorageDisposition,
+  AppStorageExportEvent,
   AppStorageIndexRebuilder,
   AppStorageService,
   AppStorageSweeper,

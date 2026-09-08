@@ -17,7 +17,6 @@ type StorageCompatibilityCode =
   | "index_removed"
   | "index_field_changed"
   | "allowed_operation_removed"
-  | "schema_version_regressed"
   | "schema_version_reused"
   | "reader_version_dropped"
   | "stored_writer_unreadable"
@@ -41,31 +40,41 @@ interface StorageCompatibilityReport {
   /**
    * Index entries exist per record, so an index a candidate adds finds nothing
    * until it is built over the records already stored. Activation runs
-   * `rebuildIndex` for each of these before the candidate serves a query.
+   * `rebuildIndex` for each of these before the candidate serves a query, and the
+   * rebuild is also where a value stored before the field was indexed is checked
+   * against the index's own bounds.
    */
   requiresIndexRebuild: StorageIndexRebuild[];
 }
 
 /**
- * What a candidate release is checked against. Set inclusion between two
- * declarations is not enough: records outlive the release that wrote them, a
- * rollback puts an older release back in front of newer records, and a job
- * enqueued under one schema version is read back under it whatever is active by
- * then.
+ * What one collection is checked as. Observations are per collection because they
+ * are per collection in the database: collection A can hold records written under
+ * version 1 while collection B holds version 2, and a single flat list of versions
+ * would have each collection answer for the other's history.
+ *
+ * `candidate` is `null` when the candidate release stops declaring the collection.
+ * `active` is the declaration serving now; `rollback` holds the declarations of
+ * releases an operator can still go back to, which for a rollback admission
+ * includes the release being left behind.
  *
  * `queuedReaderVersions` and `storedWriterVersions` are observations, not
- * declarations: the schema versions jobs were enqueued under and the schema
- * versions rows actually carry. They describe the collections being evaluated in
- * this call, so a caller holding per-collection observations evaluates one
- * collection at a time.
+ * declarations: the schema versions jobs were enqueued under, and the versions
+ * rows in this collection actually carry. The stored side is authoritative and
+ * comes from `AppStorageService.storedSchemaVersions`, so a caller never has to
+ * infer it from what some release declared.
  */
-export interface StorageCompatibilityInput {
-  candidate: readonly StorageCollection[];
-  active: readonly StorageCollection[];
-  /** Declarations of releases an operator can still roll back to. */
-  rollback?: readonly StorageCollection[];
+export interface StorageCollectionObservation {
+  collectionId: string;
+  candidate: StorageCollection | null;
+  active: StorageCollection;
+  rollback: readonly StorageCollection[];
   queuedReaderVersions: readonly number[];
   storedWriterVersions: readonly number[];
+}
+
+interface StorageCompatibilityInput {
+  collections: readonly StorageCollectionObservation[];
 }
 
 /**
@@ -73,51 +82,48 @@ export interface StorageCompatibilityInput {
  * release can be activated over the records installed releases wrote, without
  * running migration code over them.
  *
- * Every pairing has to hold in both directions. The candidate must be able to
- * read what is already stored, which is why its `compatibleReaderVersions` has to
- * cover every version a stored row carries and the version the active release
- * writes. And every reader that outlives the activation — the active release
- * during a rolling change, a release the operator can roll back to, a job already
- * enqueued — must be able to read what the candidate writes, which it can either
- * because it declared the candidate's version readable or because the candidate
- * only added optional fields to what it already reads.
+ * The matrix is direction-neutral. A rollback is an activation whose candidate
+ * carries a lower schema version, and lowering the number is not by itself a
+ * defect — what matters is whether every pairing still holds. So a candidate is
+ * never rejected for being behind; it is rejected when a pairing fails.
  *
- * Everything else changes the meaning of records nobody is going to rewrite: a
- * removed or retyped field makes stored values unreadable, a newly required field
- * makes every existing record invalid, a loosened one makes a record an older
- * reader still requires disappear, a removed index takes away an access path a
- * queued job may have been planned against, and a narrowed `allowedOperations`
- * turns a queued job's next call into `denied`.
+ * Three families of rule decide that, and they are independent of each other.
+ *
+ * The schema rules are additive-only and hold whatever any release declares. Of
+ * two declarations, the one carrying the higher schema version may only add
+ * optional fields to the other: removing a field, retyping one, or changing its
+ * requiredness changes the meaning of records nobody is going to rewrite. A
+ * `compatibleReaderVersions` entry is a claim about which versions a release can
+ * parse, and no claim makes a removed field readable, so a declaration cannot
+ * waive these.
+ *
+ * The reader rules are about coverage. The candidate has to read every version
+ * stored records carry and the version the active release writes, or activating
+ * it makes existing rows unreadable.
+ *
+ * The rest are access-path rules: a removed index takes away a path a queued job
+ * may have been planned against, a narrowed `allowedOperations` turns a queued
+ * job's next call into `denied`, and a job queued under a version no release in
+ * the picture declares has nothing to be read back by.
  */
 export const evaluateStorageCompatibility = (
   input: StorageCompatibilityInput,
 ): StorageCompatibilityReport => {
-  const candidateById = new Map(input.candidate.map((collection) => [collection.id, collection]));
   const findings: StorageCompatibilityFinding[] = [];
   const requiresIndexRebuild: StorageIndexRebuild[] = [];
 
-  for (const active of input.active) {
-    const candidate = candidateById.get(active.id);
-    if (!candidate) {
+  for (const observation of input.collections) {
+    if (!observation.candidate) {
       findings.push({
         code: "collection_removed",
-        collectionId: active.id,
-        detail: `The candidate release does not declare collection ${active.id}`,
+        collectionId: observation.collectionId,
+        detail: `The candidate release does not declare collection ${observation.collectionId}`,
       });
       continue;
     }
 
-    const rollback = (input.rollback ?? []).filter((collection) => collection.id === active.id);
-    findings.push(
-      ...compareCollections({
-        active,
-        candidate,
-        rollback,
-        queuedReaderVersions: input.queuedReaderVersions,
-        storedWriterVersions: input.storedWriterVersions,
-      }),
-    );
-    requiresIndexRebuild.push(...addedIndexes(active, candidate));
+    findings.push(...compareCollection(observation, observation.candidate));
+    requiresIndexRebuild.push(...addedIndexes(observation.active, observation.candidate));
   }
 
   const unique = dedupe(findings);
@@ -141,25 +147,15 @@ const addedIndexes = (active: StorageCollection, candidate: StorageCollection): 
     .map((index) => ({ collectionId: candidate.id, indexId: index.id }));
 };
 
-const compareCollections = (input: {
-  active: StorageCollection;
-  candidate: StorageCollection;
-  rollback: readonly StorageCollection[];
-  queuedReaderVersions: readonly number[];
-  storedWriterVersions: readonly number[];
-}): StorageCompatibilityFinding[] => {
-  const { active, candidate, rollback } = input;
+const compareCollection = (
+  observation: StorageCollectionObservation,
+  candidate: StorageCollection,
+): StorageCompatibilityFinding[] => {
+  const { active, rollback, collectionId } = observation;
   const findings: StorageCompatibilityFinding[] = [];
   const at = (code: StorageCompatibilityCode, detail: string): void => {
-    findings.push({ code, collectionId: active.id, detail });
+    findings.push({ code, collectionId, detail });
   };
-
-  if (candidate.schemaVersion < active.schemaVersion) {
-    at(
-      "schema_version_regressed",
-      `Schema version ${candidate.schemaVersion} is behind the active version ${active.schemaVersion}`,
-    );
-  }
 
   // A schema version is what a reader resolves a record's shape by, so two
   // releases cannot share one and mean different shapes by it.
@@ -170,8 +166,15 @@ const compareCollections = (input: {
     );
   }
 
+  // Additive-only, in whichever direction the versions run. The candidate is
+  // paired with the active declaration and with every release the operator could
+  // still return to, because each of those pairings outlives the activation.
+  for (const other of [active, ...rollback]) {
+    findings.push(...compareSchemas(collectionId, other, candidate));
+  }
+
   // The candidate reads what is already stored.
-  for (const version of new Set([...input.storedWriterVersions, active.schemaVersion])) {
+  for (const version of new Set([...observation.storedWriterVersions, active.schemaVersion])) {
     if (candidate.compatibleReaderVersions.includes(version)) continue;
     if (version === active.schemaVersion) {
       at(
@@ -183,14 +186,8 @@ const compareCollections = (input: {
     at("stored_writer_unreadable", `The candidate does not read version ${version}, which stored records carry`);
   }
 
-  // Every reader that outlives the activation reads what the candidate writes.
-  const declarations = [active, ...rollback];
-  for (const declaration of declarations) {
-    findings.push(...readerCanReadCandidate(declaration, candidate));
-  }
-
-  const declaredVersions = new Set(declarations.map((declaration) => declaration.schemaVersion));
-  for (const queued of new Set(input.queuedReaderVersions)) {
+  const declaredVersions = new Set([active, ...rollback].map((declaration) => declaration.schemaVersion));
+  for (const queued of new Set(observation.queuedReaderVersions)) {
     if (queued === candidate.schemaVersion || declaredVersions.has(queued)) continue;
     at(
       "queued_reader_unknown",
@@ -228,36 +225,50 @@ const sameRecordSchema = (left: StorageCollection, right: StorageCollection): bo
 };
 
 /**
- * Whether one declaration can read what the candidate writes. It can when it
- * declared the candidate's version readable, and otherwise only when the
- * candidate's records are still its own records plus fields it may ignore — which
- * means added optional fields and nothing else.
+ * The additive-only rule between two declarations of one collection, applied from
+ * the lower-versioned declaration to the higher-versioned one whichever of them is
+ * the candidate. The later declaration may add optional fields and nothing else:
+ * a field it drops is a value stored records still carry and no reader can
+ * resolve, a retyped field is a stored value of the wrong type, a field that
+ * becomes required is one every existing record is missing, and a field that
+ * becomes optional is one an earlier reader still insists on.
+ *
+ * Two declarations sharing a version are compared in the same way, with the
+ * candidate treated as the later of the two; a shape change under a reused
+ * version is reported separately.
  */
-const readerCanReadCandidate = (
-  reader: StorageCollection,
+const compareSchemas = (
+  collectionId: string,
+  other: StorageCollection,
   candidate: StorageCollection,
 ): StorageCompatibilityFinding[] => {
-  if (reader.compatibleReaderVersions.includes(candidate.schemaVersion)) return [];
+  const [earlier, later] =
+    candidate.schemaVersion < other.schemaVersion ? [candidate, other] : [other, candidate];
 
   const findings: StorageCompatibilityFinding[] = [];
-  const at = (code: StorageCompatibilityCode, detail: string): void => {
-    findings.push({ code, collectionId: candidate.id, detail });
-  };
+  const laterFields = new Map(later.recordSchema.fields.map((field) => [field.key, field]));
 
-  const candidateFields = new Map(candidate.recordSchema.fields.map((field) => [field.key, field]));
-  for (const field of reader.recordSchema.fields) {
-    const next = candidateFields.get(field.key);
+  for (const field of earlier.recordSchema.fields) {
+    const next = laterFields.get(field.key);
     if (!next) {
-      at("field_removed", `Field ${field.key} is no longer declared`);
+      findings.push({
+        code: "field_removed",
+        collectionId,
+        detail: `Field ${field.key} is no longer declared`,
+      });
       continue;
     }
-    findings.push(...compareField(candidate.id, field, next));
+    findings.push(...compareField(collectionId, field, next));
   }
 
-  const readerFieldKeys = new Set(reader.recordSchema.fields.map((field) => field.key));
-  for (const field of candidate.recordSchema.fields) {
-    if (readerFieldKeys.has(field.key) || !field.required) continue;
-    at("required_field_added", `Field ${field.key} is added as required, which stored records do not carry`);
+  const earlierFieldKeys = new Set(earlier.recordSchema.fields.map((field) => field.key));
+  for (const field of later.recordSchema.fields) {
+    if (earlierFieldKeys.has(field.key) || !field.required) continue;
+    findings.push({
+      code: "required_field_added",
+      collectionId,
+      detail: `Field ${field.key} is added as required, which stored records do not carry`,
+    });
   }
 
   return findings;
@@ -265,29 +276,29 @@ const readerCanReadCandidate = (
 
 const compareField = (
   collectionId: string,
-  reader: StorageRecordField,
-  candidate: StorageRecordField,
+  earlier: StorageRecordField,
+  later: StorageRecordField,
 ): StorageCompatibilityFinding[] => {
   const findings: StorageCompatibilityFinding[] = [];
-  if (candidate.type !== reader.type) {
+  if (later.type !== earlier.type) {
     findings.push({
       code: "field_type_changed",
       collectionId,
-      detail: `Field ${reader.key} changes from ${reader.type} to ${candidate.type}`,
+      detail: `Field ${earlier.key} changes from ${earlier.type} to ${later.type}`,
     });
   }
-  if (candidate.required && !reader.required) {
+  if (later.required && !earlier.required) {
     findings.push({
       code: "field_requirement_tightened",
       collectionId,
-      detail: `Field ${reader.key} becomes required`,
+      detail: `Field ${earlier.key} becomes required`,
     });
   }
-  if (!candidate.required && reader.required) {
+  if (!later.required && earlier.required) {
     findings.push({
       code: "field_requirement_loosened",
       collectionId,
-      detail: `Field ${reader.key} becomes optional, which a reader that requires it cannot read`,
+      detail: `Field ${earlier.key} becomes optional, which a reader that requires it cannot read`,
     });
   }
   return findings;

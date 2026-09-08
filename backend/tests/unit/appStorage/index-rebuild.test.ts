@@ -13,29 +13,107 @@ const collection = buildStorageCollection();
 describe("app storage index rebuild", () => {
   const scope = { workspaceId, installationId, collection, indexId: "by_external_id" };
 
-  it("walks the collection in key-ordered batches until a short one ends the rebuild", async () => {
+  it("walks the collection in key-ordered batches until a short one ends the pass", async () => {
     const repository = buildRepositoryStub();
     const batches = [
-      { rebuiltCount: 2, lastKey: "post-2" },
-      { rebuiltCount: 1, lastKey: "post-3" },
+      { rebuiltCount: 2, lastKey: "post-2", incompatibleCount: 0 },
+      { rebuiltCount: 1, lastKey: "post-3", incompatibleCount: 0 },
     ];
     repository.rebuildIndexBatch = vi.fn(async () => ({
       admitted: true as const,
-      value: batches.shift() ?? { rebuiltCount: 0, lastKey: null },
+      value: batches.shift() ?? { rebuiltCount: 0, lastKey: null, incompatibleCount: 0 },
     }));
 
     const result = await createAppStorageIndexRebuilder({ repository, batchSize: 2 }).rebuildIndex(scope);
 
-    expect(result).toEqual({ ok: true, value: { rebuiltCount: 3, batchCount: 2 } });
+    // Three records over two batches, then one more batch for the convergence
+    // pass that finds nothing written since the marker went up.
+    expect(result).toEqual({ ok: true, value: { outcome: "rebuilt", rebuiltCount: 3, batchCount: 3 } });
     expect(repository.rebuildIndexBatch).toHaveBeenNthCalledWith(1, {
       scope: { workspaceId, installationId, collectionId: "sync_state" },
       index: { id: "by_external_id", field: "external_id", fieldType: "string" },
       after: null,
       limit: 2,
+      minVersion: null,
     });
     // The second batch resumes after the last key the first one reached, so the
-    // rebuild holds no cursor in the database and never revisits a record.
+    // pass never revisits a record it already built.
     expect(repository.rebuildIndexBatch).toHaveBeenNthCalledWith(2, expect.objectContaining({ after: "post-2" }));
+  });
+
+  it("marks the index pending before the first batch and clears it after the last", async () => {
+    // While the marker is up, every put maintains an entry for this index as well
+    // as for the ones its own release declares. Without it, an older release that
+    // rewrites a key the first pass already visited silently drops the entry.
+    const repository = buildRepositoryStub();
+    const order: string[] = [];
+    repository.beginIndexRebuild = vi.fn(async () => {
+      order.push("begin");
+      return { admitted: true as const, value: { startVersion: 41 } };
+    });
+    repository.rebuildIndexBatch = vi.fn(async () => {
+      order.push("batch");
+      return { admitted: true as const, value: { rebuiltCount: 0, lastKey: null, incompatibleCount: 0 } };
+    });
+    repository.finishIndexRebuild = vi.fn(async () => {
+      order.push("finish");
+      return { admitted: true as const, value: undefined };
+    });
+
+    await createAppStorageIndexRebuilder({ repository }).rebuildIndex(scope);
+
+    expect(order).toEqual(["begin", "batch", "batch", "finish"]);
+    expect(repository.finishIndexRebuild).toHaveBeenCalledWith({
+      scope: { workspaceId, installationId, collectionId: "sync_state" },
+      indexId: "by_external_id",
+    });
+  });
+
+  it("closes with a pass over only the records written since the marker went up", async () => {
+    // The batches run one transaction at a time, so a write can land behind the
+    // cursor while they are running. Every such write carries a version at or
+    // past the marker, which is exactly what this pass revisits.
+    const repository = buildRepositoryStub();
+    repository.beginIndexRebuild = vi.fn(async () => ({
+      admitted: true as const,
+      value: { startVersion: 77 },
+    }));
+    const batches = [
+      { rebuiltCount: 2, lastKey: "post-2", incompatibleCount: 0 },
+      { rebuiltCount: 0, lastKey: null, incompatibleCount: 0 },
+      { rebuiltCount: 2, lastKey: "post-9", incompatibleCount: 0 },
+      { rebuiltCount: 0, lastKey: null, incompatibleCount: 0 },
+    ];
+    repository.rebuildIndexBatch = vi.fn(async () => ({
+      admitted: true as const,
+      value: batches.shift() ?? { rebuiltCount: 0, lastKey: null, incompatibleCount: 0 },
+    }));
+
+    await createAppStorageIndexRebuilder({ repository, batchSize: 2 }).rebuildIndex(scope);
+
+    const calls = (repository.rebuildIndexBatch as ReturnType<typeof vi.fn>).mock.calls.map(
+      ([batch]) => batch.minVersion,
+    );
+    expect(calls).toEqual([null, null, 77, 77]);
+  });
+
+  it("reports a value the index cannot hold instead of activating a query that skips it", async () => {
+    // A field stored before it was indexed was never measured against the index's
+    // bounds. The marker stays up, so writes keep maintaining the index while an
+    // operator decides what to do about the records it names.
+    const repository = buildRepositoryStub();
+    repository.rebuildIndexBatch = vi.fn(async () => ({
+      admitted: true as const,
+      value: { rebuiltCount: 1, lastKey: null, incompatibleCount: 1 },
+    }));
+
+    const result = await createAppStorageIndexRebuilder({ repository }).rebuildIndex(scope);
+
+    expect(result).toEqual({
+      ok: true,
+      value: { outcome: "incompatible_records", indexId: "by_external_id", incompatibleCount: 2 },
+    });
+    expect(repository.finishIndexRebuild).not.toHaveBeenCalled();
   });
 
   it("derives the entry column from the declared field type rather than from any App's data", async () => {
@@ -93,7 +171,7 @@ describe("app storage index rebuild", () => {
     const repository = buildRepositoryStub();
     repository.rebuildIndexBatch = vi.fn(async () => ({
       admitted: true as const,
-      value: { rebuiltCount: 2, lastKey: "post-2" },
+      value: { rebuiltCount: 2, lastKey: "post-2", incompatibleCount: 0 },
     }));
 
     await expect(

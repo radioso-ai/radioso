@@ -39,6 +39,14 @@ const DEFAULT_MAX_BATCHES = 10_000;
  * installation state, then the collection's counter, then record rows — so it
  * neither blocks a collection for the length of the rebuild nor deadlocks against
  * a put running beside it.
+ *
+ * Working in pages is what makes it safe to run beside writes, and also what
+ * would make it lose them: a key the first pass rebuilt can be rewritten by an
+ * older release that knows nothing of this index, and the cursor never comes
+ * back. So the rebuild is fenced by a marker on the installation's state row
+ * instead of by a lock held for its whole length — while the marker is set every
+ * put maintains the index, and a closing pass over the records written since
+ * catches whatever landed behind the cursor before the marker was cleared.
  */
 export const createAppStorageIndexRebuilder = (
   options: AppStorageIndexRebuilderOptions,
@@ -68,37 +76,85 @@ export const createAppStorageIndexRebuilder = (
         collectionId: input.collection.id,
       };
 
+      const descriptor = { id: index.id, field: index.field, fieldType: field.type };
+
       try {
-        let rebuiltCount = 0;
-        let batchCount = 0;
-        let after: string | null = null;
-
-        while (batchCount < maxBatches) {
-          const progress = await repository.rebuildIndexBatch({
-            scope,
-            index: { id: index.id, field: index.field, fieldType: field.type },
-            after,
-            limit: batchSize,
-          });
-
-          // A rebuild against a revoked installation is still the operator's, but
-          // one against a tombstoned installation has nothing left to build over.
-          if (!progress.admitted) {
-            return storageFailure("denied", "Storage for this installation is not available");
-          }
-
-          batchCount += 1;
-          rebuiltCount += progress.value.rebuiltCount;
-          if (progress.value.rebuiltCount < batchSize || progress.value.lastKey === null) {
-            return storageSuccess({ rebuiltCount, batchCount });
-          }
-          after = progress.value.lastKey;
+        // The index is marked pending before a single record is read. From here
+        // every put maintains an entry for it as well as for the indexes the
+        // writing release declares, so an older release that rewrites a key the
+        // first pass already visited does not drop the entry the rebuild put
+        // there. `startVersion` is where the closing pass starts looking.
+        const started = await repository.beginIndexRebuild({ scope, index: descriptor });
+        if (!started.admitted) {
+          return storageFailure("denied", "Storage for this installation is not available");
         }
 
-        return storageFailure(
-          "internal",
-          `Rebuilding index ${index.id} did not finish within the batches one rebuild takes`,
-        );
+        let rebuiltCount = 0;
+        let batchCount = 0;
+        let incompatibleCount = 0;
+
+        /** One key-ordered sweep of the collection, optionally limited to what a version marks as new. */
+        const pass = async (
+          minVersion: number | null,
+        ): Promise<AppStorageResult<AppStorageIndexRebuildResult> | null> => {
+          let after: string | null = null;
+
+          while (batchCount < maxBatches) {
+            const progress = await repository.rebuildIndexBatch({
+              scope,
+              index: descriptor,
+              after,
+              limit: batchSize,
+              minVersion,
+            });
+
+            // A rebuild against a revoked installation is still the operator's,
+            // but one against a tombstoned installation has nothing to build over.
+            if (!progress.admitted) {
+              return storageFailure("denied", "Storage for this installation is not available");
+            }
+
+            batchCount += 1;
+            rebuiltCount += progress.value.rebuiltCount;
+            incompatibleCount += progress.value.incompatibleCount;
+            if (progress.value.rebuiltCount < batchSize || progress.value.lastKey === null) return null;
+            after = progress.value.lastKey;
+          }
+
+          return storageFailure(
+            "internal",
+            `Rebuilding index ${index.id} did not finish within the batches one rebuild takes`,
+          );
+        };
+
+        const first = await pass(null);
+        if (first) return first;
+
+        // The convergence pass. The batches above ran one transaction at a time,
+        // so a write could land behind the cursor while they were running; every
+        // such write carries a version at or past the marker, which is exactly
+        // the set this pass revisits.
+        const converged = await pass(started.value.startVersion);
+        if (converged) return converged;
+
+        // A value stored before its field was indexed was never measured against
+        // the index's bounds. Leaving the marker set keeps writes maintaining the
+        // index while an operator decides, and the outcome names the count rather
+        // than activating a release whose query would silently skip those records.
+        if (incompatibleCount > 0) {
+          return storageSuccess({
+            outcome: "incompatible_records",
+            indexId: index.id,
+            incompatibleCount,
+          });
+        }
+
+        const finished = await repository.finishIndexRebuild({ scope, indexId: index.id });
+        if (!finished.admitted) {
+          return storageFailure("denied", "Storage for this installation is not available");
+        }
+
+        return storageSuccess({ outcome: "rebuilt", rebuiltCount, batchCount });
       } catch (error) {
         return classifyStorageFailure(error);
       }

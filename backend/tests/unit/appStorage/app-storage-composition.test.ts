@@ -32,7 +32,8 @@ describe("app storage composition", () => {
     });
 
     expect(typeof composition.service.put).toBe("function");
-    expect(typeof composition.disposition.exportRecords).toBe("function");
+    expect(typeof composition.disposition.export).toBe("function");
+    expect(typeof composition.disposition.drainAuditOutbox).toBe("function");
     expect(typeof composition.sweeper.runExpirySweep).toBe("function");
     expect(typeof composition.sweeper.runRetentionSweep).toBe("function");
     expect(typeof composition.indexRebuilder.rebuildIndex).toBe("function");
@@ -64,7 +65,7 @@ describe("app storage audit sink", () => {
     ]);
   });
 
-  it("carries a workspace-wide disposition with no installation identity", async () => {
+  it("carries an event with no installation identity, which is what a null one means", async () => {
     const recorded: AuditEventInput[] = [];
     const workspaceId = randomUUID();
     const auditService = buildAuditService(recorded);
@@ -75,10 +76,10 @@ describe("app storage audit sink", () => {
       installationId: null,
       eventType: "app.data.deletion.requested",
       eventStatus: "success",
-      metadata: { scope: "workspace" },
+      metadata: { reason: "retention_elapsed" },
     });
 
     expect(spy).toHaveBeenCalledTimes(1);
-    expect(recorded[0]?.metadata).toEqual({ scope: "workspace", installationId: null });
+    expect(recorded[0]?.metadata).toEqual({ reason: "retention_elapsed", installationId: null });
   });
 });

@@ -1485,7 +1485,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Read the assistant logo image */
+        get: operations["getAgentAssistantLogo"];
         put?: never;
         /** Upload an assistant logo */
         post: operations["uploadAgentAssistantLogo"];
@@ -14376,6 +14377,49 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RoutineDefinitionPublishRejectedResponse"];
+                };
+            };
+        };
+    };
+    getAgentAssistantLogo: {
+        parameters: {
+            query?: {
+                workspaceId?: string;
+                v?: string;
+            };
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Logo image */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/png": string;
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or logo not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

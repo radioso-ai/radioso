@@ -2,7 +2,7 @@ import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../../db/repos
 import type { AccessGrantService } from "../../accessGrants/public.js";
 import type { AgentRecord, AgentService } from "../../agents/public.js";
 import { getWebsiteEmbedSurfaceSettings, isAgentBootstrapActive } from "../../agents/public.js";
-import { buildAssistantLogoCacheKey, buildPublicAssistantLogoUrl } from "../../../app/http/shared/assistantLogoUrl.js";
+import { buildAssistantLogoCacheKey, buildOperatorAssistantLogoUrl } from "../../../app/http/shared/assistantLogoUrl.js";
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
@@ -18,7 +18,7 @@ import type {
 } from "../domain/platformSettings.js";
 import { resolvePublicLaunchLifecycle } from "../../accessGrants/public.js";
 
-export interface PlatformSettingsServiceDependencies {
+interface PlatformSettingsServiceDependencies {
   workspaceRepository: Pick<WorkspaceRepositoryPort, "findById">;
   agentService: Pick<AgentService, "resolve" | "update" | "withRotatedTokens">;
   accessGrantService?: Pick<AccessGrantService, "resolvePublicLaunchGrant">;
@@ -28,7 +28,7 @@ export interface PlatformSettingsServiceDependencies {
   websiteEmbedIntegration?: WebsiteEmbedIntegrationProvider;
 }
 
-export interface PlatformSettingsUpdateContext {
+interface PlatformSettingsUpdateContext {
   accountId?: string | null;
   /**
    * The version the caller decided against. Passed through to the agent write's own predicate so a
@@ -40,7 +40,7 @@ export interface PlatformSettingsUpdateContext {
 }
 
 /** The settings plus the version a conditional write can be predicated on, read in one pass. */
-export interface VersionedPlatformSettings {
+interface VersionedPlatformSettings {
   settings: PlatformSettingsResource;
   updatedAt: Date;
 }
@@ -341,12 +341,11 @@ export class PlatformSettingsService {
   }
 
   private buildAssistantLogoUrl(agent: AgentRecord): string | null {
-    const token = agent.surfaceSettings.anonymousChat.token ?? getWebsiteEmbedSurfaceSettings(agent).token;
-    return buildPublicAssistantLogoUrl({
-      token,
+    return buildOperatorAssistantLogoUrl({
+      agentId: agent.id,
+      workspaceId: agent.workspaceId,
       hasLogo: Boolean(agent.logo),
       cacheKey: buildAssistantLogoCacheKey(agent.logo),
-      publicChatBaseUrl: this.dependencies.publicChatBaseUrl,
     });
   }
 

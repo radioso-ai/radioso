@@ -228,6 +228,11 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     agentId: z.string().uuid(),
   });
 
+  const AgentAssistantLogoQuerySchema = z.object({
+    workspaceId: z.string().uuid().optional(),
+    v: z.string().optional(),
+  });
+
   const AgentChannelLifecycleSchema = registry.register(
     "AgentChannelLifecycle",
     z.object({
@@ -1064,6 +1069,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     AgentChannelCredentialMetadataSchema,
     AgentChannelCredentialParamsSchema: agentChannelCredentialParamsSchema,
     AgentParamsSchema,
+    AgentAssistantLogoQuerySchema,
     AuthoredDirectiveConditionSchema,
     AuthoredDirectiveBindingSchema,
     AuthoredDirectiveCreateRequestSchema,

@@ -15,7 +15,7 @@
   <a href="https://github.com/radioso-ai/radioso/commits/main"><img alt="Commit activity" src="https://img.shields.io/github/commit-activity/m/radioso-ai/radioso"></a>
 </p>
 
-## Radioso is the open-source platform for designing and running customer-facing AI agents with a harness to build complex multi-step LLM conversations
+## Radioso is the open-source platform for designing and running customer-facing AI agents
 
 Run one script and you have an agent your customers can talk to. It answers from the documents you gave it, with citations so you can check its work. It carries a request across turns: collects what it needs, calls your tools, finishes the job. And when the conversation needs a human, it hands the whole thing to one instead of improvising. All of this happens inside rules you author — we call it [guided autonomy](https://docs.radioso.ai/why-radioso/guided-autonomy). You don't have to enumerate every path in advance, and you don't have to accept whatever the model decides on its own.
 

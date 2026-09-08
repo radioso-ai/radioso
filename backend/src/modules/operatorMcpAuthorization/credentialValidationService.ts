@@ -50,14 +50,13 @@ const currentScopes = (current: OperatorMcpCurrentCredential): OperatorMcpScope[
 export class OperatorMcpCredentialValidationService {
   constructor(
     private readonly repository: CredentialRepository,
-    private readonly config: { credentialEpoch: string; resource: string; rolloutWorkspaceIds?: ReadonlySet<string> },
+    private readonly config: { credentialEpoch: string; resource: string },
   ) {}
 
   private async project(current: OperatorMcpCurrentCredential | null, resource: string, now: Date): Promise<OperatorMcpPrincipal> {
     if (
       !current
       || current.grant.resource !== this.config.resource
-      || (this.config.rolloutWorkspaceIds !== undefined && !this.config.rolloutWorkspaceIds.has(current.grant.workspaceId))
       || !isUsable(current, this.config.credentialEpoch, now)
     ) {
       throw new OperatorMcpAccessError("invalid_token");

@@ -8,21 +8,18 @@ const base = {
 };
 
 describe("operator MCP backend configuration", () => {
-  it("is disabled and fail-closed by default", () => {
+  it("is unavailable until all required operator configuration is present", () => {
     const env = getEnv(base);
-    expect(env.OPERATOR_MCP_ENABLED).toBe(false);
     expect(env.OPERATOR_MCP_RESOURCE_URL).toBeUndefined();
     expect(env.OPERATOR_MCP_INTERNAL_SECRET).toBeUndefined();
     expect(env.OPERATOR_MCP_CREDENTIAL_EPOCH).toBeUndefined();
     expect(env.OPERATOR_MCP_ACCESS_TOKEN_TTL_SECONDS).toBe(900);
-    expect(env.OPERATOR_MCP_VERIFICATION_BUDGET_PER_MINUTE).toBe(6);
   });
 
-  it("requires canonical origins and a dedicated secret when enabled", () => {
-    expect(() => getEnv({ ...base, OPERATOR_MCP_ENABLED: "true" })).toThrow(/OPERATOR_MCP_RESOURCE_URL/);
+  it("requires canonical origins and a dedicated secret once any operator configuration is supplied", () => {
+    expect(() => getEnv({ ...base, OPERATOR_MCP_RESOURCE_URL: "https://mcp.example/operator/mcp" })).toThrow(/OPERATOR_MCP_ISSUER_URL/);
     expect(() => getEnv({
       ...base,
-      OPERATOR_MCP_ENABLED: "true",
       OPERATOR_MCP_RESOURCE_URL: "https://mcp.example/operator/mcp",
       OPERATOR_MCP_ISSUER_URL: "https://app.example",
       OPERATOR_MCP_INTERNAL_SECRET: "short",
@@ -30,7 +27,6 @@ describe("operator MCP backend configuration", () => {
     })).toThrow(/OPERATOR_MCP_INTERNAL_SECRET/);
     expect(() => getEnv({
       ...base,
-      OPERATOR_MCP_ENABLED: "true",
       OPERATOR_MCP_RESOURCE_URL: "https://mcp.example/operator/mcp",
       OPERATOR_MCP_ISSUER_URL: "https://app.example",
       OPERATOR_MCP_INTERNAL_SECRET: "a-long-enough-operator-proof-secret",
@@ -45,7 +41,6 @@ describe("operator MCP backend configuration", () => {
   it("requires the issuer to be an origin when enabled", () => {
     expect(() => getEnv({
       ...base,
-      OPERATOR_MCP_ENABLED: "true",
       OPERATOR_MCP_RESOURCE_URL: "https://mcp.example/operator/mcp",
       OPERATOR_MCP_ISSUER_URL: "https://app.example/oauth",
       OPERATOR_MCP_INTERNAL_SECRET: "a-long-enough-operator-proof-secret",
@@ -55,7 +50,6 @@ describe("operator MCP backend configuration", () => {
 
   it("requires HTTPS outside loopback development and preserves secret bytes", () => {
     const operator = {
-      OPERATOR_MCP_ENABLED: "true",
       OPERATOR_MCP_RESOURCE_URL: "http://mcp.example/operator/mcp",
       OPERATOR_MCP_ISSUER_URL: "http://app.example",
       OPERATOR_MCP_INTERNAL_SECRET: "  exact-operator-proof-secret-value  ",

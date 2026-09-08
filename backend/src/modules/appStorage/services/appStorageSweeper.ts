@@ -4,6 +4,7 @@ import type {
 } from "../ports/appStorageRepository.js";
 import type {
   AppStorageExpirySweepResult,
+  AppStorageIndexRebuildSweepResult,
   AppStorageRetentionSweepResult,
   AppStorageSweeper,
 } from "../ports/appStorageService.js";
@@ -157,8 +158,35 @@ export const createAppStorageSweeper = (options: AppStorageSweeperOptions): AppS
     }
   };
 
+  /**
+   * Drops the rebuild markers whose lease has run out.
+   *
+   * A rebuild renews its marker's lease every batch, and once more when it
+   * converges so the activation has a window. A marker past its deadline
+   * therefore belongs to a run that died — and until it goes, every write to that
+   * collection keeps maintaining an index no release is going to query. The
+   * listing is fairness-free and lock-free, in deadline order; each deadline is
+   * read again under the installation's state row, so a rebuild that renewed its
+   * lease in between keeps it.
+   */
+  const sweepAbandonedRebuilds = async (): Promise<AppStorageIndexRebuildSweepResult> => {
+    const installations = await repository.listAbandonedIndexRebuilds(maxInstallations);
+    let cancelledCount = 0;
+    let installationCount = 0;
+
+    for (const scope of installations) {
+      const dropped = await repository.cancelAbandonedIndexRebuilds({ scope });
+      if (dropped.cancelledCount === 0) continue;
+      cancelledCount += dropped.cancelledCount;
+      installationCount += 1;
+    }
+
+    return { installationCount, cancelledCount };
+  };
+
   return {
     runExpirySweep: sweepCollections,
+    runIndexRebuildSweep: sweepAbandonedRebuilds,
 
     /**
      * A pass that reported a failed reclamation the same way as one that was

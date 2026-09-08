@@ -678,7 +678,60 @@ describeIntegration("Managed App Storage (Postgres)", () => {
         outbox: "1",
       });
 
-      await database.query(`DELETE FROM app_storage_audit_outbox WHERE workspace_id = $1`, [doomed]);
+      // And the evidence is publishable, which is the whole point of preserving
+      // it. This sink writes the row `audit_events` actually holds, so the
+      // foreign key on its workspace decides the case rather than a stub: the
+      // column is nullable and its constraint sets it to null when a workspace
+      // goes, so a preserved entry reaches the trail with its former workspace as
+      // an identifier instead of failing that key on every retry forever.
+      const published: AuditEventInput[] = [];
+      const persisting = createAppStorageDisposition({
+        repository,
+        audit: createAppStorageAuditSink({
+          async record(event) {
+            published.push(event);
+            await database.query(
+              `INSERT INTO audit_events (id, event_type, event_status, metadata_json, workspace_id)
+               VALUES (gen_random_uuid(), $1, $2, $3::jsonb, $4)`,
+              [
+                event.eventType,
+                event.eventStatus,
+                JSON.stringify(event.metadata ?? {}),
+                event.workspaceId,
+              ],
+            );
+          },
+          async getLatestSuccessfulChatAnswerMetadata() {
+            return null;
+          },
+          async updateChatAnswerSuggestions() {
+            // The storage disposition writes no chat metadata.
+          },
+        }),
+      });
+
+      const drained = await persisting.drainAuditOutbox();
+      expect(drained.failureCount).toBe(0);
+      expect(drained.publishedCount).toBeGreaterThanOrEqual(1);
+
+      const preserved = published.find(
+        (event) => event.metadata?.installationId === scope.installationId,
+      );
+      expect(preserved).toMatchObject({
+        workspaceId: null,
+        eventType: "app.data.deletion.requested",
+        eventStatus: "success",
+        metadata: expect.objectContaining({ deletedWorkspaceId: doomed }),
+      });
+
+      // Acknowledged, so the entry is terminal: the row is gone and a second
+      // drain publishes nothing for this installation again.
+      expect(await counts()).toMatchObject({ outbox: "0" });
+      published.length = 0;
+      expect((await persisting.drainAuditOutbox()).failureCount).toBe(0);
+      expect(
+        published.filter((event) => event.metadata?.installationId === scope.installationId),
+      ).toEqual([]);
     });
   });
 });

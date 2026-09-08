@@ -206,3 +206,28 @@ describe("app storage retention sweep", () => {
     });
   });
 });
+
+describe("app storage index rebuild sweep", () => {
+  it("drops the markers whose lease ran out and counts the installations they were on", async () => {
+    // A marker outlives the process that set it. Until it goes, every write to
+    // its collection maintains an index no release is going to query.
+    const repository = buildRepositoryStub();
+    const abandoned: AppStorageInstallationScope[] = [
+      { workspaceId, installationId },
+      { workspaceId, installationId: randomUUID() },
+    ];
+    repository.listAbandonedIndexRebuilds = vi.fn(async () => abandoned);
+    const dropped = [{ cancelledCount: 2 }, { cancelledCount: 0 }];
+    repository.cancelAbandonedIndexRebuilds = vi.fn(async () => dropped.shift() ?? { cancelledCount: 0 });
+
+    await expect(createAppStorageSweeper({ repository }).runIndexRebuildSweep()).resolves.toEqual({
+      installationCount: 1,
+      cancelledCount: 2,
+    });
+
+    // The listing takes no locks, so an installation whose rebuild renewed its
+    // lease in between is rechecked under the state row and left alone — it is
+    // asked about, and it counts for nothing.
+    expect(repository.cancelAbandonedIndexRebuilds).toHaveBeenCalledTimes(2);
+  });
+});

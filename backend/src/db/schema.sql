@@ -813,9 +813,10 @@ CREATE TABLE public.app_storage_installation_state (
     deleted_collection_count integer,
     pending_indexes jsonb DEFAULT '{}'::jsonb NOT NULL,
     rebuild_generation bigint DEFAULT 0 NOT NULL,
+    rebuild_lease_until timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT app_storage_installation_state_rebuild_generation_check CHECK ((rebuild_generation >= 0))
+    CONSTRAINT app_storage_installation_state_rebuild_generation_check CHECK (((rebuild_generation >= 0) AND (rebuild_generation <= '9007199254740991'::bigint)))
 );
 
 
@@ -6486,6 +6487,13 @@ CREATE INDEX idx_app_storage_index_entries_text ON public.app_storage_index_entr
 --
 
 CREATE INDEX idx_app_storage_index_entries_timestamp ON public.app_storage_index_entries USING btree (workspace_id, installation_id, collection_id, index_id, timestamp_value, record_key) WHERE (timestamp_value IS NOT NULL);
+
+
+--
+-- Name: idx_app_storage_installation_state_rebuild_lease; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_app_storage_installation_state_rebuild_lease ON public.app_storage_installation_state USING btree (rebuild_lease_until) WHERE ((rebuild_lease_until IS NOT NULL) AND (deleted_at IS NULL));
 
 
 --

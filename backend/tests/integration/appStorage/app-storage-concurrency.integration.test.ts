@@ -11,6 +11,9 @@ import {
   createAppStorageDisposition,
   createAppStorageService,
   createAppStorageSweeper,
+  INDEXED_STRING_BYTE_BOUND,
+  type AppStorageService,
+  type ExportedAppStorageRecord,
 } from "../../../src/modules/appStorage/public.js";
 import { Database } from "../../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "../support/integrationDatabase.js";
@@ -69,8 +72,19 @@ describeIntegration("Managed App Storage under concurrency (Postgres)", () => {
     await database.close().catch(() => undefined);
   });
 
-  const put = (scope: Scope, key: string, external: string, expectedVersion?: number) =>
-    service.put({
+  /**
+   * A write issued by a named writer. Every case that has to prove two writes
+   * were held at the same moment issues them through {@link pinned} services, so
+   * the barrier can name the backends rather than count them.
+   */
+  const putVia = (
+    writer: AppStorageService,
+    scope: Scope,
+    key: string,
+    external: string,
+    expectedVersion?: number,
+  ) =>
+    writer.put({
       ...scope,
       request: {
         collection: scope.collection.id,
@@ -79,6 +93,9 @@ describeIntegration("Managed App Storage under concurrency (Postgres)", () => {
         ...(expectedVersion === undefined ? {} : { expectedVersion }),
       },
     });
+
+  const put = (scope: Scope, key: string, external: string, expectedVersion?: number) =>
+    putVia(service, scope, key, external, expectedVersion);
 
   const versionOf = (result: Awaited<ReturnType<typeof put>>): number => (result.ok ? result.value.version : -1);
 
@@ -146,45 +163,31 @@ describeIntegration("Managed App Storage under concurrency (Postgres)", () => {
   };
 
   /**
-   * Blocks until PostgreSQL reports `count` backends waiting on a lock in this
-   * database. This is the barrier the shared-pool cases are built on: the
-   * operation under test is provably held, rather than probably held.
-   *
-   * Where a case has to prove that a *named* operation is the one waiting, it
-   * uses {@link pinned} and {@link awaitBlockedPids} instead — this counter is
-   * satisfied by any blocked backend, including one belonging to another test.
-   */
-  const awaitBlocked = async (count = 1): Promise<void> => {
-    for (let attempt = 0; attempt < 600; attempt += 1) {
-      const rows = await database.query<{ blocked: string }>(
-        `SELECT count(*)::text AS blocked FROM pg_stat_activity
-         WHERE datname = current_database() AND state = 'active' AND wait_event_type = 'Lock'`,
-      );
-      if (Number(rows[0]?.blocked ?? "0") >= count) return;
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-    throw new Error(`no ${count} operation(s) ever blocked on a lock`);
-  };
-
-  /**
-   * A repository on a pool of exactly one connection, and that connection's
-   * backend pid.
+   * A repository and a service on a pool of exactly one connection, and that
+   * connection's backend pid.
    *
    * Counting blocked backends across the whole database proves only that
-   * *something* is waiting — another case, another suite, a stray session. When a
-   * test's claim is "this operation and that one are both held at the same
-   * moment", the barrier has to name them, and a single-connection pool is what
+   * *something* is waiting — another case, another suite, a stray session. Every
+   * claim in this file is "this operation and that one were both held at the same
+   * moment", so the barrier names them, and a single-connection pool is what
    * makes an operation's backend identifiable.
    */
   const pinned = async (): Promise<{
     repository: AppStorageRepository;
+    service: AppStorageService;
     database: Database;
     pid: number;
   }> => {
     const owned = new Database(integrationDatabaseUrl, { poolMax: 1 });
     const [row] = await owned.query<{ pid: number }>(`SELECT pg_backend_pid()::int AS pid`);
     pinnedDatabases.push(owned);
-    return { repository: new AppStorageRepository(owned.kysely), database: owned, pid: row?.pid ?? -1 };
+    const ownedRepository = new AppStorageRepository(owned.kysely);
+    return {
+      repository: ownedRepository,
+      service: createAppStorageService({ repository: ownedRepository }),
+      database: owned,
+      pid: row?.pid ?? -1,
+    };
   };
 
   /** Blocks until every named backend is waiting on a lock, not merely some backend. */
@@ -232,9 +235,11 @@ describeIntegration("Managed App Storage under concurrency (Postgres)", () => {
     // the test waits until both are actually queued on a lock. Neither can have
     // run to completion before the other started.
     const lock = await holdLock(scope, "usage");
-    const first = put(scope, "contended", "a", seen);
-    const second = put(scope, "contended", "b", seen);
-    await awaitBlocked(2);
+    const one = await pinned();
+    const two = await pinned();
+    const first = putVia(one.service, scope, "contended", "a", seen);
+    const second = putVia(two.service, scope, "contended", "b", seen);
+    await awaitBlockedPids([one.pid, two.pid]);
     await lock.release();
 
     const outcomes = [await first, await second].map((result) =>
@@ -248,9 +253,11 @@ describeIntegration("Managed App Storage under concurrency (Postgres)", () => {
     const scope = installation(tiny);
 
     const lock = await holdLock(scope, "usage");
-    const first = put(scope, "one", "one");
-    const second = put(scope, "two", "two");
-    await awaitBlocked(2);
+    const one = await pinned();
+    const two = await pinned();
+    const first = putVia(one.service, scope, "one", "one");
+    const second = putVia(two.service, scope, "two", "two");
+    await awaitBlockedPids([one.pid, two.pid]);
     await lock.release();
 
     const outcomes = [await first, await second].map((result) =>
@@ -264,8 +271,9 @@ describeIntegration("Managed App Storage under concurrency (Postgres)", () => {
     const scope = installation();
     const lock = await holdLock(scope, "usage");
 
-    const blocked = put(scope, "queued", "queued");
-    await awaitBlocked();
+    const writer = await pinned();
+    const blocked = putVia(writer.service, scope, "queued", "queued");
+    await awaitBlockedPids([writer.pid]);
 
     await lock.release();
     expect(await blocked).toMatchObject({ ok: true });
@@ -290,8 +298,9 @@ describeIntegration("Managed App Storage under concurrency (Postgres)", () => {
     );
 
     const lock = await holdLock(scope, "usage");
-    const blocked = put(scope, "second", "second");
-    await awaitBlocked();
+    const writer = await pinned();
+    const blocked = putVia(writer.service, scope, "second", "second");
+    await awaitBlockedPids([writer.pid]);
 
     // The deadline is crossed while the write is provably still queued, and only
     // then is the lock released. A write judging liveness by its transaction's
@@ -309,8 +318,9 @@ describeIntegration("Managed App Storage under concurrency (Postgres)", () => {
     const scope = installation(ttl);
 
     const lock = await holdLock(scope, "usage");
-    const blocked = put(scope, "waited", "waited");
-    await awaitBlocked();
+    const writer = await pinned();
+    const blocked = putVia(writer.service, scope, "waited", "waited");
+    await awaitBlockedPids([writer.pid]);
     await new Promise((resolve) => setTimeout(resolve, 300));
     await lock.release();
     expect(await blocked).toMatchObject({ ok: true });
@@ -427,9 +437,10 @@ describeIntegration("Managed App Storage under concurrency (Postgres)", () => {
     // first lock every runtime operation takes.
     const lock = await holdLock(scope, "state");
 
-    const blocked = put(scope, "kept", "changed");
+    const writer = await pinned();
+    const blocked = putVia(writer.service, scope, "kept", "changed");
     // A check made before the operation's own transaction would have passed by now.
-    await awaitBlocked();
+    await awaitBlockedPids([writer.pid]);
 
     await lock.client.query(
       `UPDATE app_storage_installation_state SET access_revoked_at = clock_timestamp()
@@ -452,8 +463,9 @@ describeIntegration("Managed App Storage under concurrency (Postgres)", () => {
 
     const lock = await holdLock(scope, "state");
 
-    const blocked = put(scope, "two", "two");
-    await awaitBlocked();
+    const writer = await pinned();
+    const blocked = putVia(writer.service, scope, "two", "two");
+    await awaitBlockedPids([writer.pid]);
 
     await lock.client.query(
       `DELETE FROM app_storage_records WHERE workspace_id = $1 AND installation_id = $2`,
@@ -504,13 +516,14 @@ describeIntegration("Managed App Storage under concurrency (Postgres)", () => {
 
     const index = { id: "by_sequence", field: "sequence", fieldType: "number" as const };
     const started = await repository.beginIndexRebuild({ scope: scopeOf(scope), index });
-    expect(started.admitted).toBe(true);
-    const startVersion = started.admitted ? started.value.startVersion : 0;
-    const generation = started.admitted ? started.value.generation : 0;
+    expect(started).toMatchObject({ admitted: true, value: { outcome: "started" } });
+    if (!started.admitted || started.value.outcome !== "started") return;
+    const { startVersion, generation } = started.value;
 
     const first = await repository.rebuildIndexBatch({
       scope: scopeOf(scope),
       index,
+      generation,
       after: null,
       limit: 1,
       minVersion: null,
@@ -529,6 +542,7 @@ describeIntegration("Managed App Storage under concurrency (Postgres)", () => {
       await repository.rebuildIndexBatch({
         scope: scopeOf(scope),
         index,
+        generation,
         after: cursor,
         limit: 1,
         minVersion: null,
@@ -539,6 +553,7 @@ describeIntegration("Managed App Storage under concurrency (Postgres)", () => {
     await repository.rebuildIndexBatch({
       scope: scopeOf(scope),
       index,
+      generation,
       after: null,
       limit: 10,
       minVersion: startVersion,
@@ -652,7 +667,10 @@ describeIntegration("Managed App Storage under concurrency (Postgres)", () => {
     });
     const scope = installation(tiny);
 
-    const keys = Array.from({ length: 1_400 }, (_unused, index) => `k${index}`);
+    // Larger than two foreground reclaims, so the backlog is still there after
+    // the put has done its share and after the first usage read has done its
+    // own — which is what makes both intermediate numbers below exact.
+    const keys = Array.from({ length: 3_000 }, (_unused, index) => `k${index}`);
     await database.query(
       `INSERT INTO app_storage_records
          (workspace_id, installation_id, collection_id, record_key, schema_version, value, byte_size, version, expires_at)
@@ -674,11 +692,34 @@ describeIntegration("Managed App Storage under concurrency (Postgres)", () => {
     expect(await put(scope, "fresh", "fresh")).toMatchObject({ ok: true });
     expect(await liveKeys(scope)).toEqual(["fresh"]);
 
-    // The counter still counts the rows that are there, and says so: a number
-    // ahead of the live rows is reported as a backlog rather than left looking
-    // simply high.
-    const midway = await service.usage(scope);
-    expect(midway).toMatchObject({ ok: true });
+    // The counter counts the rows that are there, live or expired-and-not-yet-
+    // reclaimed, and every reclaim's arithmetic subtracts against that meaning.
+    // The put gave back exactly one foreground budget — four batches of 256 —
+    // and left the rest, so this number is the whole claim: it is neither the
+    // live count nor the original backlog.
+    const counter = async (): Promise<number> => {
+      const rows = await database.query<{ record_count: number; expired: string }>(
+        `SELECT u.record_count,
+                (SELECT count(*)::text FROM app_storage_records r
+                  WHERE r.workspace_id = u.workspace_id AND r.installation_id = u.installation_id
+                    AND r.collection_id = u.collection_id
+                    AND r.expires_at IS NOT NULL AND r.expires_at <= clock_timestamp()) AS expired
+           FROM app_storage_collection_usage u
+          WHERE u.workspace_id = $1 AND u.installation_id = $2 AND u.collection_id = 'false_quota'`,
+        [scope.workspaceId, scope.installationId],
+      );
+      expect(rows[0]?.record_count).toBe(Number(rows[0]?.expired ?? "0") + 1);
+      return rows[0]?.record_count ?? -1;
+    };
+    expect(await counter()).toBe(keys.length - 1_024 + 1);
+
+    // And the read says so rather than leaving the number looking simply high:
+    // one usage call reclaims its own budget and reports what is still there
+    // together with the fact that a backlog remains.
+    expect(await service.usage(scope)).toMatchObject({
+      ok: true,
+      value: { recordCount: keys.length - 2_048 + 1, reclaimPending: true },
+    });
 
     // Once the backlog is gone the counter and the live rows agree again.
     for (let pass = 0; pass < 10; pass += 1) {
@@ -730,9 +771,13 @@ describeIntegration("Managed App Storage under concurrency (Postgres)", () => {
     const index = { id: "by_sequence", field: "sequence", fieldType: "number" as const };
     const first = await repository.beginIndexRebuild({ scope: scopeOf(scope), index });
     const second = await repository.beginIndexRebuild({ scope: scopeOf(scope), index });
-    expect(first.admitted && second.admitted).toBe(true);
-    if (!first.admitted || !second.admitted) return;
-    expect(second.value.generation).toBeGreaterThan(first.value.generation);
+    expect(first).toMatchObject({ admitted: true, value: { outcome: "started" } });
+    expect(second).toMatchObject({ admitted: true, value: { outcome: "started" } });
+    if (!first.admitted || first.value.outcome !== "started") return;
+    if (!second.admitted || second.value.outcome !== "started") return;
+    const firstGeneration = first.value.generation;
+    const secondGeneration = second.value.generation;
+    expect(secondGeneration).toBeGreaterThan(firstGeneration);
 
     // The first run finishing here would clear a marker the second run is still
     // scanning under, and every write from that point would stop maintaining the
@@ -741,7 +786,7 @@ describeIntegration("Managed App Storage under concurrency (Postgres)", () => {
       repository.finishIndexRebuild({
         scope: scopeOf(scope),
         indexId: index.id,
-        generation: first.value.generation,
+        generation: firstGeneration,
       }),
     ).resolves.toMatchObject({ admitted: true, value: { outcome: "stale" } });
 
@@ -749,14 +794,14 @@ describeIntegration("Managed App Storage under concurrency (Postgres)", () => {
       repository.cancelIndexRebuild({
         scope: scopeOf(scope),
         indexId: index.id,
-        generation: first.value.generation,
+        generation: firstGeneration,
       }),
     ).resolves.toMatchObject({ admitted: true, value: { outcome: "stale" } });
 
     const owner = await repository.finishIndexRebuild({
       scope: scopeOf(scope),
       indexId: index.id,
-      generation: second.value.generation,
+      generation: secondGeneration,
     });
     expect(owner).toMatchObject({ admitted: true, value: { outcome: "finished" } });
     if (!owner.admitted || owner.value.outcome !== "finished") return;
@@ -768,7 +813,7 @@ describeIntegration("Managed App Storage under concurrency (Postgres)", () => {
         repository.completeIndexRebuild(tx, {
           scope: scopeOf(scope),
           indexId: index.id,
-          completionToken: `sync_state:${index.id}:${first.value.generation}`,
+          completionToken: `sync_state:${index.id}:${firstGeneration}`,
         }),
       ),
     ).resolves.toEqual({ outcome: "stale" });
@@ -1110,5 +1155,239 @@ describeIntegration("Managed App Storage under concurrency (Postgres)", () => {
     expect(stored[0]?.count).toBe("1");
     expect(counter[0]?.record_count).toBe(1);
     expect(await service.usage(scope)).toMatchObject({ ok: true, value: { recordCount: 1 } });
+  });
+  it("rolls an activation back together with the rebuild completion it committed with", async () => {
+    // The seam this proves: the `apps` domain flips a release's visibility and
+    // this domain clears the rebuild marker in one commit. Split across two,
+    // an older release's write lands between them and takes an index entry with
+    // it. The executor is the platform's own transaction type, so the activation
+    // running in it issues its own statements against its own tables.
+    const scope = installation();
+    await put(scope, "a", "a");
+
+    const index = { id: "by_sequence", field: "sequence", fieldType: "number" as const };
+    const started = await repository.beginIndexRebuild({ scope: scopeOf(scope), index });
+    expect(started).toMatchObject({ admitted: true, value: { outcome: "started" } });
+    if (!started.admitted || started.value.outcome !== "started") return;
+
+    const finished = await repository.finishIndexRebuild({
+      scope: scopeOf(scope),
+      indexId: index.id,
+      generation: started.value.generation,
+    });
+    expect(finished).toMatchObject({ admitted: true, value: { outcome: "finished" } });
+    if (!finished.admitted || finished.value.outcome !== "finished") return;
+    const completionToken = finished.value.completionToken;
+
+    // The activation's own mutation, in the same transaction as the completion.
+    // It is a row this domain does not own, which is the point of the seam.
+    const activationKey = `activation-${randomUUID()}`;
+    await expect(
+      repository.runInTransaction(async (tx) => {
+        const completed = await repository.completeIndexRebuild(tx, {
+          scope: scopeOf(scope),
+          indexId: index.id,
+          completionToken,
+        });
+        expect(completed).toEqual({ outcome: "completed" });
+
+        await tx
+          .insertInto("workspaces")
+          .values({
+            id: randomUUID(),
+            account_id: accountId,
+            name: "Activation",
+            public_route_key: activationKey,
+          })
+          .execute();
+
+        throw new Error("activation failed after both writes");
+      }),
+    ).rejects.toThrow("activation failed after both writes");
+
+    // Neither half committed. The marker is still up, so writes keep maintaining
+    // the index, and the activation's own row is not there either.
+    const pending = await database.query<{ pending_indexes: Record<string, unknown> }>(
+      `SELECT pending_indexes FROM app_storage_installation_state
+       WHERE workspace_id = $1 AND installation_id = $2`,
+      [scope.workspaceId, scope.installationId],
+    );
+    expect(Object.keys(pending[0]?.pending_indexes ?? {})).toEqual(["sync_state"]);
+
+    const activated = await database.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM workspaces WHERE public_route_key = $1`,
+      [activationKey],
+    );
+    expect(activated[0]?.count).toBe("0");
+  });
+
+  it("hands a snapshot to one reader and refuses the second, leaking no transaction", async () => {
+    // Two readers sharing one snapshot would each open a transaction and
+    // overwrite the other's: whichever finished first would end the transaction
+    // the other was mid-page in, and the second would be leaked with its
+    // connection and its MVCC snapshot.
+    const scope = installation();
+    for (const key of ["a", "b", "c"]) await put(scope, key, key);
+
+    const before = await idleInTransaction();
+    const opened = await repository.openInstallationExport({ scope, batchSize: 1 });
+    expect(opened.admitted).toBe(true);
+    if (!opened.admitted) return;
+
+    const first = opened.value.read()[Symbol.asyncIterator]();
+    const second = opened.value.read()[Symbol.asyncIterator]();
+
+    // The winner is whichever reader's generator body runs first; what matters is
+    // that exactly one of them owns the snapshot.
+    const outcomes = await Promise.allSettled([first.next(), second.next()]);
+    const refusals = outcomes.filter((outcome) => outcome.status === "rejected");
+    expect(refusals).toHaveLength(1);
+    expect(refusals[0]?.reason).toMatchObject({ name: "AppStorageExportBusyError" });
+
+    const wonFirst = outcomes[0]?.status === "fulfilled";
+    const winner = wonFirst ? first : second;
+    const opening = (wonFirst ? outcomes[0] : outcomes[1]) as PromiseFulfilledResult<
+      IteratorResult<ExportedAppStorageRecord>
+    >;
+
+    // The winner reads the whole installation, starting from the row its own
+    // first `next` already produced: being refused a snapshot must cost the
+    // other reader nothing.
+    const rows = opening.value.done ? [] : [opening.value.value];
+    for (;;) {
+      const next = await winner.next();
+      if (next.done) break;
+      rows.push(next.value);
+    }
+    expect(rows.map((row) => row.key)).toEqual(["a", "b", "c"]);
+
+    // The refused reader opened nothing, and the winner's transaction ended with
+    // its own iteration.
+    await opened.value.close();
+    expect(await idleInTransaction()).toBe(before);
+  });
+
+  it("refuses a reclaim whose lease deadline passed, even when it still holds the token", async () => {
+    // Locking keeps the data right either way; what the deadline decides is who
+    // owns the work. A worker that stalled past its deadline can otherwise spend
+    // a batch a replacement claimant is already responsible for.
+    const ttl = buildStorageCollection({ id: "expired_lease", retention: { kind: "ttl", seconds: 3600 } });
+    const scope = installation(ttl);
+    for (const key of ["a", "b"]) await put(scope, key, key);
+    await database.query(
+      `UPDATE app_storage_records SET expires_at = clock_timestamp() - interval '1 second'
+       WHERE workspace_id = $1 AND installation_id = $2`,
+      [scope.workspaceId, scope.installationId],
+    );
+
+    const claim = await repository.claimCollectionForExpirySweep({ scope: scopeOf(scope) });
+    expect(claim).toMatchObject({ claimed: true });
+    if (!claim.claimed) return;
+
+    await database.query(
+      `UPDATE app_storage_collection_usage SET sweep_lease_until = clock_timestamp() - interval '1 second'
+       WHERE workspace_id = $1 AND installation_id = $2 AND collection_id = $3`,
+      [scope.workspaceId, scope.installationId, "expired_lease"],
+    );
+
+    expect(
+      await repository.reclaimExpiredRecords({ scope: scopeOf(scope), limit: 10, leaseToken: claim.leaseToken }),
+    ).toBe(0);
+    const remaining = await database.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM app_storage_records WHERE installation_id = $1`,
+      [scope.installationId],
+    );
+    expect(remaining[0]?.count).toBe("2");
+  });
+
+  it("drops a rebuild marker whose lease ran out, and the entries it built", async () => {
+    // A marker outlives the process that set it. Until it is dropped, every
+    // write to the collection maintains an index no release is going to query.
+    const scope = installation();
+    await put(scope, "a", "a");
+
+    const index = { id: "by_sequence", field: "sequence", fieldType: "number" as const };
+    const started = await repository.beginIndexRebuild({ scope: scopeOf(scope), index });
+    expect(started).toMatchObject({ admitted: true, value: { outcome: "started" } });
+    if (!started.admitted || started.value.outcome !== "started") return;
+
+    await repository.rebuildIndexBatch({
+      scope: scopeOf(scope),
+      index,
+      generation: started.value.generation,
+      after: null,
+      limit: 10,
+      minVersion: null,
+    });
+
+    // A live marker is nobody's to collect.
+    expect(
+      await repository.cancelAbandonedIndexRebuilds({ scope }),
+    ).toEqual({ cancelledCount: 0 });
+
+    const expire = async (): Promise<void> => {
+      await database.query(
+        `UPDATE app_storage_installation_state
+            SET rebuild_lease_until = clock_timestamp() - interval '1 second',
+                pending_indexes = jsonb_set(
+                  pending_indexes, '{sync_state,0,leaseUntil}',
+                  to_jsonb((clock_timestamp() - interval '1 second')::text))
+          WHERE workspace_id = $1 AND installation_id = $2`,
+        [scope.workspaceId, scope.installationId],
+      );
+    };
+    await expire();
+
+    expect(await repository.listAbandonedIndexRebuilds(50)).toContainEqual({
+      workspaceId: scope.workspaceId,
+      installationId: scope.installationId,
+    });
+    expect(await repository.cancelAbandonedIndexRebuilds({ scope })).toEqual({ cancelledCount: 1 });
+
+    const state = await database.query<{
+      pending_indexes: Record<string, unknown>;
+      rebuild_lease_until: Date | null;
+    }>(
+      `SELECT pending_indexes, rebuild_lease_until FROM app_storage_installation_state
+       WHERE workspace_id = $1 AND installation_id = $2`,
+      [scope.workspaceId, scope.installationId],
+    );
+    expect(state[0]?.pending_indexes).toEqual({});
+    expect(state[0]?.rebuild_lease_until).toBeNull();
+
+    const entries = await database.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM app_storage_index_entries
+       WHERE installation_id = $1 AND index_id = 'by_sequence'`,
+      [scope.installationId],
+    );
+    expect(entries[0]?.count).toBe("0");
+  });
+
+  it("refuses a write whose value a pending index cannot hold rather than storing it unindexed", async () => {
+    // Skipping the entry would leave a record the rebuilt index never answers
+    // about, and the activation that followed would expose a query quietly short
+    // of a row. The write is where the record and the bound it fails are both in
+    // hand, so it is where the refusal belongs.
+    const scope = installation();
+    const index = { id: "by_external_id_rebuild", field: "external_id", fieldType: "string" as const };
+    const started = await repository.beginIndexRebuild({ scope: scopeOf(scope), index });
+    expect(started).toMatchObject({ admitted: true, value: { outcome: "started" } });
+
+    const past = "x".repeat(INDEXED_STRING_BYTE_BOUND + 1);
+    expect(
+      await service.put({
+        ...scope,
+        // The record itself is admitted: the collection this release declares has
+        // no index on the field, so only the pending one bounds it.
+        collection: buildStorageCollection({ indexes: [] }),
+        request: { collection: scope.collection.id, key: "long", record: { external_id: past } },
+      }),
+    ).toMatchObject({ ok: false, error: { code: "invalid_input" } });
+
+    const stored = await database.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM app_storage_records WHERE installation_id = $1`,
+      [scope.installationId],
+    );
+    expect(stored[0]?.count).toBe("0");
   });
 });

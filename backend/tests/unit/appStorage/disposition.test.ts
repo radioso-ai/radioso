@@ -352,6 +352,36 @@ describe("app storage disposition", () => {
     });
   });
 
+  it("says an intent that was not committed out loud, in identifiers and codes", async () => {
+    // Not replacing the primary answer is half the rule; the other half is that
+    // an outbox outage during a refusal must not be silent, or the only symptom
+    // is trail entries nobody ever notices are missing.
+    const logger = { warn: vi.fn() };
+    repository.openInstallationExport = vi.fn(async () => ({ admitted: false as const }));
+    repository.enqueueAuditEvent = vi.fn(async (input) => {
+      if (input.intent.eventType === "app.data.export.cancelled") throw connectionFailure();
+    });
+
+    const refused = await createAppStorageDisposition({
+      repository,
+      audit,
+      logger,
+      now: () => now,
+    }).export(scope);
+
+    expect(refused).toMatchObject({ ok: false, error: { code: "denied" } });
+    expect(logger.warn).toHaveBeenCalledWith(
+      {
+        installationId,
+        workspaceId,
+        eventType: "app.data.export.cancelled",
+        eventStatus: "failure",
+        failureCode: "unavailable",
+      },
+      expect.any(String),
+    );
+  });
+
   it("closes the snapshot when the consumer walks away mid-stream", async () => {
     // A repeatable-read snapshot pins a connection and an MVCC snapshot. The
     // consumer's `break` is what has to end it, not the idle timeout.
@@ -398,6 +428,7 @@ describe("app storage disposition", () => {
         {
           eventId: "event-1",
           workspaceId,
+          deletedWorkspaceId: null,
           installationId,
           eventType: "app.data.deletion.completed" as const,
           eventStatus: "success" as const,
@@ -427,6 +458,7 @@ describe("app storage disposition", () => {
         {
           eventId: "kept",
           workspaceId,
+          deletedWorkspaceId: null,
           installationId,
           eventType: "app.data.export.requested" as const,
           eventStatus: "success" as const,
@@ -436,6 +468,7 @@ describe("app storage disposition", () => {
         {
           eventId: "published",
           workspaceId,
+          deletedWorkspaceId: null,
           installationId,
           eventType: "app.data.export.completed" as const,
           eventStatus: "success" as const,

@@ -14,24 +14,24 @@ type TestAppModule = typeof import("../../../backend/tests/support/testApp.js");
 type McpConverseRoutesModule = typeof import("../../../backend/src/app/http/routes/mcpConverseRoutes.js");
 type DependencyBuildersModule = typeof import("../../../backend/src/app/server/dependencyBuilders.js");
 
-export interface SmokeLogger {
+interface SmokeLogger {
   step(message: string): void;
 }
 
-export interface BackendHarness {
+interface BackendHarness {
   app: unknown;
   baseUrl: string;
   close(): Promise<void>;
   issueConverseGrant(email?: string): Promise<{ agentId: string; token: string; workspaceId: string }>;
 }
 
-export interface RemoteHarness {
+interface RemoteHarness {
   auditEvents: ReturnType<typeof createInMemoryAuditSink>["events"];
   baseUrl: string;
   close(): Promise<void>;
 }
 
-export interface ConverseSmokeSummary {
+interface ConverseSmokeSummary {
   answer: string;
   agentId: string;
   workspaceId: string;
@@ -135,7 +135,7 @@ const getStructuredContent = (payload: unknown): unknown => {
 const asAskAgentAnswer = (structuredContent: unknown): { answer: { text: string } } =>
   structuredContent as { answer: { text: string } };
 
-export const startBackendHarness = async (): Promise<BackendHarness> => {
+const startBackendHarness = async (): Promise<BackendHarness> => {
   const { createTestApp, issueTestSession } = await loadTestAppModule();
   const { createMcpConverseRoutes } = await loadMcpConverseRoutesModule();
   const { buildMcpConverseServices } = await loadDependencyBuildersModule();
@@ -173,7 +173,7 @@ export const startBackendHarness = async (): Promise<BackendHarness> => {
   };
 };
 
-export const startRemoteHarness = async (options: {
+const startRemoteHarness = async (options: {
   backendBaseUrl: string;
   redisKeyPrefix?: string;
   redisUrl?: string;
@@ -206,7 +206,7 @@ export const startRemoteHarness = async (options: {
   };
 };
 
-export const initializeSession = async (baseUrl: string, accessToken: string) => {
+const initializeSession = async (baseUrl: string, accessToken: string) => {
   const initializeResponse = await mcpRequest(baseUrl, accessToken, {
     id: "initialize-1",
     jsonrpc: "2.0",
@@ -232,7 +232,7 @@ export const initializeSession = async (baseUrl: string, accessToken: string) =>
   assert.ok(initializedResponse.ok, `Expected initialized notification to succeed, got ${initializedResponse.status}`);
 };
 
-export const listTools = async (baseUrl: string, accessToken: string) => {
+const listTools = async (baseUrl: string, accessToken: string) => {
   const response = await mcpRequest(baseUrl, accessToken, {
     id: "tools-list-1",
     jsonrpc: "2.0",
@@ -244,7 +244,7 @@ export const listTools = async (baseUrl: string, accessToken: string) => {
   return payload as { result: { tools: Array<{ name: string }> } };
 };
 
-export const callTool = async (
+const callTool = async (
   baseUrl: string,
   accessToken: string,
   name: string,

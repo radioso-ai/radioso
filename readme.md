@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="./LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/github/license/radioso-ai/radioso?color=blue"></a>
+  <a href="./LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
   <a href="http://makeapullrequest.com"><img alt="PRs welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg"></a>
   <a href="https://github.com/radioso-ai/radioso/commits/main"><img alt="Commit activity" src="https://img.shields.io/github/commit-activity/m/radioso-ai/radioso"></a>
 </p>

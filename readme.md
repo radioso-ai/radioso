@@ -16,8 +16,9 @@
 </p>
 
 ## Radioso is the open-source platform for designing and running customer-facing AI agents
+Tried Parlant but wanting batteries included? Or looking for an open-source alternative for Fin, Rasa or Ada.cx?
 
-Run one script and you have an agent your customers can talk to. It answers from the documents you gave it, with citations so you can check its work. It carries a request across turns: collects what it needs, calls your tools, finishes the job. And when the conversation needs a human, it hands the whole thing to one instead of improvising. All of this happens inside rules you author — we call it [guided autonomy](https://docs.radioso.ai/why-radioso/guided-autonomy). You don't have to enumerate every path in advance, and you don't have to accept whatever the model decides on its own.
+Radioso is the platform for steering LLM conversations according to your rules. It answers from the documents you gave it, with citations so you can check its work. It carries a request across turns: collects what it needs, calls your tools, finishes the job. And when the conversation needs a human, it hands the whole thing to one instead of improvising. All of this happens inside rules you author — we call it [guided autonomy](https://docs.radioso.ai/why-radioso/guided-autonomy). You don't have to enumerate every path in advance, and you don't have to accept whatever the model decides on its own.
 
 Run it in Radioso Cloud or on your own infrastructure, so your data sits where you want it. Multi-provider, so no model lock-in. API-first, because you'll want to build on it.
 

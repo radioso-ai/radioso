@@ -250,6 +250,7 @@ const declarations: readonly PolicyDeclaration[] = [
     ["GET", "/api/v1/apps/installations/:installationId/operations", "workspace.apps.manage"],
     ["PATCH", "/api/v1/apps/installations/:installationId/configuration", "workspace.apps.manage"],
     ["POST", "/api/v1/apps/installations/:installationId/connections", "workspace.apps.manage"],
+    ["POST", "/api/v1/apps/installations/:installationId/activate", "workspace.apps.manage"],
     ["POST", "/api/v1/apps/installations/:installationId/disable", "workspace.apps.manage"],
     ["POST", "/api/v1/apps/installations/:installationId/enable", "workspace.apps.manage"],
     ["POST", "/api/v1/apps/installations/:installationId/remove", "workspace.apps.manage"],

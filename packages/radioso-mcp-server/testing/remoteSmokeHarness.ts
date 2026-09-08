@@ -266,11 +266,11 @@ export const runConverseGrantSmoke = async (logger: SmokeLogger): Promise<Conver
     logger.step("initializing MCP session directly with converse grant bearer");
     await initializeSession(remote.baseUrl, grant.token);
 
-    logger.step("listing converse-only tools");
+    logger.step("listing the converse and documentation tools");
     const tools = await listTools(remote.baseUrl, grant.token);
     assert.deepEqual(
       tools.result.tools.map((tool) => tool.name).sort(),
-      ["ask_agent"],
+      ["ask_agent", "radioso_doc_page", "radioso_docs"],
     );
     assert.ok(!tools.result.tools.some((tool) => tool.name === "describe_capabilities"));
     assert.ok(!tools.result.tools.some((tool) => tool.name === "list_documents"));

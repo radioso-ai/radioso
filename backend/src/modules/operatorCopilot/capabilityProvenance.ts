@@ -7,6 +7,7 @@ type ProductionDescriptorName =
   | "conversation_transcript" | "create_eval_case_from_turn" | "draft_reply" | "document_chunks" | "document_search" | "document_status"
   | "eval_results" | "needs_attention" | "propose_agent" | "propose_agent_setting" | "propose_context_variable" | "propose_directive"
   | "propose_document" | "propose_document_removal" | "propose_document_retrieval"
+  | "product_doc_page" | "product_docs"
   | "propose_ingestion_settings" | "propose_workspace_setting" | "start_crawl"
   | "propose_directive_enablement" | "propose_directive_removal" | "propose_routine"
   | "propose_routine_edit" | "propose_routine_lifecycle" | "propose_skill_config" | "quality_signals"
@@ -37,6 +38,8 @@ export const copilotCapabilityProvenance: Readonly<Record<ProductionDescriptorNa
   document_chunks: { applicationPrimitiveIds: ["documents.chunks.read"] },
   eval_results: { backingOperationIds: ["listEvalCases"] },
   needs_attention: { applicationPrimitiveIds: ["operatorCopilot.needs-attention"], ...rayOnly("Ray composes the authorized escalation sources into one operator working list carrying the handles its follow-up acts consume.") },
+  product_docs: { applicationPrimitiveIds: ["productDocs.corpus.read"] },
+  product_doc_page: { applicationPrimitiveIds: ["productDocs.corpus.read"] },
   propose_agent: { backingOperationIds: ["createAgentFromWizard"], applicationPrimitiveIds: ["agentWizard.agent.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray persists an operator-reviewable draft before the agent wizard creates an agent and queues its website.") },
   propose_agent_setting: { backingOperationIds: ["updateAgent"], applicationPrimitiveIds: ["agents.setting.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray persists an operator-reviewable draft before the agent service receives a setting mutation.") },
   propose_context_variable: { backingOperationIds: ["createContextVariable", "updateContextVariable", "upsertAgentContextVariable"], applicationPrimitiveIds: ["contextVariables.definition.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray persists an operator-reviewable draft before the context-variable service applies a definition or enablement mutation.") },

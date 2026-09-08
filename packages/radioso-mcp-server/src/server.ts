@@ -4,6 +4,7 @@ import { McpServer } from "@modelcontextprotocol/server";
 import { toStructuredToolError } from "./errors.js";
 import { toCallToolResult, toErrorCallToolResult } from "./toolResult.js";
 import { createConverseToolDefinitions } from "./tools/converseTools.js";
+import { createProductDocsToolDefinitions } from "./tools/productDocsTools.js";
 import type { RemoteToolAuthInfo, ToolDefinition, ToolExecutionContext } from "./types.js";
 
 export interface RadiosoMcpServerContext {
@@ -47,7 +48,10 @@ export const createRadiosoMcpServer = ({
   });
 
   const converseToolDefinitions = createConverseToolDefinitions();
-  const toolDefinitions = converseToolDefinitions;
+  // Documentation tools sit beside the converse tool rather than behind a flag: a client that
+  // can reach this server is already authorized for the workspace, and the corpus is the same
+  // public documentation for every one of them.
+  const toolDefinitions = [...converseToolDefinitions, ...createProductDocsToolDefinitions()];
   const executionResolver = resolveExecutionContext;
 
   if (!executionResolver) {

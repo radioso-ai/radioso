@@ -24,6 +24,7 @@ import { contextVariableCopilotPrimitives } from "../../../src/modules/context-v
 import { documentCopilotPrimitives } from "../../../src/modules/documents/public.js";
 import { embeddingProfileCopilotPrimitives } from "../../../src/modules/embeddingProfiles/public.js";
 import { evalCopilotPrimitives } from "../../../src/modules/eval/public.js";
+import { productDocsCopilotPrimitives } from "../../../src/modules/productDocs/public.js";
 import { retrievalCopilotPrimitives } from "../../../src/modules/retrieval/public.js";
 import { routineCopilotPrimitives } from "../../../src/modules/routines/public.js";
 import { settingsCopilotPrimitives } from "../../../src/modules/settings/public.js";
@@ -53,6 +54,7 @@ const ownerExportedPrimitiveIds = new Set([
   ...documentCopilotPrimitives,
   ...embeddingProfileCopilotPrimitives,
   ...evalCopilotPrimitives,
+  ...productDocsCopilotPrimitives,
   ...retrievalCopilotPrimitives,
   ...routineCopilotPrimitives,
   ...settingsCopilotPrimitives,

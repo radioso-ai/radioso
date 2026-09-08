@@ -53,6 +53,8 @@ import { ContextVariableRepository } from "../../db/repositories/contextVariable
 import { AccessGrantLifecycleUnitOfWork } from "../../db/repositories/accessGrantRepository.js";
 import { ContextVariableService } from "../../modules/context-variables/public.js";
 import { createAgentBundleServices } from "../composition/agentBundleComposition.js";
+import { createAppRepositories, createAppsServices, createAppsUnitOfWork } from "../composition/apps.js";
+import { resolveRunningRadiosoVersion } from "../config/radiosoVersion.js";
 import { createConnectorIngestionPort } from "../../modules/connectors/services/connectorIngestionPort.js";
 import { ConnectorManagementService } from "../../modules/connectors/services/connectorManagementService.js";
 import { resolveWebsiteCrawlerConfig } from "../../modules/websiteCrawler/config.js";
@@ -784,6 +786,19 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     copilotToolCatalog,
   });
 
+  // The built-in registry is empty until a first-party App registers itself, so a
+  // Radioso that ships without one still starts, plans nothing, and installs nothing.
+  const appsServices = createAppsServices({
+    repositories: createAppRepositories(infrastructure.database.kysely),
+    unitOfWork: createAppsUnitOfWork(infrastructure.database.kysely),
+    audit: infrastructure.auditService,
+    logger,
+    accountAccessService: access.accountAccessService,
+    secretEncryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
+    builtInReleases: [],
+    runningRadiosoVersion: resolveRunningRadiosoVersion(env.RADIOSO_RELEASE),
+  });
+
   const agentBundleServices = createAgentBundleServices({
     logger,
     metrics: infrastructure.metricsRegistry,
@@ -901,6 +916,15 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     platformSettingsService,
     agentService,
     authoredDirectiveService,
+    appReleaseAdmissionService: appsServices.appReleaseAdmissionService,
+    appInstallationPlanService: appsServices.appInstallationPlanService,
+    appInstallationLifecycleService: appsServices.appInstallationLifecycleService,
+    appInstallationQueryService: appsServices.appInstallationQueryService,
+    appConnectionService: appsServices.appConnectionService,
+    appControlPlaneRecovery: {
+      drainAuditOutbox: appsServices.drainAuditOutbox,
+      recoverStalledAppOperations: appsServices.recoverStalledAppOperations,
+    },
     agentBundleExportService: agentBundleServices.exportService,
     agentBundleImportService: agentBundleServices.importService,
     agentBundleImportCleanupWorker: agentBundleServices.cleanupWorker,

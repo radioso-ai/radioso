@@ -17,7 +17,7 @@ interface ServerLike {
   close(callback?: (error?: Error) => void): void;
 }
 
-export interface StartApiRuntimeOptions {
+interface StartApiRuntimeOptions {
   env: Env;
   logger?: AppLogger;
   runMigrations?: (connectionString: string, logger: AppLogger, options: MigrationTimeoutOptions) => Promise<void>;
@@ -75,6 +75,17 @@ export const startApiRuntime = async (options: StartApiRuntimeOptions): Promise<
     fetchPublicUrl,
   });
   await dependencies.applicationModules.initializeAll();
+  // Admission runs after application modules register, so a module that contributes a
+  // built-in App release is admitted in the same pass. It is idempotent per version and
+  // never throws: a registry entry that fails policy makes that App uninstallable, not
+  // the platform unstartable.
+  await dependencies.appReleaseAdmissionService.syncBuiltInReleases();
+  // A restart is when both backlogs exist: audit intents committed but never delivered,
+  // and lifecycle operations whose driver died holding them. Neither drains itself, and a
+  // stalled operation keeps its installation's in-flight fence closed against every
+  // command until something re-drives it.
+  await dependencies.appControlPlaneRecovery.drainAuditOutbox();
+  await dependencies.appControlPlaneRecovery.recoverStalledAppOperations();
   await dependencies.credentialExpiryWarningLifecycle.start();
 
   const app = (options.createApp ?? createApp)(dependencies);

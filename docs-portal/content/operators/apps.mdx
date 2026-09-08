@@ -1,0 +1,172 @@
+---
+title: "Apps"
+description: "Install, connect, activate, reconfigure, disable, and remove Hosted Apps: what each installation state means, what the plan review shows, and how data disposition works on removal."
+last_updated: 2026-09-08
+---
+
+# Apps
+
+An App is a workspace installation with one release, its own connections and
+grants, and an operator-reviewed plan. The control plane records and protects
+that authority before a runtime or contribution adapter uses it.
+
+## Setting an App up
+
+Installing happens in two moves, and the gap between them is the point.
+
+**Apply** turns the plan you approved into a real installation. It records the
+grant set, the effective configuration, and the release the installation is
+pinned to — and it starts nothing. The installation sits in `planned`, which is
+what lets you bind credentials against something that exists.
+
+**Activate** is the step that goes live: it provisions the runtime, stages the
+contributions, runs the safe test, and switches them on together. It refuses
+while any connection the release requires still has no record, and tells you
+which slot is missing.
+
+That order is what makes a generated secret workable. A webhook signing secret
+is minted by Radioso when you bind the slot and shown to you exactly once; you
+copy it into the external service, then activate. Nothing has to pretend a slot
+is bound before anything has been stored for it.
+
+## Installation states
+
+| State | What's happening |
+|---|---|
+| `planned` | Your approved plan is recorded. Grants and configuration are stored; nothing runs. Bind connections here. |
+| `provisioning` | Radioso is starting the App's runtime for this installation. |
+| `staged` | The runtime is up, but its contributions aren't visible to agents, schedules, or webhooks yet. |
+| `testing` | The safe test is running against the staged installation. |
+| `ready` | The test passed; the installation is one step from going live. |
+| `active` | The App's approved contributions are live together. |
+| `disabled` | You've turned the installation off; nothing runs, but everything is still configured. |
+| `failed` | An operation's rollback could not finish, so the installation needs repair. Its health carries the reason code, and removal is the command that repairs it. |
+| `removing` | You've asked to remove the App; Radioso is revoking runtime authority and applying your data choice. |
+| `removed` | The installation is gone. |
+
+`active` and `disabled` move back and forth. Disabling doesn't lose
+configuration, so re-enabling returns straight to `active` — and re-enabling
+also reopens execution, in the same commit that makes the installation active,
+so contributions run again the moment the state says they do.
+
+An operation that fails and rolls back cleanly leaves the installation in the
+state you issued the command from, with the reason on its health. A failed
+activation returns to `planned` and can be activated again once the cause is
+fixed; it does not become `failed`.
+
+## Every command carries the version you read
+
+Disable, enable, activate, remove, reconfigure, and binding a connection all
+take the installation's `expectedVersion`. If someone else changed the
+installation between your reading it and your clicking, the command is refused
+rather than applied to a state you never saw. Read the installation again and
+decide again.
+
+Apply, activate, disable, enable, remove, and reconfigure require an
+idempotency key. Sending the same command twice with
+the same key resumes the one operation it started; sending a *different*
+command with a key that has already been used is refused, so a retry can never
+report success for work that never ran.
+
+One operation runs per installation at a time. A second command that arrives
+while one is in flight is refused with `operation_in_progress`.
+
+## The plan review
+
+Before anything runs, Radioso builds a plan and shows it to you: the release
+identity and version, every contribution the release offers, the permissions it
+asks for, every external destination it would reach with the credential each one
+uses and how that credential is sent, the storage collections it would use, and
+anything it needs that isn't resolved yet — a configuration value you haven't
+filled in, a connection that isn't bound.
+
+The response contains the plan checksum, release identity and digest, resolved
+non-secret configuration, grants, destinations, collections, contributions,
+connection-slot status, the admission policy version and release state the plan
+was built against, and unresolved requirements. The publisher and the
+release's compatibility with your deployment are on the release itself, which
+you read before you plan. The plan you approve is
+bound to exactly what you saw: that release, that workspace, that grant set,
+and the admission judgement that made the release installable. If anything relevant changes
+before you apply it, the plan goes stale and Radioso asks for a fresh review.
+If the release itself is revoked or quarantined in the meantime, apply and
+activation both refuse it outright.
+
+## Connections
+
+Credentials never pass through your screen twice. A connection you fill in — a
+site's application password, an API key — is write-only: Radioso stores it and
+the App receives a reference, never the value back. Where a connection slot is
+a generated secret, Radioso mints it and shows it to you once at binding; copy
+it into the App or the external service at that point, because the dashboard
+doesn't display it again. Lost it? Rebind the slot to rotate.
+
+Every bind carries an idempotency key. Sending the same bind twice with the same
+key answers with the connection the first one created and no secret, so a retry
+can never mint a second secret and leave the first one stranded.
+
+Once an installation is being removed, its credentials are marked for deletion
+and binding is closed. A bind that arrives late is refused rather than
+resurrecting stored credentials on an installation that is on its way out.
+
+## Changing configuration
+
+A configuration change holds your current configuration in place and stores the
+proposed values as a candidate. Radioso validates the candidate, sends the
+frozen effective configuration and typed contribution descriptors to staging
+and test ports, then promotes the candidate and adopts its configuration in one
+commit once those ports succeed. If a value would switch on a contribution whose
+connection isn't bound, the change is refused and the current configuration
+remains in force. A failed change leaves the installation exactly as it was —
+same state, same configuration, same health.
+
+## The safe test
+
+The staging and safe-test ports receive the candidate descriptor and are
+currently no-ops. They still form the lifecycle boundary: the control plane
+uses their success before it adopts configuration, and providers or contribution
+owners can add their work behind that boundary.
+
+A failure stops the operation. Provisioning and staged candidates have
+best-effort compensators; persisted grants can be revoked. Safe tests, stopped
+runtimes, and data disposition have no guessed reversal. Radioso records the
+outcome as a reason code on the operation, and on the installation's health for
+every operation except a configuration change — a change that never applied says
+nothing about the health of the installation still running the old one. The
+reason is a code and a fixed message, never the provider's own error text,
+because that text can carry a credential, a command line, or a response body.
+
+## Disable or remove
+
+**Disable** stops an installation immediately without touching its
+configuration or stored data — use it to pull an App out of service while you
+investigate. **Remove** goes further: Radioso revokes the installation's grants
+first, marks its credentials for deletion, stops the runtime, detaches the
+contributions, and then applies the data choice you make — export it, retain it
+for a period before deletion, or delete it now. That choice is explicit every
+time.
+
+## Common failure modes
+
+- **`connections_unbound` on activation.** A slot the release requires has no
+  connection record. The error names the slot; bind it and activate again.
+- **`runtime_unavailable` on activation.** Apps need a runtime provider
+  registered — something has to start and host each installation's process. A
+  deployment with no provider configured still plans, installs, and connects
+  Apps, but activation fails with this reason and the installation moves to
+  `failed`. Chat, retrieval, and document ingestion are unaffected.
+- **`release_not_eligible`.** The release was deprecated, revoked, or
+  quarantined, or it doesn't support the Radioso version this deployment runs.
+  Nothing was changed.
+- **An interrupted operation.** If the process handling an operation stops
+  partway, the operation keeps its cursor. Re-send the same command with the
+  same idempotency key and it continues from the last committed step rather
+  than starting over.
+- **`compensation_failed`.** An operation failed *and* rolling it back also
+  failed. The operation records how far the rollback got; this one needs a
+  person to look at the installation.
+
+## Read next
+
+- [Release admission](/docs/apps/release-admission) — what makes a release
+  installable, and what the admission decision records.

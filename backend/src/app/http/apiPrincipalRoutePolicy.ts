@@ -238,6 +238,25 @@ const declarations: readonly PolicyDeclaration[] = [
     ["GET", "/api/v1/operator-mcp/oauth/transactions/:transactionId", "session"],
     ["POST", "/api/v1/operator-mcp/oauth/transactions/:transactionId/decision", "session"],
   ].map(([method, path, permission]) => sessionOnly(method, path, permission)),
+  // Installing an App grants a third-party runtime host capabilities inside a
+  // workspace. Release A keeps that decision with a signed-in administrator: no
+  // machine credential may plan, apply, or dispose of an installation.
+  ...[
+    ["GET", "/api/v1/apps/releases", "workspace.apps.manage"],
+    ["GET", "/api/v1/apps/releases/:releaseId", "workspace.apps.manage"],
+    ["POST", "/api/v1/apps/installation-plans", "workspace.apps.manage"],
+    ["GET", "/api/v1/apps/installation-plans/:planId", "workspace.apps.manage"],
+    ["POST", "/api/v1/apps/installation-plans/:planId/apply", "workspace.apps.manage"],
+    ["GET", "/api/v1/apps/installations", "workspace.apps.manage"],
+    ["GET", "/api/v1/apps/installations/:installationId", "workspace.apps.manage"],
+    ["GET", "/api/v1/apps/installations/:installationId/operations", "workspace.apps.manage"],
+    ["PATCH", "/api/v1/apps/installations/:installationId/configuration", "workspace.apps.manage"],
+    ["POST", "/api/v1/apps/installations/:installationId/connections", "workspace.apps.manage"],
+    ["POST", "/api/v1/apps/installations/:installationId/activate", "workspace.apps.manage"],
+    ["POST", "/api/v1/apps/installations/:installationId/disable", "workspace.apps.manage"],
+    ["POST", "/api/v1/apps/installations/:installationId/enable", "workspace.apps.manage"],
+    ["POST", "/api/v1/apps/installations/:installationId/remove", "workspace.apps.manage"],
+  ].map(([method, path, permission]) => sessionOnly(method, path, permission)),
   ...[
     ["GET", "/api/v1/settings/credentials", "workspace.settings.read"],
     ["PUT", "/api/v1/settings/credentials/:provider", "workspace.credentials.manage"],

@@ -739,6 +739,165 @@ CREATE TABLE public.api_credentials (
 
 
 --
+-- Name: app_audit_outbox; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.app_audit_outbox (
+    id uuid NOT NULL,
+    workspace_id uuid,
+    event jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    delivered_at timestamp with time zone,
+    claim_token text,
+    claim_expires_at timestamp with time zone
+);
+
+
+--
+-- Name: app_connection_bind_requests; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.app_connection_bind_requests (
+    id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    installation_id uuid NOT NULL,
+    connection_id uuid NOT NULL,
+    idempotency_key text NOT NULL,
+    request_fingerprint text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: app_connections; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.app_connections (
+    id uuid NOT NULL,
+    installation_id uuid NOT NULL,
+    slot_id text NOT NULL,
+    kind text NOT NULL,
+    public_fields jsonb DEFAULT '{}'::jsonb NOT NULL,
+    secret_ciphertext text,
+    encryption_key_id text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    rotated_at timestamp with time zone,
+    deletion_requested_at timestamp with time zone,
+    CONSTRAINT app_connections_check CHECK (((secret_ciphertext IS NULL) = (encryption_key_id IS NULL))),
+    CONSTRAINT app_connections_kind_check CHECK ((kind = ANY (ARRAY['secret_fields'::text, 'generated_secret'::text])))
+);
+
+
+--
+-- Name: app_grants; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.app_grants (
+    id uuid NOT NULL,
+    installation_id uuid NOT NULL,
+    release_id uuid NOT NULL,
+    kind text NOT NULL,
+    key text NOT NULL,
+    plan_id uuid,
+    approved_by uuid,
+    approved_at timestamp with time zone DEFAULT now() NOT NULL,
+    revoked_at timestamp with time zone,
+    CONSTRAINT app_grants_kind_check CHECK ((kind = ANY (ARRAY['permission'::text, 'destination'::text, 'collection'::text, 'contribution'::text])))
+);
+
+
+--
+-- Name: app_installation_plans; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.app_installation_plans (
+    id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    release_id uuid NOT NULL,
+    checksum text NOT NULL,
+    plan jsonb NOT NULL,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    consumed_at timestamp with time zone
+);
+
+
+--
+-- Name: app_installations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.app_installations (
+    id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    app_id text NOT NULL,
+    active_release_id uuid,
+    candidate_release_id uuid,
+    state text NOT NULL,
+    configuration jsonb DEFAULT '{}'::jsonb NOT NULL,
+    candidate_configuration jsonb,
+    candidate_revision text,
+    active_revision text,
+    execution_denied_at timestamp with time zone,
+    version integer DEFAULT 1 NOT NULL,
+    health jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT app_installations_state_check CHECK ((state = ANY (ARRAY['planned'::text, 'provisioning'::text, 'staged'::text, 'testing'::text, 'ready'::text, 'active'::text, 'disabled'::text, 'failed'::text, 'removing'::text, 'removed'::text]))),
+    CONSTRAINT app_installations_version_check CHECK ((version > 0))
+);
+
+
+--
+-- Name: app_lifecycle_operations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.app_lifecycle_operations (
+    id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    installation_id uuid NOT NULL,
+    kind text NOT NULL,
+    state text NOT NULL,
+    step text,
+    compensation_step text,
+    lease_owner text,
+    lease_expires_at timestamp with time zone,
+    idempotency_key text NOT NULL,
+    request_fingerprint text NOT NULL,
+    initiated_by jsonb NOT NULL,
+    payload jsonb DEFAULT '{}'::jsonb NOT NULL,
+    error jsonb,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT app_lifecycle_operations_kind_check CHECK ((kind = ANY (ARRAY['install'::text, 'activate'::text, 'reconfigure'::text, 'disable'::text, 'enable'::text, 'remove'::text, 'dispose_data'::text]))),
+    CONSTRAINT app_lifecycle_operations_state_check CHECK ((state = ANY (ARRAY['running'::text, 'completed'::text, 'failed'::text, 'compensating'::text, 'compensation_failed'::text])))
+);
+
+
+--
+-- Name: app_releases; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.app_releases (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    version text NOT NULL,
+    manifest jsonb NOT NULL,
+    manifest_digest text NOT NULL,
+    artifact_digest text NOT NULL,
+    publisher_id text NOT NULL,
+    state text NOT NULL,
+    admission_policy_version text NOT NULL,
+    admission_decision jsonb DEFAULT '{}'::jsonb NOT NULL,
+    admitted_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT app_releases_state_check CHECK ((state = ANY (ARRAY['submitted'::text, 'validating'::text, 'admitted'::text, 'rejected'::text, 'withdrawn'::text, 'deprecated'::text, 'revoked'::text, 'quarantined'::text])))
+);
+
+
+--
 -- Name: assistant_answer_feedback; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3749,6 +3908,102 @@ ALTER TABLE ONLY public.api_credentials
 
 
 --
+-- Name: app_audit_outbox app_audit_outbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_audit_outbox
+    ADD CONSTRAINT app_audit_outbox_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: app_connection_bind_requests app_connection_bind_requests_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_connection_bind_requests
+    ADD CONSTRAINT app_connection_bind_requests_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: app_connection_bind_requests app_connection_bind_requests_workspace_id_idempotency_key_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_connection_bind_requests
+    ADD CONSTRAINT app_connection_bind_requests_workspace_id_idempotency_key_key UNIQUE (workspace_id, idempotency_key);
+
+
+--
+-- Name: app_connections app_connections_installation_id_slot_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_connections
+    ADD CONSTRAINT app_connections_installation_id_slot_id_key UNIQUE (installation_id, slot_id);
+
+
+--
+-- Name: app_connections app_connections_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_connections
+    ADD CONSTRAINT app_connections_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: app_grants app_grants_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_grants
+    ADD CONSTRAINT app_grants_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: app_installation_plans app_installation_plans_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_installation_plans
+    ADD CONSTRAINT app_installation_plans_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: app_installations app_installations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_installations
+    ADD CONSTRAINT app_installations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: app_lifecycle_operations app_lifecycle_operations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_lifecycle_operations
+    ADD CONSTRAINT app_lifecycle_operations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: app_lifecycle_operations app_lifecycle_operations_workspace_id_idempotency_key_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_lifecycle_operations
+    ADD CONSTRAINT app_lifecycle_operations_workspace_id_idempotency_key_key UNIQUE (workspace_id, idempotency_key);
+
+
+--
+-- Name: app_releases app_releases_app_id_version_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_releases
+    ADD CONSTRAINT app_releases_app_id_version_key UNIQUE (app_id, version);
+
+
+--
+-- Name: app_releases app_releases_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_releases
+    ADD CONSTRAINT app_releases_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: assistant_answer_feedback assistant_answer_feedback_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6304,6 +6559,55 @@ CREATE INDEX idx_api_credentials_workspace_created ON public.api_credentials USI
 
 
 --
+-- Name: idx_app_audit_outbox_undelivered; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_app_audit_outbox_undelivered ON public.app_audit_outbox USING btree (created_at) WHERE (delivered_at IS NULL);
+
+
+--
+-- Name: idx_app_grants_live; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_app_grants_live ON public.app_grants USING btree (installation_id, release_id, kind, key) WHERE (revoked_at IS NULL);
+
+
+--
+-- Name: idx_app_installation_plans_workspace; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_app_installation_plans_workspace ON public.app_installation_plans USING btree (workspace_id, created_at DESC);
+
+
+--
+-- Name: idx_app_installations_workspace_app_live; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_app_installations_workspace_app_live ON public.app_installations USING btree (workspace_id, app_id) WHERE (state <> 'removed'::text);
+
+
+--
+-- Name: idx_app_lifecycle_operations_in_flight; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_app_lifecycle_operations_in_flight ON public.app_lifecycle_operations USING btree (installation_id) WHERE (state = ANY (ARRAY['running'::text, 'compensating'::text, 'compensation_failed'::text]));
+
+
+--
+-- Name: idx_app_lifecycle_operations_stalled; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_app_lifecycle_operations_stalled ON public.app_lifecycle_operations USING btree (lease_expires_at) WHERE (state = ANY (ARRAY['running'::text, 'compensating'::text]));
+
+
+--
+-- Name: idx_app_releases_installable; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_app_releases_installable ON public.app_releases USING btree (app_id, created_at DESC) WHERE (state = 'admitted'::text);
+
+
+--
 -- Name: idx_assistant_answer_feedback_actor_message; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8580,6 +8884,126 @@ ALTER TABLE ONLY public.api_credentials
 
 ALTER TABLE ONLY public.api_credentials
     ADD CONSTRAINT api_credentials_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: app_audit_outbox app_audit_outbox_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_audit_outbox
+    ADD CONSTRAINT app_audit_outbox_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: app_connection_bind_requests app_connection_bind_requests_connection_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_connection_bind_requests
+    ADD CONSTRAINT app_connection_bind_requests_connection_id_fkey FOREIGN KEY (connection_id) REFERENCES public.app_connections(id) ON DELETE CASCADE;
+
+
+--
+-- Name: app_connection_bind_requests app_connection_bind_requests_installation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_connection_bind_requests
+    ADD CONSTRAINT app_connection_bind_requests_installation_id_fkey FOREIGN KEY (installation_id) REFERENCES public.app_installations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: app_connection_bind_requests app_connection_bind_requests_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_connection_bind_requests
+    ADD CONSTRAINT app_connection_bind_requests_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: app_connections app_connections_installation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_connections
+    ADD CONSTRAINT app_connections_installation_id_fkey FOREIGN KEY (installation_id) REFERENCES public.app_installations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: app_grants app_grants_installation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_grants
+    ADD CONSTRAINT app_grants_installation_id_fkey FOREIGN KEY (installation_id) REFERENCES public.app_installations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: app_grants app_grants_plan_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_grants
+    ADD CONSTRAINT app_grants_plan_id_fkey FOREIGN KEY (plan_id) REFERENCES public.app_installation_plans(id) ON DELETE SET NULL;
+
+
+--
+-- Name: app_grants app_grants_release_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_grants
+    ADD CONSTRAINT app_grants_release_id_fkey FOREIGN KEY (release_id) REFERENCES public.app_releases(id) ON DELETE CASCADE;
+
+
+--
+-- Name: app_installation_plans app_installation_plans_release_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_installation_plans
+    ADD CONSTRAINT app_installation_plans_release_id_fkey FOREIGN KEY (release_id) REFERENCES public.app_releases(id) ON DELETE CASCADE;
+
+
+--
+-- Name: app_installation_plans app_installation_plans_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_installation_plans
+    ADD CONSTRAINT app_installation_plans_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: app_installations app_installations_active_release_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_installations
+    ADD CONSTRAINT app_installations_active_release_id_fkey FOREIGN KEY (active_release_id) REFERENCES public.app_releases(id);
+
+
+--
+-- Name: app_installations app_installations_candidate_release_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_installations
+    ADD CONSTRAINT app_installations_candidate_release_id_fkey FOREIGN KEY (candidate_release_id) REFERENCES public.app_releases(id);
+
+
+--
+-- Name: app_installations app_installations_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_installations
+    ADD CONSTRAINT app_installations_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: app_lifecycle_operations app_lifecycle_operations_installation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_lifecycle_operations
+    ADD CONSTRAINT app_lifecycle_operations_installation_id_fkey FOREIGN KEY (installation_id) REFERENCES public.app_installations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: app_lifecycle_operations app_lifecycle_operations_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_lifecycle_operations
+    ADD CONSTRAINT app_lifecycle_operations_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

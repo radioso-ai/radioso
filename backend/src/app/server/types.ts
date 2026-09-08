@@ -131,6 +131,13 @@ import type {
 } from "../../modules/machineAccess/public.js";
 import type { MachineAccessSecurityObserver } from "../../modules/machineAccess/public.js";
 import type { ApiPrincipalRouteInventory } from "../http/apiPrincipalRoutePolicy.js";
+import type {
+  AppConnectionService,
+  AppInstallationLifecycleService,
+  AppInstallationPlanService,
+  AppInstallationQueryService,
+  AppReleaseAdmissionService,
+} from "../../modules/apps/public.js";
 import type { AgentConverseSessionMappingPort } from "../../modules/settings/contracts/agentConverseSession.js";
 import type {
   OperatorMcpAuthorizationService,
@@ -248,6 +255,19 @@ export interface AppDependencies {
   skillCapabilityRegistry: SkillCapabilityRegistry;
   agentSkillsService: AgentSkillsService;
   agentService: AgentService;
+  appReleaseAdmissionService: AppReleaseAdmissionService;
+  appInstallationPlanService: AppInstallationPlanService;
+  appInstallationLifecycleService: AppInstallationLifecycleService;
+  appInstallationQueryService: AppInstallationQueryService;
+  appConnectionService: AppConnectionService;
+  /**
+   * Start-up recovery for the Apps control plane: drains durable audit intents and
+   * re-drives lifecycle operations whose driver died.
+   */
+  appControlPlaneRecovery: {
+    drainAuditOutbox(): Promise<number>;
+    recoverStalledAppOperations(): Promise<number>;
+  };
   agentBundleExportService: AgentBundleExportService;
   agentBundleImportService: AgentBundleImportService;
   agentBundleImportCleanupWorker: AgentBundleImportCleanupWorker;

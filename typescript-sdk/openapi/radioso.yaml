@@ -11195,7 +11195,7 @@ components:
       properties:
         type:
           type: string
-          enum: &a66
+          enum: &a76
             - session
             - customer
             - agent
@@ -17789,7 +17789,7 @@ paths:
       summary: List workspace webhook destinations
       operationId: listWebhookDestinations
       security: &a64
-        - &a67
+        - &a77
           sessionCookie: []
           workspaceSelection: []
       responses:
@@ -18561,6 +18561,2586 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/apps/releases:
+    get:
+      tags:
+        - Apps
+      summary: List the App releases an operator can install now
+      operationId: listAppReleases
+      security: &a66
+        - sessionCookie: []
+      responses:
+        "200":
+          description: Releases that are admitted and compatible with this host
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        appId:
+                          type: string
+                        version:
+                          type: string
+                        name:
+                          type: string
+                        description:
+                          type: string
+                        publisher:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            name:
+                              type: string
+                          required:
+                            - id
+                            - name
+                        manifestDigest:
+                          type: string
+                        artifactDigest:
+                          type: string
+                        admissionPolicyVersion:
+                          type: string
+                        state:
+                          type: string
+                          enum: &a67
+                            - submitted
+                            - validating
+                            - admitted
+                            - rejected
+                            - withdrawn
+                            - deprecated
+                            - revoked
+                            - quarantined
+                        admissionEvidence:
+                          type: object
+                          additionalProperties: {}
+                        currentCompatibility:
+                          type: object
+                          properties:
+                            runningVersion:
+                              type:
+                                - string
+                                - "null"
+                            range:
+                              type: string
+                            result:
+                              type: string
+                              enum: &a68
+                                - compatible
+                                - incompatible
+                                - undetermined
+                          required:
+                            - runningVersion
+                            - range
+                            - result
+                        admittedAt:
+                          type:
+                            - string
+                            - "null"
+                          format: date-time
+                      required:
+                        - id
+                        - appId
+                        - version
+                        - name
+                        - description
+                        - publisher
+                        - manifestDigest
+                        - artifactDigest
+                        - admissionPolicyVersion
+                        - state
+                        - admissionEvidence
+                        - currentCompatibility
+                        - admittedAt
+                required:
+                  - items
+        "400":
+          description: Invalid configuration, connection, or request shape
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Interactive workspace session required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: App administration permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Release, plan, or installation not available in this workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: A stored release no longer matches the admission decision recorded for it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: No App runtime or secret encryption key is configured, or App administration permission could not be checked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/apps/releases/{releaseId}:
+    get:
+      tags:
+        - Apps
+      summary: Inspect an installable App release
+      operationId: getAppRelease
+      security: *a66
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: releaseId
+          in: path
+      responses:
+        "200":
+          description: The admitted release and its App Spec
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  appId:
+                    type: string
+                  version:
+                    type: string
+                  name:
+                    type: string
+                  description:
+                    type: string
+                  publisher:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      name:
+                        type: string
+                    required:
+                      - id
+                      - name
+                  manifestDigest:
+                    type: string
+                  artifactDigest:
+                    type: string
+                  admissionPolicyVersion:
+                    type: string
+                  state:
+                    type: string
+                    enum: *a67
+                  admissionEvidence:
+                    type: object
+                    additionalProperties: {}
+                  currentCompatibility:
+                    type: object
+                    properties:
+                      runningVersion:
+                        type:
+                          - string
+                          - "null"
+                      range:
+                        type: string
+                      result:
+                        type: string
+                        enum: *a68
+                    required:
+                      - runningVersion
+                      - range
+                      - result
+                  admittedAt:
+                    type:
+                      - string
+                      - "null"
+                    format: date-time
+                  manifest:
+                    type: object
+                    additionalProperties: {}
+                required:
+                  - id
+                  - appId
+                  - version
+                  - name
+                  - description
+                  - publisher
+                  - manifestDigest
+                  - artifactDigest
+                  - admissionPolicyVersion
+                  - state
+                  - admissionEvidence
+                  - currentCompatibility
+                  - admittedAt
+                  - manifest
+        "400":
+          description: Invalid configuration, connection, or request shape
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Interactive workspace session required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: App administration permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Release, plan, or installation not available in this workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: A stored release no longer matches the admission decision recorded for it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: No App runtime or secret encryption key is configured, or App administration permission could not be checked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/apps/installation-plans:
+    post:
+      tags:
+        - Apps
+      summary: Plan an installation for review
+      operationId: createAppInstallationPlan
+      security: *a66
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                releaseId:
+                  type: string
+                  format: uuid
+                configuration:
+                  type: object
+                  additionalProperties:
+                    anyOf:
+                      - type: string
+                      - type: number
+                      - type: boolean
+              required:
+                - releaseId
+              additionalProperties: false
+      responses:
+        "201":
+          description: The plan an operator approves, with its checksum
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  releaseId:
+                    type: string
+                    format: uuid
+                  checksum:
+                    type: string
+                  plan:
+                    type: object
+                    properties:
+                      planVersion:
+                        type: number
+                        enum:
+                          - 1
+                      workspaceId:
+                        type: string
+                        format: uuid
+                      releaseId:
+                        type: string
+                        format: uuid
+                      appId:
+                        type: string
+                      version:
+                        type: string
+                      manifestDigest:
+                        type: string
+                      configuration:
+                        type: object
+                        additionalProperties:
+                          anyOf:
+                            - type: string
+                            - type: number
+                            - type: boolean
+                      grants:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            kind:
+                              type: string
+                              enum: &a69
+                                - permission
+                                - destination
+                                - collection
+                                - contribution
+                            key:
+                              type: string
+                          required:
+                            - kind
+                            - key
+                      destinations:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            host:
+                              type:
+                                - string
+                                - "null"
+                            protocols:
+                              type: array
+                              items:
+                                type: string
+                            credentials:
+                              type:
+                                - object
+                                - "null"
+                              properties:
+                                slotId:
+                                  type: string
+                                mode:
+                                  type: string
+                                  enum: &a70
+                                    - http_basic
+                                    - bearer
+                                    - header
+                                required:
+                                  type: boolean
+                              required:
+                                - slotId
+                                - mode
+                                - required
+                          required:
+                            - id
+                            - host
+                            - protocols
+                            - credentials
+                      storageCollections:
+                        type: array
+                        items:
+                          type: string
+                      contributions:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            kind:
+                              type: string
+                            executionClass:
+                              type:
+                                - string
+                                - "null"
+                            availability:
+                              type: string
+                            active:
+                              type: boolean
+                          required:
+                            - id
+                            - kind
+                            - executionClass
+                            - availability
+                            - active
+                      connectionSlots:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            slotId:
+                              type: string
+                            kind:
+                              type: string
+                            required:
+                              type: boolean
+                            bound:
+                              type: boolean
+                          required:
+                            - slotId
+                            - kind
+                            - required
+                            - bound
+                      admissionPolicyVersion:
+                        type: string
+                      releaseState:
+                        type: string
+                      unresolvedRequirements:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            code:
+                              type: string
+                              enum: &a71
+                                - configuration_required
+                                - connection_unbound
+                                - destination_host_unresolved
+                            path:
+                              type: string
+                            message:
+                              type: string
+                          required:
+                            - code
+                            - path
+                            - message
+                    required:
+                      - planVersion
+                      - workspaceId
+                      - releaseId
+                      - appId
+                      - version
+                      - manifestDigest
+                      - configuration
+                      - grants
+                      - destinations
+                      - storageCollections
+                      - contributions
+                      - connectionSlots
+                      - admissionPolicyVersion
+                      - releaseState
+                      - unresolvedRequirements
+                  createdAt:
+                    type: string
+                    format: date-time
+                  expiresAt:
+                    type: string
+                    format: date-time
+                  consumedAt:
+                    type:
+                      - string
+                      - "null"
+                    format: date-time
+                required:
+                  - id
+                  - releaseId
+                  - checksum
+                  - plan
+                  - createdAt
+                  - expiresAt
+                  - consumedAt
+        "400":
+          description: Invalid configuration, connection, or request shape
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Interactive workspace session required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: App administration permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Release, plan, or installation not available in this workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: A stored release no longer matches the admission decision recorded for it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: No App runtime or secret encryption key is configured, or App administration permission could not be checked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/apps/installation-plans/{planId}:
+    get:
+      tags:
+        - Apps
+      summary: Read a previously created installation plan
+      operationId: getAppInstallationPlan
+      security: *a66
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: planId
+          in: path
+      responses:
+        "200":
+          description: The approved plan
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  releaseId:
+                    type: string
+                    format: uuid
+                  checksum:
+                    type: string
+                  plan:
+                    type: object
+                    properties:
+                      planVersion:
+                        type: number
+                        enum:
+                          - 1
+                      workspaceId:
+                        type: string
+                        format: uuid
+                      releaseId:
+                        type: string
+                        format: uuid
+                      appId:
+                        type: string
+                      version:
+                        type: string
+                      manifestDigest:
+                        type: string
+                      configuration:
+                        type: object
+                        additionalProperties:
+                          anyOf:
+                            - type: string
+                            - type: number
+                            - type: boolean
+                      grants:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            kind:
+                              type: string
+                              enum: *a69
+                            key:
+                              type: string
+                          required:
+                            - kind
+                            - key
+                      destinations:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            host:
+                              type:
+                                - string
+                                - "null"
+                            protocols:
+                              type: array
+                              items:
+                                type: string
+                            credentials:
+                              type:
+                                - object
+                                - "null"
+                              properties:
+                                slotId:
+                                  type: string
+                                mode:
+                                  type: string
+                                  enum: *a70
+                                required:
+                                  type: boolean
+                              required:
+                                - slotId
+                                - mode
+                                - required
+                          required:
+                            - id
+                            - host
+                            - protocols
+                            - credentials
+                      storageCollections:
+                        type: array
+                        items:
+                          type: string
+                      contributions:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            kind:
+                              type: string
+                            executionClass:
+                              type:
+                                - string
+                                - "null"
+                            availability:
+                              type: string
+                            active:
+                              type: boolean
+                          required:
+                            - id
+                            - kind
+                            - executionClass
+                            - availability
+                            - active
+                      connectionSlots:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            slotId:
+                              type: string
+                            kind:
+                              type: string
+                            required:
+                              type: boolean
+                            bound:
+                              type: boolean
+                          required:
+                            - slotId
+                            - kind
+                            - required
+                            - bound
+                      admissionPolicyVersion:
+                        type: string
+                      releaseState:
+                        type: string
+                      unresolvedRequirements:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            code:
+                              type: string
+                              enum: *a71
+                            path:
+                              type: string
+                            message:
+                              type: string
+                          required:
+                            - code
+                            - path
+                            - message
+                    required:
+                      - planVersion
+                      - workspaceId
+                      - releaseId
+                      - appId
+                      - version
+                      - manifestDigest
+                      - configuration
+                      - grants
+                      - destinations
+                      - storageCollections
+                      - contributions
+                      - connectionSlots
+                      - admissionPolicyVersion
+                      - releaseState
+                      - unresolvedRequirements
+                  createdAt:
+                    type: string
+                    format: date-time
+                  expiresAt:
+                    type: string
+                    format: date-time
+                  consumedAt:
+                    type:
+                      - string
+                      - "null"
+                    format: date-time
+                required:
+                  - id
+                  - releaseId
+                  - checksum
+                  - plan
+                  - createdAt
+                  - expiresAt
+                  - consumedAt
+        "400":
+          description: Invalid configuration, connection, or request shape
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Interactive workspace session required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: App administration permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Release, plan, or installation not available in this workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: A stored release no longer matches the admission decision recorded for it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: No App runtime or secret encryption key is configured, or App administration permission could not be checked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/apps/installation-plans/{planId}/apply:
+    post:
+      tags:
+        - Apps
+      summary: Apply an approved plan and create the installation
+      operationId: applyAppInstallationPlan
+      security: *a66
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: planId
+          in: path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                checksum:
+                  type: string
+                expectedInstallationVersion:
+                  type:
+                    - integer
+                    - "null"
+                  exclusiveMinimum: 0
+                idempotencyKey:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+              required:
+                - checksum
+                - idempotencyKey
+      responses:
+        "201":
+          description: The installation, created in `planned` with its grants recorded and nothing running yet, and the operation that recorded it
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  installation:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      appId:
+                        type: string
+                      state:
+                        type: string
+                        enum: &a72
+                          - planned
+                          - provisioning
+                          - staged
+                          - testing
+                          - ready
+                          - active
+                          - disabled
+                          - failed
+                          - removing
+                          - removed
+                      activeReleaseId:
+                        type:
+                          - string
+                          - "null"
+                        format: uuid
+                      candidateReleaseId:
+                        type:
+                          - string
+                          - "null"
+                        format: uuid
+                      configuration:
+                        type: object
+                        additionalProperties:
+                          anyOf:
+                            - type: string
+                            - type: number
+                            - type: boolean
+                      health:
+                        type: object
+                        additionalProperties: {}
+                      version:
+                        type: integer
+                        exclusiveMinimum: 0
+                      createdAt:
+                        type: string
+                        format: date-time
+                      updatedAt:
+                        type: string
+                        format: date-time
+                    required:
+                      - id
+                      - appId
+                      - state
+                      - activeReleaseId
+                      - candidateReleaseId
+                      - configuration
+                      - health
+                      - version
+                      - createdAt
+                      - updatedAt
+                  operation:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      installationId:
+                        type: string
+                        format: uuid
+                      kind:
+                        type: string
+                        enum: &a73
+                          - install
+                          - activate
+                          - reconfigure
+                          - disable
+                          - enable
+                          - remove
+                          - dispose_data
+                      state:
+                        type: string
+                        enum: &a74
+                          - running
+                          - completed
+                          - failed
+                          - compensating
+                          - compensation_failed
+                      step:
+                        type:
+                          - string
+                          - "null"
+                      compensationStep:
+                        type:
+                          - string
+                          - "null"
+                      error:
+                        type:
+                          - object
+                          - "null"
+                        properties:
+                          reason:
+                            type: string
+                          message:
+                            type: string
+                        required:
+                          - reason
+                          - message
+                      createdAt:
+                        type: string
+                        format: date-time
+                      updatedAt:
+                        type: string
+                        format: date-time
+                    required:
+                      - id
+                      - installationId
+                      - kind
+                      - state
+                      - step
+                      - compensationStep
+                      - error
+                      - createdAt
+                      - updatedAt
+                required:
+                  - installation
+                  - operation
+        "400":
+          description: Invalid configuration, connection, or request shape
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Interactive workspace session required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: App administration permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Release, plan, or installation not available in this workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: A stored release no longer matches the admission decision recorded for it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: No App runtime or secret encryption key is configured, or App administration permission could not be checked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/apps/installations:
+    get:
+      tags:
+        - Apps
+      summary: List this workspace's App installations
+      operationId: listAppInstallations
+      security: *a66
+      responses:
+        "200":
+          description: Installations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        appId:
+                          type: string
+                        state:
+                          type: string
+                          enum: *a72
+                        activeReleaseId:
+                          type:
+                            - string
+                            - "null"
+                          format: uuid
+                        candidateReleaseId:
+                          type:
+                            - string
+                            - "null"
+                          format: uuid
+                        configuration:
+                          type: object
+                          additionalProperties:
+                            anyOf:
+                              - type: string
+                              - type: number
+                              - type: boolean
+                        health:
+                          type: object
+                          additionalProperties: {}
+                        version:
+                          type: integer
+                          exclusiveMinimum: 0
+                        createdAt:
+                          type: string
+                          format: date-time
+                        updatedAt:
+                          type: string
+                          format: date-time
+                      required:
+                        - id
+                        - appId
+                        - state
+                        - activeReleaseId
+                        - candidateReleaseId
+                        - configuration
+                        - health
+                        - version
+                        - createdAt
+                        - updatedAt
+                required:
+                  - items
+        "400":
+          description: Invalid configuration, connection, or request shape
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Interactive workspace session required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: App administration permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Release, plan, or installation not available in this workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: A stored release no longer matches the admission decision recorded for it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: No App runtime or secret encryption key is configured, or App administration permission could not be checked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/apps/installations/{installationId}:
+    get:
+      tags:
+        - Apps
+      summary: Read an installation with its grants and connections
+      operationId: getAppInstallation
+      security: *a66
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: installationId
+          in: path
+      responses:
+        "200":
+          description: The installation and what it currently holds
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  installation:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      appId:
+                        type: string
+                      state:
+                        type: string
+                        enum: *a72
+                      activeReleaseId:
+                        type:
+                          - string
+                          - "null"
+                        format: uuid
+                      candidateReleaseId:
+                        type:
+                          - string
+                          - "null"
+                        format: uuid
+                      configuration:
+                        type: object
+                        additionalProperties:
+                          anyOf:
+                            - type: string
+                            - type: number
+                            - type: boolean
+                      health:
+                        type: object
+                        additionalProperties: {}
+                      version:
+                        type: integer
+                        exclusiveMinimum: 0
+                      createdAt:
+                        type: string
+                        format: date-time
+                      updatedAt:
+                        type: string
+                        format: date-time
+                    required:
+                      - id
+                      - appId
+                      - state
+                      - activeReleaseId
+                      - candidateReleaseId
+                      - configuration
+                      - health
+                      - version
+                      - createdAt
+                      - updatedAt
+                  activeVersion:
+                    type:
+                      - string
+                      - "null"
+                  candidateVersion:
+                    type:
+                      - string
+                      - "null"
+                  grants:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        kind:
+                          type: string
+                          enum:
+                            - permission
+                            - destination
+                            - collection
+                            - contribution
+                        key:
+                          type: string
+                        releaseId:
+                          type: string
+                          format: uuid
+                        approvedAt:
+                          type: string
+                          format: date-time
+                      required:
+                        - kind
+                        - key
+                        - releaseId
+                        - approvedAt
+                  connections:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        slotId:
+                          type: string
+                        kind:
+                          type: string
+                          enum: &a75
+                            - secret_fields
+                            - generated_secret
+                        publicFields:
+                          type: object
+                          additionalProperties:
+                            type: string
+                        hasSecret:
+                          type: boolean
+                        createdAt:
+                          type: string
+                          format: date-time
+                        updatedAt:
+                          type: string
+                          format: date-time
+                        rotatedAt:
+                          type:
+                            - string
+                            - "null"
+                          format: date-time
+                        deletionRequestedAt:
+                          type:
+                            - string
+                            - "null"
+                          format: date-time
+                      required:
+                        - id
+                        - slotId
+                        - kind
+                        - publicFields
+                        - hasSecret
+                        - createdAt
+                        - updatedAt
+                        - rotatedAt
+                        - deletionRequestedAt
+                  currentOperation:
+                    type:
+                      - object
+                      - "null"
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      installationId:
+                        type: string
+                        format: uuid
+                      kind:
+                        type: string
+                        enum: *a73
+                      state:
+                        type: string
+                        enum: *a74
+                      step:
+                        type:
+                          - string
+                          - "null"
+                      compensationStep:
+                        type:
+                          - string
+                          - "null"
+                      error:
+                        type:
+                          - object
+                          - "null"
+                        properties:
+                          reason:
+                            type: string
+                          message:
+                            type: string
+                        required:
+                          - reason
+                          - message
+                      createdAt:
+                        type: string
+                        format: date-time
+                      updatedAt:
+                        type: string
+                        format: date-time
+                    required:
+                      - id
+                      - installationId
+                      - kind
+                      - state
+                      - step
+                      - compensationStep
+                      - error
+                      - createdAt
+                      - updatedAt
+                required:
+                  - installation
+                  - activeVersion
+                  - candidateVersion
+                  - grants
+                  - connections
+                  - currentOperation
+        "400":
+          description: Invalid configuration, connection, or request shape
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Interactive workspace session required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: App administration permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Release, plan, or installation not available in this workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: A stored release no longer matches the admission decision recorded for it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: No App runtime or secret encryption key is configured, or App administration permission could not be checked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/apps/installations/{installationId}/operations:
+    get:
+      tags:
+        - Apps
+      summary: List an installation's lifecycle operations
+      operationId: listAppInstallationOperations
+      security: *a66
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: installationId
+          in: path
+      responses:
+        "200":
+          description: Recent lifecycle operations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        installationId:
+                          type: string
+                          format: uuid
+                        kind:
+                          type: string
+                          enum: *a73
+                        state:
+                          type: string
+                          enum: *a74
+                        step:
+                          type:
+                            - string
+                            - "null"
+                        compensationStep:
+                          type:
+                            - string
+                            - "null"
+                        error:
+                          type:
+                            - object
+                            - "null"
+                          properties:
+                            reason:
+                              type: string
+                            message:
+                              type: string
+                          required:
+                            - reason
+                            - message
+                        createdAt:
+                          type: string
+                          format: date-time
+                        updatedAt:
+                          type: string
+                          format: date-time
+                      required:
+                        - id
+                        - installationId
+                        - kind
+                        - state
+                        - step
+                        - compensationStep
+                        - error
+                        - createdAt
+                        - updatedAt
+                required:
+                  - items
+        "400":
+          description: Invalid configuration, connection, or request shape
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Interactive workspace session required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: App administration permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Release, plan, or installation not available in this workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: A stored release no longer matches the admission decision recorded for it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: No App runtime or secret encryption key is configured, or App administration permission could not be checked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/apps/installations/{installationId}/configuration:
+    patch:
+      tags:
+        - Apps
+      summary: Reconfigure an installation, re-staging and re-testing before the change applies
+      operationId: updateAppInstallationConfiguration
+      security: *a66
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: installationId
+          in: path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                configuration:
+                  type: object
+                  additionalProperties:
+                    anyOf:
+                      - type: string
+                      - type: number
+                      - type: boolean
+                expectedVersion:
+                  type: integer
+                  exclusiveMinimum: 0
+                idempotencyKey:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+              required:
+                - configuration
+                - expectedVersion
+                - idempotencyKey
+      responses:
+        "200":
+          description: The installation and the reconfigure operation that ran
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  installation:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      appId:
+                        type: string
+                      state:
+                        type: string
+                        enum: *a72
+                      activeReleaseId:
+                        type:
+                          - string
+                          - "null"
+                        format: uuid
+                      candidateReleaseId:
+                        type:
+                          - string
+                          - "null"
+                        format: uuid
+                      configuration:
+                        type: object
+                        additionalProperties:
+                          anyOf:
+                            - type: string
+                            - type: number
+                            - type: boolean
+                      health:
+                        type: object
+                        additionalProperties: {}
+                      version:
+                        type: integer
+                        exclusiveMinimum: 0
+                      createdAt:
+                        type: string
+                        format: date-time
+                      updatedAt:
+                        type: string
+                        format: date-time
+                    required:
+                      - id
+                      - appId
+                      - state
+                      - activeReleaseId
+                      - candidateReleaseId
+                      - configuration
+                      - health
+                      - version
+                      - createdAt
+                      - updatedAt
+                  operation:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      installationId:
+                        type: string
+                        format: uuid
+                      kind:
+                        type: string
+                        enum: *a73
+                      state:
+                        type: string
+                        enum: *a74
+                      step:
+                        type:
+                          - string
+                          - "null"
+                      compensationStep:
+                        type:
+                          - string
+                          - "null"
+                      error:
+                        type:
+                          - object
+                          - "null"
+                        properties:
+                          reason:
+                            type: string
+                          message:
+                            type: string
+                        required:
+                          - reason
+                          - message
+                      createdAt:
+                        type: string
+                        format: date-time
+                      updatedAt:
+                        type: string
+                        format: date-time
+                    required:
+                      - id
+                      - installationId
+                      - kind
+                      - state
+                      - step
+                      - compensationStep
+                      - error
+                      - createdAt
+                      - updatedAt
+                required:
+                  - installation
+                  - operation
+        "400":
+          description: Invalid configuration, connection, or request shape
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Interactive workspace session required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: App administration permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Release, plan, or installation not available in this workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: A stored release no longer matches the admission decision recorded for it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: No App runtime or secret encryption key is configured, or App administration permission could not be checked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/apps/installations/{installationId}/connections:
+    post:
+      tags:
+        - Apps
+      summary: Bind a connection slot
+      operationId: bindAppConnection
+      security: *a66
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: installationId
+          in: path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                slotId:
+                  type: string
+                values:
+                  type: object
+                  additionalProperties: {}
+                expectedVersion:
+                  type: integer
+                  exclusiveMinimum: 0
+                idempotencyKey:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+              required:
+                - slotId
+                - expectedVersion
+                - idempotencyKey
+      responses:
+        "201":
+          description: "The bound connection. `generatedSecret` is present only for a host-minted slot and is returned exactly once; a retry under the same idempotency key answers with `replayed: true` and no secret."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connection:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      slotId:
+                        type: string
+                      kind:
+                        type: string
+                        enum: *a75
+                      publicFields:
+                        type: object
+                        additionalProperties:
+                          type: string
+                      hasSecret:
+                        type: boolean
+                      createdAt:
+                        type: string
+                        format: date-time
+                      updatedAt:
+                        type: string
+                        format: date-time
+                      rotatedAt:
+                        type:
+                          - string
+                          - "null"
+                        format: date-time
+                      deletionRequestedAt:
+                        type:
+                          - string
+                          - "null"
+                        format: date-time
+                    required:
+                      - id
+                      - slotId
+                      - kind
+                      - publicFields
+                      - hasSecret
+                      - createdAt
+                      - updatedAt
+                      - rotatedAt
+                      - deletionRequestedAt
+                  generatedSecret:
+                    type:
+                      - string
+                      - "null"
+                  replayed:
+                    type: boolean
+                required:
+                  - connection
+                  - generatedSecret
+                  - replayed
+        "400":
+          description: Invalid configuration, connection, or request shape
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Interactive workspace session required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: App administration permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Release, plan, or installation not available in this workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: A stored release no longer matches the admission decision recorded for it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: No App runtime or secret encryption key is configured, or App administration permission could not be checked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/apps/installations/{installationId}/activate:
+    post:
+      tags:
+        - Apps
+      summary: Provision, stage, test, and activate an installation
+      operationId: activateAppInstallation
+      security: *a66
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: installationId
+          in: path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                expectedVersion:
+                  type: integer
+                  exclusiveMinimum: 0
+                idempotencyKey:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+              required:
+                - expectedVersion
+                - idempotencyKey
+      responses:
+        "200":
+          description: The installation and the lifecycle operation that ran
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  installation:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      appId:
+                        type: string
+                      state:
+                        type: string
+                        enum: *a72
+                      activeReleaseId:
+                        type:
+                          - string
+                          - "null"
+                        format: uuid
+                      candidateReleaseId:
+                        type:
+                          - string
+                          - "null"
+                        format: uuid
+                      configuration:
+                        type: object
+                        additionalProperties:
+                          anyOf:
+                            - type: string
+                            - type: number
+                            - type: boolean
+                      health:
+                        type: object
+                        additionalProperties: {}
+                      version:
+                        type: integer
+                        exclusiveMinimum: 0
+                      createdAt:
+                        type: string
+                        format: date-time
+                      updatedAt:
+                        type: string
+                        format: date-time
+                    required:
+                      - id
+                      - appId
+                      - state
+                      - activeReleaseId
+                      - candidateReleaseId
+                      - configuration
+                      - health
+                      - version
+                      - createdAt
+                      - updatedAt
+                  operation:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      installationId:
+                        type: string
+                        format: uuid
+                      kind:
+                        type: string
+                        enum: *a73
+                      state:
+                        type: string
+                        enum: *a74
+                      step:
+                        type:
+                          - string
+                          - "null"
+                      compensationStep:
+                        type:
+                          - string
+                          - "null"
+                      error:
+                        type:
+                          - object
+                          - "null"
+                        properties:
+                          reason:
+                            type: string
+                          message:
+                            type: string
+                        required:
+                          - reason
+                          - message
+                      createdAt:
+                        type: string
+                        format: date-time
+                      updatedAt:
+                        type: string
+                        format: date-time
+                    required:
+                      - id
+                      - installationId
+                      - kind
+                      - state
+                      - step
+                      - compensationStep
+                      - error
+                      - createdAt
+                      - updatedAt
+                required:
+                  - installation
+                  - operation
+        "400":
+          description: Invalid configuration, connection, or request shape
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Interactive workspace session required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: App administration permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Release, plan, or installation not available in this workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: A stored release no longer matches the admission decision recorded for it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: No App runtime or secret encryption key is configured, or App administration permission could not be checked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/apps/installations/{installationId}/disable:
+    post:
+      tags:
+        - Apps
+      summary: Disable an installation
+      operationId: disableAppInstallation
+      security: *a66
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: installationId
+          in: path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                expectedVersion:
+                  type: integer
+                  exclusiveMinimum: 0
+                idempotencyKey:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+              required:
+                - expectedVersion
+                - idempotencyKey
+      responses:
+        "200":
+          description: The installation and the lifecycle operation that ran
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  installation:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      appId:
+                        type: string
+                      state:
+                        type: string
+                        enum: *a72
+                      activeReleaseId:
+                        type:
+                          - string
+                          - "null"
+                        format: uuid
+                      candidateReleaseId:
+                        type:
+                          - string
+                          - "null"
+                        format: uuid
+                      configuration:
+                        type: object
+                        additionalProperties:
+                          anyOf:
+                            - type: string
+                            - type: number
+                            - type: boolean
+                      health:
+                        type: object
+                        additionalProperties: {}
+                      version:
+                        type: integer
+                        exclusiveMinimum: 0
+                      createdAt:
+                        type: string
+                        format: date-time
+                      updatedAt:
+                        type: string
+                        format: date-time
+                    required:
+                      - id
+                      - appId
+                      - state
+                      - activeReleaseId
+                      - candidateReleaseId
+                      - configuration
+                      - health
+                      - version
+                      - createdAt
+                      - updatedAt
+                  operation:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      installationId:
+                        type: string
+                        format: uuid
+                      kind:
+                        type: string
+                        enum: *a73
+                      state:
+                        type: string
+                        enum: *a74
+                      step:
+                        type:
+                          - string
+                          - "null"
+                      compensationStep:
+                        type:
+                          - string
+                          - "null"
+                      error:
+                        type:
+                          - object
+                          - "null"
+                        properties:
+                          reason:
+                            type: string
+                          message:
+                            type: string
+                        required:
+                          - reason
+                          - message
+                      createdAt:
+                        type: string
+                        format: date-time
+                      updatedAt:
+                        type: string
+                        format: date-time
+                    required:
+                      - id
+                      - installationId
+                      - kind
+                      - state
+                      - step
+                      - compensationStep
+                      - error
+                      - createdAt
+                      - updatedAt
+                required:
+                  - installation
+                  - operation
+        "400":
+          description: Invalid configuration, connection, or request shape
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Interactive workspace session required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: App administration permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Release, plan, or installation not available in this workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: A stored release no longer matches the admission decision recorded for it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: No App runtime or secret encryption key is configured, or App administration permission could not be checked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/apps/installations/{installationId}/enable:
+    post:
+      tags:
+        - Apps
+      summary: Enable a disabled installation
+      operationId: enableAppInstallation
+      security: *a66
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: installationId
+          in: path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                expectedVersion:
+                  type: integer
+                  exclusiveMinimum: 0
+                idempotencyKey:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+              required:
+                - expectedVersion
+                - idempotencyKey
+      responses:
+        "200":
+          description: The installation and the lifecycle operation that ran
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  installation:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      appId:
+                        type: string
+                      state:
+                        type: string
+                        enum: *a72
+                      activeReleaseId:
+                        type:
+                          - string
+                          - "null"
+                        format: uuid
+                      candidateReleaseId:
+                        type:
+                          - string
+                          - "null"
+                        format: uuid
+                      configuration:
+                        type: object
+                        additionalProperties:
+                          anyOf:
+                            - type: string
+                            - type: number
+                            - type: boolean
+                      health:
+                        type: object
+                        additionalProperties: {}
+                      version:
+                        type: integer
+                        exclusiveMinimum: 0
+                      createdAt:
+                        type: string
+                        format: date-time
+                      updatedAt:
+                        type: string
+                        format: date-time
+                    required:
+                      - id
+                      - appId
+                      - state
+                      - activeReleaseId
+                      - candidateReleaseId
+                      - configuration
+                      - health
+                      - version
+                      - createdAt
+                      - updatedAt
+                  operation:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      installationId:
+                        type: string
+                        format: uuid
+                      kind:
+                        type: string
+                        enum: *a73
+                      state:
+                        type: string
+                        enum: *a74
+                      step:
+                        type:
+                          - string
+                          - "null"
+                      compensationStep:
+                        type:
+                          - string
+                          - "null"
+                      error:
+                        type:
+                          - object
+                          - "null"
+                        properties:
+                          reason:
+                            type: string
+                          message:
+                            type: string
+                        required:
+                          - reason
+                          - message
+                      createdAt:
+                        type: string
+                        format: date-time
+                      updatedAt:
+                        type: string
+                        format: date-time
+                    required:
+                      - id
+                      - installationId
+                      - kind
+                      - state
+                      - step
+                      - compensationStep
+                      - error
+                      - createdAt
+                      - updatedAt
+                required:
+                  - installation
+                  - operation
+        "400":
+          description: Invalid configuration, connection, or request shape
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Interactive workspace session required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: App administration permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Release, plan, or installation not available in this workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: A stored release no longer matches the admission decision recorded for it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: No App runtime or secret encryption key is configured, or App administration permission could not be checked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/apps/installations/{installationId}/remove:
+    post:
+      tags:
+        - Apps
+      summary: Remove an installation and dispose of its managed data
+      operationId: removeAppInstallation
+      security: *a66
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: installationId
+          in: path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                disposition:
+                  type: string
+                  enum:
+                    - export
+                    - retain
+                    - delete
+                expectedVersion:
+                  type: integer
+                  exclusiveMinimum: 0
+                idempotencyKey:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+              required:
+                - disposition
+                - expectedVersion
+                - idempotencyKey
+      responses:
+        "200":
+          description: The removed installation and the operation that ran
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  installation:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      appId:
+                        type: string
+                      state:
+                        type: string
+                        enum: *a72
+                      activeReleaseId:
+                        type:
+                          - string
+                          - "null"
+                        format: uuid
+                      candidateReleaseId:
+                        type:
+                          - string
+                          - "null"
+                        format: uuid
+                      configuration:
+                        type: object
+                        additionalProperties:
+                          anyOf:
+                            - type: string
+                            - type: number
+                            - type: boolean
+                      health:
+                        type: object
+                        additionalProperties: {}
+                      version:
+                        type: integer
+                        exclusiveMinimum: 0
+                      createdAt:
+                        type: string
+                        format: date-time
+                      updatedAt:
+                        type: string
+                        format: date-time
+                    required:
+                      - id
+                      - appId
+                      - state
+                      - activeReleaseId
+                      - candidateReleaseId
+                      - configuration
+                      - health
+                      - version
+                      - createdAt
+                      - updatedAt
+                  operation:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      installationId:
+                        type: string
+                        format: uuid
+                      kind:
+                        type: string
+                        enum: *a73
+                      state:
+                        type: string
+                        enum: *a74
+                      step:
+                        type:
+                          - string
+                          - "null"
+                      compensationStep:
+                        type:
+                          - string
+                          - "null"
+                      error:
+                        type:
+                          - object
+                          - "null"
+                        properties:
+                          reason:
+                            type: string
+                          message:
+                            type: string
+                        required:
+                          - reason
+                          - message
+                      createdAt:
+                        type: string
+                        format: date-time
+                      updatedAt:
+                        type: string
+                        format: date-time
+                    required:
+                      - id
+                      - installationId
+                      - kind
+                      - state
+                      - step
+                      - compensationStep
+                      - error
+                      - createdAt
+                      - updatedAt
+                required:
+                  - installation
+                  - operation
+        "400":
+          description: Invalid configuration, connection, or request shape
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Interactive workspace session required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: App administration permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Release, plan, or installation not available in this workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Stale plan or installation version, a conflicting or removing installation, an operation already in flight, a reused idempotency key, an unbound connection this change needs, or a release that is no longer eligible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: A stored release no longer matches the admission decision recorded for it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: No App runtime or secret encryption key is configured, or App administration permission could not be checked
           content:
             application/json:
               schema:
@@ -20613,7 +23193,7 @@ paths:
           in: path
         - schema:
             type: string
-            enum: *a66
+            enum: *a76
           required: true
           name: scopeType
           in: query
@@ -20747,7 +23327,7 @@ paths:
       operationId: listSkills
       security:
         - bearerAuth: []
-        - *a67
+        - *a77
       responses:
         "200":
           description: Skills catalog returned
@@ -20769,7 +23349,7 @@ paths:
       operationId: getSkill
       security:
         - bearerAuth: []
-        - *a67
+        - *a77
       parameters:
         - schema:
             type: string
@@ -20798,11 +23378,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/mcp-connections:
     get:
-      tags: &a68
+      tags: &a78
         - External Skills
       summary: List an agent's MCP connections
       operationId: listMcpConnections
-      security: &a69
+      security: &a79
         - bearerAuth: []
       parameters:
         - schema:
@@ -20864,10 +23444,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     post:
-      tags: *a68
+      tags: *a78
       summary: Create an MCP connection
       operationId: createMcpConnection
-      security: *a69
+      security: *a79
       parameters:
         - schema:
             type: string
@@ -20976,10 +23556,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/mcp-connections/{connectionId}/discover:
     post:
-      tags: *a68
+      tags: *a78
       summary: Discover a connection's tools
       operationId: discoverMcpConnectionTools
-      security: *a69
+      security: *a79
       parameters:
         - schema:
             type: string
@@ -21029,10 +23609,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/mcp-connections/{connectionId}:
     delete:
-      tags: *a68
+      tags: *a78
       summary: Delete an MCP connection
       operationId: deleteMcpConnection
-      security: *a69
+      security: *a79
       parameters:
         - schema:
             type: string
@@ -21068,10 +23648,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     get:
-      tags: *a68
+      tags: *a78
       summary: Get an MCP connection
       operationId: getMcpConnection
-      security: *a69
+      security: *a79
       parameters:
         - schema:
             type: string
@@ -21131,10 +23711,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     patch:
-      tags: *a68
+      tags: *a78
       summary: Update an MCP connection (rename / rotate token)
       operationId: updateMcpConnection
-      security: *a69
+      security: *a79
       parameters:
         - schema:
             type: string
@@ -21213,10 +23793,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/external-skills:
     get:
-      tags: *a68
+      tags: *a78
       summary: List an agent's external skill definitions
       operationId: listExternalSkills
-      security: *a69
+      security: *a79
       parameters:
         - schema:
             type: string
@@ -21296,10 +23876,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     post:
-      tags: *a68
+      tags: *a78
       summary: Define an external skill (bind a discovered tool)
       operationId: createExternalSkill
-      security: *a69
+      security: *a79
       parameters:
         - schema:
             type: string
@@ -21425,10 +24005,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/external-skills/{skillId}:
     delete:
-      tags: *a68
+      tags: *a78
       summary: Delete an external skill definition
       operationId: deleteExternalSkill
-      security: *a69
+      security: *a79
       parameters:
         - schema:
             type: string
@@ -21458,10 +24038,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     get:
-      tags: *a68
+      tags: *a78
       summary: Get an external skill definition
       operationId: getExternalSkill
-      security: *a69
+      security: *a79
       parameters:
         - schema:
             type: string
@@ -21540,10 +24120,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     patch:
-      tags: *a68
+      tags: *a78
       summary: Update an external skill definition (enable / update bindings)
       operationId: updateExternalSkill
-      security: *a69
+      security: *a79
       parameters:
         - schema:
             type: string
@@ -21658,10 +24238,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/mcp-connections/{connectionId}/oauth/authorize:
     post:
-      tags: *a68
+      tags: *a78
       summary: Start the OAuth authorization flow for a connection
       operationId: startMcpConnectionOauth
-      security: *a69
+      security: *a79
       parameters:
         - schema:
             type: string
@@ -21714,10 +24294,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/mcp-connections/{connectionId}/oauth/complete:
     post:
-      tags: *a68
+      tags: *a78
       summary: Complete the OAuth authorization flow
       operationId: completeMcpConnectionOauth
-      security: *a69
+      security: *a79
       parameters:
         - schema:
             type: string
@@ -21800,11 +24380,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/oauth-connections:
     post:
-      tags: &a70
+      tags: &a80
         - OAuth Connections
       summary: Create and start a workspace OAuth connection
       operationId: createWorkspaceOauthConnection
-      security: &a71
+      security: &a81
         - bearerAuth: []
       parameters:
         - schema:
@@ -21877,10 +24457,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     get:
-      tags: *a70
+      tags: *a80
       summary: List non-secret workspace OAuth connection statuses
       operationId: listWorkspaceOauthConnections
-      security: *a71
+      security: *a81
       parameters:
         - schema:
             type: string
@@ -21910,7 +24490,7 @@ paths:
                           type: string
                         status:
                           type: string
-                          enum: &a72
+                          enum: &a82
                             - pending
                             - authorized
                             - needs_reauth
@@ -21950,10 +24530,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/oauth-connections/{connectionId}:
     get:
-      tags: *a70
+      tags: *a80
       summary: Get a non-secret workspace OAuth connection status
       operationId: getWorkspaceOauthConnection
-      security: *a71
+      security: *a81
       parameters:
         - schema:
             type: string
@@ -21987,7 +24567,7 @@ paths:
                         type: string
                       status:
                         type: string
-                        enum: *a72
+                        enum: *a82
                       grantedScopes:
                         type: array
                         items:
@@ -22028,10 +24608,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/oauth-connections/{connectionId}/reauthorize:
     post:
-      tags: *a70
+      tags: *a80
       summary: Restart authorization for a workspace OAuth connection
       operationId: reauthorizeWorkspaceOauthConnection
-      security: *a71
+      security: *a81
       parameters:
         - schema:
             type: string
@@ -22092,7 +24672,7 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/oauth/callback/{provider}:
     get:
-      tags: *a70
+      tags: *a80
       summary: Complete a provider OAuth callback
       operationId: completeWorkspaceOauthCallback
       parameters:
@@ -22138,7 +24718,7 @@ paths:
         - Customer Email Activity
       summary: List sanitized workspace customer email skill activity
       operationId: listWorkspaceEmailSkillActivity
-      security: &a73
+      security: &a83
         - bearerAuth: []
       parameters:
         - schema:
@@ -22240,12 +24820,12 @@ paths:
                           type: string
                         mode:
                           type: string
-                          enum: &a77
+                          enum: &a87
                             - draft
                             - send
                         outcome:
                           type: string
-                          enum: &a78
+                          enum: &a88
                             - drafted
                             - sent
                             - missing_input
@@ -22322,11 +24902,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/email-connections:
     get:
-      tags: &a74
+      tags: &a84
         - Customer Email Connections
       summary: List workspace customer email connections
       operationId: listWorkspaceEmailConnections
-      security: *a73
+      security: *a83
       parameters:
         - schema:
             type: string
@@ -22371,7 +24951,7 @@ paths:
                             - "null"
                         status:
                           type: string
-                          enum: &a75
+                          enum: &a85
                             - authorized
                             - disabled
                             - needs_reauth
@@ -22380,7 +24960,7 @@ paths:
                           type:
                             - string
                             - "null"
-                          enum: &a76
+                          enum: &a86
                             - ok
                             - failed
                             - unknown
@@ -22423,10 +25003,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     post:
-      tags: *a74
+      tags: *a84
       summary: Create a workspace customer email connection
       operationId: createWorkspaceEmailConnection
-      security: *a73
+      security: *a83
       parameters:
         - schema:
             type: string
@@ -22497,12 +25077,12 @@ paths:
                           - "null"
                       status:
                         type: string
-                        enum: *a75
+                        enum: *a85
                       lastHealthStatus:
                         type:
                           - string
                           - "null"
-                        enum: *a76
+                        enum: *a86
                       lastHealthCheckedAt:
                         type:
                           - string
@@ -22555,10 +25135,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/email-oauth-connections:
     get:
-      tags: *a74
+      tags: *a84
       summary: List OAuth connections eligible to back a customer email connection
       operationId: listWorkspaceEmailOauthConnections
-      security: *a73
+      security: *a83
       parameters:
         - schema:
             type: string
@@ -22628,10 +25208,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/email-connections/{connectionId}:
     patch:
-      tags: *a74
+      tags: *a84
       summary: Update or enable/disable a workspace customer email connection
       operationId: updateWorkspaceEmailConnection
-      security: *a73
+      security: *a83
       parameters:
         - schema:
             type: string
@@ -22703,12 +25283,12 @@ paths:
                           - "null"
                       status:
                         type: string
-                        enum: *a75
+                        enum: *a85
                       lastHealthStatus:
                         type:
                           - string
                           - "null"
-                        enum: *a76
+                        enum: *a86
                       lastHealthCheckedAt:
                         type:
                           - string
@@ -22760,10 +25340,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     delete:
-      tags: *a74
+      tags: *a84
       summary: Delete a workspace customer email connection
       operationId: deleteWorkspaceEmailConnection
-      security: *a73
+      security: *a83
       parameters:
         - schema:
             type: string
@@ -22806,10 +25386,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/email-connections/{connectionId}/health-check:
     post:
-      tags: *a74
+      tags: *a84
       summary: Check customer email connection health
       operationId: checkWorkspaceEmailConnectionHealth
-      security: *a73
+      security: *a83
       parameters:
         - schema:
             type: string
@@ -22858,12 +25438,12 @@ paths:
                           - "null"
                       status:
                         type: string
-                        enum: *a75
+                        enum: *a85
                       lastHealthStatus:
                         type:
                           - string
                           - "null"
-                        enum: *a76
+                        enum: *a86
                       lastHealthCheckedAt:
                         type:
                           - string
@@ -22910,11 +25490,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/email-skills:
     get:
-      tags: &a79
+      tags: &a89
         - Customer Email Skills
       summary: List agent customer email skills
       operationId: listAgentEmailSkills
-      security: *a73
+      security: *a83
       parameters:
         - schema:
             type: string
@@ -22951,7 +25531,7 @@ paths:
                           type: string
                         mode:
                           type: string
-                          enum: *a77
+                          enum: *a87
                         boundInputs:
                           type: object
                           additionalProperties: {}
@@ -22970,7 +25550,7 @@ paths:
                           type: array
                           items:
                             type: string
-                            enum: *a78
+                            enum: *a88
                         createdAt:
                           type: string
                         updatedAt:
@@ -23009,10 +25589,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     post:
-      tags: *a79
+      tags: *a89
       summary: Create an agent customer email skill
       operationId: createAgentEmailSkill
-      security: *a73
+      security: *a83
       parameters:
         - schema:
             type: string
@@ -23034,7 +25614,7 @@ paths:
                   format: uuid
                 mode:
                   type: string
-                  enum: *a77
+                  enum: *a87
                   default: draft
                 boundInputs:
                   type: object
@@ -23083,7 +25663,7 @@ paths:
                         type: string
                       mode:
                         type: string
-                        enum: *a77
+                        enum: *a87
                       boundInputs:
                         type: object
                         additionalProperties: {}
@@ -23102,7 +25682,7 @@ paths:
                         type: array
                         items:
                           type: string
-                          enum: *a78
+                          enum: *a88
                       createdAt:
                         type: string
                       updatedAt:
@@ -23154,10 +25734,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/email-skills/{skillId}:
     get:
-      tags: *a79
+      tags: *a89
       summary: Get an agent customer email skill
       operationId: getAgentEmailSkill
-      security: *a73
+      security: *a83
       parameters:
         - schema:
             type: string
@@ -23198,7 +25778,7 @@ paths:
                         type: string
                       mode:
                         type: string
-                        enum: *a77
+                        enum: *a87
                       boundInputs:
                         type: object
                         additionalProperties: {}
@@ -23217,7 +25797,7 @@ paths:
                         type: array
                         items:
                           type: string
-                          enum: *a78
+                          enum: *a88
                       createdAt:
                         type: string
                       updatedAt:
@@ -23256,10 +25836,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     patch:
-      tags: *a79
+      tags: *a89
       summary: Update an agent customer email skill
       operationId: updateAgentEmailSkill
-      security: *a73
+      security: *a83
       parameters:
         - schema:
             type: string
@@ -23282,7 +25862,7 @@ paths:
               properties:
                 mode:
                   type: string
-                  enum: *a77
+                  enum: *a87
                 boundInputs:
                   type: object
                   additionalProperties: {}
@@ -23324,7 +25904,7 @@ paths:
                         type: string
                       mode:
                         type: string
-                        enum: *a77
+                        enum: *a87
                       boundInputs:
                         type: object
                         additionalProperties: {}
@@ -23343,7 +25923,7 @@ paths:
                         type: array
                         items:
                           type: string
-                          enum: *a78
+                          enum: *a88
                       createdAt:
                         type: string
                       updatedAt:
@@ -23388,10 +25968,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     delete:
-      tags: *a79
+      tags: *a89
       summary: Delete an agent customer email skill
       operationId: deleteAgentEmailSkill
-      security: *a73
+      security: *a83
       parameters:
         - schema:
             type: string
@@ -23428,11 +26008,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/slack/install/start:
     post:
-      tags: &a80
+      tags: &a90
         - Slack
       summary: Start Slack OAuth installation
       operationId: startWorkspaceSlackInstall
-      security: &a81
+      security: &a91
         - bearerAuth: []
       parameters:
         - schema:
@@ -23489,10 +26069,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/slack/install/status:
     get:
-      tags: *a80
+      tags: *a90
       summary: Get Slack installation status
       operationId: getWorkspaceSlackInstallStatus
-      security: *a81
+      security: *a91
       parameters:
         - schema:
             type: string
@@ -23556,10 +26136,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/slack/manifest:
     get:
-      tags: *a80
+      tags: *a90
       summary: Get self-host Slack app manifest
       operationId: getWorkspaceSlackManifest
-      security: *a81
+      security: *a91
       parameters:
         - schema:
             type: string
@@ -23685,10 +26265,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/slack/binding:
     get:
-      tags: *a80
+      tags: *a90
       summary: Get Slack answering binding
       operationId: getWorkspaceSlackBinding
-      security: *a81
+      security: *a91
       parameters:
         - schema:
             type: string
@@ -23737,10 +26317,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     put:
-      tags: *a80
+      tags: *a90
       summary: Set Slack answering binding
       operationId: setWorkspaceSlackBinding
-      security: *a81
+      security: *a91
       parameters:
         - schema:
             type: string
@@ -23823,10 +26403,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     delete:
-      tags: *a80
+      tags: *a90
       summary: Remove a Slack channel answering binding
       operationId: deleteWorkspaceSlackChannelBinding
-      security: *a81
+      security: *a91
       parameters:
         - schema:
             type: string
@@ -23863,10 +26443,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/slack/bindings:
     get:
-      tags: *a80
+      tags: *a90
       summary: List Slack answering bindings
       operationId: listWorkspaceSlackBindings
-      security: *a81
+      security: *a91
       parameters:
         - schema:
             type: string
@@ -23923,10 +26503,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/slack/installation:
     delete:
-      tags: *a80
+      tags: *a90
       summary: Disconnect Slack installation
       operationId: disconnectWorkspaceSlackInstallation
-      security: *a81
+      security: *a91
       parameters:
         - schema:
             type: string
@@ -23955,7 +26535,7 @@ paths:
         - Webhook Skills
       summary: List agent webhook skills
       operationId: listAgentWebhookSkills
-      security: &a82
+      security: &a92
         - bearerAuth: []
       parameters:
         - schema:
@@ -24012,7 +26592,7 @@ paths:
                           type: array
                           items:
                             type: string
-                            enum: &a83
+                            enum: &a93
                               - delivered
                               - missing_input
                               - destination_not_found
@@ -24058,7 +26638,7 @@ paths:
         - Webhook Skills
       summary: Create an agent webhook skill
       operationId: createAgentWebhookSkill
-      security: *a82
+      security: *a92
       parameters:
         - schema:
             type: string
@@ -24147,7 +26727,7 @@ paths:
                         type: array
                         items:
                           type: string
-                          enum: *a83
+                          enum: *a93
                       createdAt:
                         type: string
                       updatedAt:
@@ -24202,7 +26782,7 @@ paths:
         - Webhook Skills
       summary: Get an agent webhook skill
       operationId: getAgentWebhookSkill
-      security: *a82
+      security: *a92
       parameters:
         - schema:
             type: string
@@ -24262,7 +26842,7 @@ paths:
                         type: array
                         items:
                           type: string
-                          enum: *a83
+                          enum: *a93
                       createdAt:
                         type: string
                       updatedAt:
@@ -24304,7 +26884,7 @@ paths:
         - Webhook Skills
       summary: Update an agent webhook skill
       operationId: updateAgentWebhookSkill
-      security: *a82
+      security: *a92
       parameters:
         - schema:
             type: string
@@ -24388,7 +26968,7 @@ paths:
                         type: array
                         items:
                           type: string
-                          enum: *a83
+                          enum: *a93
                       createdAt:
                         type: string
                       updatedAt:
@@ -24436,7 +27016,7 @@ paths:
         - Webhook Skills
       summary: Delete an agent webhook skill
       operationId: deleteAgentWebhookSkill
-      security: *a82
+      security: *a92
       parameters:
         - schema:
             type: string
@@ -24477,7 +27057,7 @@ paths:
         - Slack Skills
       summary: List agent Slack skills
       operationId: listAgentSlackSkills
-      security: &a86
+      security: &a96
         - bearerAuth: []
       parameters:
         - schema:
@@ -24516,13 +27096,13 @@ paths:
                         boundInputs:
                           type: object
                           properties:
-                            channelId: &a84 {}
-                            text: *a84
-                            threadTs: *a84
+                            channelId: &a94 {}
+                            text: *a94
+                            threadTs: *a94
                         exposedInputs:
                           type: object
                           properties:
-                            channelId: &a85
+                            channelId: &a95
                               type: object
                               properties:
                                 description:
@@ -24532,15 +27112,15 @@ paths:
                                 required:
                                   type: boolean
                                   default: true
-                            text: *a85
-                            threadTs: *a85
+                            text: *a95
+                            threadTs: *a95
                         enabled:
                           type: boolean
                         outcomes:
                           type: array
                           items:
                             type: string
-                            enum: &a91
+                            enum: &a101
                               - enqueued
                               - missing_input
                               - failed
@@ -24585,7 +27165,7 @@ paths:
         - Slack Skills
       summary: Create an agent Slack skill
       operationId: createAgentSlackSkill
-      security: *a86
+      security: *a96
       parameters:
         - schema:
             type: string
@@ -24608,14 +27188,14 @@ paths:
                 boundInputs:
                   type: object
                   properties:
-                    channelId: &a87 {}
-                    text: *a87
-                    threadTs: *a87
+                    channelId: &a97 {}
+                    text: *a97
+                    threadTs: *a97
                   default: {}
                 exposedInputs:
                   type: object
                   properties:
-                    channelId: &a88
+                    channelId: &a98
                       type: object
                       properties:
                         description:
@@ -24625,8 +27205,8 @@ paths:
                         required:
                           type: boolean
                           default: true
-                    text: *a88
-                    threadTs: *a88
+                    text: *a98
+                    threadTs: *a98
                   default: {}
                 enabled:
                   type: boolean
@@ -24662,13 +27242,13 @@ paths:
                       boundInputs:
                         type: object
                         properties:
-                          channelId: &a89 {}
-                          text: *a89
-                          threadTs: *a89
+                          channelId: &a99 {}
+                          text: *a99
+                          threadTs: *a99
                       exposedInputs:
                         type: object
                         properties:
-                          channelId: &a90
+                          channelId: &a100
                             type: object
                             properties:
                               description:
@@ -24678,15 +27258,15 @@ paths:
                               required:
                                 type: boolean
                                 default: true
-                          text: *a90
-                          threadTs: *a90
+                          text: *a100
+                          threadTs: *a100
                       enabled:
                         type: boolean
                       outcomes:
                         type: array
                         items:
                           type: string
-                          enum: *a91
+                          enum: *a101
                       createdAt:
                         type: string
                       updatedAt:
@@ -24741,7 +27321,7 @@ paths:
         - Slack Skills
       summary: Get an agent Slack skill
       operationId: getAgentSlackSkill
-      security: *a86
+      security: *a96
       parameters:
         - schema:
             type: string
@@ -24783,13 +27363,13 @@ paths:
                       boundInputs:
                         type: object
                         properties:
-                          channelId: &a92 {}
-                          text: *a92
-                          threadTs: *a92
+                          channelId: &a102 {}
+                          text: *a102
+                          threadTs: *a102
                       exposedInputs:
                         type: object
                         properties:
-                          channelId: &a93
+                          channelId: &a103
                             type: object
                             properties:
                               description:
@@ -24799,15 +27379,15 @@ paths:
                               required:
                                 type: boolean
                                 default: true
-                          text: *a93
-                          threadTs: *a93
+                          text: *a103
+                          threadTs: *a103
                       enabled:
                         type: boolean
                       outcomes:
                         type: array
                         items:
                           type: string
-                          enum: *a91
+                          enum: *a101
                       createdAt:
                         type: string
                       updatedAt:
@@ -24849,7 +27429,7 @@ paths:
         - Slack Skills
       summary: Update an agent Slack skill
       operationId: updateAgentSlackSkill
-      security: *a86
+      security: *a96
       parameters:
         - schema:
             type: string
@@ -24873,13 +27453,13 @@ paths:
                 boundInputs:
                   type: object
                   properties:
-                    channelId: &a94 {}
-                    text: *a94
-                    threadTs: *a94
+                    channelId: &a104 {}
+                    text: *a104
+                    threadTs: *a104
                 exposedInputs:
                   type: object
                   properties:
-                    channelId: &a95
+                    channelId: &a105
                       type: object
                       properties:
                         description:
@@ -24889,8 +27469,8 @@ paths:
                         required:
                           type: boolean
                           default: true
-                    text: *a95
-                    threadTs: *a95
+                    text: *a105
+                    threadTs: *a105
                 enabled:
                   type: boolean
       responses:
@@ -24921,13 +27501,13 @@ paths:
                       boundInputs:
                         type: object
                         properties:
-                          channelId: &a96 {}
-                          text: *a96
-                          threadTs: *a96
+                          channelId: &a106 {}
+                          text: *a106
+                          threadTs: *a106
                       exposedInputs:
                         type: object
                         properties:
-                          channelId: &a97
+                          channelId: &a107
                             type: object
                             properties:
                               description:
@@ -24937,15 +27517,15 @@ paths:
                               required:
                                 type: boolean
                                 default: true
-                          text: *a97
-                          threadTs: *a97
+                          text: *a107
+                          threadTs: *a107
                       enabled:
                         type: boolean
                       outcomes:
                         type: array
                         items:
                           type: string
-                          enum: *a91
+                          enum: *a101
                       createdAt:
                         type: string
                       updatedAt:
@@ -24993,7 +27573,7 @@ paths:
         - Slack Skills
       summary: Delete an agent Slack skill
       operationId: deleteAgentSlackSkill
-      security: *a86
+      security: *a96
       parameters:
         - schema:
             type: string
@@ -25034,7 +27614,7 @@ paths:
         - Agent Skills
       summary: List agent skill capabilities
       operationId: listAgentSkillCapabilities
-      security: &a99
+      security: &a109
         - bearerAuth: []
       parameters:
         - schema:
@@ -25058,7 +27638,7 @@ paths:
                       properties:
                         id:
                           type: string
-                          enum: &a100
+                          enum: &a110
                             - retrieve
                             - mcp_tool
                             - email
@@ -25154,13 +27734,13 @@ paths:
                           type: array
                           items:
                             type: string
-                            enum: &a98
+                            enum: &a108
                               - default_answer
                               - routine_named
                               - agent_selectable
                         defaultInvocationMode:
                           type: string
-                          enum: *a98
+                          enum: *a108
                         executorAdapter:
                           type: string
                         targets:
@@ -25224,7 +27804,7 @@ paths:
         - Agent Skills
       summary: List agent skills
       operationId: listAgentSkills
-      security: *a99
+      security: *a109
       parameters:
         - schema:
             type: string
@@ -25258,7 +27838,7 @@ paths:
                           type: string
                         capability:
                           type: string
-                          enum: *a100
+                          enum: *a110
                         storedKind:
                           type: string
                         target:
@@ -25279,7 +27859,7 @@ paths:
                           additionalProperties: {}
                         invocationMode:
                           type: string
-                          enum: *a98
+                          enum: *a108
                         enabled:
                           type: boolean
                         createdAt:
@@ -25324,7 +27904,7 @@ paths:
         - Agent Skills
       summary: Create an agent skill
       operationId: createAgentSkill
-      security: *a99
+      security: *a109
       parameters:
         - schema:
             type: string
@@ -25343,7 +27923,7 @@ paths:
                   type: string
                 capability:
                   type: string
-                  enum: *a100
+                  enum: *a110
                 target:
                   type: object
                   properties:
@@ -25363,7 +27943,7 @@ paths:
                   default: {}
                 invocationMode:
                   type: string
-                  enum: *a98
+                  enum: *a108
                   default: routine_named
                 enabled:
                   type: boolean
@@ -25396,7 +27976,7 @@ paths:
                         type: string
                       capability:
                         type: string
-                        enum: *a100
+                        enum: *a110
                       storedKind:
                         type: string
                       target:
@@ -25417,7 +27997,7 @@ paths:
                         additionalProperties: {}
                       invocationMode:
                         type: string
-                        enum: *a98
+                        enum: *a108
                       enabled:
                         type: boolean
                       createdAt:
@@ -25475,7 +28055,7 @@ paths:
         - Agent Skills
       summary: Update an agent skill
       operationId: updateAgentSkill
-      security: *a99
+      security: *a109
       parameters:
         - schema:
             type: string
@@ -25517,7 +28097,7 @@ paths:
                   additionalProperties: {}
                 invocationMode:
                   type: string
-                  enum: *a98
+                  enum: *a108
                 enabled:
                   type: boolean
       responses:
@@ -25544,7 +28124,7 @@ paths:
                         type: string
                       capability:
                         type: string
-                        enum: *a100
+                        enum: *a110
                       storedKind:
                         type: string
                       target:
@@ -25565,7 +28145,7 @@ paths:
                         additionalProperties: {}
                       invocationMode:
                         type: string
-                        enum: *a98
+                        enum: *a108
                       enabled:
                         type: boolean
                       createdAt:
@@ -25622,7 +28202,7 @@ paths:
         - Agent Skills
       summary: Delete an agent skill
       operationId: deleteAgentSkill
-      security: *a99
+      security: *a109
       parameters:
         - schema:
             type: string
@@ -27301,7 +29881,7 @@ paths:
         - Conversation Ownership
       summary: Take human ownership of a conversation
       operationId: takeOverConversation
-      security: &a101
+      security: &a111
         - bearerAuth: []
       parameters:
         - schema:
@@ -27365,7 +29945,7 @@ paths:
         - Conversation Ownership
       summary: Reply to a conversation as a human operator
       operationId: replyToConversation
-      security: *a101
+      security: *a111
       parameters:
         - schema:
             type: string
@@ -27434,7 +30014,7 @@ paths:
         - Conversation Ownership
       summary: Transfer human ownership of a conversation
       operationId: transferConversationOwnership
-      security: *a101
+      security: *a111
       parameters:
         - schema:
             type: string
@@ -27502,7 +30082,7 @@ paths:
         - Conversation Ownership
       summary: Return a human-owned conversation to AI ownership
       operationId: handBackConversation
-      security: *a101
+      security: *a111
       parameters:
         - schema:
             type: string
@@ -27567,7 +30147,7 @@ paths:
       summary: Fork a conversation into a dashboard test session
       description: Copies the conversation's user and assistant message thread into a new conversation tagged as an authenticated_chat test session (same agent and workspace), leaving the original untouched.
       operationId: forkConversation
-      security: *a101
+      security: *a111
       parameters:
         - schema:
             type: string
@@ -28484,7 +31064,7 @@ paths:
                     type: array
                     items:
                       type: string
-                      enum: &a102
+                      enum: &a112
                         - directive
                         - agent
                         - agent_setting
@@ -28656,7 +31236,7 @@ paths:
                                     format: uuid
                                   targetType:
                                     type: string
-                                    enum: *a102
+                                    enum: *a112
                                   targetLabel:
                                     type: string
                                   summary:
@@ -28873,14 +31453,14 @@ paths:
                     format: uuid
                   targetType:
                     type: string
-                    enum: *a102
+                    enum: *a112
                   targetRef: {}
                   target:
                     type: object
                     properties:
                       type:
                         type: string
-                        enum: *a102
+                        enum: *a112
                       ref: {}
                     required:
                       - type
@@ -29056,7 +31636,7 @@ paths:
         - Evals
       summary: Capture an Eval snapshot
       operationId: createEvalSnapshot
-      security: &a103
+      security: &a113
         - sessionCookie: []
           workspaceSelection: []
         - bearerAuth: []
@@ -29112,7 +31692,7 @@ paths:
         - Evals
       summary: Get an Eval snapshot
       operationId: getEvalSnapshot
-      security: *a103
+      security: *a113
       parameters:
         - schema:
             type: string
@@ -29157,7 +31737,7 @@ paths:
         - Evals
       summary: Create an Eval case
       operationId: createEvalCase
-      security: *a103
+      security: *a113
       requestBody:
         required: true
         content:
@@ -29362,7 +31942,7 @@ paths:
         - Evals
       summary: List Eval cases and latest results
       operationId: listEvalCases
-      security: *a103
+      security: *a113
       responses:
         "200":
           description: Eval cases with each case's latest result
@@ -29528,7 +32108,7 @@ paths:
         - Evals
       summary: Get an Eval case and its run history
       operationId: getEvalCase
-      security: *a103
+      security: *a113
       parameters:
         - schema:
             type: string
@@ -29572,7 +32152,7 @@ paths:
         - Evals
       summary: Rename an Eval case
       operationId: renameEvalCase
-      security: *a103
+      security: *a113
       parameters:
         - schema:
             type: string
@@ -29630,7 +32210,7 @@ paths:
         - Evals
       summary: Replace an Eval case's assertions
       operationId: replaceEvalCaseAssertions
-      security: *a103
+      security: *a113
       parameters:
         - schema:
             type: string
@@ -29898,7 +32478,7 @@ paths:
       summary: Run an Eval case
       description: Replays are safe by default. A live-effect case requires a fresh allowLiveEffects confirmation from an interactive workspace session; API credentials and Ray-triggered replays remain safe.
       operationId: createEvalCaseRun
-      security: *a103
+      security: *a113
       parameters:
         - schema:
             type: string
@@ -29927,7 +32507,7 @@ paths:
                       properties:
                         provider:
                           type: string
-                          enum: &a104
+                          enum: &a114
                             - openai
                             - openai-compatible
                             - gemini
@@ -29985,7 +32565,7 @@ paths:
                           properties:
                             provider:
                               type: string
-                              enum: &a105
+                              enum: &a115
                                 - openai
                                 - openai-compatible
                                 - gemini
@@ -30020,7 +32600,7 @@ paths:
                             type: integer
                         status:
                           type: string
-                          enum: &a106
+                          enum: &a116
                             - active
                             - suspended
                             - completed
@@ -30238,7 +32818,7 @@ paths:
                       properties:
                         provider:
                           type: string
-                          enum: *a104
+                          enum: *a114
                         model:
                           type: string
                       required:
@@ -30292,7 +32872,7 @@ paths:
                           properties:
                             provider:
                               type: string
-                              enum: *a105
+                              enum: *a115
                             model:
                               type: string
                           required:
@@ -30323,7 +32903,7 @@ paths:
                             type: integer
                         status:
                           type: string
-                          enum: *a106
+                          enum: *a116
                         metadata:
                           type: object
                           additionalProperties: {}
@@ -30374,7 +32954,7 @@ paths:
                       properties:
                         provider:
                           type: string
-                          enum: *a105
+                          enum: *a115
                         model:
                           type: string
                       required:
@@ -31060,7 +33640,7 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "429":
           description: Reconnect or distributed workspace/account/principal admission limit exceeded
-          headers: &a107
+          headers: &a117
             Retry-After:
               description: Minimum reconnect delay in whole seconds. The browser also applies its local jittered exponential backoff.
               schema:
@@ -31072,7 +33652,7 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "503":
           description: Realtime admission, broker subscription, or runtime capacity is temporarily unavailable
-          headers: *a107
+          headers: *a117
           content:
             application/json:
               schema:

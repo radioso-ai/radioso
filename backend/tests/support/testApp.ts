@@ -1,5 +1,13 @@
 import { createAgentBundleServices } from "../../src/app/composition/agentBundleComposition.js";
 import { InMemoryAgentBundleImportRepository } from "./inMemoryAgentBundleImports.js";
+import { createAppsServices } from "../../src/app/composition/apps.js";
+import { resolveRunningRadiosoVersion } from "../../src/app/config/radiosoVersion.js";
+import type { AppRuntimeProvisioningPort, BuiltInAppRelease } from "../../src/modules/apps/public.js";
+import {
+  createInMemoryAppRepositories,
+  createNonTransactionalInMemoryAppsUnitOfWork,
+  type InMemoryAppRepositories,
+} from "./inMemoryApps.js";
 import { setTimeout as delay } from "node:timers/promises";
 
 import request from "supertest";
@@ -413,6 +421,7 @@ interface TestRepositories {
   agentSkillRepository: InMemoryAgentSkillRepository;
   routineDefinitionRepository: InMemoryRoutineDefinitionRepository;
   machineAccessRepository: InMemoryMachineAccessRepository;
+  apps: InMemoryAppRepositories;
 }
 
 const appDependencyMap = new WeakMap<object, AppDependencies>();
@@ -694,6 +703,10 @@ export const createTestDependencies = (overrides: {
   contactHistoryProvider?: ContactHistoryProviderPort;
   publicChatActionAdvertiser?: PublicChatActionAdvertiserPort;
   applicationRouteMounts?: ApplicationRouteMount[];
+  /** The releases the built-in registry vouches for. Empty unless a test supplies one. */
+  appBuiltInReleases?: readonly BuiltInAppRelease[];
+  /** Stands in for a hosted App runtime, which the default composition does not have. */
+  appRuntimeProvisioning?: AppRuntimeProvisioningPort;
   workbenchReplayRunner?: Pick<WorkbenchReplayRunner, "run">;
   chatInferencePipelineComplete?: AppDependencies["chatInferencePipeline"]["complete"];
   logger?: AppDependencies["logger"];
@@ -2120,6 +2133,19 @@ export const createTestDependencies = (overrides: {
     ),
   });
   const agentBundleImportRepository = new InMemoryAgentBundleImportRepository();
+  const appRepositories = createInMemoryAppRepositories();
+  const appsServices = createAppsServices({
+    repositories: appRepositories,
+    unitOfWork: createNonTransactionalInMemoryAppsUnitOfWork(appRepositories),
+    audit: auditService,
+    logger,
+    accountAccessService,
+    secretEncryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
+    builtInReleases: overrides.appBuiltInReleases ?? [],
+    runningRadiosoVersion: resolveRunningRadiosoVersion(env.RADIOSO_RELEASE),
+    runtimeProvisioning: overrides.appRuntimeProvisioning,
+  });
+
   const agentBundleServices = createAgentBundleServices({
     auditService,
     imports: agentBundleImportRepository,
@@ -2137,6 +2163,15 @@ export const createTestDependencies = (overrides: {
   });
   const dependencies: AppDependencies = {
     env,
+    appReleaseAdmissionService: appsServices.appReleaseAdmissionService,
+    appInstallationPlanService: appsServices.appInstallationPlanService,
+    appInstallationLifecycleService: appsServices.appInstallationLifecycleService,
+    appInstallationQueryService: appsServices.appInstallationQueryService,
+    appConnectionService: appsServices.appConnectionService,
+    appControlPlaneRecovery: {
+      drainAuditOutbox: appsServices.drainAuditOutbox,
+      recoverStalledAppOperations: appsServices.recoverStalledAppOperations,
+    },
     agentBundleExportService: agentBundleServices.exportService,
     agentBundleImportService: agentBundleServices.importService,
     agentBundleImportCleanupWorker: agentBundleServices.cleanupWorker,
@@ -2352,6 +2387,7 @@ export const createTestDependencies = (overrides: {
       agentSkillRepository,
       routineDefinitionRepository,
       machineAccessRepository,
+      apps: appRepositories,
     },
   };
 };
@@ -2372,6 +2408,10 @@ export const createTestApp = (overrides: {
   contactHistoryProvider?: ContactHistoryProviderPort;
   publicChatActionAdvertiser?: PublicChatActionAdvertiserPort;
   applicationRouteMounts?: ApplicationRouteMount[];
+  /** The releases the built-in registry vouches for. Empty unless a test supplies one. */
+  appBuiltInReleases?: readonly BuiltInAppRelease[];
+  /** Stands in for a hosted App runtime, which the default composition does not have. */
+  appRuntimeProvisioning?: AppRuntimeProvisioningPort;
   workbenchReplayRunner?: Pick<WorkbenchReplayRunner, "run">;
   chatInferencePipelineComplete?: AppDependencies["chatInferencePipeline"]["complete"];
   logger?: AppDependencies["logger"];

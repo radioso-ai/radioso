@@ -5,6 +5,7 @@ import type { Env } from "../../../app/config/env.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../../../app/http/middleware/requireWorkspaceSession.js";
 import { requirePublicChatPermission } from "../../../app/http/middleware/requirePermission.js";
 import type { AccessGrantService } from "../../accessGrants/public.js";
+import type { AuthenticatedPrincipal, Permission } from "../../account/public.js";
 import type { AgentService } from "../../agents/public.js";
 import type { AgentRepositoryPort } from "../../../db/repositories/agentRepository.js";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
@@ -36,8 +37,8 @@ export interface AnswerFeedbackRouteDependencies {
     requirePermission(input: {
       accountId: string;
       userId?: string | null;
-      principal?: import("../../account/public.js").AuthenticatedPrincipal | null;
-      permission: import("../../account/public.js").Permission;
+      principal?: AuthenticatedPrincipal | null;
+      permission: Permission;
       workspaceId?: string | null;
     }): Promise<void>;
   };

@@ -1274,6 +1274,33 @@ to its own declarations, and measures it against what a host admits.
 Should not own persistence, transport, execution, or product policy. It carries
 schemas and pure functions, and depends on nothing inside the workspace.
 
+`backend/src/modules/apps/` is the control-plane domain built on that
+contract: App releases, release admission, installations, installation plans,
+grants, connections, and the lifecycle saga.
+
+Setup and activation are separate operations. `apply` records the approval —
+installation row, grants, effective configuration — in one transaction with the
+plan's consumption, and touches nothing outside the database; the operator then
+binds the release's connections against an installation that exists; `activate`
+provisions, stages, tests, and goes live. Every operation is serialized by a
+partial unique index (one in flight per installation), advances a durable cursor
+by compare-and-set, hands each port a stable `{ operationId, stepId }` effect id
+to deduplicate on, and rolls back through a reverse runner with its own cursor.
+Admission records the policy version and an evidence record that names both what
+it established and what it did not; apply, activation, and every resumed step
+re-check that the release is currently admitted and compatible.
+
+`AppExecutionEligibility` on `public.ts` is the fail-closed decision the runtime
+paths ask before granting authority to a contribution.
+
+The domain does not know about provider APIs, runtime transport,
+product-specific execution, or React. Runtime execution — the App Gateway,
+host capabilities, App Jobs, the local-process provider — belongs to the
+sibling `appRuntime` domain; managed records belong to `appStorage`; both are
+separate domains composed alongside this one. `apps` reaches owning modules
+such as documents and agent skills only through their narrow ports, never
+their internals.
+
 Primary paths:
 
 - `packages/app-contract/src/index.ts` — the public surface
@@ -1282,21 +1309,33 @@ Primary paths:
 - `packages/app-contract/src/validate.ts` — admission rules and issue codes
 - `packages/app-contract/fixtures/reference/wordpress.manifest.json` — the conformance vector
 - `packages/app-contract/tests/`
+- `backend/src/modules/apps/public.ts` — the module's public entry
+- `backend/src/modules/apps/domain/` — release admission policy and evidence, semantic-version ranges, plan builder and checksum, lifecycle state machine, secret-safe port outcomes
+- `backend/src/modules/apps/services/appInstallationLifecycleService.ts` — saga steps, cursor compare-and-set, compensation, resume
+- `backend/src/modules/apps/services/appExecutionEligibilityService.ts` — the fail-closed execution decision
+- `backend/src/modules/apps/repositories/appsUnitOfWork.ts` — the atomic boundary a step commits through
+- `backend/src/app/composition/apps.ts` — repositories, unit of work, services, and the built-in release registry
+- `backend/tests/unit/apps/`
+- `backend/tests/integration/apps/`
 
 Useful searches:
 
 - `rg "validateManifest|appManifestSchema|hostCapabilityRequestSchema" packages backend`
 - `rg "app-contract" package.json packages backend`
+- `rg "AppRelease|AppInstallation|admissionPolicyVersion|AppInstallationLifecycleService|AppExecutionEligibility" backend/src backend/tests`
 
 Focused checks:
 
 - `pnpm --filter @radioso/app-contract test`
 - `pnpm --filter @radioso/app-contract build`
+- `cd backend && pnpm exec vitest run tests/unit/apps tests/integration/apps`
 
 Related docs and specs:
 
 - [App Manifest Reference](../apps/app-manifest.md)
 - [App Runtime Protocol](../apps/runtime-protocol.md)
+- [Release Admission](../apps/release-admission.md)
+- [Apps (operator)](../../docs-portal/content/operators/apps.mdx)
 - `packages/app-contract/README.md`
 - `specs/1118-hosted-app-runtime/`
 

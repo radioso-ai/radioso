@@ -22,12 +22,13 @@ describe("app execution eligibility", () => {
     const decision = await harness.eligibility.evaluate({
       installationId: installation.id,
       contributionId: "site_content",
+      expectedReleaseDigest: null,
     });
 
     expect(decision).toMatchObject({ eligible: true });
     if (!decision.eligible) return;
     expect(decision.releaseDigest).toMatch(/^sha256:/);
-    expect(decision.activeContributionIds).toContain("site_content");
+    expect(decision.contribution.id).toBe("site_content");
   });
 
   it("refuses a contribution this configuration leaves switched off", async () => {
@@ -37,6 +38,7 @@ describe("app execution eligibility", () => {
     await expect(harness.eligibility.evaluate({
       installationId: installation.id,
       contributionId: "content_poll",
+      expectedReleaseDigest: null,
     })).resolves.toEqual({ eligible: false, reason: "contribution_not_active" });
   });
 
@@ -54,18 +56,56 @@ describe("app execution eligibility", () => {
     await expect(harness.eligibility.evaluate({
       installationId: installation.id,
       contributionId: "site_content",
-    })).resolves.toEqual({ eligible: false, reason: "installation_not_active" });
+      expectedReleaseDigest: null,
+    })).resolves.toEqual({ eligible: false, reason: "execution_denied" });
   });
 
   it("refuses a contribution whose release has been revoked", async () => {
     const harness = await createAppsHarness();
     const installation = await activeInstallation(harness);
-    await harness.releaseAdmission.transitionSecurityState(installation.activeReleaseId!, "revoked");
+    await harness.releaseAdmission.transitionSecurityState({
+      releaseId: installation.activeReleaseId!,
+      state: "revoked",
+      ...principal,
+      actorUserId: principal.userId,
+      reason: "test revocation",
+    });
 
     await expect(harness.eligibility.evaluate({
       installationId: installation.id,
       contributionId: "site_content",
-    })).resolves.toEqual({ eligible: false, reason: "release_not_admitted" });
+      expectedReleaseDigest: null,
+    })).resolves.toEqual({ eligible: false, reason: "release_not_usable" });
+  });
+
+  it("keeps an existing installation on a deprecated release eligible", async () => {
+    const harness = await createAppsHarness();
+    const installation = await activeInstallation(harness);
+    const release = await harness.repositories.releases.findById(installation.activeReleaseId!);
+    await harness.releaseAdmission.transitionSecurityState({
+      releaseId: installation.activeReleaseId!,
+      state: "deprecated",
+      ...principal,
+      actorUserId: principal.userId,
+      reason: "test deprecation",
+    });
+
+    await expect(harness.eligibility.evaluate({
+      installationId: installation.id,
+      contributionId: "site_content",
+      expectedReleaseDigest: release!.manifestDigest,
+    })).resolves.toMatchObject({ eligible: true });
+  });
+
+  it("refuses a stale contribution projection by digest", async () => {
+    const harness = await createAppsHarness();
+    const installation = await activeInstallation(harness);
+
+    await expect(harness.eligibility.evaluate({
+      installationId: installation.id,
+      contributionId: "site_content",
+      expectedReleaseDigest: "sha256:stale",
+    })).resolves.toEqual({ eligible: false, reason: "release_changed" });
   });
 
   it("refuses a contribution the approved plan never granted", async () => {
@@ -75,6 +115,7 @@ describe("app execution eligibility", () => {
     await expect(harness.eligibility.evaluate({
       installationId: installation.id,
       contributionId: "not_a_contribution",
+      expectedReleaseDigest: null,
     })).resolves.toEqual({ eligible: false, reason: "contribution_not_granted" });
   });
 
@@ -86,6 +127,7 @@ describe("app execution eligibility", () => {
     await expect(harness.eligibility.evaluate({
       installationId: installation.id,
       contributionId: "site_content",
+      expectedReleaseDigest: null,
     })).resolves.toEqual({ eligible: false, reason: "connections_unbound" });
   });
 
@@ -95,6 +137,7 @@ describe("app execution eligibility", () => {
     await expect(harness.eligibility.evaluate({
       installationId: "11111111-1111-4111-8111-111111111111",
       contributionId: "site_content",
+      expectedReleaseDigest: null,
     })).resolves.toEqual({ eligible: false, reason: "installation_not_found" });
   });
 
@@ -108,6 +151,7 @@ describe("app execution eligibility", () => {
     await expect(harness.eligibility.evaluate({
       installationId: installation.id,
       contributionId: "site_content",
+      expectedReleaseDigest: null,
     })).resolves.toEqual({ eligible: false, reason: "eligibility_unavailable" });
   });
 });

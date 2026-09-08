@@ -39,6 +39,7 @@ export const appSagaStepIds = [
   "create_records",
   "persist_grants_and_connections",
   "validate",
+  "open_candidate",
   "provision_runtime",
   "stage_contributions",
   "run_safe_tests",
@@ -93,11 +94,13 @@ export const appSagaSteps: Readonly<Record<AppLifecycleOperationKind, readonly A
     { id: "activate", enters: "active", compensation: "skip" },
   ],
   // FR-021b: a configuration change re-stages and re-tests before it becomes the
-  // installation's answer to what it does. Nothing before the last step writes the new
-  // configuration, so an abandoned reconfigure leaves the stored one untouched and the
-  // next successful operation re-stages from it; there is nothing to reverse.
+  // installation's answer to what it does. The proposal is durable from `open_candidate`
+  // onwards, but it is a candidate — the configuration the installation is running is
+  // untouched until `apply_configuration`, and a failure anywhere after `open_candidate`
+  // discards the candidate and leaves the working installation exactly as it was.
   reconfigure: [
     { id: "validate", enters: null, compensation: "skip" },
+    { id: "open_candidate", enters: null, compensation: "reverse" },
     { id: "stage_contributions", enters: null, compensation: "skip" },
     { id: "run_safe_tests", enters: null, compensation: "skip" },
     { id: "apply_configuration", enters: null, compensation: "skip" },
@@ -160,6 +163,41 @@ export const remainingAppSagaCompensationSteps = (
   if (compensationCursor === null) return plan;
   const index = plan.findIndex((step) => step.id === compensationCursor);
   return index < 0 ? plan : plan.slice(index + 1);
+};
+
+/**
+ * The installation states each command may be issued from.
+ *
+ * A command is checked against this while its operation is claimed, before any port is
+ * called. Without it, `activate` on an already-active installation provisions a second
+ * runtime and only then discovers that `active -> provisioning` is not a transition, and
+ * `disable` on a `planned` installation deprovisions something that was never provisioned.
+ * A refusal here costs nothing; a refusal three steps in costs a compensation.
+ */
+const appCommandSourceStates: Readonly<
+  Record<AppLifecycleOperationKind, readonly AppInstallationState[]>
+> = {
+  install: ["planned"],
+  activate: ["planned"],
+  disable: ["active"],
+  enable: ["disabled"],
+  reconfigure: ["planned", "active", "disabled"],
+  // Removal is also the repair path, so it accepts the states a failed operation leaves
+  // behind — including an installation already part-way through a removal that stopped.
+  remove: ["planned", "active", "disabled", "failed", "removing"],
+  dispose_data: ["removing", "removed"],
+};
+
+export const assertAppCommandSourceState = (
+  kind: AppLifecycleOperationKind,
+  state: AppInstallationState,
+): void => {
+  if (appCommandSourceStates[kind].includes(state)) return;
+  throw new AppsError(
+    "invalid_transition",
+    `A ${kind} command cannot be issued against an installation in ${state}.`,
+    { kind, state },
+  );
 };
 
 const allowedTransitions: Readonly<Record<AppInstallationState, readonly AppInstallationState[]>> = {

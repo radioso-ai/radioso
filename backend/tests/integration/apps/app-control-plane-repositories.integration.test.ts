@@ -182,8 +182,17 @@ describeIntegration("Apps control-plane repositories (Postgres)", () => {
     // Another workspace must not read, let alone apply, this plan.
     expect(await plans.findById(randomUUID(), record.id)).toBeNull();
 
-    expect(await plans.consume(workspaceId, record.id, new Date())).toBe(true);
-    expect(await plans.consume(workspaceId, record.id, new Date())).toBe(false);
+    const consumeInput = {
+      workspaceId,
+      planId: record.id,
+      checksum,
+      releaseId: release.id,
+      admissionPolicyVersion: release.admissionPolicyVersion,
+      manifestDigest: release.manifestDigest,
+      now: new Date(),
+    };
+    expect(await plans.consume(consumeInput)).toBe(true);
+    expect(await plans.consume(consumeInput)).toBe(false);
   });
 
   it("keeps one live grant per key and revokes them all at once", async () => {
@@ -255,31 +264,56 @@ describeIntegration("Apps control-plane repositories (Postgres)", () => {
     });
     const principal = { accountId, userId: randomUUID() };
     const idempotencyKey = `install-${randomUUID()}`;
-    const start = { installationId: installation.id, kind: "install" as const, idempotencyKey, requestFingerprint: "sha256:abc", initiatedBy: principal, payload: {} };
+    const reserveInput = {
+      workspaceId,
+      installationId: installation.id,
+      kind: "install" as const,
+      idempotencyKey,
+      requestFingerprint: "sha256:abc",
+      initiatedBy: principal,
+      payload: {},
+    };
 
-    const started = await operations.start(start);
-    const retried = await operations.start(start);
-    expect(retried.operation.id).toBe(started.operation.id);
-    expect(started.operation.initiatedBy).toEqual(principal);
-    expect(started.operation.requestFingerprint).toBe("sha256:abc");
+    const started = await operations.reserve(reserveInput);
+    expect(started).not.toBeNull();
+    // A retried reservation under the same key inserts nothing new; the caller reads the
+    // existing operation back in the same healthy transaction instead.
+    expect(await operations.reserve(reserveInput)).toBeNull();
+    const replay = await operations.findByIdempotencyKey(workspaceId, idempotencyKey);
+    expect(replay?.id).toBe(started!.id);
+    expect(started!.initiatedBy).toEqual(principal);
+    expect(started!.requestFingerprint).toBe("sha256:abc");
 
-    const advanced = await operations.update(started.operation.id, { step: "provision_runtime" });
-    expect(advanced.step).toBe("provision_runtime");
-    // A resumed operation reads its cursor back exactly as the crashed process left it.
-    expect((await operations.findByIdempotencyKey(idempotencyKey))?.step).toBe("provision_runtime");
-
-    const failed = await operations.update(started.operation.id, {
-      state: "failed", error: { reason: "runtime_unavailable", message: "No runtime provider" },
+    const leaseOwner = randomUUID();
+    const leaseExpiresAt = new Date(Date.now() + 60_000);
+    const claimed = await operations.claim(started!.id, {
+      expectedState: "running", expectedStep: null, leaseOwner, leaseExpiresAt, now: new Date(),
     });
-    expect(failed.error).toEqual({ reason: "runtime_unavailable", message: "No runtime provider" });
+    expect(claimed).not.toBeNull();
+
+    const advanced = await operations.advance(started!.id, {
+      expectedState: "running", expectedStep: null, leaseOwner, step: "provision_runtime",
+    });
+    expect(advanced?.step).toBe("provision_runtime");
+    // A resumed operation reads its cursor back exactly as the crashed process left it.
+    expect((await operations.findByIdempotencyKey(workspaceId, idempotencyKey))?.step).toBe("provision_runtime");
+
+    const failed = await operations.finish(started!.id, {
+      expectedState: "running",
+      expectedStep: "provision_runtime",
+      leaseOwner,
+      state: "failed",
+      error: { reason: "runtime_unavailable", message: "No runtime provider" },
+    });
+    expect(failed?.error).toEqual({ reason: "runtime_unavailable", message: "No runtime provider" });
     expect(await operations.listByInstallation(installation.id, 20)).toHaveLength(1);
   });
 
   /**
    * Two concurrent commands can both pass the service's read of "is anything running";
    * the partial unique index on (installation_id) WHERE state IN ('running',
-   * 'compensating') is what actually decides which one owns the installation, and the
-   * loser must see the domain refusal rather than a raw SQLSTATE.
+   * 'compensating', 'compensation_failed') is what actually decides which one owns the
+   * installation, and the loser must see the domain refusal rather than a raw SQLSTATE.
    */
   it("allows one in-flight operation per installation and frees it once terminal", async () => {
     const release = await admit("8.0.0");
@@ -287,8 +321,11 @@ describeIntegration("Apps control-plane repositories (Postgres)", () => {
       workspaceId, appId: `${appId}.serialization`, candidateReleaseId: release.id, configuration: {},
     });
     const principal = { accountId, userId: randomUUID() };
+    const leaseOwner = randomUUID();
+    const leaseExpiresAt = new Date(Date.now() + 60_000);
 
-    const first = await operations.start({
+    const first = await operations.reserve({
+      workspaceId,
       installationId: installation.id,
       kind: "disable",
       idempotencyKey: `disable-${randomUUID()}`,
@@ -296,8 +333,10 @@ describeIntegration("Apps control-plane repositories (Postgres)", () => {
       initiatedBy: principal,
       payload: {},
     });
+    expect(first).not.toBeNull();
 
-    await expect(operations.start({
+    await expect(operations.reserve({
+      workspaceId,
       installationId: installation.id,
       kind: "remove",
       idempotencyKey: `remove-${randomUUID()}`,
@@ -307,8 +346,14 @@ describeIntegration("Apps control-plane repositories (Postgres)", () => {
     })).rejects.toMatchObject({ reason: "operation_in_progress" });
 
     // Compensating still counts as in flight: a rollback owns the installation too.
-    await operations.update(first.operation.id, { state: "compensating" });
-    await expect(operations.start({
+    await operations.claim(first!.id, {
+      expectedState: "running", expectedStep: null, leaseOwner, leaseExpiresAt, now: new Date(),
+    });
+    await operations.finish(first!.id, {
+      expectedState: "running", expectedStep: null, leaseOwner, state: "compensating", error: null,
+    });
+    await expect(operations.reserve({
+      workspaceId,
       installationId: installation.id,
       kind: "remove",
       idempotencyKey: `remove-${randomUUID()}`,
@@ -317,16 +362,38 @@ describeIntegration("Apps control-plane repositories (Postgres)", () => {
       payload: {},
     })).rejects.toMatchObject({ reason: "operation_in_progress" });
 
-    await operations.update(first.operation.id, { state: "compensation_failed" });
-    const next = await operations.start({
+    // A rollback that could not finish keeps the installation fenced too, until repair.
+    await operations.finish(first!.id, {
+      expectedState: "compensating", expectedStep: null, leaseOwner, state: "compensation_failed", error: null,
+    });
+    await expect(operations.reserve({
+      workspaceId,
       installationId: installation.id,
       kind: "remove",
       idempotencyKey: `remove-${randomUUID()}`,
       requestFingerprint: "sha256:four",
       initiatedBy: principal,
       payload: {},
+    })).rejects.toMatchObject({ reason: "operation_in_progress" });
+
+    // The sole transition out of `compensation_failed`: resolve the unfinished rollback to
+    // a plain terminal failure with the empty repair token, matching `admitRepair`. That
+    // frees the installation for a fresh operation.
+    const repaired = await operations.finish(first!.id, {
+      expectedState: "compensation_failed", expectedStep: null, leaseOwner: "", state: "failed", error: null,
     });
-    expect(next.created).toBe(true);
+    expect(repaired?.state).toBe("failed");
+
+    const next = await operations.reserve({
+      workspaceId,
+      installationId: installation.id,
+      kind: "remove",
+      idempotencyKey: `remove-${randomUUID()}`,
+      requestFingerprint: "sha256:five",
+      initiatedBy: principal,
+      payload: {},
+    });
+    expect(next).not.toBeNull();
   });
 
   it("advances a cursor only for the driver that still holds it", async () => {
@@ -334,7 +401,8 @@ describeIntegration("Apps control-plane repositories (Postgres)", () => {
     const installation = await installations.create({
       workspaceId, appId: `${appId}.cursor`, candidateReleaseId: release.id, configuration: {},
     });
-    const { operation } = await operations.start({
+    const reserved = await operations.reserve({
+      workspaceId,
       installationId: installation.id,
       kind: "activate",
       idempotencyKey: `activate-${randomUUID()}`,
@@ -342,24 +410,46 @@ describeIntegration("Apps control-plane repositories (Postgres)", () => {
       initiatedBy: { accountId, userId: randomUUID() },
       payload: {},
     });
+    expect(reserved).not.toBeNull();
+    const operationId = reserved!.id;
+    const driverA = randomUUID();
+    const driverB = randomUUID();
+    const leaseExpiresAt = new Date(Date.now() + 60_000);
 
-    const advanced = await operations.advance(operation.id, {
-      expectedState: "running", expectedStep: null, step: "provision_runtime",
+    const claimedByA = await operations.claim(operationId, {
+      expectedState: "running", expectedStep: null, leaseOwner: driverA, leaseExpiresAt, now: new Date(),
+    });
+    expect(claimedByA).not.toBeNull();
+
+    // A second driver cannot claim the same step while the first driver's lease is live.
+    expect(await operations.claim(operationId, {
+      expectedState: "running", expectedStep: null, leaseOwner: driverB, leaseExpiresAt, now: new Date(),
+    })).toBeNull();
+
+    const advanced = await operations.advance(operationId, {
+      expectedState: "running", expectedStep: null, leaseOwner: driverA, step: "provision_runtime",
     });
     expect(advanced?.step).toBe("provision_runtime");
 
-    // A second driver that still believes the cursor is null gets nothing back, which is
-    // how it learns to stop rather than run the step again.
-    expect(await operations.advance(operation.id, {
-      expectedState: "running", expectedStep: null, step: "stage_contributions",
+    // A driver that never held this lease gets nothing back, which is how it learns to
+    // stop rather than run the step again.
+    expect(await operations.advance(operationId, {
+      expectedState: "running", expectedStep: null, leaseOwner: driverB, step: "stage_contributions",
     })).toBeNull();
 
-    await operations.update(operation.id, { state: "compensating" });
-    expect(await operations.advanceCompensation(operation.id, {
-      expectedCompensationStep: null, compensationStep: "provision_runtime",
+    const compensating = await operations.finish(operationId, {
+      expectedState: "running", expectedStep: "provision_runtime", leaseOwner: driverA,
+      state: "compensating", error: null,
+    });
+    expect(compensating?.state).toBe("compensating");
+
+    expect(await operations.advanceCompensation(operationId, {
+      expectedState: "compensating", expectedStep: "provision_runtime", expectedCompensationStep: null,
+      leaseOwner: driverA, compensationStep: "provision_runtime",
     })).toMatchObject({ compensationStep: "provision_runtime" });
-    expect(await operations.advanceCompensation(operation.id, {
-      expectedCompensationStep: null, compensationStep: "stage_contributions",
+    expect(await operations.advanceCompensation(operationId, {
+      expectedState: "compensating", expectedStep: "provision_runtime", expectedCompensationStep: "provision_runtime",
+      leaseOwner: driverB, compensationStep: "stage_contributions",
     })).toBeNull();
   });
 
@@ -391,9 +481,18 @@ describeIntegration("Apps control-plane repositories (Postgres)", () => {
       workspaceId, releaseId: release.id, checksum, plan, createdBy: null, expiresAt,
     });
     const bootstrapAppId = `${appId}.bootstrap`;
+    const consumeInput = {
+      workspaceId,
+      planId: record.id,
+      checksum,
+      releaseId: release.id,
+      admissionPolicyVersion: release.admissionPolicyVersion,
+      manifestDigest: release.manifestDigest,
+      now: new Date(),
+    };
 
     await expect(unitOfWork.run(async (repositories) => {
-      expect(await repositories.plans.consume(workspaceId, record.id, new Date())).toBe(true);
+      expect(await repositories.plans.consume(consumeInput)).toBe(true);
       await repositories.installations.create({
         workspaceId,
         appId: bootstrapAppId,
@@ -408,14 +507,15 @@ describeIntegration("Apps control-plane repositories (Postgres)", () => {
 
     // And the same work, uninterrupted, leaves a complete and resumable state.
     const bootstrapped = await unitOfWork.run(async (repositories) => {
-      await repositories.plans.consume(workspaceId, record.id, new Date());
+      await repositories.plans.consume(consumeInput);
       const installation = await repositories.installations.create({
         workspaceId,
         appId: bootstrapAppId,
         candidateReleaseId: release.id,
         configuration: plan.configuration,
       });
-      return repositories.operations.start({
+      return repositories.operations.reserve({
+        workspaceId,
         installationId: installation.id,
         kind: "install",
         idempotencyKey: `install-${randomUUID()}`,
@@ -424,7 +524,7 @@ describeIntegration("Apps control-plane repositories (Postgres)", () => {
         payload: { planId: record.id },
       });
     });
-    expect(bootstrapped.operation.state).toBe("running");
+    expect(bootstrapped?.state).toBe("running");
     expect((await plans.findById(workspaceId, record.id))?.consumedAt).not.toBeNull();
   });
 

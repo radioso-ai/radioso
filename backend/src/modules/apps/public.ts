@@ -62,14 +62,17 @@ export { AppInstallationPlanRepository, type AppInstallationPlanRepositoryPort }
 export { AppGrantRepository, type AppGrantRepositoryPort } from "./repositories/appGrantRepository.js";
 export { AppConnectionRepository, type AppConnectionRepositoryPort } from "./repositories/appConnectionRepository.js";
 export { AppLifecycleOperationRepository, type AppLifecycleOperationRepositoryPort } from "./repositories/appLifecycleOperationRepository.js";
+export { AppAuditOutboxRepository, type AppAuditOutboxRepositoryPort } from "./repositories/appAuditOutboxRepository.js";
 export type { AppsUnitOfWork } from "./repositories/appsUnitOfWork.js";
 
 export {
   AppReleaseAdmissionService,
   type BuiltInAppRelease,
+  type AppReleaseView,
 } from "./services/appReleaseAdmissionService.js";
 export { AppInstallationPlanService } from "./services/appInstallationPlanService.js";
 export { AppConnectionService } from "./services/appConnectionService.js";
+export { AppAuditOutboxDispatcher } from "./services/appAuditOutboxDispatcher.js";
 export {
   AppInstallationLifecycleService,
   type AppLifecycleOutcome,

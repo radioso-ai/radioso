@@ -46,10 +46,10 @@ const crashDuringActivation = async (
   });
 
   const operations = harness.repositories.operations;
-  const commit = operations.update.bind(operations);
-  const died = vi.spyOn(operations, "update").mockImplementation(async (id, patch) => {
-    if (patch.state === "compensating") throw new Error("process died");
-    return commit(id, patch);
+  const finish = operations.finish.bind(operations);
+  const died = vi.spyOn(operations, "finish").mockImplementation(async (id, input) => {
+    if (input.state === "compensating") throw new Error("process died");
+    return finish(id, input);
   });
 
   await expect(harness.lifecycle.activate({
@@ -61,9 +61,12 @@ const crashDuringActivation = async (
   })).rejects.toThrow("process died");
   died.mockRestore();
 
-  const operation = await operations.findByIdempotencyKey("activate-1");
+  const operation = await operations.findByIdempotencyKey(workspaceId, "activate-1");
   if (!operation) throw new Error("the interrupted operation was not persisted");
-  return { operation, installationId: applied.installation.id };
+  // Recovery happens after the dead driver's short lease has elapsed. A live second
+  // driver must not be allowed to steal it merely because it presents a new process id.
+  operations.rows.set(operation.id, { ...operation, leaseOwner: null, leaseExpiresAt: null });
+  return { operation: (await operations.findById(operation.id))!, installationId: applied.installation.id };
 };
 
 describe("app installation setup phase", () => {
@@ -150,6 +153,32 @@ describe("app installation setup phase", () => {
 });
 
 describe("app lifecycle operation serialization", () => {
+  it("lets one of two drivers own a step and leaves the losing driver effect-free", async () => {
+    const harness = await createAppsHarness();
+    const installed = await harness.install();
+    harness.provisioning.provision.mockClear();
+    harness.provisioning.deprovision.mockClear();
+    const operation = await harness.repositories.operations.reserve({
+      workspaceId,
+      installationId: installed.installation.id,
+      kind: "disable",
+      idempotencyKey: "two-drivers-disable",
+      requestFingerprint: "same-request",
+      initiatedBy: principal,
+      payload: {},
+    });
+    if (!operation) throw new Error("test operation was not reserved");
+
+    const [first, second] = await Promise.all([
+      harness.lifecycle.resumeById(workspaceId, operation.id),
+      harness.lifecycle.resumeById(workspaceId, operation.id),
+    ]);
+
+    expect(harness.provisioning.deprovision).toHaveBeenCalledTimes(1);
+    expect(harness.provisioning.provision).not.toHaveBeenCalled();
+    expect([first.operation.state, second.operation.state]).toContain("completed");
+  });
+
   it("refuses a second command against an installation with an operation already in flight", async () => {
     const harness = await createAppsHarness();
     const installed = await harness.install();
@@ -546,6 +575,27 @@ describe("app installation removal", () => {
 });
 
 describe("app installation reconfiguration", () => {
+  it("keeps an active configuration when staging a candidate fails", async () => {
+    const harness = await createAppsHarness();
+    const installed = await harness.install();
+    const original = installed.installation.configuration;
+    harness.staging.stage.mockResolvedValueOnce({ ok: false, code: "contribution_staging_failed" });
+
+    const outcome = await harness.lifecycle.reconfigure({
+      workspaceId,
+      installationId: installed.installation.id,
+      configuration: { ...original, poll_interval_sec: 60 },
+      expectedVersion: installed.installation.version,
+      idempotencyKey: "reconfigure-candidate-failure",
+      principal,
+    });
+
+    expect(outcome.operation.state).toBe("failed");
+    expect(outcome.installation.state).toBe("active");
+    expect(outcome.installation.configuration).toEqual(original);
+    expect(outcome.installation.candidateConfiguration).toBeNull();
+  });
+
   it("re-stages and re-tests before a configuration change applies", async () => {
     const harness = await createAppsHarness();
     const installed = await harness.install();
@@ -576,7 +626,8 @@ describe("app installation reconfiguration", () => {
     expect(harness.staging.stage).toHaveBeenCalledTimes(1);
     expect(harness.staging.runSafeTests).toHaveBeenCalledTimes(1);
     // The re-staged projection is the one the new configuration turns on.
-    expect(harness.staging.stage.mock.calls[0][0].contributionIds).toContain("content_poll");
+    expect(harness.staging.stage.mock.calls[0][0].contributions.map((contribution) => contribution.id))
+      .toContain("content_poll");
   });
 
   it("refuses a configuration change that turns on a contribution whose connection is unbound", async () => {

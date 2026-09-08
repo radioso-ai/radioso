@@ -9,6 +9,7 @@ import {
 import { createLogger } from "../../../src/shared/observability/logger.js";
 import { admittedManifestOf } from "../../../src/modules/apps/domain/releaseAdmission.js";
 import {
+  APPS_TEST_PRINCIPAL,
   RUNNING_RADIOSO_VERSION,
   createAppsHarness,
   wordpressArtifactCatalogue,
@@ -46,8 +47,8 @@ describe("app release admission", () => {
     expect(decision.outcome).toBe("admitted");
     if (decision.outcome !== "admitted") return;
     expect(decision.evidence).toEqual({
-      signature: "built_in_registry",
-      provenance: "built_in_registry",
+      signature: "not_evaluated",
+      provenance: "not_evaluated",
       softwareInventory: "not_evaluated",
       vulnerabilityPolicy: "not_evaluated",
       conformance: "not_evaluated",
@@ -62,6 +63,7 @@ describe("app release admission", () => {
       storageCollectionCount: 1,
       connectionSlotCount: 2,
       verifiedDigestCount: 2,
+      trustRoot: "built_in_registry",
     });
     expect(JSON.stringify(decision.evidence)).not.toContain("wordpress");
   });
@@ -165,11 +167,12 @@ describe("app release version immutability", () => {
 
       const registry = new AppReleaseAdmissionService({
         releases: harness.repositories.releases,
+        unitOfWork: { run: async (work) => work(harness.repositories) },
         builtInReleases: [{
           manifest: changedManifest(),
           artifactDigests: [...wordpressArtifactCatalogue()],
         }],
-        audit: harness.audit,
+        auditDelivery: { drain: async () => 0 },
         logger: createLogger("silent"),
         runningRadiosoVersion: RUNNING_RADIOSO_VERSION,
       });
@@ -187,7 +190,7 @@ describe("app release registry synchronisation", () => {
   it("never resurrects a revoked release when the platform restarts", async () => {
     const harness = await createAppsHarness();
     const releaseId = await harness.admitReference();
-    await harness.releaseAdmission.transitionSecurityState(releaseId, "revoked");
+    await harness.releaseAdmission.transitionSecurityState({ releaseId, state: "revoked", ...APPS_TEST_PRINCIPAL, actorUserId: APPS_TEST_PRINCIPAL.userId, reason: "test revocation" });
 
     await harness.releaseAdmission.syncBuiltInReleases();
 
@@ -200,7 +203,7 @@ describe("app release registry synchronisation", () => {
     const harness = await createAppsHarness();
     const releaseId = await harness.admitReference();
 
-    await harness.releaseAdmission.transitionSecurityState(releaseId, "quarantined");
+    await harness.releaseAdmission.transitionSecurityState({ releaseId, state: "quarantined", ...APPS_TEST_PRINCIPAL, actorUserId: APPS_TEST_PRINCIPAL.userId, reason: "test quarantine" });
 
     const events = harness.audit.record.mock.calls.map((call) => (call[0] as { eventType: string }).eventType);
     expect(events).toContain("app.release.quarantined");
@@ -236,7 +239,7 @@ describe("current release eligibility", () => {
   it("refuses to plan against a release that is no longer admitted", async () => {
     const harness = await createAppsHarness();
     const releaseId = await harness.admitReference();
-    await harness.releaseAdmission.transitionSecurityState(releaseId, "revoked");
+    await harness.releaseAdmission.transitionSecurityState({ releaseId, state: "revoked", ...APPS_TEST_PRINCIPAL, actorUserId: APPS_TEST_PRINCIPAL.userId, reason: "test revocation" });
 
     await expect(harness.plans.create({
       workspaceId: "22222222-2222-4222-8222-222222222222",
@@ -260,7 +263,7 @@ describe("current release eligibility", () => {
       configuration: { site_url: "https://example.com" },
       principal,
     });
-    await harness.releaseAdmission.transitionSecurityState(releaseId, "revoked");
+    await harness.releaseAdmission.transitionSecurityState({ releaseId, state: "revoked", ...APPS_TEST_PRINCIPAL, actorUserId: APPS_TEST_PRINCIPAL.userId, reason: "test revocation" });
 
     await expect(harness.lifecycle.apply({
       workspaceId,
@@ -293,7 +296,7 @@ describe("current release eligibility", () => {
       expectedVersion: applied.installation.version,
       principal,
     });
-    await harness.releaseAdmission.transitionSecurityState(applied.installation.candidateReleaseId!, "quarantined");
+    await harness.releaseAdmission.transitionSecurityState({ releaseId: applied.installation.candidateReleaseId!, state: "quarantined", ...APPS_TEST_PRINCIPAL, actorUserId: APPS_TEST_PRINCIPAL.userId, reason: "test quarantine" });
     const current = await harness.repositories.installations.findById(workspaceId, applied.installation.id);
 
     await expect(harness.lifecycle.activate({

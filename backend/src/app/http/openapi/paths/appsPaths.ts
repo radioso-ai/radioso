@@ -20,6 +20,13 @@ const release = z.object({
   manifestDigest: z.string(),
   artifactDigest: z.string(),
   admissionPolicyVersion: z.string(),
+  state: z.enum(["submitted", "validating", "admitted", "rejected", "withdrawn", "deprecated", "revoked", "quarantined"]),
+  admissionEvidence: z.record(z.unknown()),
+  currentCompatibility: z.object({
+    runningVersion: z.string().nullable(),
+    range: z.string(),
+    result: z.enum(["compatible", "incompatible", "unknown"]),
+  }),
   admittedAt: z.string().datetime(),
 });
 
@@ -245,7 +252,7 @@ export const registerAppsPaths = (
       body: body(z.object({
         configuration,
         expectedVersion: z.number().int().positive(),
-        idempotencyKey: z.string().min(1).max(200).optional(),
+        idempotencyKey: z.string().min(1).max(200),
       })),
     },
     responses: { 200: json("The installation and the reconfigure operation that ran", lifecycleOutcome), ...errors },
@@ -260,6 +267,7 @@ export const registerAppsPaths = (
         slotId: z.string(),
         values: z.record(z.unknown()).optional(),
         expectedVersion: z.number().int().positive(),
+        idempotencyKey: z.string().min(1).max(200),
       })),
     },
     responses: {
@@ -286,7 +294,7 @@ export const registerAppsPaths = (
         params: installationParams,
         body: body(z.object({
           expectedVersion: z.number().int().positive(),
-          idempotencyKey: z.string().min(1).max(200).optional(),
+          idempotencyKey: z.string().min(1).max(200),
         })),
       },
       responses: { 200: json("The installation and the lifecycle operation that ran", lifecycleOutcome), ...errors },
@@ -302,7 +310,7 @@ export const registerAppsPaths = (
       body: body(z.object({
         disposition: z.enum(["export", "retain", "delete"]),
         expectedVersion: z.number().int().positive(),
-        idempotencyKey: z.string().min(1).max(200).optional(),
+        idempotencyKey: z.string().min(1).max(200),
       })),
     },
     responses: { 200: json("The removed installation and the operation that ran", lifecycleOutcome), ...errors },

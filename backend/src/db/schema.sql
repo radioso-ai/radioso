@@ -739,6 +739,19 @@ CREATE TABLE public.api_credentials (
 
 
 --
+-- Name: app_audit_outbox; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.app_audit_outbox (
+    id uuid NOT NULL,
+    workspace_id uuid,
+    event jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    delivered_at timestamp with time zone
+);
+
+
+--
 -- Name: app_connections; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -806,6 +819,9 @@ CREATE TABLE public.app_installations (
     candidate_release_id uuid,
     state text NOT NULL,
     configuration jsonb DEFAULT '{}'::jsonb NOT NULL,
+    candidate_configuration jsonb,
+    candidate_revision text,
+    execution_denied_at timestamp with time zone,
     version integer DEFAULT 1 NOT NULL,
     health jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
@@ -821,11 +837,14 @@ CREATE TABLE public.app_installations (
 
 CREATE TABLE public.app_lifecycle_operations (
     id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
     installation_id uuid NOT NULL,
     kind text NOT NULL,
     state text NOT NULL,
     step text,
     compensation_step text,
+    lease_owner text,
+    lease_expires_at timestamp with time zone,
     idempotency_key text NOT NULL,
     request_fingerprint text NOT NULL,
     initiated_by jsonb NOT NULL,
@@ -3870,6 +3889,14 @@ ALTER TABLE ONLY public.api_credentials
 
 
 --
+-- Name: app_audit_outbox app_audit_outbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_audit_outbox
+    ADD CONSTRAINT app_audit_outbox_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: app_connections app_connections_installation_id_slot_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3910,19 +3937,19 @@ ALTER TABLE ONLY public.app_installations
 
 
 --
--- Name: app_lifecycle_operations app_lifecycle_operations_idempotency_key_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.app_lifecycle_operations
-    ADD CONSTRAINT app_lifecycle_operations_idempotency_key_key UNIQUE (idempotency_key);
-
-
---
 -- Name: app_lifecycle_operations app_lifecycle_operations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.app_lifecycle_operations
     ADD CONSTRAINT app_lifecycle_operations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: app_lifecycle_operations app_lifecycle_operations_workspace_id_idempotency_key_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_lifecycle_operations
+    ADD CONSTRAINT app_lifecycle_operations_workspace_id_idempotency_key_key UNIQUE (workspace_id, idempotency_key);
 
 
 --
@@ -6497,6 +6524,13 @@ CREATE INDEX idx_api_credentials_workspace_created ON public.api_credentials USI
 
 
 --
+-- Name: idx_app_audit_outbox_undelivered; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_app_audit_outbox_undelivered ON public.app_audit_outbox USING btree (created_at) WHERE (delivered_at IS NULL);
+
+
+--
 -- Name: idx_app_grants_live; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6521,7 +6555,7 @@ CREATE UNIQUE INDEX idx_app_installations_workspace_app_live ON public.app_insta
 -- Name: idx_app_lifecycle_operations_in_flight; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX idx_app_lifecycle_operations_in_flight ON public.app_lifecycle_operations USING btree (installation_id) WHERE (state = ANY (ARRAY['running'::text, 'compensating'::text]));
+CREATE UNIQUE INDEX idx_app_lifecycle_operations_in_flight ON public.app_lifecycle_operations USING btree (installation_id) WHERE (state = ANY (ARRAY['running'::text, 'compensating'::text, 'compensation_failed'::text]));
 
 
 --
@@ -8811,6 +8845,14 @@ ALTER TABLE ONLY public.api_credentials
 
 
 --
+-- Name: app_audit_outbox app_audit_outbox_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_audit_outbox
+    ADD CONSTRAINT app_audit_outbox_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: app_connections app_connections_installation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8888,6 +8930,14 @@ ALTER TABLE ONLY public.app_installations
 
 ALTER TABLE ONLY public.app_lifecycle_operations
     ADD CONSTRAINT app_lifecycle_operations_installation_id_fkey FOREIGN KEY (installation_id) REFERENCES public.app_installations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: app_lifecycle_operations app_lifecycle_operations_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_lifecycle_operations
+    ADD CONSTRAINT app_lifecycle_operations_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

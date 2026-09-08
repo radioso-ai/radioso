@@ -28068,6 +28068,50 @@
                           "admissionPolicyVersion": {
                             "type": "string"
                           },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "submitted",
+                              "validating",
+                              "admitted",
+                              "rejected",
+                              "withdrawn",
+                              "deprecated",
+                              "revoked",
+                              "quarantined"
+                            ]
+                          },
+                          "admissionEvidence": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          },
+                          "currentCompatibility": {
+                            "type": "object",
+                            "properties": {
+                              "runningVersion": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "range": {
+                                "type": "string"
+                              },
+                              "result": {
+                                "type": "string",
+                                "enum": [
+                                  "compatible",
+                                  "incompatible",
+                                  "unknown"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "runningVersion",
+                              "range",
+                              "result"
+                            ]
+                          },
                           "admittedAt": {
                             "type": "string",
                             "format": "date-time"
@@ -28083,6 +28127,9 @@
                           "manifestDigest",
                           "artifactDigest",
                           "admissionPolicyVersion",
+                          "state",
+                          "admissionEvidence",
+                          "currentCompatibility",
                           "admittedAt"
                         ]
                       }
@@ -28229,6 +28276,50 @@
                     "admissionPolicyVersion": {
                       "type": "string"
                     },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "submitted",
+                        "validating",
+                        "admitted",
+                        "rejected",
+                        "withdrawn",
+                        "deprecated",
+                        "revoked",
+                        "quarantined"
+                      ]
+                    },
+                    "admissionEvidence": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    },
+                    "currentCompatibility": {
+                      "type": "object",
+                      "properties": {
+                        "runningVersion": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "range": {
+                          "type": "string"
+                        },
+                        "result": {
+                          "type": "string",
+                          "enum": [
+                            "compatible",
+                            "incompatible",
+                            "unknown"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "runningVersion",
+                        "range",
+                        "result"
+                      ]
+                    },
                     "admittedAt": {
                       "type": "string",
                       "format": "date-time"
@@ -28248,6 +28339,9 @@
                     "manifestDigest",
                     "artifactDigest",
                     "admissionPolicyVersion",
+                    "state",
+                    "admissionEvidence",
+                    "currentCompatibility",
                     "admittedAt",
                     "manifest"
                   ]
@@ -30207,7 +30301,8 @@
                 },
                 "required": [
                   "configuration",
-                  "expectedVersion"
+                  "expectedVersion",
+                  "idempotencyKey"
                 ]
               }
             }
@@ -30502,11 +30597,17 @@
                   "expectedVersion": {
                     "type": "integer",
                     "exclusiveMinimum": 0
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
                   }
                 },
                 "required": [
                   "slotId",
-                  "expectedVersion"
+                  "expectedVersion",
+                  "idempotencyKey"
                 ]
               }
             }
@@ -30700,7 +30801,8 @@
                   }
                 },
                 "required": [
-                  "expectedVersion"
+                  "expectedVersion",
+                  "idempotencyKey"
                 ]
               }
             }
@@ -30996,7 +31098,8 @@
                   }
                 },
                 "required": [
-                  "expectedVersion"
+                  "expectedVersion",
+                  "idempotencyKey"
                 ]
               }
             }
@@ -31292,7 +31395,8 @@
                   }
                 },
                 "required": [
-                  "expectedVersion"
+                  "expectedVersion",
+                  "idempotencyKey"
                 ]
               }
             }
@@ -31597,7 +31701,8 @@
                 },
                 "required": [
                   "disposition",
-                  "expectedVersion"
+                  "expectedVersion",
+                  "idempotencyKey"
                 ]
               }
             }

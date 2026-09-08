@@ -322,6 +322,23 @@ export const buildAppInstallationPlan = (input: AppInstallationPlanInput): AppIn
   };
 };
 
+/**
+ * The stored plan is still the document its checksum names.
+ *
+ * Everything downstream — grants, configuration, the release the operator approved — is
+ * read out of this JSON, so a row that no longer digests to its recorded checksum is
+ * stored-state corruption and must not be applied as though somebody approved it.
+ */
+export const assertAppPlanIntegrity = (record: {
+  readonly plan: AppInstallationPlan;
+  readonly checksum: string;
+}): void => {
+  if (canonicalDigest(record.plan) === record.checksum) return;
+  throw new AppsError("plan_stale", "This stored plan no longer matches the checksum recorded for it.", {
+    cause: "checksum_corrupt",
+  });
+};
+
 interface AppPlanApplicabilityInput {
   readonly plan: { readonly checksum: string; readonly expiresAt: Date; readonly consumedAt: Date | null };
   readonly submittedChecksum: string;

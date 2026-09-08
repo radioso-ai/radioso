@@ -7,7 +7,7 @@ import {
   type AppInstallationRecord,
   type AppInstallationView,
   type AppLifecycleOperationRecord,
-  type AppReleaseRecord,
+  type AppReleaseView,
   type AppsErrorReason,
 } from "../../../modules/apps/public.js";
 
@@ -49,7 +49,9 @@ export const presentAppsError = (error: unknown): unknown =>
     ? new AppError(statusByReason[error.reason], error.reason, error.message, error.details)
     : error;
 
-export const presentAppRelease = (release: AppReleaseRecord) => ({
+export const presentAppRelease = (view: AppReleaseView) => {
+  const { release } = view;
+  return ({
   id: release.id,
   appId: release.appId,
   version: release.version,
@@ -59,8 +61,12 @@ export const presentAppRelease = (release: AppReleaseRecord) => ({
   manifestDigest: release.manifestDigest,
   artifactDigest: release.artifactDigest,
   admissionPolicyVersion: release.admissionPolicyVersion,
+  state: release.state,
+  admissionEvidence: view.admissionEvidence,
+  currentCompatibility: view.currentCompatibility,
   admittedAt: release.updatedAt.toISOString(),
-});
+  });
+};
 
 /**
  * Inspection carries the admitted manifest itself rather than a projection of it. The
@@ -68,9 +74,9 @@ export const presentAppRelease = (release: AppReleaseRecord) => ({
  * and re-describing its fields here would be a second copy of the contract package's
  * schema that drifts the moment a field is added.
  */
-export const presentAppReleaseDetail = (release: AppReleaseRecord) => ({
-  ...presentAppRelease(release),
-  manifest: release.manifest,
+export const presentAppReleaseDetail = (view: AppReleaseView) => ({
+  ...presentAppRelease(view),
+  manifest: view.release.manifest,
 });
 
 export const presentAppInstallation = (installation: AppInstallationRecord) => ({

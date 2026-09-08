@@ -22,15 +22,13 @@ admitted exactly the way any App is, so what the registry enforces is the real
 protocol rather than a shortcut taken because the publisher happens to be
 Radioso.
 
-Trusting a second publisher's key means distributing and rotating that key
-safely, revoking it across every installation that used it, and reviewing what
-that publisher submits before it reaches a workspace. Radioso operates one
-signing chain, one build pipeline, and one policy, and admission says so
-explicitly in the evidence it records.
+The registry identity is recorded separately as `trustRoot`, so the evidence
+does not imply that a publisher signature or provenance check ran.
 
 ## What admission establishes
 
-Admission runs one pass and records everything it checked:
+Admission validates the manifest, pins registry digests, checks compatibility,
+and records those results:
 
 - **The manifest validates under the Release A policy.** Admission runs
   `validateManifest` from `@radioso/app-contract` and requires `ok: true` —
@@ -64,8 +62,8 @@ names both the checks that ran and the checks that did not:
 
 ```json
 {
-  "signature": "built_in_registry",
-  "provenance": "built_in_registry",
+  "signature": "not_evaluated",
+  "provenance": "not_evaluated",
   "softwareInventory": "not_evaluated",
   "vulnerabilityPolicy": "not_evaluated",
   "conformance": "not_evaluated",
@@ -75,17 +73,15 @@ names both the checks that ran and the checks that did not:
   "destinationCount": 1,
   "storageCollectionCount": 1,
   "connectionSlotCount": 2,
-  "verifiedDigestCount": 2
+  "verifiedDigestCount": 2,
+  "trustRoot": "built_in_registry"
 }
 ```
 
-`signature` and `provenance` name the built-in registry because that is what
-actually vouched for the artifact — there is one trust root, and the record
-points at it rather than at a publisher key. `softwareInventory`,
-`vulnerabilityPolicy`, and `conformance` read `not_evaluated`, and they are
-written down for the same reason a blank line in a checklist is worse than an
-explicit "not checked": a decision that quietly omitted them would read later
-as though they had passed.
+`signature`, `provenance`, `softwareInventory`, `vulnerabilityPolicy`, and
+`conformance` all read `not_evaluated`. `trustRoot` identifies the built-in
+registry that supplied the digest catalogue. Keeping these distinct makes the
+record clear about both what admission established and what it did not.
 
 The counts are counts. An admission decision never becomes a second copy of the
 manifest.

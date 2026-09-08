@@ -6,6 +6,11 @@ interface AppLifecycleRequestFingerprintInput {
   /** `null` on an apply, whose installation does not exist until the request succeeds. */
   readonly installationId: string | null;
   readonly kind: AppLifecycleOperationKind;
+  /**
+   * `null` outside an apply. Two plans can describe identical content and produce the same
+   * checksum, so only the id says which approval, and whose provenance, this apply is for.
+   */
+  readonly planId: string | null;
   readonly planChecksum: string | null;
   readonly disposition: string | null;
   readonly configuration: Readonly<Record<string, unknown>> | null;
@@ -24,6 +29,7 @@ export const appLifecycleRequestFingerprint = (
   workspaceId: input.workspaceId,
   installationId: input.installationId,
   kind: input.kind,
+  planId: input.planId,
   planChecksum: input.planChecksum,
   disposition: input.disposition,
   configuration: input.configuration,

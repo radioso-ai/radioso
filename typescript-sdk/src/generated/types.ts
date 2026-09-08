@@ -13266,6 +13266,17 @@ export interface operations {
                             manifestDigest: string;
                             artifactDigest: string;
                             admissionPolicyVersion: string;
+                            /** @enum {string} */
+                            state: "submitted" | "validating" | "admitted" | "rejected" | "withdrawn" | "deprecated" | "revoked" | "quarantined";
+                            admissionEvidence: {
+                                [key: string]: unknown;
+                            };
+                            currentCompatibility: {
+                                runningVersion: string | null;
+                                range: string;
+                                /** @enum {string} */
+                                result: "compatible" | "incompatible" | "unknown";
+                            };
                             /** Format: date-time */
                             admittedAt: string;
                         }[];
@@ -13359,6 +13370,17 @@ export interface operations {
                         manifestDigest: string;
                         artifactDigest: string;
                         admissionPolicyVersion: string;
+                        /** @enum {string} */
+                        state: "submitted" | "validating" | "admitted" | "rejected" | "withdrawn" | "deprecated" | "revoked" | "quarantined";
+                        admissionEvidence: {
+                            [key: string]: unknown;
+                        };
+                        currentCompatibility: {
+                            runningVersion: string | null;
+                            range: string;
+                            /** @enum {string} */
+                            result: "compatible" | "incompatible" | "unknown";
+                        };
                         /** Format: date-time */
                         admittedAt: string;
                         manifest: {
@@ -14197,7 +14219,7 @@ export interface operations {
                         [key: string]: string | number | boolean;
                     };
                     expectedVersion: number;
-                    idempotencyKey?: string;
+                    idempotencyKey: string;
                 };
             };
         };
@@ -14327,6 +14349,7 @@ export interface operations {
                         [key: string]: unknown;
                     };
                     expectedVersion: number;
+                    idempotencyKey: string;
                 };
             };
         };
@@ -14430,7 +14453,7 @@ export interface operations {
             content: {
                 "application/json": {
                     expectedVersion: number;
-                    idempotencyKey?: string;
+                    idempotencyKey: string;
                 };
             };
         };
@@ -14556,7 +14579,7 @@ export interface operations {
             content: {
                 "application/json": {
                     expectedVersion: number;
-                    idempotencyKey?: string;
+                    idempotencyKey: string;
                 };
             };
         };
@@ -14682,7 +14705,7 @@ export interface operations {
             content: {
                 "application/json": {
                     expectedVersion: number;
-                    idempotencyKey?: string;
+                    idempotencyKey: string;
                 };
             };
         };
@@ -14810,7 +14833,7 @@ export interface operations {
                     /** @enum {string} */
                     disposition: "export" | "retain" | "delete";
                     expectedVersion: number;
-                    idempotencyKey?: string;
+                    idempotencyKey: string;
                 };
             };
         };

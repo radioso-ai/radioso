@@ -19,6 +19,7 @@ import {
   type AppSecretCipherPort,
 } from "../../../src/modules/apps/public.js";
 import { createLogger } from "../../../src/shared/observability/logger.js";
+import { AppAuditOutboxDispatcher } from "../../../src/modules/apps/services/appAuditOutboxDispatcher.js";
 import {
   createInMemoryAppRepositories,
   createInMemoryAppsUnitOfWork,
@@ -68,6 +69,7 @@ export interface AppsHarness {
     stage: Mock<AppContributionStagingPort["stage"]>;
     runSafeTests: Mock<AppContributionStagingPort["runSafeTests"]>;
     detach: Mock<AppContributionStagingPort["detach"]>;
+    discardCandidate: Mock<AppContributionStagingPort["discardCandidate"]>;
   };
   readonly provisioning: {
     provision: Mock<AppRuntimeProvisioningPort["provision"]>;
@@ -107,6 +109,11 @@ export const createAppsHarness = async (options: AppsHarnessOptions = {}): Promi
       logs.push(JSON.parse(line) as Record<string, unknown>);
     },
   });
+  const auditDelivery = new AppAuditOutboxDispatcher({
+    outbox: repositories.auditOutbox,
+    audit,
+    logger,
+  });
   const authorization = {
     allow: true,
     indeterminate: false,
@@ -119,6 +126,7 @@ export const createAppsHarness = async (options: AppsHarnessOptions = {}): Promi
     stage: vi.fn(async () => ({ ok: true as const })),
     runSafeTests: vi.fn(async () => ({ ok: true as const })),
     detach: vi.fn(async () => ({ ok: true as const })),
+    discardCandidate: vi.fn(async () => ({ ok: true as const })),
   };
   const provisioning = {
     provision: vi.fn(async () => ({ ok: true as const })),
@@ -132,8 +140,9 @@ export const createAppsHarness = async (options: AppsHarnessOptions = {}): Promi
 
   const releaseAdmission = new AppReleaseAdmissionService({
     releases: repositories.releases,
+    unitOfWork,
     builtInReleases: [{ manifest: wordpressManifestDocument(), artifactDigests: [...wordpressArtifactCatalogue()] }],
-    audit,
+    auditDelivery,
     logger,
     runningRadiosoVersion,
   });
@@ -144,7 +153,8 @@ export const createAppsHarness = async (options: AppsHarnessOptions = {}): Promi
     connections: repositories.connections,
     plans: repositories.plans,
     authorization,
-    audit,
+    unitOfWork,
+    auditDelivery,
     runningRadiosoVersion,
   });
 
@@ -159,7 +169,7 @@ export const createAppsHarness = async (options: AppsHarnessOptions = {}): Promi
     contributionStaging: staging,
     dataDisposition: disposition,
     authorization,
-    audit,
+    auditDelivery,
     logger,
     runningRadiosoVersion,
   });
@@ -172,7 +182,7 @@ export const createAppsHarness = async (options: AppsHarnessOptions = {}): Promi
     unitOfWork,
     cipher,
     authorization,
-    audit,
+    auditDelivery,
   });
 
   const installations = new AppInstallationQueryService({
@@ -184,10 +194,7 @@ export const createAppsHarness = async (options: AppsHarnessOptions = {}): Promi
   });
 
   const eligibility = new AppExecutionEligibilityService({
-    installations: repositories.installations,
-    releases: repositories.releases,
-    grants: repositories.grants,
-    connections: repositories.connections,
+    unitOfWork,
     runningRadiosoVersion,
   });
 

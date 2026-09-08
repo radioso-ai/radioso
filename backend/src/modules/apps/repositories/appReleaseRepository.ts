@@ -18,6 +18,19 @@ export interface InsertAppReleaseInput {
   readonly admissionDecision: Readonly<Record<string, unknown>>;
 }
 
+/**
+ * The predicates a release has to still satisfy at the instant an authority is committed.
+ * Reading this inside the committing transaction takes a share lock on the release row, so
+ * a revocation racing the commit waits for it rather than slipping in between the check
+ * and the write.
+ */
+export interface AppReleaseEligibilityFence {
+  readonly releaseId: string;
+  readonly admissionPolicyVersion: string;
+  readonly manifestDigest: string;
+  readonly allowedStates: readonly AppReleaseState[];
+}
+
 export interface AppReleaseRepositoryPort {
   /**
    * Inserts a release that does not exist yet and returns `null` when one already does.
@@ -28,6 +41,8 @@ export interface AppReleaseRepositoryPort {
   insertIfAbsent(input: InsertAppReleaseInput): Promise<AppReleaseRecord | null>;
   /** The one writer of a release's state, used by explicit deprecate/revoke/quarantine. */
   transitionState(id: string, state: AppReleaseState): Promise<AppReleaseRecord | null>;
+  /** `null` when the release no longer satisfies the fence, which is a refusal, not an error. */
+  lockEligible(input: AppReleaseEligibilityFence): Promise<AppReleaseRecord | null>;
   findByAppIdAndVersion(appId: string, version: string): Promise<AppReleaseRecord | null>;
   findById(id: string): Promise<AppReleaseRecord | null>;
   listInstallable(): Promise<AppReleaseRecord[]>;
@@ -111,6 +126,19 @@ export class AppReleaseRepository implements AppReleaseRepositoryPort {
       .set({ state, updated_at: new Date() })
       .where("id", "=", id)
       .returning(COLUMNS)
+      .executeTakeFirst();
+    return row ? mapRecord(row) : null;
+  }
+
+  async lockEligible(input: AppReleaseEligibilityFence): Promise<AppReleaseRecord | null> {
+    const row = await this.db
+      .selectFrom("app_releases")
+      .select(COLUMNS)
+      .where("id", "=", input.releaseId)
+      .where("state", "in", [...input.allowedStates])
+      .where("admission_policy_version", "=", input.admissionPolicyVersion)
+      .where("manifest_digest", "=", input.manifestDigest)
+      .forShare()
       .executeTakeFirst();
     return row ? mapRecord(row) : null;
   }

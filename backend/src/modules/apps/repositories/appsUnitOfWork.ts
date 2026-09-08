@@ -1,16 +1,21 @@
+import type { AppAuditOutboxRepositoryPort } from "./appAuditOutboxRepository.js";
 import type { AppConnectionRepositoryPort } from "./appConnectionRepository.js";
 import type { AppGrantRepositoryPort } from "./appGrantRepository.js";
 import type { AppInstallationPlanRepositoryPort } from "./appInstallationPlanRepository.js";
 import type { AppInstallationRepositoryPort } from "./appInstallationRepository.js";
 import type { AppLifecycleOperationRepositoryPort } from "./appLifecycleOperationRepository.js";
+import type { AppReleaseRepositoryPort } from "./appReleaseRepository.js";
 
 /** The repositories a lifecycle operation writes through. */
 export interface AppsTransactionalRepositories {
   readonly installations: AppInstallationRepositoryPort;
   readonly plans: AppInstallationPlanRepositoryPort;
+  readonly releases: AppReleaseRepositoryPort;
   readonly grants: AppGrantRepositoryPort;
   readonly connections: AppConnectionRepositoryPort;
   readonly operations: AppLifecycleOperationRepositoryPort;
+  /** Audit intents, so a record of what happened commits with the thing that happened. */
+  readonly auditOutbox: AppAuditOutboxRepositoryPort;
 }
 
 /**

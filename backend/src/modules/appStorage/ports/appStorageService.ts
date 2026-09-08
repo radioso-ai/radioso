@@ -159,16 +159,28 @@ export interface AppStorageRetentionSweepResult {
   failureCount: number;
 }
 
+export interface AppStorageIndexRebuildSweepResult {
+  /** Installations that held at least one marker past its deadline. */
+  installationCount: number;
+  cancelledCount: number;
+}
+
 /**
- * The two maintenance passes managed storage needs. Neither enforces a rule a
+ * The maintenance passes managed storage needs. None of them enforces a rule a
  * read already enforces: an expired record is invisible before the expiry sweep
  * reaches it, and a retained installation's data is unreachable by its App
  * throughout. What the passes do is make the deletion real — space back for the
  * first, and the operator's promise that the data stops existing for the second.
+ *
+ * The third is about cost rather than data. A rebuild marker outlives the process
+ * that set it, and while it is up every write to its collection maintains an
+ * index that will never be queried, so a rebuild that died is collected by its
+ * lease.
  */
 export interface AppStorageSweeper {
   runExpirySweep(): Promise<AppStorageExpirySweepResult>;
   runRetentionSweep(): Promise<AppStorageRetentionSweepResult>;
+  runIndexRebuildSweep(): Promise<AppStorageIndexRebuildSweepResult>;
 }
 
 /**
@@ -187,7 +199,14 @@ export type AppStorageIndexRebuildResult =
   | { outcome: "rebuilt"; rebuiltCount: number; batchCount: number; completionToken: string }
   | { outcome: "incompatible_records"; indexId: string; incompatibleCount: number }
   /** Another rebuild of the same index took the marker over; this run owns nothing. */
-  | { outcome: "superseded"; indexId: string };
+  | { outcome: "superseded"; indexId: string }
+  /**
+   * The batch budget ran out with records still to visit. The budget bounds one
+   * run, not the rebuild: the marker stays up under a renewed lease, so the
+   * entries built so far keep being maintained and another run may continue.
+   * There is no completion token, so nothing can be activated against this.
+   */
+  | { outcome: "in_progress"; indexId: string; rebuiltCount: number; batchCount: number };
 
 /**
  * Builds a declared index over records written before it was declared. An index

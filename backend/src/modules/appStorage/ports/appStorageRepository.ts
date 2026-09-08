@@ -1,5 +1,7 @@
 import type { BoundedJsonRecord, StorageFieldType } from "@radioso/app-contract";
+import type { Transaction } from "kysely";
 
+import type { DB } from "../../../shared/infra/kysely/types.js";
 import type { AppStorageIndexEntry, AppStorageIndexColumn } from "../domain/indexEntries.js";
 import type { AppStorageCollectionUsage } from "../domain/quota.js";
 import type { AppStorageAuditEvent, AppStorageAuditIntent } from "./appStorageAudit.js";
@@ -21,14 +23,16 @@ export interface AppStorageCollectionScope extends AppStorageInstallationScope {
 }
 
 /**
- * A transaction the repository opened, passed back to it by a caller that needs
- * one of its operations to commit with work of its own. It is opaque on purpose:
- * the port describes what may share a transaction, and the persistence library
- * that provides it stays behind the port.
+ * The unit of work a caller shares with this repository.
+ *
+ * It is the platform's own transaction type rather than a handle this module
+ * invented. An index activation is one commit spanning two owners — the `apps`
+ * domain flipping a release's visibility and this domain clearing the rebuild
+ * marker — and an opaque handle only one of them can produce would force the
+ * other to import and cast a foreign abstraction to take part. Both already
+ * depend on `shared/infra/kysely`, so the seam is the type they already share.
  */
-export interface AppStorageTransactionHandle {
-  readonly appStorageTransaction: unique symbol;
-}
+export type AppStorageUnitOfWork = Transaction<DB>;
 
 export interface AppStorageInstallationDeletion {
   recordCount: number;
@@ -108,7 +112,14 @@ export type AppStoragePutOutcome =
   | { outcome: "not_found" }
   | { outcome: "quota_exceeded" }
   /** The collection's version counter reached the last value a JSON number carries exactly. */
-  | { outcome: "version_exhausted" };
+  | { outcome: "version_exhausted" }
+  /**
+   * The value carries a field an index being rebuilt underneath this write cannot
+   * hold. The write is refused rather than stored with that entry missing: a
+   * silently skipped entry is a record the rebuilt index never answers about, and
+   * the activation that follows would expose a query quietly missing it.
+   */
+  | { outcome: "pending_index_bound_exceeded"; indexId: string };
 
 export interface AppStorageDeleteCommand {
   scope: AppStorageCollectionScope;
@@ -146,6 +157,12 @@ export interface AppStorageLiveUsage extends AppStorageCollectionUsage {
 export interface AppStorageIndexRebuildBatch {
   scope: AppStorageCollectionScope;
   index: AppStorageIndexDescriptor;
+  /**
+   * The rebuild this batch belongs to. A batch renews the marker's lease, and a
+   * lease renewed by a run the marker no longer belongs to would keep a
+   * superseded rebuild alive forever.
+   */
+  generation: number;
   after: string | null;
   limit: number;
   /**
@@ -158,6 +175,12 @@ export interface AppStorageIndexRebuildBatch {
 }
 
 export interface AppStorageIndexRebuildProgress {
+  /**
+   * True when the marker no longer belongs to the generation that asked. The
+   * batch built nothing: another rebuild of the same index took the marker over,
+   * or a sweeper cancelled this one after its lease ran out.
+   */
+  stale: boolean;
   rebuiltCount: number;
   lastKey: string | null;
   /**
@@ -175,16 +198,25 @@ export interface AppStorageIndexRebuildProgress {
   incompatibleKeys: string[];
 }
 
-export interface AppStorageIndexRebuildStart {
-  /** The collection's next version at the moment the index became pending. */
-  startVersion: number;
+export type AppStorageIndexRebuildStart =
+  | {
+      outcome: "started";
+      /** The collection's next version at the moment the index became pending. */
+      startVersion: number;
+      /**
+       * This rebuild's identity. Finishing and cancelling are compare-and-set
+       * against it, so a second rebuild of the same index cannot clear the marker
+       * the first one is still scanning under, and a stale run cannot undo a
+       * newer one.
+       */
+      generation: number;
+    }
   /**
-   * This rebuild's identity. Finishing and cancelling are compare-and-set against
-   * it, so a second rebuild of the same index cannot clear the marker the first
-   * one is still scanning under, and a stale run cannot undo a newer one.
+   * The generation counter reached the last value a JSON number carries exactly.
+   * Past it two rebuilds could compare equal and a stale completion token could
+   * clear a live rebuild, so the installation stops handing out generations.
    */
-  generation: number;
-}
+  | { outcome: "generation_exhausted" };
 
 /**
  * Whether the rebuild that asked is still the one the marker belongs to.
@@ -194,9 +226,21 @@ export interface AppStorageIndexRebuildStart {
  */
 export type AppStorageIndexRebuildFinish =
   | { outcome: "finished"; completionToken: string }
-  | { outcome: "stale" };
+  | { outcome: "stale" }
+  /**
+   * A live record still carries a value the index cannot hold, observed under the
+   * same fence that would have stamped the rebuild converged. The batches saw the
+   * collection one page at a time; this is the single look at current state that
+   * decides whether the index can actually be activated.
+   */
+  | { outcome: "incompatible_records"; incompatibleCount: number };
 
 export type AppStorageIndexRebuildCancel = { outcome: "cancelled" } | { outcome: "stale" };
+
+/** What one pass over an installation's abandoned rebuild markers dropped. */
+export interface AppStorageIndexRebuildSweep {
+  cancelledCount: number;
+}
 
 /** Clearing a finished rebuild's marker, as the activation that owns it sees it. */
 export type AppStorageIndexRebuildCompletion = { outcome: "completed" } | { outcome: "stale" };
@@ -338,7 +382,7 @@ export interface AppStorageRepositoryPort {
    * rather than in two steps a write can land between.
    */
   completeIndexRebuild(
-    transaction: AppStorageTransactionHandle,
+    executor: AppStorageUnitOfWork,
     input: { scope: AppStorageCollectionScope; indexId: string; completionToken: string },
   ): Promise<AppStorageIndexRebuildCompletion>;
   /** Drops a rebuild that will not be activated, so writes stop maintaining an index nobody will use. */
@@ -347,10 +391,28 @@ export interface AppStorageRepositoryPort {
     indexId: string;
     generation: number;
   }): Promise<AppStorageAdmitted<AppStorageIndexRebuildCancel>>;
-  /** Runs work inside one repository transaction, for callers that have to commit with it. */
-  runInTransaction<TValue>(
-    work: (transaction: AppStorageTransactionHandle) => Promise<TValue>,
-  ): Promise<TValue>;
+  /**
+   * The installations holding a rebuild marker whose lease has run out. A rebuild
+   * renews its lease every batch, so a marker past its deadline belongs to a run
+   * that died — and until it is dropped, every write to that collection keeps
+   * maintaining an index no release will ever query.
+   */
+  listAbandonedIndexRebuilds(limit: number): Promise<AppStorageInstallationScope[]>;
+  /**
+   * Drops every marker on this installation whose lease has run out, and the
+   * index entries built under them, rechecking the deadlines under the state row:
+   * the listing is a decision made outside any lock, and a rebuild that renewed
+   * its lease in between is still alive.
+   */
+  cancelAbandonedIndexRebuilds(input: {
+    scope: AppStorageInstallationScope;
+  }): Promise<AppStorageIndexRebuildSweep>;
+  /**
+   * Runs work inside one transaction, for callers that have to commit with it.
+   * The executor it hands over is the platform's shared transaction type, so the
+   * activation running in it may issue its own statements against its own tables.
+   */
+  runInTransaction<TValue>(work: (executor: AppStorageUnitOfWork) => Promise<TValue>): Promise<TValue>;
   /**
    * The collections the expiry sweep could work next, least recently swept first.
    * It takes no lock and makes no claim: it is a listing, and every decision it

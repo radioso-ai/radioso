@@ -41,17 +41,30 @@ CREATE TABLE IF NOT EXISTS app_storage_installation_state (
   deleted_record_count INTEGER,
   deleted_collection_count INTEGER,
   -- Indexes a rebuild is currently building, as
-  -- {"<collection_id>": [{"id","field","fieldType","generation","finishedAt"}]}.
+  -- {"<collection_id>": [{"id","field","fieldType","generation","finishedAt","leaseUntil"}]}.
   -- A put maintains entries for these as well as for the indexes its own release
   -- declares, so a rebuild running beside an older release's writes converges
   -- instead of losing the keys those writes touched. The generation is the
   -- rebuild's own identity: finishing and cancelling are compare-and-set against
   -- it, so one run can never clear the marker another run is still scanning
-  -- under.
+  -- under. `leaseUntil` is how long a marker survives without a sign of life:
+  -- every batch renews it, converging renews it once more for the activation to
+  -- come, and a marker past its deadline belongs to a run that died.
   pending_indexes JSONB NOT NULL DEFAULT '{}'::jsonb,
   -- Hands out the generation each rebuild is identified by. It only increases, so
   -- a generation names one rebuild of one index for the life of the installation.
-  rebuild_generation BIGINT NOT NULL DEFAULT 0 CHECK (rebuild_generation >= 0),
+  -- The ceiling is JavaScript's safe-integer maximum, like next_version below: a
+  -- generation is carried as a JSON number and pasted into a completion token, so
+  -- past that point two rebuilds would compare equal and a stale token could
+  -- clear a live one.
+  rebuild_generation BIGINT NOT NULL DEFAULT 0
+    CHECK (rebuild_generation >= 0 AND rebuild_generation <= 9007199254740991),
+  -- The soonest deadline any marker in pending_indexes holds, derived from them
+  -- on every write. It exists so the sweep that drops abandoned rebuilds finds
+  -- its work with a range scan instead of reading every installation's JSON; the
+  -- per-marker deadlines are what the drop itself is decided by, under this row's
+  -- own lock.
+  rebuild_lease_until TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (workspace_id, installation_id)
@@ -62,6 +75,12 @@ CREATE TABLE IF NOT EXISTS app_storage_installation_state (
 CREATE INDEX IF NOT EXISTS idx_app_storage_installation_state_retention
   ON app_storage_installation_state (retain_until)
   WHERE retain_until IS NOT NULL AND deleted_at IS NULL;
+
+-- The rebuild sweep asks for installations holding a marker whose lease has run
+-- out and that are not already tombstoned.
+CREATE INDEX IF NOT EXISTS idx_app_storage_installation_state_rebuild_lease
+  ON app_storage_installation_state (rebuild_lease_until)
+  WHERE rebuild_lease_until IS NOT NULL AND deleted_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS app_storage_records (
   workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -207,8 +226,11 @@ CREATE INDEX IF NOT EXISTS idx_app_storage_collection_usage_sweep
 -- here is the data itself and goes with the workspace; an undrained disposition
 -- event is the evidence that the data was exported, retained, or deleted, and a
 -- cascade would erase exactly the entries describing the last thing that happened
--- to a workspace being torn down. The published audit event keeps itself the same
--- way, with a null workspace.
+-- to a workspace being torn down. The drain publishes such an entry with a null
+-- workspace: audit_events.workspace_id is nullable and its own foreign key sets
+-- it to null when the workspace goes, so the entry reaches the trail with its
+-- former workspace carried as an identifier in the metadata rather than failing
+-- a foreign key on every retry forever.
 CREATE TABLE IF NOT EXISTS app_storage_audit_outbox (
   -- The delivery identity. It reaches the sink on every attempt, so a publish
   -- that succeeded and then failed to be acknowledged is recognisable as the

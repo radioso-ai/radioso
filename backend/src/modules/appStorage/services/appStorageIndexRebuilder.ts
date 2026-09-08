@@ -59,8 +59,14 @@ const INCOMPATIBLE_CEILING = 1_000;
  * overlapping rebuilds of one index cannot clear each other's marker; converging
  * stamps the rebuild rather than clearing it, and hands back the token the
  * activation presents to clear it in the same transaction that starts serving the
- * index. A rebuild that will not be activated cancels its own marker, so a
- * failure does not leave every future write maintaining an index nobody queries.
+ * index. A rebuild that will not be activated cancels its own marker — on a
+ * refusal, on a failure, and on anything raised — so an answer this run produced
+ * never leaves every future write maintaining an index nobody queries.
+ *
+ * Running out of batches is the one ending that keeps the marker. The budget
+ * bounds a single run rather than the rebuild, and the entries built so far are
+ * worth keeping maintained; the marker's lease, renewed by each batch, is what
+ * collects it if no further run ever comes.
  */
 export const createAppStorageIndexRebuilder = (
   options: AppStorageIndexRebuilderOptions,
@@ -91,19 +97,52 @@ export const createAppStorageIndexRebuilder = (
       };
 
       const descriptor = { id: index.id, field: index.field, fieldType: field.type };
+      const unavailable = (): AppStorageResult<AppStorageIndexRebuildResult> =>
+        storageFailure("denied", "Storage for this installation is not available");
+
+      // The index is marked pending before a single record is read. From here
+      // every put maintains an entry for it as well as for the indexes the
+      // writing release declares, so an older release that rewrites a key the
+      // first pass already visited does not drop the entry the rebuild put there.
+      // `startVersion` is where the closing pass starts looking.
+      let started;
+      try {
+        started = await repository.beginIndexRebuild({ scope, index: descriptor });
+      } catch (error) {
+        return classifyStorageFailure(error);
+      }
+
+      if (!started.admitted) return unavailable();
+      if (started.value.outcome === "generation_exhausted") {
+        return storageFailure(
+          "internal",
+          `Storage cannot identify another rebuild on collection ${input.collection.id}`,
+        );
+      }
+
+      const { startVersion, generation } = started.value;
+
+      /**
+       * From here the run owns a marker, so every way out has to say what becomes
+       * of it. A run that ends without either converging or cancelling leaves
+       * every later write to the collection maintaining an index no release is
+       * going to query; the lease on the marker is the backstop for a process
+       * that dies outright, not a substitute for cleaning up after an answer this
+       * run actually produced.
+       *
+       * Cancelling is itself compare-and-set and best effort: the marker may
+       * already belong to a newer run, and what the caller is owed is the failure
+       * that brought us here rather than a second one about the cleanup.
+       */
+      const cancelOwned = async (): Promise<void> => {
+        try {
+          await repository.cancelIndexRebuild({ scope, indexId: index.id, generation });
+        } catch {
+          // The marker's lease is what collects it if this did not.
+        }
+      };
 
       try {
-        // The index is marked pending before a single record is read. From here
-        // every put maintains an entry for it as well as for the indexes the
-        // writing release declares, so an older release that rewrites a key the
-        // first pass already visited does not drop the entry the rebuild put
-        // there. `startVersion` is where the closing pass starts looking.
-        const started = await repository.beginIndexRebuild({ scope, index: descriptor });
-        if (!started.admitted) {
-          return storageFailure("denied", "Storage for this installation is not available");
-        }
-
-        const generation = started.value.generation;
         let rebuiltCount = 0;
         let batchCount = 0;
 
@@ -119,16 +158,30 @@ export const createAppStorageIndexRebuilder = (
          */
         const incompatible = new Set<string>();
 
+        /**
+         * How a pass ended. `null` is the ordinary end of a pass; anything else is
+         * the run's own answer, and the caller of a pass decides what the marker
+         * owes it.
+         */
+        type PassEnd =
+          | null
+          /** The marker belongs to another run now, or its lease was collected. */
+          | { kind: "superseded" }
+          /** Enough records are past the index bound that counting more proves nothing. */
+          | { kind: "incompatible" }
+          | { kind: "failed"; result: AppStorageResult<AppStorageIndexRebuildResult> }
+          /** The batch budget ran out with records still to visit. */
+          | { kind: "budget" };
+
         /** One key-ordered sweep of the collection, optionally limited to what a version marks as new. */
-        const pass = async (
-          minVersion: number | null,
-        ): Promise<AppStorageResult<AppStorageIndexRebuildResult> | null> => {
+        const pass = async (minVersion: number | null): Promise<PassEnd> => {
           let after: string | null = null;
 
           while (batchCount < maxBatches) {
             const progress = await repository.rebuildIndexBatch({
               scope,
               index: descriptor,
+              generation,
               after,
               limit: batchSize,
               minVersion,
@@ -136,36 +189,56 @@ export const createAppStorageIndexRebuilder = (
 
             // A rebuild against a revoked installation is still the operator's,
             // but one against a tombstoned installation has nothing to build over.
-            if (!progress.admitted) {
-              return storageFailure("denied", "Storage for this installation is not available");
-            }
+            if (!progress.admitted) return { kind: "failed", result: unavailable() };
+
+            // The marker is no longer this run's. Another rebuild of the same
+            // index took it over, or its lease ran out and it was collected —
+            // either way this run owns nothing and must not cancel what it does
+            // not own.
+            if (progress.value.stale) return { kind: "superseded" };
 
             batchCount += 1;
             rebuiltCount += progress.value.rebuiltCount;
             for (const key of progress.value.visitedKeys) incompatible.delete(key);
             for (const key of progress.value.incompatibleKeys) incompatible.add(key);
-            if (incompatible.size >= INCOMPATIBLE_CEILING) return null;
+            if (incompatible.size >= INCOMPATIBLE_CEILING) return { kind: "incompatible" };
 
             if (progress.value.rebuiltCount < batchSize || progress.value.lastKey === null) return null;
             after = progress.value.lastKey;
           }
 
-          return storageFailure(
-            "internal",
-            `Rebuilding index ${index.id} did not finish within the batches one rebuild takes`,
-          );
+          return { kind: "budget" };
         };
 
         const first = await pass(null);
-        if (first) return first;
-
         // The convergence pass. The batches above ran one transaction at a time,
         // so a write could land behind the cursor while they were running; every
         // such write carries a version at or past the marker, which is exactly
         // the set this pass revisits.
-        if (incompatible.size < INCOMPATIBLE_CEILING) {
-          const converged = await pass(started.value.startVersion);
-          if (converged) return converged;
+        const ended = first === null ? await pass(startVersion) : first;
+
+        if (ended?.kind === "superseded") {
+          // The marker belongs to the run that took it over. Clearing it here
+          // would take down the rebuild that is still scanning under it.
+          return storageSuccess({ outcome: "superseded", indexId: index.id });
+        }
+
+        if (ended?.kind === "failed") {
+          await cancelOwned();
+          return ended.result;
+        }
+
+        if (ended?.kind === "budget") {
+          // The batch budget is a limit on one run, not on the rebuild. The
+          // marker stays up under its renewed lease, so the entries built so far
+          // keep being maintained and another run continues from a fresh
+          // generation; if none comes, the lease is what collects it.
+          return storageSuccess({
+            outcome: "in_progress",
+            indexId: index.id,
+            rebuiltCount,
+            batchCount,
+          });
         }
 
         // A value stored before its field was indexed was never measured against
@@ -173,7 +246,7 @@ export const createAppStorageIndexRebuilder = (
         // activated, so its marker comes down: leaving it up would make every
         // future write maintain an index no release is ever going to query.
         if (incompatible.size > 0) {
-          await repository.cancelIndexRebuild({ scope, indexId: index.id, generation });
+          await cancelOwned();
           return storageSuccess({
             outcome: "incompatible_records",
             indexId: index.id,
@@ -183,14 +256,28 @@ export const createAppStorageIndexRebuilder = (
 
         const finished = await repository.finishIndexRebuild({ scope, indexId: index.id, generation });
         if (!finished.admitted) {
-          return storageFailure("denied", "Storage for this installation is not available");
+          await cancelOwned();
+          return unavailable();
         }
 
         // Another rebuild of this index took the marker over while this one ran.
         // It owns the convergence now, and this run has nothing to hand an
-        // activation.
+        // activation — including a cancellation.
         if (finished.value.outcome === "stale") {
           return storageSuccess({ outcome: "superseded", indexId: index.id });
+        }
+
+        // The closing look at current state, under the fence that would have
+        // stamped the rebuild converged. The batches each saw one page at a
+        // moment already past; this is the one observation that decides whether
+        // the index can be activated at all.
+        if (finished.value.outcome === "incompatible_records") {
+          await cancelOwned();
+          return storageSuccess({
+            outcome: "incompatible_records",
+            indexId: index.id,
+            incompatibleCount: finished.value.incompatibleCount,
+          });
         }
 
         // The marker stays up until activation clears it with this token, in one
@@ -204,6 +291,7 @@ export const createAppStorageIndexRebuilder = (
           completionToken: finished.value.completionToken,
         });
       } catch (error) {
+        await cancelOwned();
         return classifyStorageFailure(error);
       }
     },

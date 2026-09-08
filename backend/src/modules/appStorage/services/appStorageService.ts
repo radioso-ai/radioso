@@ -185,6 +185,16 @@ export const createAppStorageService = (options: AppStorageServiceOptions): AppS
                 "internal",
                 "Storage cannot accept further writes to this collection",
               );
+            // An index the host is building over this collection cannot hold the
+            // value this write carries. It is the caller's to fix — the field is
+            // past the indexed-value bound — and refusing is the only honest
+            // answer: storing it with the entry missing would leave a record the
+            // rebuilt index never answers about.
+            case "pending_index_bound_exceeded":
+              return storageFailure(
+                "invalid_input",
+                `A field this record carries is past the bound index ${outcome.indexId} admits`,
+              );
           }
         });
       });

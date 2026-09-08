@@ -38,6 +38,7 @@ describe("app storage composition", () => {
     expect(typeof composition.disposition.drainAuditOutbox).toBe("function");
     expect(typeof composition.sweeper.runExpirySweep).toBe("function");
     expect(typeof composition.sweeper.runRetentionSweep).toBe("function");
+    expect(typeof composition.sweeper.runIndexRebuildSweep).toBe("function");
     expect(typeof composition.indexRebuilder.rebuildIndex).toBe("function");
     expect(typeof composition.repository.findRecord).toBe("function");
   });
@@ -52,6 +53,7 @@ describe("app storage audit sink", () => {
     await createAppStorageAuditSink(buildAuditService(recorded)).record({
       eventId: "event-1",
       workspaceId,
+      deletedWorkspaceId: null,
       installationId,
       eventType: "app.data.deletion.completed",
       eventStatus: "success",
@@ -68,6 +70,40 @@ describe("app storage audit sink", () => {
     ]);
   });
 
+  it("publishes an event whose workspace is gone with a null workspace and the former identifier", async () => {
+    // The outbox deliberately outlives workspace deletion, and `audit_events`
+    // references `workspaces`: attributing a preserved entry to a workspace row
+    // that no longer exists would fail the foreign key on every retry forever.
+    const recorded: AuditEventInput[] = [];
+    const deletedWorkspaceId = randomUUID();
+    const installationId = randomUUID();
+
+    await createAppStorageAuditSink(buildAuditService(recorded)).record({
+      eventId: "event-3",
+      workspaceId: null,
+      deletedWorkspaceId,
+      installationId,
+      eventType: "app.data.deletion.completed",
+      eventStatus: "success",
+      metadata: { recordCount: 1, collectionCount: 1 },
+    });
+
+    expect(recorded).toEqual([
+      {
+        workspaceId: null,
+        eventType: "app.data.deletion.completed",
+        eventStatus: "success",
+        metadata: {
+          recordCount: 1,
+          collectionCount: 1,
+          installationId,
+          eventId: "event-3",
+          deletedWorkspaceId,
+        },
+      },
+    ]);
+  });
+
   it("carries an event with no installation identity, which is what a null one means", async () => {
     const recorded: AuditEventInput[] = [];
     const workspaceId = randomUUID();
@@ -77,6 +113,7 @@ describe("app storage audit sink", () => {
     await createAppStorageAuditSink(auditService).record({
       eventId: "event-2",
       workspaceId,
+      deletedWorkspaceId: null,
       installationId: null,
       eventType: "app.data.deletion.requested",
       eventStatus: "success",

@@ -50,15 +50,35 @@ describe("evaluateStorageCompatibility", () => {
   });
 
   it("accepts an added optional field, which every older reader may ignore", () => {
-    // The reader at version 1 does not declare version 2 readable, but the two
-    // declarations differ only by an optional field, so it can read what the
-    // candidate writes whatever it declares.
+    // The schema rule is what this is about: an optional field added to a
+    // declaration changes nothing an older reader has to understand. The reader
+    // still declares the candidate's version, because structural similarity is a
+    // different fact and does not stand in for the claim.
+    const reader = buildStorageCollection({ schemaVersion: 1, compatibleReaderVersions: [1, 2] });
     const candidate = atVersion(2, {
       recordSchema: {
         fields: [...base.recordSchema.fields, { key: "etag", type: "string", required: false }],
       },
     });
-    expect(evaluate({ candidate }).compatible).toBe(true);
+    expect(evaluate({ survivingReaders: [reader], candidate }).compatible).toBe(true);
+  });
+
+  it("rejects the same additive candidate when no surviving reader declared its version", () => {
+    // Two declarations differing only by an optional field are shaped so that
+    // each could parse the other's records. Whether a release actually accepts a
+    // version it never declared is the release's own business — it may reject an
+    // unknown `schemaVersion` outright — so the declaration is required even
+    // here.
+    const reader = buildStorageCollection({ schemaVersion: 1, compatibleReaderVersions: [1] });
+    const candidate = atVersion(2, {
+      recordSchema: {
+        fields: [...base.recordSchema.fields, { key: "etag", type: "string", required: false }],
+      },
+    });
+
+    const report = evaluate({ survivingReaders: [reader], candidate });
+    expect(report.compatible).toBe(false);
+    expect(report.findings.map((finding) => finding.code)).toEqual(["reader_declaration_missing"]);
   });
 
   it("accepts an added allowed operation", () => {
@@ -257,7 +277,7 @@ describe("evaluateStorageCompatibility candidate-writer coverage", () => {
 
     expect(
       evaluate({ survivingReaders: [reader], candidate }).findings.map((finding) => finding.code),
-    ).toContain("candidate_writer_unreadable");
+    ).toContain("reader_declaration_missing");
   });
 
   it("accepts a candidate a surviving reader declares readable even at a higher version", () => {
@@ -277,7 +297,7 @@ describe("evaluateStorageCompatibility candidate-writer coverage", () => {
     });
 
     const report = evaluate({ survivingReaders: [serving, queued], candidate });
-    expect(report.findings.map((finding) => finding.code)).toContain("candidate_writer_unreadable");
+    expect(report.findings.map((finding) => finding.code)).toContain("reader_declaration_missing");
   });
 });
 
@@ -324,7 +344,12 @@ describe("evaluateStorageCompatibility against stored and surviving readers", ()
   it("accepts dropping an obsolete reader version no stored record uses", () => {
     // The contract caps the reader list, so a long-lived App has to drop the
     // oldest entry eventually; what makes that safe is that nothing carries it.
-    const serving = atVersion(8);
+    // The release still serving declares the candidate's version, which is the
+    // backward direction and a separate question from the drop.
+    const serving = buildStorageCollection({
+      schemaVersion: 8,
+      compatibleReaderVersions: [2, 3, 4, 5, 6, 7, 8, 9],
+    });
     const candidate = buildStorageCollection({
       schemaVersion: 9,
       compatibleReaderVersions: [2, 3, 4, 5, 6, 7, 8, 9],

@@ -267,6 +267,7 @@ export interface AppStorageInstallationState {
   installation_id: string;
   pending_indexes: Generated<Json>;
   rebuild_generation: Generated<Int8>;
+  rebuild_lease_until: Timestamp | null;
   retain_until: Timestamp | null;
   updated_at: Generated<Timestamp>;
   workspace_id: string;

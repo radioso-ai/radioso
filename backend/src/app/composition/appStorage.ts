@@ -9,6 +9,7 @@ import {
   createAppStorageService,
   createAppStorageSweeper,
   type AppStorageAuditEvent,
+  type AppStorageAuditLogPort,
   type AppStorageAuditPort,
   type AppStorageCompatibilityFactsPort,
   type AppStorageDisposition,
@@ -40,7 +41,21 @@ export const createAppStorageAuditSink = (auditService: AuditService): AppStorag
       // into an event to begin with. The event id travels with it because
       // delivery is at-least-once: it is what an operator reading the trail twice
       // recognises one event by.
-      metadata: { ...event.metadata, installationId: event.installationId, eventId: event.eventId },
+      //
+      // A deleted workspace arrives as a null `workspaceId` and its former
+      // identifier here. `audit_events.workspace_id` references `workspaces` and
+      // is set to null when one is deleted, so this is the only shape in which
+      // the storage outbox's deliberately surviving entries can be published at
+      // all — attributing them to a workspace row that is gone would fail the
+      // foreign key on every retry, forever.
+      metadata: {
+        ...event.metadata,
+        installationId: event.installationId,
+        eventId: event.eventId,
+        ...(event.deletedWorkspaceId === null
+          ? {}
+          : { deletedWorkspaceId: event.deletedWorkspaceId }),
+      },
     });
   },
 });
@@ -66,8 +81,10 @@ export interface AppStorageComposition {
    * Exposed, not scheduled. The runtime that owns background work decides when a
    * pass runs; what each pass is for differs. Expiry reclaims space a read and a
    * write already ignore, so it can run late. Retention is the only thing that
-   * makes an operator's bounded hold end, so it cannot. The audit outbox drain on
-   * `disposition` is the third pass with the same property: the trail is already
+   * makes an operator's bounded hold end, so it cannot. The rebuild sweep drops
+   * markers whose lease ran out, which is a tax on every write to their
+   * collections rather than a correctness problem. The audit outbox drain on
+   * `disposition` is the fourth pass with the same property: the trail is already
    * durable when a disposition returns, and draining is what publishes it.
    */
   sweeper: AppStorageSweeper;
@@ -84,6 +101,12 @@ export interface AppStorageComposition {
 export const createAppStorageComposition = (options: {
   kysely: Kysely<DB>;
   auditService: AuditService;
+  /**
+   * Where a secondary audit failure is written. A disposition answers correctly
+   * without it; what it buys is an outbox outage that is visible as itself rather
+   * than only as trail entries nobody ever sees.
+   */
+  logger?: AppStorageAuditLogPort;
 }): AppStorageComposition => {
   const repository = new AppStorageRepository(options.kysely);
   const audit = createAppStorageAuditSink(options.auditService);
@@ -92,7 +115,11 @@ export const createAppStorageComposition = (options: {
     repository,
     service: createAppStorageService({ repository }),
     compatibilityFacts: createAppStorageCompatibilityFacts({ repository }),
-    disposition: createAppStorageDisposition({ repository, audit }),
+    disposition: createAppStorageDisposition({
+      repository,
+      audit,
+      ...(options.logger === undefined ? {} : { logger: options.logger }),
+    }),
     indexRebuilder: createAppStorageIndexRebuilder({ repository }),
     sweeper: createAppStorageSweeper({ repository }),
   };

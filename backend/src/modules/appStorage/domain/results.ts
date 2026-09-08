@@ -56,6 +56,22 @@ export class AppStorageExportClosedError extends Error {
 }
 
 /**
+ * A second consumer asked a snapshot that is already being read.
+ *
+ * A snapshot owns exactly one transaction, and two readers sharing it would
+ * commit and roll back under each other: whichever finished first would end the
+ * transaction the other was mid-page in, and the second reader's own transaction
+ * would be leaked. So ownership is taken once and the second attempt is refused
+ * — a caller error, deterministic and not worth retrying.
+ */
+export class AppStorageExportBusyError extends Error {
+  constructor() {
+    super("This export snapshot is already being read");
+    this.name = "AppStorageExportBusyError";
+  }
+}
+
+/**
  * SQLSTATE classes a caller can retry into: a connection that dropped, a server
  * out of a resource, an operator intervention, and the two concurrency failures
  * Postgres resolves by asking for the transaction again.
@@ -101,6 +117,9 @@ export const classifyStorageFailure = (error: unknown): AppStorageFailure => {
   }
   if (error instanceof AppStorageExportClosedError) {
     return storageFailure("unavailable", "This export snapshot is closed");
+  }
+  if (error instanceof AppStorageExportBusyError) {
+    return storageFailure("invalid_input", "This export snapshot is already being read");
   }
   return isTransient(error)
     ? storageFailure("unavailable", "Storage could not be reached for this call")

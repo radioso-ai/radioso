@@ -27,6 +27,7 @@ export type { StorageCollectionObservation } from "./domain/compatibility.js";
 export type {
   AppStorageAuditEvent,
   AppStorageAuditIntent,
+  AppStorageAuditLogPort,
   AppStorageAuditPort,
 } from "./ports/appStorageAudit.js";
 export type { AppStorageCompatibilityFactsPort } from "./ports/appStorageCompatibilityFacts.js";
@@ -34,7 +35,8 @@ export type {
   AppStorageCollectionScope,
   AppStorageInstallationScope,
   AppStorageRepositoryPort,
-  AppStorageTransactionHandle,
+  AppStorageUnitOfWork,
+  ExportedAppStorageRecord,
   StoredAppStorageRecord,
 } from "./ports/appStorageRepository.js";
 export type {

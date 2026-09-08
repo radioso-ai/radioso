@@ -219,7 +219,7 @@ Storage answers a failed call with one of these:
 
 | Code | What happened |
 |---|---|
-| `invalid_input` | The collection is not one this installation declares, the record does not match its schema, or the query names an index or a value type the collection does not have |
+| `invalid_input` | The collection is not one this installation declares, the record does not match its schema, the query names an index or a value type the collection does not have, or a value is past the bound of an index being built over the collection |
 | `denied` | The collection does not allow this operation, the installation's storage access is revoked, or its storage is deleted |
 | `not_found` | A write or delete carrying `expectedVersion` found no record under that key |
 | `version_conflict` | The stored record's version is not the one the call expected |
@@ -272,12 +272,18 @@ Forwards: the candidate must read everything already there. Its
 `compatibleReaderVersions` covers every version stored records carry and every
 version a surviving reader writes.
 
-Backwards: every surviving reader must be able to read what the candidate writes.
-A reader proves that by listing the candidate's `schemaVersion` in its own
-`compatibleReaderVersions`, or by differing from the candidate only by optional
-fields — which is the same proof made structurally. A release still serving
-beside the candidate meets the records it writes, and a reader that never said it
-could read them has not said it.
+Backwards: every surviving reader must be able to read what the candidate writes,
+and it proves that one way only — by listing the candidate's `schemaVersion` in
+its own `compatibleReaderVersions`. A release still serving beside the candidate
+meets the records it writes, and a reader that never said it could read them has
+not said it.
+
+Two declarations that differ only by an optional field are shaped so that each
+could parse the other's records, and that is a different fact from the claim. A
+release is free to reject a `schemaVersion` it does not recognise, and nothing in
+a manifest says whether it does. So raising `schemaVersion` means adding the new
+number to the reader list of every release that will still be running — usually
+the release before the one that raises it.
 
 A rollback is admitted the same way. Carrying a lower `schemaVersion` than the
 release it replaces is not by itself a defect; what decides it is whether every
@@ -328,16 +334,33 @@ converges stamps the mark rather than clearing it, and activation takes it down
 in the same transaction that starts serving the index. That single transaction is
 what closes the last window: between a rebuild finishing and a release taking
 over, an older release can still rewrite a record, and the mark is the only thing
-making that write maintain the index. A rebuild that will not be activated clears
-its own mark, so a failure does not leave every later write maintaining an index
-nobody queries.
+making that write maintain the index.
+
+Every way a rebuild ends says what becomes of its mark. A rebuild that is refused
+or that fails clears its own, so nothing is left making later writes maintain an
+index no release will query. A rebuild that runs out of its batch budget keeps
+its mark and reports that it is still in progress, because the entries it built
+are worth keeping maintained and another run can continue — it hands out no
+completion token, so nothing can be activated against it. And every mark carries
+a lease that each batch renews, so a rebuild whose process dies is collected by
+the next rebuild of that index or by the maintenance pass, which drops the mark
+and the entries built under it.
 
 A value stored before its field was indexed was never measured against the
 indexed-value bound, so a rebuild that meets one reports it with a count rather
 than activating a release whose query would silently skip those records. The
 count is of records that are past the bound now: one that was too long when the
 rebuild first read it and was corrected before the closing pass is not held
-against the candidate.
+against the candidate. The last of those counts is taken when the rebuild
+converges, in one look at the collection's current state — the batches each saw
+one page at a moment already past, and this is the observation the rebuild is
+decided on.
+
+**A write is refused while a rebuild cannot index it.** While a mark is up, a
+`storage.put` whose value is past the indexed-value bound of the index being
+built comes back `invalid_input`, even when the release making the write does not
+declare that index. Storing it with its entry missing would leave a record the
+rebuilt index never answers about.
 
 The practical shape of a schema change is therefore: add the new field as
 optional, write both fields for a release, and stop reading the old one. The old
@@ -424,13 +447,19 @@ guarantee about the order they were committed.
 Events still waiting to be published survive workspace deletion. An undrained
 event is the evidence of what happened to the data, and a cascade would erase
 exactly the entries describing the last thing done to a workspace being torn
-down.
+down. Such an event is published with no workspace on it and the former
+workspace's identifier carried in its metadata as `deletedWorkspaceId`, which is
+what lets the trail hold it at all — an audit event's workspace has to name a
+workspace that exists. It is published once and acknowledged like any other, so
+the entry ends rather than being retried forever.
 
 ## Common failure modes
 
 **Every write comes back `invalid_input`.** The record carries a key the
 collection does not declare, a field key is not lower-case snake case, or a field
-an index points at is past the indexed-value bound above.
+an index points at is past the indexed-value bound above. The same bound applies
+to an index a candidate release is having built over the collection, so a value
+can be refused over an index the release making the write does not declare.
 
 **A query returns nothing though the records are there.** Check that the record
 actually carries the indexed field. A record that omits an optional indexed field

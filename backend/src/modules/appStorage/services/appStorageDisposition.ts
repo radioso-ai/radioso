@@ -1,11 +1,16 @@
 import { MAX_RETENTION_DAYS, validateRetentionDeadline } from "../domain/retention.js";
 import {
+  AppStorageExportBusyError,
   classifyStorageFailure,
   storageFailure,
   storageSuccess,
   type AppStorageResult,
 } from "../domain/results.js";
-import type { AppStorageAuditIntent, AppStorageAuditPort } from "../ports/appStorageAudit.js";
+import type {
+  AppStorageAuditIntent,
+  AppStorageAuditLogPort,
+  AppStorageAuditPort,
+} from "../ports/appStorageAudit.js";
 import type {
   AppStorageExportSnapshot,
   AppStorageInstallationScope,
@@ -23,6 +28,12 @@ import type {
 interface AppStorageDispositionOptions {
   repository: AppStorageRepositoryPort;
   audit: AppStorageAuditPort;
+  /**
+   * Where a secondary audit failure is said out loud. Optional because a
+   * disposition is correct without it — the primary answer is unaffected either
+   * way — and absent it the failure is simply not visible.
+   */
+  logger?: AppStorageAuditLogPort;
   now?: () => Date;
   /** Rows read per round trip while an export streams; never the whole installation at once. */
   exportBatchSize?: number;
@@ -125,11 +136,31 @@ export const createAppStorageDisposition = (
   const enqueueBeside = async (
     scope: AppStorageInstallationScope,
     intent: AppStorageAuditIntent,
-  ): Promise<AppStorageResult<void>> =>
-    attempt(async () => {
+  ): Promise<AppStorageResult<void>> => {
+    const recorded = await attempt(async () => {
       await enqueue(scope, intent);
       return storageSuccess(undefined);
     });
+
+    if (!recorded.ok) {
+      // Identifiers and codes only. The event type and the installation are what
+      // an operator needs to find the disposition this belongs to; the intent's
+      // metadata is not, and the classifier's message is the one thing here that
+      // a database error could have shaped around a stored value.
+      options.logger?.warn(
+        {
+          installationId: scope.installationId,
+          workspaceId: scope.workspaceId,
+          eventType: intent.eventType,
+          eventStatus: intent.eventStatus,
+          failureCode: recorded.error.code,
+        },
+        "app storage audit intent was not committed",
+      );
+    }
+
+    return recorded;
+  };
 
   return {
     async revokeAccess(scope: AppStorageInstallationScope): Promise<AppStorageResult<void>> {
@@ -210,6 +241,12 @@ export const createAppStorageDisposition = (
         const collections = new Set<string>();
         let recordCount = 0;
         let settled = false;
+        /**
+         * True when this consumer was turned away because another one already
+         * holds the snapshot. It owns nothing, so it closes nothing: closing
+         * would end the transaction the consumer that does own it is reading in.
+         */
+        let refused = false;
 
         const closing = (reason: string | null): AppStorageAuditIntent => ({
           eventType: reason === null ? "app.data.export.completed" : "app.data.export.cancelled",
@@ -227,6 +264,17 @@ export const createAppStorageDisposition = (
               yield toExportLine(record);
             }
           } catch (error) {
+            // A snapshot has one consumer. This one asked for a snapshot another
+            // is already reading, which is a caller error rather than an export
+            // that went wrong: nothing was read, nothing is closed, and the
+            // trail has no cancellation to record.
+            if (error instanceof AppStorageExportBusyError) {
+              refused = true;
+              settled = true;
+              yield { kind: "error", error: classifyStorageFailure(error).error };
+              return;
+            }
+
             // A read that failed part-way is a line of its own. A stream that
             // simply stopped would be indistinguishable from one that finished,
             // and the difference is whether the operator has all of the
@@ -245,11 +293,13 @@ export const createAppStorageDisposition = (
           const recorded = await enqueueBeside(scope, closing(null));
           if (!recorded.ok) yield { kind: "error", error: recorded.error };
         } finally {
-          // The consumer walked away mid-stream. There is no line left to hand
-          // it, so the cancellation goes to the trail and the snapshot is closed
-          // rather than left to its idle timeout.
-          if (!settled) await enqueueBeside(scope, closing("consumer_stopped"));
-          await snapshot.close().catch(() => undefined);
+          if (!refused) {
+            // The consumer walked away mid-stream. There is no line left to hand
+            // it, so the cancellation goes to the trail and the snapshot is
+            // closed rather than left to its idle timeout.
+            if (!settled) await enqueueBeside(scope, closing("consumer_stopped"));
+            await snapshot.close().catch(() => undefined);
+          }
         }
       }
 

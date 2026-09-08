@@ -21,7 +21,7 @@ type StorageCompatibilityCode =
   | "schema_version_reused"
   | "reader_version_dropped"
   | "stored_writer_unreadable"
-  | "candidate_writer_unreadable";
+  | "reader_declaration_missing";
 
 interface StorageCompatibilityFinding {
   code: StorageCompatibilityCode;
@@ -103,10 +103,16 @@ interface StorageCompatibilityInput {
  * misses. Forwards: the candidate reads every version stored records carry and
  * every version a surviving reader writes, or activating it makes existing rows
  * unreadable. Backwards: every reader that survives the activation reads what the
- * candidate writes, or the release still serving beside it meets a record it
- * cannot parse. A reader proves the backward direction by declaring the
- * candidate's `schemaVersion` readable, or by differing from the candidate only
- * additively — which is the same proof, made structurally.
+ * candidate writes, and it proves that one way only — by naming the candidate's
+ * `schemaVersion` in its own `compatibleReaderVersions`.
+ *
+ * Structural similarity is not that proof. Two declarations differing only by an
+ * optional field are shaped so that each could parse the other's records, but
+ * whether a release actually accepts a version it never declared is the release's
+ * own business: a reader may reject an unknown `schemaVersion` outright, and
+ * nothing in a manifest says it does not. So the declaration is required
+ * unconditionally, and the additive-only schema comparison stays a separate rule
+ * answering a separate question.
  *
  * The rest are access-path rules: a removed index takes away a path a surviving
  * reader may have been planned against, and a narrowed `allowedOperations` turns
@@ -211,19 +217,17 @@ const compareCollection = (
     // Additive-only, in whichever direction the versions run. Every surviving
     // reader is paired with the candidate, because each of those pairings
     // outlives the activation.
-    const schemaFindings = compareSchemas(collectionId, reader, candidate);
-    findings.push(...schemaFindings);
+    findings.push(...compareSchemas(collectionId, reader, candidate));
 
     // The backward direction: this reader is still serving after the activation
-    // and will meet records the candidate wrote. It proves it can read them by
-    // declaring the candidate's version, or by differing from it only additively.
-    if (
-      !reader.compatibleReaderVersions.includes(candidate.schemaVersion) &&
-      schemaFindings.length > 0
-    ) {
+    // and will meet records the candidate wrote. The only proof that it can read
+    // them is its own declaration, so the check is unconditional — a structural
+    // resemblance between the two schemas is a different fact, checked above, and
+    // it does not stand in for a claim the reader never made.
+    if (!reader.compatibleReaderVersions.includes(candidate.schemaVersion)) {
       at(
-        "candidate_writer_unreadable",
-        `A surviving reader at version ${reader.schemaVersion} does not read version ${candidate.schemaVersion}, which the candidate writes`,
+        "reader_declaration_missing",
+        `A surviving reader at version ${reader.schemaVersion} does not declare version ${candidate.schemaVersion} readable, which the candidate writes`,
       );
     }
 
@@ -287,9 +291,9 @@ const sameRecordSchema = (left: StorageCollection, right: StorageCollection): bo
  * candidate treated as the later of the two; a shape change under a reused
  * version is reported separately.
  *
- * An empty result is also the structural proof of reader coverage: two
- * declarations that differ only by optional fields can each read the other's
- * records whatever either declares.
+ * This rule answers only whether the shapes can coexist. Whether a release will
+ * accept a version it never declared is the reader's own claim to make, so an
+ * empty result here does not waive the declaration requirement.
  */
 const compareSchemas = (
   collectionId: string,

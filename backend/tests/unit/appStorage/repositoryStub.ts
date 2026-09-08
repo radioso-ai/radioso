@@ -4,11 +4,15 @@ import { vi } from "vitest";
 
 import type {
   AppStorageRepositoryPort,
-  AppStorageTransactionHandle,
+  AppStorageUnitOfWork,
 } from "../../../src/modules/appStorage/public.js";
 
-/** A stand-in for the opaque handle the repository hands work that shares its transaction. */
-const transactionHandle = {} as unknown as AppStorageTransactionHandle;
+/**
+ * A stand-in for the transaction the repository hands work that shares its unit
+ * of work. Nothing in a service test issues a statement on it; what the tests are
+ * about is which calls happen inside one.
+ */
+const unitOfWork = {} as AppStorageUnitOfWork;
 
 /**
  * A repository that admits everything and stores nothing. Every method answers
@@ -44,11 +48,17 @@ export const buildRepositoryStub = (): AppStorageRepositoryPort => ({
   listStoredSchemaVersions: vi.fn(async () => ({ admitted: true as const, value: [] })),
   beginIndexRebuild: vi.fn(async () => ({
     admitted: true as const,
-    value: { startVersion: 1, generation: 1 },
+    value: { outcome: "started" as const, startVersion: 1, generation: 1 },
   })),
   rebuildIndexBatch: vi.fn(async () => ({
     admitted: true as const,
-    value: { rebuiltCount: 0, lastKey: null, visitedKeys: [], incompatibleKeys: [] },
+    value: {
+      stale: false,
+      rebuiltCount: 0,
+      lastKey: null,
+      visitedKeys: [] as string[],
+      incompatibleKeys: [] as string[],
+    },
   })),
   finishIndexRebuild: vi.fn(async () => ({
     admitted: true as const,
@@ -59,7 +69,9 @@ export const buildRepositoryStub = (): AppStorageRepositoryPort => ({
     admitted: true as const,
     value: { outcome: "cancelled" as const },
   })),
-  runInTransaction: vi.fn(async (work) => work(transactionHandle)),
+  runInTransaction: vi.fn(async (work) => work(unitOfWork)),
+  listAbandonedIndexRebuilds: vi.fn(async () => []),
+  cancelAbandonedIndexRebuilds: vi.fn(async () => ({ cancelledCount: 0 })),
   listExpirySweepCandidates: vi.fn(async () => []),
   claimCollectionForExpirySweep: vi.fn(async () => ({
     claimed: true as const,

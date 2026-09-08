@@ -290,7 +290,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   ...coverage(["updateGeneralSettings"], duplicateSettingsWritePath),
   ...coverage(["updateWorkspaceLlmModels"], workspaceModelSelection),
   ...coverage(["reprocessWorkspaceIngestion"], workspaceWideReprocess),
-  ...coverage(["uploadAssistantLogo", "deleteAssistantLogo"], brandAssetIsOperatorSupplied),
+  ...coverage(["uploadAssistantLogo", "deleteAssistantLogo", "getAgentAssistantLogo"], brandAssetIsOperatorSupplied),
   ...coverage([
     "startMcpConnectionOauth",
     "createWorkspaceOauthConnection",

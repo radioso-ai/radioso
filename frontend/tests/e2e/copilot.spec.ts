@@ -490,8 +490,6 @@ test("offers Apply only on the proposals this operator may apply, and Dismiss on
   // An operator who manages knowledge but not agents. Apply belongs on the document card and not on
   // the directive card; a single workspace-wide permission flag would have shown both or neither.
   const copilotConversationId = "copilot-proposal-mixed-permissions";
-  const nowIso = new Date("2026-08-31T10:00:00.000Z").toISOString();
-  let messages: unknown[] = [];
 
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page);
@@ -503,16 +501,6 @@ test("offers Apply only on the proposals this operator may apply, and Dismiss on
     }
     if (path === "/copilot/conversations" && request.method() === "GET") return route.fulfill({ json: { conversations: [] } });
     if (path === "/copilot/turns" && request.method() === "POST") {
-      messages = [
-        { id: "operator-mixed", role: "operator", content: "What should change?", createdAt: nowIso },
-        {
-          id: "answer-mixed", role: "copilot", content: "Two drafts.", createdAt: nowIso, outcome: "completed", activity: [],
-          proposals: [
-            { id: "proposal-doc-1", targetType: "document", targetLabel: "Refund policy", summary: "Add the document \"Refund policy\".", status: "pending" },
-            { id: "proposal-directive-1", targetType: "directive", targetLabel: "Avoid competitors", summary: "Draft a directive.", status: "pending" },
-          ],
-        },
-      ];
       return route.fulfill({
         status: 200,
         contentType: "text/event-stream",

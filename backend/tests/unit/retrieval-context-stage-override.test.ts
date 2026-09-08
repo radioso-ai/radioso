@@ -84,7 +84,7 @@ describe("RetrievalContextStageService retrievalSettingsOverride", () => {
       workspaceId: "ws-1",
       query: "q",
       history: [],
-      retrievalSettingsOverride: { workspaceId: "ws-other" } as never,
+      retrievalSettingsOverride: { workspaceId: "ws-other" },
     });
 
     expect(result.settings.workspaceId).toBe("ws-1");

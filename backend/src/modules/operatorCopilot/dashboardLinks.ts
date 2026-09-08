@@ -54,3 +54,6 @@ export const buildCopilotDashboardLink = (
       return `${base}/agents`;
   }
 };
+
+export const buildOperatorMcpProposalLink = (proposalId: string): string =>
+  `/oauth/operator-mcp/proposal/${encodeURIComponent(proposalId)}`;

@@ -112,7 +112,7 @@ export const buildGroundedAnswerResponseFormat = (
 /** Base schema for callers with no structured extension to contribute. */
 export const GROUNDED_ANSWER_RESPONSE_FORMAT = buildGroundedAnswerResponseFormat();
 
-interface ParsedEnvelopeTail extends Omit<GroundedAnswerEnvelope, "answer"> {}
+type ParsedEnvelopeTail = Omit<GroundedAnswerEnvelope, "answer">;
 
 const emptyTail = (parseStatus: GroundingEnvelopeParseStatus): ParsedEnvelopeTail => ({
   protocolVersion: null,

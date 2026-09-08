@@ -2,27 +2,11 @@
  * Public entry point for the context-variables module. Other modules (chat, routines) must
  * import from here, never from internal files, per the module-boundary lint.
  */
-export { renderContextBlock, renderContextBlockWithBound } from "./contextBlockRenderer.js";
-export type {
-  ContextFragment,
-  PageContextFragment,
-  VariableContextFragment,
-} from "./contextBlockRenderer.js";
+export { renderContextBlockWithBound } from "./contextBlockRenderer.js";
 export { resolveAvailableContextVariables } from "./availableContextVariables.js";
-export type { AvailableContextVariable } from "./availableContextVariables.js";
 export { boundContextVariableFragments } from "./contextVariablesBound.js";
-export type {
-  ContextVariableBoundClamp,
-  ContextVariableBoundDrop,
-  ContextVariableBoundResult,
-  ContextVariableRenderBoundConfig,
-  ContextVariableRenderCandidate,
-} from "./contextVariablesBound.js";
-export {
-  ContextResolutionService,
-  PAGE_CONTEXT_VARIABLE_NAME,
-  resolveContextForTurn,
-} from "./contextResolutionService.js";
+export type { ContextVariableRenderBoundConfig } from "./contextVariablesBound.js";
+export { resolveContextForTurn } from "./contextResolutionService.js";
 export { projectContextForMatching } from "./matchContextProjection.js";
 export type { MatchContextProjection } from "./matchContextProjection.js";
 export {
@@ -30,32 +14,19 @@ export {
   signVisitorIdentity,
   verifySignedIdentity,
 } from "./identitySigning.js";
-export { isValueCompatibleWithType } from "./valueCompatibility.js";
-export type {
-  SignedVisitorIdentityPayload,
-  VerifiedVisitorIdentity,
-  VerifySignedIdentityInput,
-} from "./identitySigning.js";
+export type { SignedVisitorIdentityPayload } from "./identitySigning.js";
 export { ContextVariableResolverService } from "./contextVariableResolverService.js";
 export type {
   ResolvedTurnContext,
-  PageContextInput,
   ResolvedVariableInput,
   ContextVariableSurfacing,
 } from "./contextResolutionService.js";
 export type { ContextResolverPort } from "./contextVariableResolverService.js";
-export { redactSnapshot, REDACTED_VALUE } from "./redaction.js";
-export type { ContextVariableSnapshot, SnapshotEntry } from "./redaction.js";
-export {
-  BUILT_IN_CONTEXT_VARIABLES,
-  BUILT_IN_CONTEXT_VARIABLE_BY_NAME,
-} from "./registry.js";
-export type { BuiltInContextVariableDescriptor } from "./registry.js";
+export { BUILT_IN_CONTEXT_VARIABLES } from "./registry.js";
 export type {
   AgentContextVariableEnablement,
   ContextVariable,
   ContextVariableScope,
-  ContextVariableScopeType,
   ContextVariableSensitivity,
   ContextVariableSource,
   ContextVariableTrustTier,
@@ -67,19 +38,10 @@ export type {
   ApplyContextVariableProposalInput,
   ApplyContextVariableProposalResult,
   ContextVariableCreateRecord,
-  ContextVariableDefinitionWrite,
   ContextVariableEnablementReaderPort,
-  ContextVariableEnablementWrite,
   ContextVariableRepositoryPort,
   ContextVariableResolutionReaderPort,
-  ContextVariableResolverRepositoryPort,
   ContextVariableUpdateRecord,
 } from "./repository.js";
-export {
-  ContextVariableService,
-  assertEnablementIsWellFormed,
-  type ContextVariableAgentReaderPort,
-  type ContextVariableAgentSkillsReaderPort,
-  type ContextVariableServiceOptions,
-} from "./services/contextVariableService.js";
+export { ContextVariableService } from "./services/contextVariableService.js";
 export * from "./copilotPrimitiveRegistry.js";

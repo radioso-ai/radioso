@@ -78,7 +78,7 @@ const dependencies = (overrides: Partial<NeedsAttentionCopilotToolDependencies> 
   },
   workspaceRouteKeyResolver: { resolveWorkspaceKey: vi.fn(async () => "acme") },
   ...overrides,
-} as NeedsAttentionCopilotToolDependencies);
+});
 
 const list = async (
   deps: NeedsAttentionCopilotToolDependencies,
@@ -86,7 +86,7 @@ const list = async (
   invocation = context(),
 ) => {
   const [descriptor] = createNeedsAttentionCopilotTools(deps);
-  return descriptor!.createTool(invocation).invoke(input as never, {} as never) as Promise<{
+  return descriptor.createTool(invocation).invoke(input, {} as never) as Promise<{
     items: Array<Record<string, unknown>>;
     sources: Array<{ source: string; status: string; total: number | null; included: number }>;
   }>;
@@ -216,8 +216,8 @@ describe("needs_attention", () => {
       takenOverAt: "2026-08-26T07:30:00.000Z",
       ownerDisplayName: "Ada",
     });
-    expect(result.items[0]!.waitingMinutes).toEqual(expect.any(Number));
-    expect(result.items[0]!.waitingMinutes as number).toBeGreaterThanOrEqual(0);
+    expect(result.items[0].waitingMinutes).toEqual(expect.any(Number));
+    expect(result.items[0].waitingMinutes as number).toBeGreaterThanOrEqual(0);
   });
 
   it("keeps the matched count honest when the page bound drops rows", async () => {

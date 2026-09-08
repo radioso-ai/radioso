@@ -1,5 +1,6 @@
 import { Router } from "express";
 
+import { readBuildIdentity } from "../../config/buildIdentity.js";
 import type { AppDependencies } from "../../server/types.js";
 import { createAccountRoutes } from "./accountRoutes.js";
 import { createAccountUserRoutes } from "./accountUserRoutes.js";
@@ -11,6 +12,7 @@ import { createDecisionsQueryRoutes } from "./decisionsQueryRoutes.js";
 import { createAssistantRoutes } from "./assistantRoutes.js";
 import { createAgentRoutes } from "./agentRoutes.js";
 import { createAgentExternalSkillsRoutes } from "./agentExternalSkillsRoutes.js";
+import { createAgentBundleRoutes } from "./agentBundleRoutes.js";
 import { createDocumentRoutes } from "./documentRoutes.js";
 import { createHistoryRoutes } from "./historyRoutes.js";
 import { createMetricsRoutes } from "./metricsRoutes.js";
@@ -35,8 +37,12 @@ import { createSkillRoutes } from "./skillRoutes.js";
 import { createEvalRoutes } from "../../../modules/eval/composition.js";
 import { createCopilotRoutes } from "../../../modules/operatorCopilot/routes.js";
 import { createApiAccessRoutes } from "./apiAccessRoutes.js";
+import { createOperatorMcpSetupRoutes } from "../../../modules/operatorMcpSetup/routes.js";
+import { createOperatorMcpDashboardRoutes } from "../../../modules/operatorMcpAuthorization/dashboardRoutes.js";
+import { createOperatorMcpDiscoveryRoutes, createOperatorMcpOauthRoutes } from "../../../modules/operatorMcpAuthorization/routes.js";
+import { createOperatorMcpInternalRoutes } from "../../../modules/operatorCopilot/mcpRoutes.js";
 
-export type ApiRouteMount = {
+type ApiRouteMount = {
   path: string;
   createRouter: (dependencies: AppDependencies) => Router;
 };
@@ -45,11 +51,16 @@ export type ApiRouteMount = {
  * The public API's mount table. The route-policy contract inspects every router here
  * and every application contribution, then discovers authentication structurally.
  */
-export const createApiRouteMounts = (dependencies: AppDependencies): readonly ApiRouteMount[] => [
+export const createApiRouteMounts = (_dependencies: AppDependencies): readonly ApiRouteMount[] => [
+  { path: "/.well-known", createRouter: createOperatorMcpDiscoveryRoutes },
   { path: "/api/v1/auth", createRouter: createAuthRoutes },
   { path: "/api/v1/account", createRouter: createAccountRoutes },
   { path: "/api/v1/account", createRouter: createAccountUserRoutes },
   { path: "/api/v1/account", createRouter: createApiAccessRoutes },
+  { path: "/api/v1", createRouter: createOperatorMcpSetupRoutes },
+  { path: "/api/v1", createRouter: createOperatorMcpDashboardRoutes },
+  { path: "/api/v1/operator-mcp/oauth", createRouter: createOperatorMcpOauthRoutes },
+  { path: "/api/v1/internal/operator-copilot/mcp", createRouter: createOperatorMcpInternalRoutes },
   { path: "/api/v1/workspace", createRouter: createWorkspaceRoutes },
   { path: "/api/v1", createRouter: createOauthConnectionRoutes },
   { path: "/api/v1", createRouter: createCustomerEmailConnectionRoutes },
@@ -59,6 +70,7 @@ export const createApiRouteMounts = (dependencies: AppDependencies): readonly Ap
   { path: "/api/v1", createRouter: createContextVariableRoutes },
   { path: "/api/v1/agents", createRouter: createDecisionRoutes },
   { path: "/api/v1/decisions", createRouter: createDecisionsQueryRoutes },
+  { path: "/api/v1/agents", createRouter: createAgentBundleRoutes },
   { path: "/api/v1/agents", createRouter: createAgentExternalSkillsRoutes },
   { path: "/api/v1/agents", createRouter: createEmailSkillRoutes },
   { path: "/api/v1/agents", createRouter: createWebhookSkillRoutes },
@@ -96,7 +108,7 @@ export const createApiRouter = (dependencies: AppDependencies): Router => {
   const router = Router();
 
   router.get("/health", (_req, res) => {
-    res.status(200).json({ status: "ok" });
+    res.status(200).json({ status: "ok", ...readBuildIdentity(dependencies.env) });
   });
   if (dependencies.env.METRICS_ENABLED) {
     if (!dependencies.metricsRegistry || !dependencies.env.METRICS_AUTH_TOKEN) {

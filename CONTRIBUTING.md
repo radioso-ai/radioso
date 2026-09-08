@@ -76,7 +76,6 @@ The guard rejects an application database that resolves to the same live Postgre
 cd frontend
 pnpm test
 pnpm run test:e2e
-pnpm run lint
 ```
 
 Keep frontend unit tests on state transitions, data transforms, API adapters, and routing logic. Reach for Playwright for anything a user sees; don't assert on markup, class names, or cosmetic copy.
@@ -92,6 +91,20 @@ pnpm run sync
 
 Documentation is part of the product. If your change affects setup, auth, APIs, ingestion, retrieval settings, SDK usage, or MCP usage, update the relevant docs under `docs/` or `docs-portal/content/` in the same pull request.
 
+## Lint and dead code
+
+Two checks cover the whole workspace, so run them from the repo root rather than inside a package:
+
+```bash
+pnpm run lint              # ESLint across every area
+pnpm run lint:fix          # applies the safe autofixes
+pnpm run lint:dead-code:ci # the dead-code ratchet
+```
+
+The ratchet asks three things of a pull request: don't introduce dead code, clean up the dead code already sitting in the files you touched, and keep `knip-baseline.json` matching what knip actually finds. So when you delete some, re-record the baseline with `pnpm run lint:dead-code:baseline` and commit it — the build fails until you do.
+
+[`docs/code-quality-gates.md`](./docs/code-quality-gates.md) explains what each gate catches and what to do when one fails.
+
 ## Before you open a pull request
 
 GitHub CI is manual here, so run the local check first. It builds and tests the workspace against your merge base:
@@ -105,6 +118,7 @@ Use `pnpm run ci:local -- --all` for changes that touch many areas, and paste th
 ## Commit and pull request format
 
 - Use [Conventional Commits](https://www.conventionalcommits.org/) for messages, such as `feat: add retrieval setting` or `fix: handle empty uploads`.
+- **The pull request title is checked by CI**, because `main` is squash-merged and the title becomes the squashed commit subject — and from there, the line an operator reads in the release notes. Write it as `<type>[(scope)][!]: <description>`, in lower case, with no trailing period and no `(#123)` suffix. Mark a change that breaks an API, SDK, connector, or worker contract with `!`; it leads the release notes and forces a major version. Run `PR_TITLE='feat: your title' node scripts/release/check-pr-title.mjs` to check one before you open the pull request. See [docs/releases.md](docs/releases.md) for how the notes are built.
 - Keep a pull request focused on one change. Extraction-only refactors are easier to review when they are separate from behavior changes.
 - Fill in the pull request template: what changed, why, how you tested it, and the `ci:local` result.
 

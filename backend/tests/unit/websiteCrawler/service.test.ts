@@ -137,7 +137,7 @@ describe("website crawler service", () => {
 
   it("flushes the final checkpoint when the provider fails", async () => {
     vi.useFakeTimers();
-    const providerError = new Error("stream failed");
+    const providerError = new WebsiteCrawlerProviderError("stream failed", { provider: "stream-crawler" });
     const checkpoints: unknown[] = [];
     const service = createCheckpointFlushTestService(async (request) => {
       await request.onCheckpointEvent?.({ type: "discovered", url: "https://example.com/failed", canonicalUrl: "https://example.com/failed" });
@@ -589,6 +589,56 @@ describe("website crawler service", () => {
   });
 
   it.each([
+    ["an explicitly selected source", "selected-source"],
+    ["a source derived from the crawled url", undefined],
+  ])("resolves %s through the ingestion service so instance methods keep their receiver", async (_description, sourceId) => {
+    // The real DocumentIngestionService resolver reaches for private helpers on `this`;
+    // a detached method reference throws before any page is crawled.
+    class IngestionServiceStub {
+      readonly resolved: unknown[] = [];
+
+      async resolveSource(input: { workspaceId: string; source: unknown }) {
+        this.resolved.push(input.source);
+        return { id: sourceId ?? "source-1" };
+      }
+
+      async ingest() {
+        return { documentId: "doc-1", status: "queued" as const };
+      }
+
+      async updateSourceSyncState() {}
+
+      async reapMissingPages() {
+        return { deletedCount: 0, deletedContentBytes: 0 };
+      }
+    }
+    const documentIngestionService = new IngestionServiceStub();
+    const service = new WebsiteCrawlerService({
+      provider: createProvider([{
+        sourceUrl: "https://example.com/a",
+        canonicalUrl: "https://example.com/a",
+        title: "A",
+        content: "alpha",
+        metadata: {},
+      }]),
+      documentIngestionService,
+      auditService: { record: vi.fn() },
+      assertCrawlUrlAllowed: async () => undefined,
+    });
+
+    const result = await service.crawlAndPublish({
+      workspaceId: "workspace-1",
+      sourceId,
+      url: "https://example.com",
+      limit: 5,
+    });
+
+    expect(documentIngestionService.resolved).toHaveLength(1);
+    expect(result.accepted).toBe(1);
+    expect(result.failed).toBe(0);
+  });
+
+  it.each([
     ["the source resolver is absent", undefined],
     ["the selected source cannot be resolved", vi.fn().mockResolvedValue(null)],
     ["the resolver returns a different source", vi.fn().mockResolvedValue({ id: "wrong-source" })],
@@ -684,6 +734,67 @@ describe("website crawler service", () => {
     }));
   });
 
+  it("normalizes streamed provider failures without detaching the provider method", async () => {
+    const auditService = { record: vi.fn() };
+    const provider = {
+      name: "stream-crawler",
+      crawl: vi.fn(),
+      async crawlStream() {
+        if (this.name !== "stream-crawler") {
+          throw new Error("provider method lost its receiver");
+        }
+        throw new Error("stream provider failed");
+      },
+    };
+    const service = new WebsiteCrawlerService({
+      provider,
+      documentIngestionService: { ingest: vi.fn() },
+      auditService,
+      assertCrawlUrlAllowed: async () => undefined,
+    });
+
+    await expect(service.crawlAndPublish({
+      workspaceId: "workspace-1",
+      url: "https://example.com",
+      limit: 1,
+    })).rejects.toMatchObject({
+      code: "website_crawler_provider_failed",
+      statusCode: 502,
+      message: "stream provider failed",
+    });
+
+    expect(auditService.record).toHaveBeenCalledWith(expect.objectContaining({
+      metadata: expect.objectContaining({ failureCode: "website_crawler_provider_failed" }),
+    }));
+  });
+
+  it("keeps streamed callback failures classified as internal crawler faults", async () => {
+    const auditService = { record: vi.fn() };
+    const service = new WebsiteCrawlerService({
+      provider: {
+        name: "stream-crawler",
+        crawl: vi.fn(),
+        crawlStream: vi.fn(async (_request, onPage) => {
+          await onPage({ sourceUrl: "https://example.com", content: undefined as never });
+          return { provider: "stream-crawler", status: "completed" };
+        }),
+      },
+      documentIngestionService: { ingest: vi.fn() },
+      auditService,
+      assertCrawlUrlAllowed: async () => undefined,
+    });
+
+    await expect(service.crawlAndPublish({
+      workspaceId: "workspace-1",
+      url: "https://example.com",
+      limit: 1,
+    })).rejects.toBeInstanceOf(TypeError);
+
+    expect(auditService.record).toHaveBeenCalledWith(expect.objectContaining({
+      metadata: expect.objectContaining({ failureCode: "website_crawler_internal_fault" }),
+    }));
+  });
+
   it("audits URL policy failures with the original bad request code", async () => {
     const auditService = { record: vi.fn() };
     const provider = createProvider([]);
@@ -713,6 +824,35 @@ describe("website crawler service", () => {
       metadata: expect.objectContaining({
         failureCode: "bad_request",
         failureStatusCode: 400,
+      }),
+    }));
+  });
+
+  it("audits an unexpected setup exception as an internal crawler fault", async () => {
+    const auditService = { record: vi.fn() };
+    const resolveSource = vi.fn().mockRejectedValue(new TypeError("Cannot read properties of undefined"));
+    const crawl = vi.fn();
+    const service = new WebsiteCrawlerService({
+      provider: { name: "test-crawler", crawl },
+      documentIngestionService: { ingest: vi.fn(), resolveSource },
+      auditService,
+      assertCrawlUrlAllowed: async () => undefined,
+    });
+
+    await expect(service.crawlAndPublish({
+      workspaceId: "workspace-1",
+      sourceId: "source-1",
+      url: "https://example.com",
+      limit: 1,
+    })).rejects.toBeInstanceOf(TypeError);
+
+    expect(crawl).not.toHaveBeenCalled();
+    expect(auditService.record).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "document.website_crawler.crawl",
+      eventStatus: "failure",
+      metadata: expect.objectContaining({
+        failureCode: "website_crawler_internal_fault",
+        failureStatusCode: 500,
       }),
     }));
   });

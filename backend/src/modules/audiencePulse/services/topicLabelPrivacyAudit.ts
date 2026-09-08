@@ -1,12 +1,13 @@
 import type { TelemetryService } from "../../../shared/observability/telemetry/telemetryService.js";
 import type {
+  ModelCallIssuedReporter,
   TopicLabel,
   TopicLabelPrivacyAuditPort,
   TopicNamingExemplars,
   TopicNamingPort,
 } from "../contracts/topicLabel.js";
 
-export interface ResolveAuditedTopicLabelInput {
+interface ResolveAuditedTopicLabelInput {
   workspaceId: string;
   /** The cluster/topic identifier the label is for -- an id, never label text. */
   topicId: string;
@@ -18,6 +19,7 @@ export interface ResolveAuditedTopicLabelInput {
   privacyAuditPort: TopicLabelPrivacyAuditPort;
   telemetryService?: Pick<TelemetryService, "emit">;
   signal?: AbortSignal;
+  onModelCallIssued?: ModelCallIssuedReporter;
 }
 
 /**
@@ -35,13 +37,17 @@ export interface ResolveAuditedTopicLabelInput {
 export const resolveAuditedTopicLabel = async (
   input: ResolveAuditedTopicLabelInput,
 ): Promise<TopicLabel> => {
-  const firstReview = await input.privacyAuditPort.review(input.candidate, input.signal);
+  const firstReview = await input.privacyAuditPort.review(
+    input.candidate,
+    input.signal,
+    input.onModelCallIssued,
+  );
   if (!firstReview.flagged) {
     return input.candidate;
   }
 
-  const regenerated = await input.namingPort.name(input.exemplars, input.signal);
-  const secondReview = await input.privacyAuditPort.review(regenerated, input.signal);
+  const regenerated = await input.namingPort.name(input.exemplars, input.signal, input.onModelCallIssued);
+  const secondReview = await input.privacyAuditPort.review(regenerated, input.signal, input.onModelCallIssued);
   if (!secondReview.flagged) {
     return regenerated;
   }
@@ -54,5 +60,5 @@ export const resolveAuditedTopicLabel = async (
     metrics: { rejectionCount: 1 },
   }).catch(() => undefined);
 
-  return input.namingPort.nameFallback(input.signal);
+  return input.namingPort.nameFallback(input.signal, input.onModelCallIssued);
 };

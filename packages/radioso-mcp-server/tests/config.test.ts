@@ -1,8 +1,22 @@
 import { describe, expect, it } from "vitest";
 
-import { loadConfig } from "../src/config.js";
+import { loadConfig, type RadiosoMcpConfig } from "../src/config.js";
 
 describe("loadConfig", () => {
+  it("keeps operatorMcp optional for programmatic legacy configurations", () => {
+    const config: RadiosoMcpConfig = {
+      baseUrl: "http://localhost:8080",
+      bindHost: "127.0.0.1",
+      bindPort: 8787,
+      redisKeyPrefix: "radioso-mcp",
+      requestTimeoutMs: 30_000,
+      serverName: "radioso-context",
+      trustedProxyHops: 0,
+    };
+
+    expect(config.operatorMcp).toBeUndefined();
+  });
+
   it("reads the remote runtime env vars and applies defaults", () => {
     const config = loadConfig({
       RADIOSO_BASE_URL: "http://localhost:8080",
@@ -23,8 +37,79 @@ describe("loadConfig", () => {
       requestTimeoutMs: 15000,
       serverName: "radioso-test",
       signingSecret: undefined,
+      operatorMcp: { enabled: false },
       trustedProxyHops: 0,
     });
+  });
+
+  it("activates Operator MCP from one complete externally-versioned configuration", () => {
+    expect(() => loadConfig({
+      RADIOSO_BASE_URL: "http://localhost:8080",
+      OPERATOR_MCP_RESOURCE_URL: "https://mcp.example/operator/mcp",
+      OPERATOR_MCP_ISSUER_URL: "https://app.example",
+      OPERATOR_MCP_INTERNAL_SECRET: "a-long-enough-operator-proof-secret",
+    })).toThrow(/OPERATOR_MCP_CREDENTIAL_EPOCH/i);
+
+    expect(loadConfig({
+      RADIOSO_BASE_URL: "http://localhost:8080",
+      OPERATOR_MCP_RESOURCE_URL: "https://mcp.example/operator/mcp",
+      OPERATOR_MCP_ISSUER_URL: "https://app.example",
+      OPERATOR_MCP_INTERNAL_SECRET: "a-long-enough-operator-proof-secret",
+      OPERATOR_MCP_CREDENTIAL_EPOCH: "7",
+    }).operatorMcp).toEqual({
+      credentialEpoch: "7",
+      enabled: true,
+      internalSecret: "a-long-enough-operator-proof-secret",
+      issuerUrl: "https://app.example",
+      resourceUrl: "https://mcp.example/operator/mcp",
+    });
+    expect(() => loadConfig({
+      RADIOSO_BASE_URL: "http://localhost:8080",
+      OPERATOR_MCP_RESOURCE_URL: "https://mcp.example/operator/mcp",
+      OPERATOR_MCP_ISSUER_URL: "https://app.example/oauth",
+      OPERATOR_MCP_INTERNAL_SECRET: "a-long-enough-operator-proof-secret",
+      OPERATOR_MCP_CREDENTIAL_EPOCH: "1",
+    })).toThrow(/OPERATOR_MCP_ISSUER_URL/i);
+  });
+
+  it("requires HTTPS issuer/resource in production but permits loopback HTTP in development", () => {
+    const common = {
+      OPERATOR_MCP_INTERNAL_SECRET: "a-long-enough-operator-proof-secret",
+      OPERATOR_MCP_CREDENTIAL_EPOCH: "1",
+    };
+    expect(() => loadConfig({
+      ...common,
+      NODE_ENV: "production",
+      OPERATOR_MCP_ISSUER_URL: "http://127.0.0.1:8080",
+      OPERATOR_MCP_RESOURCE_URL: "http://127.0.0.1:8787/operator/mcp",
+      RADIOSO_BASE_URL: "http://localhost:8080",
+    })).toThrow(/HTTPS/i);
+    expect(loadConfig({
+      ...common,
+      NODE_ENV: "development",
+      OPERATOR_MCP_ISSUER_URL: "http://127.0.0.1:8080",
+      OPERATOR_MCP_RESOURCE_URL: "http://127.0.0.1:8787/operator/mcp",
+      RADIOSO_BASE_URL: "http://localhost:8080",
+    }).operatorMcp.enabled).toBe(true);
+    expect(() => loadConfig({
+      ...common,
+      NODE_ENV: "development",
+      OPERATOR_MCP_ISSUER_URL: "http://app.example",
+      OPERATOR_MCP_RESOURCE_URL: "http://mcp.example/operator/mcp",
+      RADIOSO_BASE_URL: "http://localhost:8080",
+    })).toThrow(/loopback|HTTPS/i);
+  });
+
+  it("preserves operator secret bytes exactly", () => {
+    const internalSecret = `  ${"x".repeat(32)}  `;
+    expect(loadConfig({
+      NODE_ENV: "development",
+      OPERATOR_MCP_CREDENTIAL_EPOCH: "1",
+      OPERATOR_MCP_INTERNAL_SECRET: internalSecret,
+      OPERATOR_MCP_ISSUER_URL: "http://127.0.0.1:8080",
+      OPERATOR_MCP_RESOURCE_URL: "http://127.0.0.1:8787/operator/mcp",
+      RADIOSO_BASE_URL: "http://localhost:8080",
+    }).operatorMcp).toMatchObject({ internalSecret });
   });
 
   it("does not require a signing secret for one standalone process with in-memory sessions", () => {

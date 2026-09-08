@@ -11,7 +11,7 @@ const { describeIntegration, integrationDatabaseUrl } = await resolveIntegration
 const claimableNow = () => new Date(Date.now() + 1_000);
 
 describeIntegration("FacetExtractionJobRepository (Postgres)", () => {
-  const database = new Database(integrationDatabaseUrl as string);
+  const database = new Database(integrationDatabaseUrl);
   const repository = new FacetExtractionJobRepository(database.kysely);
   const accountId = randomUUID();
   const workspaceId = randomUUID();
@@ -60,7 +60,7 @@ describeIntegration("FacetExtractionJobRepository (Postgres)", () => {
        FROM facet_extraction_jobs WHERE id = $1`,
       [jobId],
     );
-    return rows[0]!;
+    return rows[0];
   };
 
   beforeAll(async () => {
@@ -94,14 +94,14 @@ describeIntegration("FacetExtractionJobRepository (Postgres)", () => {
       `SELECT count(*)::text AS count FROM facet_extraction_jobs WHERE message_id = $1`,
       [messageId],
     );
-    expect(rows[0]!.count).toBe("1");
+    expect(rows[0].count).toBe("1");
   });
 
   it("enqueue does not resurrect a terminal job for the same message", async () => {
     const messageId = await createMessage();
     const first = await repository.enqueue({ messageId, workspaceId });
     const [claimed] = await repository.claimBatch(10, claimableNow());
-    await repository.markCompleted(claimed!);
+    await repository.markCompleted(claimed);
 
     const second = await repository.enqueue({ messageId, workspaceId });
 
@@ -113,7 +113,7 @@ describeIntegration("FacetExtractionJobRepository (Postgres)", () => {
     const messageId = await createMessage();
     const first = await repository.enqueue({ messageId, workspaceId });
     const [claimed] = await repository.claimBatch(10, claimableNow());
-    await repository.markCompleted(claimed!);
+    await repository.markCompleted(claimed);
 
     const second = await repository.enqueue({ messageId, workspaceId, restartTerminal: true });
 
@@ -184,7 +184,7 @@ describeIntegration("FacetExtractionJobRepository (Postgres)", () => {
   it("claimBatch honours the batch limit and skips rows scheduled in the future", async () => {
     const [future] = await seed(1);
     const [futureClaim] = await repository.claimBatch(10, claimableNow());
-    await repository.markFailed(futureClaim!, "transient", new Date(Date.now() + 60_000));
+    await repository.markFailed(futureClaim, "transient", new Date(Date.now() + 60_000));
     await seed(3);
 
     const claimed = await repository.claimBatch(2, claimableNow());
@@ -194,7 +194,7 @@ describeIntegration("FacetExtractionJobRepository (Postgres)", () => {
 
     const remaining = await repository.claimBatch(10, claimableNow());
     expect(remaining).toHaveLength(1);
-    expect(remaining[0]!.id).not.toBe(future);
+    expect(remaining[0].id).not.toBe(future);
   });
 
   it("concurrent claimBatch calls never claim the same row twice", async () => {
@@ -205,7 +205,7 @@ describeIntegration("FacetExtractionJobRepository (Postgres)", () => {
       repository.claimBatch(10, claimableNow()),
     ]);
 
-    const claimedIds = [...first!, ...second!].map((job) => job.id);
+    const claimedIds = [...first, ...second].map((job) => job.id);
     expect(new Set(claimedIds).size).toBe(claimedIds.length);
     expect(claimedIds.sort()).toEqual([...ids].sort());
   });
@@ -255,9 +255,9 @@ describeIntegration("FacetExtractionJobRepository (Postgres)", () => {
 
     const [claimed] = await repository.claimBatch(10, claimableNow());
 
-    await repository.markFailed(claimed!, "provider timeout", nextScheduledAt);
+    await repository.markFailed(claimed, "provider timeout", nextScheduledAt);
 
-    const row = await readRow(id!);
+    const row = await readRow(id);
     expect(row.status).toBe("queued");
     expect(row.claimed_at).toBeNull();
     expect(row.last_error).toBe("provider timeout");
@@ -269,9 +269,9 @@ describeIntegration("FacetExtractionJobRepository (Postgres)", () => {
     const [id] = await seed(1);
     const [claimed] = await repository.claimBatch(10, claimableNow());
 
-    await repository.markFailed(claimed!, "invalid request", null);
+    await repository.markFailed(claimed, "invalid request", null);
 
-    const row = await readRow(id!);
+    const row = await readRow(id);
     expect(row.status).toBe("failed");
     expect(row.claimed_at).toBeNull();
     expect(row.last_error).toBe("invalid request");
@@ -282,11 +282,11 @@ describeIntegration("FacetExtractionJobRepository (Postgres)", () => {
     const [completedId, skippedId] = await seed(2);
     const [completed, skippedClaim] = await repository.claimBatch(10, claimableNow());
 
-    await repository.markCompleted(completed!);
-    await repository.markSkipped(skippedClaim!, "message_deleted");
+    await repository.markCompleted(completed);
+    await repository.markSkipped(skippedClaim, "message_deleted");
 
-    expect((await readRow(completedId!)).status).toBe("completed");
-    const skippedRow = await readRow(skippedId!);
+    expect((await readRow(completedId)).status).toBe("completed");
+    const skippedRow = await readRow(skippedId);
     expect(skippedRow.status).toBe("skipped");
     expect(skippedRow.last_error).toBe("message_deleted");
     expect(await repository.claimBatch(10, claimableNow())).toEqual([]);
@@ -295,12 +295,12 @@ describeIntegration("FacetExtractionJobRepository (Postgres)", () => {
   it("markCompleted clears a stale retry error", async () => {
     const [id] = await seed(1);
     const [firstClaim] = await repository.claimBatch(10, claimableNow());
-    await repository.markFailed(firstClaim!, "provider timeout", new Date(Date.now() - 1_000));
+    await repository.markFailed(firstClaim, "provider timeout", new Date(Date.now() - 1_000));
     const [secondClaim] = await repository.claimBatch(10, claimableNow());
 
-    await repository.markCompleted(secondClaim!);
+    await repository.markCompleted(secondClaim);
 
-    const row = await readRow(id!);
+    const row = await readRow(id);
     expect(row.status).toBe("completed");
     expect(row.last_error).toBeNull();
   });
@@ -321,11 +321,11 @@ describeIntegration("FacetExtractionJobRepository (Postgres)", () => {
     });
 
     expect(released).toBe(1);
-    const row = await readRow(id!);
+    const row = await readRow(id);
     expect(row.status).toBe("queued");
     expect(row.claimed_at).toBeNull();
     expect(row.attempt_count).toBe(1);
-    expect((await repository.claimBatch(10, claimableNow()))[0]!.attemptCount).toBe(2);
+    expect((await repository.claimBatch(10, claimableNow()))[0].attemptCount).toBe(2);
   });
 
   it("ignores terminal updates from an expired claim after the row is reclaimed", async () => {
@@ -338,10 +338,10 @@ describeIntegration("FacetExtractionJobRepository (Postgres)", () => {
     });
     const [freshClaim] = await repository.claimBatch(10, new Date(claimedAt.getTime() + 11 * 60_000));
 
-    expect(await repository.markCompleted(staleClaim!)).toBe(false);
-    expect(await repository.markCompleted(freshClaim!)).toBe(true);
+    expect(await repository.markCompleted(staleClaim)).toBe(false);
+    expect(await repository.markCompleted(freshClaim)).toBe(true);
 
-    const row = await readRow(id!);
+    const row = await readRow(id);
     expect(row.status).toBe("completed");
     expect(row.attempt_count).toBe(2);
   });
@@ -357,7 +357,7 @@ describeIntegration("FacetExtractionJobRepository (Postgres)", () => {
     });
 
     expect(changed).toBe(1);
-    const row = await readRow(id!);
+    const row = await readRow(id);
     expect(row.status).toBe("failed");
     expect(row.claimed_at).toBeNull();
     expect(row.last_error).toBe("claim_expired");

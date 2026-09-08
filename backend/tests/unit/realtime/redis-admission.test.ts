@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createNodeRedisAdmissionScriptPort, RedisAdmissionController, RealtimeAdmissionError, type RedisAdmissionScriptPort } from "../../../src/modules/realtime/infrastructure/redisAdmissionController.js";
+import { createNodeRedisAdmissionScriptPort, RedisAdmissionController, RealtimeAdmissionError } from "../../../src/modules/realtime/infrastructure/redisAdmissionController.js";
 import { redisAdmissionScripts } from "../../../src/modules/realtime/infrastructure/redisAdmissionScripts.js";
 import { decodeRedisAdmissionReply } from "../../../src/modules/realtime/infrastructure/redisAdmissionReply.js";
 
@@ -49,7 +49,7 @@ const createController = (replies: unknown[] = []) => {
     return { ok: true, reason: "ok", expiresAtMs: 1_700_000_090_000, serverTimeMs: 1_700_000_000_000, hasMore: false };
   });
   const events: string[] = [];
-  const controller = new RedisAdmissionController({ redis: { execute } as RedisAdmissionScriptPort, prefix, limits, instanceId: "instance-1", now: () => Date.now(), telemetry: { event: (event) => events.push(event) } });
+  const controller = new RedisAdmissionController({ redis: { execute }, prefix, limits, instanceId: "instance-1", now: () => Date.now(), telemetry: { event: (event) => events.push(event) } });
   return { calls, controller, events, execute };
 };
 afterEach(() => vi.useRealTimers());
@@ -197,7 +197,7 @@ describe("RedisAdmissionController", () => {
   it("does not return a live lease when close races an in-flight acquire", async () => {
     let resolve!: (value: unknown) => void;
     const pending = new Promise((done) => { resolve = done; });
-    const controller = new RedisAdmissionController({ redis: { execute: async () => pending } as RedisAdmissionScriptPort, prefix, instanceId: "instance-1", limits, now: () => 0 });
+    const controller = new RedisAdmissionController({ redis: { execute: async () => pending }, prefix, instanceId: "instance-1", limits, now: () => 0 });
     const admission = controller.admit({ accountId, workspaceId, principalId });
     controller.close();
     resolve({ ok: true, leaseId: "late", serverTimeMs: 0, expiresAtMs: 90_000 });
@@ -214,7 +214,7 @@ describe("RedisAdmissionController", () => {
       aggregates: Map<string, { queue: Promise<void> }>;
       renewAggregate(aggregateId: string, now: number): Promise<void>;
     };
-    const aggregateId = [...state.aggregates.keys()][0]!;
+    const aggregateId = [...state.aggregates.keys()][0];
     state.aggregates.get(aggregateId)!.queue = queued;
     const renewal = state.renewAggregate(aggregateId, 0);
     await Promise.resolve();
@@ -289,7 +289,7 @@ describe("RedisAdmissionController", () => {
       { ok: true }, { ok: true }, { ok: true }, { ok: true },
     ]);
     const leases = await Promise.all(Array.from({ length: 5 }, () => controller.admit({ accountId, workspaceId, principalId })));
-    await expect(leases[0]!.release()).rejects.toMatchObject({ statusCode: 503 });
+    await expect(leases[0].release()).rejects.toMatchObject({ statusCode: 503 });
     await Promise.all(leases.slice(1, 4).map((lease) => lease.release()));
     await vi.advanceTimersByTimeAsync(30_001);
     const transitions = calls.filter((call) => call.name === "admission.release").map((call) => call.args.slice(2, 4));
@@ -344,7 +344,7 @@ describe("RedisAdmissionController", () => {
   it("fences every active lease in an aggregate once and never rearms renewal", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(1_700_000_000_000);
-    const { controller, calls } = createController([
+    const { controller } = createController([
       { ok: true, leaseId: "one" }, { ok: true, leaseId: "two" },
       { ok: true }, { ok: false, reason: "fenced", retryAfterMs: 1 },
     ]);
@@ -353,7 +353,6 @@ describe("RedisAdmissionController", () => {
     await vi.advanceTimersByTimeAsync(30_000);
     await expect(first.risk).resolves.toMatchObject({ reason: "fenced" });
     await expect(second.risk).resolves.toMatchObject({ reason: "fenced" });
-    const renewals = calls.filter((call) => call.name === "admission.renew").length;
     controller.close();
   });
 
@@ -450,7 +449,7 @@ describe("RedisAdmissionController", () => {
     [1, 36_000],
   ])("arms independent renewal jitter inside the configured ±20%% window (%s)", async (random, dueAtMs) => {
     const controller = new RedisAdmissionController({
-      redis: { execute: async () => admissionSuccess({ leaseId: "lease" }) } as RedisAdmissionScriptPort,
+      redis: { execute: async () => admissionSuccess({ leaseId: "lease" }) },
       prefix,
       instanceId: "instance-1",
       now: () => 0,
@@ -483,7 +482,7 @@ describe("RedisAdmissionController", () => {
       return Promise.resolve(admissionSuccess({ leaseId: "lease" }));
     });
     const controller = new RedisAdmissionController({
-      redis: { execute } as RedisAdmissionScriptPort,
+      redis: { execute },
       prefix,
       instanceId: "instance-1",
       now: () => Date.now(),
@@ -540,7 +539,7 @@ describe("RedisAdmissionController", () => {
     let resolve!: () => void;
     const deferred = new Promise((done) => { resolve = () => done(admissionSuccess({ leaseId: "lease" })); });
     const execute = vi.fn(async () => deferred);
-    const controller = new RedisAdmissionController({ redis: { execute } as RedisAdmissionScriptPort, prefix, instanceId: "instance-1", limits: { ...limits, localProcessCap: 1 }, now: () => 0 });
+    const controller = new RedisAdmissionController({ redis: { execute }, prefix, instanceId: "instance-1", limits: { ...limits, localProcessCap: 1 }, now: () => 0 });
     const pending = controller.admit({ accountId, workspaceId, principalId });
     await expect(controller.admit({ accountId, workspaceId: otherWorkspaceId, principalId })).rejects.toMatchObject({ reason: "local_capacity", statusCode: 429 });
     expect((controller as unknown as { aggregates: Map<string, unknown> }).aggregates.size).toBe(1);
@@ -574,7 +573,7 @@ describe("RedisAdmissionController", () => {
     vi.useFakeTimers();
     vi.setSystemTime(1_700_000_000_000);
     const { controller, events } = createController([{ ok: true, leaseId: "lease-1" }, new Error("renew"), new Error("renew")]);
-    const lease = await controller.admit({ accountId, workspaceId, principalId });
+    await controller.admit({ accountId, workspaceId, principalId });
     expect(controller.schedulerCount()).toBe(1);
     controller.close();
     expect(controller.schedulerCount()).toBe(0);
@@ -728,7 +727,7 @@ describe("RedisAdmissionController", () => {
       return response;
     });
     const controller = new RedisAdmissionController({
-      redis: { execute } as RedisAdmissionScriptPort, prefix, instanceId: "instance-1", now: () => Date.now(),
+      redis: { execute }, prefix, instanceId: "instance-1", now: () => Date.now(),
       limits: { ...limits, renewalMs: 100, leaseTtlMs: 1_000, safetyMs: 100, closeJitterMaxMs: 50 },
     });
     const lease = await controller.admit({ accountId, workspaceId, principalId });
@@ -743,7 +742,7 @@ describe("RedisAdmissionController", () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);
     const controller = new RedisAdmissionController({
-      redis: { execute: async () => admissionSuccess({ leaseId: "lease", expiresAtMs: 100 }) } as RedisAdmissionScriptPort,
+      redis: { execute: async () => admissionSuccess({ leaseId: "lease", expiresAtMs: 100 }) },
       prefix,
       instanceId: "instance-1",
       now: () => Date.now(),
@@ -766,7 +765,7 @@ describe("RedisAdmissionController", () => {
       if (calls === 1) return admissionSuccess({ leaseId: "lease", expiresAtMs: 100 });
       throw new Error("late renewal");
     });
-    const controller = new RedisAdmissionController({ redis: { execute } as RedisAdmissionScriptPort, prefix, instanceId: "instance-1", now: () => Date.now(), limits: { ...limits, renewalMs: 100, leaseTtlMs: 100, safetyMs: 20, closeJitterMaxMs: 19 } });
+    const controller = new RedisAdmissionController({ redis: { execute }, prefix, instanceId: "instance-1", now: () => Date.now(), limits: { ...limits, renewalMs: 100, leaseTtlMs: 100, safetyMs: 20, closeJitterMaxMs: 19 } });
     const lease = await controller.admit({ accountId, workspaceId, principalId });
     let risks = 0;
     let closeAtMs = Number.NaN;

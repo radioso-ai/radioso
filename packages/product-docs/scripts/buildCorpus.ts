@@ -84,6 +84,33 @@ const trimBlankEdges = (lines: string[]): string => {
   return lines.slice(start, end).join("\n");
 };
 
+const normalizeLastUpdated = (value: unknown, relativePath: string): string | null => {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (value instanceof Date) {
+    return value.toISOString().slice(0, 10);
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  throw new Error(`${relativePath} last_updated must be an ISO date string when present.`);
+};
+
+const describeUnknownError = (error: unknown): string => {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (typeof error === "string") {
+    return error;
+  }
+  if (typeof error === "number" || typeof error === "boolean" || typeof error === "bigint") {
+    return `${error}`;
+  }
+  const serialized = JSON.stringify(error);
+  return serialized ?? "Unknown error";
+};
+
 /**
  * Splits a page at its `##` headings so a long page can be read one section at a time. Fenced
  * blocks are tracked because a `##` comment inside an example is not a section boundary.
@@ -138,9 +165,7 @@ const buildCorpus = async () => {
     // YAML parses a bare `2026-09-08` into a Date at UTC midnight; both forms normalize to the same
     // ISO day the frontmatter shows.
     const rawLastUpdated: unknown = matter(source).data.last_updated;
-    const lastUpdated = rawLastUpdated instanceof Date
-      ? rawLastUpdated.toISOString().slice(0, 10)
-      : rawLastUpdated;
+    const lastUpdated = normalizeLastUpdated(rawLastUpdated, relativePath);
     const url = slug === "index" ? CITATION_BASE : `${CITATION_BASE}/${slug}`;
     const { intro, sections } = splitSections(converted.markdown);
 
@@ -150,7 +175,7 @@ const buildCorpus = async () => {
       title: converted.title,
       description: converted.description,
       section: SECTION_LABELS[slug.split("/")[0]] ?? "Overview",
-      lastUpdated: lastUpdated === undefined ? null : String(lastUpdated),
+      lastUpdated,
       intro,
       sections,
     });
@@ -180,6 +205,6 @@ const main = async () => {
 };
 
 main().catch((error: unknown) => {
-  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+  process.stderr.write(`${describeUnknownError(error)}\n`);
   process.exitCode = 1;
 });

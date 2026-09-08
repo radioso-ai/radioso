@@ -5,6 +5,7 @@ import { AppError } from "../../src/shared/domain/errors.js";
 import { LLM_DEFAULTS } from "../../src/shared/domain/behaviorConfig.js";
 import { AGENT_STEP_MAX_INPUT_TOKENS } from "../../src/shared/agent-runtime/index.js";
 import { ModelInferencePipelineService } from "../../src/shared/infra/llm/modelInferencePipeline.js";
+import { captureModelCallTrace } from "../../src/shared/observability/tracing/modelCallTraceContext.js";
 import { streamWithUsage } from "../../src/shared/infra/llm/providerStreaming.js";
 import type { TextGenerationClient } from "../../src/shared/infra/llm/providerTypes.js";
 import type { ModelUsageEvent, UsageEventRecorder } from "../../src/shared/domain/usageEventRecorder.js";
@@ -103,6 +104,89 @@ describe("ModelInferencePipelineService", () => {
       "radioso.workspace_id": "workspace-1",
     });
     expect(JSON.stringify(exporter.spans[0]?.attributes)).not.toContain("private prompt");
+  });
+
+  it("forwards the dispatch record to the provider completion boundary", async () => {
+    const dispatchRecord = { dispatched: false };
+    const complete = vi.fn(async (request) => {
+      // The provider must never be handed the caller's object.
+      expect(request.dispatchRecord).not.toBe(dispatchRecord);
+      request.dispatchRecord!.dispatched = true;
+      return textResult("Answer");
+    });
+    const client: TextGenerationClient = {
+      metadata: { capability: "chat", provider: "openai", model: "gpt-test" },
+      complete,
+      stream: vi.fn(() => streamResult(["Answer"])),
+    };
+    const pipeline = new ModelInferencePipelineService(client);
+
+    await pipeline.complete({
+      operation: usageContext,
+      prompt: "private prompt",
+      dispatchRecord,
+    });
+
+    expect(dispatchRecord.dispatched).toBe(true);
+  });
+
+  it("keeps a hostile dispatch record from touching the request it observes", async () => {
+    const controller = new AbortController();
+    let seenBySetter = 0;
+    // A record is documented as plain data, but an accessor would otherwise run inside
+    // the provider and could abort or fail the very call it exists to observe.
+    const hostileRecord = {
+      get dispatched() { return false; },
+      set dispatched(_value: boolean) {
+        seenBySetter += 1;
+        controller.abort();
+        throw new Error("hostile accounting sink");
+      },
+    };
+    const complete = vi.fn(async (request) => {
+      request.dispatchRecord!.dispatched = true;
+      expect(controller.signal.aborted).toBe(false);
+      return textResult("Answer");
+    });
+    const client: TextGenerationClient = {
+      metadata: { capability: "chat", provider: "openai", model: "gpt-test" },
+      complete,
+      stream: vi.fn(() => streamResult(["Answer"])),
+    };
+
+    const result = await new ModelInferencePipelineService(client).complete({
+      operation: usageContext,
+      prompt: "private prompt",
+      dispatchRecord: hostileRecord,
+    });
+
+    expect(result.text).toBe("Answer");
+    expect(seenBySetter).toBe(1);
+  });
+
+  it("forwards the dispatch record to the provider streaming boundary", async () => {
+    const dispatchRecord = { dispatched: false };
+    const client: TextGenerationClient = {
+      metadata: { capability: "chat", provider: "openai", model: "gpt-test" },
+      complete: vi.fn(async () => textResult("unused")),
+      stream(request) {
+        expect(request.dispatchRecord).not.toBe(dispatchRecord);
+        request.dispatchRecord!.dispatched = true;
+        return streamResult(["Answer"]);
+      },
+    };
+    const pipeline = new ModelInferencePipelineService(client);
+
+    const { textStream } = pipeline.stream({
+      operation: usageContext,
+      prompt: "private prompt",
+      dispatchRecord,
+    });
+    for await (const _chunk of textStream) {
+      // drain
+    }
+
+    expect(dispatchRecord.dispatched).toBe(true);
   });
 
   it("rejects oversized non-streaming prompts before calling the provider", async () => {
@@ -329,6 +413,39 @@ describe("ModelInferencePipelineService", () => {
     });
   });
 
+  it("surfaces reasoning and cached input tokens on the model call trace", async () => {
+    const { recorder } = recordingUsageRecorder();
+    const client: TextGenerationClient = {
+      metadata: { capability: "chat", provider: "openai", model: "gpt-reasoning" },
+      async complete() {
+        return textResult("Answer", {
+          inputTokens: 100,
+          outputTokens: 40,
+          reasoningTokens: 12,
+          cachedInputTokens: 64,
+          totalTokens: 140,
+          quality: "actual",
+        });
+      },
+      stream: () => streamResult(["unused"]),
+    };
+    const pipeline = new ModelInferencePipelineService(client, recorder);
+
+    // Without these on the trace, a slow turn cannot be told apart from a turn that
+    // spent its budget on hidden reasoning, or one whose prompt prefix went uncached.
+    const { calls } = await captureModelCallTrace(async () => {
+      await pipeline.complete({ operation: usageContext, prompt: "Private prompt" });
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      inputTokens: 100,
+      outputTokens: 40,
+      reasoningTokens: 12,
+      cachedInputTokens: 64,
+    });
+  });
+
   it("records an early-returned stream exactly once as cancelled with provider usage", async () => {
     const { recorder, events } = recordingUsageRecorder();
     const providerUsage = {
@@ -348,6 +465,11 @@ describe("ModelInferencePipelineService", () => {
             yield "PRIVATE PARTIAL OUTPUT";
             yield "unused";
           } finally {
+            // Intentional: streamWithUsage reads the generator's return value as the
+            // final usage payload (see providerStreaming.ts). Closing the iterator via
+            // `.return()` only runs code placed in `finally`, mirroring real provider
+            // adapters' close semantics -- not the accidental-swallow the rule guards.
+            // eslint-disable-next-line no-unsafe-finally -- see comment above
             return providerUsage;
           }
         });
@@ -385,7 +507,7 @@ describe("ModelInferencePipelineService", () => {
         return {
           textStream: (async function* () {
             const abortedSignal = new Promise<never>((_resolve, reject) => {
-              input.signal?.addEventListener("abort", () => reject(input.signal?.reason), { once: true });
+              input.signal?.addEventListener("abort", () => reject(input.signal?.reason as Error), { once: true });
             });
             yield "PRIVATE PARTIAL OUTPUT";
             await abortedSignal;

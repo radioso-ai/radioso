@@ -25,6 +25,7 @@ import { ChatWorkbenchDrawer } from '@/components/dashboard/workbench/chat-workb
 import { RoutineDiagnosticList } from '@/components/dashboard/settings/routine-editor-controls'
 import { RoutineDraftAssistDialog } from '@/components/dashboard/settings/routine-draft-assist-dialog'
 import { RoutineCompletionExportPanel } from '@/components/dashboard/settings/routine-completion-export-panel'
+import { RoutineMapButton } from '@/components/dashboard/settings/routine-canvas'
 import { RoutineDocumentTab } from '@/components/dashboard/settings/routine-document-tab'
 import { RoutineSkillCatalogProvider } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { RoutineVersionHistoryDrawer } from '@/components/dashboard/settings/routine-version-history-drawer'
@@ -1325,6 +1326,12 @@ function RoutineEditorScreen({
 
 
 
+
+            {activeRoutineDraft ? (
+              <div className="flex justify-end">
+                <RoutineMapButton draft={activeRoutineDraft} />
+              </div>
+            ) : null}
 
             {activeRoutineDraft ? (
               <RoutineDocumentTab

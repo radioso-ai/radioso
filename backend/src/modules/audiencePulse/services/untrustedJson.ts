@@ -11,4 +11,4 @@ const HTML_SENSITIVE_CHARACTERS: Record<string, string> = {
  * rule lives in exactly one place.
  */
 export const serializeUntrustedInput = (value: unknown): string =>
-  JSON.stringify(value).replace(/[<>&]/g, (character) => HTML_SENSITIVE_CHARACTERS[character]!);
+  JSON.stringify(value).replace(/[<>&]/g, (character) => HTML_SENSITIVE_CHARACTERS[character]);

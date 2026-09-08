@@ -44,7 +44,7 @@ describe("rerank recency date", () => {
     const gateway: RerankGateway = {
       async rerank(input) {
         captured = input;
-        return [{ chunkId: input.contexts[0]!.chunkId, relevanceScore: 0.9 }];
+        return [{ chunkId: input.contexts[0].chunkId, relevanceScore: 0.9 }];
       },
     };
     const service = new RerankService(gateway, undefined, fixedClock("2026-06-02T10:00:00Z"));

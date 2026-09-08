@@ -113,7 +113,7 @@ describe("start_crawl", () => {
       rationale: "y".repeat(1_000),
     }, {} as never);
 
-    const persisted = (createProposal.mock.calls[0]![0] as { payload: Record<string, unknown> }).payload;
+    const persisted = (createProposal.mock.calls[0][0] as { payload: Record<string, unknown> }).payload;
     await expect(adapter.preview("workspace-1", { url: "https://help.example.com" }, persisted)).resolves.toBeDefined();
   });
 

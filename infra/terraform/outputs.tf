@@ -53,6 +53,11 @@ output "app_base_url" {
   value       = local.app_base_url
 }
 
+output "operator_mcp_resource_url" {
+  description = "Canonical OAuth resource URL for the separate Operator MCP surface, or null while disabled."
+  value       = local.operator_mcp_configured ? "${var.mcp_public_origin}/operator/mcp" : null
+}
+
 output "document_storage_bucket_name" {
   description = "GCS bucket storing original uploaded document files"
   value       = google_storage_bucket.documents.name

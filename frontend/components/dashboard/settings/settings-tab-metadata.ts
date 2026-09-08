@@ -1,12 +1,12 @@
 import type { SettingsTab } from '@/lib/dashboard-routes'
 
-export interface SettingsSectionDescriptor {
+interface SettingsSectionDescriptor {
   id: string
   label: string
   summary: string
 }
 
-export interface SettingsTabDescriptor {
+interface SettingsTabDescriptor {
   id: SettingsTab
   title: string
   summary: string
@@ -36,6 +36,11 @@ export const settingsTabMetadata: Record<SettingsTab, SettingsTabDescriptor> = {
     title: 'API access',
     summary: 'Every identity that can call this workspace over the API.',
     sections: [
+      {
+        id: 'operator-mcp',
+        label: 'Radioso MCP',
+        summary: 'Delegated OAuth access for your preferred MCP client.',
+      },
       {
         id: 'personal-tokens',
         label: 'Personal tokens',

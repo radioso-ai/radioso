@@ -20,6 +20,8 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
     },
   },
   settingsFields: [
+    // sourceScope is left non-portable: it names document source ids that only exist in this
+    // workspace, so its value is meaningless (or wrong) in an export target.
     {
       key: "sourceScope",
       label: "Source scope",
@@ -28,6 +30,11 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       group: "Scope",
       showValueToCopilot: true,
     },
+    // Free text, and portable for the same reason the agent's own customInstruction is: it is
+    // behavior the operator authored, not a credential or personal data. Wording that names this
+    // workspace's content is a correctness annoyance the operator edits after an import, not a
+    // leak - and an agent that arrives without its retrieval instruction answers differently
+    // from the one it was taken from.
     {
       key: "instruction",
       label: "Instruction",
@@ -35,6 +42,7 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       help: "Capability-specific retrieval instruction used when this skill runs.",
       group: "Scope",
       showValueToCopilot: true,
+      portable: true,
     },
     {
       key: "retrievalStrategy",
@@ -50,6 +58,7 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       group: "Retrieval tuning",
       advanced: true,
       showValueToCopilot: true,
+      portable: true,
     },
     {
       key: "vectorTopK",
@@ -62,6 +71,7 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       group: "Retrieval tuning",
       advanced: true,
       showValueToCopilot: true,
+      portable: true,
     },
     {
       key: "rerankEnabled",
@@ -72,6 +82,7 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       group: "Retrieval tuning",
       advanced: true,
       showValueToCopilot: true,
+      portable: true,
     },
     {
       key: "rerankTopK",
@@ -85,7 +96,10 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       group: "Retrieval tuning",
       advanced: true,
       showValueToCopilot: true,
+      portable: true,
     },
+    // metadataRules is left non-portable: the rules reference this workspace's own document
+    // metadata schema and values, which an export target has no reason to share.
     {
       key: "metadataRules",
       label: "Metadata rules",
@@ -104,6 +118,7 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       group: "Query rewrite",
       advanced: true,
       showValueToCopilot: true,
+      portable: true,
     },
     {
       key: "temporalStructuredLookupEnabled",
@@ -114,6 +129,7 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       group: "Temporal retrieval",
       advanced: true,
       showValueToCopilot: true,
+      portable: true,
     },
     {
       key: "temporalBoostUpcomingEnabled",
@@ -124,6 +140,7 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       group: "Temporal retrieval",
       advanced: true,
       showValueToCopilot: true,
+      portable: true,
     },
     {
       key: "temporalDeterministicSortEnabled",
@@ -134,7 +151,9 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       group: "Temporal retrieval",
       advanced: true,
       showValueToCopilot: true,
+      portable: true,
     },
+    // Free text, portable for the same reason as instruction above.
     {
       key: "semanticRewriteInstructions",
       label: "Semantic rewrite instructions",
@@ -145,6 +164,7 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       group: "Query rewrite",
       advanced: true,
       showValueToCopilot: true,
+      portable: true,
     },
     {
       key: "lexicalRewriteInstructions",
@@ -156,6 +176,7 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       group: "Query rewrite",
       advanced: true,
       showValueToCopilot: true,
+      portable: true,
     },
     {
       key: "suggestedQuestionsEnabled",
@@ -165,6 +186,7 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       defaultValue: retrieveSettingsDefaults.suggestedQuestionsEnabled,
       group: "Suggested questions",
       showValueToCopilot: true,
+      portable: true,
     },
     {
       key: "suggestedQuestionsCount",
@@ -177,6 +199,7 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       max: 4,
       group: "Suggested questions",
       showValueToCopilot: true,
+      portable: true,
     },
   ],
   outcomeVocabulary: ["found", "empty"],

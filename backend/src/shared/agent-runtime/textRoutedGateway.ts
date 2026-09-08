@@ -84,7 +84,7 @@ const formatToolForCatalog = (schema: ToolSchema): string =>
 
 const formatToolSignature = (schema: ZodTypeAny): string => {
   const unwrapped = unwrapSchema(schema);
-  const def = unwrapped._def as { typeName: string };
+  const def = unwrapped._def as { typeName: z.ZodFirstPartyTypeKind };
   if (def.typeName !== z.ZodFirstPartyTypeKind.ZodObject) {
     return "(unknown)";
   }
@@ -94,7 +94,7 @@ const formatToolSignature = (schema: ZodTypeAny): string => {
 const formatObjectFields = (schema: z.ZodObject<z.ZodRawShape>, depth: number): string[] => {
   const fields: string[] = [];
   for (const [name, child] of Object.entries(schema.shape)) {
-    const childSchema = child as ZodTypeAny;
+    const childSchema = child;
     const optional = isOptional(childSchema);
     fields.push(`${name}${optional ? "?" : ""}: ${formatZodType(unwrapSchema(childSchema), depth)}`);
   }
@@ -107,7 +107,7 @@ const formatObjectFields = (schema: z.ZodObject<z.ZodRawShape>, depth: number): 
  * wrapper tells a model nothing about what to send.
  */
 const unwrapSchema = (schema: ZodTypeAny): ZodTypeAny => {
-  const def = schema._def as { typeName: string; innerType?: ZodTypeAny; schema?: ZodTypeAny };
+  const def = schema._def as { typeName: z.ZodFirstPartyTypeKind; innerType?: ZodTypeAny; schema?: ZodTypeAny };
   switch (def.typeName) {
     case z.ZodFirstPartyTypeKind.ZodOptional:
     case z.ZodFirstPartyTypeKind.ZodNullable:
@@ -121,7 +121,7 @@ const unwrapSchema = (schema: ZodTypeAny): ZodTypeAny => {
 };
 
 const isOptional = (schema: ZodTypeAny): boolean => {
-  const typeName = (schema._def as { typeName: string }).typeName;
+  const typeName = (schema._def as { typeName: z.ZodFirstPartyTypeKind }).typeName;
   if (typeName === z.ZodFirstPartyTypeKind.ZodOptional || typeName === z.ZodFirstPartyTypeKind.ZodDefault) return true;
   if (typeName === z.ZodFirstPartyTypeKind.ZodEffects) {
     const inner = (schema._def as { schema?: ZodTypeAny }).schema;
@@ -136,7 +136,7 @@ const isOptional = (schema: ZodTypeAny): boolean => {
 const MAX_SHAPE_DEPTH = 2;
 
 const formatZodType = (schema: ZodTypeAny, depth = 0): string => {
-  const def = schema._def as { typeName: string; [key: string]: unknown };
+  const def = schema._def as { typeName: z.ZodFirstPartyTypeKind; [key: string]: unknown };
   switch (def.typeName) {
     case z.ZodFirstPartyTypeKind.ZodString:
       return "string";

@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-09-03
+last_updated: 2026-09-06
 ---
 
 # Code Map
@@ -156,6 +156,13 @@ typed query builder) on the shared `pg.Pool`; Postgres-specific fragments live i
 the `Database` pool wrapper, the pgvector/full-text adapters, and the connector files bound to
 the published `@radioso/connector-api` contract — enforced by `pnpm run lint:no-raw-sql`
 (`scripts/checkNoRawSql.mjs`). Migrations themselves stay raw `.sql`.
+
+`pnpm run lint:unbound-methods` (`scripts/checkUnboundMethods.mjs`) catches a class or
+interface method being passed or stored without its receiver, including first-party
+workspace packages. Bind the method or pass an arrow that calls it with its owner;
+reviewed structural-port exceptions use a path, member, and receiver fingerprint in
+the allowlist beside the script. Backend CI and `pnpm run ci:local` run the complete
+backend lint chain.
 
 Should not own product rules. Domain modules depend on a `*RepositoryPort` (a
 type) and never import `pg`, Kysely, the `Database` class, or a concrete repository.
@@ -443,7 +450,7 @@ Public and tool surfaces:
 - `frontend/components/dashboard/copilot-proposal-card.tsx` (evidence section on the card)
 - `backend/src/modules/operatorCopilot/services/expensiveOperationGuard.ts` (shared rate limit for capabilities that spend model budget)
 - `backend/src/modules/operatorCopilot/probeBudget.ts` (per-turn verification budget, charged from each descriptor's declared cost)
-- `backend/src/modules/operatorCopilot/services/copilotRetentionWorker.ts` (conversation retention sweep, started by `startWorkerRuntime`)
+- `backend/src/modules/operatorCopilot/services/copilotRetentionWorker.ts` (independent conversation-retention and Operator MCP expiration sweeps, started by `startWorkerRuntime`)
 - `backend/src/modules/eval/services/evalRunService.ts` (one eval run reserves one answer, in either run mode and through either entry point)
 - `backend/tests/support/copilotEvalSuite.ts` and `copilotEvalRunner.ts` (Ray behaviour suite: assertions, sampling and reduction, the never-list adherence gate, the handoff-link report, turn observer)
 - `backend/src/modules/operatorCopilot/neverList.ts` (the boundaries Ray refuses, with the reason and deep link each refusal carries; a conversation-scoped boundary binds its link to the conversation the turn is on)
@@ -473,6 +480,50 @@ Related docs, specs, and issues:
 - `backend/tests/fixtures/copilot-evals/README.md`
 - `specs/104-in-product-operator-copilot/`
 - Issues `#1036`, `#1041`, `#1043`, `#1044`, and `#1054`
+
+## Agent Bundle (portable agent export/import)
+
+Owns the portable form of a whole agent. Export composes the `AgentConfig`
+projection with the agent's published routines, context-variable enablements, and
+skills, re-keying workspace-scoped references to natural keys and placeholding the
+ones that cannot travel. Import creates a new agent from that bundle through each
+owning module's own service, and returns every reference it could not resolve
+rather than dropping it. `AgentConfig` itself stays agent-shaped, because eval replay
+materializes a `ConversationAgent` from it, and keeps its own version:
+`AGENT_CONFIG_SCHEMA_VERSION` bumps whenever its field set changes, including
+additively, and readers declare which versions they accept
+(`SUPPORTED_AGENT_CONFIG_VERSIONS` in `agentBundle/importService.ts`). The current
+number lives in code, not here.
+
+Public surfaces and key files:
+
+- `backend/src/modules/agentBundle/README.md` (boundaries, portability rules)
+- `backend/src/modules/agentBundle/public.ts`
+- `backend/src/modules/agentBundle/domain.ts` (bundle shape, `unresolved` kinds)
+- `backend/src/modules/agentBundle/exportService.ts`
+- `backend/src/modules/agentBundle/importService.ts`
+- `backend/src/modules/agentBundle/importCleanupWorker.ts` (stale applying-job compensation)
+- `backend/src/modules/agentBundle/importProjection.ts` (placeholder handling)
+- `backend/src/app/composition/agentBundleComposition.ts` (port adapting)
+- `backend/src/app/http/routes/agentBundleRoutes.ts`
+- `backend/src/db/repositories/agentBundleImportRepository.ts` (durable import lifecycle and idempotency)
+- `backend/src/modules/skills/capabilityRegistry.ts` (`portable` settings flag)
+- `frontend/lib/agent-bundle.ts` (file reading, filename, unresolved grouping)
+- `frontend/lib/api-agent-bundle.ts`
+- `frontend/components/dashboard/settings/agent-bundle-export-card.tsx`
+- `frontend/components/dashboard/agent-bundle-import-dialog.tsx`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/agent-bundle-export.test.ts tests/unit/agent-bundle-import.test.ts tests/unit/agent-bundle-routes.test.ts tests/unit/skill-capability-portability.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/agent-bundle-import-jobs.test.ts tests/unit/agent-bundle-import-cleanup-worker.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/agent-bundle-import-jobs.integration.test.ts --no-file-parallelism`
+- `cd frontend && pnpm exec vitest run tests/unit/agent-bundle.test.ts`
+- `cd frontend && pnpm exec playwright test tests/e2e/agent-bundle.spec.ts`
+
+Related specs and issues:
+
+- `specs/100-portable-agent-authoring/` (`plan-agent-bundle.md` is the design record)
 
 ## Context Variables
 
@@ -818,7 +869,8 @@ Public surfaces and contracts:
 - `backend/src/modules/routines/public.ts` (definition types, compiler, validator)
 - `backend/src/modules/routines/authoringEdit.ts` (stable-id field patch and the keyed projection an external authoring surface reviews a routine through)
 - `packages/routine-definition` (shared definition schemas and types)
-- `packages/routine-document` (routine block-document projection and shared guard/condition labeling for the Document editor)
+- `packages/routine-document` (routine block-document projection and shared guard/condition labeling, including `branchDecisionLabel` — the one place a branch's decision is named for the Document editor and the map)
+- `packages/routine-definition` also owns the shared slot-collection rule (`collectedSlotsByStep`, `SLOT_REFERENCE_PATTERN`) so the compiler, the population analysis, and the authoring surfaces agree on which step captures a slot
 - `backend/src/app/http/routes/agentRoutes.ts` (`/api/v1/agents/:agentId/routines` CRUD/validate/publish/revise/archive/restore)
 - `packages/conversation-contract/index.d.ts` (the `Routine` graph and guards the compiler targets)
 - `packages/conversation-defaults/src/routineRegistry.ts` (ranked one-call
@@ -833,10 +885,15 @@ Primary internals:
 - `packages/conversation-engine/src/routineRunner.ts` (runtime: activation, resume, guards, fast-forward)
 - `backend/prompts/chat/routine-next-step.md`, `routine-step-reply.md`, `routine-ranked-activation.md`
 - `frontend/components/dashboard/settings/assistant-routines-section.tsx` (authoring UI)
+- `frontend/lib/routine-flow.ts` (block document → canvas graph, guard provenance, slot collection)
+- `frontend/components/dashboard/settings/routine-canvas.tsx` (read-only map over that graph)
+- `frontend/lib/turn-flow-layout.ts` (`layoutFlowGraph`, the dagre call the turn flow and the routine map share)
 
 Focused checks:
 
 - `cd backend && pnpm test -- tests/unit/routine-definition-domain.test.ts tests/unit/routine-definition-service.test.ts tests/integration/chat.integration.test.ts`
+- `cd frontend && pnpm exec vitest run tests/unit/routine-flow.test.ts`
+- `cd frontend && pnpm exec playwright test tests/e2e/routine-canvas.spec.ts`
 - `cd packages/conversation-engine && pnpm test`
 
 Related docs and specs:
@@ -1208,6 +1265,42 @@ Related docs and specs:
 - `specs/043-settings-ui-refresh/`
 - `specs/033-dashboard-deep-links/`
 
+## Apps
+
+Owns the provider-neutral contract every Hosted App and every host surface reads:
+manifest schemas, the runtime protocol envelopes, the App Job wake-up envelope,
+and `validateManifest`, which parses a manifest, resolves the references it makes
+to its own declarations, and measures it against what a host admits.
+
+Should not own persistence, transport, execution, or product policy. It carries
+schemas and pure functions, and depends on nothing inside the workspace.
+
+Primary paths:
+
+- `packages/app-contract/src/index.ts` — the public surface
+- `packages/app-contract/src/manifest.ts` — the `AppManifest` schema
+- `packages/app-contract/src/runtime.ts` — invocation and host capability envelopes
+- `packages/app-contract/src/validate.ts` — admission rules and issue codes
+- `packages/app-contract/fixtures/reference/wordpress.manifest.json` — the conformance vector
+- `packages/app-contract/tests/`
+
+Useful searches:
+
+- `rg "validateManifest|appManifestSchema|hostCapabilityRequestSchema" packages backend`
+- `rg "app-contract" package.json packages backend`
+
+Focused checks:
+
+- `pnpm --filter @radioso/app-contract test`
+- `pnpm --filter @radioso/app-contract build`
+
+Related docs and specs:
+
+- [App Manifest Reference](../apps/app-manifest.md)
+- [App Runtime Protocol](../apps/runtime-protocol.md)
+- `packages/app-contract/README.md`
+- `specs/1118-hosted-app-runtime/`
+
 ## MCP Server Package
 
 Owns the standalone MCP server package, MCP transport, read/write tool
@@ -1246,6 +1339,7 @@ Focused checks:
 Related docs and specs:
 
 - [MCP Client Setup](../mcp-client-setup.md)
+- [Operator MCP OAuth Access](../operator-mcp.md)
 - `packages/radioso-mcp-server/README.md`
 - `specs/043-mcp-context-server/`
 - `specs/061-mcp-deployment-modes/`
@@ -1363,7 +1457,8 @@ Primary paths:
 - `backend/tests/fixtures/conversation-quality/` — the dataset (corpus, seed
   routines and directives, agent, cases, `baseline.json`) and its `README.md`
 - `backend/scripts/runEvals.ts` — headless CLI that seeds fixtures, drives turns
-  through `WorkbenchReplayRunner`, scores, and gates on the baseline
+  through `WorkbenchReplayRunner`, scores, and gates on the baseline; every selected
+  case must have a committed baseline entry
 - `.github/workflows/conversation-quality-evals.yml` — nightly live run
 
 Full-assistant runs use the same conversation turn assembly as production chat

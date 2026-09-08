@@ -15,6 +15,7 @@ import { getApiErrorMessage } from '@/lib/api-error'
 import { generalSettingsApi, type GeneralSettings } from '@/lib/api'
 import { editionController } from '@/lib/edition-controller'
 import { formatLastUsed } from '@/lib/format-last-used'
+import { mergeGeneralSettingsSnapshot } from '@/lib/general-settings-snapshot'
 import {
   buildWebsiteEmbedTestHarnessUrl,
   buildWebsiteEmbedSnippet,
@@ -38,6 +39,8 @@ export type WebsiteEmbedSettingsControllerProps = {
   updateGeneralSettings?: typeof generalSettingsApi.updateGeneralSettings
   rotateWebsiteEmbedToken?: () => Promise<GeneralSettings>
   anonDraftVersionRef: MutableRefObject<number>
+  /** Counts logo writes, so a save started before one cannot restore the replaced logo URL. */
+  assistantLogoWriteRef: MutableRefObject<number>
   saveSequenceRef: MutableRefObject<number>
   setSaveState: (state: SaveState) => void
   setSaveError: (message: string | null) => void
@@ -131,6 +134,7 @@ function WebsiteEmbedSettingsPanel({
   updateGeneralSettings = generalSettingsApi.updateGeneralSettings,
   rotateWebsiteEmbedToken = () => generalSettingsApi.rotateWebsiteEmbedToken({ auth: 'session' }),
   anonDraftVersionRef,
+  assistantLogoWriteRef,
   saveSequenceRef,
   setSaveState,
   setSaveError,
@@ -229,45 +233,50 @@ function WebsiteEmbedSettingsPanel({
       return
     }
 
-    const timeout = window.setTimeout(async () => {
-      const draftVersionAtRequestStart = anonDraftVersionRef.current
-      const saveId = saveSequenceRef.current + 1
-      saveSequenceRef.current = saveId
-      setIsAnonSaving(true)
-      setSaveState('saving')
-      setSaveError(null)
-      try {
-        const updated = await updateGeneralSettings({
-          websiteEmbedEnabled: anonSettings.websiteEmbedEnabled ?? false,
-          websiteEmbedAllowedOrigins: websiteEmbedStoredOrigins,
-          websiteEmbedLauncherLabel: anonSettings.websiteEmbedLauncherLabel ?? 'Chat with us',
-          websiteEmbedLauncherPosition: anonSettings.websiteEmbedLauncherPosition ?? 'bottom-right',
-          websiteEmbedCopy: anonSettings.websiteEmbedCopy ?? {},
-          websiteEmbedExpertOverrides: anonSettings.websiteEmbedExpertOverrides ?? {},
-        })
-        if (saveSequenceRef.current !== saveId) return
-        setSavedAnonSettings(updated)
-        if (anonDraftVersionRef.current === draftVersionAtRequestStart) {
-          setAnonSettings(updated)
-          setSaveState('saved')
+    const timeout = window.setTimeout(() => {
+      void (async () => {
+        const draftVersionAtRequestStart = anonDraftVersionRef.current
+        const logoWriteAtRequestStart = assistantLogoWriteRef.current
+        const saveId = saveSequenceRef.current + 1
+        saveSequenceRef.current = saveId
+        setIsAnonSaving(true)
+        setSaveState('saving')
+        setSaveError(null)
+        try {
+          const updated = await updateGeneralSettings({
+            websiteEmbedEnabled: anonSettings.websiteEmbedEnabled ?? false,
+            websiteEmbedAllowedOrigins: websiteEmbedStoredOrigins,
+            websiteEmbedLauncherLabel: anonSettings.websiteEmbedLauncherLabel ?? 'Chat with us',
+            websiteEmbedLauncherPosition: anonSettings.websiteEmbedLauncherPosition ?? 'bottom-right',
+            websiteEmbedCopy: anonSettings.websiteEmbedCopy ?? {},
+            websiteEmbedExpertOverrides: anonSettings.websiteEmbedExpertOverrides ?? {},
+          })
+          if (saveSequenceRef.current !== saveId) return
+          const hasNewerLogo = assistantLogoWriteRef.current !== logoWriteAtRequestStart
+          setSavedAnonSettings((current) => mergeGeneralSettingsSnapshot(current, updated, { hasNewerLogo }))
+          if (anonDraftVersionRef.current === draftVersionAtRequestStart) {
+            setAnonSettings((current) => mergeGeneralSettingsSnapshot(current, updated, { hasNewerLogo }))
+            setSaveState('saved')
+          }
+        } catch (error) {
+          if (saveSequenceRef.current !== saveId) return
+          const message = getApiErrorMessage(error, 'Failed to save website embed settings')
+          console.error('Failed to update website embed settings:', message, error)
+          setSaveState('error')
+          setSaveError(message)
+        } finally {
+          if (saveSequenceRef.current === saveId) {
+            setIsAnonSaving(false)
+          }
         }
-      } catch (error) {
-        if (saveSequenceRef.current !== saveId) return
-        const message = getApiErrorMessage(error, 'Failed to save website embed settings')
-        console.error('Failed to update website embed settings:', message, error)
-        setSaveState('error')
-        setSaveError(message)
-      } finally {
-        if (saveSequenceRef.current === saveId) {
-          setIsAnonSaving(false)
-        }
-      }
+      })()
     }, 700)
 
     return () => window.clearTimeout(timeout)
   }, [
     anonDraftVersionRef,
     anonSettings,
+    assistantLogoWriteRef,
     hasWebsiteEmbedChanges,
     saveSequenceRef,
     savedAnonSettings,
@@ -330,6 +339,7 @@ function WebsiteEmbedSettingsPanel({
           JSON.stringify(savedAnonSettings?.websiteEmbedExpertOverrides ?? {})
 
       if (hasPersistedChanges) {
+        const logoWriteAtRequestStart = assistantLogoWriteRef.current
         const updated = await updateGeneralSettings({
           websiteEmbedEnabled: anonSettings.websiteEmbedEnabled ?? false,
           websiteEmbedAllowedOrigins: nextOrigins,
@@ -338,8 +348,9 @@ function WebsiteEmbedSettingsPanel({
           websiteEmbedCopy: anonSettings.websiteEmbedCopy ?? {},
           websiteEmbedExpertOverrides: anonSettings.websiteEmbedExpertOverrides ?? {},
         })
-        setAnonSettings(updated)
-        setSavedAnonSettings(updated)
+        const hasNewerLogo = assistantLogoWriteRef.current !== logoWriteAtRequestStart
+        setAnonSettings((current) => mergeGeneralSettingsSnapshot(current, updated, { hasNewerLogo }))
+        setSavedAnonSettings((current) => mergeGeneralSettingsSnapshot(current, updated, { hasNewerLogo }))
       }
 
       window.open(websiteEmbedDemoUrl, '_blank', 'noopener,noreferrer')
@@ -366,10 +377,12 @@ function WebsiteEmbedSettingsPanel({
   const handleWebsiteEmbedTokenRotate = async () => {
     if (!anonSettings) return
     setIsAnonSaving(true)
+    const logoWriteAtRequestStart = assistantLogoWriteRef.current
     try {
       const updated = await rotateWebsiteEmbedToken()
-      setAnonSettings(updated)
-      setSavedAnonSettings(updated)
+      const hasNewerLogo = assistantLogoWriteRef.current !== logoWriteAtRequestStart
+      setAnonSettings((current) => mergeGeneralSettingsSnapshot(current, updated, { hasNewerLogo }))
+      setSavedAnonSettings((current) => mergeGeneralSettingsSnapshot(current, updated, { hasNewerLogo }))
     } catch (error) {
       const message = getApiErrorMessage(error, 'Could not generate a new install code. Please try again.')
       console.error('Failed to rotate website embed token:', message, error)
@@ -524,7 +537,7 @@ function WebsiteEmbedSettingsPanel({
           <Label htmlFor="websiteEmbedDisplayMode" className="text-foreground">Display mode</Label>
           <select
             id="websiteEmbedDisplayMode"
-            value={(anonSettings.websiteEmbedExpertOverrides?.displayMode ?? 'bubble') as 'bubble' | 'panel'}
+            value={(anonSettings.websiteEmbedExpertOverrides?.displayMode ?? 'bubble')}
             onChange={(event) =>
               handleWebsiteEmbedExpertOverrideChange('displayMode', event.target.value === 'bubble' ? '' : event.target.value)
             }
@@ -581,7 +594,7 @@ function WebsiteEmbedSettingsPanel({
             <Label htmlFor="websiteEmbedInitialState" className="text-foreground">When a page loads</Label>
             <select
               id="websiteEmbedInitialState"
-              value={(anonSettings.websiteEmbedExpertOverrides?.initialState ?? 'collapsed') as 'collapsed' | 'open'}
+              value={(anonSettings.websiteEmbedExpertOverrides?.initialState ?? 'collapsed')}
               onChange={(event) =>
                 handleWebsiteEmbedExpertOverrideChange('initialState', event.target.value === 'collapsed' ? '' : event.target.value)
               }
@@ -596,7 +609,7 @@ function WebsiteEmbedSettingsPanel({
             <Label htmlFor="websiteEmbedPageContext" className="text-foreground">What the assistant knows about the page</Label>
             <select
               id="websiteEmbedPageContext"
-              value={(anonSettings.websiteEmbedExpertOverrides?.pageContext ?? 'metadata') as 'metadata' | 'content'}
+              value={(anonSettings.websiteEmbedExpertOverrides?.pageContext ?? 'metadata')}
               onChange={(event) =>
                 handleWebsiteEmbedExpertOverrideChange('pageContext', event.target.value === 'metadata' ? '' : event.target.value)
               }

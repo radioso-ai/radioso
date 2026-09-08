@@ -1,0 +1,314 @@
+{
+  "manifestSchemaVersion": 1,
+  "runtimeProtocolVersion": 1,
+  "app": {
+    "id": "ai.radioso.wordpress",
+    "name": "WordPress",
+    "description": "Keeps a workspace in step with a WordPress site: pages, posts, and WooCommerce products arrive as they are published, updated, and deleted.",
+    "publisher": {
+      "id": "ai.radioso",
+      "name": "Radioso"
+    }
+  },
+  "version": "1.0.0",
+  "radiosoCompatibility": ">=0.1.0",
+  "artifact": {
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "mediaType": "application/vnd.radioso.app.node-bundle.v1+tar",
+    "entrypoint": "dist/main.js"
+  },
+  "permissions": [
+    "documents.ingest",
+    "documents.delete",
+    "storage.read",
+    "storage.write",
+    "egress.fetch"
+  ],
+  "configuration": {
+    "fields": [
+      {
+        "key": "site_url",
+        "type": "url",
+        "label": "WordPress site URL",
+        "description": "The site to sync, for example https://example.com.",
+        "required": true,
+        "placeholder": "https://example.com"
+      },
+      {
+        "key": "post_types",
+        "type": "text",
+        "label": "Post types to sync",
+        "description": "Comma-separated WordPress post types. Add product to sync a WooCommerce catalogue.",
+        "required": false,
+        "default": "page,post"
+      },
+      {
+        "key": "poll_interval_sec",
+        "type": "number",
+        "label": "Polling interval in seconds",
+        "description": "0 leaves the companion plugin to push changes. A value here polls the REST API instead, and needs site credentials.",
+        "required": false,
+        "default": 0,
+        "min": 0,
+        "max": 86400
+      }
+    ]
+  },
+  "connections": {
+    "slots": [
+      {
+        "id": "site_credentials",
+        "kind": "secret_fields",
+        "displayName": "WordPress site credentials",
+        "description": "Used only when Radioso polls the REST API.",
+        "fields": [
+          {
+            "key": "wp_username",
+            "label": "WordPress username",
+            "sensitive": false,
+            "required": true
+          },
+          {
+            "key": "wp_application_password",
+            "label": "Application password",
+            "description": "Generate one at Users, then Profile, then Application Passwords inside WordPress.",
+            "sensitive": true,
+            "required": true
+          }
+        ]
+      },
+      {
+        "id": "webhook_secret",
+        "kind": "generated_secret",
+        "displayName": "Webhook signing secret",
+        "description": "Radioso mints this and shows it once. Paste it into the companion plugin so pushes can be verified.",
+        "byteLength": 32
+      }
+    ]
+  },
+  "destinations": [
+    {
+      "id": "site",
+      "host": {
+        "kind": "configuration",
+        "field": "site_url"
+      },
+      "protocols": [
+        "https",
+        "http"
+      ],
+      "purpose": "Read published content from the configured WordPress site over its REST API.",
+      "dataClasses": [
+        "credentials",
+        "operational_metadata"
+      ],
+      "credentials": {
+        "slot": "site_credentials",
+        "application": {
+          "mode": "http_basic",
+          "usernameField": "wp_username",
+          "passwordField": "wp_application_password"
+        },
+        "required": false
+      }
+    }
+  ],
+  "storageCollections": [
+    {
+      "id": "sync_state",
+      "scope": "installation",
+      "schemaVersion": 1,
+      "compatibleReaderVersions": [
+        1
+      ],
+      "recordSchema": {
+        "fields": [
+          {
+            "key": "cursor",
+            "type": "string",
+            "required": true
+          },
+          {
+            "key": "updated_at",
+            "type": "timestamp",
+            "required": true
+          }
+        ]
+      },
+      "indexes": [
+        {
+          "id": "by_updated_at",
+          "field": "updated_at"
+        }
+      ],
+      "quotas": {
+        "maxRecords": 100,
+        "maxRecordBytes": 8192
+      },
+      "retention": {
+        "kind": "none"
+      },
+      "allowedOperations": [
+        "get",
+        "put",
+        "delete",
+        "query_by_index"
+      ]
+    }
+  ],
+  "contributions": [
+    {
+      "id": "site_content",
+      "kind": "document_source",
+      "displayName": "WordPress content",
+      "description": "Pages, posts, and products from the connected site, kept in step as they change.",
+      "permissions": [
+        "documents.ingest",
+        "documents.delete",
+        "storage.read",
+        "storage.write",
+        "egress.fetch"
+      ],
+      "egressDestinations": [
+        "site"
+      ],
+      "deadlineMs": 600000,
+      "availability": "required",
+      "inputSchemaVersion": 1,
+      "outputSchemaVersion": 1,
+      "requiredConnectionSlots": [],
+      "externalIdNamespace": "wp_post",
+      "syncModes": [
+        "push",
+        "poll",
+        "backfill"
+      ],
+      "contentFormats": [
+        "html"
+      ],
+      "indexedFields": {
+        "policy": "dynamic",
+        "maxFields": 32
+      },
+      "backfill": {
+        "checkpointCollection": "sync_state"
+      }
+    },
+    {
+      "id": "content_push",
+      "kind": "external_webhook_handler",
+      "displayName": "Content push",
+      "description": "Receives signed pushes from the Radioso Sync companion plugin when a post is published, updated, or deleted.",
+      "permissions": [
+        "documents.ingest",
+        "documents.delete"
+      ],
+      "egressDestinations": [],
+      "deadlineMs": 30000,
+      "availability": "required",
+      "inputSchemaVersion": 1,
+      "outputSchemaVersion": 1,
+      "requiredConnectionSlots": [
+        "webhook_secret"
+      ],
+      "documentSources": [
+        "site_content"
+      ],
+      "authentication": {
+        "kind": "hmac_sha256",
+        "secretConnectionSlot": "webhook_secret",
+        "signatureHeader": "X-Radioso-Signature",
+        "signaturePrefix": "sha256="
+      },
+      "maxBodyBytes": 2097152,
+      "replayWindowSeconds": 300
+    },
+    {
+      "id": "content_poll",
+      "kind": "scheduled_task",
+      "displayName": "Content poll",
+      "description": "Reads the WordPress REST API on a schedule for sites that cannot run the companion plugin.",
+      "permissions": [
+        "documents.ingest",
+        "documents.delete",
+        "storage.read",
+        "storage.write",
+        "egress.fetch"
+      ],
+      "egressDestinations": [
+        "site"
+      ],
+      "deadlineMs": 600000,
+      "availability": "optional",
+      "inputSchemaVersion": 1,
+      "outputSchemaVersion": 1,
+      "requiredConnectionSlots": [
+        "site_credentials"
+      ],
+      "documentSources": [
+        "site_content"
+      ],
+      "schedule": {
+        "kind": "interval_from_configuration",
+        "field": "poll_interval_sec",
+        "minSeconds": 60,
+        "maxSeconds": 86400,
+        "disabledValue": 0
+      },
+      "overlapPolicy": "skip",
+      "maxDurationSeconds": 600,
+      "retry": {
+        "maxAttempts": 5,
+        "backoff": {
+          "kind": "exponential",
+          "baseSeconds": 30,
+          "maxSeconds": 900
+        }
+      },
+      "checkpointCollection": "sync_state"
+    }
+  ],
+  "resourceProfile": {
+    "memoryMb": 256,
+    "cpuMillis": 1000,
+    "maxConcurrentInvocations": 4,
+    "scratchMb": 64
+  },
+  "setupGuide": {
+    "sections": [
+      {
+        "title": "Install the Radioso Sync plugin",
+        "paragraphs": [
+          "The companion plugin is what pushes content the moment it changes, so the workspace never waits for a poll."
+        ],
+        "steps": [
+          "Download radioso-sync.zip from this page.",
+          "In WordPress, go to Plugins, then Add New, then Upload Plugin, and choose the file.",
+          "Install and activate it."
+        ]
+      },
+      {
+        "title": "Point the plugin at this installation",
+        "paragraphs": [
+          "The endpoint and the signing secret belong to this installation alone. The secret is shown once, so paste it before leaving the page.",
+          "Post types starts at page,post. Set it to the comma-separated list you want synced: add product for a WooCommerce catalogue, plus any custom types the site registers."
+        ],
+        "steps": [
+          "In WordPress, open Settings, then Radioso Sync.",
+          "Paste the webhook URL and the signing secret shown on this page.",
+          "Save, then publish or update a post to confirm it arrives in Sources."
+        ]
+      }
+    ]
+  },
+  "companionAssets": [
+    {
+      "id": "companion_plugin",
+      "label": "Radioso Sync plugin for WordPress",
+      "fileName": "radioso-sync.zip",
+      "mediaType": "application/zip",
+      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ],
+  "conformanceFixtures": []
+}

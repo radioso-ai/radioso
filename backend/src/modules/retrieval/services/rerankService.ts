@@ -353,17 +353,19 @@ export class RerankService {
       const rerankBatches = chunkContexts(input.contexts, RETRIEVAL_BEHAVIOR.rerank.maxBatchSize);
       const batchScores = await Promise.all(
         rerankBatches.map((contexts, batchIndex) =>
-          this.gateway?.rerank({
-            query: input.query,
-            contexts,
-            today,
-            workspaceContext: input.workspaceContext,
-            usageContext: {
-              ...(input.usageContext ?? fallbackUsageContext(input.workspaceContext?.workspaceId)),
-              operation: "rerank",
-              attemptKey: `rerank:${batchIndex}`,
-            },
-          }),
+          this.gateway
+            ? this.gateway.rerank({
+              query: input.query,
+              contexts,
+              today,
+              workspaceContext: input.workspaceContext,
+              usageContext: {
+                ...(input.usageContext ?? fallbackUsageContext(input.workspaceContext?.workspaceId)),
+                operation: "rerank",
+                attemptKey: `rerank:${batchIndex}`,
+              },
+            })
+            : Promise.resolve(undefined),
         ),
       );
       const scores = batchScores.flatMap((batch) => batch ?? []);

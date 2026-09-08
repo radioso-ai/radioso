@@ -176,7 +176,7 @@ export class AdmissionMaintenanceScheduler {
 
   private nextAccount(): string | undefined {
     if (this.accounts.length === 0) return undefined;
-    const account = this.accounts[this.accountCursor % this.accounts.length]!;
+    const account = this.accounts[this.accountCursor % this.accounts.length];
     this.accountCursor = (this.accountCursor + 1) % this.accounts.length;
     return account;
   }
@@ -184,7 +184,7 @@ export class AdmissionMaintenanceScheduler {
   private nextDebtAccount(): string | undefined {
     while (this.debtQueue.length) {
       if (this.debtCursor >= this.debtQueue.length) this.debtCursor = 0;
-      const account = this.debtQueue[this.debtCursor++]!;
+      const account = this.debtQueue[this.debtCursor++];
       if (this.debt.has(account)) return account;
     }
     return undefined;

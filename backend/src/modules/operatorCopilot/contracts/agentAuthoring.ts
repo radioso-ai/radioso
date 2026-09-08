@@ -48,7 +48,6 @@ export const copilotAgentPayloadSchema = z.object({
 
 export const copilotAgentTargetRefSchema = z.object({ websiteUrl: httpUrlSchema }).strict();
 
-export type CopilotAgentChange = z.infer<typeof copilotAgentChangeSchema>;
 export type CopilotAgentPayload = z.infer<typeof copilotAgentPayloadSchema>;
 
 /** The wizard's creation contract, narrowed to the fields a proposal carries. */

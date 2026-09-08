@@ -1,4 +1,4 @@
-import { copilotNeverList, neverListExclusion, type CopilotNeverListEntry } from "../../../src/modules/operatorCopilot/neverList.js";
+import { neverListExclusion, type CopilotNeverListEntry } from "../../../src/modules/operatorCopilot/neverList.js";
 
 interface CatalogCoverageExclusion {
   readonly disposition: "deferred" | "permanent";
@@ -188,6 +188,15 @@ const liveEvalEffects = permanent("Permanent exclusion: Ray may replay and evalu
 export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   ...catalogToolCoverage,
 
+  ...coverage([
+    "decideOperatorMcpConsentTransaction",
+    "getOperatorMcpConsentTransaction",
+    "getOperatorMcpGrant",
+    "getOperatorMcpSetup",
+    "listOperatorMcpGrants",
+    "revokeOperatorMcpGrant",
+  ], neverListExclusion("machine_access")),
+
   streamWorkspaceEvents: ambientOperatorRuntime,
 
   ...coverage([
@@ -202,6 +211,8 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "resendEmailVerification",
     "getAccountInvitation",
     "acceptAccountInvitation",
+    "acceptAccountInvitationAsCurrentUser",
+    "getCurrentSession",
   ], authOrRegistration),
   ...coverage([
     "getAgentContextVariableSigningKey",
@@ -279,7 +290,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   ...coverage(["updateGeneralSettings"], duplicateSettingsWritePath),
   ...coverage(["updateWorkspaceLlmModels"], workspaceModelSelection),
   ...coverage(["reprocessWorkspaceIngestion"], workspaceWideReprocess),
-  ...coverage(["uploadAssistantLogo", "deleteAssistantLogo"], brandAssetIsOperatorSupplied),
+  ...coverage(["uploadAssistantLogo", "deleteAssistantLogo", "getAgentAssistantLogo"], brandAssetIsOperatorSupplied),
   ...coverage([
     "startMcpConnectionOauth",
     "createWorkspaceOauthConnection",
@@ -448,6 +459,15 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   reviseAgentRoutine: "propose_routine_edit",
   archiveAgentRoutine: "propose_routine_lifecycle",
   restoreAgentRoutine: "propose_routine_lifecycle",
+  // Bundle export/import moves a whole agent as a file between workspaces. Export is a
+  // bulk dump of what Ray already reads field by field through get_agent, so a tool for
+  // it would add reach without adding an operator outcome. Import is the stronger
+  // exclusion: it creates a whole agent from a document the operator holds, so the
+  // operator supplying that file IS the review step, and there is nothing for Ray to
+  // propose that the operator has not already decided.
+  exportAgentBundle: permanent("Bulk read of configuration Ray already reads field by field through get_agent; a tool would widen reach without giving the operator a new outcome."),
+  importAgentBundle: permanent("Creates a whole agent from an operator-supplied file. The operator choosing the file is the decision; Ray has no bundle to propose and no way to review one it did not author."),
+  getAgentBundleImport: permanent("Import-job status only explains an operator-supplied bulk import. Ray cannot start or review that file import, so surfacing its recovery trail would add a detached operational read without an action Ray may take."),
   getCopilotAvailability: copilotUiOnly,
   listCopilotConversations: copilotUiOnly,
   getCopilotConversation: copilotUiOnly,

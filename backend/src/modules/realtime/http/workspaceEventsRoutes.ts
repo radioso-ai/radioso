@@ -148,7 +148,7 @@ const acceptsEventStream = (request: Request): boolean => {
 const singleWorkspaceId = (request: Request): string | undefined => {
   const values = rawHeaderValues(request, "x-workspace-id");
   if (values.length !== 1) return undefined;
-  const value = values[0]!.trim();
+  const value = values[0].trim();
   return workspaceIdPattern.test(value) ? value : undefined;
 };
 
@@ -167,7 +167,7 @@ const dashboardSessionToken = (request: Request, cookieName: string): string | u
       }
     }
   }
-  return matches.length === 1 && matches[0]!.length > 0 ? matches[0] : undefined;
+  return matches.length === 1 && matches[0].length > 0 ? matches[0] : undefined;
 };
 
 const expressSseResponse = (response: Response, onCommit: () => void): SseResponse => ({

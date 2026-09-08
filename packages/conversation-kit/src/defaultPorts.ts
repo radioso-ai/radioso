@@ -6,7 +6,6 @@ import type {
   ConversationSkillSelector,
   ConversationTurnComposer,
   ConversationTurnComposeInput,
-  Directive,
   DirectiveMatch,
   RenderableTurn,
   RoutineSkillResult,

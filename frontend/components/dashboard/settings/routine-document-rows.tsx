@@ -6,7 +6,7 @@ import { AlertTriangle, ArrowRight, CheckCircle2, CircleDashed, CornerUpRight, G
 import { findRoutineSkillDescriptor, RoutineSkillCatalogContext } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { branchIsImplicitFallThrough, documentTextToSegments, formatBindingLine, guardToSentence } from '@/lib/routine-document'
+import { branchDecisionLabel, branchIsImplicitFallThrough, documentTextToSegments, formatBindingLine, guardToSentence } from '@/lib/routine-document'
 import type { RoutineBlockBranch, RoutineBlockDoc, RoutineBlockEnding, RoutineBlockInstructionSegment, RoutineBlockSlot, RoutineBlockStep } from '@/lib/routine-prose'
 
 export const instructionIsEmpty = (segments: RoutineBlockInstructionSegment[]) =>
@@ -28,7 +28,7 @@ export function buildDocumentIndex(doc: RoutineBlockDoc): RoutineDocumentIndex {
   return { stepNumbers, endings }
 }
 
-export function InstructionSentence({ segments, editable = false }: { segments: RoutineBlockInstructionSegment[]; editable?: boolean }) {
+function InstructionSentence({ segments, editable = false }: { segments: RoutineBlockInstructionSegment[]; editable?: boolean }) {
   if (instructionIsEmpty(segments)) {
     return editable ? <p className="rounded-md border border-dashed border-border px-3 py-2 text-sm text-muted-foreground">Write what this step should do…</p> : null
   }
@@ -41,7 +41,7 @@ function InlineSlotText({ text }: { text: string }) {
   return <>{documentTextToSegments(text).map((segment, index) => segment.kind === 'text' ? segment.text : <span key={`${segment.key}-${index}`} className="mx-0.5 inline-flex select-none items-center rounded-md border border-emerald-300 bg-emerald-100 px-1.5 py-0 align-baseline text-xs font-medium text-emerald-900">{segment.key}</span>)}</>
 }
 
-export function DiagnosticNotes({ notes }: { notes?: string[] }) {
+function DiagnosticNotes({ notes }: { notes?: string[] }) {
   if (!notes || notes.length === 0) return null
   return <div className="mt-1 space-y-0.5">{notes.map((note, index) => <p key={`${note}-${index}`} className="text-xs text-destructive">{note}</p>)}</div>
 }
@@ -90,7 +90,7 @@ function BranchTarget({ branch, index }: { branch: RoutineBlockBranch; index?: R
   return <span className="inline-flex items-center gap-1 text-muted-foreground"><CircleDashed className="h-3.5 w-3.5" />the same ending as above</span>
 }
 
-export function RoutineBranchRow({ branch, slotNames, index, editable = false, editing = false, onEdit, editor }: {
+function RoutineBranchRow({ branch, slotNames, index, editable = false, editing = false, onEdit, editor }: {
   branch: RoutineBlockBranch
   slotNames: Map<string, string>
   index?: RoutineDocumentIndex
@@ -99,12 +99,11 @@ export function RoutineBranchRow({ branch, slotNames, index, editable = false, e
   onEdit?: () => void
   editor?: ReactNode
 }) {
-  const branchIsAi = branch.guard.provenance === 'judgment'
   // A default guard states no condition, so it reads as the plain onward path rather than a
   // decision: no badge, no "otherwise", just where the routine goes.
   const isDefault = branch.guard.kind === 'default'
   if (editing) return <li className="rounded-md border border-border bg-muted/30 p-3 text-sm">{editor}</li>
-  return <li className="py-1.5 text-sm"><button type="button" aria-label={isDefault ? 'Continue' : branchIsAi ? 'AI decides' : 'Rule'} onClick={onEdit} disabled={!editable} className="group flex w-full flex-wrap items-center gap-2 text-left disabled:cursor-default">{isDefault ? <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" /> : <><Badge variant="outline" className="border-border bg-transparent font-normal text-muted-foreground">{branchIsAi ? 'AI decides' : 'Rule'}</Badge><span><InlineSlotText text={guardToSentence(branch.guard, slotNames)} /></span><GitBranch className="h-3.5 w-3.5 text-muted-foreground" /></>}<BranchTarget branch={branch} index={index} /><EditHint editable={editable} /></button></li>
+  return <li className="py-1.5 text-sm"><button type="button" aria-label={branchDecisionLabel(branch.guard.kind)} onClick={onEdit} disabled={!editable} className="group flex w-full flex-wrap items-center gap-2 text-left disabled:cursor-default">{isDefault ? <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" /> : <><Badge variant="outline" className="border-border bg-transparent font-normal text-muted-foreground">{branchDecisionLabel(branch.guard.kind)}</Badge><span><InlineSlotText text={guardToSentence(branch.guard, slotNames)} /></span><GitBranch className="h-3.5 w-3.5 text-muted-foreground" /></>}<BranchTarget branch={branch} index={index} /><EditHint editable={editable} /></button></li>
 }
 
 export function RoutineStepRow({ step, stepIndex, slotNames, index, nextStepId = null, notes, editable = false, editing, onEditInstruction, onEditBinding, onEditApproval, onEditBranch, onEditStep, instructionEditor, bindingEditor, approvalEditor, branchEditor, stepEditor }: {

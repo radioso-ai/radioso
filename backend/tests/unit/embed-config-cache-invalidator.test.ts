@@ -19,7 +19,7 @@ describe("embed config cache invalidator", () => {
     const invalidator = createCloudCdnEmbedConfigCacheInvalidator({
       projectId: "proj-1",
       urlMap: "radioso-live-frontend-lb",
-      fetchImpl: fetchImpl as unknown as typeof fetch,
+      fetchImpl: fetchImpl,
       accessTokenProvider: async () => "token-abc",
     });
 
@@ -39,9 +39,9 @@ describe("embed config cache invalidator", () => {
     const invalidator = createCloudCdnEmbedConfigCacheInvalidator({
       projectId: "proj-1",
       urlMap: "lb",
-      fetchImpl: (async () => {
+      fetchImpl: async () => {
         throw new Error("network down");
-      }) as unknown as typeof fetch,
+      },
       accessTokenProvider: async () => "token-abc",
       logger: { warn: vi.fn() },
     });
@@ -54,7 +54,7 @@ describe("embed config cache invalidator", () => {
     const invalidator = createCloudCdnEmbedConfigCacheInvalidator({
       projectId: "proj-1",
       urlMap: "lb",
-      fetchImpl: fetchImpl as unknown as typeof fetch,
+      fetchImpl: fetchImpl,
       accessTokenProvider: async () => null,
       logger: { warn: vi.fn() },
     });

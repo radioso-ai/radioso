@@ -91,7 +91,7 @@ const lifecycleClient = (input: { connectPending?: boolean; connectReject?: bool
     unsubscribe: vi.fn(async () => undefined),
     withCommandOptions: vi.fn(() => client),
   };
-  const factory = vi.fn<RedisLogicalClientFactory>(() => client as unknown as RedisLogicalClient);
+  const factory = vi.fn<RedisLogicalClientFactory>(() => client);
   return { client, factory, connectGate, closeGate };
 };
 
@@ -299,7 +299,7 @@ describe("RedisInvalidationTransport", () => {
     const factory = vi.fn<RedisLogicalClientFactory>(() => {
       const generation = generations[generationIndex++];
       if (!generation) throw new Error("unexpected Redis client generation");
-      return generation.client as unknown as RedisLogicalClient;
+      return generation.client;
     });
     const subscriber = new RedisWorkspaceInterestSubscriber({ channelPrefix: "test", commandTimeoutMs: 50, createClient: factory, mode: "standalone" });
 
@@ -573,7 +573,7 @@ describe("RedisInvalidationTransport", () => {
 
     expect(continuity).toHaveBeenCalledWith({ generation: 1, state: "lost" });
     expect(continuity).toHaveBeenCalledWith({ generation: 1, state: "restored" });
-    expect(fake.subscriber.sSubscribe.mock.invocationCallOrder[2]).toBeLessThan(fake.subscriber.sSubscribe.mock.invocationCallOrder[3]!);
+    expect(fake.subscriber.sSubscribe.mock.invocationCallOrder[2]).toBeLessThan(fake.subscriber.sSubscribe.mock.invocationCallOrder[3]);
     stop();
     await Promise.all([transport.close(), transport.close()]);
     expect(fake.subscriber.close).toHaveBeenCalledTimes(1);

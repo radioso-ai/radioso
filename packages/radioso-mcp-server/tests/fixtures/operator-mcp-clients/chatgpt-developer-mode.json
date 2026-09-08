@@ -1,0 +1,12 @@
+{
+  "displayName": "ChatGPT custom app (developer mode)",
+  "clientSurface": "chatgpt-developer-mode",
+  "supportedBuild": "pending-release-freeze",
+  "handoff": "remote-http-oauth-discovery",
+  "resourceInsertion": "explicit-canonical-resource",
+  "clientIdentification": "client-id-metadata-document",
+  "redirectMechanism": "hosted-client-callback",
+  "availability": "unavailable",
+  "verified": false,
+  "failureRecovery": "Treat this client as unsupported until its hosted discovery transcript is recorded and reviewed."
+}

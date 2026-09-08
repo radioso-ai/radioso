@@ -98,6 +98,8 @@ module "radioso" {
   copilot_probe_budget_per_turn             = var.copilot_probe_budget_per_turn
   copilot_conversation_retention_days       = var.copilot_conversation_retention_days
   copilot_retention_schedule                = var.copilot_retention_schedule
+  agent_bundle_import_orphan_age_ms         = var.agent_bundle_import_orphan_age_ms
+  agent_bundle_import_cleanup_schedule      = var.agent_bundle_import_cleanup_schedule
   document_storage_bucket_name              = var.document_storage_bucket_name
   document_upload_max_bytes                 = var.document_upload_max_bytes
   openai_api_key                            = var.openai_api_key
@@ -123,6 +125,8 @@ module "radioso" {
   metrics_enabled                           = var.metrics_enabled
   connector_public_base_url                 = var.connector_public_base_url
   radioso_mcp_enabled                       = var.radioso_mcp_enabled
+  mcp_public_origin                         = var.mcp_public_origin
+  operator_mcp_credential_epoch             = var.operator_mcp_credential_epoch
   app_base_url_override                     = var.app_base_url_override
   public_chat_base_url_override             = var.public_chat_base_url_override
   worker_tasks_service_url_override         = var.worker_tasks_service_url_override

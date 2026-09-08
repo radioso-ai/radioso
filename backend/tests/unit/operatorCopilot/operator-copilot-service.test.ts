@@ -60,7 +60,7 @@ describe("OperatorCopilotService", () => {
     expect(commit).toHaveBeenCalledOnce();
     expect(release).not.toHaveBeenCalled();
     expect(invoke).not.toHaveBeenCalled();
-    expect(runStreaming.mock.calls[0]![1].map((candidate) => candidate.name)).toEqual(["visible"]);
+    expect(runStreaming.mock.calls[0][1].map((candidate) => candidate.name)).toEqual(["visible"]);
     expect(repository.messages.at(-1)).toMatchObject({ role: "copilot", content: "Partial result", outcome: "budget_exhausted", activity: [{ tool: "Visible", outcome: "completed" }] });
   });
 

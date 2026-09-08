@@ -15,7 +15,7 @@ import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
 describeIntegration("ConversationForkService (Postgres)", () => {
-  const database = new Database(integrationDatabaseUrl as string);
+  const database = new Database(integrationDatabaseUrl);
   const conversationRepository = new ConversationRepository(database.kysely);
   const messageRepository = new MessageRepository(database.kysely);
   const routineStateRepository = new RoutineStateRepository(database.kysely);

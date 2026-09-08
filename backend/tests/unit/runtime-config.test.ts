@@ -99,6 +99,7 @@ describe("runtime configuration", () => {
       "./backend/src:/app/backend/src",
       "./backend/prompts:/app/backend/prompts",
       "./packages/conversation-engine/src:/app/packages/conversation-engine/src",
+      "./packages/operator-mcp-contract/src:/app/packages/operator-mcp-contract/src",
       "radioso_backend_node_modules:/app/backend/node_modules",
     ];
     for (const service of [backend, worker]) {
@@ -127,6 +128,7 @@ describe("runtime configuration", () => {
       "packages/crawler/package.json",
       "packages/document-parser/package.json",
       "packages/mcp-source-proof/package.json",
+      "packages/operator-mcp-contract/package.json",
       "packages/radioso-mcp-server/package.json",
       "packages/skill-contract/package.json",
       "packages/usage-contract/package.json",
@@ -139,6 +141,7 @@ describe("runtime configuration", () => {
     expect(entrypoint).toContain("zod/package.json");
     expect(dockerfile).toContain("COPY packages/conversation-defaults ./packages/conversation-defaults");
     expect(dockerfile).toContain("COPY packages/mcp-source-proof ./packages/mcp-source-proof");
+    expect(dockerfile).toContain("COPY packages/operator-mcp-contract ./packages/operator-mcp-contract");
     expect(dockerfile).toContain("@radioso/conversation-defaults...");
     expect(entrypoint).toContain("backend/node_modules/@radioso/conversation-engine");
     expect(entrypoint).toContain("backend/node_modules/@radioso/conversation-defaults");
@@ -163,6 +166,9 @@ describe("runtime configuration", () => {
       "COPY packages/mcp-source-proof/package.json ./packages/mcp-source-proof/package.json",
       "COPY packages/mcp-source-proof ./packages/mcp-source-proof",
       "COPY --chown=node:node --from=build /app/packages/mcp-source-proof/dist ./packages/mcp-source-proof/dist",
+      "COPY packages/operator-mcp-contract/package.json ./packages/operator-mcp-contract/package.json",
+      "COPY packages/operator-mcp-contract ./packages/operator-mcp-contract",
+      "COPY --chown=node:node --from=build /app/packages/operator-mcp-contract/dist ./packages/operator-mcp-contract/dist",
       "@radioso/conversation-tools...",
     ]) {
       expect(dockerfile).toContain(expected);
@@ -170,6 +176,7 @@ describe("runtime configuration", () => {
 
     expect(workflow).toContain("packages/conversation-tools/**");
     expect(workflow).toContain("packages/mcp-source-proof/**");
+    expect(workflow).toContain("packages/operator-mcp-contract/**");
     expect(workflow).toContain("packages/radioso-mcp-server/**");
     expect(workflow).toContain("mcp_service: radioso-staging-mcp");
     expect(sharedDeployWorkflow).toContain('--build-arg RADIOSO_EDITION="${RADIOSO_EDITION}"');
@@ -180,10 +187,61 @@ describe("runtime configuration", () => {
     expect(sharedDeployWorkflow).toContain('gcloud run services describe "${MCP_SERVICE}"');
     expect(sharedDeployWorkflow).toContain('gcloud run services update "${MCP_SERVICE}" --image "${BACKEND_IMAGE}"');
     expect(sharedDeployWorkflow).toContain('echo "mcp_url=disabled"');
-    expect(sharedDeployWorkflow.match(/--update-env-vars "RADIOSO_EDITION=\$\{RADIOSO_EDITION\}"/g)).toHaveLength(4);
+    expect(
+      sharedDeployWorkflow.match(
+        /--update-env-vars "RADIOSO_EDITION=\$\{RADIOSO_EDITION\},RADIOSO_RELEASE=\$\{RADIOSO_RELEASE\},RADIOSO_COMMIT=\$\{RELEASE_COMMIT\}"/g,
+      ),
+    ).toHaveLength(4);
     expect(sharedDeployWorkflow).toContain(
       '--update-env-vars "RADIOSO_EDITION=${RADIOSO_EDITION},NEXT_PUBLIC_RADIOSO_EDITION=${RADIOSO_EDITION}"',
     );
+  });
+
+  it("stamps the release it ships into the image it builds", async () => {
+    const dockerfile = await readFile(new URL("../../../infra/backend.Dockerfile", import.meta.url), "utf8");
+    const sharedDeployWorkflow = await readFile(
+      new URL("../../../.github/workflows/_deploy-cloud-run.yml", import.meta.url),
+      "utf8",
+    );
+    const liveWorkflow = await readFile(
+      new URL("../../../.github/workflows/deploy-live.yml", import.meta.url),
+      "utf8",
+    );
+
+    // A release deploy builds the tag, which is not necessarily the commit the workflow was
+    // dispatched from, so both the ancestry check and the image tag read the checked-out commit.
+    expect(sharedDeployWorkflow).toContain("ref: ${{ inputs.release }}");
+    expect(sharedDeployWorkflow).toContain("git merge-base --is-ancestor HEAD refs/remotes/origin/main");
+    expect(sharedDeployWorkflow).toContain("backend:${RELEASE_COMMIT}");
+    expect(sharedDeployWorkflow).not.toContain("backend:${GITHUB_SHA}");
+    expect(sharedDeployWorkflow).toContain('--build-arg RADIOSO_RELEASE="${RADIOSO_RELEASE}"');
+    expect(sharedDeployWorkflow).toContain('--build-arg RADIOSO_COMMIT="${RELEASE_COMMIT}"');
+
+    expect(dockerfile).toContain("ARG RADIOSO_RELEASE=development");
+    expect(dockerfile).toContain("ENV RADIOSO_RELEASE=${RADIOSO_RELEASE}");
+    expect(dockerfile).toContain("OBSERVABILITY_VERSION=${RADIOSO_RELEASE}");
+
+    // Production ships a release someone named, never whatever main happened to be.
+    expect(liveWorkflow).toContain("required: true");
+    expect(liveWorkflow).toContain("release: ${{ inputs.release }}");
+  });
+
+  it("refuses a release input that is not an existing release tag", async () => {
+    const sharedDeployWorkflow = await readFile(
+      new URL("../../../.github/workflows/_deploy-cloud-run.yml", import.meta.url),
+      "utf8",
+    );
+
+    // A workflow_dispatch input is free text, so "main" or a bare SHA would otherwise satisfy
+    // the ancestry check and ship as a release, stamping images and /health with a non-version.
+    expect(sharedDeployWorkflow).toContain("grep -Eq '^v[0-9]+\\.[0-9]+\\.[0-9]+$'");
+    expect(sharedDeployWorkflow).toContain(
+      'git ls-remote --exit-code --tags origin "refs/tags/${RELEASE}"',
+    );
+    // A branch sharing the tag's name wins the checkout, so the tag's commit is compared to
+    // what was actually checked out rather than the name being trusted.
+    expect(sharedDeployWorkflow).toContain('git rev-parse "refs/tags/${RELEASE}^{commit}"');
+    expect(sharedDeployWorkflow).toContain('if [ "${tag_commit}" != "${commit}" ]; then');
   });
 
   it("clears incomplete frontend Next dev caches with missing manifests or vendor chunks", async () => {
@@ -207,6 +265,21 @@ describe("runtime configuration", () => {
         /\.github\/workflows\/\*\|infra\/\*\|\.dockerignore\|\*\/\.dockerignore\|Dockerfile\|\*\/Dockerfile\|\*\.Dockerfile\)[\s\S]+mark_all[\s\S]+;;/,
       );
     }
+  });
+
+  it("boots an unstamped build rather than demanding a release it was not given", () => {
+    const unstamped = getEnv({ ...baseEnv });
+    expect(unstamped.RADIOSO_RELEASE).toBe("development");
+    expect(unstamped.RADIOSO_COMMIT).toBe("unknown");
+
+    // An empty value is what a compose file or a Cloud Run variable left blank actually sends.
+    const blank = getEnv({ ...baseEnv, RADIOSO_RELEASE: "", RADIOSO_COMMIT: "" });
+    expect(blank.RADIOSO_RELEASE).toBe("development");
+    expect(blank.RADIOSO_COMMIT).toBe("unknown");
+
+    const stamped = getEnv({ ...baseEnv, RADIOSO_RELEASE: "1.4.0", RADIOSO_COMMIT: "5434e0e" });
+    expect(stamped.RADIOSO_RELEASE).toBe("1.4.0");
+    expect(stamped.RADIOSO_COMMIT).toBe("5434e0e");
   });
 
   it("provides default observability configuration without extra vendor settings", () => {
@@ -489,6 +562,19 @@ describe("runtime configuration", () => {
     expect(example).toContain("EMAIL_VERIFICATION_TOKEN_TTL_MINUTES=30");
   });
 
+  it("leaves Operator MCP opt-in configuration empty in the example environment", async () => {
+    const example = await readFile(new URL("../../../.env.example", import.meta.url), "utf8");
+
+    for (const setting of [
+      "OPERATOR_MCP_RESOURCE_URL",
+      "OPERATOR_MCP_ISSUER_URL",
+      "OPERATOR_MCP_INTERNAL_SECRET",
+      "OPERATOR_MCP_CREDENTIAL_EPOCH",
+    ]) {
+      expect(example).toMatch(new RegExp(`^${setting}=$`, "m"));
+    }
+  });
+
   it("pins environment-aware observability identity and cloud runtime URLs for the Cloud Run API and worker services", async () => {
     const computeTf = await readFile(new URL("../../../infra/terraform/compute.tf", import.meta.url), "utf8");
     const terraformFoundation = await readFile(new URL("../../../infra/terraform/foundation/main.tf", import.meta.url), "utf8");
@@ -506,6 +592,8 @@ describe("runtime configuration", () => {
     const stagingEnvVariables = await readFile(new URL("../../../infra/terraform/environments/staging/variables.tf", import.meta.url), "utf8");
     const liveEnv = await readFile(new URL("../../../infra/terraform/environments/live/main.tf", import.meta.url), "utf8");
     const liveEnvVariables = await readFile(new URL("../../../infra/terraform/environments/live/variables.tf", import.meta.url), "utf8");
+    const liveEuEnv = await readFile(new URL("../../../infra/terraform/environments/live-eu/main.tf", import.meta.url), "utf8");
+    const liveEuEnvVariables = await readFile(new URL("../../../infra/terraform/environments/live-eu/variables.tf", import.meta.url), "utf8");
 
     expect(computeTf).toContain('name  = "OBSERVABILITY_ENVIRONMENT"');
     expect(computeTf).toContain('value = var.environment');
@@ -525,12 +613,31 @@ describe("runtime configuration", () => {
     expect(computeTf).toContain('resource "google_cloud_run_v2_service_iam_member" "mcp_public"');
     expect(computeTf).toContain('name  = "RADIOSO_MCP_PUBLIC_URL"');
     expect(computeTf.match(/name = "RADIOSO_MCP_SIGNING_SECRET"/g)).toHaveLength(2);
-    expect(computeTf.match(/name  = "RADIOSO_TRUSTED_PROXY_HOPS"/g)).toHaveLength(2);
+    expect(computeTf.match(/name {2}= "RADIOSO_TRUSTED_PROXY_HOPS"/g)).toHaveLength(2);
     expect(computeTf.match(/value = "2"/g)?.length).toBeGreaterThanOrEqual(2);
     expect(databaseTf).toContain('resource "random_password" "radioso_mcp_signing_secret"');
-    expect(secretsTf).toContain('"radioso-mcp-signing-secret" = random_password.radioso_mcp_signing_secret.result');
+    expect(secretsTf).toMatch(/"radioso-mcp-signing-secret"\s+= random_password\.radioso_mcp_signing_secret\.result/u);
     expect(terraformVariables).not.toContain('variable "radioso_mcp_signing_secret"');
     expect(terraformWorkflow).not.toContain('RADIOSO_MCP_SIGNING_SECRET');
+    expect(terraformVariables).toContain('variable "mcp_public_origin"');
+    expect(terraformVariables).toContain('variable "operator_mcp_credential_epoch"');
+    expect(terraformWorkflow).toContain("MCP_PUBLIC_ORIGIN: ${{ vars.MCP_PUBLIC_ORIGIN }}");
+    expect(terraformWorkflow).toContain('TF_VAR_mcp_public_origin=${MCP_RESOURCE_ORIGIN%/}');
+    expect(terraformWorkflow).toContain('MCP_URL="$(gcloud run services describe "${SERVICE_PREFIX}-mcp"');
+    expect(terraformWorkflow).toContain('MCP_RESOURCE_ORIGIN="${MCP_PUBLIC_ORIGIN:-$MCP_URL}"');
+    for (const [name, main, variables] of [
+      ["staging", stagingEnv, stagingEnvVariables],
+      ["live", liveEnv, liveEnvVariables],
+      ["live-eu", liveEuEnv, liveEuEnvVariables],
+    ] as const) {
+      for (const setting of [
+        "mcp_public_origin",
+        "operator_mcp_credential_epoch",
+      ]) {
+        expect(variables, `${name} must expose ${setting}`).toContain(`variable "${setting}"`);
+        expect(main, `${name} must pass ${setting}`).toMatch(new RegExp(`${setting}\\s+= var\\.${setting}`));
+      }
+    }
     // The retention window is documented as an operator knob, and the sweep that reads it runs in
     // the worker — so a Terraform deployment that never passes it leaves the docs describing a
     // setting the deployment cannot honour.
@@ -588,7 +695,7 @@ describe("runtime configuration", () => {
     expect(computeTf).toContain('value = try(google_cloud_run_v2_service.crawler_worker[0].uri, "")');
     expect(computeTf).toContain('name  = "WORKER_TASKS_CRAWL_SERVICE_URL"');
     expect((computeTf.match(/name\s+=\s+"WORKER_TASK_AUTH_TOKEN"/g) ?? [])).toHaveLength(3);
-    expect((computeTf.match(/secret  = google_secret_manager_secret\.secrets\["worker-task-auth-token"\]\.secret_id/g) ?? [])).toHaveLength(3);
+    expect((computeTf.match(/secret {2}= google_secret_manager_secret\.secrets\["worker-task-auth-token"\]\.secret_id/g) ?? [])).toHaveLength(3);
     expect(computeTf).toContain('network_interfaces {');
     expect(computeTf).toContain('secret  = google_secret_manager_secret.secrets["database-url"].secret_id');
     expect(computeTf).not.toContain("cpu_idle = false");
@@ -598,9 +705,9 @@ describe("runtime configuration", () => {
     expect(computeTf).toContain('name = "RESEND_MAIL_API_KEY"');
     expect((computeTf.match(/name = "RESEND_MAIL_API_KEY"/g) ?? [])).toHaveLength(2);
     expect(computeTf).toContain('name  = "MAIL_FROM_EMAIL"');
-    expect((computeTf.match(/name  = "MAIL_FROM_EMAIL"/g) ?? [])).toHaveLength(2);
+    expect((computeTf.match(/name {2}= "MAIL_FROM_EMAIL"/g) ?? [])).toHaveLength(2);
     expect(computeTf).toContain('name  = "MAIL_FROM_NAME"');
-    expect((computeTf.match(/name  = "MAIL_FROM_NAME"/g) ?? [])).toHaveLength(2);
+    expect((computeTf.match(/name {2}= "MAIL_FROM_NAME"/g) ?? [])).toHaveLength(2);
     expect(computeTf).not.toContain('name  = "AUTH_SKIP_EMAIL_VERIFICATION"');
     expect(computeTf).toContain('ignore_changes = [');
     expect(computeTf).toContain('client_version,');
@@ -622,7 +729,7 @@ describe("runtime configuration", () => {
     expect(terraformFoundationVariables).toContain('variable "project_number"');
     expect(terraformMain).toContain('worker_tasks_service_url = coalesce(var.worker_tasks_service_url_override, "https://example.invalid")');
     expect(terraformMain).toContain('resource_name_prefix         = "${local.service_name}-${var.environment}"');
-    expect(terraformMain).toContain('app_base_url = coalesce(var.app_base_url_override, "https://example.invalid")');
+    expect(terraformMain).toContain('app_base_url            = coalesce(var.app_base_url_override, "https://example.invalid")');
     expect(terraformVariables).toContain('app_base_url_override must be set when radioso_edition is enterprise.');
     expect(terraformVariables).toContain('variable "mail_from_email"');
     expect(terraformVariables).toContain('variable "document_worker_recovery_schedule"');

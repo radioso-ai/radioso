@@ -9,7 +9,7 @@ import { resolveIntegrationDatabase } from "../support/integrationDatabase.js";
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
 describeIntegration("TopicRepository (Postgres)", () => {
-  const database = new Database(integrationDatabaseUrl as string);
+  const database = new Database(integrationDatabaseUrl);
   const repository = new TopicRepository(database.kysely);
   const accountId = randomUUID();
 
@@ -102,6 +102,7 @@ describeIntegration("TopicRepository (Postgres)", () => {
     expect(run?.seed).toBe("seed-abc");
     expect(run?.params).toEqual({ targetMembers: 20, k: 4 });
     expect(run?.topics).toEqual([]);
+    expect(run?.dissolvedTopics).toEqual([]);
   });
 
   it("loadRun returns null for an unknown run id", async () => {
@@ -152,11 +153,11 @@ describeIntegration("TopicRepository (Postgres)", () => {
     const active = await repository.listActiveTopics(workspaceId);
 
     expect(active).toHaveLength(1);
-    expect(active[0]!.id).toBe(survivingId);
-    expect(active[0]!.title).toBe("Billing questions");
-    expect(active[0]!.centroid).toHaveLength(3);
-    active[0]!.centroid.forEach((value, index) => {
-      expect(Math.abs(value - [0.1, 0.2, 0.3][index]!)).toBeLessThan(1e-4);
+    expect(active[0].id).toBe(survivingId);
+    expect(active[0].title).toBe("Billing questions");
+    expect(active[0].centroid).toHaveLength(3);
+    active[0].centroid.forEach((value, index) => {
+      expect(Math.abs(value - [0.1, 0.2, 0.3][index])).toBeLessThan(1e-4);
     });
   });
 
@@ -175,7 +176,47 @@ describeIntegration("TopicRepository (Postgres)", () => {
     await repository.markDissolved(runId, [topicId]);
 
     expect(await repository.listActiveTopics(workspaceId)).toEqual([]);
-    expect((await repository.listMatchableTopics(workspaceId)).map((topic) => topic.id)).toEqual([topicId]);
+    const matchable = await repository.listMatchableTopics(workspaceId);
+    expect(matchable.map((topic) => topic.id)).toEqual([topicId]);
+    expect(matchable[0]?.dissolvedAt).not.toBeNull();
+  });
+
+  it("loads one run containing topics with different centroid dimensions", async () => {
+    const workspaceId = randomUUID();
+    const runId = await createRun(workspaceId, { questionCount: 2, unclassifiedCount: 0 });
+    const [firstMessageId, secondMessageId] = await createMessages(workspaceId, 2);
+    const firstTopicId = randomUUID();
+    const secondTopicId = randomUUID();
+    await repository.saveTopics(runId, [
+      {
+        id: firstTopicId,
+        workspaceId,
+        centroid: [0.1, 0.2],
+        radius: 0.3,
+        title: "Two dimensions",
+        description: "Uses one embedding width",
+      },
+      {
+        id: secondTopicId,
+        workspaceId,
+        centroid: [0.1, 0.2, 0.3],
+        radius: 0.4,
+        title: "Three dimensions",
+        description: "Uses another embedding width",
+      },
+    ]);
+    await repository.saveMemberships(runId, [
+      { topicId: firstTopicId, messageId: firstMessageId, distance: 0.1 },
+      { topicId: secondTopicId, messageId: secondMessageId, distance: 0.2 },
+    ]);
+
+    const run = await repository.loadRun(runId);
+
+    expect(run?.topics.map((topic) => ({ id: topic.id, memberCount: topic.memberCount, dimensions: topic.centroid.length })))
+      .toEqual(expect.arrayContaining([
+        { id: firstTopicId, memberCount: 1, dimensions: 2 },
+        { id: secondTopicId, memberCount: 1, dimensions: 3 },
+      ]));
   });
 
   it("saveTopics reactivates a dissolved topic when identity matching reuses its id", async () => {
@@ -202,8 +243,8 @@ describeIntegration("TopicRepository (Postgres)", () => {
 
     const active = await repository.listActiveTopics(workspaceId);
     expect(active).toHaveLength(1);
-    expect(active[0]!.id).toBe(topicId);
-    expect(active[0]!.lastSeenRunId).toBe(secondRunId);
+    expect(active[0].id).toBe(topicId);
+    expect(active[0].lastSeenRunId).toBe(secondRunId);
   });
 
   it("saveTopics updates a surviving topic and keeps its title/description when not supplied", async () => {
@@ -234,12 +275,12 @@ describeIntegration("TopicRepository (Postgres)", () => {
 
     const active = await repository.listActiveTopics(workspaceId);
     expect(active).toHaveLength(1);
-    expect(active[0]!.title).toBe("Refund policy");
-    expect(active[0]!.description).toBe("Questions about refunds");
-    expect(active[0]!.lastSeenRunId).toBe(secondRunId);
-    expect(active[0]!.createdRunId).toBe(firstRunId);
-    active[0]!.centroid.forEach((value, index) => {
-      expect(Math.abs(value - [0.2, 0.2, 0.2][index]!)).toBeLessThan(1e-4);
+    expect(active[0].title).toBe("Refund policy");
+    expect(active[0].description).toBe("Questions about refunds");
+    expect(active[0].lastSeenRunId).toBe(secondRunId);
+    expect(active[0].createdRunId).toBe(firstRunId);
+    active[0].centroid.forEach((value, index) => {
+      expect(Math.abs(value - [0.2, 0.2, 0.2][index])).toBeLessThan(1e-4);
     });
   });
 
@@ -271,8 +312,8 @@ describeIntegration("TopicRepository (Postgres)", () => {
     ]);
 
     const active = await repository.listActiveTopics(workspaceId);
-    expect(active[0]!.title).toBe("New title");
-    expect(active[0]!.description).toBe("New description");
+    expect(active[0].title).toBe("New title");
+    expect(active[0].description).toBe("New description");
   });
 
   it("saves a full run (topics + memberships + transitions) in one transaction and reads it back via loadRun", async () => {
@@ -303,15 +344,19 @@ describeIntegration("TopicRepository (Postgres)", () => {
         },
       ]);
       await trxRepository.saveMemberships(runId, [
-        { topicId: topicAId, messageId: messageIds[0]!, distance: 0.01 },
-        { topicId: topicAId, messageId: messageIds[1]!, distance: 0.02 },
-        { topicId: topicAId, messageId: messageIds[2]!, distance: 0.03 },
-        { topicId: topicBId, messageId: messageIds[3]!, distance: 0.04 },
-        { topicId: topicBId, messageId: messageIds[4]!, distance: 0.05 },
+        { topicId: topicAId, messageId: messageIds[0], distance: 0.01 },
+        { topicId: topicAId, messageId: messageIds[1], distance: 0.02 },
+        { topicId: topicAId, messageId: messageIds[2], distance: 0.03 },
+        { topicId: topicBId, messageId: messageIds[3], distance: 0.04 },
+        { topicId: topicBId, messageId: messageIds[4], distance: 0.05 },
       ]);
       await trxRepository.saveTransitions(runId, [
-        { topicId: topicAId, kind: "emerged", parentTopicIds: [] },
-        { topicId: topicBId, kind: "emerged", parentTopicIds: [] },
+        {
+          topicId: topicAId,
+          kind: "survived",
+          parentTopicIds: [topicAId],
+          membershipOverlap: 0.85,
+        },
       ]);
     });
 
@@ -325,13 +370,50 @@ describeIntegration("TopicRepository (Postgres)", () => {
     expect(topicB?.memberCount).toBe(2);
     expect(topicA?.title).toBe("Topic A");
     expect(topicA?.dissolvedAt).toBeNull();
+    expect(topicA?.transition).toEqual({
+      kind: "survived",
+      parentTopicIds: [topicAId],
+      viaCentroidFallback: false,
+      membershipOverlap: 0.85,
+    });
+    expect(topicB?.transition).toBeNull();
 
     const transitionRows = await database.query<{ kind: string; topic_id: string }>(
       "SELECT kind, topic_id FROM topic_transitions WHERE run_id = $1 ORDER BY topic_id",
       [runId],
     );
-    expect(transitionRows).toHaveLength(2);
-    expect(transitionRows.every((row) => row.kind === "emerged")).toBe(true);
+    expect(transitionRows).toHaveLength(1);
+    expect(transitionRows.every((row) => row.kind === "survived")).toBe(true);
+  });
+
+  it("rejects a second transition for the same run and topic", async () => {
+    const workspaceId = randomUUID();
+    const runId = await createRun(workspaceId, { seed: "duplicate-transition" });
+    const topicId = randomUUID();
+    const messageIds = await createMessages(workspaceId, 3);
+
+    await repository.saveTopics(runId, [
+      { id: topicId, workspaceId, centroid: [0.2, 0.2, 0.2], radius: 0.3, title: "Topic", description: "Only topic" },
+    ]);
+    await repository.saveMemberships(runId, [
+      { topicId, messageId: messageIds[0], distance: 0.01 },
+      { topicId, messageId: messageIds[1], distance: 0.02 },
+      { topicId, messageId: messageIds[2], distance: 0.03 },
+    ]);
+    await repository.saveTransitions(runId, [{ topicId, kind: "emerged", parentTopicIds: [] }]);
+    await expect(repository.saveTransitions(runId, [{ topicId, kind: "survived", parentTopicIds: [] }]))
+      .rejects.toMatchObject({ code: "23505" });
+
+    const transitionRows = await database.query<{ topic_id: string }>(
+      "SELECT topic_id FROM topic_transitions WHERE run_id = $1",
+      [runId],
+    );
+    expect(transitionRows).toHaveLength(1);
+
+    const run = await repository.loadRun(runId);
+
+    expect(run?.topics).toHaveLength(1);
+    expect(run?.topics[0]?.transition?.kind).toBe("emerged");
   });
 
   it("saves transitions with parent topic ids intact", async () => {
@@ -412,7 +494,7 @@ describeIntegration("TopicRepository (Postgres)", () => {
       "SELECT count(*)::text AS count FROM topic_memberships WHERE run_id = $1",
       [runId],
     );
-    expect(rows[0]!.count).toBe("1200");
+    expect(rows[0].count).toBe("1200");
   });
 
   it("saveRun persists the run, its topics, and its memberships atomically", async () => {
@@ -450,9 +532,9 @@ describeIntegration("TopicRepository (Postgres)", () => {
         },
       ],
       memberships: [
-        { topicId: topicAId, messageId: messageIds[0]!, distance: 0.01 },
-        { topicId: topicAId, messageId: messageIds[1]!, distance: 0.02 },
-        { topicId: topicBId, messageId: messageIds[2]!, distance: 0.03 },
+        { topicId: topicAId, messageId: messageIds[0], distance: 0.01 },
+        { topicId: topicAId, messageId: messageIds[1], distance: 0.02 },
+        { topicId: topicBId, messageId: messageIds[2], distance: 0.03 },
       ],
     });
 
@@ -503,7 +585,7 @@ describeIntegration("TopicRepository (Postgres)", () => {
           description: "Emerged this run",
         },
       ],
-      memberships: [{ topicId: newTopicId, messageId: messageId!, distance: 0.01 }],
+      memberships: [{ topicId: newTopicId, messageId: messageId, distance: 0.01 }],
       transitions: [
         { topicId: newTopicId, kind: "emerged", parentTopicIds: [], viaCentroidFallback: false },
         { topicId: oldTopicId, kind: "dissolved", parentTopicIds: [], viaCentroidFallback: false },
@@ -524,10 +606,27 @@ describeIntegration("TopicRepository (Postgres)", () => {
       "SELECT dissolved_at FROM topics WHERE id = $1",
       [oldTopicId],
     );
-    expect(oldTopicRow[0]!.dissolved_at).not.toBeNull();
+    expect(oldTopicRow[0].dissolved_at).not.toBeNull();
 
     const active = await repository.listActiveTopics(workspaceId);
     expect(active.map((topic) => topic.id)).toEqual([newTopicId]);
+
+    const run = await repository.loadRun(runId);
+    expect(run?.topics.map((topic) => topic.id)).toEqual([newTopicId]);
+    expect(run?.dissolvedTopics).toEqual([{ id: oldTopicId, title: "Old topic" }]);
+
+    const reactivationRunId = await createRun(workspaceId, { seed: "reactivation-run" });
+    await repository.saveTopics(reactivationRunId, [{
+      id: oldTopicId,
+      workspaceId,
+      centroid: [0.1, 0.1, 0.1],
+      radius: 0.3,
+      title: "Renamed after reactivation",
+      description: "A new description after reactivation",
+    }]);
+
+    const historicalRun = await repository.loadRun(runId);
+    expect(historicalRun?.dissolvedTopics).toEqual([{ id: oldTopicId, title: "Old topic" }]);
   });
 
   it("saveRun rolls back the run row when a later statement in the transaction fails", async () => {
@@ -585,6 +684,6 @@ describeIntegration("TopicRepository (Postgres)", () => {
       "SELECT dissolved_at FROM topics WHERE id = $1",
       [topicId],
     );
-    expect(rows[0]!.dissolved_at).not.toBeNull();
+    expect(rows[0].dissolved_at).not.toBeNull();
   });
 });

@@ -11,7 +11,7 @@ const hangingTransport = (): Transport =>
     start: () => new Promise<void>(() => undefined),
     send: async () => undefined,
     close: async () => undefined,
-  }) as unknown as Transport;
+  });
 
 const serviceFor = async (tools: MockTool[]): Promise<SdkMcpToolService> => {
   const { clientTransport } = await connectMockMcpServer(tools);

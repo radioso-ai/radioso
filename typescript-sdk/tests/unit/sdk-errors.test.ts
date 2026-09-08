@@ -19,7 +19,7 @@ describe("sdk errors", () => {
     const client = createRadiosoClient({
       baseUrl: "https://api.example.com",
       apiToken: "token-123",
-      fetch: fetchMock as typeof fetch,
+      fetch: fetchMock,
     });
 
     await expect(client.settings.getGeneral()).rejects.toEqual(expect.objectContaining({
@@ -39,7 +39,7 @@ describe("sdk errors", () => {
     const client = createRadiosoClient({
       baseUrl: "https://api.example.com",
       apiToken: "token-123",
-      fetch: fetchMock as typeof fetch,
+      fetch: fetchMock,
     });
 
     await expect(client.documents.list()).rejects.toEqual(expect.objectContaining({

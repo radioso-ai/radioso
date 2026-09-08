@@ -313,6 +313,23 @@ variable "copilot_retention_schedule" {
   default     = null
 }
 
+variable "agent_bundle_import_orphan_age_ms" {
+  description = "Milliseconds an active bundle-import job may run before orphan cleanup reclaims it. Imports normally take seconds; use a larger value only for a deployment with known slow imports."
+  type        = number
+  default     = 900000
+
+  validation {
+    condition     = var.agent_bundle_import_orphan_age_ms > 0 && floor(var.agent_bundle_import_orphan_age_ms) == var.agent_bundle_import_orphan_age_ms
+    error_message = "agent_bundle_import_orphan_age_ms must be a whole number greater than zero."
+  }
+}
+
+variable "agent_bundle_import_cleanup_schedule" {
+  description = "Optional cron schedule for the Cloud Run bundle-import orphan cleanup sweep."
+  type        = string
+  default     = null
+}
+
 # --- Document storage ---
 
 variable "document_storage_bucket_name" {
@@ -514,6 +531,31 @@ variable "radioso_mcp_enabled" {
   description = "Whether Terraform should deploy the standalone public MCP Cloud Run service."
   type        = bool
   default     = false
+}
+
+variable "mcp_public_origin" {
+  description = "Optional canonical HTTPS origin for the standalone MCP service. GitHub Actions discovers the Cloud Run URL after the service exists; set this only for a custom domain or a direct Terraform run."
+  type        = string
+  default     = null
+
+  validation {
+    condition = (
+      var.mcp_public_origin == null ||
+      can(regex("^https://[^/?#]+$", var.mcp_public_origin))
+    )
+    error_message = "mcp_public_origin must be an HTTPS origin without a path, query, fragment, or trailing slash."
+  }
+}
+
+variable "operator_mcp_credential_epoch" {
+  description = "Externally monotonic Operator MCP credential/key generation. Increase this explicitly during rotation or restore; every enabled replica must use the same value."
+  type        = string
+  default     = "1"
+
+  validation {
+    condition     = can(regex("^[1-9][0-9]*$", var.operator_mcp_credential_epoch))
+    error_message = "operator_mcp_credential_epoch must be a canonical positive decimal integer."
+  }
 }
 
 variable "frontend_backend_internal_url_override" {

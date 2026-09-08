@@ -14,7 +14,12 @@ const notifyDeliverySchema = z.object({
 }).strict();
 
 export const notifyConfigSchema = z.object({
-  delivery: notifyDeliverySchema,
+  // Defaulted, not required. Both of its fields already default, so `{}` and an
+  // absent `delivery` describe the same skill — one with no destination configured
+  // yet. Requiring the key only meant an agent-export bundle, which strips every
+  // delivery value as non-portable, produced a config this capability then refused
+  // to create: an agent carrying a notify skill could not be imported at all.
+  delivery: notifyDeliverySchema.default({}),
   exposedInputs: z.object({
     message: z.boolean().default(true),
     email: z.boolean().optional(),
@@ -34,7 +39,9 @@ export const notifyCapability: SkillCapabilityDescriptor<"notify", "notify"> = {
   // Neither field below sets `showValueToCopilot`, and neither should: a webhook URL routinely
   // carries a signed token or capability URL in its query string, and recipient emails are
   // personal data. The operator copilot reader (agent_skills) names both keys to Ray but must
-  // never read their values into model context.
+  // never read their values into model context. For the same reason, neither field sets
+  // `portable`: an agent-export bundle must never carry a webhook URL or a recipient's email
+  // address to another workspace.
   settingsFields: [
     {
       key: "delivery.recipientEmails",

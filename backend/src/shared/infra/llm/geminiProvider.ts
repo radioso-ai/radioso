@@ -86,17 +86,22 @@ export class GeminiTextGenerationClient implements TextGenerationClient {
   }
 
   async complete(input: TextGenerationRequest): Promise<TextGenerationResult> {
-    const response = await fetch(
-      `${GEMINI_BASE_URL}/${this.config.model}:generateContent?key=${encodeURIComponent(this.config.apiKey)}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        signal: input.signal,
-        body: JSON.stringify(buildGenerateBody(input)),
+    const url = `${GEMINI_BASE_URL}/${this.config.model}:generateContent?key=${encodeURIComponent(this.config.apiKey)}`;
+    const request: RequestInit = {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
       },
-    );
+      signal: input.signal,
+      body: JSON.stringify(buildGenerateBody(input)),
+    };
+    // Invoking fetch is the dispatch. Record only after the transport has been handed
+    // the request, and not at all when an aborted signal makes it reject unsent.
+    const responsePromise = fetch(url, request);
+    if (input.dispatchRecord && !input.dispatchRecord.dispatched && !input.signal?.aborted) {
+      input.dispatchRecord.dispatched = true;
+    }
+    const response = await responsePromise;
 
     if (!response.ok) {
       throw await readProviderErrorBody("Gemini", "generate", response);
@@ -112,7 +117,7 @@ export class GeminiTextGenerationClient implements TextGenerationClient {
   stream(input: TextGenerationRequest): TextGenerationStreamResult {
     const config = this.config;
     return streamWithUsage(async function* () {
-      const response = await fetch(
+      const responsePromise = fetch(
         `${GEMINI_BASE_URL}/${config.model}:streamGenerateContent?alt=sse&key=${encodeURIComponent(config.apiKey)}`,
         {
           method: "POST",
@@ -123,6 +128,10 @@ export class GeminiTextGenerationClient implements TextGenerationClient {
           body: JSON.stringify(buildGenerateBody(input)),
         },
       );
+      if (input.dispatchRecord && !input.dispatchRecord.dispatched && !input.signal?.aborted) {
+        input.dispatchRecord.dispatched = true;
+      }
+      const response = await responsePromise;
 
       if (!response.ok) {
         throw await readProviderErrorBody("Gemini", "stream", response);

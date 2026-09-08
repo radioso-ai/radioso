@@ -12,11 +12,6 @@ export type AgentSkillKind = (typeof agentSkillKinds)[number];
 export const agentSkillInvocationModes = ["default_answer", "routine_named", "agent_selectable"] as const;
 export type AgentSkillInvocationMode = (typeof agentSkillInvocationModes)[number];
 
-const agentSkillKindSet = new Set<string>(agentSkillKinds);
-
-export const isAgentSkillKind = (value: string): value is AgentSkillKind =>
-  agentSkillKindSet.has(value);
-
 export interface AgentSkillSpine {
   id: string;
   agentId: string;

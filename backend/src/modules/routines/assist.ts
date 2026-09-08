@@ -139,7 +139,7 @@ const extractVariableHints = (
 ): string[] => {
   const actionAliases = actionAliasTokens(catalog);
   const hints = [...prose.matchAll(/@([A-Za-z_][A-Za-z0-9_]*)\b/gu)]
-    .map((match) => match[1]!)
+    .map((match) => match[1])
     .filter((key) => !actionAliases.has(key));
   return [...new Set(hints)];
 };

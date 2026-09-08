@@ -45,7 +45,7 @@ const createClientBackedDatabase = (client: PoolClient): Database => {
           const value = Reflect.get(target, property, receiver);
           return typeof value === "function" ? value.bind(target) : value;
         },
-      }) as PoolClient;
+      });
     },
   } as Database["pool"];
 
@@ -84,7 +84,7 @@ const createClientBackedDatabase = (client: PoolClient): Database => {
     }
   },
   async close(): Promise<void> {},
-  } as Database;
+  };
 };
 
 const createRoutineSchema = async (client: PoolClient, schema: string): Promise<void> => {
@@ -647,8 +647,8 @@ describeIfDatabase("RoutineDefinitionRepository Postgres integration", () => {
       [published.id],
     );
     expect(steps).toHaveLength(1);
-    expect(steps[0]!.instruction).toContain("v1");
-    expect(steps[0]!.instruction).not.toContain("raced");
+    expect(steps[0].instruction).toContain("v1");
+    expect(steps[0].instruction).not.toContain("raced");
   });
 
   it("rewrites legacy compiled-id scope tags to definition ids in migration 091", async () => {
@@ -703,7 +703,7 @@ describeIfDatabase("RoutineDefinitionRepository Postgres integration", () => {
         `SELECT scope_tags FROM agent_directives WHERE id = $1`,
         [directiveId],
       );
-      expect(rewritten.rows[0]!.scope_tags).toEqual([
+      expect(rewritten.rows[0].scope_tags).toEqual([
         `routine:${definitionId}`,
         `step:${definitionId}:ask_topic`,
         "tone:friendly",
@@ -713,7 +713,7 @@ describeIfDatabase("RoutineDefinitionRepository Postgres integration", () => {
         `SELECT scope_tags FROM agent_directives WHERE id = $1`,
         [untouchedDirectiveId],
       );
-      expect(untouched.rows[0]!.scope_tags).toEqual([
+      expect(untouched.rows[0].scope_tags).toEqual([
         `routine:routine:${agentIdForMigration}:missing-routine:v9`,
       ]);
 

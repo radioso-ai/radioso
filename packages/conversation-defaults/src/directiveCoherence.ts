@@ -7,7 +7,6 @@ import type {
   DirectiveCoherenceConflict,
   DirectiveCoherenceGate,
   DirectiveCoherenceGateOptions,
-  DirectiveCoherenceMode,
   DirectiveCoherenceVerdict,
 } from "@radioso/conversation-contract";
 import { effectiveSurfaces } from "./domain.js";

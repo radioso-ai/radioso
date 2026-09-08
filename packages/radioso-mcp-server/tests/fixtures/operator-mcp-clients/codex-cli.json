@@ -1,0 +1,12 @@
+{
+  "displayName": "Codex CLI",
+  "clientSurface": "codex-cli",
+  "supportedBuild": "0.149.0",
+  "handoff": "remote-http-oauth-discovery",
+  "resourceInsertion": "explicit-canonical-resource",
+  "clientIdentification": "client-id-metadata-document",
+  "redirectMechanism": "client-declared-redirect",
+  "availability": "unavailable",
+  "verified": false,
+  "failureRecovery": "Use only the browser handoff; update this fixture after the named build passes discovery and callback validation."
+}

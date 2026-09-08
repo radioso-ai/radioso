@@ -86,7 +86,7 @@ export const reduceSamples = <TVerdict>(
     samples.find((sample) => sample.status === "fail") ??
     samples.find((sample) => sample.status === "error") ??
     samples.find((sample) => sample.status === "pass") ??
-    samples[0]!;
+    samples[0];
 
   return {
     status,
@@ -149,10 +149,17 @@ export const runConversationQualitySuiteSampled = async (
       verdicts: reduced.verdicts,
       samples,
       passCount: reduced.passCount,
+      passRate: reduced.passRate,
       flaky: reduced.flaky,
     });
   }
 
-  const outcomes: CaseOutcome[] = reports.map(({ caseId, name, status }) => ({ caseId, name, status }));
+  const outcomes: CaseOutcome[] = reports.map(({ caseId, name, status, passRate, samples }) => ({
+    caseId,
+    name,
+    status,
+    passRate,
+    samples,
+  }));
   return { reports, outcomes };
 };

@@ -14,6 +14,10 @@ export interface ModelCallTraceRecord {
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
+  // Reported only by providers that separate them. Omitted rather than zeroed, so a
+  // model that does not report reasoning is not read as one that reasoned for free.
+  reasoningTokens?: number;
+  cachedInputTokens?: number;
 }
 
 interface ModelCallTraceInput extends Omit<ModelCallTraceRecord, "id" | "operation" | "model"> {
@@ -83,6 +87,12 @@ export class ModelCallTraceCollector {
       inputTokens: finiteNonNegative(input.inputTokens),
       outputTokens: finiteNonNegative(input.outputTokens),
       totalTokens: finiteNonNegative(input.totalTokens),
+      ...(input.reasoningTokens === undefined
+        ? {}
+        : { reasoningTokens: finiteNonNegative(input.reasoningTokens) }),
+      ...(input.cachedInputTokens === undefined
+        ? {}
+        : { cachedInputTokens: finiteNonNegative(input.cachedInputTokens) }),
     });
   }
 }

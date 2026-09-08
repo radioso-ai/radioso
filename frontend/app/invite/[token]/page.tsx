@@ -1,77 +1,19 @@
-'use client'
+import type { Metadata } from 'next'
 
-import { useEffect, useState } from 'react'
-import { useParams } from 'next/navigation'
+import { InvitationJoinScreen } from '@/components/auth/invitation-join-screen'
 
-import { InvitationAcceptForm } from '@/components/auth/invitation-accept-form'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { LogoSpinner } from '@/components/ui/spinner'
-import { authApi, type InvitationDetailsResponse } from '@/lib/api'
-import { getApiErrorMessage } from '@/lib/api-error'
+export const metadata: Metadata = {
+  title: 'Join account',
+}
 
-export default function InvitationPage() {
-  const params = useParams<{ token: string }>()
-  const token = typeof params?.token === 'string' ? params.token : ''
-  const [invitation, setInvitation] = useState<InvitationDetailsResponse | null>(null)
-  const [isLoading, setIsLoading] = useState(() => Boolean(token))
-  const [error, setError] = useState<string | null>(() => (token ? null : 'Invitation token is missing.'))
+export default async function InvitationPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ token: string }>
+  searchParams: Promise<{ error?: string }>
+}) {
+  const [{ token }, query] = await Promise.all([params, searchParams])
 
-  useEffect(() => {
-    let active = true
-
-    const load = async () => {
-      setIsLoading(true)
-      setError(null)
-      try {
-        const response = await authApi.getInvitation(token)
-        if (!active) return
-        setInvitation(response)
-      } catch (nextError) {
-        if (!active) return
-        setError(getApiErrorMessage(nextError, 'Failed to load invitation.'))
-      } finally {
-        if (active) {
-          setIsLoading(false)
-        }
-      }
-    }
-
-    if (!token) {
-      return () => {
-        active = false
-      }
-    }
-
-    void load()
-
-    return () => {
-      active = false
-    }
-  }, [token])
-
-  return (
-    <div className="flex min-h-screen items-center justify-center p-6">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle>Join account</CardTitle>
-          <CardDescription>Accept your invitation with your own login.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {isLoading ? (
-            <div className="flex justify-center py-8">
-              <LogoSpinner imageClassName="h-7 w-7" />
-            </div>
-          ) : error ? (
-            <p className="text-sm text-destructive">{error}</p>
-          ) : invitation?.status === 'pending' ? (
-            <InvitationAcceptForm invitationToken={token} invitedEmail={invitation.email} />
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              This invitation is {invitation?.status ?? 'unavailable'}.
-            </p>
-          )}
-        </CardContent>
-      </Card>
-    </div>
-  )
+  return <InvitationJoinScreen token={token} error={query.error} />
 }

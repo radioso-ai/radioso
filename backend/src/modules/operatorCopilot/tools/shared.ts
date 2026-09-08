@@ -81,11 +81,11 @@ export const describeNamedAgent = async <TInput extends NamedAgentInput>(
   if (candidates.length !== 1) {
     return candidates.length === 0 ? { kind: "not_found" } : { kind: "ambiguous", candidates };
   }
-  const candidate = candidates[0]!;
+  const candidate = candidates[0];
   return {
     kind: "resolved",
     entity: candidate,
-    input: { ...input, agentId: candidate.id, agentName: undefined } as TInput,
+    input: { ...input, agentId: candidate.id, agentName: undefined },
   };
 };
 
@@ -103,6 +103,12 @@ export const requiredCopilotConversation = (context: { copilotConversationId?: s
   const conversationId = context.copilotConversationId;
   if (!conversationId) throw new Error("Copilot proposal drafting requires a persisted conversation");
   return conversationId;
+};
+export const copilotProposalOrigin = (context: { copilotConversationId?: string; operatorMcpInvocationId?: string }) => {
+  if (context.operatorMcpInvocationId && !context.copilotConversationId) {
+    return { type: "operator_mcp_invocation" as const, invocationId: context.operatorMcpInvocationId };
+  }
+  return { type: "conversation" as const, conversationId: requiredCopilotConversation(context) };
 };
 export const recordProposalCreated = async (
   auditService: CopilotAuditPort,

@@ -51,7 +51,7 @@ const buildSession = (): PreparedSession => {
     role: "user",
     content: "What is X?",
     createdAt: new Date(),
-  } as MessageRecord;
+  };
   const agent = { id: "agent-1" } as AgentRecord;
   return {
     agent,
@@ -69,7 +69,7 @@ const buildSession = (): PreparedSession => {
       ],
       responseSettings: {},
     } as PreparedSession["retrieval"],
-    turnRoute: "retrieval" as PreparedSession["turnRoute"],
+    turnRoute: "retrieval",
     userMessage,
     effectiveQuery: userMessage.content,
     stagedContext: [],

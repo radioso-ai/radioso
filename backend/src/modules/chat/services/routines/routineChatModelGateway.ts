@@ -25,8 +25,8 @@ const serializeTranscript = (messages: ConversationMessage[]): string =>
 
 const lastUserContent = (messages: ConversationMessage[]): string => {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
-    if (messages[index]!.role === "user") {
-      return messages[index]!.content;
+    if (messages[index].role === "user") {
+      return messages[index].content;
     }
   }
   return "";

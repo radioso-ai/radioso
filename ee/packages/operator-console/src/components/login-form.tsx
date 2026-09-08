@@ -29,7 +29,7 @@ export function LoginForm() {
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-zinc-950 px-4 text-zinc-100">
-      <form onSubmit={submit} className="w-full max-w-sm rounded-md border border-zinc-800 bg-zinc-900 p-6 shadow-2xl">
+      <form onSubmit={(event) => { void submit(event); }} className="w-full max-w-sm rounded-md border border-zinc-800 bg-zinc-900 p-6 shadow-2xl">
         <div className="mb-6 flex items-center gap-3">
           <div className="flex size-10 items-center justify-center rounded-md border border-emerald-500/30 bg-emerald-500/10 text-emerald-300">
             <ShieldCheck className="size-5" />

@@ -60,6 +60,8 @@ export class RetrievalExecutionTelemetryService {
     normalizedCandidateCount: number;
     finalContextCount: number;
     queryEmbeddingDurationMs?: number;
+    semanticRetrievalDurationMs?: number;
+    lexicalRetrievalDurationMs?: number;
     semanticRetrievalAvailability?: "available" | "degraded" | "unavailable";
     semanticRetrievalFailureReason?:
       | "query_embedding_unavailable"
@@ -122,6 +124,8 @@ export class RetrievalExecutionTelemetryService {
           normalizedCandidateCount: input.normalizedCandidateCount,
           finalContextCount: input.finalContextCount,
           queryEmbeddingDurationMs: input.queryEmbeddingDurationMs ?? 0,
+          semanticRetrievalDurationMs: input.semanticRetrievalDurationMs ?? 0,
+          lexicalRetrievalDurationMs: input.lexicalRetrievalDurationMs ?? 0,
         },
         metadata: {
           appliedConstraintCount: input.appliedConstraints?.length ?? 0,

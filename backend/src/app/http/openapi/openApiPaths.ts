@@ -36,6 +36,7 @@ import { registerAudiencePulsePaths } from "./paths/audiencePulsePaths.js";
 import { registerCopilotPaths } from "./paths/copilotPaths.js";
 import { registerWorkspaceEventsPaths } from "./paths/workspaceEventsPaths.js";
 import { registerApiAccessPaths } from "./paths/apiAccessPaths.js";
+import { registerOperatorMcpPaths } from "./paths/operatorMcpPaths.js";
 
 export const registerOpenApiPaths = (
   registry: OpenAPIRegistry,
@@ -48,6 +49,7 @@ export const registerOpenApiPaths = (
   registerAccountManagementPaths(registry, schemas, security);
   registerAccountSessionPaths(registry, schemas, security);
   registerApiAccessPaths(registry, schemas, security);
+  registerOperatorMcpPaths(registry, schemas, security);
   registerWorkspacePaths(registry, schemas, security);
   registerSettingsPaths(registry, schemas, security);
   registerAgentsPaths(registry, schemas, security);

@@ -2,8 +2,14 @@ import { randomUUID } from "node:crypto";
 
 import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
 import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInferencePipeline.js";
+import type { ProviderDispatchRecord } from "../../../shared/infra/llm/providerTypes.js";
 import type { TelemetryService } from "../../../shared/observability/telemetry/telemetryService.js";
-import type { TopicLabel, TopicNamingExemplars, TopicNamingPort } from "../contracts/topicLabel.js";
+import type {
+  ModelCallIssuedReporter,
+  TopicLabel,
+  TopicNamingExemplars,
+  TopicNamingPort,
+} from "../contracts/topicLabel.js";
 import { parseTopicLabelModelOutput, TopicLabelValidationError } from "../domain/topicLabel.js";
 import {
   TOPIC_NAMING_MAX_OUTPUT_TOKENS,
@@ -28,7 +34,7 @@ export interface TopicNamingInferenceFactory {
   }): Promise<ModelInferencePipeline>;
 }
 
-export interface ModelTopicNamingGatewayDependencies {
+interface ModelTopicNamingGatewayDependencies {
   inferenceFactory: TopicNamingInferenceFactory;
   workspaceContext: { workspaceId: string };
   telemetryService?: Pick<TelemetryService, "emit">;
@@ -55,21 +61,27 @@ const parseLabel = (text: string): TopicLabel => {
 export class ModelTopicNamingGateway implements TopicNamingPort {
   constructor(private readonly deps: ModelTopicNamingGatewayDependencies) {}
 
-  async name(exemplars: TopicNamingExemplars, signal?: AbortSignal): Promise<TopicLabel> {
+  async name(
+    exemplars: TopicNamingExemplars,
+    signal?: AbortSignal,
+    onModelCallIssued?: ModelCallIssuedReporter,
+  ): Promise<TopicLabel> {
     return this.call({
       prompt: buildTopicNamingPrompt(exemplars),
       operation: "topic_naming",
       fallback: false,
       signal,
+      onModelCallIssued,
     });
   }
 
-  async nameFallback(signal?: AbortSignal): Promise<TopicLabel> {
+  async nameFallback(signal?: AbortSignal, onModelCallIssued?: ModelCallIssuedReporter): Promise<TopicLabel> {
     return this.call({
       prompt: buildTopicFallbackNamingPrompt(),
       operation: "topic_naming_fallback",
       fallback: true,
       signal,
+      onModelCallIssued,
     });
   }
 
@@ -78,6 +90,7 @@ export class ModelTopicNamingGateway implements TopicNamingPort {
     operation: string;
     fallback: boolean;
     signal?: AbortSignal;
+    onModelCallIssued?: ModelCallIssuedReporter;
   }): Promise<TopicLabel> {
     const { workspaceId } = this.deps.workspaceContext;
     const modelCallContext: ModelCallUsageContext = {
@@ -91,17 +104,31 @@ export class ModelTopicNamingGateway implements TopicNamingPort {
       workspaceContext: this.deps.workspaceContext,
       modelCallContext,
     });
-    const completion = await inference.complete({
-      prompt: input.prompt,
-      maxInputTokens: TOPIC_NAMING_MAX_TOTAL_TOKENS,
-      maxOutputTokens: TOPIC_NAMING_MAX_OUTPUT_TOKENS,
-      responseFormat: TOPIC_NAMING_RESPONSE_FORMAT,
-      signal: input.signal,
-      operation: modelCallContext,
-      validateResult(result) {
-        parseLabel(result.text);
-      },
-    });
+    const dispatchRecord: ProviderDispatchRecord = { dispatched: false };
+    let completion: Awaited<ReturnType<typeof inference.complete>>;
+    try {
+      completion = await inference.complete({
+        prompt: input.prompt,
+        maxInputTokens: TOPIC_NAMING_MAX_TOTAL_TOKENS,
+        maxOutputTokens: TOPIC_NAMING_MAX_OUTPUT_TOKENS,
+        responseFormat: TOPIC_NAMING_RESPONSE_FORMAT,
+        signal: input.signal,
+        operation: modelCallContext,
+        dispatchRecord,
+        validateResult(result) {
+          parseLabel(result.text);
+        },
+      });
+    } finally {
+      if (dispatchRecord.dispatched) {
+        try {
+          input.onModelCallIssued?.();
+        } catch {
+          // Reporting runs in a finally, so a throwing counter would replace the
+          // call's own outcome. Accounting must not decide what the caller sees.
+        }
+      }
+    }
     const label = parseLabel(completion.text);
 
     // Counts a naming call as issued (as opposed to reused, which never calls this

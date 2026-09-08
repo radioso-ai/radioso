@@ -26,13 +26,17 @@ Radioso parses the original query, applies rewrite logic when enabled, and can s
 
 The system runs semantic and lexical retrieval. Semantic retrieval uses embeddings. Lexical retrieval uses search text built from the document title, chunk content, and metadata-derived text.
 
+The two run concurrently. Lexical queries go out before the query embedding resolves, so lexical results are often already in hand when vector search starts.
+
 For listing-style event date questions, the pipeline can also ask a retrieval-owned temporal candidate port for ongoing and upcoming chunks with `dateFrom` and `dateTo` metadata. This path is controlled by the agent's temporal structured lookup setting.
 
 ### Candidate preparation
 
 Retrieved chunks are normalized, merged, and scored. Metadata rules and explicit metadata filters narrow or boost the candidate set here.
 
-Semantic cosine and query-relative lexical scores stay separate. Candidate preparation combines their source ranks into a fused score from 0 to 1, with a bounded boost when both sources find the same chunk. Weak lexical results must also meet an absolute lexical-rank floor before they can contribute to fusion or minimum-useful-candidate checks.
+Semantic cosine and query-relative lexical scores stay separate. Candidate preparation combines their source ranks into a fused score from 0 to 1, with a bounded boost when both sources find the same chunk.
+
+Two lexical gates apply, and they answer different questions. Fusion ranks candidates against each other, so it gates on the query-relative lexical score: a chunk contributes its lexical rank once it reaches 0.2 against the best lexical hit for that query. Evidence checks — trigger backoff and minimum-useful-candidate counts — ask whether the turn found real lexical signal at all, so they gate on the absolute PostgreSQL `ts_rank_cd` value against a floor of 0.05. A rare-term query can produce top hits whose absolute rank sits well under that floor. Those hits rank normally against their peers, and they count as thin evidence.
 
 When upcoming-event boost is enabled, dated event evidence can receive a temporal boost during event date lookups. Topic relevance still applies; the temporal signal refines the candidate set rather than replacing it.
 
@@ -45,6 +49,8 @@ When deterministic temporal sort is enabled, selected dated event contexts can b
 ### Prompt assembly and diagnostics
 
 Radioso builds the final prompt, generates citations, and captures diagnostics and a retrieval trace. Chat then uses that result to generate the answer.
+
+Each retrieval branch is timed around its own work, so the trace shows the semantic and lexical spans as they actually ran. Read them as overlapping: the two stages can start at different moments, and because they run concurrently their durations can add up to more than the retrieval stage that contains them.
 </Steps>
 
 ## What operators can adjust

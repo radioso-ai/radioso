@@ -52,7 +52,7 @@ const countedAbortSignal = (): CountedAbortSignal => {
       }
       return Reflect.get(target, property, target);
     },
-  }) as AbortSignal;
+  });
   return {
     controller,
     signal,
@@ -258,8 +258,8 @@ describe("SsePresenter RED contract", () => {
     resolveAttachment(f);
     await waitForCommit(f.response);
     expect(f.response.commitSse).toHaveBeenCalledWith();
-    expect(f.response.commitSse.mock.invocationCallOrder[0]).toBeLessThan(f.response.write.mock.invocationCallOrder[0]!);
-    expect(frameText(f.response.writes[0]!)).toBe('event: ready\ndata: {"protocolVersion":1}\n\n');
+    expect(f.response.commitSse.mock.invocationCallOrder[0]).toBeLessThan(f.response.write.mock.invocationCallOrder[0]);
+    expect(frameText(f.response.writes[0])).toBe('event: ready\ndata: {"protocolVersion":1}\n\n');
     expect(f.response.writes).toHaveLength(1);
     f.response.emit("close");
     await opening;
@@ -685,7 +685,7 @@ describe("SsePresenter RED contract", () => {
     await waitForCommit(f.response);
     f.connection?.enqueueInvalidation(invalidation);
     await vi.waitFor(() => expect(f.response.writes).toHaveLength(2));
-    expect(frameText(f.response.writes[1]!)).toBe('event: invalidate\ndata: {"protocolVersion":1,"changeKinds":["crawl.progress"]}\n\n');
+    expect(frameText(f.response.writes[1])).toBe('event: invalidate\ndata: {"protocolVersion":1,"changeKinds":["crawl.progress"]}\n\n');
     expect(f.response.writes.every((frame) => frame.byteLength <= 4 * 1024)).toBe(true);
     f.response.emit("close");
     await opening;
@@ -700,7 +700,7 @@ describe("SsePresenter RED contract", () => {
     f.connection?.enqueueInvalidation(INVALIDATION_KINDS);
     await vi.waitFor(() => expect(f.response.destroy).toHaveBeenCalledOnce());
     expect(f.response.writes).toHaveLength(1);
-    expect(frameText(f.response.writes[0]!)).toContain("event: ready");
+    expect(frameText(f.response.writes[0])).toContain("event: ready");
     await opening;
   });
 
@@ -721,7 +721,7 @@ describe("SsePresenter RED contract", () => {
     f.response.blockWrites(false);
     f.response.emit("drain");
     await vi.waitFor(() => expect(f.response.writes).toHaveLength(2));
-    expect(frameText(f.response.writes[1]!)).toBe('event: resync\ndata: {"protocolVersion":1}\n\n');
+    expect(frameText(f.response.writes[1])).toBe('event: resync\ndata: {"protocolVersion":1}\n\n');
     expect(f.response.listenerCount("drain")).toBe(0);
     expect(f.response.maxDrainListeners()).toBe(1);
     expect(f.response.maxWritesInFlight()).toBe(1);
@@ -740,7 +740,7 @@ describe("SsePresenter RED contract", () => {
     f.response.blockWrites(true);
     f.connection?.enqueueResync();
     await vi.waitFor(() => expect(f.response.writes).toHaveLength(2));
-    expect(frameText(f.response.writes[1]!)).toBe('event: resync\ndata: {"protocolVersion":1}\n\n');
+    expect(frameText(f.response.writes[1])).toBe('event: resync\ndata: {"protocolVersion":1}\n\n');
 
     f.connection?.enqueueInvalidation(invalidation);
     f.response.blockWrites(false);
@@ -750,7 +750,7 @@ describe("SsePresenter RED contract", () => {
     await opening;
 
     expect(f.response.writes).toHaveLength(3);
-    expect(frameText(f.response.writes[2]!)).toBe('event: invalidate\ndata: {"protocolVersion":1,"changeKinds":["crawl.progress"]}\n\n');
+    expect(frameText(f.response.writes[2])).toBe('event: invalidate\ndata: {"protocolVersion":1,"changeKinds":["crawl.progress"]}\n\n');
     expect(f.response.writes.filter((frame) => frameText(frame).startsWith("event: resync")).length).toBe(1);
   });
 

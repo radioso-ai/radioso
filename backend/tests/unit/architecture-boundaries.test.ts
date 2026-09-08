@@ -8,7 +8,7 @@ const moduleUrl = new URL("../../../scripts/validate-architecture-boundaries.mjs
 const {
   validateImportRecords,
   validateRepositoryBoundaries,
-} = await import(moduleUrl.href) as any;
+} = await import(moduleUrl.href);
 const require = createRequire(import.meta.url);
 const dependencyCruiserConfig = require("../../dependency-cruiser.config.cjs") as {
   forbidden: Array<{
@@ -274,6 +274,16 @@ describe("architecture boundary validation", () => {
       "no-domain-module-imports-operator-copilot",
     );
   }, 30_000);
+
+  it("keeps Operator MCP authorization shape vocabulary on the neutral contract", async () => {
+    const source = await fs.readFile(
+      new URL("../../src/modules/operatorMcpAuthorization/domain.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain('from "@radioso/operator-mcp-contract"');
+    expect(source).not.toContain("operatorCopilot");
+  });
 
   // Ray-specific vocabulary in chat is a boundary break that no import rule can see: the knowledge
   // leaks without an import. Previously enforced by scripts/checkCopilotBoundary.mjs, whose import

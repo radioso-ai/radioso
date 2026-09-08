@@ -1,16 +1,16 @@
 import { z } from "zod";
 
-export const WEBHOOK_DESTINATION_LIMITS = {
+const WEBHOOK_DESTINATION_LIMITS = {
   name: 200,
   url: 2048,
 } as const;
 
-export const webhookDestinationNameSchema = z.string()
+const webhookDestinationNameSchema = z.string()
   .trim()
   .min(1)
   .max(WEBHOOK_DESTINATION_LIMITS.name);
 
-export const webhookDestinationUrlSchema = z.string()
+const webhookDestinationUrlSchema = z.string()
   .trim()
   .min(1)
   .max(WEBHOOK_DESTINATION_LIMITS.url);

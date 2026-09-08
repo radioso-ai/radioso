@@ -2,6 +2,7 @@ import { z } from "zod";
 import { isProductAnalyticsEventName } from "../../shared/analytics/productAnalyticsTypes.js";
 import { hasConfiguredSink, parseConfiguredSinks } from "../../shared/observability/configuredSinks.js";
 import { parseRealtimeConfig, realtimeEnvShape } from "../../modules/realtime/infrastructure/config.js";
+import { AGENT_BUNDLE_IMPORT_ORPHAN_AGE_MS_DEFAULT } from "../../modules/agentBundle/public.js";
 import {
   COPILOT_CONVERSATION_RETENTION_DAYS_DEFAULT,
   COPILOT_PROBE_BUDGET_PER_TURN_DEFAULT,
@@ -51,6 +52,10 @@ const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(8080),
   TRUST_PROXY_HOPS: z.coerce.number().int().nonnegative().default(0),
+  // The deploy stamps the release it ships onto the image. An unstamped build says so
+  // rather than borrowing the last release's number and reporting a version it is not.
+  RADIOSO_RELEASE: emptyStringToDefault(z.string().min(1), "development"),
+  RADIOSO_COMMIT: emptyStringToDefault(z.string().min(1), "unknown"),
   OBSERVABILITY_ENABLED: booleanish(true),
   OBSERVABILITY_SERVICE_NAME: z.string().min(1).default("radioso-api"),
   OBSERVABILITY_ENVIRONMENT: emptyStringToUndefined(z.string().min(1)),
@@ -132,6 +137,7 @@ const envSchema = z.object({
   WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK: booleanish(false),
   AUTH_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   AUTH_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(10),
+  OPERATOR_MCP_OAUTH_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(300),
   PASSWORD_RESET_TOKEN_TTL_MINUTES: z.coerce.number().int().positive().default(30),
   EMAIL_VERIFICATION_TOKEN_TTL_MINUTES: z.coerce.number().int().positive().default(30),
   UPLOAD_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(20),
@@ -144,6 +150,8 @@ const envSchema = z.object({
   COPILOT_PROBE_BUDGET_PER_TURN: z.coerce.number().int().positive().default(COPILOT_PROBE_BUDGET_PER_TURN_DEFAULT),
   // Days a copilot conversation is kept after its last activity. 0 keeps them indefinitely.
   COPILOT_CONVERSATION_RETENTION_DAYS: z.coerce.number().int().nonnegative().default(COPILOT_CONVERSATION_RETENTION_DAYS_DEFAULT),
+  // Applying imports older than this are treated as crashed work and compensated by the worker.
+  AGENT_BUNDLE_IMPORT_ORPHAN_AGE_MS: z.coerce.number().int().positive().default(AGENT_BUNDLE_IMPORT_ORPHAN_AGE_MS_DEFAULT),
   PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(10),
   PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(600),
@@ -160,6 +168,14 @@ const envSchema = z.object({
   MCP_CONVERSE_SESSION_TOKEN_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(10),
   RADIOSO_MCP_SIGNING_SECRET: emptyStringToUndefined(z.string().min(32)),
   RADIOSO_TRUSTED_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(0),
+  OPERATOR_MCP_RESOURCE_URL: emptyStringToUndefined(z.string().url()),
+  OPERATOR_MCP_ISSUER_URL: emptyStringToUndefined(z.string().url()),
+  OPERATOR_MCP_INTERNAL_SECRET: emptyStringToUndefined(z.string().min(32)),
+  OPERATOR_MCP_CREDENTIAL_EPOCH: emptyStringToUndefined(z.string().regex(/^[1-9]\d*$/u)),
+  OPERATOR_MCP_ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().max(900).default(900),
+  OPERATOR_MCP_AUTHORIZATION_CODE_TTL_SECONDS: z.coerce.number().int().positive().max(300).default(300),
+  OPERATOR_MCP_REFRESH_IDLE_TTL_DAYS: z.coerce.number().int().positive().max(30).default(30),
+  OPERATOR_MCP_REFRESH_ABSOLUTE_TTL_DAYS: z.coerce.number().int().positive().max(90).default(90),
   DOCUMENT_STORAGE_DRIVER: z.enum(["local", "gcs"]).default("local"),
   DOCUMENT_STORAGE_LOCAL_PATH: z.string().min(1).default("../.context/document-storage"),
   DOCUMENT_STORAGE_BUCKET: emptyStringToUndefined(z.string().min(1)),
@@ -346,15 +362,66 @@ const envSchema = z.object({
     });
   }
 
+  const operatorMcpFields = [
+    "OPERATOR_MCP_RESOURCE_URL",
+    "OPERATOR_MCP_ISSUER_URL",
+    "OPERATOR_MCP_INTERNAL_SECRET",
+    "OPERATOR_MCP_CREDENTIAL_EPOCH",
+  ] as const;
+  if (operatorMcpFields.some((field) => value[field] !== undefined)) {
+    for (const field of operatorMcpFields) {
+      if (!value[field]) ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [field],
+        message: `${field} is required when Operator MCP is configured`,
+      });
+    }
+    if (value.OPERATOR_MCP_RESOURCE_URL) {
+      const resource = new URL(value.OPERATOR_MCP_RESOURCE_URL);
+      if (resource.pathname !== "/operator/mcp" || resource.search || resource.hash) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["OPERATOR_MCP_RESOURCE_URL"],
+          message: "OPERATOR_MCP_RESOURCE_URL must be the canonical /operator/mcp resource without query or fragment",
+        });
+      }
+    }
+    if (value.OPERATOR_MCP_ISSUER_URL) {
+      const issuer = new URL(value.OPERATOR_MCP_ISSUER_URL);
+      if ((issuer.pathname !== "/" && issuer.pathname !== "") || issuer.search || issuer.hash) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["OPERATOR_MCP_ISSUER_URL"],
+          message: "OPERATOR_MCP_ISSUER_URL must be an origin without path, query, or fragment",
+        });
+      }
+    }
+    for (const field of ["OPERATOR_MCP_RESOURCE_URL", "OPERATOR_MCP_ISSUER_URL"] as const) {
+      const rawUrl = value[field];
+      if (!rawUrl) continue;
+      const url = new URL(rawUrl);
+      if (url.protocol === "https:") continue;
+      if (value.NODE_ENV !== "development") {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [field], message: `${field} must use https outside development` });
+        continue;
+      }
+      if (!new Set(["localhost", "127.0.0.1", "[::1]"]).has(url.hostname)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [field], message: `${field} may use http only on a development loopback host` });
+      }
+    }
+  }
+
 });
 
 type ParsedEnv = z.infer<typeof envSchema>;
 
 type RealtimeEnvInputKey = Extract<keyof ParsedEnv, `REALTIME_${string}`>;
+type OperatorMcpEnvInputKey = Extract<keyof ParsedEnv, `OPERATOR_MCP_${string}`>;
 
 // Realtime is an opt-in runtime: existing API/worker test compositions may omit
 // its inputs and the realtime parser supplies the disabled defaults.
-export type Env = Omit<ParsedEnv, "OBSERVABILITY_ENVIRONMENT" | RealtimeEnvInputKey> & Partial<Pick<ParsedEnv, RealtimeEnvInputKey>> & {
+export type Env = Omit<ParsedEnv, "OBSERVABILITY_ENVIRONMENT" | RealtimeEnvInputKey | OperatorMcpEnvInputKey>
+  & Partial<Pick<ParsedEnv, RealtimeEnvInputKey | OperatorMcpEnvInputKey>> & {
   OBSERVABILITY_ENVIRONMENT: string;
 };
 

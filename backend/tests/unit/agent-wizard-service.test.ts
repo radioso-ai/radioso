@@ -201,7 +201,7 @@ describe("AgentWizardService", () => {
       workspaceId: "workspace-1",
     });
 
-    const prompt = complete.mock.calls[0]?.[0]?.prompt as string;
+    const prompt = complete.mock.calls[0]?.[0]?.prompt;
     expect(prompt).toContain("how visitors can contact the organization");
     expect(prompt).toContain("Do not invent contact details");
     expect(prompt).toContain("verified contact path");
@@ -239,7 +239,7 @@ describe("AgentWizardService", () => {
       workspaceId: "workspace-1",
     });
 
-    const prompt = complete.mock.calls[0]?.[0]?.prompt as string;
+    const prompt = complete.mock.calls[0]?.[0]?.prompt;
     expect(prompt).toContain("<candidate_links>");
     expect(prompt).toContain("https://example.com/datenschutz");
     expect(prompt).toContain("https://example.com/contact");

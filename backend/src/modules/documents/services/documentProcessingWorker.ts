@@ -45,7 +45,7 @@ const traceActiveSpan = <T>(
 const compactTraceAttributes = (attributes: TraceAttributes): TraceAttributes =>
   Object.fromEntries(
     Object.entries(attributes).filter(([, value]) => value !== undefined && value !== null),
-  ) as TraceAttributes;
+  );
 
 export const buildDocumentWorkerJobTraceAttributes = (
   job: Pick<DocumentProcessingJobRecord, "id" | "workspaceId" | "documentId" | "documentRevision" | "attemptCount" | "status" | "kind">,
@@ -291,24 +291,26 @@ export class DocumentProcessingWorker {
       return;
     }
 
-    this.timer = setTimeout(async () => {
-      try {
-        const processed = await this.runOnce();
-        this.scheduleNextTick(processed ? 0 : this.pollIntervalMs);
-      } catch (error) {
-        this.logger.error({ error }, "Document processing worker tick failed");
-        // Fire-and-forget so the poll loop is never blocked by reporting, but the
-        // rejection must be caught — an unhandled rejection would now be process-fatal.
-        void this.errorReporter
-          ?.report({ errorType: "document.worker.tick_failed", error, severity: "error" })
-          .catch((reportError) => {
-            this.logger.error(
-              { err: reportError instanceof Error ? reportError.message : String(reportError) },
-              "Document processing worker error report failed",
-            );
-          });
-        this.scheduleNextTick(this.pollIntervalMs);
-      }
+    this.timer = setTimeout(() => {
+      void (async () => {
+        try {
+          const processed = await this.runOnce();
+          this.scheduleNextTick(processed ? 0 : this.pollIntervalMs);
+        } catch (error) {
+          this.logger.error({ error }, "Document processing worker tick failed");
+          // Fire-and-forget so the poll loop is never blocked by reporting, but the
+          // rejection must be caught — an unhandled rejection would now be process-fatal.
+          void this.errorReporter
+            ?.report({ errorType: "document.worker.tick_failed", error, severity: "error" })
+            .catch((reportError) => {
+              this.logger.error(
+                { err: reportError instanceof Error ? reportError.message : String(reportError) },
+                "Document processing worker error report failed",
+              );
+            });
+          this.scheduleNextTick(this.pollIntervalMs);
+        }
+      })();
     }, delayMs);
   }
 

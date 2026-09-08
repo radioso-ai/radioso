@@ -39,7 +39,7 @@ const generalSettings = (): GeneralSettings => ({
   websiteEmbedExpertOverrides: {},
 })
 
-const behaviorSettings = (): AssistantBehaviorSettings => ({
+const behaviorSettings = (overrides: Partial<AssistantBehaviorSettings> = {}): AssistantBehaviorSettings => ({
   suggestedQuestionsEnabled: true,
   customInstruction: '',
   assistantLinkUtmEnabled: true,
@@ -59,6 +59,7 @@ const behaviorSettings = (): AssistantBehaviorSettings => ({
   retrievalEnabled: true,
   skillSettings: {},
   retrievalSkillSettings: {},
+  ...overrides,
 })
 
 describe('assistant profile section', () => {
@@ -82,17 +83,19 @@ describe('assistant profile section', () => {
     anonSettings: GeneralSettings
     showInternalName?: boolean
     onAssistantSettingChange?: <K extends keyof GeneralSettings>(key: K, value: GeneralSettings[K]) => void
+    assistantBehaviorSettings?: AssistantBehaviorSettings
+    onAssistantBehaviorDraft?: (updater: (current: AssistantBehaviorSettings) => AssistantBehaviorSettings) => void
   }) => {
     act(() => {
       root.render(
         <AssistantProfileSection
           anonSettings={props.anonSettings}
-          assistantBehaviorSettings={behaviorSettings()}
+          assistantBehaviorSettings={props.assistantBehaviorSettings ?? behaviorSettings()}
           assistantLocaleInput=""
           showInternalName={props.showInternalName}
           onAssistantSettingChange={props.onAssistantSettingChange ?? (() => undefined)}
           onAssistantLocaleInputChange={() => undefined}
-          onAssistantBehaviorDraft={() => undefined}
+          onAssistantBehaviorDraft={props.onAssistantBehaviorDraft ?? (() => undefined)}
           isAnonSaving={false}
         />,
       )
@@ -123,5 +126,24 @@ describe('assistant profile section', () => {
       input?.dispatchEvent(new Event('input', { bubbles: true }))
     })
     expect(changes).toContainEqual(['internalName', 'Claudio (EN)'])
+  })
+
+  it('updates the retrieval-miss handoff draft from its toggle', () => {
+    const updates: AssistantBehaviorSettings[] = []
+    renderSection({
+      anonSettings: generalSettings(),
+      assistantBehaviorSettings: behaviorSettings({ handoffOnRetrievalMiss: false }),
+      onAssistantBehaviorDraft: (updater) => {
+        updates.push(updater(behaviorSettings({ handoffOnRetrievalMiss: false })))
+      },
+    })
+
+    const toggle = container.querySelector<HTMLButtonElement>('#handoffOnRetrievalMiss')
+    expect(toggle).not.toBeNull()
+    act(() => {
+      toggle?.click()
+    })
+
+    expect(updates.at(-1)?.handoffOnRetrievalMiss).toBe(true)
   })
 })

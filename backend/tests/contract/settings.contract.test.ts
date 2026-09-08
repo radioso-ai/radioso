@@ -409,10 +409,10 @@ describe("settings contract", () => {
 
   it("documents retrieval defaults and ingestion settings in the generated schema", () => {
     const spec = readFileSync(new URL("../../openapi.yaml", import.meta.url), "utf8");
-    const retrievalDefaultsSchema = spec.match(/RetrievalDefaultsResponse:\n([\s\S]*?)\n    RetrievalSettingsOverride:/)?.[1] ?? "";
-    const retrievalOverrideSchema = spec.match(/RetrievalSettingsOverride:\n([\s\S]*?)\n    IngestionSettings:/)?.[1] ?? "";
-    const ingestionSettingsSchema = spec.match(/IngestionSettings:\n([\s\S]*?)\n    UpdateIngestionSettingsRequest:/)?.[1] ?? "";
-    const ingestionUpdateSchema = spec.match(/UpdateIngestionSettingsRequest:\n([\s\S]*?)\n    RetrievalMetadataRule:/)?.[1] ?? "";
+    const retrievalDefaultsSchema = spec.match(/RetrievalDefaultsResponse:\n([\s\S]*?)\n {4}RetrievalSettingsOverride:/)?.[1] ?? "";
+    const retrievalOverrideSchema = spec.match(/RetrievalSettingsOverride:\n([\s\S]*?)\n {4}IngestionSettings:/)?.[1] ?? "";
+    const ingestionSettingsSchema = spec.match(/IngestionSettings:\n([\s\S]*?)\n {4}UpdateIngestionSettingsRequest:/)?.[1] ?? "";
+    const ingestionUpdateSchema = spec.match(/UpdateIngestionSettingsRequest:\n([\s\S]*?)\n {4}RetrievalMetadataRule:/)?.[1] ?? "";
 
     expect(spec).not.toContain("/api/v1/settings/retrieval:");
     expect(spec).not.toContain("UpdateRetrievalSettingsRequest:");
@@ -447,11 +447,11 @@ describe("settings contract", () => {
     expect(ingestionSettingsSchema).toContain("pendingEmbeddingModel:");
     const ingestionResponseModelSchema =
       ingestionSettingsSchema.match(
-        /embeddingModel:\n([\s\S]*?)\n        pendingEmbeddingModel:/,
+        /embeddingModel:\n([\s\S]*?)\n {8}pendingEmbeddingModel:/,
       )?.[1] ?? "";
     const ingestionUpdateModelSchema =
       ingestionUpdateSchema.match(
-        /embeddingModel:\n([\s\S]*?)\n        documentEnrichmentEnabled:/,
+        /embeddingModel:\n([\s\S]*?)\n {8}documentEnrichmentEnabled:/,
       )?.[1] ?? "";
     expect(ingestionResponseModelSchema).toContain("type: string");
     expect(ingestionResponseModelSchema).not.toContain("enum:");

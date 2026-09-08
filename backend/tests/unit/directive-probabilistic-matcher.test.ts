@@ -72,7 +72,7 @@ describe("ProbabilisticDirectiveMatcher", () => {
       selectionConfidence: 0.9,
       selectionReason: "angry customer",
     });
-    expect(matches[0]!.directive.name).toBe("escalate");
+    expect(matches[0].directive.name).toBe("escalate");
   });
 
   it("only forwards contextual directives to the gateway", async () => {
@@ -166,7 +166,7 @@ describe("ModelDirectiveMatchGateway", () => {
     });
 
     expect(result).toEqual([{ name: "escalate", confidence: 0.7 }]);
-    const request = complete.mock.calls[0]![0];
+    const request = complete.mock.calls[0][0];
     expect(request.systemPrompt).toBeTruthy();
     expect(request.prompt).toContain("escalate");
     expect(request.prompt).toContain("customer demands a refund");
@@ -189,7 +189,7 @@ describe("createDirectiveMatcher", () => {
       directives: [contextual("escalate", "customer demands a refund")],
     });
 
-    expect(complete.mock.calls[0]![0].systemPrompt).toBe(loadPromptTemplate("chat/directive-match.md"));
+    expect(complete.mock.calls[0][0].systemPrompt).toBe(loadPromptTemplate("chat/directive-match.md"));
   });
 
   it("logs a warning and keeps always directives when the contextual model call fails", async () => {
@@ -212,7 +212,7 @@ describe("createDirectiveMatcher", () => {
 
     expect(matches.map((match) => match.directive.name)).toEqual(["standing"]);
     expect(logger.warn).toHaveBeenCalledTimes(1);
-    const [payload] = logger.warn.mock.calls[0]!;
+    const [payload] = logger.warn.mock.calls[0];
     expect(payload).toMatchObject({
       event: "directive_contextual_match_unavailable",
       errorType: "Error",

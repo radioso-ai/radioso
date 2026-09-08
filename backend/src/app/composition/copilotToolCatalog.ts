@@ -25,15 +25,12 @@ import {
 } from "../../modules/operatorCopilot/tools/index.js";
 import type { CopilotWebsiteAnalysisProbePort } from "../../modules/operatorCopilot/contracts/agentAuthoring.js";
 import type {
-  CopilotAgentSettingProposalAdapter,
-  CopilotAgentSkillProposalAdapter,
-  CopilotContextVariableProposalAdapter,
-  CopilotDirectiveProposalAdapter,
   CopilotEvalCaseCapturePort,
   CopilotEvalCaseReplayPort,
   ProposalEvidenceDependencies,
   CopilotEvalSuiteProbePort,
   CopilotProposalAdapterRegistry,
+  CopilotMcpProposalRecoveryPort,
   CopilotWorkspaceRouteKeyResolver,
 } from "../../modules/operatorCopilot/public.js";
 import type { CopilotDocumentAuthoringPort, CopilotDocumentSummary, CopilotWorkspaceAccountResolver } from "../../modules/operatorCopilot/contracts/documentAuthoring.js";
@@ -203,6 +200,7 @@ export const createCopilotToolCatalog = (deps: {
   readonly workspaceSettings: CopilotWorkspaceSettingsPort;
   readonly productDocs: CopilotProductDocsPort;
   readonly proposalRepository: Pick<CopilotRepositoryPort, "createProposal">;
+  readonly proposalRecovery: CopilotMcpProposalRecoveryPort;
   readonly proposalAdapters: CopilotProposalAdapterRegistry;
   readonly auditService: CopilotAuditPort;
   readonly workspaceRouteKeyResolver: CopilotWorkspaceRouteKeyResolver;

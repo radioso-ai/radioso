@@ -13,10 +13,12 @@ import { useAuth } from '@/lib/auth-context'
 import { buildDashboardHref } from '@/lib/dashboard-routes'
 import { getErrorMessage } from './auth-errors'
 
-export function ResetPasswordScreen({ token }: { token?: string }) {
+export function ResetPasswordScreen({ token, email: initialEmail }: { token?: string; email?: string }) {
   const router = useRouter()
   const { login } = useAuth()
-  const [email, setEmail] = useState('')
+  // Prefilled when the visitor arrives from a flow that already knows the
+  // address, such as an invitation for a login they cannot sign in to.
+  const [email, setEmail] = useState(initialEmail ?? '')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)

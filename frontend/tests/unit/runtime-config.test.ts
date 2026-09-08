@@ -4,14 +4,14 @@ import { buildAgentChatEndpoint, parseRuntimeConfig, resolveApiBaseUrl } from '@
 
 describe('parseRuntimeConfig', () => {
   it('reads both deployment values', () => {
-    expect(parseRuntimeConfig({ mcpUrl: 'https://mcp.example.com/mcp', publicApiUrl: 'https://api.example.com' }))
-      .toEqual({ mcpUrl: 'https://mcp.example.com/mcp', publicApiUrl: 'https://api.example.com' })
+    expect(parseRuntimeConfig({ mcpUrl: 'https://mcp.example.com/mcp', operatorMcpUrl: 'https://mcp.example.com/operator/mcp', publicApiUrl: 'https://api.example.com' }))
+      .toEqual({ mcpUrl: 'https://mcp.example.com/mcp', operatorMcpUrl: 'https://mcp.example.com/operator/mcp', publicApiUrl: 'https://api.example.com' })
   })
 
   it('falls back to empty values for a malformed body', () => {
-    expect(parseRuntimeConfig(null)).toEqual({ mcpUrl: '', publicApiUrl: '' })
-    expect(parseRuntimeConfig('nope')).toEqual({ mcpUrl: '', publicApiUrl: '' })
-    expect(parseRuntimeConfig({ mcpUrl: 7 })).toEqual({ mcpUrl: '', publicApiUrl: '' })
+    expect(parseRuntimeConfig(null)).toEqual({ mcpUrl: '', operatorMcpUrl: '', publicApiUrl: '' })
+    expect(parseRuntimeConfig('nope')).toEqual({ mcpUrl: '', operatorMcpUrl: '', publicApiUrl: '' })
+    expect(parseRuntimeConfig({ mcpUrl: 7 })).toEqual({ mcpUrl: '', operatorMcpUrl: '', publicApiUrl: '' })
   })
 })
 

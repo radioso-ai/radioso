@@ -132,7 +132,7 @@ describe("ContextualChatGateway", () => {
         completeCalls.push({ apiKey: cfg.apiKey, prompt: req.prompt });
         return streamResult(["workspace"]);
       },
-    })) as TextGenerationClientCache["getOrCreate"];
+    }));
 
     const gateway = new ContextualChatGateway(
       { resolver: buildResolver({ chat: config }), clientCache: cache },
@@ -207,7 +207,7 @@ describe("ContextualStructuredInferenceFactory", () => {
       stream() {
         return streamResult(["ok"]);
       },
-    })) as TextGenerationClientCache["getOrCreate"];
+    }));
     return cache;
   };
 
@@ -297,7 +297,7 @@ describe("ContextualDirectiveMatchGatewayFactory", () => {
       stream() {
         return streamResult([]);
       },
-    })) as TextGenerationClientCache["getOrCreate"];
+    }));
 
     const factory = new ContextualDirectiveMatchGatewayFactory(
       { resolver: buildResolver({ chat: config }), clientCache: cache },

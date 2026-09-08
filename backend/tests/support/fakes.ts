@@ -41,6 +41,8 @@ import type {
 import type {
   AccountRecord,
   AccountRepositoryPort,
+  FederatedIdentityRecord,
+  FederatedIdentityRepositoryPort,
   SessionRecord,
   SessionRepositoryPort,
 } from "../../src/modules/auth/services/authService.js";
@@ -533,6 +535,52 @@ export class InMemorySessionRepository implements SessionRepositoryPort {
     }
 
     return count;
+  }
+}
+
+export class InMemoryFederatedIdentityRepository implements FederatedIdentityRepositoryPort {
+  readonly items: FederatedIdentityRecord[] = [];
+
+  async findByProviderSubject(provider: string, subject: string): Promise<FederatedIdentityRecord | null> {
+    return this.items.find((item) => item.provider === provider && item.subject === subject) ?? null;
+  }
+
+  async listForUser(userId: string): Promise<FederatedIdentityRecord[]> {
+    return this.items.filter((item) => item.userId === userId);
+  }
+
+  async link(params: {
+    userId: string;
+    provider: string;
+    subject: string;
+    providerEmail: string;
+    authenticatedAt: Date;
+  }): Promise<FederatedIdentityRecord> {
+    const record: FederatedIdentityRecord = {
+      userId: params.userId,
+      provider: params.provider,
+      subject: params.subject,
+      providerEmail: params.providerEmail,
+      lastAuthenticatedAt: params.authenticatedAt,
+    };
+    // Mirrors the unique (provider, subject) constraint the table carries.
+    const existing = this.items.findIndex(
+      (item) => item.provider === params.provider && item.subject === params.subject,
+    );
+    if (existing === -1) {
+      this.items.push(record);
+    } else {
+      this.items[existing] = record;
+    }
+
+    return record;
+  }
+
+  async deleteForUser(userId: string): Promise<number> {
+    const remaining = this.items.filter((item) => item.userId !== userId);
+    const removed = this.items.length - remaining.length;
+    this.items.splice(0, this.items.length, ...remaining);
+    return removed;
   }
 }
 
@@ -1941,7 +1989,7 @@ export class InMemoryConnectorDatabase {
         originalAgentConfig,
         sourceAgentId,
         capturedBy,
-      ] = params as unknown[];
+      ] = params;
       const row = {
         id,
         workspace_id: workspaceId,
@@ -1987,7 +2035,7 @@ export class InMemoryConnectorDatabase {
         status,
         outcomeReason,
         completedAt,
-      ] = params as unknown[];
+      ] = params;
       const row = {
         id,
         workspace_id: workspaceId,
@@ -3372,7 +3420,7 @@ export class InMemoryChunkRepository implements ChunkRepositoryPort {
         embeddingDimensions: chunk.embedding.length || null,
       })),
       totalChunks: matchingChunks.length,
-      nextChunkIndex: rows.length > input.limit ? rows[input.limit]!.chunkIndex : null,
+      nextChunkIndex: rows.length > input.limit ? rows[input.limit].chunkIndex : null,
     };
   }
 
@@ -4477,7 +4525,7 @@ export class InMemoryAuditEventRepository implements AuditEventRepositoryPort {
 export class InMemoryHistoryItemsRepository implements HistoryItemsRepositoryPort {
   constructor(
     private readonly conversationRepository: InMemoryConversationRepository,
-    private readonly auditEventRepository: InMemoryAuditEventRepository,
+    _auditEventRepository: InMemoryAuditEventRepository,
   ) {}
 
   async listPageByWorkspaceId(
@@ -4493,15 +4541,7 @@ export class InMemoryHistoryItemsRepository implements HistoryItemsRepositoryPor
         sortAt: conversation.updatedAt,
         conversation,
       }));
-    const searches: HistoryItemsSourceRecord[] = this.auditEventRepository.items
-      .filter((event) => event.workspaceId === workspaceId && event.eventType === "document.search" && !input.agentId)
-      .map((event) => ({
-        kind: "search" as const,
-        id: typeof event.metadata.searchId === "string" ? event.metadata.searchId : event.id,
-        sortAt: event.createdAt,
-        event,
-      }));
-    const items = [...conversations, ...searches].sort((left, right) => {
+    const items = conversations.sort((left, right) => {
       const timeDiff = right.sortAt.getTime() - left.sortAt.getTime();
       return timeDiff !== 0 ? timeDiff : right.id.localeCompare(left.id);
     });

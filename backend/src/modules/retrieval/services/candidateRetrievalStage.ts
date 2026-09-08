@@ -48,10 +48,11 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
     // search is already guarded below, so an unguarded lexical or temporal query was
     // the one path where a backend outage produced no reply at all.
     const degradedChannels = new Set<DegradableRetrievalChannel>();
+    const lexicalTiming = startBranchTiming();
     const lexicalSearchBySubquery = new Map(
       input.activeRetrievalSubqueries.map((subquery) => [
         subquery.id,
-        this.lexicalSearch.search({
+        lexicalTiming.track(this.lexicalSearch.search({
           workspaceId: input.request.workspaceId,
           query: subquery.lexicalQuery,
           topK: RETRIEVAL_BEHAVIOR.hybrid.lexicalTopK,
@@ -61,7 +62,7 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
         }).catch(() => {
           degradedChannels.add("lexical");
           return [];
-        }),
+        })),
       ] as const),
     );
     const embeddingResult = await this.queryEmbeddings.embedQueries({
@@ -85,11 +86,12 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
       ] as const),
     );
     const activeEmbeddingDurationMs = Math.max(0, Date.now() - embeddingStartedAt);
+    const semanticTiming = startBranchTiming();
     const semanticSearchByQuery = new Map(
       uniqueSemanticQueries.map((query) => [
         query,
         embeddingResult
-          ? this.searchWithFallback({
+          ? semanticTiming.track(this.searchWithFallback({
               workspaceId: input.request.workspaceId,
               space: embeddingResult.space,
               queryVector: embeddingBySemanticQuery.get(query) ?? [],
@@ -98,7 +100,7 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
               metadataFilter,
               sourceFilter,
               notExpiredAt: retrievalNow.toISOString(),
-            }).catch(() => ({ contexts: [], fallbackApplied: true }))
+            }).catch(() => ({ contexts: [], fallbackApplied: true })))
           : Promise.resolve({ contexts: [], fallbackApplied: true }),
       ] as const),
     );
@@ -172,6 +174,10 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
       ...input,
       activeEmbedding: embeddingBySemanticQuery.get(input.activeRetrievalSubqueries[0]?.semanticQuery ?? "") ?? [],
       activeEmbeddingDurationMs,
+      semanticRetrievalStartedAtMs: semanticTiming.startedAtMs,
+      semanticRetrievalDurationMs: semanticTiming.durationMs(),
+      lexicalRetrievalStartedAtMs: lexicalTiming.startedAtMs,
+      lexicalRetrievalDurationMs: lexicalTiming.durationMs(),
       originalContexts,
       rewrittenContexts,
       lexicalContexts,
@@ -223,6 +229,31 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
     };
   }
 }
+
+interface BranchTiming {
+  readonly startedAtMs: number;
+  track<T>(promise: Promise<T>): Promise<T>;
+  durationMs(): number;
+}
+
+// Semantic and lexical retrieval run concurrently, so each branch is measured around
+// its own promises instead of being carved out of the enclosing stage span. Two
+// consequences are intended: the branches can start at different times, and their
+// durations can sum to more than the span that contains both.
+const startBranchTiming = (): BranchTiming => {
+  const startedAtMs = Date.now();
+  let completedAtMs = startedAtMs;
+
+  return {
+    startedAtMs,
+    track: <T>(promise: Promise<T>): Promise<T> =>
+      promise.finally(() => {
+        completedAtMs = Math.max(completedAtMs, Date.now());
+      }),
+    // A branch that issued no work reports zero rather than a share of the stage.
+    durationMs: () => Math.max(0, completedAtMs - startedAtMs),
+  };
+};
 
 const resolveSemanticAvailability = (input: {
   embeddingAvailable: boolean;

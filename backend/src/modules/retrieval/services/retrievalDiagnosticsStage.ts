@@ -24,6 +24,8 @@ export class RetrievalDiagnosticsStageService implements RetrievalDiagnosticsSta
       normalizedCandidateCount: input.scoredCandidates.length,
       finalContextCount: input.contexts.length,
       queryEmbeddingDurationMs: input.activeEmbeddingDurationMs,
+      semanticRetrievalDurationMs: input.semanticRetrievalDurationMs,
+      lexicalRetrievalDurationMs: input.lexicalRetrievalDurationMs,
       semanticRetrievalAvailability: input.semanticRetrievalAvailability,
       semanticRetrievalFailureReason: input.semanticRetrievalFailureReason,
       degradedRetrievalChannels: input.degradedRetrievalChannels,

@@ -3,16 +3,6 @@ import { currentTimestamp } from "../../../shared/infra/kysely/sqlHelpers.js";
 import { sha256 } from "../../auth/contracts/index.js";
 import type { RealtimeSessionRecord, RealtimeSessionStore } from "../domain/contracts.js";
 
-type RealtimeSessionRow = {
-  session_id: string;
-  account_id: string;
-  user_id: string;
-  expires_at: Date;
-  membership_status: string | null;
-  matched_workspace_id: string | null;
-  matched_workspace_account_id: string | null;
-};
-
 /** One-query auth projection for the isolated realtime runtime. */
 export class PostgresRealtimeSessionStore implements RealtimeSessionStore {
   constructor(private readonly db: Db) {}
@@ -36,7 +26,7 @@ export class PostgresRealtimeSessionStore implements RealtimeSessionStore {
       .where("sessions.session_token_hash", "=", sha256(input.sessionToken))
       .where("sessions.revoked_at", "is", null)
       .where("sessions.expires_at", ">", currentTimestamp())
-      .executeTakeFirst() as RealtimeSessionRow | undefined;
+      .executeTakeFirst();
     if (!row) return null;
     const workspaceOwned = row.matched_workspace_id === input.workspaceId
       && row.matched_workspace_account_id === row.account_id;

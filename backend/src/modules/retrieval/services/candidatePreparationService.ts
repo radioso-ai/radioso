@@ -25,7 +25,7 @@ export class CandidatePreparationService {
         const fusedScore = fuseCandidateRanks({
           semanticRank,
           lexicalRank,
-          lexicalRankScore: candidate.lexicalRankScore ?? 0,
+          lexicalScore: candidate.lexicalScore,
         });
         return {
           ...candidate,

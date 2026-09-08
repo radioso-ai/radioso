@@ -1,4 +1,5 @@
 import type { ApplicationRouteMount } from "../radiosoModuleTypes.js";
+import { HttpError } from "../shared/httpError.js";
 import { hashStaffPassword } from "./staffCrypto.js";
 import type { StaffUserRepository } from "./staffRepository.js";
 import type { StaffUser } from "./staffTypes.js";
@@ -42,15 +43,11 @@ export class StaffBootstrapService {
 
   private async resetExistingOwner(existing: StaffUser, passwordHash: string): Promise<StaffUser> {
     if (existing.role !== "owner") {
-      throw {
-        statusCode: 409,
-        code: "staff_bootstrap_conflict",
-        message: "Bootstrap can only reset an existing owner.",
-      };
+      throw new HttpError(409, "staff_bootstrap_conflict", "Bootstrap can only reset an existing owner.");
     }
     const updated = await this.users.updatePassword(existing.id, passwordHash);
     if (!updated) {
-      throw { statusCode: 404, code: "not_found", message: "Staff owner not found." };
+      throw new HttpError(404, "not_found", "Staff owner not found.");
     }
     return updated;
   }

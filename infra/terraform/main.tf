@@ -6,7 +6,8 @@ locals {
   # Cloud Run does not expose a stable frontend URL Terraform can reuse here without
   # creating a backend<->frontend dependency cycle. Keep a valid placeholder until
   # the wrapper supplies the public app URL or discovered frontend run.app URL.
-  app_base_url = coalesce(var.app_base_url_override, "https://example.invalid")
+  app_base_url            = coalesce(var.app_base_url_override, "https://example.invalid")
+  operator_mcp_configured = var.radioso_mcp_enabled && var.mcp_public_origin != null
   # The document worker self-references its own public URL for Cloud Tasks
   # retry dispatch, so Terraform cannot use a direct reference and we keep the
   # placeholder + override pattern. The crawler worker URL has no such cycle:
@@ -36,6 +37,10 @@ locals {
   copilot_retention_schedule = coalesce(
     var.copilot_retention_schedule,
     "30 4 * * *",
+  )
+  agent_bundle_import_cleanup_schedule = coalesce(
+    var.agent_bundle_import_cleanup_schedule,
+    "*/5 * * * *",
   )
   public_chat_base_url = (
     var.public_chat_base_url_override != null

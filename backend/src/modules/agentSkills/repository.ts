@@ -113,7 +113,7 @@ export class AgentSkillRepository implements AgentSkillRepositoryPort {
       })
       .returningAll()
       .executeTakeFirstOrThrow();
-    return mapRow(row as AgentSkillRow);
+    return mapRow(row);
   }
 
   async findById(workspaceId: string, agentId: string, id: string): Promise<AgentSkillSpine | null> {
@@ -124,7 +124,7 @@ export class AgentSkillRepository implements AgentSkillRepositoryPort {
       .where("agent_id", "=", agentId)
       .where("id", "=", id)
       .executeTakeFirst();
-    return row ? mapRow(row as AgentSkillRow) : null;
+    return row ? mapRow(row) : null;
   }
 
   async findByName(workspaceId: string, agentId: string, skillName: string): Promise<AgentSkillSpine | null> {
@@ -135,7 +135,7 @@ export class AgentSkillRepository implements AgentSkillRepositoryPort {
       .where("agent_id", "=", agentId)
       .where("skill_name", "=", skillName)
       .executeTakeFirst();
-    return row ? mapRow(row as AgentSkillRow) : null;
+    return row ? mapRow(row) : null;
   }
 
   async findByAgentAndName(agentId: string, skillName: string): Promise<AgentSkillSpine | null> {
@@ -145,7 +145,7 @@ export class AgentSkillRepository implements AgentSkillRepositoryPort {
       .where("agent_id", "=", agentId)
       .where("skill_name", "=", skillName)
       .executeTakeFirst();
-    return row ? mapRow(row as AgentSkillRow) : null;
+    return row ? mapRow(row) : null;
   }
 
   async findDefaultAnswer(workspaceId: string, agentId: string): Promise<AgentSkillSpine | null> {
@@ -156,7 +156,7 @@ export class AgentSkillRepository implements AgentSkillRepositoryPort {
       .where("agent_id", "=", agentId)
       .where("invocation_mode", "=", "default_answer")
       .executeTakeFirst();
-    return row ? mapRow(row as AgentSkillRow) : null;
+    return row ? mapRow(row) : null;
   }
 
   async listByAgent(workspaceId: string, agentId: string): Promise<AgentSkillSpine[]> {
@@ -256,7 +256,7 @@ export class AgentSkillRepository implements AgentSkillRepositoryPort {
       .where((eb) => optionalTimestampMatch(eb.ref("updated_at"), input.expectedUpdatedAt))
       .returningAll()
       .executeTakeFirst();
-    return row ? mapRow(row as AgentSkillRow) : null;
+    return row ? mapRow(row) : null;
   }
 
   async remove(workspaceId: string, agentId: string, id: string): Promise<boolean> {

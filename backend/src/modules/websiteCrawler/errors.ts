@@ -1,3 +1,8 @@
+import {
+  isUsageLimitExceededError,
+  USAGE_LIMIT_EXCEEDED_CODE,
+} from "../../shared/domain/usageLimitPolicy.js";
+
 const SECRET_FIELD_PATTERNS = [
   /secret/i,
   /token/i,
@@ -45,6 +50,74 @@ export class WebsiteCrawlerBadRequestError extends Error {
     this.details = details ? redactSensitiveDetails(details) : undefined;
   }
 }
+
+export const WEBSITE_CRAWLER_INTERNAL_FAULT_CODE = "website_crawler_internal_fault";
+const INTERNAL_CRAWL_OPERATOR_MESSAGE = "An internal error interrupted the crawl. Try again later.";
+
+export type WebsiteCrawlerFailureClassification =
+  | { kind: "expected"; code: string; statusCode?: number }
+  | { kind: "internal"; code: typeof WEBSITE_CRAWLER_INTERNAL_FAULT_CODE; statusCode: 500 };
+
+/**
+ * Classifies only failures the crawler owns as expected. A random `code` field
+ * is not proof that a failure came from the target site or crawler provider.
+ */
+export const classifyWebsiteCrawlerFailure = (error: unknown): WebsiteCrawlerFailureClassification => {
+  if (
+    error instanceof WebsiteCrawlerUnavailableError
+    || error instanceof WebsiteCrawlerProviderError
+    || error instanceof WebsiteCrawlerBadRequestError
+  ) {
+    return { code: error.code, statusCode: error.statusCode, kind: "expected" };
+  }
+  if (isUsageLimitExceededError(error)) {
+    return {
+      code: USAGE_LIMIT_EXCEEDED_CODE,
+      ...(typeof error.statusCode === "number" ? { statusCode: error.statusCode } : {}),
+      kind: "expected",
+    };
+  }
+  return { kind: "internal", code: WEBSITE_CRAWLER_INTERNAL_FAULT_CODE, statusCode: 500 };
+};
+
+export const getWebsiteCrawlerOperatorFailureMessage = (error: unknown): string => {
+  if (classifyWebsiteCrawlerFailure(error).kind === "internal") {
+    return INTERNAL_CRAWL_OPERATOR_MESSAGE;
+  }
+  return error instanceof Error && error.message.trim()
+    ? redactSensitiveText(error.message)
+    : "Website crawl failed";
+};
+
+/** Wraps service callback failures so stream-provider failures can be normalized separately. */
+export class WebsiteCrawlerStreamCallbackError extends Error {
+  constructor(readonly callbackError: unknown) {
+    super("Website crawler stream callback failed");
+    this.name = "WebsiteCrawlerStreamCallbackError";
+  }
+}
+
+export const toWebsiteCrawlerProviderError = (error: unknown, provider: string): WebsiteCrawlerProviderError => {
+  if (error instanceof WebsiteCrawlerProviderError) {
+    return error;
+  }
+  const message = error instanceof Error && error.message.trim()
+    ? error.message
+    : "Website crawler provider failed";
+  return new WebsiteCrawlerProviderError(message, { provider });
+};
+
+/**
+ * Internal fault reports intentionally contain no original message, URL, page
+ * content, provider payload, or original stack. Its error type and worker
+ * correlation still make the incident alertable without exporting untrusted
+ * failure data to an observability sink.
+ */
+export const toSafeWebsiteCrawlerInternalFault = (error: unknown): Error => {
+  const safeError = new Error("Unexpected internal website crawl failure");
+  safeError.name = error instanceof Error ? error.name : "NonErrorThrowable";
+  return safeError;
+};
 
 export const toSafeWebsiteCrawlerError = (error: {
   code: string;

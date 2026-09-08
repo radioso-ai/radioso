@@ -1,6 +1,7 @@
 import type { EvalRunStatus } from "../domain/types.js";
 import type { BaselineDiff, CaseOutcome } from "./baseline.js";
 import type { SuiteAssertionVerdict } from "./scoring.js";
+import { stringifyUnknown } from "../../../shared/text/stringifyUnknown.js";
 
 export interface SuiteRunSummary {
   total: number;
@@ -50,7 +51,7 @@ const describeAssertion = (verdict: SuiteAssertionVerdict): string => {
     assertion.pattern ??
     assertion.stepId ??
     "";
-  return detail ? `${assertion.type}(${String(detail)})` : assertion.type;
+  return detail ? `${assertion.type}(${stringifyUnknown(detail)})` : assertion.type;
 };
 
 /**
@@ -72,10 +73,35 @@ export const formatReport = (
   );
   lines.push("");
 
+  if (diff.thresholdMismatch) {
+    lines.push("BASELINE THRESHOLD MISMATCH — these fail the run:");
+    lines.push(
+      `  ✗ baseline ${(diff.thresholdMismatch.baseline * 100).toFixed(0)}% → current ${(diff.thresholdMismatch.current * 100).toFixed(0)}%`,
+    );
+    lines.push("");
+  }
   if (diff.regressions.length > 0) {
     lines.push(`REGRESSIONS (${diff.regressions.length}) — these fail the run:`);
     for (const regression of diff.regressions) {
       lines.push(`  ✗ ${regression.caseId} "${regression.name}": ${regression.from} → ${regression.to}`);
+    }
+    lines.push("");
+  }
+  if (diff.rateRegressions.length > 0) {
+    lines.push(`RATE REGRESSIONS (${diff.rateRegressions.length}) — these fail the run:`);
+    for (const regression of diff.rateRegressions) {
+      lines.push(
+        `  ✗ ${regression.caseId} "${regression.name}": ${(regression.from * 100).toFixed(0)}% → ${(regression.to * 100).toFixed(0)}% pass rate`,
+      );
+    }
+    lines.push("");
+  }
+  if (diff.underSampled.length > 0) {
+    lines.push(`UNDER-SAMPLED REGRESSIONS (${diff.underSampled.length}) — these fail the run:`);
+    for (const regression of diff.underSampled) {
+      lines.push(
+        `  ✗ ${regression.caseId} "${regression.name}": ${regression.from} → ${regression.to} (${regression.samples}/${regression.baselineSamples} samples)`,
+      );
     }
     lines.push("");
   }
@@ -87,7 +113,11 @@ export const formatReport = (
     lines.push("");
   }
   if (diff.newCases.length > 0) {
-    lines.push(`New (not in baseline): ${diff.newCases.map((entry) => entry.caseId).join(", ")}`);
+    lines.push(`MISSING BASELINE ENTRIES (${diff.newCases.length}) — these fail the run:`);
+    for (const entry of diff.newCases) {
+      lines.push(`  ✗ ${entry.caseId} "${entry.name}": observed ${entry.status}`);
+    }
+    lines.push("");
   }
   if (diff.removed.length > 0) {
     lines.push(`Removed (in baseline, not run): ${diff.removed.join(", ")}`);

@@ -20,7 +20,7 @@ describe("vector index production composition", () => {
     };
     const preparation = new PgVectorTransitionIndexPreparation(
       adapter as never,
-      checkpoints as never,
+      checkpoints,
     );
     const space = {
       id: "space-target",
@@ -60,7 +60,7 @@ describe("vector index production composition", () => {
         listBuildingTransitions: vi.fn().mockResolvedValue([{
           profile: { workspaceId: "workspace-1" },
         }]),
-      } as never,
+      },
       {
         reconcileBackfills,
         promotePendingEmbeddingModelIfReady,
@@ -102,7 +102,7 @@ describe("vector index production composition", () => {
       });
     const maintenance = new PgVectorTransitionMaintenance(
       { runUntilIdle: vi.fn().mockResolvedValue(0) },
-      { listBuildingTransitions } as never,
+      { listBuildingTransitions },
       {
         reconcileBackfills,
         promotePendingEmbeddingModelIfReady,
@@ -140,7 +140,7 @@ describe("vector index production composition", () => {
     const onBackfillReconciliationFailure = vi.fn();
     const maintenance = new PgVectorTransitionMaintenance(
       { runUntilIdle: vi.fn().mockResolvedValue(0) },
-      { listBuildingTransitions: vi.fn().mockResolvedValue([]) } as never,
+      { listBuildingTransitions: vi.fn().mockResolvedValue([]) },
       {
         reconcileBackfills,
         promotePendingEmbeddingModelIfReady: vi.fn(),

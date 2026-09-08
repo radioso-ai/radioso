@@ -3,7 +3,6 @@ import {
   routineToChipDoc,
   serializeProseDoc,
   type ParseDiagnostic,
-  type ProseParagraph,
 } from "@radioso/routine-document";
 
 import type { RoutineDefinition } from "./domain.js";
@@ -21,12 +20,6 @@ export interface PortableRoutineDocumentEnvelope {
 export type PortableRoutineDocumentProjectionResult =
   | { ok: true; envelope: PortableRoutineDocumentEnvelope }
   | { ok: false; diagnostics: ParseDiagnostic[] };
-
-const unsupportedEnvelopeVersion = (version: number): ParseDiagnostic => ({
-  line: 1,
-  code: "unsupported_grammar_version",
-  message: `Unsupported routine grammar version: ${version}`,
-});
 
 const routineNotPortable = (message: string): ParseDiagnostic => ({
   line: 1,
@@ -48,42 +41,6 @@ const routineNotPortableDiagnostic = (routine: RoutineDefinition): ParseDiagnost
     "Routine portable markdown v1 cannot represent this routine shape. Use the structured routine API or form editor.",
   );
 };
-
-const paragraphText = (paragraph: ProseParagraph): string =>
-  paragraph.segments.map((segment) => {
-    if (segment.kind === "text") {
-      return segment.text;
-    }
-    return segment.chipKind === "variable" ? `{{slot.${segment.refId}}}` : "";
-  }).join("");
-
-const paragraphChips = (paragraph: ProseParagraph) =>
-  paragraph.segments
-    .filter((segment): segment is Extract<ProseParagraph["segments"][number], { kind: "chip" }> =>
-      segment.kind === "chip" && segment.chipKind !== "variable"
-    )
-    .map((segment) => ({
-      kind: segment.chipKind,
-      refId: segment.refId,
-      label: segment.label,
-      ...(segment.op ? { op: segment.op } : {}),
-      ...(segment.value !== undefined ? { value: segment.value } : {}),
-      ...(segment.values !== undefined ? { values: segment.values } : {}),
-      ...(segment.unit !== undefined ? { unit: segment.unit } : {}),
-      ...(segment.counterLimit !== undefined ? { counterLimit: segment.counterLimit } : {}),
-      ...(segment.inputBindings ? { inputBindings: segment.inputBindings } : {}),
-      ...(segment.outputAssignments ? { outputAssignments: segment.outputAssignments } : {}),
-      ...(segment.mode ? { mode: segment.mode } : {}),
-      ...(segment.captureKey !== undefined ? { captureKey: segment.captureKey } : {}),
-      ...(segment.options ? { options: segment.options } : {}),
-    }));
-
-const bodyBlocksFromParagraphs = (paragraphs: ProseParagraph[]) =>
-  paragraphs.map((paragraph) => ({
-    text: paragraphText(paragraph),
-    chips: paragraphChips(paragraph),
-    ...(paragraph.headingLevel ? { headingLevel: paragraph.headingLevel } : {}),
-  }));
 
 export const projectRoutineToPortableDocument = (routine: RoutineDefinition): PortableRoutineDocumentProjectionResult => {
   const doc = routineToChipDoc(routine);

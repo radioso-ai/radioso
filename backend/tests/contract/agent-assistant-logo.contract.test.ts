@@ -63,10 +63,11 @@ describe("agent assistant logo contract", () => {
 
     const settings = await request(app)
       .get("/api/v1/settings/general")
+      .set("X-Forwarded-Prefix", "/backend")
       .set(adminSessionHeaders(session))
       .expect(200);
 
-    expect(settings.body.assistantLogoUrl).toContain(`/api/v1/agents/${agentId}/assistant-logo`);
+    expect(settings.body.assistantLogoUrl).toMatch(new RegExp(`^/backend/api/v1/agents/${agentId}/assistant-logo`));
     expect(settings.body.assistantLogoUrl).toContain(`workspaceId=${session.workspaceId}`);
   });
 

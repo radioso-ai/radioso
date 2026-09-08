@@ -1490,7 +1490,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Read the assistant logo image */
+        /**
+         * Read the assistant logo image
+         * @description Dashboard session only; bearer API tokens are rejected. The optional workspaceId query selects the workspace for browser image requests.
+         */
         get: operations["getAgentAssistantLogo"];
         put?: never;
         /** Upload an assistant logo */
@@ -14407,6 +14410,9 @@ export interface operations {
                 };
                 content: {
                     "image/png": string;
+                    "image/jpeg": string;
+                    "image/webp": string;
+                    "image/gif": string;
                 };
             };
             /** @description Authentication required */

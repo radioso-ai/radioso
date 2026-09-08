@@ -30066,10 +30066,12 @@
           "Agents"
         ],
         "summary": "Read the assistant logo image",
+        "description": "Dashboard session only; bearer API tokens are rejected. The optional workspaceId query selects the workspace for browser image requests.",
         "operationId": "getAgentAssistantLogo",
         "security": [
           {
-            "bearerAuth": []
+            "sessionCookie": [],
+            "workspaceSelection": []
           }
         ],
         "parameters": [
@@ -30105,6 +30107,24 @@
             "description": "Logo image",
             "content": {
               "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/gif": {
                 "schema": {
                   "type": "string",
                   "format": "binary"

@@ -20,26 +20,21 @@ export const appPortFailureCodes = [
 ] as const;
 export type AppPortFailureCode = (typeof appPortFailureCodes)[number];
 
-/** Bounded, vetted, operator-safe text. Logged; never persisted, audited, or returned. */
-const APP_PORT_DETAIL_MAX_LENGTH = 200;
-
+/**
+ * A refusal carries a code and nothing else. There is deliberately no free-text field: an
+ * adapter is the wrong place to be trusted with prose, and a length bound makes text short
+ * rather than vetted. Everything the control plane logs about a refusal is written here or
+ * owned by the service — the code, the operation, the step, the effect id.
+ */
 interface AppPortFailure {
   readonly ok: false;
   readonly code: AppPortFailureCode;
-  readonly detail?: string;
 }
 
 export type AppPortResult = { readonly ok: true } | AppPortFailure;
 
-/**
- * The one way to build a port refusal, so the detail bound holds wherever a refusal is
- * made rather than only where it is written down.
- */
-export const appPortFailure = (code: AppPortFailureCode, detail?: string): AppPortFailure => ({
-  ok: false,
-  code,
-  ...(detail === undefined ? {} : { detail: detail.slice(0, APP_PORT_DETAIL_MAX_LENGTH) }),
-});
+/** The one way to build a port refusal. */
+export const appPortFailure = (code: AppPortFailureCode): AppPortFailure => ({ ok: false, code });
 
 interface AppPortFailureMeaning {
   readonly reason: AppsErrorReason;

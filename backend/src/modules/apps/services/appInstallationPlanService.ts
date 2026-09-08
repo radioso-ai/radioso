@@ -1,5 +1,4 @@
 import { notFound } from "../../../shared/domain/errors.js";
-import type { AuditPort } from "../../audit/contracts/index.js";
 import { requireAppAdministration } from "../domain/authorization.js";
 import { buildAppInstallationPlan } from "../domain/installationPlan.js";
 import type { AppInstallationPlanRecord } from "../domain/records.js";
@@ -9,6 +8,7 @@ import type { AppConnectionRepositoryPort } from "../repositories/appConnectionR
 import type { AppInstallationPlanRepositoryPort } from "../repositories/appInstallationPlanRepository.js";
 import type { AppInstallationRepositoryPort } from "../repositories/appInstallationRepository.js";
 import type { AppReleaseRepositoryPort } from "../repositories/appReleaseRepository.js";
+import type { AppsUnitOfWork } from "../repositories/appsUnitOfWork.js";
 
 interface CreateAppInstallationPlanRequest {
   readonly workspaceId: string;
@@ -22,8 +22,9 @@ interface AppInstallationPlanServiceDependencies {
   readonly installations: AppInstallationRepositoryPort;
   readonly connections: AppConnectionRepositoryPort;
   readonly plans: AppInstallationPlanRepositoryPort;
+  readonly unitOfWork: AppsUnitOfWork;
   readonly authorization: AppOperatorAuthorizationPort;
-  readonly audit: Pick<AuditPort, "record">;
+  readonly auditDelivery: { drain(): Promise<number> };
   readonly runningRadiosoVersion: string | null;
   readonly clock?: () => Date;
 }
@@ -72,33 +73,38 @@ export class AppInstallationPlanService {
       now: this.now(),
     });
 
-    const record = await this.dependencies.plans.create({
-      workspaceId: request.workspaceId,
-      releaseId: release.id,
-      checksum,
-      plan,
-      createdBy: request.principal.userId,
-      expiresAt,
-    });
-
-    await this.dependencies.audit.record({
-      accountId: request.principal.accountId,
-      workspaceId: request.workspaceId,
-      eventType: "app.installation.planned",
-      eventStatus: "success",
-      metadata: {
-        planId: record.id,
-        appId: release.appId,
+    // The plan row and the record that it was created commit together, so a review an
+    // operator was shown is never a review with no audit trail.
+    const record = await this.dependencies.unitOfWork.run(async (repositories) => {
+      const created = await repositories.plans.create({
+        workspaceId: request.workspaceId,
         releaseId: release.id,
-        version: release.version,
         checksum,
-        actorUserId: request.principal.userId,
-        grantCount: plan.grants.length,
-        destinationCount: plan.destinations.length,
-        contributionCount: plan.contributions.length,
-        unresolvedRequirementCount: plan.unresolvedRequirements.length,
-      },
+        plan,
+        createdBy: request.principal.userId,
+        expiresAt,
+      });
+      await repositories.auditOutbox.enqueue([{
+        workspaceId: request.workspaceId,
+        accountId: request.principal.accountId,
+        eventType: "app.installation.planned",
+        eventStatus: "success",
+        metadata: {
+          planId: created.id,
+          appId: release.appId,
+          releaseId: release.id,
+          version: release.version,
+          checksum,
+          actorUserId: request.principal.userId,
+          grantCount: plan.grants.length,
+          destinationCount: plan.destinations.length,
+          contributionCount: plan.contributions.length,
+          unresolvedRequirementCount: plan.unresolvedRequirements.length,
+        },
+      }]);
+      return created;
     });
+    await this.dependencies.auditDelivery.drain();
 
     return record;
   }

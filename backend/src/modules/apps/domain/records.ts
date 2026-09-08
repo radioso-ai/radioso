@@ -46,6 +46,12 @@ export interface AppInstallationRecord {
   readonly candidateReleaseId: string | null;
   readonly state: AppInstallationState;
   readonly configuration: Readonly<Record<string, unknown>>;
+  /** What a reconfigure proposes, staged beside the configuration still in use. */
+  readonly candidateConfiguration: Readonly<Record<string, unknown>> | null;
+  /** Names the staged candidate so staging can discard exactly the one it was given. */
+  readonly candidateRevision: string | null;
+  /** Set the moment a disable or a remove is claimed. Execution eligibility denies while it is set. */
+  readonly executionDeniedAt: Date | null;
   readonly version: number;
   readonly health: Readonly<Record<string, unknown>>;
   readonly createdAt: Date;
@@ -92,12 +98,16 @@ export interface AppConnectionRecord {
 
 export interface AppLifecycleOperationRecord {
   readonly id: string;
+  readonly workspaceId: string;
   readonly installationId: string;
   readonly kind: AppLifecycleOperationKind;
   readonly state: AppLifecycleOperationState;
   readonly step: AppSagaStepId | null;
   /** Where a reverse runner has got to. `null` means no compensator has completed. */
   readonly compensationStep: AppSagaStepId | null;
+  /** The driver that currently owns the next step, and when its claim lapses. */
+  readonly leaseOwner: string | null;
+  readonly leaseExpiresAt: Date | null;
   readonly idempotencyKey: string;
   /**
    * A digest of what the request asked for. The same key with the same fingerprint is a

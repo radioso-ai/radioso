@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 import { Router, type Response } from "express";
 import { z } from "zod";
 
@@ -48,17 +46,18 @@ const connectionBodySchema = z.object({
   slotId: z.string().min(1),
   values: z.record(z.unknown()).default({}),
   expectedVersion,
+  idempotencyKey,
 });
 
 const configurationBodySchema = z.object({
   configuration: z.record(configurationValue),
   expectedVersion,
-  idempotencyKey: idempotencyKey.optional(),
+  idempotencyKey,
 });
 
 const lifecycleBodySchema = z.object({
   expectedVersion,
-  idempotencyKey: idempotencyKey.optional(),
+  idempotencyKey,
 });
 
 const removeBodySchema = lifecycleBodySchema.extend({
@@ -210,7 +209,7 @@ export const createAppRoutes = (dependencies: AppDependencies): Router => {
           installationId,
           configuration: body.configuration,
           expectedVersion: body.expectedVersion,
-          idempotencyKey: body.idempotencyKey ?? randomUUID(),
+          idempotencyKey: body.idempotencyKey,
           principal: operatorPrincipal(res),
         });
         res.status(200).json(presentAppLifecycleOutcome(outcome));
@@ -234,6 +233,7 @@ export const createAppRoutes = (dependencies: AppDependencies): Router => {
           slotId: body.slotId,
           values: body.values,
           expectedVersion: body.expectedVersion,
+          idempotencyKey: body.idempotencyKey,
           principal: operatorPrincipal(res),
         });
         // The only response that ever carries the minted secret. There is no read path
@@ -261,7 +261,7 @@ export const createAppRoutes = (dependencies: AppDependencies): Router => {
             workspaceId: workspaceOf(res),
             installationId,
             expectedVersion: body.expectedVersion,
-            idempotencyKey: body.idempotencyKey ?? randomUUID(),
+            idempotencyKey: body.idempotencyKey,
             principal: operatorPrincipal(res),
           });
           res.status(200).json(presentAppLifecycleOutcome(outcome));
@@ -285,7 +285,7 @@ export const createAppRoutes = (dependencies: AppDependencies): Router => {
           installationId,
           disposition: body.disposition,
           expectedVersion: body.expectedVersion,
-          idempotencyKey: body.idempotencyKey ?? randomUUID(),
+          idempotencyKey: body.idempotencyKey,
           principal: operatorPrincipal(res),
         });
         res.status(200).json(presentAppLifecycleOutcome(outcome));

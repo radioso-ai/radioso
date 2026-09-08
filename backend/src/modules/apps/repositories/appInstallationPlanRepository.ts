@@ -14,11 +14,30 @@ export interface CreateAppInstallationPlanInput {
   readonly expiresAt: Date;
 }
 
+/**
+ * Everything consumption is conditional on, in one statement.
+ *
+ * Applicability and consumption used to read two different clocks and check two different
+ * sets of predicates, so a plan could expire, or its release be revoked, between the check
+ * and the write. One captured instant and one conditional update joined on the release row
+ * close both gaps: whatever this returns true for was still approvable at the moment it
+ * was consumed.
+ */
+export interface ConsumeAppInstallationPlanInput {
+  readonly workspaceId: string;
+  readonly planId: string;
+  readonly checksum: string;
+  readonly releaseId: string;
+  readonly admissionPolicyVersion: string;
+  readonly manifestDigest: string;
+  readonly now: Date;
+}
+
 export interface AppInstallationPlanRepositoryPort {
   create(input: CreateAppInstallationPlanInput): Promise<AppInstallationPlanRecord>;
   findById(workspaceId: string, id: string): Promise<AppInstallationPlanRecord | null>;
   /** Compare-and-set: only the first apply of a plan wins, so a retried POST cannot install twice. */
-  consume(workspaceId: string, id: string, consumedAt: Date): Promise<boolean>;
+  consume(input: ConsumeAppInstallationPlanInput): Promise<boolean>;
 }
 
 const COLUMNS = [
@@ -87,14 +106,22 @@ export class AppInstallationPlanRepository implements AppInstallationPlanReposit
     return row ? mapRecord(row) : null;
   }
 
-  async consume(workspaceId: string, id: string, consumedAt: Date): Promise<boolean> {
+  async consume(input: ConsumeAppInstallationPlanInput): Promise<boolean> {
     const row = await this.db
       .updateTable("app_installation_plans")
-      .set({ consumed_at: consumedAt })
-      .where("workspace_id", "=", workspaceId)
-      .where("id", "=", id)
-      .where("consumed_at", "is", null)
-      .returning("id")
+      .from("app_releases")
+      .set({ consumed_at: input.now })
+      .where("app_installation_plans.workspace_id", "=", input.workspaceId)
+      .where("app_installation_plans.id", "=", input.planId)
+      .where("app_installation_plans.checksum", "=", input.checksum)
+      .where("app_installation_plans.consumed_at", "is", null)
+      .where("app_installation_plans.expires_at", ">", input.now)
+      .where("app_installation_plans.release_id", "=", input.releaseId)
+      .where("app_releases.id", "=", input.releaseId)
+      .where("app_releases.state", "=", "admitted")
+      .where("app_releases.admission_policy_version", "=", input.admissionPolicyVersion)
+      .where("app_releases.manifest_digest", "=", input.manifestDigest)
+      .returning("app_installation_plans.id as id")
       .executeTakeFirst();
     return Boolean(row);
   }

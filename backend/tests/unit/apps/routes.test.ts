@@ -56,7 +56,12 @@ const install = async (context: Context) => {
   const bound = await request(context.app)
     .post(`/api/v1/apps/installations/${installationId}/connections`)
     .set(context.headers)
-    .send({ slotId: "webhook_secret", values: {}, expectedVersion: applied.body.installation.version })
+    .send({
+      slotId: "webhook_secret",
+      values: {},
+      expectedVersion: applied.body.installation.version,
+      idempotencyKey: "bind-webhook-secret-1",
+    })
     .expect(201);
 
   const view = await request(context.app)
@@ -66,7 +71,7 @@ const install = async (context: Context) => {
   const activated = await request(context.app)
     .post(`/api/v1/apps/installations/${installationId}/activate`)
     .set(context.headers)
-    .send({ expectedVersion: view.body.installation.version })
+    .send({ expectedVersion: view.body.installation.version, idempotencyKey: "activate-1" })
     .expect(200);
 
   return { releaseId, approved, applied: applied.body, bound: bound.body, activated: activated.body };
@@ -191,7 +196,7 @@ describe("app routes", () => {
     const refused = await request(context.app)
       .post(`/api/v1/apps/installations/${applied.body.installation.id}/activate`)
       .set(context.headers)
-      .send({ expectedVersion: applied.body.installation.version })
+      .send({ expectedVersion: applied.body.installation.version, idempotencyKey: "activate-1" })
       .expect(409);
 
     expect(refused.body.error?.code ?? refused.body.code).toBe("connections_unbound");
@@ -226,6 +231,7 @@ describe("app routes", () => {
         slotId: "site_credentials",
         values: { wp_username: "editor", wp_application_password: "correct horse battery staple" },
         expectedVersion: activated.installation.version,
+        idempotencyKey: "bind-site-credentials-1",
       })
       .expect(201);
 
@@ -248,7 +254,12 @@ describe("app routes", () => {
     const refused = await request(context.app)
       .post(`/api/v1/apps/installations/${activated.installation.id}/connections`)
       .set(context.headers)
-      .send({ slotId: "not_a_slot", values: {}, expectedVersion: activated.installation.version })
+      .send({
+        slotId: "not_a_slot",
+        values: {},
+        expectedVersion: activated.installation.version,
+        idempotencyKey: "bind-not-a-slot-1",
+      })
       .expect(400);
 
     expect(refused.body.error?.code ?? refused.body.code).toBe("connection_slot_unknown");
@@ -265,6 +276,7 @@ describe("app routes", () => {
       .send({
         configuration: { site_url: "https://example.com", post_types: "page" },
         expectedVersion: activated.installation.version,
+        idempotencyKey: "reconfigure-1",
       })
       .expect(200);
 
@@ -277,6 +289,7 @@ describe("app routes", () => {
       .send({
         configuration: { site_url: "https://example.com", post_types: "post" },
         expectedVersion: activated.installation.version,
+        idempotencyKey: "reconfigure-2",
       })
       .expect(409);
   });
@@ -300,21 +313,21 @@ describe("app routes", () => {
     const disabled = await request(context.app)
       .post(`/api/v1/apps/installations/${installationId}/disable`)
       .set(context.headers)
-      .send({ expectedVersion: activated.installation.version })
+      .send({ expectedVersion: activated.installation.version, idempotencyKey: "disable-1" })
       .expect(200);
     expect(disabled.body.installation.state).toBe("disabled");
 
     const enabled = await request(context.app)
       .post(`/api/v1/apps/installations/${installationId}/enable`)
       .set(context.headers)
-      .send({ expectedVersion: disabled.body.installation.version })
+      .send({ expectedVersion: disabled.body.installation.version, idempotencyKey: "enable-1" })
       .expect(200);
     expect(enabled.body.installation.state).toBe("active");
 
     const removed = await request(context.app)
       .post(`/api/v1/apps/installations/${installationId}/remove`)
       .set(context.headers)
-      .send({ disposition: "delete", expectedVersion: enabled.body.installation.version })
+      .send({ disposition: "delete", expectedVersion: enabled.body.installation.version, idempotencyKey: "remove-1" })
       .expect(200);
     expect(removed.body.installation.state).toBe("removed");
 
@@ -352,7 +365,12 @@ describe("app routes", () => {
     await request(context.app)
       .post(`/api/v1/apps/installations/${installationId}/connections`)
       .set(headers)
-      .send({ slotId: "webhook_secret", values: {}, expectedVersion: applied.body.installation.version })
+      .send({
+        slotId: "webhook_secret",
+        values: {},
+        expectedVersion: applied.body.installation.version,
+        idempotencyKey: "bind-webhook-secret-1",
+      })
       .expect(201);
     const view = await request(context.app)
       .get(`/api/v1/apps/installations/${installationId}`)
@@ -363,7 +381,7 @@ describe("app routes", () => {
     const activated = await request(context.app)
       .post(`/api/v1/apps/installations/${installationId}/activate`)
       .set(headers)
-      .send({ expectedVersion: view.body.installation.version })
+      .send({ expectedVersion: view.body.installation.version, idempotencyKey: "activate-1" })
       .expect(200);
 
     expect(activated.body.installation.state).toBe("failed");

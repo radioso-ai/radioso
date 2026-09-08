@@ -3,6 +3,8 @@ import type { Kysely, Transaction } from "kysely";
 import {
   AppConnectionRepository,
   AppConnectionService,
+  AppAuditOutboxDispatcher,
+  AppAuditOutboxRepository,
   AppExecutionEligibilityService,
   AppGrantRepository,
   AppInstallationLifecycleService,
@@ -18,6 +20,7 @@ import {
   createUnavailableAppRuntimeProvisioning,
   createUnavailableAppSecretCipher,
   type AppConnectionRepositoryPort,
+  type AppAuditOutboxRepositoryPort,
   type AppContributionStagingPort,
   type AppExecutionEligibilityPort,
   type AppGrantRepositoryPort,
@@ -56,6 +59,7 @@ interface AppsRepositories {
   readonly grants: AppGrantRepositoryPort;
   readonly connections: AppConnectionRepositoryPort;
   readonly operations: AppLifecycleOperationRepositoryPort;
+  readonly auditOutbox: AppAuditOutboxRepositoryPort;
 }
 
 export const createAppRepositories = (db: Db): AppsRepositories => ({
@@ -65,6 +69,7 @@ export const createAppRepositories = (db: Db): AppsRepositories => ({
   grants: new AppGrantRepository(db),
   connections: new AppConnectionRepository(db),
   operations: new AppLifecycleOperationRepository(db),
+  auditOutbox: new AppAuditOutboxRepository(db),
 });
 
 /**
@@ -107,6 +112,8 @@ interface AppsServices {
   readonly appInstallationQueryService: AppInstallationQueryService;
   readonly appConnectionService: AppConnectionService;
   readonly appExecutionEligibility: AppExecutionEligibilityPort;
+  /** Startup and post-commit recovery hook for durable App audit intents. */
+  drainAuditOutbox(): Promise<number>;
 }
 
 /**
@@ -118,6 +125,7 @@ interface AppsServices {
  */
 export const createAppsServices = (dependencies: AppsCompositionDependencies): AppsServices => {
   const { repositories, unitOfWork, audit, logger, runningRadiosoVersion } = dependencies;
+  const auditDelivery = new AppAuditOutboxDispatcher({ outbox: repositories.auditOutbox, audit, logger });
 
   // A closure, not the service instance: a port method held as a value loses its
   // receiver, and this one is called from inside a durable saga. It also separates a
@@ -133,11 +141,11 @@ export const createAppsServices = (dependencies: AppsCompositionDependencies): A
           permission: APP_ADMINISTRATION_PERMISSION,
         });
         return { ok: true };
-      } catch (error) {
+        } catch (error) {
         const denied = error instanceof AppError && (error.statusCode === 403 || error.statusCode === 404);
         if (!denied) {
           logger.warn(
-            { workspaceId, err: { name: error instanceof Error ? error.name : "unknown" } },
+            { workspaceId },
             "App administration permission could not be evaluated",
           );
         }
@@ -157,8 +165,9 @@ export const createAppsServices = (dependencies: AppsCompositionDependencies): A
 
   const appReleaseAdmissionService = new AppReleaseAdmissionService({
     releases: repositories.releases,
+    unitOfWork,
     builtInReleases: dependencies.builtInReleases ?? [],
-    audit,
+    auditDelivery,
     logger,
     runningRadiosoVersion,
   });
@@ -168,8 +177,9 @@ export const createAppsServices = (dependencies: AppsCompositionDependencies): A
     installations: repositories.installations,
     connections: repositories.connections,
     plans: repositories.plans,
+    unitOfWork,
     authorization,
-    audit,
+    auditDelivery,
     runningRadiosoVersion,
   });
 
@@ -184,7 +194,7 @@ export const createAppsServices = (dependencies: AppsCompositionDependencies): A
     contributionStaging: dependencies.contributionStaging ?? createNoopAppContributionStaging(),
     dataDisposition: dependencies.dataDisposition ?? createNoopAppManagedDataDisposition(),
     authorization,
-    audit,
+    auditDelivery,
     logger,
     runningRadiosoVersion,
   });
@@ -205,14 +215,11 @@ export const createAppsServices = (dependencies: AppsCompositionDependencies): A
     unitOfWork,
     cipher,
     authorization,
-    audit,
+    auditDelivery,
   });
 
   const appExecutionEligibility = new AppExecutionEligibilityService({
-    installations: repositories.installations,
-    releases: repositories.releases,
-    grants: repositories.grants,
-    connections: repositories.connections,
+    unitOfWork,
     runningRadiosoVersion,
   });
 
@@ -223,5 +230,6 @@ export const createAppsServices = (dependencies: AppsCompositionDependencies): A
     appInstallationQueryService,
     appConnectionService,
     appExecutionEligibility,
+    drainAuditOutbox: () => auditDelivery.drain(),
   };
 };

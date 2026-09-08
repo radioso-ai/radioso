@@ -20,13 +20,16 @@ import { satisfiesSemanticVersionRange } from "./semanticVersion.js";
 export const APP_ADMISSION_POLICY_VERSION = "release-a.1";
 
 /**
- * What admission actually established, said plainly. Release A has one trust root — the
- * built-in registry Radioso ships — so `signature` and `provenance` name that root rather
- * than a publisher key nobody can verify yet. The checks this release does not run are
- * recorded as `not_evaluated` instead of being left out, because a decision that omits a
- * check reads later as though the check passed.
+ * What admission actually established, said plainly. Release A runs one check — manifest
+ * compatibility with the running host — and every other check it does not run is recorded
+ * as `not_evaluated`, because a decision that omits a check, or that names its trust root
+ * in the check's own field, reads later as though the check passed. Which root vouched for
+ * the release is a separate fact, so it has a separate field.
  */
-type AppAdmissionEvidenceOutcome = "built_in_registry" | "not_evaluated";
+type AppAdmissionEvidenceOutcome = "not_evaluated";
+
+/** Who vouched for the release. Release A has one root: the registry Radioso ships. */
+type AppAdmissionTrustRoot = "built_in_registry";
 
 interface AppCompatibilityEvidence {
   /** `null` when the host could not determine its own version, which fails admission closed. */
@@ -36,6 +39,8 @@ interface AppCompatibilityEvidence {
 }
 
 interface AppReleaseAdmissionEvidence {
+  readonly trustRoot: AppAdmissionTrustRoot;
+  /** Publisher signature verification arrives with the publisher pipeline. */
   readonly signature: AppAdmissionEvidenceOutcome;
   readonly provenance: AppAdmissionEvidenceOutcome;
   /** Software inventory and vulnerability policy arrive with the publisher pipeline. */
@@ -169,8 +174,9 @@ export const admitAppRelease = (input: AppReleaseAdmissionInput): AppReleaseAdmi
     manifestDigest,
     artifactDigest: manifest.artifact.digest,
     evidence: {
-      signature: "built_in_registry",
-      provenance: "built_in_registry",
+      trustRoot: "built_in_registry",
+      signature: "not_evaluated",
+      provenance: "not_evaluated",
       softwareInventory: "not_evaluated",
       vulnerabilityPolicy: "not_evaluated",
       conformance: "not_evaluated",

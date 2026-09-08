@@ -55,7 +55,7 @@ describe("app lifecycle saga", () => {
   it("re-stages and re-tests a reconfigure before the change applies", () => {
     const ids = appSagaSteps.reconfigure.map((step) => step.id);
 
-    expect(ids).toEqual(["validate", "stage_contributions", "run_safe_tests", "apply_configuration"]);
+    expect(ids).toEqual(["validate", "open_candidate", "stage_contributions", "run_safe_tests", "apply_configuration"]);
     expect(ids.indexOf("run_safe_tests")).toBeLessThan(ids.indexOf("apply_configuration"));
   });
 
@@ -94,8 +94,9 @@ describe("app lifecycle saga", () => {
     ]);
     expect(appSagaCompensationPlan("activate", null)).toEqual([]);
     expect(appSagaCompensationPlan("remove", "mark_removed")).toEqual([]);
-    // A reconfigure writes nothing until its last step, so there is nothing to reverse.
-    expect(appSagaCompensationPlan("reconfigure", "run_safe_tests")).toEqual([]);
+    // The durable candidate is reversed if staging or testing rejects it.
+    expect(appSagaCompensationPlan("reconfigure", "run_safe_tests").map((step) => step.id))
+      .toEqual(["open_candidate"]);
   });
 
   /**

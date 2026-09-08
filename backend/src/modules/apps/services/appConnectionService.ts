@@ -1,7 +1,6 @@
 import { randomBytes } from "node:crypto";
 
 import { notFound } from "../../../shared/domain/errors.js";
-import type { AuditPort } from "../../audit/contracts/index.js";
 import { requireAppAdministration } from "../domain/authorization.js";
 import { buildAppConnectionBinding } from "../domain/connectionBinding.js";
 import { AppsError } from "../domain/errors.js";
@@ -9,6 +8,7 @@ import type { AppConnectionRecord } from "../domain/records.js";
 import { admittedManifestOf } from "../domain/releaseAdmission.js";
 import type { AppOperatorAuthorizationPort, AppOperatorPrincipal } from "../ports/operatorAuthorization.js";
 import type { AppSecretCipherPort } from "../ports/secretCipher.js";
+import type { AppAuditIntent } from "../repositories/appAuditOutboxRepository.js";
 import type { AppConnectionRepositoryPort } from "../repositories/appConnectionRepository.js";
 import type { AppInstallationRepositoryPort } from "../repositories/appInstallationRepository.js";
 import type { AppLifecycleOperationRepositoryPort } from "../repositories/appLifecycleOperationRepository.js";
@@ -21,6 +21,8 @@ interface BindAppConnectionRequest {
   readonly slotId: string;
   readonly values: Readonly<Record<string, unknown>>;
   readonly expectedVersion: number;
+  /** Required at the HTTP boundary; internal setup callers may omit it. */
+  readonly idempotencyKey?: string;
   readonly principal: AppOperatorPrincipal;
 }
 
@@ -41,7 +43,8 @@ interface AppConnectionServiceDependencies {
   readonly unitOfWork: AppsUnitOfWork;
   readonly cipher: AppSecretCipherPort;
   readonly authorization: AppOperatorAuthorizationPort;
-  readonly audit: Pick<AuditPort, "record">;
+  /** Delivers the audit intent this service commits. It never decides the response. */
+  readonly auditDelivery: { drain(): Promise<number> };
 }
 
 export class AppConnectionService {
@@ -100,6 +103,24 @@ export class AppConnectionService {
     const secretCiphertext = binding.secret === null ? null : this.dependencies.cipher.encrypt(binding.secret);
 
     const connection = await this.dependencies.unitOfWork.run(async (repositories) => {
+      // A revoked or quarantined release must not have credentials minted or stored for
+      // it. Reading the release inside this transaction takes a share lock on it, so a
+      // revocation racing this commit waits for it rather than landing in between. A
+      // deprecated release still binds: deprecation stops new installs, not the operator
+      // finishing the setup of one they already have.
+      const eligible = await repositories.releases.lockEligible({
+        releaseId: release.id,
+        admissionPolicyVersion: release.admissionPolicyVersion,
+        manifestDigest: release.manifestDigest,
+        allowedStates: ["admitted", "deprecated"],
+      });
+      if (!eligible) {
+        throw new AppsError(
+          "release_not_eligible",
+          "This release is no longer admitted, so its connections cannot be changed.",
+          { releaseId: release.id },
+        );
+      }
       const claimed = await repositories.installations.update(
         request.workspaceId,
         installation.id,
@@ -111,7 +132,7 @@ export class AppConnectionService {
           cause: "version_mismatch",
         });
       }
-      return repositories.connections.bind({
+      const bound = await repositories.connections.bind({
         installationId: installation.id,
         slotId: binding.slotId,
         kind: binding.kind,
@@ -119,25 +140,31 @@ export class AppConnectionService {
         secretCiphertext,
         encryptionKeyId: secretCiphertext === null ? null : this.dependencies.cipher.keyId,
       });
+      const intent: AppAuditIntent = {
+        workspaceId: request.workspaceId,
+        accountId: request.principal.accountId,
+        eventType: existing ? "app.connection.rotated" : "app.connection.bound",
+        eventStatus: "success",
+        metadata: {
+          installationId: installation.id,
+          appId: installation.appId,
+          connectionId: bound.id,
+          slotId: bound.slotId,
+          slotKind: bound.kind,
+          actorUserId: request.principal.userId,
+          // Field *names* the operator filled in. Never a value.
+          publicFieldKeys: Object.keys(bound.publicFields),
+          hasSecret: bound.hasSecret,
+        },
+      };
+      await repositories.auditOutbox.enqueue([intent]);
+      return bound;
     });
 
-    await this.dependencies.audit.record({
-      accountId: request.principal.accountId,
-      workspaceId: request.workspaceId,
-      eventType: existing ? "app.connection.rotated" : "app.connection.bound",
-      eventStatus: "success",
-      metadata: {
-        installationId: installation.id,
-        appId: installation.appId,
-        connectionId: connection.id,
-        slotId: connection.slotId,
-        slotKind: connection.kind,
-        actorUserId: request.principal.userId,
-        // Field *names* the operator filled in. Never a value.
-        publicFieldKeys: Object.keys(connection.publicFields),
-        hasSecret: connection.hasSecret,
-      },
-    });
+    // The generated secret exists in exactly one response. Delivery of the audit record is
+    // durable because its intent committed with the ciphertext, so a sink that is down can
+    // never suppress the one handover the operator gets.
+    await this.dependencies.auditDelivery.drain();
 
     return { connection, generatedSecret: binding.generatedSecret };
   }

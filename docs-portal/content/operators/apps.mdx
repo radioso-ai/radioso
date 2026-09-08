@@ -6,20 +6,9 @@ last_updated: 2026-09-08
 
 # Apps
 
-An App runs outside Radioso and extends what a workspace can do — sync content
-from a site, react to a webhook, run a task on a schedule — without anyone
-redeploying Radioso itself. You review what an App asks for before it can do
-any of that, and every step from install to removal stays visible and
-reversible.
-
-## Apps and Packs
-
-An **App** is the thing you install: one publisher, one release, one running
-installation with its own connections and grants. A **Pack** is a bundle of
-agent-facing pieces — skills, directives, routines — that references an App's
-contributions instead of duplicating them. Installing an App never installs its
-Packs for you; you review and activate a Pack separately, and a Pack can never
-grant more authority than the App contribution it points at.
+An App is a workspace installation with one release, its own connections and
+grants, and an operator-reviewed plan. The control plane records and protects
+that authority before a runtime or contribution adapter uses it.
 
 ## Setting an App up
 
@@ -66,7 +55,8 @@ installation between your reading it and your clicking, the command is refused
 rather than applied to a state you never saw. Read the installation again and
 decide again.
 
-Each command also takes an idempotency key. Sending the same command twice with
+Apply, activate, disable, enable, remove, and reconfigure require an
+idempotency key. Sending the same command twice with
 the same key resumes the one operation it started; sending a *different*
 command with a key that has already been used is refused, so a retry can never
 report success for work that never ran.
@@ -84,9 +74,11 @@ the storage collections it would use, and anything it needs that isn't resolved
 yet — a configuration value you haven't filled in, a connection that isn't
 bound.
 
-The plan you approve is bound to exactly what you saw: that release, that
-workspace, those connection bindings, that grant set, and the admission
-judgement that made the release installable. If anything relevant changes
+The response contains the plan checksum, release identity and digest, resolved
+non-secret configuration, grants, destinations, collections, contributions,
+connection-slot status, and unresolved requirements. The plan you approve is
+bound to exactly what you saw: that release, that workspace, that grant set,
+and the admission judgement that made the release installable. If anything relevant changes
 before you apply it, the plan goes stale and Radioso asks for a fresh review.
 If the release itself is revoked or quarantined in the meantime, apply and
 activation both refuse it outright.
@@ -106,23 +98,24 @@ resurrecting stored credentials on an installation that is on its way out.
 
 ## Changing configuration
 
-A configuration change goes through the same lifecycle as an install: Radioso
-validates the new values against the release's own schema, re-stages the
-contributions the new configuration turns on, runs the safe test against them,
-and only then makes the change the installation's answer to what it does. If a
-value would switch on a contribution whose connection isn't bound, the change
-is refused and nothing is applied.
+A configuration change holds your current configuration in place and stores the
+proposed values as a candidate. Radioso validates the candidate, sends the
+frozen effective configuration and typed contribution descriptors to staging
+and test ports, then adopts it only after those ports succeed. If a value would
+switch on a contribution whose connection isn't bound, the change is refused
+and the current configuration remains in force.
 
 ## The safe test
 
-Activation and every configuration change include a safe-test step against the
-staged contributions, and an installation cannot reach `active` without it
-passing. The runtime provider hosting the installation is what runs the test,
-so a deployment with no provider configured never gets this far — activation
-stops earlier, at `runtime_unavailable`.
+The staging and safe-test ports receive the candidate descriptor and are
+currently no-ops. They still form the lifecycle boundary: the control plane
+uses their success before it adopts configuration, and providers or contribution
+owners can add their work behind that boundary.
 
-A failure here stops the operation and rolls back the steps that already
-committed. Radioso records the outcome as a reason code on the operation and on
+A failure stops the operation. Provisioning and staged candidates have
+best-effort compensators; persisted grants can be revoked. Safe tests, stopped
+runtimes, and data disposition have no guessed reversal. Radioso records the
+outcome as a reason code on the operation and on
 the installation's health. It is a code and a fixed message, never the
 provider's own error text, because that text can carry a credential, a command
 line, or a response body.

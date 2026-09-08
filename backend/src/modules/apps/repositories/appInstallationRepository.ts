@@ -18,7 +18,21 @@ export interface AppInstallationMutation {
   readonly activeReleaseId?: string | null;
   readonly candidateReleaseId?: string | null;
   readonly configuration?: Readonly<Record<string, unknown>>;
+  readonly candidateConfiguration?: Readonly<Record<string, unknown>> | null;
+  readonly candidateRevision?: string | null;
+  readonly executionDeniedAt?: Date | null;
   readonly health?: Readonly<Record<string, unknown>>;
+}
+
+/**
+ * Moving the active pointer, fenced on the release still being the one the operator
+ * approved. The predicates sit in the same statement as the write, so a revocation cannot
+ * land between a check and a commit and leave an active pointer to an ineligible release.
+ */
+export interface ActivateAppInstallationInput {
+  readonly releaseId: string;
+  readonly admissionPolicyVersion: string;
+  readonly manifestDigest: string;
 }
 
 export interface AppInstallationRepositoryPort {
@@ -41,6 +55,16 @@ export interface AppInstallationRepositoryPort {
     expectedVersion: number,
     mutation: AppInstallationMutation,
   ): Promise<AppInstallationRecord | null>;
+  /**
+   * `null` when the version no longer matches *or* the release is no longer eligible. The
+   * caller distinguishes the two by re-reading the release inside the same transaction.
+   */
+  activateRelease(
+    workspaceId: string,
+    id: string,
+    expectedVersion: number,
+    input: ActivateAppInstallationInput,
+  ): Promise<AppInstallationRecord | null>;
 }
 
 const COLUMNS = [
@@ -51,10 +75,34 @@ const COLUMNS = [
   "candidate_release_id",
   "state",
   "configuration",
+  "candidate_configuration",
+  "candidate_revision",
+  "execution_denied_at",
   "version",
   "health",
   "created_at",
   "updated_at",
+] as const;
+
+/**
+ * The same columns, qualified. An update that joins `app_releases` sees `id`, `state`,
+ * `version`, and the timestamps on both sides, so the returning list has to say which.
+ */
+const QUALIFIED_COLUMNS = [
+  "app_installations.id as id",
+  "app_installations.workspace_id as workspace_id",
+  "app_installations.app_id as app_id",
+  "app_installations.active_release_id as active_release_id",
+  "app_installations.candidate_release_id as candidate_release_id",
+  "app_installations.state as state",
+  "app_installations.configuration as configuration",
+  "app_installations.candidate_configuration as candidate_configuration",
+  "app_installations.candidate_revision as candidate_revision",
+  "app_installations.execution_denied_at as execution_denied_at",
+  "app_installations.version as version",
+  "app_installations.health as health",
+  "app_installations.created_at as created_at",
+  "app_installations.updated_at as updated_at",
 ] as const;
 
 interface AppInstallationRow {
@@ -65,6 +113,9 @@ interface AppInstallationRow {
   candidate_release_id: string | null;
   state: string;
   configuration: unknown;
+  candidate_configuration: unknown;
+  candidate_revision: string | null;
+  execution_denied_at: Date | null;
   version: number;
   health: unknown;
   created_at: Date;
@@ -95,6 +146,11 @@ const mapRecord = (row: AppInstallationRow): AppInstallationRecord => ({
   candidateReleaseId: row.candidate_release_id,
   state: row.state as AppInstallationState,
   configuration: asObject(row.configuration),
+  candidateConfiguration: row.candidate_configuration === null || row.candidate_configuration === undefined
+    ? null
+    : asObject(row.candidate_configuration),
+  candidateRevision: row.candidate_revision,
+  executionDeniedAt: row.execution_denied_at ? new Date(row.execution_denied_at) : null,
   version: Number(row.version),
   health: asObject(row.health),
   createdAt: new Date(row.created_at),
@@ -184,6 +240,11 @@ export class AppInstallationRepository implements AppInstallationRepositoryPort 
         ...(mutation.activeReleaseId === undefined ? {} : { active_release_id: mutation.activeReleaseId }),
         ...(mutation.candidateReleaseId === undefined ? {} : { candidate_release_id: mutation.candidateReleaseId }),
         ...(mutation.configuration === undefined ? {} : { configuration: toJsonb(mutation.configuration) }),
+        ...(mutation.candidateConfiguration === undefined
+          ? {}
+          : { candidate_configuration: mutation.candidateConfiguration === null ? null : toJsonb(mutation.candidateConfiguration) }),
+        ...(mutation.candidateRevision === undefined ? {} : { candidate_revision: mutation.candidateRevision }),
+        ...(mutation.executionDeniedAt === undefined ? {} : { execution_denied_at: mutation.executionDeniedAt }),
         ...(mutation.health === undefined ? {} : { health: toJsonb(mutation.health) }),
         version: expectedVersion + 1,
         updated_at: new Date(),
@@ -192,6 +253,34 @@ export class AppInstallationRepository implements AppInstallationRepositoryPort 
       .where("id", "=", id)
       .where("version", "=", expectedVersion)
       .returning(COLUMNS)
+      .executeTakeFirst();
+    return row ? mapRecord(row) : null;
+  }
+
+  async activateRelease(
+    workspaceId: string,
+    id: string,
+    expectedVersion: number,
+    input: ActivateAppInstallationInput,
+  ): Promise<AppInstallationRecord | null> {
+    const row = await this.db
+      .updateTable("app_installations")
+      .from("app_releases")
+      .set({
+        state: "active",
+        active_release_id: input.releaseId,
+        candidate_release_id: null,
+        version: expectedVersion + 1,
+        updated_at: new Date(),
+      })
+      .where("app_installations.workspace_id", "=", workspaceId)
+      .where("app_installations.id", "=", id)
+      .where("app_installations.version", "=", expectedVersion)
+      .where("app_releases.id", "=", input.releaseId)
+      .where("app_releases.state", "=", "admitted")
+      .where("app_releases.admission_policy_version", "=", input.admissionPolicyVersion)
+      .where("app_releases.manifest_digest", "=", input.manifestDigest)
+      .returning(QUALIFIED_COLUMNS)
       .executeTakeFirst();
     return row ? mapRecord(row) : null;
   }

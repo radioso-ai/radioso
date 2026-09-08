@@ -112,7 +112,7 @@ describe("secret-safe diagnostics", () => {
     // tear down a runtime that is already serving.
     expect(installed.installation.state).toBe("active");
     expect(installed.operation.state).toBe("completed");
-    expect(JSON.stringify(harness.logs)).toContain("audit event was not recorded");
+    expect(JSON.stringify(harness.logs)).toContain("App audit event could not be delivered yet");
     expect(JSON.stringify(harness.logs)).not.toContain(SENTINEL);
   });
 });

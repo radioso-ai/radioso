@@ -43,10 +43,12 @@ describe('api type mappers', () => {
     expect(settings.websiteEmbedScriptUrl).toBe('https://app.example.com/radioso-embed.js')
   })
 
-  it('uses the enabled website embed token for agent logo URLs when anonymous chat is disabled', () => {
+  it('addresses the agent logo by agent, so it resolves with every visitor channel switched off', () => {
     vi.stubGlobal('window', { location: { origin: 'https://app.example.com' } })
 
     const settings = agentToGeneralSettings({
+      id: '00000000-0000-4000-8000-0000000000a1',
+      workspaceId: '00000000-0000-4000-8000-0000000000b2',
       name: 'Support',
       greetingInstruction: null,
       assistantDefaultLocale: null,
@@ -62,11 +64,11 @@ describe('api type mappers', () => {
       surfaceSettings: {
         anonymousChat: {
           enabled: false,
-          token: 'disabled-anonymous-token',
+          token: null,
         },
         websiteEmbed: {
-          enabled: true,
-          token: 'enabled-embed-token',
+          enabled: false,
+          token: null,
           allowedOrigins: [],
           launcherLabel: 'Chat',
           launcherPosition: 'bottom-right',
@@ -84,7 +86,8 @@ describe('api type mappers', () => {
 
     const logoUrl = new URL(settings.assistantLogoUrl ?? '')
     expect(logoUrl.origin).toBe('https://app.example.com')
-    expect(logoUrl.pathname).toBe('/backend/api/v1/public/chat/enabled-embed-token/assistant-logo')
+    expect(logoUrl.pathname).toBe('/backend/api/v1/agents/00000000-0000-4000-8000-0000000000a1/assistant-logo')
+    expect(logoUrl.searchParams.get('workspaceId')).toBe('00000000-0000-4000-8000-0000000000b2')
     expect(logoUrl.searchParams.get('v')).toMatch(/^[a-z0-9]+::123$/)
     expect(logoUrl.searchParams.get('v')).not.toContain('workspaces/ws-1/agents/agent-1/logo.png')
   })

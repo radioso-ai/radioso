@@ -200,6 +200,8 @@ const declarations: readonly PolicyDeclaration[] = [
   sessionOnly("POST", "/api/v1/settings/general/website-embed-token/rotate"),
   sessionOnly("POST", "/api/v1/agents/:agentId/anonymous-chat-token/rotate"),
   sessionOnly("POST", "/api/v1/agents/:agentId/website-embed-token/rotate"),
+  // Rendered by the dashboard in an `<img>`, so it must work from a cookie session alone.
+  sessionOnly("GET", "/api/v1/agents/:agentId/assistant-logo", "workspace.agents.read"),
   sessionOnly("POST", "/api/v1/agents/:agentId/assistant-logo", "workspace.agents.manage"),
   sessionOnly("DELETE", "/api/v1/agents/:agentId/assistant-logo", "workspace.agents.manage"),
   sessionOnly("POST", "/api/v1/agents/:agentId/default", "workspace.agents.manage"),

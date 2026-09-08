@@ -9,6 +9,25 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [0.2.0] - 2026-09-08
+
+### Added
+
+- add product docs tools for Ray and MCP ([#1221](https://github.com/radioso-ai/radioso/pull/1221))
+- enable Operator MCP for all workspaces by default ([#1216](https://github.com/radioso-ai/radioso/pull/1216))
+- **apps:** add the app contract package and the hosted app runtime spec ([`2fe2ce1`](https://github.com/radioso-ai/radioso/commit/2fe2ce11ee1bd8da00db00b4a54359712ee4baba))
+
+### Fixed
+
+- keep assistant logo preview current after upload ([#1220](https://github.com/radioso-ai/radioso/pull/1220))
+- **mcp:** drop unnecessary non-null assertions in the operator config ([`24dc5c7`](https://github.com/radioso-ai/radioso/commit/24dc5c7d3c71fed56600b3da5da71c55396f3f8a))
+
+### Internal
+
+- simplify Operator MCP deployment ([#1218](https://github.com/radioso-ai/radioso/pull/1218))
+
+[0.2.0]: https://github.com/radioso-ai/radioso/compare/v0.1.0...v0.2.0
+
 ## [0.1.0] - 2026-09-07
 
 ### Breaking changes

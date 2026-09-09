@@ -137,9 +137,10 @@ describeIntegration("ContextVariableRepository (Postgres)", () => {
       "SELECT generation, snapshot FROM agent_drafts WHERE agent_id = $1",
       [agentId],
     );
+    if (!draft) throw new Error("Expected agent draft");
     await database.query(
       "INSERT INTO agent_revisions (id, agent_id, workspace_id, snapshot, source_draft_generation) VALUES ($1, $2, $3, $4::jsonb, $5)",
-      [randomUUID(), agentId, workspaceId, JSON.stringify(draft!.snapshot), draft!.generation],
+      [randomUUID(), agentId, workspaceId, JSON.stringify(draft.snapshot), draft.generation],
     );
 
     await expect(repository.delete(workspaceId, variable.id)).rejects.toMatchObject({

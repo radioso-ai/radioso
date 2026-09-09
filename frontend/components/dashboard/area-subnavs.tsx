@@ -249,6 +249,7 @@ export function AgentAreaSubNav({ accountId, routeState }: { accountId: string; 
   const selectedLabel = selectedAgent ? getAgentOperatorLabel(selectedAgent) : 'Select an agent'
   const logoUrl = selectedAgent ? agentToGeneralSettings(selectedAgent).assistantLogoUrl : null
   const selectedSection = activeSection
+  const agentRowActive = !agentOpen
   const channelGroups: SubNavGroup[] = [{ items: [
     ...channelCatalog.map((entry) => ({
     ...channelMetadata[entry.id],
@@ -271,7 +272,7 @@ export function AgentAreaSubNav({ accountId, routeState }: { accountId: string; 
   return (
     <div className="ml-2 space-y-1 border-l border-sidebar-border/70 pl-2">
       <div className="space-y-1">
-        <button type="button" onClick={() => setAgentOpen((open) => !open)} aria-expanded={agentOpen} className="flex w-full items-center gap-2 rounded-md bg-sidebar-accent px-2 py-1.5 text-left text-sm font-medium text-sidebar-accent-foreground">
+        <button type="button" onClick={() => setAgentOpen((open) => !open)} aria-current={agentRowActive ? 'page' : undefined} aria-expanded={agentOpen} className={agentRowActive ? "flex w-full items-center gap-2 rounded-md bg-sidebar-accent px-2 py-1.5 text-left text-sm font-medium text-sidebar-accent-foreground" : "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm font-medium text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"}>
           <span aria-hidden="true" className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-md bg-primary/15 text-[10px] font-semibold text-primary" style={logoUrl ? { backgroundImage: `url(${logoUrl})`, backgroundPosition: 'center', backgroundSize: 'cover' } : undefined}>
             {logoUrl ? null : initials(selectedLabel)}
           </span>

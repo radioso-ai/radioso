@@ -20,6 +20,7 @@ describe('agentRevisionsApi', () => {
 
   it('starts a fenced comparison with explicit immutable revision ids and test values', async () => {
     vi.stubGlobal('window', { localStorage: storage() })
+    vi.stubGlobal('crypto', { randomUUID: () => 'test-execution-request-1' })
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
       id: 'execution-1',
       generation: 3,
@@ -43,6 +44,7 @@ describe('agentRevisionsApi', () => {
       revisionIds: ['published-7', 'candidate-8'],
       testValues: [{ contextVariableId: 'customer-tier', value: 'standard' }],
       expectedDraftGeneration: 8,
+      idempotencyKey: 'test-execution-request-1',
     }))
   })
 

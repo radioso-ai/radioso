@@ -18,7 +18,7 @@ describe("coverage routine assembly effects", () => {
       routineStore: durableStore,
       routineProvider: { forTurn: async () => ({ coverageActivator: { evaluateCandidates: () => [], activate: async () => null }, activator: { activate: async () => null }, runner: { resume: async () => ({ response: { answer: "" }, nextState: null }) } }) },
     } as never);
-    const runtime = await (assembly as never as { coverageRoutineRuntime: (s: unknown, i: unknown) => Promise<unknown> }).coverageRoutineRuntime(original, { responseLanguage: Promise.resolve(undefined), getSession: () => final });
+    const runtime = await (assembly as never as { coverageTurnRuntime: (s: unknown, i: unknown) => Promise<unknown> }).coverageTurnRuntime(original, { responseLanguage: Promise.resolve(undefined), getSession: () => final });
     const typed = runtime as { routineStore: { save: (s: unknown) => Promise<void> }; coverageReactionRecorder: { record: (r: unknown) => Promise<void> }; effects: (r: unknown) => { commitRoutineState: () => Promise<void>; commitCoverageReactions: () => Promise<void> } };
     await typed.routineStore.save({ sessionId: "new", routineId: "r", path: [], variables: {}, status: "active" });
     await typed.coverageReactionRecorder.record({ assessment: { availability: "assessed", coverage: "unanswered", reason: "insufficient_evidence", schemaVersion: 1 }, evaluationState: "evaluated", reactions: [] });
@@ -40,7 +40,7 @@ it("projects coverage handoff and suspended approval effects without committing 
     routineStore: durableStore,
     routineProvider: { forTurn: async () => ({ coverageActivator: { evaluateCandidates: () => [], activate: async () => null }, activator: { activate: async () => null }, runner: { resume: async () => ({ response: { answer: "" }, nextState: null }) } }) },
   } as never);
-  const runtime = await (assembly as never as { coverageRoutineRuntime: (s: unknown, i: unknown) => Promise<unknown> }).coverageRoutineRuntime(session, { responseLanguage: Promise.resolve(undefined) });
+  const runtime = await (assembly as never as { coverageTurnRuntime: (s: unknown, i: unknown) => Promise<unknown> }).coverageTurnRuntime(session, { responseLanguage: Promise.resolve(undefined) });
   const typed = runtime as { routineStore: { save: (s: unknown) => Promise<void> }; effects: (r: unknown) => { actions?: Array<{ type: string }>; handoff?: { routineId: string; stepId: string }; suspended?: boolean; pendingDecisionTransition?: { routineId: string; stepId: string }; commitRoutineState: () => Promise<void> } };
   await typed.routineStore.save({ sessionId: "conversation", routineId: "routine", path: [], variables: {}, status: "suspended" });
   const effects = typed.effects({ actions: [{ type: "routine.action", payload: {} }], handoff: { routineId: "routine", stepId: "handoff" }, awaitingDecision: { stepId: "approve", captureKey: "approval", options: [{ id: "yes", label: "Yes" }] } });
@@ -78,7 +78,7 @@ it("carries coverage activation clarification through the existing deferred clar
       }),
     }, activator: { activate: async () => null }, runner: { resume: async () => ({ response: { answer: "" }, nextState: null }) } }) },
   } as never);
-  const runtime = await (assembly as never as { coverageRoutineRuntime: (s: unknown, i: unknown) => Promise<unknown> }).coverageRoutineRuntime(session, {
+  const runtime = await (assembly as never as { coverageTurnRuntime: (s: unknown, i: unknown) => Promise<unknown> }).coverageTurnRuntime(session, {
     responseLanguage: Promise.resolve(undefined),
     clarification: { clarifier, store: clarificationStore },
   });

@@ -135,6 +135,12 @@ export const applyRoutineFieldPatch = (
   };
 };
 
+const describeCoverageCriteria = (criteria: NonNullable<NonNullable<RoutineFieldPatch["activation"]>["coverageCriteria"]>): string => {
+  const coverage = criteria.coverage.map((value) => value.replaceAll("_", " ")).join(" or ");
+  const reasons = criteria.reasons?.map((value) => value.replaceAll("_", " ")).join(" or ");
+  return reasons ? `answer coverage ${coverage} (${reasons})` : `answer coverage ${coverage}`;
+};
+
 /** Names what an edit touches, in the operator's routine vocabulary rather than field paths. */
 export const describeRoutineFieldPatch = (patch: RoutineFieldPatch): string => {
   const parts: string[] = [];
@@ -142,6 +148,7 @@ export const describeRoutineFieldPatch = (patch: RoutineFieldPatch): string => {
   if (patch.activation?.triggerDescription) parts.push("trigger");
   if (patch.activation?.priority !== undefined) parts.push("priority");
   if (patch.activation?.reentryMode) parts.push("re-entry");
+  if (patch.activation?.coverageCriteria) parts.push(describeCoverageCriteria(patch.activation.coverageCriteria));
   for (const step of patch.steps ?? []) parts.push(`step ${step.stableStepId}`);
   for (const terminal of patch.terminals ?? []) parts.push(`ending ${terminal.stableStepId}`);
   for (const slot of patch.slots ?? []) parts.push(`field ${slot.key}`);

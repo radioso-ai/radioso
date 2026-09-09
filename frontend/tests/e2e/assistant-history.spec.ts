@@ -1212,6 +1212,8 @@ test("routine-driven turn without a retrieval leaf still exposes the debug panel
   await page.getByRole("button", { name: "Open in debug view" }).click();
   await page.getByRole("button", { name: "Debug" }).click();
   await expect(page.getByText("Outcome summary").first()).toBeVisible();
+  await expect(page.getByText("Routine reply", { exact: true })).toBeVisible();
+  await expect(page.getByText("Answer coverage was not assessed", { exact: true })).toHaveCount(0);
 
   // The flow opens from the spine and shows the routine path.
   await page.getByRole("button", { name: "Flow" }).click();

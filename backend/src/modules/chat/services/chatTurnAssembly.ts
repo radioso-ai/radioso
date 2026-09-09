@@ -417,6 +417,22 @@ export class ChatTurnAssembly {
 
   constructor(private readonly options: ChatTurnAssemblyOptions) {}
 
+  private logCoverageRoutineFailure(trace: ConversationTrace | undefined, session: PreparedSession): void {
+    const stage = trace?.stages.find((entry) => entry.id === "answer_coverage_routine_activation");
+    if (stage?.status !== "fallback" || stage.outputs?.availability !== "failed") {
+      return;
+    }
+    const failureKind = stage.outputs.failureKind;
+    const causeType = stage.outputs.causeType;
+    this.options.logger?.warn({
+      event: "routine_activation_failed",
+      workspaceId: session.conversation.workspaceId,
+      conversationId: session.conversation.id,
+      ...(typeof failureKind === "string" ? { failureKind } : {}),
+      ...(typeof causeType === "string" ? { causeType } : {}),
+    }, "Coverage routine activation failed");
+  }
+
   async attemptRoutineTurn(
     session: PreparedSession,
     input: {
@@ -730,6 +746,7 @@ export class ChatTurnAssembly {
       }),
       ...coverageTurnRuntime,
     });
+    this.logCoverageRoutineFailure(result.trace, session);
     return {
       presentation,
       engineTrace: result.trace,
@@ -823,6 +840,7 @@ export class ChatTurnAssembly {
     const engineTrace = stage
       ? this.conversationTraceWithStage(result.trace, stage)
       : result.trace;
+    this.logCoverageRoutineFailure(engineTrace, sessionRef.current);
     return {
       session: sessionRef.current,
       presentation,
@@ -876,6 +894,7 @@ export class ChatTurnAssembly {
         yield event;
         continue;
       }
+      this.logCoverageRoutineFailure(event.engineTrace, session);
       yield {
         type: "final",
         finalPresentation: event.presentation,
@@ -968,6 +987,7 @@ export class ChatTurnAssembly {
         yield event;
         continue;
       }
+      this.logCoverageRoutineFailure(event.engineTrace, sessionRef.current);
       const stage = clarificationTraceStage(clarificationState.current);
       yield {
         type: "final",

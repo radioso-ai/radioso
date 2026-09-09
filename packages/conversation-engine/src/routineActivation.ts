@@ -33,8 +33,8 @@ const routineIdFromClarificationCandidate = (candidate: { payload: unknown }): s
  * safe trace value and must never expose the originating error detail.
  */
 export class RoutineActivationFailure extends Error {
-  constructor(readonly phase: "selection" | "resume") {
-    super(`Routine ${phase} failed`);
+  constructor(readonly phase: "selection" | "resume", cause?: unknown) {
+    super(`Routine ${phase} failed`, cause === undefined ? undefined : { cause });
     this.name = "RoutineActivationFailure";
   }
 }
@@ -214,8 +214,8 @@ const attemptRoutineWithMode = async (
         ...(completedRoutineIds.length > 0 ? { suppressedRoutineIds: completedRoutineIds } : {}),
         ...(input.suppressNewClarification ? { suppressClarificationAsk: input.suppressNewClarification } : {}),
       });
-    } catch {
-      throw new RoutineActivationFailure("selection");
+    } catch (error) {
+      throw new RoutineActivationFailure("selection", error);
     }
     if (!activation) {
       return null;
@@ -316,8 +316,8 @@ const attemptRoutineWithMode = async (
       history,
       activationClarificationStage,
     });
-  } catch {
-    throw new RoutineActivationFailure("resume");
+  } catch (error) {
+    throw new RoutineActivationFailure("resume", error);
   }
 };
 

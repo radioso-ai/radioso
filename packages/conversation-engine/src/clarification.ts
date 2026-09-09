@@ -111,6 +111,7 @@ export const resolvePendingClarification = async (input: {
       resolvedPending: true,
       suppressNewClarification: true,
       outcome: "declined",
+      loopGuardCandidateIds: candidateIds(pending),
     };
   }
 

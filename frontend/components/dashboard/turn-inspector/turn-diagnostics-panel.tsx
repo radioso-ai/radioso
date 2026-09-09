@@ -17,7 +17,7 @@ import {
   turnTraceRollup,
 } from '@/lib/turn-trace'
 import {
-  answerCoverageOutcomePresentation,
+  answerCoverageAwareOutcome,
   normalizeAnswerCoverage,
   normalizeAnswerCoverageInteractionTrace,
 } from '@/lib/answer-coverage'
@@ -148,18 +148,14 @@ export function TurnDiagnosticsPanel({
   const normalizedAnswerCoverage = normalizeAnswerCoverage(diagnostics.answerCoverage)
   const answerCoverage = normalizedAnswerCoverage ?? { availability: 'not_recorded' as const, originatingTurnId: '', originatingRequestId: '' }
   const interactionTrace = normalizeAnswerCoverageInteractionTrace(diagnostics.interactionTrace)
-  const displayedOutcome = answerCoverage.availability !== 'assessed'
-    ? {
-        ...outcomePresentation,
-        title: 'Answer coverage was not assessed',
-        summary: normalizedAnswerCoverage
-          ? 'This turn has no semantic coverage verdict. Retrieval and citation diagnostics remain available below.'
-          : 'This legacy turn has no semantic coverage verdict. Its recorded grounding diagnostics remain available below.',
-        tone: 'warning' as const,
-      }
-    : answerCoverage.coverage && answerCoverage.coverage !== 'answered'
-    ? { ...outcomePresentation, ...answerCoverageOutcomePresentation(answerCoverage.coverage) }
-    : outcomePresentation
+  const displayedOutcome = answerCoverageAwareOutcome(outcomePresentation, normalizedAnswerCoverage, {
+    // Old history records had no route/trace discriminator. Preserve their legacy
+    // warning, while current non-retrieval turns carry an explicit not_recorded state.
+    legacyUnavailable: !normalizedAnswerCoverage
+      && !diagnostics.route
+      && !diagnostics.turnTrace
+      && !diagnostics.activityTrace,
+  })
 
   return (
     <div className="space-y-4">

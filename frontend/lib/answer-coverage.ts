@@ -1,3 +1,5 @@
+import type { DiagnosticPresentation } from '@/lib/activity-diagnostics'
+
 export type AnswerCoverageAvailability = 'assessed' | 'not_recorded' | 'failed' | 'invalid'
 export type AnswerCoverageValue = 'answered' | 'partial' | 'unanswered' | 'unclear'
 export type AnswerCoverageReason =
@@ -110,12 +112,18 @@ export const answerCoverageReasonLabel = (value: AnswerCoverageReason | undefine
   value ? value.replaceAll('_', ' ').replace(/^./, (char) => char.toUpperCase()) : 'Not recorded'
 
 /** Operator-facing wording for the semantic verdict, independent of retrieval outcome. */
-export const answerCoverageOutcomePresentation = (coverage: Exclude<AnswerCoverageValue, 'answered'>): {
+export const answerCoverageOutcomePresentation = (coverage: AnswerCoverageValue): {
   title: string
   summary: string
-  tone: 'warning' | 'neutral'
+  tone: 'ok' | 'warning' | 'neutral'
 } => {
   switch (coverage) {
+    case 'answered':
+      return {
+        title: 'Request answered',
+        summary: 'The response resolved the visitor’s request according to the semantic coverage assessment.',
+        tone: 'ok',
+      }
     case 'unanswered':
       return {
         title: 'Request remains unanswered',
@@ -135,4 +143,40 @@ export const answerCoverageOutcomePresentation = (coverage: Exclude<AnswerCovera
         tone: 'neutral',
       }
   }
+}
+
+/**
+ * Applies semantic coverage only when it was actually evaluated. Direct replies,
+ * routines, and other non-retrieval turns intentionally keep their activity outcome.
+ */
+export const answerCoverageAwareOutcome = (
+  outcome: DiagnosticPresentation,
+  assessment?: AnswerCoverageAssessment,
+  options: { legacyUnavailable?: boolean } = {},
+): DiagnosticPresentation => {
+  if (!assessment) {
+    return options.legacyUnavailable
+      ? {
+          ...outcome,
+          title: 'Answer coverage was not assessed',
+          summary: 'This legacy turn has no semantic coverage verdict. Its recorded grounding diagnostics remain available below.',
+          tone: 'warning',
+        }
+      : outcome
+  }
+
+  if (assessment.availability === 'not_recorded') {
+    return outcome
+  }
+
+  if (assessment.availability !== 'assessed' || !assessment.coverage) {
+    return {
+      ...outcome,
+      title: 'Answer coverage was not assessed',
+      summary: 'This turn has no semantic coverage verdict. Retrieval and citation diagnostics remain available below.',
+      tone: 'warning',
+    }
+  }
+
+  return { ...outcome, ...answerCoverageOutcomePresentation(assessment.coverage) }
 }

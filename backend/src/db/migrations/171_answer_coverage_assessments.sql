@@ -1,3 +1,8 @@
+-- These composite unique indexes are prerequisites for the workspace-scoped
+-- foreign keys below. The migration runner executes each file in one transaction,
+-- so PostgreSQL cannot build them CONCURRENTLY. Run this migration in a coordinated
+-- deploy window: CREATE UNIQUE INDEX takes a strong lock on the existing tables for
+-- the duration of each build.
 CREATE UNIQUE INDEX idx_conversations_workspace_id_unique ON conversations (workspace_id, id);
 CREATE UNIQUE INDEX idx_messages_workspace_conversation_id_unique ON messages (workspace_id, conversation_id, id);
 

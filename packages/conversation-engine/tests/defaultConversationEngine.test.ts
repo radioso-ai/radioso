@@ -1205,7 +1205,11 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
       id: "answer_coverage_routine_activation",
       kind: "answer_coverage_routine_activation",
       status: "fallback",
-      outputs: { availability: "failed", failureKind: "routine_selection_failed" },
+      outputs: {
+        availability: "failed",
+        failureKind: "routine_selection_failed",
+        causeType: "TypeError",
+      },
     }));
   });
 

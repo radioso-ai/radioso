@@ -13,6 +13,10 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import type { RoutineDefinitionDraft, RoutineFieldGuardOp, RoutineFieldGuardUnit, RoutineGuardKind, RoutineReentryMode, RoutineSlotType, RoutineStepKind, RoutineValidationDiagnostic } from '@/lib/api'
+import {
+  compatibleAnswerCoverageReasons,
+  type AnswerCoverageValue,
+} from '@/lib/answer-coverage'
 import { documentDiagnosticText, formatBindingLine, formatBranchTargetLabel, instructionToProseParagraphs, proseParagraphsToInstruction, sanitizeDraftContentForSave } from '@/lib/routine-document'
 import { diagnosticTargetFor } from '@/lib/routine-form'
 import {
@@ -66,6 +70,19 @@ const instructionsEqual = (left: RoutineBlockInstructionSegment[], right: Routin
     return candidate.kind === 'slotReference' && segment.key === candidate.key && segment.source === candidate.source
   })
 
+const coverageCriteriaForSelection = (
+  current: RoutineBlockDoc['activation']['coverageCriteria'],
+  coverage: AnswerCoverageValue[],
+): RoutineBlockDoc['activation']['coverageCriteria'] => {
+  if (coverage.length === 0) return undefined
+  const compatibleReasons = new Set(compatibleAnswerCoverageReasons(coverage))
+  const reasons = current?.reasons?.filter((reason) => compatibleReasons.has(reason)) ?? []
+  return {
+    coverage,
+    ...(reasons.length > 0 ? { reasons } : {}),
+  }
+}
+
 const endingList = (doc: RoutineBlockDoc): RoutineBlockEnding[] => {
   const endings = new Map<string, RoutineBlockEnding>()
   for (const ending of doc.unreferencedEndings) endings.set(ending.stableStepId, ending)
@@ -113,19 +130,22 @@ function RoutineActivationEditor({ doc, apply, onDone }: {
           const selectedCoverage = currentCriteria?.coverage ?? []
           const nextCoverage = selected ? selectedCoverage.filter((item) => item !== coverage) : [...selectedCoverage, coverage]
           if (nextCoverage.length === 0) setAddingCoverageCondition(false)
-          return updateActivation(current, { coverageCriteria: nextCoverage.length > 0 ? { ...currentCriteria, coverage: nextCoverage } : undefined })
+          return updateActivation(current, { coverageCriteria: coverageCriteriaForSelection(currentCriteria, nextCoverage) })
         })} className={selected ? 'rounded-full border border-primary bg-muted/40 px-3 py-1.5 text-sm' : 'rounded-full border border-border px-3 py-1.5 text-sm text-muted-foreground'}>{coverage.replaceAll('_', ' ')}</button>
       })}</div></div>
       <div><p className="mb-1 text-xs font-medium text-foreground">Reason <span className="font-normal text-muted-foreground">(optional)</span></p><div className="flex flex-wrap gap-2">{(['sufficient_evidence', 'insufficient_evidence', 'conflicting_evidence', 'ambiguous_request', 'intentional_scope_boundary'] as const).map((reason) => {
         const selected = criteria?.reasons?.includes(reason) ?? false
-        return <button key={reason} type="button" role="checkbox" aria-checked={selected} disabled={!criteria} onClick={() => apply((current) => {
+        const compatible = criteria
+          ? compatibleAnswerCoverageReasons(criteria.coverage).includes(reason)
+          : false
+        return <button key={reason} type="button" role="checkbox" aria-checked={selected} disabled={!compatible} onClick={() => apply((current) => {
           const currentCriteria = current.activation.coverageCriteria!
           const reasons = currentCriteria.reasons ?? []
           const nextReasons = selected ? reasons.filter((item) => item !== reason) : [...reasons, reason]
           const withoutReasons = { ...currentCriteria }
           delete withoutReasons.reasons
           return updateActivation(current, { coverageCriteria: nextReasons.length > 0 ? { ...withoutReasons, reasons: nextReasons } : withoutReasons })
-        })} className={selected ? 'rounded-full border border-primary bg-muted/40 px-3 py-1.5 text-xs' : 'rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground'}>{reason.replaceAll('_', ' ')}</button>
+        })} className={selected ? 'rounded-full border border-primary bg-muted/40 px-3 py-1.5 text-xs disabled:cursor-not-allowed disabled:opacity-50' : 'rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50'}>{reason.replaceAll('_', ' ')}</button>
       })}</div></div>
     </div> : <div className="flex flex-wrap items-center gap-2"><DropdownMenu><DropdownMenuTrigger asChild><Button type="button" size="sm" variant="outline"><Plus className="mr-1.5 h-4 w-4" />Add condition</Button></DropdownMenuTrigger><DropdownMenuContent align="start"><DropdownMenuItem onSelect={() => setAddingCoverageCondition(true)}>Answer coverage</DropdownMenuItem></DropdownMenuContent></DropdownMenu><Button type="button" size="sm" onClick={onDone}>Done</Button></div>}
     {showingCoverageCondition ? <Button type="button" size="sm" onClick={onDone}>Done</Button> : null}

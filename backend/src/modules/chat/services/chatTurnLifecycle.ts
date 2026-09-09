@@ -213,6 +213,8 @@ export interface AssistantTurnPersistencePort {
     routineStateTransition?: CapturedRoutineTransition | null;
     pendingDecisionTransition?: PendingDecisionCreateInput | null;
     clarificationTransition?: CapturedClarificationTransition | null;
+    /** Exact request whose provisional coverage assessment this reply commits. */
+    answerCoverageRequestMessageId?: string;
     assistantMessage: MessageCreateInput;
     auditEvent: AuditEventInput;
     ownershipHandoff?: OwnershipHandoffInput | null;
@@ -687,6 +689,7 @@ export class ChatTurnLifecycle {
         routineStateTransition: input.routineStateTransition,
         pendingDecisionTransition: input.pendingDecisionTransition,
         clarificationTransition: input.clarificationTransition,
+        answerCoverageRequestMessageId: input.session.userMessage.id,
         assistantMessage: presentation.assistantMessage,
         auditEvent,
         ownershipHandoff: safeTestTurn ? undefined : input.ownershipHandoff,

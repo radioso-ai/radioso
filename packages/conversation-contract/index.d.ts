@@ -1424,6 +1424,8 @@ export interface AttemptRoutineInput {
    * empty-context turn when this is absent.
    */
   turnContext?: TurnContext;
+  /** The host already durably appended this input event; routine output still references it. */
+  inputEventAlreadyAppended?: boolean;
   directives?: Directive[];
   directiveMatcher?: ConversationDirectiveMatcher;
   steeringResolver?: SteeringResolver;

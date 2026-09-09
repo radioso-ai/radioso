@@ -711,6 +711,7 @@ CREATE TABLE public.answer_coverage_assessments (
     interaction_evaluation_state text,
     assessed_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
     created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+    assistant_message_id uuid,
     CONSTRAINT answer_coverage_assessments_availability_check CHECK ((availability = ANY (ARRAY['assessed'::text, 'not_recorded'::text, 'failed'::text, 'invalid'::text]))),
     CONSTRAINT answer_coverage_assessments_check CHECK ((((availability = 'assessed'::text) AND (coverage IS NOT NULL) AND (reason IS NOT NULL)) OR ((availability <> 'assessed'::text) AND (coverage IS NULL) AND (reason IS NULL) AND (unresolved_request IS NULL)))),
     CONSTRAINT answer_coverage_assessments_coverage_check CHECK ((coverage = ANY (ARRAY['answered'::text, 'partial'::text, 'unanswered'::text, 'unclear'::text]))),
@@ -8663,6 +8664,14 @@ ALTER TABLE ONLY public.agent_skills
 
 ALTER TABLE ONLY public.agents
     ADD CONSTRAINT agents_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: answer_coverage_assessments answer_coverage_assessments_conversation_assistant_message_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.answer_coverage_assessments
+    ADD CONSTRAINT answer_coverage_assessments_conversation_assistant_message_fkey FOREIGN KEY (workspace_id, conversation_id, assistant_message_id) REFERENCES public.messages(workspace_id, conversation_id, id) ON DELETE SET NULL (assistant_message_id);
 
 
 --

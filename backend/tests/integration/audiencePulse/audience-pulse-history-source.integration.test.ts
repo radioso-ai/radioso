@@ -10,6 +10,7 @@ import {
   buildAudiencePulseEvidenceAnchorTargetQuery,
   buildAudiencePulseQuestionAnswerQuery,
 } from "../../../src/modules/chat/audiencePulseHistorySource.js";
+import { AnswerCoverageRepository } from "../../../src/db/repositories/answerCoverageRepository.js";
 import { Database } from "../../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "../support/integrationDatabase.js";
 
@@ -479,6 +480,36 @@ describeIntegration("PostgresAudiencePulseHistorySource", () => {
       grounding: "no_support",
       contentGapEligible: true,
     });
+  });
+
+  it("keeps provisional assessments unassessed while absent legacy assessments retain the message fallback", async () => {
+    const conversationId = await createConversation();
+    const legacyQuestionId = await createMessage({ conversationId, role: "user", content: "Legacy question", createdAt: "2026-07-15T10:00:00.000Z", source: "customer" });
+    await createMessage({ conversationId, role: "assistant", content: "Legacy unsupported answer", createdAt: "2026-07-15T10:00:01.000Z", source: "ai_agent", skillName: "retrieval.answer", skillOutcome: "no_context", grounding: "no_support" });
+    const provisionalQuestionId = await createMessage({ conversationId, role: "user", content: "Provisional question", createdAt: "2026-07-16T10:00:00.000Z", source: "customer" });
+    await createMessage({ conversationId, role: "assistant", content: "An unrelated later answer", createdAt: "2026-07-16T10:00:01.000Z", source: "ai_agent", skillName: "retrieval.answer", skillOutcome: "no_context", grounding: "no_support" });
+    await createMessage({ conversationId, role: "assistant", content: "A human follow-up", createdAt: "2026-07-16T10:00:02.000Z", source: "human_agent", skillName: null, skillOutcome: null, grounding: null });
+    const confirmedQuestionId = await createMessage({ conversationId, role: "user", content: "Confirmed question", createdAt: "2026-07-17T10:00:00.000Z", source: "customer" });
+    const confirmedAssistantMessageId = await createMessage({ conversationId, role: "assistant", content: "The committed reply", createdAt: "2026-07-17T10:00:01.000Z", source: "ai_agent", skillName: "retrieval.answer", skillOutcome: "no_context", grounding: "no_support" });
+    await database.query(
+      `INSERT INTO answer_coverage_assessments(id, workspace_id, conversation_id, request_message_id, originating_turn_id, contextualized_request, availability, coverage, reason, schema_version) VALUES ($1, $2, $3, $4, $4, 'Provisional question', 'assessed', 'unanswered', 'insufficient_evidence', 1)`,
+      [randomUUID(), workspaceId, conversationId, provisionalQuestionId],
+    );
+    await database.query(
+      `INSERT INTO answer_coverage_assessments(id, workspace_id, conversation_id, request_message_id, originating_turn_id, contextualized_request, assistant_message_id, availability, coverage, reason, schema_version) VALUES ($1, $2, $3, $4, $4, 'Confirmed question', $5, 'assessed', 'unanswered', 'insufficient_evidence', 1)`,
+      [randomUUID(), workspaceId, conversationId, confirmedQuestionId, confirmedAssistantMessageId],
+    );
+
+    const snapshot = await new PostgresAudiencePulseHistorySource(
+      database.kysely,
+      new AnswerCoverageRepository(database.kysely),
+    ).read({ workspaceId, analysisStart: new Date("2026-07-01T00:00:00.000Z"), analysisEnd: new Date("2026-07-31T00:00:00.000Z") });
+    const evidence = new Map(snapshot.evidence.map((item) => [item.id, item]));
+
+    expect(evidence.get(legacyQuestionId)).toMatchObject({ legacyCoverage: true, contentGapEligible: true });
+    expect(evidence.get(provisionalQuestionId)).toMatchObject({ legacyCoverage: false, contentGapEligible: false });
+    expect(evidence.get(provisionalQuestionId)).not.toHaveProperty("answerCoverage");
+    expect(evidence.get(confirmedQuestionId)).toMatchObject({ legacyCoverage: false, contentGapEligible: true, answerCoverage: { assistantMessageId: confirmedAssistantMessageId } });
   });
 
   it("reads an exact bounded anchor from its workspace and conversation after a long history", async () => {

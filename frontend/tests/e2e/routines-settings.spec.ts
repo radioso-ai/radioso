@@ -93,8 +93,19 @@ test("routine coverage criteria round-trip through the authored API payload", as
   await expect(page.getByRole("checkbox", { name: "insufficient evidence" })).toHaveAttribute("aria-checked", "true");
   await page.getByRole("checkbox", { name: "partial" }).click();
   await page.getByRole("checkbox", { name: "unanswered" }).click();
-  await page.getByRole("checkbox", { name: "insufficient evidence" }).click();
-  await page.getByRole("checkbox", { name: "conflicting evidence" }).click();
+  const insufficient = page.getByRole("checkbox", { name: "insufficient evidence", exact: true });
+  const sufficient = page.getByRole("checkbox", { name: "sufficient evidence", exact: true });
+  await page.getByRole("checkbox", { name: "answered", exact: true }).click();
+  await page.getByRole("checkbox", { name: "partial", exact: true }).click();
+  await expect(insufficient).toBeDisabled();
+  await expect(insufficient).toHaveAttribute("aria-checked", "false");
+  await expect(sufficient).toBeEnabled();
+  await sufficient.click();
+  await page.getByRole("checkbox", { name: "partial", exact: true }).click();
+  await page.getByRole("checkbox", { name: "answered", exact: true }).click();
+  await expect(sufficient).toBeDisabled();
+  await expect(sufficient).toHaveAttribute("aria-checked", "false");
+  await page.getByRole("checkbox", { name: "conflicting evidence", exact: true }).click();
 
   await expect.poll(() => routineUpdates.some((update) => update.method === "PATCH"), { timeout: 15_000 }).toBe(true);
   const update = routineUpdates.filter((entry) => entry.method === "PATCH").at(-1);

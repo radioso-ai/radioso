@@ -74,7 +74,9 @@ export const resumeRoutine = async (input: {
 
   const events = [] as Awaited<ReturnType<typeof createInputEvent>>[];
   const inputEvent = createInputEvent(request);
-  await request.stores.appendEvent(inputEvent);
+  if (!request.inputEventAlreadyAppended) {
+    await request.stores.appendEvent(inputEvent);
+  }
   events.push(inputEvent);
 
   if (result.nextState) {

@@ -11,6 +11,7 @@ export interface AnswerCoverageRow {
   request_message_id: string;
   originating_turn_id: string;
   contextualized_request: string;
+  assistant_message_id: string | null;
   availability: AnswerCoverageAssessment["availability"];
   coverage: "answered" | "partial" | "unanswered" | "unclear" | null;
   reason: "sufficient_evidence" | "insufficient_evidence" | "conflicting_evidence" | "ambiguous_request" | "intentional_scope_boundary" | null;
@@ -22,7 +23,7 @@ export interface AnswerCoverageRow {
 }
 
 export const answerCoverageColumns = [
-  "id", "workspace_id", "conversation_id", "request_message_id", "originating_turn_id", "contextualized_request", "availability", "coverage", "reason", "unresolved_request", "schema_version", "interaction_evaluation_state", "assessed_at", "created_at",
+  "id", "workspace_id", "conversation_id", "request_message_id", "originating_turn_id", "contextualized_request", "assistant_message_id", "availability", "coverage", "reason", "unresolved_request", "schema_version", "interaction_evaluation_state", "assessed_at", "created_at",
 ] as const;
 
 export const mapAnswerCoverageRow = (row: AnswerCoverageRow): AnswerCoverageRecord => {
@@ -33,6 +34,7 @@ export const mapAnswerCoverageRow = (row: AnswerCoverageRow): AnswerCoverageReco
     requestMessageId: row.request_message_id,
     originatingTurnId: row.originating_turn_id,
     contextualizedRequest: row.contextualized_request,
+    ...(row.assistant_message_id === null ? {} : { assistantMessageId: row.assistant_message_id }),
     schemaVersion: row.schema_version,
     ...(row.interaction_evaluation_state === null ? {} : { interactionEvaluationState: row.interaction_evaluation_state }),
     assessedAt: new Date(row.assessed_at),

@@ -43,3 +43,8 @@ Per eligible originating question: exactly one assessed bucket, an unassessed or
 legacy state, reason breakdown, content-gap eligibility, and authorized evidence
 references. The recurrence unit is an eligible originating request and distinct
 conversation; duplicate persistence deliveries coalesce by originating request.
+
+An assessment is provisional until the assistant-turn transaction commits the
+exact reply it evaluated. Pulse treats a present but unconfirmed assessment as
+unassessed and excludes it from gap eligibility; it never infers an association
+from a later reply. Rows with no assessment remain legacy evidence.

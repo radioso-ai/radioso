@@ -110,6 +110,47 @@ export class FacetExtractionJobRepository implements FacetExtractionJobStore {
   }
 
   /**
+   * One INSERT statement for the whole batch: a bulk upsert instead of `enqueue`'s
+   * per-message insert-then-maybe-update round trips. `restartTerminal` resets a
+   * conflicting row back to `queued` only when its current status is terminal
+   * (`completed`, `failed`, or `skipped`) -- evaluated in the database via the
+   * conflict action's `WHERE`, so a row a worker just claimed (`processing`) or
+   * that's already `queued` is left untouched.
+   */
+  async enqueueMany(input: {
+    messageIds: string[];
+    workspaceId: string;
+    restartTerminal?: boolean;
+  }): Promise<void> {
+    if (input.messageIds.length === 0) return;
+    const values = input.messageIds.map((messageId) => ({
+      message_id: messageId,
+      workspace_id: input.workspaceId,
+      status: "queued",
+    }));
+    if (input.restartTerminal) {
+      await this.db
+        .insertInto("facet_extraction_jobs")
+        .values(values)
+        .onConflict((oc) => oc.column("message_id").doUpdateSet({
+          status: "queued",
+          attempt_count: 0,
+          claimed_at: null,
+          scheduled_at: currentTimestamp(),
+          last_error: null,
+          updated_at: currentTimestamp(),
+        }).where("facet_extraction_jobs.status", "in", ["completed", "failed", "skipped"]))
+        .execute();
+      return;
+    }
+    await this.db
+      .insertInto("facet_extraction_jobs")
+      .values(values)
+      .onConflict((oc) => oc.column("message_id").doNothing())
+      .execute();
+  }
+
+  /**
    * One statement: the `due` CTE takes row locks with `SKIP LOCKED`, so a concurrent
    * worker's select never sees the rows this claim is taking and the two claims are
    * disjoint.

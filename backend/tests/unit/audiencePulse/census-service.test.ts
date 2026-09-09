@@ -15,6 +15,7 @@ import type {
 } from "../../../src/modules/audiencePulse/contracts/topicLabel.js";
 import {
   CensusService,
+  FACET_REQUEUE_CHUNK_SIZE,
   type CensusFacetSource,
   type CensusServiceDependencies,
 } from "../../../src/modules/audiencePulse/services/censusService.js";
@@ -449,6 +450,116 @@ describe("CensusService.run (T020)", () => {
     expect(result.facetReadyQuestionCount).toBe(0);
     expect(result.topics).toEqual([]);
     expect(namingPort.name).not.toHaveBeenCalled();
+  });
+});
+
+describe("CensusService.run facet requeue (backfill convergence)", () => {
+  it("requeues every excluded message for facet extraction when a facetRequeue dependency is supplied", async () => {
+    const clusterableFacets = buildClusterableFacets();
+    const missingFacetId = randomUUID();
+    const staleFacetId = randomUUID();
+    const eligibleIds = [...clusterableFacets.map((facet) => facet.messageId), missingFacetId, staleFacetId];
+    const facets: FacetFixture[] = [
+      ...clusterableFacets,
+      {
+        messageId: staleFacetId,
+        facetText: "stale",
+        embedding: [1, 1, 1],
+        promptVersion: "facet-extraction/0",
+        embeddingProfileId: CURRENT_EMBEDDING_PROFILE_ID,
+      },
+      // missingFacetId has no row at all.
+    ];
+    const facetRequeue = { enqueueMany: vi.fn(async () => undefined) };
+    const service = new CensusService({ ...buildDependencies({ eligibleIds, facets }), facetRequeue });
+
+    const result = await service.run({ workspaceId, windowStart, windowEnd });
+
+    expect(facetRequeue.enqueueMany).toHaveBeenCalledTimes(1);
+    expect(facetRequeue.enqueueMany).toHaveBeenCalledWith({
+      messageIds: [missingFacetId, staleFacetId],
+      workspaceId,
+      restartTerminal: true,
+    });
+    expect(result.requeuedForExtraction).toBe(2);
+  });
+
+  it("behaves exactly as before, with requeuedForExtraction at zero, when facetRequeue is omitted", async () => {
+    const clusterableFacets = buildClusterableFacets();
+    const missingFacetId = randomUUID();
+    const eligibleIds = [...clusterableFacets.map((facet) => facet.messageId), missingFacetId];
+    const service = new CensusService(buildDependencies({ eligibleIds, facets: clusterableFacets }));
+
+    const result = await service.run({ workspaceId, windowStart, windowEnd });
+
+    expect(result.requeuedForExtraction).toBe(0);
+  });
+
+  it("still resolves with a valid CensusRunResult when every requeue attempt rejects, counting only the ones that succeeded", async () => {
+    const clusterableFacets = buildClusterableFacets();
+    const missingFacetId = randomUUID();
+    const staleFacetId = randomUUID();
+    const eligibleIds = [...clusterableFacets.map((facet) => facet.messageId), missingFacetId, staleFacetId];
+    const facets: FacetFixture[] = [
+      ...clusterableFacets,
+      {
+        messageId: staleFacetId,
+        facetText: "stale",
+        embedding: [1, 1, 1],
+        promptVersion: "facet-extraction/0",
+        embeddingProfileId: CURRENT_EMBEDDING_PROFILE_ID,
+      },
+    ];
+    const facetRequeue = {
+      enqueueMany: vi.fn().mockRejectedValueOnce(new Error("requeue failed")),
+    };
+    const service = new CensusService({ ...buildDependencies({ eligibleIds, facets }), facetRequeue });
+
+    const result = await service.run({ workspaceId, windowStart, windowEnd });
+
+    expect(facetRequeue.enqueueMany).toHaveBeenCalledTimes(1);
+    expect(result.requeuedForExtraction).toBe(0);
+    expect(result.populationSize).toBe(10);
+  });
+
+  it("never calls facetRequeue.enqueueMany and reports zero requeued when the run is fully facet-ready", async () => {
+    const clusterableFacets = buildClusterableFacets();
+    const eligibleIds = clusterableFacets.map((facet) => facet.messageId);
+    const facetRequeue = { enqueueMany: vi.fn(async () => undefined) };
+    const service = new CensusService({ ...buildDependencies({ eligibleIds, facets: clusterableFacets }), facetRequeue });
+
+    const result = await service.run({ workspaceId, windowStart, windowEnd });
+
+    expect(facetRequeue.enqueueMany).not.toHaveBeenCalled();
+    expect(result.requeuedForExtraction).toBe(0);
+  });
+
+  it("chunks a large excluded-id backlog into multiple bounded enqueueMany calls, and one chunk failing does not prevent another from counting", async () => {
+    const clusterableFacets = buildClusterableFacets();
+    const missingFacetIds = Array.from({ length: FACET_REQUEUE_CHUNK_SIZE + 1 }, () => randomUUID());
+    // missingFacetIds have no facet row at all -- they, plus the fully-covered
+    // clusterableFacets, make up the eligible population for this run.
+    const eligibleIds = [...clusterableFacets.map((facet) => facet.messageId), ...missingFacetIds];
+    const facetRequeue = {
+      enqueueMany: vi.fn()
+        .mockRejectedValueOnce(new Error("first chunk failed"))
+        .mockResolvedValueOnce(undefined),
+    };
+    const service = new CensusService({
+      ...buildDependencies({ eligibleIds, facets: clusterableFacets }),
+      facetRequeue,
+    });
+
+    const result = await service.run({ workspaceId, windowStart, windowEnd });
+
+    expect(facetRequeue.enqueueMany).toHaveBeenCalledTimes(2);
+    for (const call of facetRequeue.enqueueMany.mock.calls) {
+      expect(call[0].messageIds.length).toBeLessThanOrEqual(FACET_REQUEUE_CHUNK_SIZE);
+    }
+    // mockRejectedValueOnce/mockResolvedValueOnce apply in call order, so the first
+    // invocation's 200-id batch "fails" and the second invocation's 1-id batch
+    // "succeeds" -- deterministically, regardless of which resolves first.
+    expect(result.requeuedForExtraction).toBe(1);
   });
 });
 

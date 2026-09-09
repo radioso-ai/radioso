@@ -444,6 +444,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     abuseControlService: chat.abuseControlService,
     embeddingBindingResolver,
     facetDrain: facetExtractionWorkspaceDrain,
+    facetRequeue: repositories.facetExtractionJobRepository,
   });
   const websiteCrawlerLimits = (() => {
     const config = resolveWebsiteCrawlerConfig();

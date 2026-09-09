@@ -202,7 +202,7 @@ function SearchDiagnosticsPanel({
   )
 }
 
-export interface ConversationDrawerProps {
+interface ConversationDrawerProps {
   selectedItem: SelectedHistoryItem
   onSelectedItemChange: (item: SelectedHistoryItem) => void
   anchorMessageId?: string | null
@@ -243,8 +243,8 @@ export function ConversationDrawer({
   const conversationTail = useConversationTail({
     conversationId: selectedChatConversationId ?? '',
     // A no-cursor tail poll returns the newest history window. Audience Pulse
-    // intentionally opens a bounded historical source window, so merging that
-    // unrelated live window would defeat the evidence anchor.
+    // evidence is reviewing a historical citation as of the report's window, so
+    // merging that unrelated live window would defeat the evidence anchor.
     enabled: selectedChatConversationId !== null && !isAudiencePulseEvidence,
     intervalMs: 1000,
   })

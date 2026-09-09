@@ -21,6 +21,7 @@ import {
   type CopilotAudiencePulsePort,
   type CopilotContextVariablesPort,
   type CopilotWorkspaceSettingsPort,
+  type CopilotProductDocsPort,
 } from "../../modules/operatorCopilot/tools/index.js";
 import type { CopilotWebsiteAnalysisProbePort } from "../../modules/operatorCopilot/contracts/agentAuthoring.js";
 import type {
@@ -53,6 +54,7 @@ import { embeddingProfileCopilotPrimitives } from "../../modules/embeddingProfil
 import { evalCopilotPrimitives } from "../../modules/eval/public.js";
 import { retrievalCopilotPrimitives } from "../../modules/retrieval/public.js";
 import { routineCopilotPrimitives } from "../../modules/routines/public.js";
+import { productDocsCopilotPrimitives } from "../../modules/productDocs/public.js";
 import { settingsCopilotPrimitives } from "../../modules/settings/public.js";
 import { contextVariableCopilotPrimitives } from "../../modules/context-variables/public.js";
 import type { WorkspaceRepositoryPort } from "../../db/repositories/workspaceRepository.js";
@@ -196,6 +198,7 @@ export const createCopilotToolCatalog = (deps: {
   readonly skillCapabilityRegistry: CopilotSkillCapabilityTargetsPort;
   readonly contextVariables: CopilotContextVariablesPort;
   readonly workspaceSettings: CopilotWorkspaceSettingsPort;
+  readonly productDocs: CopilotProductDocsPort;
   readonly proposalRepository: Pick<CopilotRepositoryPort, "createProposal">;
   readonly proposalRecovery: CopilotMcpProposalRecoveryPort;
   readonly proposalAdapters: CopilotProposalAdapterRegistry;
@@ -226,6 +229,7 @@ export const createCopilotToolCatalog = (deps: {
     ...evalCopilotPrimitives,
     ...retrievalCopilotPrimitives,
     ...routineCopilotPrimitives,
+    ...productDocsCopilotPrimitives,
     ...settingsCopilotPrimitives,
     ...websiteCrawlerCopilotPrimitives,
   ]);

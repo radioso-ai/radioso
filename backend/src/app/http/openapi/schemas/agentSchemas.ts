@@ -238,6 +238,11 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
   const AgentRevisionPublishRequestSchema = registry.register("AgentRevisionPublishRequest", publishRevisionBodySchema);
   const AgentRevisionPublishResponseSchema = registry.register("AgentRevisionPublishResponse", z.object({ publication: z.object({ id: z.string().uuid(), revisionId: z.string().uuid(), publishedAt: z.string().datetime(), idempotentReplay: z.boolean(), revision: AgentRevisionSummarySchema }), state: AgentRevisionStateSchema }));
 
+  const AgentAssistantLogoQuerySchema = z.object({
+    workspaceId: z.string().uuid().optional(),
+    v: z.string().optional(),
+  });
+
   const AgentChannelLifecycleSchema = registry.register(
     "AgentChannelLifecycle",
     z.object({
@@ -1082,6 +1087,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     AgentRevisionDetailResponseSchema,
     AgentRevisionPublishRequestSchema,
     AgentRevisionPublishResponseSchema,
+    AgentAssistantLogoQuerySchema,
     AuthoredDirectiveConditionSchema,
     AuthoredDirectiveBindingSchema,
     AuthoredDirectiveCreateRequestSchema,

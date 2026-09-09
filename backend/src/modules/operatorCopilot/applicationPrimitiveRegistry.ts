@@ -39,6 +39,7 @@ export const copilotApplicationPrimitiveRegistry = {
   "operatorCopilot.safe-test.orchestration": { owningModule: "operatorCopilot", exportedPort: "CopilotAgentTurnProbePort" },
   "operatorCopilot.workspace-triage": { owningModule: "operatorCopilot", exportedPort: "WorkspaceTriageCopilotToolDependencies" },
   "operatorCopilot.needs-attention": { owningModule: "operatorCopilot", exportedPort: "NeedsAttentionCopilotToolDependencies" },
+  "productDocs.corpus.read": { owningModule: "productDocs", exportedPort: "ProductDocsService" },
   "retrieval.evidence.probe": { owningModule: "retrieval", exportedPort: "RetrievalSearchService" },
   "routines.definition.read": { owningModule: "routines", exportedPort: "RoutineDefinitionService" },
   "routines.proposal.prepare": { owningModule: "routines", exportedPort: "RoutineDraftAssistService" },
@@ -46,5 +47,3 @@ export const copilotApplicationPrimitiveRegistry = {
   "settings.workspace.read": { owningModule: "settings", exportedPort: "PlatformSettingsService" },
   "settings.workspace.propose": { owningModule: "settings", exportedPort: "PlatformSettingsService" },
 } as const;
-
-export type CopilotApplicationPrimitiveId = keyof typeof copilotApplicationPrimitiveRegistry;

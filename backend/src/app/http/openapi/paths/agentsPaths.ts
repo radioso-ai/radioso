@@ -552,6 +552,33 @@ export const registerAgentsPaths = (
   });
 
   registry.registerPath({
+    method: "get",
+    path: "/api/v1/agents/{agentId}/assistant-logo",
+    tags: ["Agents"],
+    summary: "Read the assistant logo image",
+    description: "Dashboard session only; bearer API tokens are rejected. The optional workspaceId query selects the workspace for browser image requests.",
+    operationId: "getAgentAssistantLogo",
+    security: security.workspaceAdminSecurity,
+    request: {
+      params: schemas.AgentParamsSchema,
+      query: schemas.AgentAssistantLogoQuerySchema,
+    },
+    responses: {
+      200: {
+        description: "Logo image",
+        content: {
+          "image/png": { schema: { type: "string", format: "binary" } },
+          "image/jpeg": { schema: { type: "string", format: "binary" } },
+          "image/webp": { schema: { type: "string", format: "binary" } },
+          "image/gif": { schema: { type: "string", format: "binary" } },
+        },
+      },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent or logo not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
     method: "post",
     path: "/api/v1/agents/{agentId}/assistant-logo",
     tags: ["Agents"],

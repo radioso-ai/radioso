@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Router } from "express";
+import { Router, type RequestHandler } from "express";
 import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
@@ -8,7 +8,7 @@ import {
   type AgentRevisionRouteDependencies,
 } from "./agentRevisionRoutes.js";
 import { presentRevisionState } from "./agentRevisionPresenters.js";
-import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.js";
+import { requireWorkspaceSession, WORKSPACE_HEADER } from "../middleware/requireWorkspaceSession.js";
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { requireSurfaceExtension } from "../shared/requireSurfaceExtension.js";
 import { validateBody } from "../middleware/validate.js";
@@ -43,6 +43,7 @@ import { builtInAnswerDirectiveViews } from "../../../modules/directives/public.
 import {
   ASSISTANT_LOGO_MIME_TYPES,
   createAssistantLogoUploadHandler,
+  sendAssistantLogo,
 } from "../shared/assistantIdentity.js";
 import { resolvePublicLaunchLifecycle } from "../../../modules/accessGrants/public.js";
 import type { AccessGrant, AccessGrantSecret } from "../../../modules/accessGrants/domain.js";
@@ -704,6 +705,39 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
         ...(customInstruction === undefined
           ? {}
           : { revisionState: presentRevisionState(await dependencies.agentRevisionService.state(workspaceId, parsed.agentId), true) }),
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  /**
+   * The dashboard renders the logo in an `<img>`, which cannot carry the workspace
+   * header. Accept the workspace as a query selector for this one read and let the
+   * session middleware check it against the caller's account exactly as it does the
+   * header — the query carries a selection, never an authorisation.
+   */
+  const acceptWorkspaceIdFromQuery: RequestHandler = (req, _res, next) => {
+    const selected = req.query.workspaceId;
+    if (typeof selected === "string" && !req.header(WORKSPACE_HEADER)) {
+      req.headers[WORKSPACE_HEADER.toLowerCase()] = selected;
+    }
+    next();
+  };
+
+  router.get("/:agentId/assistant-logo", acceptWorkspaceIdFromQuery, workspaceSession, agentRead, async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const parsed = agentParamsSchema.parse(req.params);
+      const agent = await dependencies.agentRepository.findByIdAndWorkspaceId(parsed.agentId, workspaceId);
+      if (!agent?.logo) {
+        throw notFound("Not found");
+      }
+      await sendAssistantLogo({
+        res,
+        logo: agent.logo,
+        documentStorage: dependencies.documentStorage,
+        cacheControl: "private, max-age=300",
       });
     } catch (error) {
       next(error);

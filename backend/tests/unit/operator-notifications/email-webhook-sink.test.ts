@@ -52,6 +52,72 @@ const recordingWebhookClient = (): { httpClient: ContactWebhookHttpClient; reque
 };
 
 describe("EmailWebhookOperatorNotificationSink", () => {
+  it("links the operator straight to the conversation permalink", async () => {
+    const { mailer, sent } = recordingMailer();
+    const sink = new EmailWebhookOperatorNotificationSink(
+      mailer,
+      { resolve: async () => ({ emails: ["owner@business.example"], webhook: null }) },
+      undefined,
+      undefined,
+      { resolve: async () => "https://app.radioso.ai/w/support-abc/activity?tab=all&filter=chat&itemKind=chat&itemId=conv_1" },
+    );
+
+    await sink.deliver(notification, context);
+
+    expect(sent[0].text).toContain(
+      "Open: https://app.radioso.ai/w/support-abc/activity?tab=all&filter=chat&itemKind=chat&itemId=conv_1",
+    );
+  });
+
+  it("asks the resolver for the notification's own workspace and conversation", async () => {
+    const { mailer } = recordingMailer();
+    const resolve = vi.fn(async () => "https://app.radioso.ai/w/support-abc/activity");
+    const sink = new EmailWebhookOperatorNotificationSink(
+      mailer,
+      { resolve: async () => ({ emails: ["owner@business.example"], webhook: null }) },
+      undefined,
+      undefined,
+      { resolve },
+    );
+
+    await sink.deliver(handoffNotification, context);
+
+    expect(resolve).toHaveBeenCalledWith({ workspaceId: "ws_1", conversationId: "conv_1" });
+  });
+
+  it("omits the link rather than sending a broken one when the workspace cannot be resolved", async () => {
+    const { mailer, sent } = recordingMailer();
+    const sink = new EmailWebhookOperatorNotificationSink(
+      mailer,
+      { resolve: async () => ({ emails: ["owner@business.example"], webhook: null }) },
+      undefined,
+      undefined,
+      { resolve: async () => null },
+    );
+
+    await sink.deliver(notification, context);
+
+    expect(sent[0].text).not.toContain("Open:");
+    // The message still has to be actionable without a link.
+    expect(sent[0].text).toContain("Conversation: conv_1");
+  });
+
+  it("still delivers the mail when resolving the link fails", async () => {
+    const { mailer, sent } = recordingMailer();
+    const sink = new EmailWebhookOperatorNotificationSink(
+      mailer,
+      { resolve: async () => ({ emails: ["owner@business.example"], webhook: null }) },
+      undefined,
+      undefined,
+      { resolve: async () => { throw new Error("workspace lookup failed"); } },
+    );
+
+    await sink.deliver(notification, context);
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0].text).not.toContain("Open:");
+  });
+
   it("preserves approval email delivery", async () => {
     const { mailer, sent } = recordingMailer();
     const sink = new EmailWebhookOperatorNotificationSink(mailer, {
@@ -66,7 +132,9 @@ describe("EmailWebhookOperatorNotificationSink", () => {
     expect(sent[0].idempotencyKey).toBe("routine-action:conv_1:approval.request:email:owner%40business.example");
     expect(sent[0].text).toContain("Conversation: conv_1");
     expect(sent[0].text).toContain("Decision: pd_abc");
-    expect(sent[0].text).toContain("Open: /conversations/conv_1");
+    // No link resolver is wired here, so the mail omits the line rather than printing a
+    // path that does not resolve. See the permalink cases below.
+    expect(sent[0].text).not.toContain("Open:");
   });
 
   it("preserves approval webhook delivery", async () => {
@@ -119,7 +187,9 @@ describe("EmailWebhookOperatorNotificationSink", () => {
     expect(sent[0].text).toContain("Workspace: ws_1");
     expect(sent[0].text).toContain("Agent: agent_1");
     expect(sent[0].text).toContain("Reason: routine_handoff");
-    expect(sent[0].text).toContain("Open: /conversations/conv_1");
+    // No link resolver is wired here, so the mail omits the line rather than printing a
+    // path that does not resolve. See the permalink cases below.
+    expect(sent[0].text).not.toContain("Open:");
   });
 
   it("preserves handoff webhook delivery", async () => {

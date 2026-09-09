@@ -1,14 +1,14 @@
 ---
 title: "MCP server"
 description: "Connect an MCP client to one Radioso agent or to Ray through delegated Operator MCP access."
-last_updated: 2026-09-06
+last_updated: 2026-09-08
 ---
 
 import { Callout, Steps } from 'nextra/components'
 
 # MCP server
 
-Radioso's standalone MCP server lets a client talk to one agent through `ask_agent`. The credential has no workspace role: it is bound to that agent and to the MCP audience.
+Radioso's standalone MCP server lets a client talk to one agent through `ask_agent`, and read Radioso's own documentation through `radioso_docs` and `radioso_doc_page`. The credential has no workspace role: it is bound to that agent and to the MCP audience.
 
 ## Two surfaces, two boundaries
 
@@ -118,6 +118,15 @@ The dashboard credential is bound to one agent and the MCP audience. Send its or
 The converse surface provides **`ask_agent`**, which sends a message through the agent's full turn loop and continues its conversation. Retrieval can participate in that turn when the agent's configuration calls for it. Direct document search and grounded-answer generation remain REST API workflows.
 
 The converse session does not grant access to other agents, workspace administration, account management, API-access settings, Ray, the skill catalogue, connector secrets, or provider keys.
+
+## Radioso documentation tools
+
+A client wired to this server is usually being used to build something against Radioso, so the questions it gets asked are as often "how does this work" as "what does my agent say". Two tools answer the first kind from Radioso's own manual:
+
+- **`radioso_docs`** lists every documentation page with its slug, one-line summary, and section headings. Start here to find the page that covers a concept.
+- **`radioso_doc_page`** reads one page by slug — `guides/mcp-server`, `guides/authoring-directives`, `api/documents-and-search` — or one section of it by passing `section`. A long page comes back as its section outline so you can read the part you need in full, rather than a clipped version of the whole.
+
+The pages ship with the release this server runs, so an answer matches the Radioso the client is connected to. Every page is the same public documentation published at [docs.radioso.ai](https://docs.radioso.ai), and each result carries its URL so a client can cite the page it used.
 
 ## Workspace document tools
 

@@ -6,13 +6,12 @@ description: "Task list template for feature implementation"
 # Tasks: [FEATURE NAME]
 
 **Input**: Design documents from `/specs/[###-feature-name]/`
+
 **Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, contracts/
 
-**Tests**: The examples below include test tasks. Backend tests are REQUIRED and MUST appear before implementation tasks. Frontend user-visible flows SHOULD default to Playwright tasks, while frontend unit tests should only cover non-visual logic called for by the feature specification.
+**Tests**: The examples below include test tasks. Tests are OPTIONAL - only include them if explicitly requested in the feature specification.
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
-
-**Architecture**: Tasks MUST preserve the module ownership defined in `plan.md`. Prefer explicit extraction tasks for new domain logic, interfaces, and persistence seams over silently extending the largest existing file. If backend work touches replaceable runtime infrastructure, tasks MUST include any required updates to `backend/src/app/composition/` for default wiring and lifecycle while keeping product rules in modules or shared domain files. If the plan identifies unclear structure or oversized files, tasks MUST include architecture/refactor stories that are completed before feature implementation in the affected area.
 
 ## Format: `[ID] [P?] [Story] Description`
 
@@ -27,21 +26,21 @@ description: "Task list template for feature implementation"
 - **Mobile**: `api/src/`, `ios/src/` or `android/src/`
 - Paths shown below assume single project - adjust based on plan.md structure
 
-<!-- 
+<!--
   ============================================================================
   IMPORTANT: The tasks below are SAMPLE TASKS for illustration purposes only.
-  
-  The /speckit.tasks command MUST replace these with actual tasks based on:
+
+  The $speckit-tasks command MUST replace these with actual tasks based on:
   - User stories from spec.md (with their priorities P1, P2, P3...)
   - Feature requirements from plan.md
   - Entities from data-model.md
   - Endpoints from contracts/
-  
+
   Tasks MUST be organized by user story so each story can be:
   - Implemented independently
   - Tested independently
   - Delivered as an MVP increment
-  
+
   DO NOT keep these sample tasks in the generated tasks.md file.
   ============================================================================
 -->
@@ -81,7 +80,7 @@ Examples of foundational tasks (adjust based on your project):
 
 **Independent Test**: [How to verify this story works on its own]
 
-### Tests for User Story 1 (REQUIRED for backend)
+### Tests for User Story 1 (OPTIONAL - only if tests requested) ⚠️
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
@@ -107,7 +106,7 @@ Examples of foundational tasks (adjust based on your project):
 
 **Independent Test**: [How to verify this story works on its own]
 
-### Tests for User Story 2 (REQUIRED for backend)
+### Tests for User Story 2 (OPTIONAL - only if tests requested) ⚠️
 
 - [ ] T018 [P] [US2] Contract test for [endpoint] in tests/contract/test_[name].py
 - [ ] T019 [P] [US2] Integration test for [user journey] in tests/integration/test_[name].py
@@ -129,7 +128,7 @@ Examples of foundational tasks (adjust based on your project):
 
 **Independent Test**: [How to verify this story works on its own]
 
-### Tests for User Story 3 (REQUIRED for backend)
+### Tests for User Story 3 (OPTIONAL - only if tests requested) ⚠️
 
 - [ ] T024 [P] [US3] Contract test for [endpoint] in tests/contract/test_[name].py
 - [ ] T025 [P] [US3] Integration test for [user journey] in tests/integration/test_[name].py
@@ -180,17 +179,11 @@ Examples of foundational tasks (adjust based on your project):
 
 ### Within Each User Story
 
-- Backend tests MUST be written and FAIL before implementation
-- Frontend Playwright coverage comes first for user-visible behavior; add frontend unit tests only for non-visual logic
-- Complete required architecture/refactor stories first when the plan flags unclear structure or oversized files
-- Extract or create focused modules before wiring orchestration
-- Update `backend/src/app/composition/` when the story introduces or replaces app-wide adapters, registries, sinks, lifecycle hooks, capability policies, storage/dispatcher implementations, or cross-module runtime infrastructure
-- For public APIs, SDK contracts, MCP contracts, connector contracts, worker payloads, or other cross-service contract changes, complete a message-queue impact review and add any needed AMQP payload, document worker dispatch, retry semantics, queue test, or queue documentation tasks
+- Tests (if included) MUST be written and FAIL before implementation
 - Models before services
 - Services before endpoints
 - Core implementation before integration
 - Story complete before moving to next priority
-- If an existing file is marked responsibility-limited in `plan.md`, add tasks in new files instead of extending that file beyond its declared role
 
 ### Parallel Opportunities
 
@@ -257,5 +250,3 @@ With multiple developers:
 - Commit after each task or logical group
 - Stop at any checkpoint to validate story independently
 - Avoid: vague tasks, same file conflicts, cross-story dependencies that break independence
-- Avoid: monolithic "update chatService/api/page to do everything" tasks when the plan calls for focused modules
-- Avoid: hiding app-wide runtime wiring inside feature services when it belongs in `backend/src/app/composition/`

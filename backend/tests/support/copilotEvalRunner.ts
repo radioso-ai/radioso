@@ -20,6 +20,7 @@ import {
   type ModelToolCallingGateway,
 } from "../../src/shared/agent-runtime/index.js";
 import { validateAgentInput } from "../../src/modules/agents/public.js";
+import { ProductDocsService } from "../../src/modules/productDocs/public.js";
 import { enrichCopilotToolCatalog } from "../../src/modules/operatorCopilot/catalog.js";
 import { OperatorCopilotService } from "../../src/modules/operatorCopilot/public.js";
 import { copilotProposalTargetTypes } from "../../src/modules/operatorCopilot/contracts.js";
@@ -465,6 +466,7 @@ export const copilotEvalCatalogDependencies = (): Parameters<typeof createCopilo
     agentSkillsService: { list: async () => [] },
     skillCapabilityRegistry: { list: () => [] },
     contextVariables: { listByWorkspace: async () => [], listByAgent: async () => [] },
+    productDocs: new ProductDocsService(),
     workspaceSettings: {
       getRetrievalDefaults: async () => ({}),
       getIngestionSettings: async () => ({}),
@@ -551,5 +553,5 @@ export const copilotEvalCatalogDependencies = (): Parameters<typeof createCopilo
     })),
     workspaceRouteKeyResolver: copilotEvalWorkspaceRouteKeyResolver,
     auditService: { record: async () => {} },
-  } as unknown as Parameters<typeof createCopilotToolDescriptors>[0];
+  };
 };

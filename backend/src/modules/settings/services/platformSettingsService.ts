@@ -2,7 +2,7 @@ import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../../db/repos
 import type { AccessGrantService } from "../../accessGrants/public.js";
 import type { AgentRecord, AgentService } from "../../agents/public.js";
 import { getWebsiteEmbedSurfaceSettings, isAgentBootstrapActive } from "../../agents/public.js";
-import { buildAssistantLogoCacheKey, buildPublicAssistantLogoUrl } from "../../../app/http/shared/assistantLogoUrl.js";
+import { buildAssistantLogoCacheKey, buildOperatorAssistantLogoUrl } from "../../../app/http/shared/assistantLogoUrl.js";
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
@@ -18,7 +18,7 @@ import type {
 } from "../domain/platformSettings.js";
 import { resolvePublicLaunchLifecycle } from "../../accessGrants/public.js";
 
-export interface PlatformSettingsServiceDependencies {
+interface PlatformSettingsServiceDependencies {
   workspaceRepository: Pick<WorkspaceRepositoryPort, "findById">;
   agentService: Pick<AgentService, "resolve" | "update" | "withRotatedTokens">;
   accessGrantService?: Pick<AccessGrantService, "resolvePublicLaunchGrant">;
@@ -28,8 +28,10 @@ export interface PlatformSettingsServiceDependencies {
   websiteEmbedIntegration?: WebsiteEmbedIntegrationProvider;
 }
 
-export interface PlatformSettingsUpdateContext {
+interface PlatformSettingsUpdateContext {
   accountId?: string | null;
+  /** Prefix added by the frontend proxy, so browser image requests reach the backend. */
+  forwardedPrefix?: string | null;
   /**
    * The version the caller decided against. Passed through to the agent write's own predicate so a
    * surface edited since then is refused rather than replaced wholesale — the copilot drafts a
@@ -39,8 +41,13 @@ export interface PlatformSettingsUpdateContext {
   expectedUpdatedAt?: Date;
 }
 
+interface PlatformSettingsReadContext {
+  /** Prefix added by the frontend proxy, so browser image requests reach the backend. */
+  forwardedPrefix?: string | null;
+}
+
 /** The settings plus the version a conditional write can be predicated on, read in one pass. */
-export interface VersionedPlatformSettings {
+interface VersionedPlatformSettings {
   settings: PlatformSettingsResource;
   updatedAt: Date;
 }
@@ -53,7 +60,10 @@ export class PlatformSettingsService {
       ?? new DefaultWebsiteEmbedIntegrationProvider();
   }
 
-  async getForWorkspace(workspaceId: string): Promise<PlatformSettingsResource> {
+  async getForWorkspace(
+    workspaceId: string,
+    context: PlatformSettingsReadContext = {},
+  ): Promise<PlatformSettingsResource> {
     const workspace = await this.dependencies.workspaceRepository.findById(workspaceId);
 
     if (!workspace) {
@@ -62,7 +72,7 @@ export class PlatformSettingsService {
     const agent = await this.dependencies.agentService.resolve(workspaceId);
 
     return {
-      assistant: this.buildAssistantSection(agent),
+      assistant: this.buildAssistantSection(agent, context.forwardedPrefix),
       channels: await this.buildChannelsSection(agent, workspace),
     };
   }
@@ -71,7 +81,10 @@ export class PlatformSettingsService {
    * Deliberately one read: pairing values from one read with a version from a later one would let
    * an edit landing between them pass a version check it should have failed.
    */
-  async getVersionedForWorkspace(workspaceId: string): Promise<VersionedPlatformSettings> {
+  async getVersionedForWorkspace(
+    workspaceId: string,
+    context: PlatformSettingsReadContext = {},
+  ): Promise<VersionedPlatformSettings> {
     const workspace = await this.dependencies.workspaceRepository.findById(workspaceId);
 
     if (!workspace) {
@@ -81,7 +94,7 @@ export class PlatformSettingsService {
 
     return {
       settings: {
-        assistant: this.buildAssistantSection(agent),
+        assistant: this.buildAssistantSection(agent, context.forwardedPrefix),
         channels: await this.buildChannelsSection(agent, workspace),
       },
       updatedAt: agent.updatedAt,
@@ -96,7 +109,7 @@ export class PlatformSettingsService {
     const { agent, workspace } = await this.writeForWorkspace(workspaceId, patch, context);
 
     return {
-      assistant: this.buildAssistantSection(agent),
+      assistant: this.buildAssistantSection(agent, context.forwardedPrefix),
       channels: await this.buildChannelsSection(agent, workspace),
     };
   }
@@ -294,7 +307,7 @@ export class PlatformSettingsService {
     }
   }
 
-  private buildAssistantSection(agent: AgentRecord) {
+  private buildAssistantSection(agent: AgentRecord, forwardedPrefix?: string | null) {
     return {
       assistantName: agent.name,
       greetingInstruction: agent.greetingInstruction,
@@ -303,7 +316,7 @@ export class PlatformSettingsService {
       assistantBootstrapActive: isAgentBootstrapActive(agent),
       suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
       customInstruction: agent.customInstruction,
-      assistantLogoUrl: this.buildAssistantLogoUrl(agent),
+      assistantLogoUrl: this.buildAssistantLogoUrl(agent, forwardedPrefix),
     };
   }
 
@@ -340,13 +353,13 @@ export class PlatformSettingsService {
     };
   }
 
-  private buildAssistantLogoUrl(agent: AgentRecord): string | null {
-    const token = agent.surfaceSettings.anonymousChat.token ?? getWebsiteEmbedSurfaceSettings(agent).token;
-    return buildPublicAssistantLogoUrl({
-      token,
+  private buildAssistantLogoUrl(agent: AgentRecord, forwardedPrefix?: string | null): string | null {
+    return buildOperatorAssistantLogoUrl({
+      agentId: agent.id,
+      workspaceId: agent.workspaceId,
       hasLogo: Boolean(agent.logo),
       cacheKey: buildAssistantLogoCacheKey(agent.logo),
-      publicChatBaseUrl: this.dependencies.publicChatBaseUrl,
+      forwardedPrefix,
     });
   }
 

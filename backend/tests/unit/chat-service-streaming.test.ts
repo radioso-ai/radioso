@@ -2447,6 +2447,9 @@ describe("chat service streaming", () => {
     failReactionRecord?: boolean;
     senseCompatible?: boolean;
     clarify?: boolean;
+    directiveOnly?: boolean;
+    conversationRepository?: InMemoryConversationRepository;
+    blockFirstAssessment?: { started: () => void; release: Promise<void> };
     assistantTurnPersistence?: ChatServiceOptions["assistantTurnPersistence"];
   } = {}) => {
     const assessment: Extract<AnswerCoverageAssessment, { availability: "assessed" }> = {
@@ -2476,6 +2479,10 @@ describe("chat service streaming", () => {
         }) => void;
       }) => ({
         assess: async () => {
+          if (input.blockFirstAssessment && assessmentCalls++ === 0) {
+            input.blockFirstAssessment.started();
+            await input.blockFirstAssessment.release;
+          }
           onAssessment?.({ assessment, record: assessmentRecord });
           return assessment;
         },
@@ -2490,6 +2497,7 @@ describe("chat service streaming", () => {
         },
       }),
     } as unknown as NonNullable<ChatServiceOptions["coverageAssessorFactory"]>;
+    let assessmentCalls = 0;
     const routineStore: NonNullable<ChatServiceOptions["routineStore"]> = {
       loadActive: async () => null,
       loadCompleted: async () => [],
@@ -2499,7 +2507,7 @@ describe("chat service streaming", () => {
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
       forTurn: async () => ({
         activator: { activate: async () => null },
-        coverageActivator: {
+        ...(!input.directiveOnly ? { coverageActivator: {
           evaluateCandidates: () => [{ routineId: "coverage.follow-up", decision: "candidate" as const, reasonCode: "coverage_criteria_candidate" }],
           activate: async () => input.clarify
             ? {
@@ -2512,7 +2520,7 @@ describe("chat service streaming", () => {
                 }],
               }
             : ({ kind: "activate" as const, routineId: "coverage.follow-up" }),
-        },
+        } } : {}),
         runner: {
           resume: async ({ state }) => ({
             response: { answer: "I can arrange a consultation." },
@@ -2534,7 +2542,7 @@ describe("chat service streaming", () => {
       }),
     };
     const service = makeChatService(
-      new InMemoryConversationRepository(),
+      input.conversationRepository ?? new InMemoryConversationRepository(),
       new InMemoryMessageRepository(),
       new RetrievalTurnController(asChatActivityPipeline(createGroundedPipeline()) as never),
       { async answer() { return "unused"; }, async *streamAnswer() { yield "unused"; } },
@@ -2627,6 +2635,68 @@ describe("chat service streaming", () => {
     });
     expect(coverage.routineStore.save).toHaveBeenCalledOnce();
     expect(coverage.persistedReactions).toHaveLength(1);
+  });
+
+  it.each([
+    { senseCompatible: false, stream: false }, { senseCompatible: true, stream: false },
+    { senseCompatible: false, stream: true }, { senseCompatible: true, stream: true },
+  ])("defers directive-only coverage reactions until the public $stream/$senseCompatible lifecycle commits", async ({ senseCompatible, stream }) => {
+    const coverage = coverageRoutineService({ senseCompatible, directiveOnly: true });
+    const request = { workspaceId: "workspace-1", query: "Please arrange a consultation.", stream };
+    const response = stream
+      ? await (async () => {
+          const events: ChatStreamEvent[] = [];
+          for await (const event of coverage.service.streamAnswer(request)) events.push(event);
+          return events.find((event) => event.type === "done");
+        })()
+      : await coverage.service.answer(request);
+    expect(response.interactionTrace).toMatchObject({ state: "evaluated" });
+    expect(coverage.persistedReactions).toHaveLength(1);
+  });
+
+  it("does not commit a buffered directive-only reaction when a competing turn supersedes it", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const conversation = await conversationRepository.create("workspace-1", null);
+    let release!: () => void;
+    let started!: () => void;
+    const barrier = new Promise<void>((resolve) => { release = resolve; });
+    const assessed = new Promise<void>((resolve) => { started = resolve; });
+    const coverage = coverageRoutineService({
+      directiveOnly: true,
+      conversationRepository,
+      blockFirstAssessment: { started, release: barrier },
+    });
+    const first = coverage.service.answer({
+      workspaceId: "workspace-1", conversationId: conversation.id, query: "Please arrange a consultation.", stream: false,
+    });
+    await assessed;
+    const latest = coverage.service.answer({
+      workspaceId: "workspace-1", conversationId: conversation.id, query: "A new question", stream: false,
+    });
+    release();
+
+    await expect(first).rejects.toBeInstanceOf(ChatTurnSupersededError);
+    await expect(latest).resolves.toMatchObject({ answer: "unused" });
+    expect(coverage.persistedReactions).toHaveLength(1);
+  });
+
+  it.each([
+    { senseCompatible: false, stream: false }, { senseCompatible: true, stream: false },
+    { senseCompatible: false, stream: true }, { senseCompatible: true, stream: true },
+  ])("does not evaluate directive-only coverage when the public $stream/$senseCompatible lifecycle rejects", async ({ senseCompatible, stream }) => {
+    const assistantTurnPersistence = {
+      completeAssistantTurn: vi.fn(async () => { throw new Error("transaction rejected"); }),
+    } satisfies NonNullable<ChatServiceOptions["assistantTurnPersistence"]>;
+    const coverage = coverageRoutineService({ senseCompatible, directiveOnly: true, assistantTurnPersistence });
+    const request = { workspaceId: "workspace-1", query: "Please arrange a consultation.", stream };
+    if (stream) {
+      await expect((async () => {
+        for await (const _event of coverage.service.streamAnswer(request)) { /* drain */ }
+      })()).rejects.toThrow("transaction rejected");
+    } else {
+      await expect(coverage.service.answer(request)).rejects.toThrow("transaction rejected");
+    }
+    expect(coverage.persistedReactions).toEqual([]);
   });
 
   it.each([false, true])("renders and persists a coverage clarification through the public %s ChatService path", async (senseCompatible) => {

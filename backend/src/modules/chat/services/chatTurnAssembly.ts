@@ -567,7 +567,7 @@ export class ChatTurnAssembly {
    * the normal activator, so creating this port cannot make a coverage routine
    * claim a pre-retrieval turn.
    */
-  private async coverageRoutineRuntime(
+  private async coverageTurnRuntime(
     session: PreparedSession,
     input: {
       accountId?: string;
@@ -585,8 +585,28 @@ export class ChatTurnAssembly {
     coverageReactionRecorder?: ConversationCoverageReactionRecorder;
     effects?: (result: ProcessTurnResult) => CoverageRoutineEffects;
   }> {
-    if (!this.options.coverageAssessorFactory || !this.options.routineStore || !this.options.routineProvider) {
+    if (!this.options.coverageAssessorFactory) {
       return {};
+    }
+    const getSession = input.getSession ?? (() => session);
+    const reactionRecorder = this.options.coverageAssessorFactory.createReactionRecorder({
+      getSession,
+      onRecorded: (reaction) => { applyCoverageInteractionTrace(getSession(), reaction); },
+    });
+    const deferredReactionRecorder = reactionRecorder
+      ? new DeferredCoverageReactionRecorder(reactionRecorder)
+      : undefined;
+    const reactionEffects = (result: ProcessTurnResult): CoverageRoutineEffects => ({
+      actions: result.actions,
+      commitCoverageReactions: deferredReactionRecorder
+        ? () => deferredReactionRecorder.commit()
+        : undefined,
+    });
+    if (!this.options.routineStore || !this.options.routineProvider) {
+      return {
+        coverageReactionRecorder: deferredReactionRecorder,
+        effects: reactionEffects,
+      };
     }
     const modelGateway = new RoutineChatModelGateway(this.options.chatGateway, {
       workspaceContext: this.answerSupport.buildChatWorkspaceContext(session),
@@ -614,18 +634,13 @@ export class ChatTurnAssembly {
       turnPlan: session.turnPlan,
     });
     if (!routineTurnPorts?.coverageActivator) {
-      return {};
+      return {
+        coverageReactionRecorder: deferredReactionRecorder,
+        effects: reactionEffects,
+      };
     }
     const deferredStore = new DeferredRoutineStore(this.options.routineStore);
     const deferredClarificationStore = input.clarification?.store;
-    const getSession = input.getSession ?? (() => session);
-    const reactionRecorder = this.options.coverageAssessorFactory.createReactionRecorder({
-      getSession,
-      onRecorded: (reaction) => { applyCoverageInteractionTrace(getSession(), reaction); },
-    });
-    const deferredReactionRecorder = reactionRecorder
-      ? new DeferredCoverageReactionRecorder(reactionRecorder)
-      : undefined;
     return {
       coverageRoutineActivator: routineTurnPorts.coverageActivator,
       routineStore: deferredStore,
@@ -686,7 +701,7 @@ export class ChatTurnAssembly {
     engineTrace?: ConversationTrace;
     actions?: RoutineActionRequest[];
   } & CoverageRoutineEffects> {
-    const coverageRoutineRuntime = await this.coverageRoutineRuntime(session, {
+    const coverageTurnRuntime = await this.coverageTurnRuntime(session, {
       accountId: input.accountId,
       responseLanguage: input.responseLanguage ?? Promise.resolve(undefined),
       coordination: input.coordination,
@@ -713,16 +728,12 @@ export class ChatTurnAssembly {
         signal: input.coordination?.signal,
         onAssessment: (assessment) => { applyCoverageAssessment(session, assessment); },
       }),
-      coverageReactionRecorder: this.options.coverageAssessorFactory?.createReactionRecorder({
-        getSession: () => session,
-        onRecorded: (reaction) => { applyCoverageInteractionTrace(session, reaction); },
-      }),
-      ...coverageRoutineRuntime,
+      ...coverageTurnRuntime,
     });
     return {
       presentation,
       engineTrace: result.trace,
-      ...(coverageRoutineRuntime.effects?.(result) ?? { actions: result.actions }),
+      ...(coverageTurnRuntime.effects?.(result) ?? { actions: result.actions }),
     };
   }
 
@@ -772,7 +783,7 @@ export class ChatTurnAssembly {
         : undefined,
       coordination: input.coordination,
     });
-    const coverageRoutineRuntime = await this.coverageRoutineRuntime(sessionRef.current, {
+    const coverageTurnRuntime = await this.coverageTurnRuntime(sessionRef.current, {
       accountId: input.request.accountId,
       responseLanguage: input.responseLanguagePromise,
       coordination: input.coordination,
@@ -806,11 +817,7 @@ export class ChatTurnAssembly {
         signal: input.coordination?.signal,
         onAssessment: (assessment) => { applyCoverageAssessment(sessionRef.current, assessment); },
       }),
-      coverageReactionRecorder: this.options.coverageAssessorFactory?.createReactionRecorder({
-        getSession: () => sessionRef.current,
-        onRecorded: (reaction) => { applyCoverageInteractionTrace(sessionRef.current, reaction); },
-      }),
-      ...coverageRoutineRuntime,
+      ...coverageTurnRuntime,
     });
     const stage = clarificationTraceStage(clarificationState.current);
     const engineTrace = stage
@@ -820,7 +827,7 @@ export class ChatTurnAssembly {
       session: sessionRef.current,
       presentation,
       engineTrace,
-      ...(coverageRoutineRuntime.effects?.(result) ?? { actions: result.actions }),
+      ...(coverageTurnRuntime.effects?.(result) ?? { actions: result.actions }),
     };
   }
 
@@ -835,7 +842,7 @@ export class ChatTurnAssembly {
       coordination?: ChatTurnAssemblyCoordinationHook;
     },
   ): AsyncIterable<PreparedChatStreamTurnEvent> {
-    const coverageRoutineRuntime = await this.coverageRoutineRuntime(session, {
+    const coverageTurnRuntime = await this.coverageTurnRuntime(session, {
       accountId: input.accountId,
       responseLanguage: input.responseLanguage ?? Promise.resolve(undefined),
       coordination: input.coordination,
@@ -863,11 +870,7 @@ export class ChatTurnAssembly {
         signal: input.coordination?.signal,
         onAssessment: (assessment) => { applyCoverageAssessment(session, assessment); },
       }),
-      coverageReactionRecorder: this.options.coverageAssessorFactory?.createReactionRecorder({
-        getSession: () => session,
-        onRecorded: (reaction) => { applyCoverageInteractionTrace(session, reaction); },
-      }),
-      ...coverageRoutineRuntime,
+      ...coverageTurnRuntime,
     })) {
       if (event.type === "status" || event.type === "chunk") {
         yield event;
@@ -878,7 +881,7 @@ export class ChatTurnAssembly {
         finalPresentation: event.presentation,
         suggestions: event.suggestions,
         engineTrace: event.engineTrace,
-        ...(coverageRoutineRuntime.effects?.(event.result) ?? { actions: event.result.actions }),
+        ...(coverageTurnRuntime.effects?.(event.result) ?? { actions: event.result.actions }),
       };
     }
   }
@@ -924,7 +927,7 @@ export class ChatTurnAssembly {
         : undefined,
       coordination: input.coordination,
     });
-    const coverageRoutineRuntime = await this.coverageRoutineRuntime(sessionRef.current, {
+    const coverageTurnRuntime = await this.coverageTurnRuntime(sessionRef.current, {
       accountId: input.request.accountId,
       responseLanguage: input.responseLanguagePromise,
       coordination: input.coordination,
@@ -959,11 +962,7 @@ export class ChatTurnAssembly {
         signal: input.coordination?.signal,
         onAssessment: (assessment) => { applyCoverageAssessment(sessionRef.current, assessment); },
       }),
-      coverageReactionRecorder: this.options.coverageAssessorFactory?.createReactionRecorder({
-        getSession: () => sessionRef.current,
-        onRecorded: (reaction) => { applyCoverageInteractionTrace(sessionRef.current, reaction); },
-      }),
-      ...coverageRoutineRuntime,
+      ...coverageTurnRuntime,
     })) {
       if (event.type === "status" || event.type === "chunk") {
         yield event;
@@ -977,7 +976,7 @@ export class ChatTurnAssembly {
         engineTrace: stage
           ? this.conversationTraceWithStage(event.engineTrace, stage)
           : event.engineTrace,
-        ...(coverageRoutineRuntime.effects?.(event.result) ?? { actions: event.result.actions }),
+        ...(coverageTurnRuntime.effects?.(event.result) ?? { actions: event.result.actions }),
         session: sessionRef.current,
       };
     }

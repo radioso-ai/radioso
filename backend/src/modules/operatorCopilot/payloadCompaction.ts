@@ -12,12 +12,12 @@ export interface TruncationEntry {
   retainedLength?: number;
 }
 
-export interface CompactionOptions {
+interface CompactionOptions {
   maxStringChars: number;
   maxArrayItems: number;
 }
 
-export interface CompactionResult<T> {
+interface CompactionResult<T> {
   value: T;
   truncation: TruncationEntry[];
 }

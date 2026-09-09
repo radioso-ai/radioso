@@ -18,7 +18,7 @@ interface WebhookRequest extends Request {
   rawBody?: Buffer;
 }
 
-export const extractInboundMessages = (
+const extractInboundMessages = (
   workspaceId: string,
   payload: Record<string, unknown>,
 ): WhatsAppInboundMessage[] => {

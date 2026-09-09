@@ -245,7 +245,7 @@ export const evaluateAssertion = (
   }
 };
 
-export interface AggregatedRunVerdict {
+interface AggregatedRunVerdict {
   status: EvalRunStatus;
   reason: string | null;
   verdicts: AssertionVerdict[];

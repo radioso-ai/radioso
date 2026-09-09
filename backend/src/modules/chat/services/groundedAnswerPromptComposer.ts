@@ -83,15 +83,18 @@ export const composeGroundedAnswerSystemPrompt = (
     : withSteering;
 
   const envelopeBlock = renderPromptTemplate("chat/answer-envelope.md", {});
-  const coverageGuidance = input.answerCoverage
+  const assessedCoverage = input.answerCoverage?.availability === "assessed"
+    ? input.answerCoverage
+    : undefined;
+  const coverageGuidance = assessedCoverage
     ? renderPromptTemplate("chat/answer-coverage-response-guidance.md", {})
     : "";
   const withEnvelope = joinBlocks(coverageGuidance ? joinBlocks(grounded, coverageGuidance) : grounded, envelopeBlock);
   if (!suggestionsExpected) {
     return {
       systemPrompt: withEnvelope,
-      conversationContextPrompt: input.conversationSummary?.trim() || alternatives || input.answerCoverage
-        ? renderConversationContextPrompt(input)
+      conversationContextPrompt: input.conversationSummary?.trim() || alternatives || assessedCoverage
+        ? renderConversationContextPrompt({ ...input, answerCoverage: assessedCoverage })
         : "",
       suggestionsExpected: false,
     };
@@ -109,7 +112,7 @@ export const composeGroundedAnswerSystemPrompt = (
 
   return {
     systemPrompt: joinBlocks(withEnvelope, suggestionBlock),
-    conversationContextPrompt: renderConversationContextPrompt(input),
+    conversationContextPrompt: renderConversationContextPrompt({ ...input, answerCoverage: assessedCoverage }),
     suggestionsExpected: true,
   };
 };

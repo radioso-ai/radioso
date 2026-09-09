@@ -982,6 +982,8 @@ export class ChatService {
           ? { presentation: clarificationTurn.presentation, engineTrace: clarificationTurn.engineTrace, actions: undefined }
           : await this.chatTurnAssembly.renderTurn(session, {
               ...retrievalInput,
+              responseLanguage: responseLanguagePromise,
+              clarification,
               coordination: this.turnAssemblyCoordination(coordination),
             });
         this.checkTurnCancellation(coordination, "rendering");
@@ -989,11 +991,28 @@ export class ChatService {
         const engineTrace = clarificationTurn?.kind === "continue" && clarificationTurn.stage && renderedTurn.engineTrace
           ? this.chatTurnAssembly.conversationTraceWithStage(renderedTurn.engineTrace, clarificationTurn.stage)
           : renderedTurn.engineTrace;
+        const coverageOwnershipHandoff = renderedTurn.handoff
+          ? { reason: "routine_handoff" as const, ...renderedTurn.handoff }
+          : null;
+        const coverageActions = renderedTurn.handoff
+          ? [
+              ...(actions ?? []),
+              buildHandoffNotifyAction({
+                conversationId: session.conversation.id,
+                workspaceId: input.workspaceId,
+                agentId: session.agent.id,
+                userMessageId: session.userMessage.id,
+                reason: "routine_handoff",
+                routineId: renderedTurn.handoff.routineId,
+                stepId: renderedTurn.handoff.stepId,
+              }),
+            ]
+          : actions;
         const retrievalMissHandoff = retrievalMissHandoffForTurn({
           session,
           presentation,
           workspaceId: input.workspaceId,
-          actions,
+          actions: coverageActions,
         });
         this.beginTurnEmission(coordination);
         const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
@@ -1007,10 +1026,27 @@ export class ChatService {
           engineTrace,
           modelCallTrace,
           actions: retrievalMissHandoff.actions,
-          ownershipHandoff: retrievalMissHandoff.ownershipHandoff,
-          clarificationTransition: clarification.store?.getTransition(),
-          commitClarificationState: clarification.store ? () => clarification.store!.commit() : undefined,
+          ownershipHandoff: coverageOwnershipHandoff ?? retrievalMissHandoff.ownershipHandoff,
+          routineStateTransition: renderedTurn.routineStateTransition,
+          pendingDecisionTransition: renderedTurn.pendingDecisionTransition,
+          suspended: renderedTurn.suspended,
+          commitRoutineState: renderedTurn.commitRoutineState,
+          clarificationTransition: renderedTurn.clarificationTransition ?? clarification.store?.getTransition(),
+          commitClarificationState: renderedTurn.commitClarificationState
+            ?? (clarification.store ? () => clarification.store!.commit() : undefined),
         });
+        try {
+          await renderedTurn.commitCoverageReactions?.();
+          if (session.answerCoverageInteractionTrace) {
+            completedTurn.response.interactionTrace = session.answerCoverageInteractionTrace;
+          }
+        } catch {
+          this.logger?.warn({
+            workspaceId: input.workspaceId,
+            conversationId: session.conversation.id,
+            reasonCode: "coverage_reaction_persistence_failed",
+          }, "Answer coverage reaction recording failed after assistant turn commit");
+        }
         assistantMessageId = completedTurn.assistantMessageId;
         await usageReservation.commit();
 
@@ -1499,6 +1535,8 @@ export class ChatService {
       const streamEvents = useSenseCompatiblePath
         ? this.chatTurnAssembly.streamTurn(session, {
             ...retrievalInput,
+            responseLanguage: responseLanguagePromise,
+            clarification,
             coordination: this.turnAssemblyCoordination(coordination),
           })
         : this.chatTurnAssembly.streamPreparedByEngine(session, {
@@ -1623,8 +1661,9 @@ export class ChatService {
         pendingDecisionTransition: coverageRoutineEffects.pendingDecisionTransition,
         suspended: coverageRoutineEffects.suspended,
         commitRoutineState: coverageRoutineEffects.commitRoutineState,
-        clarificationTransition: clarification.store?.getTransition(),
-        commitClarificationState: clarification.store ? () => clarification.store!.commit() : undefined,
+        clarificationTransition: coverageRoutineEffects.clarificationTransition ?? clarification.store?.getTransition(),
+        commitClarificationState: coverageRoutineEffects.commitClarificationState
+          ?? (clarification.store ? () => clarification.store!.commit() : undefined),
       });
       try {
         await coverageRoutineEffects.commitCoverageReactions?.();

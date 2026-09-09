@@ -20,6 +20,14 @@ import {
   stage,
 } from "./traceStages.js";
 
+const routineIdFromClarificationCandidate = (candidate: { payload: unknown }): string | undefined => {
+  const payload = candidate.payload;
+  if (typeof payload !== "object" || payload === null || !("routineId" in payload)) {
+    return undefined;
+  }
+  return typeof payload.routineId === "string" ? payload.routineId : undefined;
+};
+
 /**
  * Carries only the activation boundary that failed. The engine maps this to a
  * safe trace value and must never expose the originating error detail.
@@ -142,6 +150,7 @@ const tryCompletedRoutineReentry = async (
     return {
       sessionId: input.sessionId,
       routineId: completedState.routineId,
+      executionId: completedState.executionId ?? globalThis.crypto.randomUUID(),
       path: [],
       variables: { ...completedState.variables },
       status: "active",
@@ -151,6 +160,7 @@ const tryCompletedRoutineReentry = async (
     return {
       sessionId: input.sessionId,
       routineId: completedState.routineId,
+      executionId: globalThis.crypto.randomUUID(),
       path: [],
       variables: {},
       status: "active",
@@ -260,6 +270,10 @@ const attemptRoutineWithMode = async (
         decision: { selected: [], reason: "routine_activation_clarification" },
         outcomes: [],
         response,
+        routineClarificationRoutineIds: activation.candidates.flatMap((candidate) => {
+          const routineId = routineIdFromClarificationCandidate(candidate);
+          return routineId ? [routineId] : [];
+        }),
         trace: createTrace([
           stage({
             id: "message",

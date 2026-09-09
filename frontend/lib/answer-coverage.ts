@@ -53,10 +53,9 @@ export const normalizeAnswerCoverage = (value: unknown): AnswerCoverageAssessmen
   const originatingTurnId = typeof value.originatingTurnId === 'string' ? value.originatingTurnId : ''
   const originatingRequestId = typeof value.originatingRequestId === 'string' ? value.originatingRequestId : ''
   if (!originatingTurnId || !originatingRequestId) return undefined
-  if (availability === 'assessed' && (
-    !coverage || !reason || typeof value.contextualizedRequest !== 'string'
-    || !originatingTurnId || !originatingRequestId || typeof value.schemaVersion !== 'number'
-  )) {
+  const hasInvalidSchemaVersion = value.schemaVersion !== undefined
+    && (typeof value.schemaVersion !== 'number' || !Number.isInteger(value.schemaVersion) || value.schemaVersion <= 0)
+  if (availability === 'assessed' && (!coverage || !reason || hasInvalidSchemaVersion)) {
     return { availability: 'invalid', originatingTurnId, originatingRequestId }
   }
   return {

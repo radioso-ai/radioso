@@ -203,3 +203,22 @@ round-trip, frontend build, SDK, and MCP OpenAPI checks. No queue payload change
 | FR-007–013 | T004, T014–T017: narrow runtime context, authoring, precedence/suppression, correlation, LLM-composed response. |
 | FR-014–019 | T003, T018–T021: shared persisted projection, buckets, recurrence, evidence authorization, legacy compatibility. |
 | FR-020–022 | T022–T024: recorded diagnostics and trace navigation, not retrospective inference. |
+
+### Inline-comment correction validation
+
+Only an `assessed` coverage result is admitted to answer-composition instructions
+or its untrusted diagnostic context. `failed`, `invalid`, and `not_recorded`
+remain visible in response and history diagnostics but cannot steer visitor-facing
+copy. The browser normalizer accepts an assessed API response without optional
+`contextualizedRequest` or `schemaVersion`, while retaining required originating
+IDs and the positive-integer bound when a schema version is supplied.
+
+Migration 174 widens the reaction trace's routine-definition reference from UUID
+to text with `USING routine_id::TEXT`; it preserves existing UUID values and
+allows opaque routine identifiers. `routine_execution_id` remains UUID. This is
+durable database-only compatibility work: no OpenAPI, SDK, MCP, document-worker,
+or AMQP payload changes were needed.
+
+Focused validation: prompt composer diagnostics gating, frontend wire
+normalization, repository persistence, and a disposable-PostgreSQL pre-migration
+upgrade test that retains a UUID reaction before writing `contact.request`.

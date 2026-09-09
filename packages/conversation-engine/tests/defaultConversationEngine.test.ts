@@ -1088,7 +1088,7 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
   });
 
   it("reenters a completed coverage routine only through the fresh assessed coverage gate", async () => {
-    const completed: RoutineState = { ...activeState, status: "completed" };
+    const completed: RoutineState = { ...activeState, executionId: "completed-run", status: "completed" };
     const input = withRoutine({
       resume: vi.fn(async () => ({ response: { answer: "Support can help." }, nextState: activeState })),
     }, null);
@@ -1118,12 +1118,46 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
       reentryGate: { decide: coverageDecide },
     };
 
+    const record = vi.fn(async () => undefined);
+    input.coverageReactionRecorder = { record };
     await new DefaultConversationEngine().processTurn(input);
 
     expect(preEvidenceDecide).toHaveBeenCalledOnce();
     expect(coverageDecide).toHaveBeenCalledOnce();
-    expect(input.routineRunner?.resume).toHaveBeenCalledWith(expect.objectContaining({ activationTurn: true }));
+    expect(input.routineRunner?.resume).toHaveBeenCalledWith(expect.objectContaining({
+      activationTurn: true,
+      state: expect.objectContaining({
+        executionId: expect.any(String),
+      }),
+    }));
+    expect(vi.mocked(input.routineRunner!.resume).mock.calls[0][0].state.executionId).not.toBe(completed.executionId);
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({
+      reactions: [expect.objectContaining({ routineExecutionId: expect.any(String) })],
+    }));
     expect(input.coverageRoutineActivator.activate).not.toHaveBeenCalled();
+  });
+
+  it("keeps a completed execution identity when reentry reopens that concrete run", async () => {
+    const completed: RoutineState = { ...activeState, executionId: "completed-run", status: "completed" };
+    const runner = vi.fn(async ({ state }: { state: RoutineState }) => ({
+      response: { answer: "Support can help." },
+      nextState: state,
+    }));
+    const input = withRoutine({ resume: runner }, null);
+    input.routineStore = {
+      loadActive: vi.fn(async () => null),
+      loadCompleted: vi.fn(async () => [completed]),
+      save: vi.fn(async () => {}),
+      clear: vi.fn(async () => {}),
+    };
+    input.routineReentryGate = { decide: vi.fn(async () => ({ kind: "resume_existing" as const })) };
+
+    await new DefaultConversationEngine().processTurn(input);
+
+    expect(runner).toHaveBeenCalledWith(expect.objectContaining({
+      activationTurn: true,
+      state: expect.objectContaining({ executionId: "completed-run" }),
+    }));
   });
 
   it("records a bounded failed activation trace without marking coverage evaluation complete", async () => {
@@ -1186,6 +1220,44 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
         decision: "skipped",
         reasonCode: "coverage_activation_not_selected",
       })],
+    }));
+  });
+
+  it("records only the coverage routines actually shown in a clarification as offered", async () => {
+    const input = withRoutine({ resume: vi.fn() }, null);
+    const record = vi.fn(async () => undefined);
+    const candidates = [
+      { id: "choice-a", label: "Consultation", confidence: 0.9, payload: { routineId: "consultation" } },
+      { id: "choice-b", label: "Callback", confidence: 0.8, payload: { routineId: "callback" } },
+    ];
+    input.coverageAssessor = {
+      assess: vi.fn(async () => ({
+        availability: "assessed",
+        coverage: "unanswered",
+        reason: "insufficient_evidence",
+        schemaVersion: 1,
+      })),
+    };
+    input.coverageRoutineActivator = {
+      evaluateCandidates: () => [
+        { routineId: "consultation", decision: "candidate", reasonCode: "coverage_criteria_candidate" },
+        { routineId: "callback", decision: "candidate", reasonCode: "coverage_criteria_candidate" },
+        { routineId: "handoff", decision: "candidate", reasonCode: "coverage_criteria_candidate" },
+      ],
+      activate: vi.fn(async () => ({ kind: "clarify" as const, candidates })),
+    };
+    input.clarifier = { phraseQuestion: vi.fn(async () => "Which would help?") };
+    input.clarificationStore = { save: vi.fn(async () => {}) };
+    input.coverageReactionRecorder = { record };
+
+    await new DefaultConversationEngine().processTurn(input);
+
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({
+      reactions: expect.arrayContaining([
+        expect.objectContaining({ routineId: "consultation", decision: "offered" }),
+        expect.objectContaining({ routineId: "callback", decision: "offered" }),
+        expect.objectContaining({ routineId: "handoff", decision: "skipped" }),
+      ]),
     }));
   });
 

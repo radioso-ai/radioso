@@ -52,13 +52,21 @@ describeIntegration("AnswerCoverageRepository", () => {
       targetMessageId: requestMessageId,
       evaluationState: "evaluated", evaluationIndex: 1, decision: "matched", reasonCode: "coverage_criteria_matched",
     });
+    const uuidRoutineId = randomUUID();
     await repository.recordReaction({
-      assessmentId: first.id, workspaceId, conversationId, reactionKey: "routine:1", routineId: randomUUID(),
+      assessmentId: first.id, workspaceId, conversationId, reactionKey: "routine:uuid", routineId: uuidRoutineId,
       targetMessageId: requestMessageId,
       evaluationState: "suppressed", evaluationIndex: 2, decision: "suppressed", reasonCode: "active_routine",
     });
-    expect((await repository.listByAssessmentId({ workspaceId, assessmentId: first.id })).map((entry) => entry.reactionKey))
-      .toEqual(["directive:1", "routine:1"]);
+    await repository.recordReaction({
+      assessmentId: first.id, workspaceId, conversationId, reactionKey: "routine:opaque", routineId: "contact.request",
+      targetMessageId: requestMessageId,
+      evaluationState: "evaluated", evaluationIndex: 3, decision: "activated", reasonCode: "coverage_criteria_matched",
+    });
+    const reactions = await repository.listByAssessmentId({ workspaceId, assessmentId: first.id });
+    expect(reactions.map((entry) => entry.reactionKey))
+      .toEqual(["directive:1", "routine:uuid", "routine:opaque"]);
+    expect(reactions.map((entry) => entry.routineId).filter(Boolean)).toEqual([uuidRoutineId, "contact.request"]);
     await repository.markInteractionEvaluated({ workspaceId, assessmentId: first.id });
     await expect(repository.findByRequestMessageId({ workspaceId, requestMessageId }))
       .resolves.toMatchObject({ interactionEvaluationState: "evaluated" });

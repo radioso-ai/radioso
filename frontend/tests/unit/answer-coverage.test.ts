@@ -19,6 +19,31 @@ describe('answer coverage wire normalization', () => {
     expect(answerCoverageLabel(value?.coverage)).toBe('Unanswered')
   })
 
+  it('keeps an API-valid assessed verdict when optional composition metadata is absent', () => {
+    expect(normalizeAnswerCoverage({
+      availability: 'assessed',
+      coverage: 'partial',
+      reason: 'insufficient_evidence',
+      originatingTurnId: 'turn-1',
+      originatingRequestId: 'request-1',
+    })).toMatchObject({
+      availability: 'assessed',
+      coverage: 'partial',
+      reason: 'insufficient_evidence',
+    })
+  })
+
+  it('rejects an assessed verdict with an out-of-bounds optional schema version', () => {
+    expect(normalizeAnswerCoverage({
+      availability: 'assessed',
+      coverage: 'answered',
+      reason: 'sufficient_evidence',
+      originatingTurnId: 'turn-1',
+      originatingRequestId: 'request-1',
+      schemaVersion: 0,
+    })?.availability).toBe('invalid')
+  })
+
   it('represents invalid or absent values as unavailable', () => {
     expect(normalizeAnswerCoverage({ availability: 'assessed', coverage: 'made_up' })).toBeUndefined()
     expect(normalizeAnswerCoverage(undefined)).toBeUndefined()

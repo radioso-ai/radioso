@@ -2,7 +2,7 @@ import type { TelemetryService } from "../../../shared/observability/telemetry/t
 import type { EmbeddingBindingResolverPort } from "../../embeddingProfiles/public.js";
 import type { AudiencePulseHistorySource } from "../contracts/history.js";
 import type { TopicRepositoryPort } from "../contracts/topicCensus.js";
-import { CensusService, type CensusFacetSource } from "../services/censusService.js";
+import { CensusService, type CensusFacetSource, type CensusFacetRequeuePort } from "../services/censusService.js";
 import {
   ModelTopicLabelPrivacyAuditGateway,
   type TopicLabelPrivacyAuditInferenceFactory,
@@ -24,6 +24,7 @@ export interface ContextualCensusServiceFactoryDependencies {
   namingInferenceFactory: TopicNamingInferenceFactory;
   privacyAuditInferenceFactory: TopicLabelPrivacyAuditInferenceFactory;
   telemetryService?: Pick<TelemetryService, "emit">;
+  facetRequeue?: CensusFacetRequeuePort;
 }
 
 /**
@@ -56,6 +57,7 @@ export class ContextualCensusServiceFactory implements CensusServiceFactory {
       },
       currentFacetPromptVersion: this.deps.currentFacetPromptVersion,
       telemetryService: this.deps.telemetryService,
+      facetRequeue: this.deps.facetRequeue,
       namingPort: new ModelTopicNamingGateway({
         inferenceFactory: this.deps.namingInferenceFactory,
         workspaceContext,

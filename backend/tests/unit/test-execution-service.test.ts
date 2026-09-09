@@ -322,7 +322,7 @@ describe("TestExecutionService", () => {
   it("self-heals a side stuck running past its lease on a plain detail read, without requiring a client-driven retry", async () => {
     const { service, repository } = setup();
     const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [] });
-    repository.execution!.sides[0]!.state = "running";
+    repository.execution!.sides[0].state = "running";
     repository.execution!.state = "running";
     repository.staleLease = new Date(500);
 
@@ -336,7 +336,7 @@ describe("TestExecutionService", () => {
   it("does not attempt lease recovery on a read once the execution has already settled", async () => {
     const { service, repository } = setup();
     const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [] });
-    repository.execution!.sides[0]!.state = "completed";
+    repository.execution!.sides[0].state = "completed";
     repository.execution!.state = "completed";
 
     await service.detail({ workspaceId, agentId, executionId: execution.id });

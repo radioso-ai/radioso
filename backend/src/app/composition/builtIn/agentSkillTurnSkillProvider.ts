@@ -37,7 +37,7 @@ import { NOTIFY_SKILLS_ADAPTER } from "../../../modules/notify/notifyExecutor.js
 import type { TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 
-export interface RepositoryAgentSkillTurnSkillProviderOptions {
+interface RepositoryAgentSkillTurnSkillProviderOptions {
   agentSkills: Pick<AgentSkillRepositoryPort, "listByAgent">;
   executorRegistry: SkillExecutorRegistry;
   capabilityPolicy: CapabilityPolicy;

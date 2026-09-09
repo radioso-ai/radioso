@@ -11,7 +11,7 @@ const SWEEP_INTERVAL_MS_DEFAULT = 6 * 60 * 60 * 1_000;
 /** Caps one tick's work so a huge first sweep cannot monopolise the worker. */
 const MAX_BATCHES_PER_SWEEP = 25;
 
-export interface TtlRetentionSweepPort {
+interface TtlRetentionSweepPort {
   /** Deletes at most `limit` rows last updated before `cutoff`; returns how many went. */
   deleteBefore(input: { cutoff: Date; limit: number }): Promise<number>;
 }
@@ -32,7 +32,7 @@ interface TtlRetentionLoggerPort {
  * task route has to return a retryable status — a transient deadlock reported as success is a
  * retention window that quietly stops being enforced.
  */
-export type TtlRetentionSweepResult =
+type TtlRetentionSweepResult =
   | { readonly status: "swept"; readonly deleted: number }
   | { readonly status: "skipped"; readonly reason: "disabled" | "in_flight" }
   | { readonly status: "failed"; readonly error: string };

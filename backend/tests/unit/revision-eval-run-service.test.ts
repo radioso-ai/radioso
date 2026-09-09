@@ -55,10 +55,10 @@ describe("RevisionEvalRunService", () => {
       async create(input) { return input; },
       async findByIdempotencyKey() { return null; },
       async find() { return stored; },
-      async claimNext(input) {
+      async claimNext(_input) {
         if (claimed) return "none";
         claimed = true;
-        return { run: stored, side: stored.sides[0]!, evalCase: stored.sides[0]!.cases[0]!, fence: 1 };
+        return { run: stored, side: stored.sides[0], evalCase: stored.sides[0].cases[0], fence: 1 };
       },
       async complete() { return true; },
       async fail(input) { failed.push(input); return true; },
@@ -118,11 +118,11 @@ describe("RevisionEvalRunService", () => {
       async claimNext() {
         if (claimed) return "none";
         claimed = true;
-        return { run: stored, side: stored.sides[0]!, evalCase: stored.sides[0]!.cases[0]!, fence: 1 };
+        return { run: stored, side: stored.sides[0], evalCase: stored.sides[0].cases[0], fence: 1 };
       },
       async complete() {
-        stored.sides[0]!.cases[0]!.state = "completed";
-        stored.sides[0]!.state = "completed";
+        stored.sides[0].cases[0].state = "completed";
+        stored.sides[0].state = "completed";
         stored.state = "completed";
         return true;
       },

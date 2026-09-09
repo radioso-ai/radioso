@@ -2,7 +2,7 @@ import type { AgentRepositoryPort } from "../../db/repositories/agentRepository.
 import { projectInternalAgentConfig, type InternalAgentConfig } from "../../modules/agents/public.js";
 
 /** Live, non-versioned agent settings that remain subject to runtime authorization. */
-export interface LiveAgentConfigReaderPort {
+interface LiveAgentConfigReaderPort {
   find(input: { workspaceId: string; agentId: string }): Promise<InternalAgentConfig | null>;
 }
 

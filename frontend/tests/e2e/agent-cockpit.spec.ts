@@ -1100,6 +1100,7 @@ test('keeps the private test execution and draft inputs across cockpit navigatio
   // header, alongside the independently scrollable conversation body.
   const cardSelector = page.getByRole('combobox', { name: 'Revision 1', exact: true })
   await expect(cardSelector).toHaveCount(1)
+  await expect(page.getByText('Ask a question to test this version.', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Compare versions', exact: true })).toBeVisible()
   await expect(page.getByText('Published v4', { exact: true })).toHaveCount(0)
   await cardSelector.click()

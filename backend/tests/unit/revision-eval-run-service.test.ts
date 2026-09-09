@@ -10,6 +10,7 @@ const agentId = "00000000-0000-4000-8000-000000000002";
 const revisionId = "00000000-0000-4000-8000-000000000003";
 const caseId = "00000000-0000-4000-8000-000000000004";
 const variableId = "00000000-0000-4000-8000-000000000005";
+const idempotencyKey = "revision-eval-start-1";
 const revision = (): AgentRevision => ({ id: revisionId, sourceDraftGeneration: 1, sourceBasePublishedRevisionId: null, createdAt: new Date(), publishedAt: null, publishedVersion: null, snapshot: { customInstruction: "frozen", directives: [], routines: [], contextVariableEnablements: [{ id: "00000000-0000-4000-8000-000000000006", agentId, variableId, source: "pushed", resolverSkillId: null, maxAgeSeconds: null, resolverTimeoutMs: null, surfacing: "always", enabled: true, createdAt: new Date(), updatedAt: new Date() }] } });
 const snapshot = (): EvalSnapshot => ({ id: "00000000-0000-4000-8000-000000000007", workspaceId, sourceConversationId: "00000000-0000-4000-8000-000000000008", sourceMessageId: null, replayTarget: null, fidelity: "full", messages: [], originalInstructionBlock: null, originalModelId: null, originalRetrievalSettings: null, originalAgent: null, originalAgentConfig: null, sourceAgentId: agentId, originalRoutineState: null, originalRetrievalResult: null, capturedAt: new Date().toISOString(), capturedBy: null });
 const evalCase = (): EvalCase => ({ id: caseId, workspaceId, snapshotId: snapshot().id, name: "case", assertions: [], executionMode: "safe_test", status: "pending", lastRunId: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
@@ -18,7 +19,7 @@ describe("RevisionEvalRunService", () => {
   it("freezes candidate, case, snapshot, and validated private values before dispatch", async () => {
     let stored: RevisionEvalRun | null = null;
     const repository: RevisionEvalRepositoryPort = {
-      async create(input) { stored = structuredClone(input); return stored; }, async find() { return stored; },
+      async create(input) { stored = structuredClone(input); return stored; }, async findByIdempotencyKey() { return null; }, async find() { return stored; },
       async claimNext() { return "none"; }, async complete() { return true; }, async fail() { return true; }, async retryFailed() { return false; },
     };
     const sourceCase = evalCase(); const sourceSnapshot = snapshot(); const sourceRevision = revision();
@@ -29,7 +30,7 @@ describe("RevisionEvalRunService", () => {
       contextCatalog: { async get() { return { id: variableId, workspaceId, name: "customer", description: null, valueType: "string", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "always", createdAt: new Date(), updatedAt: new Date() }; } },
       runner: { async executeFrozenRevisionCase() { throw new Error("not dispatched"); } },
     });
-    const run = await service.start({ workspaceId, accountId: null, revisionIds: [revisionId], caseIds: [caseId], testValues: [{ contextVariableId: variableId, value: "private sample" }], mode: "full_assistant", executionPolicy: "safe_test" });
+    const run = await service.start({ workspaceId, accountId: null, revisionIds: [revisionId], caseIds: [caseId], testValues: [{ contextVariableId: variableId, value: "private sample" }], mode: "full_assistant", executionPolicy: "safe_test", idempotencyKey });
     sourceRevision.snapshot.customInstruction = "draft changed";
     sourceCase.assertions = [{ type: "answer_contains", pattern: "new", matchMode: "substring" }];
     sourceSnapshot.sourceAgentId = "00000000-0000-4000-8000-000000000009";
@@ -47,11 +48,12 @@ describe("RevisionEvalRunService", () => {
     let claimed = false;
     const stored: RevisionEvalRun = {
       id: runId, workspaceId, agentId, actorAccountId: null, mode: "full_assistant", executionPolicy: "safe_test",
-      testValues: [], state: "pending", createdAt: new Date(),
+      testValues: [], state: "pending", createdAt: new Date(), idempotencyKey,
       sides: [{ id: sideId, ordinal: 0, revisionId, revision: revision(), state: "pending", cases: [{ id: caseRowId, caseId, frozenCase: evalCase(), frozenSnapshot: snapshot(), state: "pending", outcome: "unavailable", result: null, activeAttemptId: null, activeFence: null, leaseExpiresAt: null }] }],
     };
     const repository: RevisionEvalRepositoryPort = {
       async create(input) { return input; },
+      async findByIdempotencyKey() { return null; },
       async find() { return stored; },
       async claimNext(input) {
         if (claimed) return "none";
@@ -80,7 +82,7 @@ describe("RevisionEvalRunService", () => {
   it("records a started audit event when a revision eval run is created, mirroring agent.test_execution.started", async () => {
     const audit: Array<{ eventType: string; eventStatus: string; metadata: Record<string, unknown> }> = [];
     const repository: RevisionEvalRepositoryPort = {
-      async create(input) { return input; }, async find() { return null; },
+      async create(input) { return input; }, async findByIdempotencyKey() { return null; }, async find() { return null; },
       async claimNext() { return "none"; }, async complete() { return true; }, async fail() { return true; }, async retryFailed() { return false; },
     };
     const service = new RevisionEvalRunService({
@@ -92,7 +94,7 @@ describe("RevisionEvalRunService", () => {
       audit: { async record(input) { audit.push(input); } },
     });
 
-    await service.start({ workspaceId, accountId: "account-1", revisionIds: [revisionId], caseIds: [caseId], testValues: [], mode: "full_assistant", executionPolicy: "safe_test" });
+    await service.start({ workspaceId, accountId: "account-1", revisionIds: [revisionId], caseIds: [caseId], testValues: [], mode: "full_assistant", executionPolicy: "safe_test", idempotencyKey });
 
     expect(audit).toHaveLength(1);
     expect(audit[0]).toMatchObject({ eventType: "agent.revision_eval_run.started", eventStatus: "success" });
@@ -104,13 +106,14 @@ describe("RevisionEvalRunService", () => {
     const caseRowId = "00000000-0000-4000-8000-00000000000f";
     const stored: RevisionEvalRun = {
       id: runId, workspaceId, agentId, actorAccountId: null, mode: "full_assistant", executionPolicy: "safe_test",
-      testValues: [], state: "pending", createdAt: new Date(),
+      testValues: [], state: "pending", createdAt: new Date(), idempotencyKey,
       sides: [{ id: sideId, ordinal: 0, revisionId, revision: revision(), state: "pending", cases: [{ id: caseRowId, caseId, frozenCase: evalCase(), frozenSnapshot: snapshot(), state: "pending", outcome: "unavailable", result: null, activeAttemptId: null, activeFence: null, leaseExpiresAt: null }] }],
     };
     let claimed = false;
     const audit: Array<{ eventType: string; eventStatus: string; metadata: Record<string, unknown> }> = [];
     const repository: RevisionEvalRepositoryPort = {
       async create(input) { return input; },
+      async findByIdempotencyKey() { return null; },
       async find() { return stored; },
       async claimNext() {
         if (claimed) return "none";

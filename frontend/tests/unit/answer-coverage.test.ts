@@ -5,6 +5,7 @@ import {
   answerCoverageOutcomePresentation,
   normalizeAnswerCoverage,
   normalizeAnswerCoverageInteractionTrace,
+  compatibleAnswerCoverageReasons,
 } from '@/lib/answer-coverage'
 
 describe('answer coverage wire normalization', () => {
@@ -42,6 +43,13 @@ describe('answer coverage wire normalization', () => {
       originatingRequestId: 'request-1',
       schemaVersion: 0,
     })?.availability).toBe('invalid')
+  })
+
+  it('uses the backend any-compatible-coverage rule for reason choices', () => {
+    expect(compatibleAnswerCoverageReasons(['answered', 'partial']))
+      .toEqual(['sufficient_evidence', 'insufficient_evidence', 'conflicting_evidence', 'intentional_scope_boundary'])
+    expect(compatibleAnswerCoverageReasons(['unanswered', 'unclear']))
+      .toEqual(['insufficient_evidence', 'conflicting_evidence', 'intentional_scope_boundary', 'ambiguous_request'])
   })
 
   it('represents invalid or absent values as unavailable', () => {

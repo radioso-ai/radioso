@@ -52,11 +52,11 @@ test("directive coverage criteria round-trip through the authored API payload", 
   await openDirectives(page);
 
   await page.getByRole("button", { name: "Edit explain-attendance-gap" }).click();
-  await expect(page.getByRole("checkbox", { name: "unanswered" })).toHaveAttribute("aria-checked", "true");
-  await expect(page.getByRole("checkbox", { name: "insufficient evidence" })).toHaveAttribute("aria-checked", "true");
-  await page.getByRole("checkbox", { name: "unanswered" }).click();
-  await page.getByRole("checkbox", { name: "partial" }).click();
-  await page.getByRole("checkbox", { name: "insufficient evidence" }).click();
+  await expect(page.getByRole("checkbox", { name: "unanswered", exact: true })).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByRole("checkbox", { name: "insufficient evidence", exact: true })).toHaveAttribute("aria-checked", "true");
+  await page.getByRole("checkbox", { name: "unanswered", exact: true }).click();
+  await page.getByRole("checkbox", { name: "partial", exact: true }).click();
+  await page.getByRole("checkbox", { name: "insufficient evidence", exact: true }).click();
   await page.getByRole("checkbox", { name: "conflicting evidence" }).click();
   await page.getByRole("button", { name: "Save directive" }).click();
 
@@ -67,14 +67,14 @@ test("directive coverage criteria round-trip through the authored API payload", 
     body: {
       coverageCriteria: {
         coverage: ["partial"],
-        reasons: ["conflicting_evidence"],
+        reasons: ["insufficient_evidence", "conflicting_evidence"],
       },
     },
   });
 
   await page.reload();
   await page.getByRole("button", { name: "Edit explain-attendance-gap" }).click();
-  await expect(page.getByRole("checkbox", { name: "partial" })).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByRole("checkbox", { name: "partial", exact: true })).toHaveAttribute("aria-checked", "true");
   await expect(page.getByRole("checkbox", { name: "conflicting evidence" })).toHaveAttribute("aria-checked", "true");
   await page.getByRole("checkbox", { name: "conflicting evidence" }).click();
   await page.getByRole("button", { name: "Save directive" }).click();
@@ -83,12 +83,12 @@ test("directive coverage criteria round-trip through the authored API payload", 
   expect(directiveUpdates[1]).toMatchObject({
     method: "PATCH",
     directiveId,
-    body: { coverageCriteria: { coverage: ["partial"] } },
+    body: { coverageCriteria: { coverage: ["partial"], reasons: ["insufficient_evidence"] } },
   });
 
   await page.reload();
   await page.getByRole("button", { name: "Edit explain-attendance-gap" }).click();
-  await page.getByRole("checkbox", { name: "partial" }).click();
+  await page.getByRole("checkbox", { name: "partial", exact: true }).click();
   await page.getByRole("button", { name: "Save directive" }).click();
 
   await expect.poll(() => directiveUpdates.length).toBe(3);
@@ -1407,4 +1407,41 @@ test("a directive instruction keeps the lines its author wrote", async ({ page }
   const reopened = page.getByLabel("Instruction");
   await expect(reopened).toContainText("Answer in two sentences.");
   await expect(reopened).toContainText("Then offer to connect them with support.");
+});
+
+test("directive coverage reasons require a compatible selected status", async ({ page }) => {
+  const directiveUpdates: Array<{ method: "POST" | "PATCH" | "DELETE"; directiveId?: string; body?: unknown }> = [];
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { directiveUpdates });
+  await openDirectives(page);
+
+  await page.getByRole("button", { name: "New directive" }).click();
+  await page.getByLabel("Name").fill("coverage-compatible-reasons");
+  await fillInstruction(page, "Explain the coverage limitation.");
+
+  const sufficient = page.getByRole("checkbox", { name: "sufficient evidence", exact: true });
+  const insufficient = page.getByRole("checkbox", { name: "insufficient evidence", exact: true });
+  await expect(sufficient).toBeDisabled();
+  await expect(insufficient).toBeDisabled();
+
+  await page.getByRole("checkbox", { name: "answered", exact: true }).click();
+  await expect(sufficient).toBeEnabled();
+  await expect(insufficient).toBeDisabled();
+  await sufficient.click();
+  await expect(sufficient).toHaveAttribute("aria-checked", "true");
+
+  await page.getByRole("checkbox", { name: "answered", exact: true }).click();
+  await expect(sufficient).toBeDisabled();
+  await expect(sufficient).toHaveAttribute("aria-checked", "false");
+
+  await page.getByRole("checkbox", { name: "partial", exact: true }).click();
+  await expect(sufficient).toBeDisabled();
+  await expect(insufficient).toBeEnabled();
+  await page.getByRole("button", { name: "Save directive" }).click();
+
+  await expect.poll(() => directiveUpdates.length).toBe(1);
+  expect(directiveUpdates[0]).toMatchObject({
+    method: "POST",
+    body: { coverageCriteria: { coverage: ["partial"] } },
+  });
 });

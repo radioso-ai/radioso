@@ -2446,6 +2446,7 @@ describe("chat service streaming", () => {
     handoffAndAwaitingDecision?: boolean;
     failReactionRecord?: boolean;
     senseCompatible?: boolean;
+    clarify?: boolean;
     assistantTurnPersistence?: ChatServiceOptions["assistantTurnPersistence"];
   } = {}) => {
     const assessment: Extract<AnswerCoverageAssessment, { availability: "assessed" }> = {
@@ -2466,6 +2467,7 @@ describe("chat service streaming", () => {
       createdAt: new Date("2026-01-01T00:00:00.000Z"),
     };
     const persistedReactions: Parameters<ConversationCoverageReactionRecorder["record"]>[0][] = [];
+    const pendingClarifications: unknown[] = [];
     const coverageAssessorFactory = {
       create: ({ onAssessment }: {
         onAssessment?: (input: {
@@ -2499,7 +2501,17 @@ describe("chat service streaming", () => {
         activator: { activate: async () => null },
         coverageActivator: {
           evaluateCandidates: () => [{ routineId: "coverage.follow-up", decision: "candidate" as const, reasonCode: "coverage_criteria_candidate" }],
-          activate: async () => ({ kind: "activate" as const, routineId: "coverage.follow-up" }),
+          activate: async () => input.clarify
+            ? {
+                kind: "clarify" as const,
+                candidates: [{
+                  id: "coverage-choice",
+                  label: "Arrange a consultation",
+                  confidence: 0.8,
+                  payload: { routineId: "coverage.follow-up" },
+                }],
+              }
+            : ({ kind: "activate" as const, routineId: "coverage.follow-up" }),
         },
         runner: {
           resume: async ({ state }) => ({
@@ -2550,10 +2562,21 @@ describe("chat service streaming", () => {
           },
         }),
       },
-      input.senseCompatible ? { detect: async () => [] } : undefined, undefined, undefined,
+      input.senseCompatible ? { detect: async () => [] } : undefined, undefined,
+      input.clarify ? {
+        clarifier: {
+          phraseQuestion: async () => "Would you like me to arrange a consultation?",
+          mapReply: async () => ({ kind: "chosen" as const, id: "coverage-choice" }),
+        },
+        clarificationStore: {
+          loadPending: async () => null,
+          save: async (pending) => { pendingClarifications.push(pending); },
+          clear: async () => {},
+        },
+      } : undefined,
       coverageAssessorFactory,
     );
-    return { service, persistedReactions, routineStore };
+    return { service, persistedReactions, routineStore, pendingClarifications };
   };
 
   it("returns the evaluated coverage interaction trace only after a coverage routine commits in nonstream and stream paths", async () => {
@@ -2604,6 +2627,24 @@ describe("chat service streaming", () => {
     });
     expect(coverage.routineStore.save).toHaveBeenCalledOnce();
     expect(coverage.persistedReactions).toHaveLength(1);
+  });
+
+  it.each([false, true])("renders and persists a coverage clarification through the public %s ChatService path", async (senseCompatible) => {
+    const coverage = coverageRoutineService({ senseCompatible, clarify: true });
+    const response = await coverage.service.answer({
+      workspaceId: "workspace-1",
+      query: "Please arrange a consultation.",
+      stream: false,
+    });
+
+    expect(response.answer).toBe("Would you like me to arrange a consultation?");
+    expect(coverage.pendingClarifications).toEqual([
+      expect.objectContaining({
+        source: "routine_activation",
+        candidates: [expect.objectContaining({ id: "coverage-choice" })],
+        status: "pending",
+      }),
+    ]);
   });
 
   it.each([false, true])("forwards coverage handoff and approval effects through the public sense-compatible %s path", async (stream) => {

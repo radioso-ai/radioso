@@ -67,6 +67,8 @@ interface RunPreparedChatTurnWithConversationEngineInput {
   coverageRoutineActivator?: ConversationCoverageRoutineActivator;
   routineStore?: ConversationRoutineStore;
   routineRunner?: ConversationRoutineRunner;
+  clarifier?: ConversationClarifier;
+  clarificationStore?: ConversationClarificationStore;
 }
 
 interface RunPreparedChatTurnWithConversationEngineResult {
@@ -165,6 +167,8 @@ export const runPreparedChatTurnWithConversationEngine = async (
     coverageRoutineActivator: input.coverageRoutineActivator,
     routineStore: input.routineStore,
     routineRunner: input.routineRunner,
+    clarifier: input.clarifier,
+    clarificationStore: input.clarificationStore,
     selector: {
       async select() {
         const { decision } = input.turnSkillSelector.select(readSession());
@@ -199,7 +203,7 @@ export const runPreparedChatTurnWithConversationEngine = async (
   });
 
   const result = await input.engine.processTurn(processTurnInput);
-  if (!rendered && result.routineExecution) {
+  if (!rendered && (result.routineExecution || result.routineClarificationRoutineIds)) {
     rendered = presentRoutineRenderableAnswer(
       input.chatAnswerPresenter,
       result.response,
@@ -246,6 +250,8 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
     coverageRoutineActivator: input.coverageRoutineActivator,
     routineStore: input.routineStore,
     routineRunner: input.routineRunner,
+    clarifier: input.clarifier,
+    clarificationStore: input.clarificationStore,
     progress: {
       report({ phase }) {
         if (input.signal?.aborted) {
@@ -364,7 +370,7 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
         }
         const result = event.result;
         const streamResult = streamState.result;
-        const presentation = streamResult?.finalPresentation ?? (result.routineExecution
+        const presentation = streamResult?.finalPresentation ?? (result.routineExecution || result.routineClarificationRoutineIds
           ? presentRoutineRenderableAnswer(
               input.chatAnswerPresenter,
               result.response,

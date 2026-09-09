@@ -305,17 +305,6 @@ export class ChatSessionPreparer {
     if (conversation?.agentId && conversation.agentId !== resolvedLiveAgent.id) {
       throw notFound("Conversation not found");
     }
-    const revisionResolved = await timed("agentRevision", () =>
-      this.resolveRuntimeRevision({
-        workspaceId: input.workspaceId,
-        conversation,
-        agent: resolvedLiveAgent,
-        trustedTestRunner,
-        trustedHistoricalReplay,
-        preResolvedRevision: options.preResolvedRevision,
-      }));
-    const agent = revisionResolved.agent;
-    const effectiveVerifiedCustomerId = input.verifiedCustomerId ?? conversation?.verifiedCustomerId ?? null;
     const history = options.preResolvedHistory ?? (conversation
       ? await timed("history", () => this.messageRepository.listRecentByConversationId(
           input.workspaceId,
@@ -323,6 +312,18 @@ export class ChatSessionPreparer {
           RETRIEVAL_BEHAVIOR.rewriteConversationContextMaxMessages,
         ))
       : []);
+    const revisionResolved = await timed("agentRevision", () =>
+      this.resolveRuntimeRevision({
+        workspaceId: input.workspaceId,
+        conversation,
+        agent: resolvedLiveAgent,
+        trustedTestRunner,
+        trustedHistoricalReplay,
+        conversationHasHistory: history.length > 0,
+        preResolvedRevision: options.preResolvedRevision,
+      }));
+    const agent = revisionResolved.agent;
+    const effectiveVerifiedCustomerId = input.verifiedCustomerId ?? conversation?.verifiedCustomerId ?? null;
     const [rewriteContinuityState, conversationSummary] = await Promise.all([
       conversation
         ? this.loadRewriteContinuityState(input.workspaceId, conversation.id)
@@ -333,7 +334,7 @@ export class ChatSessionPreparer {
           ? loadConversationSummaryText(this.conversationSummaryStore, conversation.id, this.logger)
           : Promise.resolve(undefined),
     ]);
-    const persistedConversation =
+    let persistedConversation =
       conversation ?? await this.conversationRepository.create(
         input.workspaceId,
         agent.id,
@@ -348,6 +349,17 @@ export class ChatSessionPreparer {
           ...(trustedTestRunner ? { purpose: "operator_test" as const } : {}),
         },
       );
+    if (conversation && !conversation.agentRevisionId && revisionResolved.revisionId) {
+      if (!this.conversationRepository.bindAgentRevision) {
+        throw new Error("conversation_revision_binding_unavailable");
+      }
+      persistedConversation = await this.conversationRepository.bindAgentRevision({
+        conversationId: conversation.id,
+        workspaceId: input.workspaceId,
+        agentId: agent.id,
+        agentRevisionId: revisionResolved.revisionId,
+      }) ?? conversation;
+    }
     if (!conversation) {
       this.workspaceInvalidationPublisher?.enqueue(input.workspaceId, ["conversation.created"]);
     }
@@ -442,6 +454,7 @@ export class ChatSessionPreparer {
     agent: AgentRecord;
     trustedTestRunner: boolean;
     trustedHistoricalReplay: boolean;
+    conversationHasHistory: boolean;
     preResolvedRevision?: AgentRevision;
   }): Promise<{
     agent: AgentRecord;
@@ -472,7 +485,7 @@ export class ChatSessionPreparer {
         allowCandidate: input.trustedTestRunner,
       });
     }
-    if (input.conversation) {
+    if (input.conversation && input.conversationHasHistory) {
       // Migration 171 binds attributable legacy conversations to their rollout
       // baseline. A null here is therefore not permission to select today's
       // published release: that would rewrite an ongoing conversation's behavior.

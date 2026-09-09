@@ -20997,7 +20997,7 @@ paths:
       summary: Read the assistant logo image
       description: Dashboard session only; bearer API tokens are rejected. The optional workspaceId query selects the workspace for browser image requests.
       operationId: getAgentAssistantLogo
-      security: *a64
+      security: *a67
       parameters:
         - schema:
             type: string

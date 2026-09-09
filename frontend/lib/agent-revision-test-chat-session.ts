@@ -25,6 +25,8 @@ export type AgentRevisionTestChatSession = {
   contextVariables: ContextVariable[]
   valueInputs: Record<string, string>
   valueError: string | null
+  /** Revision fetch failures are cached separately from derived field validation errors. */
+  revisionValueError?: string | null
   isSending: boolean
   isStarting: boolean
   isRunningEvals: boolean

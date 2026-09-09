@@ -39,6 +39,7 @@ import { getAgentOperatorLabel } from '@/lib/agent-label'
 import { getLastSelectedAgentId, setLastSelectedAgentId } from '@/lib/agent-selection'
 import { agentChannelCredentialsApi } from '@/lib/api-agent-channel-credentials'
 import { slackApi } from '@/lib/api-slack'
+import { connectorsApi } from '@/lib/api-connectors'
 import { resolveAgentChannelCatalog, type AgentChannelCatalogId } from '@/lib/agent-channel-catalog'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -192,7 +193,8 @@ export function AgentAreaSubNav({ accountId, routeState }: { accountId: string; 
       agentChannelCredentialsApi.list(selectedAgentId, 'mcp'),
       slackApi.getInstallStatus(activeWorkspaceId, selectedAgentId),
       slackApi.listBindings(activeWorkspaceId, selectedAgentId),
-    ]).then(([general, rest, mcp, slack, bindings]) => {
+      connectorsApi.get('whatsapp'),
+    ]).then(([general, rest, mcp, slack, bindings, whatsappConnector]) => {
       if (!active) return
       const generalSettings = general.status === 'fulfilled' ? general.value : null
       const restCredentials = rest.status === 'fulfilled' ? rest.value.credentials.filter((credential) => credential.status === 'active') : []
@@ -200,6 +202,7 @@ export function AgentAreaSubNav({ accountId, routeState }: { accountId: string; 
       const slackStatus = slack.status === 'fulfilled' ? slack.value : null
       const slackBindings = bindings.status === 'fulfilled' ? bindings.value.bindings : []
       const slackBound = slackBindings.some((binding) => binding.answeringAgentId === selectedAgentId)
+      const whatsapp = whatsappConnector.status === 'fulfilled' ? whatsappConnector.value : null
       setChannelCatalog(resolveAgentChannelCatalog({
         webChatEnabled: Boolean(generalSettings?.anonymousChatEnabled || generalSettings?.websiteEmbedEnabled),
         apiCredentialCount: restCredentials.length,
@@ -207,6 +210,9 @@ export function AgentAreaSubNav({ accountId, routeState }: { accountId: string; 
         slackConfigured: slackBound,
         slackConnected: slackStatus?.status === 'connected',
         slackBound,
+        whatsappAvailable: whatsappConnector.status === 'fulfilled',
+        whatsappConfigured: whatsapp?.enabled ?? false,
+        whatsappError: Boolean(whatsapp?.errorStatus),
       }))
     })
     return () => { active = false }

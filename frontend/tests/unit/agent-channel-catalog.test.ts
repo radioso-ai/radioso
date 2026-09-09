@@ -11,6 +11,9 @@ describe('agent channel catalog', () => {
       slackConfigured: true,
       slackConnected: false,
       slackBound: true,
+      whatsappAvailable: false,
+      whatsappConfigured: false,
+      whatsappError: false,
     })).toEqual([
       { id: 'web-chat', status: 'enabled', statusLabel: 'On' },
       { id: 'api-channel', status: 'active', statusLabel: 'Active' },
@@ -26,6 +29,9 @@ describe('agent channel catalog', () => {
       slackConfigured: false,
       slackConnected: false,
       slackBound: false,
+      whatsappAvailable: false,
+      whatsappConfigured: false,
+      whatsappError: false,
     })).toEqual([{ id: 'web-chat', status: 'enabled', statusLabel: 'On' }])
   })
 
@@ -37,6 +43,47 @@ describe('agent channel catalog', () => {
       slackConfigured: false,
       slackConnected: false,
       slackBound: false,
+      whatsappAvailable: false,
+      whatsappConfigured: false,
+      whatsappError: false,
     })).toEqual([])
+  })
+
+  it('shows an available WhatsApp connector and reflects configured or error status', () => {
+    expect(resolveAgentChannelCatalog({
+      webChatEnabled: false,
+      apiCredentialCount: 0,
+      mcpCredentialCount: 0,
+      slackConfigured: false,
+      slackConnected: false,
+      slackBound: false,
+      whatsappAvailable: true,
+      whatsappConfigured: false,
+      whatsappError: false,
+    })).toEqual([{ id: 'whatsapp-channel', status: 'available', statusLabel: 'Available' }])
+
+    expect(resolveAgentChannelCatalog({
+      webChatEnabled: false,
+      apiCredentialCount: 0,
+      mcpCredentialCount: 0,
+      slackConfigured: false,
+      slackConnected: false,
+      slackBound: false,
+      whatsappAvailable: true,
+      whatsappConfigured: true,
+      whatsappError: false,
+    })).toEqual([{ id: 'whatsapp-channel', status: 'active', statusLabel: 'Active' }])
+
+    expect(resolveAgentChannelCatalog({
+      webChatEnabled: false,
+      apiCredentialCount: 0,
+      mcpCredentialCount: 0,
+      slackConfigured: false,
+      slackConnected: false,
+      slackBound: false,
+      whatsappAvailable: true,
+      whatsappConfigured: true,
+      whatsappError: true,
+    })).toEqual([{ id: 'whatsapp-channel', status: 'attention', statusLabel: 'Needs setup' }])
   })
 })

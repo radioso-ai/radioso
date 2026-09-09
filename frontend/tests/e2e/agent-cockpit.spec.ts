@@ -25,6 +25,8 @@ const clickTestChatAction = async (page: Page, label: string) => {
   await testChatMenuItem(page, label).click()
 }
 
+const PUBLISH_BODY_KEYS = new Set(['expectedDraftGeneration', 'expectedPublishedRevisionId', 'idempotencyKey'])
+
 const candidateId = '11111111-1111-4111-8111-111111111111'
 const publishedId = '22222222-2222-4222-8222-222222222222'
 const caseId = '33333333-3333-4333-8333-333333333333'
@@ -255,10 +257,16 @@ async function installCockpitMocks(page: Page, options: CockpitMockOptions = {})
     } } })
   })
   await page.route(new RegExp(`/backend/api/v1/agents/${defaultAgentId}/revisions/${candidateId}/publish$`), async (route) => {
-    options.requestBodies?.push(route.request().postDataJSON())
+    const body = route.request().postDataJSON() as Record<string, unknown> | null
+    options.requestBodies?.push(body)
     publicationAttempts += 1
     if (options.failFirstPublish && publicationAttempts === 1) {
       await route.fulfill({ status: 503, json: { error: { message: 'Publication timed out' } } })
+      return
+    }
+    // The endpoint validates a strict body; mirror that so a widened client request fails here too.
+    if (Object.keys(body ?? {}).some((key) => !PUBLISH_BODY_KEYS.has(key))) {
+      await route.fulfill({ status: 400, json: { error: { message: 'Invalid request body' } } })
       return
     }
     await route.fulfill({ json: { publication: { id: 'publication-1', revisionId: candidateId, publishedAt: nowIso, idempotentReplay: false }, state: { ...revisionState, status: 'draft_clean', publishedRevision: candidate } } })
@@ -794,20 +802,22 @@ test('reviews full scoped changes and publishes the selected candidate with a fr
   await expect(page.getByRole('dialog')).toContainText('After')
   await page.getByRole('button', { name: 'Publish revision' }).click()
 
-  expect(requestBodies).toContainEqual(expect.objectContaining({
+  await expect(page.getByRole('dialog')).toBeHidden()
+  expect(requestBodies).toContainEqual({
     expectedDraftGeneration: 8,
     expectedPublishedRevisionId: publishedId,
     idempotencyKey: expect.stringMatching(/^[0-9a-f-]{36}$/),
-  }))
+  })
 })
 
-test('keeps Review & publish available for a permitted clean saved draft', async ({ page }) => {
+test('offers no publication for a clean saved draft that already matches the published revision', async ({ page }) => {
   await installCockpitMocks(page, {
     revisionState: { ...revisionState, status: 'draft_clean' },
   })
   await page.goto(testUrl)
 
-  await expect(page.getByRole('button', { name: 'Review & publish', exact: true })).toBeVisible()
+  await expect(page.getByText('Draft matches published')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Review & publish', exact: true })).toBeDisabled()
 })
 
 test('shows the enabled Italian fallback greeting before the first message', async ({ page }) => {

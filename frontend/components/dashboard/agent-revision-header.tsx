@@ -6,7 +6,7 @@ import Link from 'next/link'
 
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { agentRevisionsApi, type AgentRevisionDetail, type AgentRevisionState } from '@/lib/api-agent-revisions'
+import { agentRevisionsApi, type AgentRevisionDetail, type AgentRevisionState, type PublishRevisionCommand } from '@/lib/api-agent-revisions'
 import { contextVariablesApi } from '@/lib/api-context-variables'
 import type { ContextVariable } from '@/lib/api-types'
 
@@ -14,15 +14,13 @@ const statusLabel = (state: AgentRevisionState) => {
   if (state.status === 'unpublished') return 'Private until first publish'
   if (state.status === 'draft_dirty') return 'Draft changes'
   if (state.status === 'published_changed_since_draft') return 'Published changed; review draft'
-  return null
+  return 'Draft matches published'
 }
 
-type PublicationCommand = {
-  revisionId: string
-  expectedDraftGeneration: number
-  expectedPublishedRevisionId: string | null
-  idempotencyKey: string
-}
+/** A clean saved draft holds the published scoped authoring, so publishing it would allocate a version nobody can tell apart from the live one. */
+const hasPublishableChanges = (state: AgentRevisionState) => state.status !== 'draft_clean'
+
+type PublicationCommand = PublishRevisionCommand & { revisionId: string }
 
 const valueLabel = (value: unknown, fallback: string) => {
   if (value && typeof value === 'object') {
@@ -108,7 +106,7 @@ export function AgentRevisionHeader({
   }, [agentId, loadState])
 
   const review = async () => {
-    if (!state || reviewing || canSaveDraft) return
+    if (!state || reviewing || canSaveDraft || !hasPublishableChanges(state)) return
     const requestGeneration = ++agentRequestGeneration.current
     setReviewing(true)
     try {
@@ -156,7 +154,7 @@ export function AgentRevisionHeader({
     </div>
     <div className="flex flex-wrap items-center gap-2">
       {canSaveDraft ? <Button type="button" size="sm" variant="outline" disabled={saveState === 'saving'} onClick={() => window.dispatchEvent(new CustomEvent('radioso:save-agent-draft', { detail: { agentId } }))}>Save draft</Button> : null}
-      {!canSaveDraft && state?.canPublish ? <Button type="button" size="sm" onClick={() => void review()} disabled={reviewing} title="Review saved draft before publishing">{reviewing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Review &amp; publish</Button> : null}
+      {!canSaveDraft && state?.canPublish ? <Button type="button" size="sm" onClick={() => void review()} disabled={reviewing || !hasPublishableChanges(state)} title={hasPublishableChanges(state) ? 'Review saved draft before publishing' : 'The saved draft already matches the published revision'}>{reviewing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Review &amp; publish</Button> : null}
     </div>
     {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
     <Dialog open={Boolean(detail)} onOpenChange={(open) => { if (!open) { setDetail(null); setPublicationCommand(null) } }}><DialogContent className="max-h-[calc(100vh-2rem)] max-w-2xl overflow-hidden"><DialogHeader><DialogTitle>Review draft publication</DialogTitle><DialogDescription>{detail?.label} is immutable. Publishing changes the revision used for new conversations; existing conversations keep their current revision.</DialogDescription></DialogHeader>{error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}{detail ? <div className="max-h-[60vh] space-y-3 overflow-y-auto break-words pr-1 text-sm"><section className="rounded-md bg-muted/40 p-3"><p className="font-medium">What changes</p><ul className="mt-1 list-disc space-y-1 pl-4 text-muted-foreground"><li>Only saved draft instructions, directives, routines, and context enablements are included.</li><li>Live channel, skill, name, model, answer, and branding settings are not included.</li></ul></section><section><p className="font-medium">Custom instructions</p>{detail.scopedChanges.customInstruction.changed ? <div className="mt-1 space-y-2 text-xs"><div className="max-h-28 overflow-auto whitespace-pre-wrap rounded border bg-muted/40 p-2"><p className="mb-1 font-medium text-muted-foreground">Before</p>{detail.scopedChanges.customInstruction.before ?? 'None'}</div><div className="max-h-28 overflow-auto whitespace-pre-wrap rounded border p-2"><p className="mb-1 font-medium text-muted-foreground">After</p>{detail.scopedChanges.customInstruction.after ?? 'None'}</div></div> : <p className="text-muted-foreground">Unchanged</p>}</section><section><p className="font-medium">Directives</p><ul className="space-y-2">{detail.scopedChanges.directives.length ? detail.scopedChanges.directives.map((change) => <li key={`${change.id}-${change.change}`}><span className="font-medium">{valueLabel(change.after ?? change.before, change.id)}</span> ({change.change})<ChangeDetail before={change.before} after={change.after} /></li>) : <li className="text-muted-foreground">Unchanged</li>}</ul></section><section><p className="font-medium">Routines</p><ul className="space-y-2">{detail.scopedChanges.routines.length ? detail.scopedChanges.routines.map((change) => <li key={`${change.definitionId}-${change.change}`}><span className="font-medium">{valueLabel(change.after ?? change.before, change.definitionId)}</span> ({change.change})<ChangeDetail before={change.before} after={change.after} /></li>) : <li className="text-muted-foreground">Unchanged</li>}</ul></section><section><p className="font-medium">Context selections</p><ul className="space-y-2">{detail.scopedChanges.contextVariableEnablements.length ? detail.scopedChanges.contextVariableEnablements.map((change) => <li key={`${change.contextVariableId}-${change.change}`}><span className="font-medium">{catalog.find((variable) => variable.id === change.contextVariableId)?.name ?? change.contextVariableId}</span> ({change.change})<ChangeDetail before={change.before} after={change.after} /></li>) : <li className="text-muted-foreground">Unchanged</li>}</ul></section><section className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm"><p className="font-medium">Evidence for this candidate</p><p className="mt-1 text-muted-foreground">No evidence loaded for this revision. <Link className="underline" href={testChatHref}>Test in Test Chat</Link>; optional tests never block publication.</p></section>{detail.dependencyWarnings.map((warning) => <p key={warning.code} className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-amber-900 dark:text-amber-100">{warning.message}</p>)}</div> : null}<DialogFooter><Button variant="outline" onClick={() => { setDetail(null); setPublicationCommand(null) }} disabled={publishing}>Cancel</Button><Button onClick={() => void publish()} disabled={publishing}>{publishing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Publish revision</Button></DialogFooter></DialogContent></Dialog>

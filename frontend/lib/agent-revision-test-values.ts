@@ -1,15 +1,15 @@
-export type RevisionTestValueVariable = {
+type RevisionTestValueVariable = {
   id: string
   name: string
   valueType: 'string' | 'json'
 }
 
-export type RevisionTestValue = {
+type RevisionTestValue = {
   contextVariableId: string
   value: unknown
 }
 
-export type RevisionTestValueValidation = {
+type RevisionTestValueValidation = {
   values: RevisionTestValue[]
   errors: Record<string, string>
 }

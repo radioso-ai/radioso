@@ -441,14 +441,20 @@ const appRevisionFixtures = new WeakMap<object, PublishedTestAgentRevisionReader
 class PublishedTestAgentRevisionReader implements AgentRevisionRuntimeReaderPort {
   private readonly revisions = new Map<string, AgentRevision>();
 
-  publish(agent: AgentRecord): AgentRevision {
+  constructor(
+    private readonly contextVariables?: Pick<ContextVariableRepositoryPort, "listByAgent">,
+  ) {}
+
+  async publish(agent: AgentRecord): Promise<AgentRevision> {
     const revision: AgentRevision = {
       id: randomUUID(),
       snapshot: {
         customInstruction: agent.customInstruction,
         directives: agent.authoredDirectives ?? [],
         routines: [],
-        contextVariableEnablements: [],
+        contextVariableEnablements: this.contextVariables
+          ? await this.contextVariables.listByAgent(agent.workspaceId, agent.id)
+          : [],
       },
       sourceDraftGeneration: 1,
       sourceBasePublishedRevisionId: null,
@@ -1561,7 +1567,7 @@ export const createTestDependencies = (overrides: {
     undefined,
     accessGrantService,
   );
-  const publishedAgentRevisions = new PublishedTestAgentRevisionReader();
+  const publishedAgentRevisions = new PublishedTestAgentRevisionReader(contextVariableRepository);
   const agentRevisionService = new AgentRevisionService({
     async initializeDraft() {},
     async mutateDraft() { return null; },
@@ -2547,7 +2553,7 @@ export const issueTestSession = async (
   // agents created by a test remain unpublished until publishTestAgentBaseline.
   const defaultAgent = await dependencies.agentService.resolve(login.workspaceId);
   repositories.workspaceRepository.setDefaultAgentForTest(login.workspaceId, defaultAgent.id);
-  revisions.publish(defaultAgent);
+  await revisions.publish(defaultAgent);
 
   return {
     cookie: login.sessionCookie,

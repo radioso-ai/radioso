@@ -73,7 +73,7 @@ const createChatContext = async (overrides: Parameters<typeof createTestDependen
     "Interruption test workspace",
   );
   const agent = await ctx.dependencies.agentService.resolve(workspace.id);
-  ctx.publishedAgentRevisions.publish(agent);
+  await ctx.publishedAgentRevisions.publish(agent);
   return { ...ctx, agent, workspaceId: workspace.id };
 };
 

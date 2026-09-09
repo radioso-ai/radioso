@@ -1,5 +1,6 @@
 import type { RoutineRegistration } from "../../modules/chat/composition.js";
 import type { RoutineDefinitionRepository } from "../../db/repositories/routineDefinitionRepository.js";
+import type { AgentRevision } from "../../modules/agents/public.js";
 import {
   compileRoutineDefinition,
   legacyCompiledRoutineId,
@@ -8,8 +9,8 @@ import {
 } from "../../modules/routines/public.js";
 
 export interface PublishedRoutineRegistrationSource {
-  load(input: { agentId: string }): Promise<RoutineRegistration[]>;
-  loadPinned(input: { agentId: string; routineIds: string[] }): Promise<RoutineRegistration[]>;
+  load(input: { agentId: string; workspaceId?: string; agentRevisionId?: string }): Promise<RoutineRegistration[]>;
+  loadPinned(input: { agentId: string; workspaceId?: string; agentRevisionId?: string; routineIds: string[] }): Promise<RoutineRegistration[]>;
   /**
    * Loads specific definitions by id regardless of lifecycle status (including
    * `draft`), for operator test-runs in the workbench. Never used by the live
@@ -18,7 +19,11 @@ export interface PublishedRoutineRegistrationSource {
   loadPreview(input: { agentId: string; routineIds: string[] }): Promise<RoutineRegistration[]>;
 }
 
-export interface PublishedRoutineRegistrationSourceOptions {
+interface PublishedRoutineRegistrationSourceOptions {
+  /** Runtime-only immutable reader. When a revision id is supplied it is mandatory. */
+  revisionReader?: Pick<{
+    findRevision(input: { workspaceId: string; agentId: string; revisionId: string }): Promise<AgentRevision | null>;
+  }, "findRevision">;
   onDefinitionError?: (input: { agentId: string; definitionId: string; error: unknown }) => void;
   onPinnedDefinitionError?: (input: { agentId: string; routineId: string; definitionId?: string; error: unknown }) => void;
   onPreviewDefinitionError?: (input: { agentId: string; routineId: string; error: unknown }) => void;
@@ -72,7 +77,11 @@ export const createPublishedRoutineRegistrationSource = (
   repository: Pick<RoutineDefinitionRepository, "listPublishedByAgent" | "listByAgent" | "findPinnedById" | "findById">,
   options: PublishedRoutineRegistrationSourceOptions = {},
 ): PublishedRoutineRegistrationSource => ({
-  async load({ agentId }) {
+  async load({ agentId, workspaceId, agentRevisionId }) {
+    if (agentRevisionId) {
+      const revision = await loadRuntimeRevision(options, { workspaceId, agentId, agentRevisionId });
+      return compileFrozenDefinitions(revision.snapshot.routines, options);
+    }
     const definitions = await repository.listPublishedByAgent(agentId);
     const registrations: RoutineRegistration[] = [];
     for (const definition of definitions) {
@@ -107,10 +116,19 @@ export const createPublishedRoutineRegistrationSource = (
     }
     return registrations;
   },
-  async loadPinned({ agentId, routineIds }) {
+  async loadPinned({ agentId, workspaceId, agentRevisionId, routineIds }) {
     const uniqueRoutineIds = [...new Set(routineIds)].filter((routineId) => routineId.length > 0);
     if (uniqueRoutineIds.length === 0) {
       return [];
+    }
+
+    if (agentRevisionId) {
+      const revision = await loadRuntimeRevision(options, { workspaceId, agentId, agentRevisionId });
+      return compileFrozenPinnedDefinitions(
+        [...revision.snapshot.routines, ...(revision.snapshot.retainedRoutineDefinitions ?? [])],
+        uniqueRoutineIds,
+        options,
+      );
     }
 
     const registrations: RoutineRegistration[] = [];
@@ -177,3 +195,65 @@ export const createPublishedRoutineRegistrationSource = (
     return registrations;
   },
 });
+
+const loadRuntimeRevision = async (
+  options: PublishedRoutineRegistrationSourceOptions,
+  input: { workspaceId?: string; agentId: string; agentRevisionId: string },
+): Promise<AgentRevision> => {
+  if (!input.workspaceId) {
+    throw new Error("agent_revision_workspace_required");
+  }
+  if (!options.revisionReader) {
+    throw new Error("agent_revision_routine_source_not_configured");
+  }
+  const revision = await options.revisionReader.findRevision({
+    workspaceId: input.workspaceId,
+    agentId: input.agentId,
+    revisionId: input.agentRevisionId,
+  });
+  if (!revision) {
+    throw new Error("agent_revision_unavailable");
+  }
+  return revision;
+};
+
+const compileFrozenDefinitions = async (
+  definitions: AgentRevision["snapshot"]["routines"],
+  options: PublishedRoutineRegistrationSourceOptions,
+): Promise<RoutineRegistration[]> => {
+  const registrations: RoutineRegistration[] = [];
+  for (const definition of definitions) {
+    registrations.push(await registrationFromDefinition(definition, options));
+  }
+  return registrations;
+};
+
+const compileFrozenPinnedDefinitions = async (
+  definitions: AgentRevision["snapshot"]["routines"],
+  routineIds: string[],
+  options: PublishedRoutineRegistrationSourceOptions,
+): Promise<RoutineRegistration[]> => {
+  const byId = new Map(definitions.map((definition) => [definition.id, definition]));
+  const legacyById = new Map<string, RoutineDefinition>();
+  for (const definition of definitions) {
+    const legacyId = legacyCompiledRoutineId(definition);
+    const current = legacyById.get(legacyId);
+    if (!current || shouldReplacePinnedCandidate(current, definition)) {
+      legacyById.set(legacyId, definition);
+    }
+  }
+  const registrations: RoutineRegistration[] = [];
+  for (const routineId of routineIds) {
+    const definition = uuidPattern.test(routineId)
+      ? byId.get(routineId)
+      : legacyById.get(routineId);
+    if (!definition) {
+      throw new Error(`pinned_revision_routine_not_found:${routineId}`);
+    }
+    const registration = await registrationFromDefinition(definition, options);
+    registrations.push(uuidPattern.test(routineId)
+      ? registration
+      : { ...registration, routine: { ...registration.routine, id: routineId } });
+  }
+  return registrations;
+};

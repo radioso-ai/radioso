@@ -44,7 +44,21 @@ describe("operator copilot catalog coverage", () => {
   //               the bounded document maintenance acts in the Wave 2 knowledge-base tools.
   //   106 -> 93   when the forty-five workspace, channel, and connector operations were reasoned
   //               one ground at a time; twelve of them were permanent, not deferred.
-  const maxDeferredCatalogExclusions = 93;
+  //   93 -> 96   agent draft-publishing lifecycle endpoints (revision state, candidate creation,
+  //               revision listing/detail, and publish) were registered for the dashboard feature
+  //               but deliberately excluded from Ray until candidate selection, pinned test/eval,
+  //               and publish controls have a reviewed transport contract. Later test/eval route
+  //               registrations require their own explicit coverage review and ratchet.
+  //   96 -> 102  private test execution and frozen revision-eval operations are
+  //               explicitly deferred until candidate selection, sample values,
+  //               retry identity, and evidence provenance have Copilot contracts.
+  //   102 -> 104 the approved cockpit history list/detail retain private
+  //   revision, sample, and attempt provenance in the existing dashboard-owned
+  //   test-execution surface; current Ray descriptors do not expose that port.
+  //   104 -> 105 retaining one comparison side forks its private pinned
+  //   transcript and continuation; Ray has no safe candidate-selection or
+  //   private-conversation control for that transition.
+  const maxDeferredCatalogExclusions = 105;
 
   it("states each permanent exclusion's own ground rather than one conflated reason", () => {
     // A permanent exclusion is the strongest claim this map makes, so a wrong one either blocks

@@ -60,8 +60,8 @@ test("author an approval gate in the Document editor, save, and publish", async 
     expect.objectContaining({ fieldRef: "decision.id", fieldOp: "equals", fieldValue: "decline" }),
   ]));
 
-  await page.getByRole("button", { name: "Publish", exact: true }).click();
-  await expect(page.getByText("published v1 (read-only)", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Prepare for agent release", exact: true }).click();
+  await expect(page.getByText("prepared v1 (read-only)", { exact: true })).toBeVisible();
 
   // The locked reader shows the question, the choices, and where each decision routes.
   const reader = page.getByRole("article", { name: "Routine document" });

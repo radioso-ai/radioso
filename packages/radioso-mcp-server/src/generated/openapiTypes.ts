@@ -1127,6 +1127,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agents/{agentId}/revision-state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get agent draft publication state */
+        get: operations["getAgentRevisionState"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/revisions/candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create immutable draft candidate */
+        post: operations["createAgentRevisionCandidate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/revisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List agent revisions */
+        get: operations["listAgentRevisions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/revisions/{revisionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get agent revision detail */
+        get: operations["getAgentRevision"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/revisions/{revisionId}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Publish an immutable candidate */
+        post: operations["publishAgentRevision"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agents/bundle/imports/{importId}": {
         parameters: {
             query?: never;
@@ -1551,6 +1636,92 @@ export interface paths {
          * @description Creates a new agent from a previously exported bundle. References that cannot travel between workspaces (credential-bearing skill targets, missing context variables, unresolved document sources) import unbound and are reported in `unresolved` rather than dropped silently.
          */
         post: operations["importAgentBundle"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/test-executions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List private immutable revision tests */
+        get: operations["listAgentTestExecutions"];
+        put?: never;
+        /** Start an operator-private immutable revision test */
+        post: operations["startAgentTestExecution"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/test-executions/{executionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get private immutable revision test evidence */
+        get: operations["getAgentTestExecution"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/test-executions/{executionId}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run a fenced private test turn */
+        post: operations["sendAgentTestExecutionMessage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/test-executions/{executionId}/sides/{sideId}/retain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Continue one settled comparison version as a private test */
+        post: operations["retainAgentTestExecutionSide"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/test-executions/{executionId}/sides/{sideId}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry one failed private test side */
+        post: operations["retryAgentTestExecutionSide"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3276,6 +3447,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/evals/revision-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run frozen Eval cases against immutable agent candidates */
+        post: operations["createRevisionEvalRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evals/revision-runs/{runId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get frozen revision Eval evidence */
+        get: operations["getRevisionEvalRun"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evals/revision-runs/{runId}/sides/{revisionId}/cases/{caseId}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry one failed frozen revision Eval case */
+        post: operations["retryRevisionEvalCase"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/evals/snapshots": {
         parameters: {
             query?: never;
@@ -4559,6 +4781,114 @@ export interface components {
                     };
                 };
             };
+        };
+        AgentRevisionSummary: {
+            /** Format: uuid */
+            id: string;
+            label: string;
+            /** @enum {string} */
+            kind: "candidate" | "published";
+            versionNumber: number | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            publishedAt?: string;
+        };
+        AgentRevisionState: {
+            /** Format: uuid */
+            agentId: string;
+            /** @enum {string} */
+            status: "unpublished" | "draft_clean" | "draft_dirty" | "published_changed_since_draft";
+            draft: {
+                generation: number;
+                /** Format: uuid */
+                basePublishedRevisionId: string | null;
+                /** Format: date-time */
+                updatedAt: string;
+            };
+            publishedRevision: components["schemas"]["AgentRevisionSummary"] | null;
+            canPublish: boolean;
+            proactiveGreetingEnabled: boolean;
+        };
+        AgentRevisionCandidateRequest: {
+            expectedDraftGeneration: number;
+        };
+        AgentRevisionCandidateResponse: {
+            candidate: components["schemas"]["AgentRevisionSummary"];
+        };
+        AgentRevisionListResponse: {
+            revisions: components["schemas"]["AgentRevisionSummary"][];
+        };
+        AgentRevisionDetailResponse: {
+            revision: components["schemas"]["AgentRevisionSummary"] & {
+                /** @enum {number} */
+                snapshotFormatVersion: 1;
+                scope: {
+                    /** @enum {boolean} */
+                    customInstructions: true;
+                    /** @enum {boolean} */
+                    directives: true;
+                    /** @enum {boolean} */
+                    routines: true;
+                    /** @enum {boolean} */
+                    contextVariableEnablements: true;
+                };
+                dependencyWarnings: {
+                    code: string;
+                    message: string;
+                }[];
+                enabledContextVariableIds: string[];
+                scopedChanges: {
+                    customInstruction: {
+                        before: string | null;
+                        after: string | null;
+                        changed: boolean;
+                    };
+                    directives: {
+                        /** Format: uuid */
+                        id: string;
+                        /** @enum {string} */
+                        change: "added" | "removed" | "changed";
+                        before?: unknown;
+                        after?: unknown;
+                    }[];
+                    routines: {
+                        /** Format: uuid */
+                        definitionId: string;
+                        /** @enum {string} */
+                        change: "added" | "removed" | "changed";
+                        before?: unknown;
+                        after?: unknown;
+                    }[];
+                    contextVariableEnablements: {
+                        /** Format: uuid */
+                        contextVariableId: string;
+                        /** @enum {string} */
+                        change: "added" | "removed" | "changed";
+                        before?: unknown;
+                        after?: unknown;
+                    }[];
+                };
+            };
+        };
+        AgentRevisionPublishRequest: {
+            expectedDraftGeneration: number;
+            /** Format: uuid */
+            expectedPublishedRevisionId: string | null;
+            idempotencyKey: string;
+        };
+        AgentRevisionPublishResponse: {
+            publication: {
+                /** Format: uuid */
+                id: string;
+                /** Format: uuid */
+                revisionId: string;
+                /** Format: date-time */
+                publishedAt: string;
+                idempotentReplay: boolean;
+                revision: components["schemas"]["AgentRevisionSummary"];
+            };
+            state: components["schemas"]["AgentRevisionState"];
         };
         AgentChannelLifecycle: {
             /** Format: date-time */
@@ -8044,6 +8374,247 @@ export interface components {
          *     data: {"protocolVersion":1}
          */
         WorkspaceEventStream: string;
+        TestExecutionEvent: {
+            /** @enum {string} */
+            type: "side_started";
+            /** Format: uuid */
+            executionId: string;
+            generation: number;
+            /** Format: uuid */
+            turnId: string;
+            /** Format: uuid */
+            attemptId: string;
+            /** Format: uuid */
+            sideId: string;
+        } | {
+            /** @enum {string} */
+            type: "message_delta";
+            /** Format: uuid */
+            executionId: string;
+            generation: number;
+            /** Format: uuid */
+            turnId: string;
+            /** Format: uuid */
+            attemptId: string;
+            /** Format: uuid */
+            sideId: string;
+            delta: string;
+        } | {
+            /** @enum {string} */
+            type: "side_completed";
+            /** Format: uuid */
+            executionId: string;
+            generation: number;
+            /** Format: uuid */
+            turnId: string;
+            /** Format: uuid */
+            attemptId: string;
+            /** Format: uuid */
+            sideId: string;
+            /** Format: uuid */
+            messageId: string;
+        } | {
+            /** @enum {string} */
+            type: "side_failed";
+            /** Format: uuid */
+            executionId: string;
+            generation: number;
+            /** Format: uuid */
+            turnId: string;
+            /** Format: uuid */
+            attemptId: string;
+            /** Format: uuid */
+            sideId: string;
+            code: string;
+            retryable: boolean;
+        } | {
+            /** @enum {string} */
+            type: "execution_partial";
+            /** Format: uuid */
+            executionId: string;
+            generation: number;
+            /** Format: uuid */
+            turnId: string;
+            /** Format: uuid */
+            attemptId: string;
+        } | {
+            /** @enum {string} */
+            type: "execution_completed";
+            /** Format: uuid */
+            executionId: string;
+            generation: number;
+            /** Format: uuid */
+            turnId: string;
+            /** Format: uuid */
+            attemptId: string;
+        };
+        TestExecutionSide: {
+            /** Format: uuid */
+            id: string;
+            revision: {
+                /** Format: uuid */
+                id: string;
+                label: string;
+                /** @enum {string} */
+                kind: "candidate" | "published";
+                versionNumber: number | null;
+                /** Format: date-time */
+                createdAt: string;
+                /** Format: date-time */
+                publishedAt?: string;
+            };
+            /** Format: uuid */
+            conversationId: string;
+            /** @enum {string} */
+            state: "running" | "partial" | "failed" | "completed";
+            retryable: boolean;
+            history: {
+                /** Format: uuid */
+                turnId: string;
+                /** @enum {string} */
+                role: "user" | "assistant";
+                content: string;
+                /** Format: uuid */
+                messageId?: string;
+                /** Format: uuid */
+                attemptId: string;
+                /** Format: date-time */
+                createdAt: string;
+            }[];
+        };
+        StartTestExecutionRequest: {
+            /** @enum {string} */
+            mode: "single" | "compare";
+            revisionIds: string[];
+            testValues: {
+                /** Format: uuid */
+                contextVariableId: string;
+                value?: unknown;
+            }[];
+            expectedDraftGeneration?: number;
+            idempotencyKey: string;
+        };
+        TestExecution: {
+            /** Format: uuid */
+            id: string;
+            generation: number;
+            /** @enum {string} */
+            mode: "single" | "compare";
+            sides: components["schemas"]["TestExecutionSide"][];
+        };
+        TestExecutionMessageRequest: {
+            message: string;
+            executionGeneration: number;
+            /** Format: uuid */
+            turnId: string;
+            /** Format: uuid */
+            attemptId: string;
+        };
+        TestExecutionRetryRequest: {
+            executionGeneration: number;
+            /** Format: uuid */
+            turnId: string;
+            /** Format: uuid */
+            attemptId: string;
+        };
+        TestExecutionHistoryItem: {
+            /** Format: uuid */
+            id: string;
+            generation: number;
+            /** @enum {string} */
+            mode: "single" | "compare";
+            /** @enum {string} */
+            state: "running" | "partial" | "failed" | "completed";
+            /** Format: date-time */
+            createdAt: string;
+            sides: {
+                /** Format: uuid */
+                id: string;
+                revision: {
+                    /** Format: uuid */
+                    id: string;
+                    label: string;
+                    /** @enum {string} */
+                    kind: "candidate" | "published";
+                    versionNumber: number | null;
+                    /** Format: date-time */
+                    createdAt: string;
+                    /** Format: date-time */
+                    publishedAt?: string;
+                };
+                /** Format: uuid */
+                conversationId: string;
+                /** @enum {string} */
+                state: "ready" | "running" | "failed" | "completed";
+                retryable: boolean;
+            }[];
+        };
+        TestExecutionAttemptRecord: {
+            /** Format: uuid */
+            executionId: string;
+            /** Format: uuid */
+            sideId: string;
+            /** Format: uuid */
+            turnId: string;
+            /** Format: uuid */
+            attemptId: string;
+            fence: number;
+            /** @enum {string} */
+            state: "running" | "failed" | "completed";
+            failureCode: string | null;
+            /** Format: date-time */
+            leaseExpiresAt: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        TestExecutionHistoryDetail: components["schemas"]["TestExecutionHistoryItem"] & {
+            sides?: {
+                /** Format: uuid */
+                id: string;
+                revision: {
+                    /** Format: uuid */
+                    id: string;
+                    label: string;
+                    /** @enum {string} */
+                    kind: "candidate" | "published";
+                    versionNumber: number | null;
+                    /** Format: date-time */
+                    createdAt: string;
+                    /** Format: date-time */
+                    publishedAt?: string;
+                };
+                /** Format: uuid */
+                conversationId: string;
+                /** @enum {string} */
+                state: "ready" | "running" | "failed" | "completed";
+                retryable: boolean;
+                history: {
+                    /** Format: uuid */
+                    turnId: string;
+                    /** @enum {string} */
+                    role: "user" | "assistant";
+                    content: string;
+                    /** Format: uuid */
+                    messageId?: string;
+                    /** Format: uuid */
+                    attemptId: string;
+                    /** Format: date-time */
+                    createdAt: string;
+                }[];
+            }[];
+            testValues: unknown[];
+            attempts: components["schemas"]["TestExecutionAttemptRecord"][];
+        };
+        TestExecutionHistoryListResponse: {
+            executions: components["schemas"]["TestExecutionHistoryItem"][];
+            nextCursor: string | null;
+            hasMore: boolean;
+        };
+        TestExecutionHistoryDetailResponse: {
+            execution: components["schemas"]["TestExecutionHistoryDetail"];
+        };
         PendingApprovalDecisionOption: {
             id: string;
             label: string;
@@ -8066,6 +8637,49 @@ export interface components {
         };
         PendingApprovalDecisionListResponse: {
             decisions: components["schemas"]["PendingApprovalDecision"][];
+        };
+        StartRevisionEvalRun: {
+            revisionIds: string[];
+            caseIds: string[];
+            testValues: {
+                /** Format: uuid */
+                contextVariableId: string;
+                value?: unknown;
+            }[];
+            /** @enum {string} */
+            mode: "retrieval_only" | "full_assistant";
+            /** @enum {string} */
+            executionPolicy: "safe_test";
+            idempotencyKey: string;
+        };
+        RevisionEvalCaseOutcome: {
+            /** Format: uuid */
+            caseId: string;
+            /** @enum {string} */
+            state: "running" | "failed" | "completed";
+            /** @enum {string} */
+            outcome: "pass" | "fail" | "partial" | "unavailable";
+        };
+        RevisionEvalRun: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            state: "running" | "partial" | "failed" | "completed";
+            sides: {
+                /** Format: uuid */
+                revisionId: string;
+                revision: {
+                    /** Format: uuid */
+                    id: string;
+                    versionNumber: number | null;
+                    label: string;
+                };
+                /** @enum {string} */
+                state: "running" | "partial" | "failed" | "completed";
+                /** @enum {string} */
+                evidenceState: "current" | "configuration_changed" | "environment_changed" | "comparability_unknown";
+                cases: components["schemas"]["RevisionEvalCaseOutcome"][];
+            }[];
         };
         EvalAssertion: {
             /** @enum {string} */
@@ -13125,6 +13739,155 @@ export interface operations {
             };
         };
     };
+    getAgentRevisionState: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revision state returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRevisionState"];
+                };
+            };
+        };
+    };
+    createAgentRevisionCandidate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentRevisionCandidateRequest"];
+            };
+        };
+        responses: {
+            /** @description Candidate created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRevisionCandidateResponse"];
+                };
+            };
+            /** @description revision_conflict when the saved draft generation changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAgentRevisions: {
+        parameters: {
+            query?: {
+                include?: "published";
+            };
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revisions returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRevisionListResponse"];
+                };
+            };
+        };
+    };
+    getAgentRevision: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                revisionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revision returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRevisionDetailResponse"];
+                };
+            };
+        };
+    };
+    publishAgentRevision: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                revisionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentRevisionPublishRequest"];
+            };
+        };
+        responses: {
+            /** @description Revision published */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRevisionPublishResponse"];
+                };
+            };
+            /** @description revision_conflict when the revision, draft generation, pointer, or idempotency command is stale */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description revision_invalid when the immutable candidate cannot run */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     getAgentBundleImport: {
         parameters: {
             query?: never;
@@ -14787,6 +15550,159 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAgentTestExecutions: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Private test history returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestExecutionHistoryListResponse"];
+                };
+            };
+        };
+    };
+    startAgentTestExecution: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartTestExecutionRequest"];
+            };
+        };
+        responses: {
+            /** @description Private test execution created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestExecution"];
+                };
+            };
+        };
+    };
+    getAgentTestExecution: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                executionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Private test evidence returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestExecutionHistoryDetailResponse"];
+                };
+            };
+        };
+    };
+    sendAgentTestExecutionMessage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                executionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestExecutionMessageRequest"];
+            };
+        };
+        responses: {
+            /** @description Fenced side events */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": components["schemas"]["TestExecutionEvent"];
+                };
+            };
+        };
+    };
+    retainAgentTestExecutionSide: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                executionId: string;
+                sideId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Single private test execution created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestExecution"];
+                };
+            };
+        };
+    };
+    retryAgentTestExecutionSide: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                executionId: string;
+                sideId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestExecutionRetryRequest"];
+            };
+        };
+        responses: {
+            /** @description Fenced side events */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": components["schemas"]["TestExecutionEvent"];
                 };
             };
         };
@@ -22838,6 +23754,130 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    createRevisionEvalRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartRevisionEvalRun"];
+            };
+        };
+        responses: {
+            /** @description Revision Eval run created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevisionEvalRun"];
+                };
+            };
+            /** @description Invalid immutable run selection */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent-manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getRevisionEvalRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revision Eval evidence */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevisionEvalRun"];
+                };
+            };
+            /** @description Agent-read permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Revision Eval run not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    retryRevisionEvalCase: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runId: string;
+                revisionId: string;
+                caseId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revision Eval retry accepted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevisionEvalRun"];
+                };
+            };
+            /** @description Agent-manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Failed revision Eval case not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
             };
         };
     };

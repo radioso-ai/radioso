@@ -30,8 +30,8 @@ test("agent settings saves behavior and channel sections without retrieval drift
   });
   expect(agentUpdates.at(-1)).not.toHaveProperty("retrieval");
 
-  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=channels`);
-  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}\\?tab=channels$`));
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=channels&anchor=web-chat`);
+  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}\\?tab=channels&anchor=web-chat$`));
   await expect(page.getByRole("heading", { name: "Web chat", level: 1, exact: true })).toBeVisible();
   await page.locator("#anonChatToggle").click();
 

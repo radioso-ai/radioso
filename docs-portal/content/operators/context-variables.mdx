@@ -65,6 +65,18 @@ Each declaration belongs to the workspace catalog:
 Then each agent enables the variables it should use. In the agent **Context**
 section, choose the source and surfacing policy for that agent.
 
+The selection belongs to the agent's private draft. Save it, then use **Test
+Chat** to try the candidate with sample values for the enabled variables. Sample
+values are private test inputs: publishing the candidate never writes them as
+visitor or production values. Changing the selected candidate or sample values
+starts a fresh test conversation, so the conversation's context and routine
+state always match the version you selected.
+
+When the behavior is ready, review the Context changes with the other draft
+changes and publish the candidate. The shared variable declarations and runtime
+values remain workspace and host concerns; the agent revision records which
+variables the agent uses and how it resolves them.
+
 The dashboard supports one source:
 
 - **Pushed API** — the host backend writes values through the REST API.

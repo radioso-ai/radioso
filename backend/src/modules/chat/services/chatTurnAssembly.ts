@@ -206,6 +206,8 @@ export interface ChatRoutineProvider {
   forTurn(input: {
     modelGateway: ConversationModelGateway;
     agentId: string;
+    /** Immutable release pinned on the conversation; absent only for fixture/replay paths. */
+    agentRevisionId?: string;
     workspaceId?: string;
     accountId?: string;
     pinnedRoutineIds?: string[];
@@ -455,6 +457,7 @@ export class ChatTurnAssembly {
     const routineTurnPorts = await this.options.routineProvider.forTurn({
       modelGateway,
       agentId: session.agent.id,
+      agentRevisionId: session.conversation.agentRevisionId ?? undefined,
       workspaceId: session.conversation.workspaceId,
       accountId: input.accountId,
       pinnedRoutineIds: await this.routineCatalogPinIds(session, input.activeRoutine),
@@ -632,6 +635,7 @@ export class ChatTurnAssembly {
     const routineTurnPorts = await this.options.routineProvider.forTurn({
       modelGateway,
       agentId: session.agent.id,
+      agentRevisionId: session.conversation.agentRevisionId ?? undefined,
       workspaceId: session.conversation.workspaceId,
       accountId: input.accountId,
       pinnedRoutineIds: await this.routineCatalogPinIds(session, null),

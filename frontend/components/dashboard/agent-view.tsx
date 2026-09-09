@@ -2,9 +2,11 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { FileJson, Globe2, RefreshCw, X } from 'lucide-react'
+import { RefreshCw, X } from 'lucide-react'
 
-import { AgentBundleImportDialog } from '@/components/dashboard/agent-bundle-import-dialog'
+import { AgentCockpitNav, type AgentCockpitTab } from '@/components/dashboard/agent-cockpit-nav'
+import { AgentRevisionTestChat } from '@/components/dashboard/agent-revision-test-chat'
+import { AgentRevisionHeader } from '@/components/dashboard/agent-revision-header'
 import { ChatView } from '@/components/dashboard/chat-view'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import { RoutineHeaderActionsProvider, useRoutineHeaderState } from '@/components/dashboard/shared/routine-header-actions'
@@ -13,25 +15,21 @@ import { SaveStateIndicator } from '@/components/dashboard/shared/save-state-ind
 import { WorkspaceAssistantChannelsTab } from '@/components/dashboard/settings/workspace-assistant-channels-tab'
 import { Button } from '@/components/ui/button'
 import {
+  buildAgentSectionHref,
   buildDashboardHref,
   type DashboardRouteState,
 } from '@/lib/dashboard-routes'
-import { agentSectionFromRoute, type AgentSectionId } from '@/lib/dashboard-areas'
+import { agentSectionFromRoute, agentSectionRoute, type AgentSectionId } from '@/lib/dashboard-areas'
 import { agentsApi, type AgentSettings } from '@/lib/api'
 import { getLastSelectedAgentId, setLastSelectedAgentId } from '@/lib/agent-selection'
+import { getAgentOperatorLabel } from '@/lib/agent-label'
 import {
   clearAgentCreationHandoff as rawClearAgentCreationHandoff,
   readAgentCreationHandoff as rawReadAgentCreationHandoff,
-  WizardDialog as RawWizardDialog,
 } from '@/lib/agent-creation-contributions'
-import {
-  loadAgentCreationActionDefinitions,
-  resolveAgentCreationActions,
-  type AgentCreationActionDefinition,
-} from '@/lib/agent-creation-extensions'
-import { editionController } from '@/lib/edition-controller'
 import { useWorkspace } from '@/lib/workspace-context'
 import { type WorkspaceOnboardingState } from '@/lib/onboarding'
+import { useCopilotEntity } from '@/lib/copilot-context'
 
 type AgentPageSaveState = {
   state: 'idle' | 'saved' | 'saving' | 'error'
@@ -40,11 +38,6 @@ type AgentPageSaveState = {
 
 type AgentSectionMeta = { title: string; mode: 'assistant' | 'channels'; description?: string }
 
-type WizardDialogComponent = (props: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  agentSettingsHrefBuilder: (agentId: string) => string
-}) => React.ReactElement | null
 interface AgentCreationHandoffItem {
   title: string | null
   url: string
@@ -61,16 +54,8 @@ interface AgentCreationHandoff {
 }
 
 type ReadAgentCreationHandoff = (agentId: string | undefined) => AgentCreationHandoff | null
-const agentCreationExtensionsEnabled = editionController.canUseAgentCreationExtensions()
-const WizardDialog = agentCreationExtensionsEnabled
-  ? RawWizardDialog as unknown as WizardDialogComponent | null
-  : null
-const readAgentCreationHandoff: ReadAgentCreationHandoff = agentCreationExtensionsEnabled
-  ? rawReadAgentCreationHandoff
-  : () => null
-const clearAgentCreationHandoff: () => void = agentCreationExtensionsEnabled
-  ? rawClearAgentCreationHandoff
-  : () => {}
+const readAgentCreationHandoff: ReadAgentCreationHandoff = rawReadAgentCreationHandoff
+const clearAgentCreationHandoff: () => void = rawClearAgentCreationHandoff
 
 /** Each non-chat agent section maps to a content mode and a column-3 title. */
 const AGENT_SECTION_META: Record<Exclude<AgentSectionId, 'chat'>, AgentSectionMeta> = {
@@ -96,6 +81,7 @@ const AGENT_SECTION_META: Record<Exclude<AgentSectionId, 'chat'>, AgentSectionMe
   'mcp-channel': { title: 'MCP', mode: 'channels' },
   'slack-channel': { title: 'Slack', mode: 'channels' },
   'whatsapp-channel': { title: 'WhatsApp', mode: 'channels' },
+  'channels-overview': { title: 'Channels', mode: 'channels', description: 'Configure the channels where this agent can answer.' },
   danger: { title: 'Danger zone', mode: 'assistant' },
 }
 
@@ -160,9 +146,12 @@ function AgentSettingsDashboardPage({
   meta,
   routeState,
   saveStateAccessory,
+  cockpitNavigation,
+  cockpitActions,
   section,
   selectedAgentId,
-  setSaveState,
+  onSaveStateChange,
+  onDraftDirtyChange,
 }: {
   accountId: string
   agentCreationHandoff: AgentCreationHandoff | null
@@ -171,9 +160,12 @@ function AgentSettingsDashboardPage({
   meta: AgentSectionMeta
   routeState: DashboardRouteState
   saveStateAccessory: React.ReactNode
+  cockpitNavigation: React.ReactNode
+  cockpitActions: React.ReactNode
   section: Exclude<AgentSectionId, 'chat'>
   selectedAgentId: string
-  setSaveState: React.Dispatch<React.SetStateAction<AgentPageSaveState>>
+  onSaveStateChange: (state: AgentPageSaveState) => void
+  onDraftDirtyChange: (dirty: boolean) => void
 }) {
   const routineHeader = useRoutineHeaderState()
   const isRoutineDetail = section === 'routines' && Boolean(routeState.agentRoutineId)
@@ -183,7 +175,14 @@ function AgentSettingsDashboardPage({
       description={isRoutineDetail ? routineHeader.description ?? 'Loading…' : meta.description}
       backAction={isRoutineDetail ? routineHeader.backAction ?? null : undefined}
       titleAccessory={saveStateAccessory}
-      actions={section === 'skills' ? <AddSkillHeaderButton /> : isRoutineDetail ? routineHeader.actions : undefined}
+      actions={
+        <>
+          {cockpitActions}
+          {section === 'skills' ? <AddSkillHeaderButton /> : isRoutineDetail ? routineHeader.actions : null}
+        </>
+      }
+      actionsClassName="w-full max-w-full justify-start sm:w-auto sm:justify-end"
+      headerContent={cockpitNavigation}
       contentClassName="flex flex-col overflow-hidden p-0"
       contentScroll={false}
     >
@@ -197,7 +196,8 @@ function AgentSettingsDashboardPage({
         agentSection={section}
         routeState={routeState}
         profileHref={profileHref}
-        onSaveStateChange={setSaveState}
+        onSaveStateChange={onSaveStateChange}
+        onDraftDirtyChange={onDraftDirtyChange}
       />
     </DashboardPage>
   )
@@ -215,24 +215,14 @@ export function AgentView({
   onOpenDocument: (documentId: string) => void
 }) {
   const router = useRouter()
-  const { activeWorkspace, activeWorkspaceId } = useWorkspace()
+  const { activeWorkspaceId } = useWorkspace()
   const [agents, setAgents] = useState<AgentSettings[]>([])
   const [agentsError, setAgentsError] = useState<string | null>(null)
   const [isAgentsLoading, setIsAgentsLoading] = useState(true)
   const [saveState, setSaveState] = useState<AgentPageSaveState>({ state: 'idle' })
+  const [isDraftDirty, setIsDraftDirty] = useState(false)
+  const [testActionsContainer, setTestActionsContainer] = useState<HTMLDivElement | null>(null)
   const [agentCreationHandoff, setAgentCreationHandoff] = useState<AgentCreationHandoff | null>(null)
-  const [agentCreationActionDefinitions, setAgentCreationActionDefinitions] = useState<AgentCreationActionDefinition[]>([])
-  const [wizardOpen, setWizardOpen] = useState(false)
-  const [importOpen, setImportOpen] = useState(false)
-  const agentCreationActions = useMemo(
-    () => agentCreationExtensionsEnabled
-      ? resolveAgentCreationActions(agentCreationActionDefinitions, {
-        accountId,
-        workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
-      })
-      : [],
-    [accountId, agentCreationActionDefinitions, activeWorkspace?.publicRouteKey],
-  )
 
   const loadAgents = useCallback(async () => {
     if (!activeWorkspaceId) {
@@ -262,22 +252,6 @@ export function AgentView({
   }, [loadAgents, routeState.agentId])
 
   useEffect(() => {
-    if (!agentCreationExtensionsEnabled) {
-      return
-    }
-
-    let active = true
-    void loadAgentCreationActionDefinitions().then((definitions) => {
-      if (active) {
-        setAgentCreationActionDefinitions(definitions)
-      }
-    })
-    return () => {
-      active = false
-    }
-  }, [])
-
-  useEffect(() => {
     const handleAgentsUpdated = () => {
       void loadAgents()
     }
@@ -289,17 +263,6 @@ export function AgentView({
       window.removeEventListener('radioso:assistant-name-updated', handleAgentsUpdated)
     }
   }, [loadAgents])
-
-  const profileHref = useMemo(
-    () =>
-      buildDashboardHref(accountId, {
-        ...routeState,
-        section: 'agents',
-        agentTab: 'behavior',
-        anchor: 'assistant-profile',
-      }),
-    [accountId, routeState],
-  )
 
   const fallbackAgent = useMemo(() => agents[0] ?? null, [agents])
   const rememberedAgentId = getLastSelectedAgentId(activeWorkspaceId)
@@ -315,6 +278,15 @@ export function AgentView({
     [agents, fallbackAgent, rememberedAgentId, routeState.agentId],
   )
   const selectedAgentId = selectedAgent?.id
+  const profileHref = useMemo(
+    () =>
+      buildAgentSectionHref(accountId, routeState, selectedAgentId, {
+        agentTab: 'behavior',
+        anchor: 'assistant-profile',
+      }),
+    [accountId, routeState, selectedAgentId],
+  )
+  useCopilotEntity('agent', selectedAgentId, getAgentOperatorLabel(selectedAgent), true)
   const isAgentRouteCanonicalizing = Boolean(
     !isAgentsLoading &&
     !agentsError &&
@@ -331,10 +303,6 @@ export function AgentView({
   }, [activeWorkspaceId, selectedAgentId])
 
   useEffect(() => {
-    if (!agentCreationExtensionsEnabled) {
-      return
-    }
-
     const timeout = window.setTimeout(() => {
       setAgentCreationHandoff(readAgentCreationHandoff(selectedAgentId))
     }, 0)
@@ -361,6 +329,20 @@ export function AgentView({
   }, [accountId, agentsError, isAgentsLoading, routeState, router, selectedAgentId])
 
   const saveStateAccessory = <SaveStateIndicator saveState={saveState} />
+  const handleSaveStateChange = useCallback((next: AgentPageSaveState) => {
+    setSaveState(next)
+  }, [])
+
+  const cockpitTab = (section: AgentSectionId): AgentCockpitTab | null =>
+    section === 'chat' || section === 'profile' || section === 'directives' || section === 'routines' || section === 'skills' || section === 'context-variables'
+      ? section
+      : null
+
+  const cockpitHrefFor = (tab: AgentCockpitTab) => {
+    const route = agentSectionRoute(tab)
+    return buildAgentSectionHref(accountId, routeState, selectedAgentId, route)
+  }
+  const evalsHref = buildDashboardHref(accountId, { ...routeState, section: 'eval', evalCaseId: undefined })
 
   const agentUnavailableContent = agentSelectionPending ? (
     <div className="flex min-h-48 items-center justify-center text-sm text-muted-foreground">
@@ -386,35 +368,6 @@ export function AgentView({
         <p className="mt-1 text-sm text-muted-foreground">
           Add an agent with its own identity, instructions, and channel settings.
         </p>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        {agentCreationActions.map((action) => (
-          <Button
-            key={action.id}
-            type="button"
-            onClick={() => {
-              if (action.kind === 'wizard-dialog' && WizardDialog) {
-                setWizardOpen(true)
-              } else if (action.href) {
-                router.push(action.href)
-              }
-            }}
-          >
-            <Globe2 className="mr-2 h-4 w-4" />
-            {action.label}
-          </Button>
-        ))}
-        {/* A workspace with no agents is the strongest case for import: there is
-            nothing here yet to move an agent alongside. */}
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => setImportOpen(true)}
-          data-testid="empty-state-import-bundle"
-        >
-          <FileJson className="mr-2 h-4 w-4" />
-          Import a bundle
-        </Button>
       </div>
     </div>
   ) : (
@@ -452,78 +405,32 @@ export function AgentView({
     </DashboardPage>
   )
 
-  const bundleImport = (
-    <AgentBundleImportDialog
-      open={importOpen}
-      onOpenChange={setImportOpen}
-      onImported={() => { void loadAgents() }}
-      agentSettingsHrefBuilder={(agentId) =>
-        buildDashboardHref(accountId, {
-          section: 'agents',
-          agentId,
-          agentTab: 'behavior',
-          anchor: 'assistant-profile',
-          workspaceId: activeWorkspaceId ?? undefined,
-          workspacePublicRouteKey: activeWorkspace?.publicRouteKey ?? undefined,
-        })
-      }
-    />
-  )
-
-  const wizard = WizardDialog ? (
-    <WizardDialog
-      open={wizardOpen}
-      onOpenChange={setWizardOpen}
-      agentSettingsHrefBuilder={(agentId) =>
-        buildDashboardHref(accountId, {
-          section: 'agents',
-          agentId,
-          agentTab: 'behavior',
-          anchor: 'assistant-profile',
-          workspaceId: activeWorkspaceId ?? undefined,
-          workspacePublicRouteKey: activeWorkspace?.publicRouteKey ?? undefined,
-        })
-      }
-    />
-  ) : null
-
   if (agentSelectionPending || agentSelectionUnavailable) {
     return (
       <>
         {renderAgentUnavailablePage('')}
-        {wizard}
-        {bundleImport}
       </>
     )
   }
 
-  // The second column owns section selection; this view renders the one section
-  // the route points at (no in-page tabs).
+  // The sidebar owns section selection; this view renders the route's section.
   const section = agentSectionFromRoute(routeState)
+  const showRevisionActions = section === 'chat'
+    || section === 'profile'
+    || section === 'directives'
+    || section === 'routines'
+    || section === 'skills'
+    || section === 'context-variables'
+  const cockpitNavigation = showRevisionActions
+    ? <AgentCockpitNav activeTab={cockpitTab(section)} hrefForTab={cockpitHrefFor} />
+    : null
+  const cockpitActions = showRevisionActions
+    ? <AgentRevisionHeader key={selectedAgentId} agentId={selectedAgentId} saveState={saveState.state} canSaveDraft={isDraftDirty} testChatHref={cockpitHrefFor('chat')} />
+    : null
 
-  if (section === 'chat') {
-    return (
-      <>
-        <ChatView
-          key={selectedAgentId}
-          accountId={accountId}
-          agentId={selectedAgentId}
-          assistantName={selectedAgent?.name}
-          assistantLinkUtmEnabled={selectedAgent?.assistantLinkUtmEnabled}
-          onOpenDocument={onOpenDocument}
-          onboarding={onboarding}
-          adoptConversationId={routeState.agentChatConversationId}
-          previewRoutineIds={
-            routeState.agentChatPreviewRoutineId ? [routeState.agentChatPreviewRoutineId] : undefined
-          }
-        />
-        {wizard}
-      </>
-    )
-  }
-
-  const meta = AGENT_SECTION_META[section]
-  return (
+  const settingsSection = section === 'chat' ? 'profile' : section
+  const settingsMeta = AGENT_SECTION_META[settingsSection]
+  const settingsPage = (
     <SkillsHeaderActionProvider>
       <RoutineHeaderActionsProvider>
         <AgentSettingsDashboardPage
@@ -531,20 +438,43 @@ export function AgentView({
           agentCreationHandoff={agentCreationHandoff}
           profileHref={profileHref}
           dismissAgentCreationHandoff={dismissAgentCreationHandoff}
-          meta={meta}
+          meta={settingsMeta}
           routeState={routeState}
           saveStateAccessory={saveStateAccessory}
-          section={section}
+          cockpitNavigation={section === 'chat' ? null : cockpitNavigation}
+          cockpitActions={section === 'chat' ? null : cockpitActions}
+          section={settingsSection}
           selectedAgentId={selectedAgentId}
-          setSaveState={setSaveState}
+          onSaveStateChange={handleSaveStateChange}
+          onDraftDirtyChange={setIsDraftDirty}
         />
-        {wizard}
-        {/* Also rendered here, not only in the agent-unavailable branch: a successful
-            import refreshes the agent list, which moves this component out of the
-            zero-agent branch. Rendering the dialog only there would unmount it at the
-            exact moment it has the unresolved report to show. */}
-        {bundleImport}
       </RoutineHeaderActionsProvider>
     </SkillsHeaderActionProvider>
+  )
+  return (
+    <>
+      <div className={section === 'chat' ? 'hidden' : 'flex min-h-0 min-w-0 flex-1 flex-col'} aria-hidden={section === 'chat'}>
+        {settingsPage}
+      </div>
+      {section === 'chat' ? (
+        routeState.agentChatConversationId || routeState.agentChatPreviewRoutineId ? (
+          <ChatView
+            key={`${selectedAgentId}-${routeState.agentChatConversationId ?? routeState.agentChatPreviewRoutineId}`}
+            accountId={accountId}
+            agentId={selectedAgentId}
+            assistantName={selectedAgent?.name}
+            assistantLinkUtmEnabled={selectedAgent?.assistantLinkUtmEnabled}
+            onOpenDocument={onOpenDocument}
+            onboarding={onboarding}
+            adoptConversationId={routeState.agentChatConversationId}
+            previewRoutineIds={routeState.agentChatPreviewRoutineId ? [routeState.agentChatPreviewRoutineId] : undefined}
+          />
+        ) : (
+          <DashboardPage title="Test Chat" actions={<>{cockpitActions}<div ref={setTestActionsContainer} /></>} actionsClassName="w-full max-w-full justify-start sm:w-auto sm:justify-end" headerContent={cockpitNavigation} contentClassName="min-h-0 overflow-hidden p-0" contentScroll={false}>
+            <AgentRevisionTestChat key={selectedAgentId} agentId={selectedAgentId} workspaceId={activeWorkspaceId ?? selectedAgent.workspaceId} assistantName={selectedAgent?.name} evalsHref={evalsHref} actionsContainer={testActionsContainer} />
+          </DashboardPage>
+        )
+      ) : null}
+    </>
   )
 }

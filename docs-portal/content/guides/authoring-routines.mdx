@@ -114,15 +114,26 @@ Routine versions use four statuses: `draft`, `published`, `superseded`, and
 conversation already running a routine keeps its pinned version, while later
 conversations use the current published version.
 
+The agent cockpit keeps the routine draft with the other behavior changes. A
+saved draft is private to the agent until you publish the candidate that you
+reviewed. Publishing does not rewrite the draft from another version, so later
+edits remain available as the next unpublished change.
+
 ## Test a draft before publishing
 
-On a saved draft, choose **Test draft** to open a live test chat over the editor.
-The draft activates and runs turn by turn in that conversation, then returns to
-normal answering when it finishes.
+On a saved draft, choose **Test draft** to open a private test chat over the
+editor. The test pins the selected candidate, activates the draft, and runs it
+turn by turn in that conversation. It returns to normal answering when the
+routine finishes.
 
 - **Test draft** uses the latest saved draft; save after a change before testing.
 - The test conversation stays separate from your other test chats.
 - The selected draft joins the agent's published routines for that test chat.
+
+From **Test Chat**, you can select the same saved candidate, compare it with the
+published revision, and run selected eval cases. Changing the candidate starts a
+fresh test conversation so its routine state cannot be mixed with another
+version. Evals are optional evidence for the publish decision.
 
 Use the test to check the trigger, information collection, skill bindings,
 branches, endings, and handoffs before publishing.

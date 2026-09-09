@@ -19,7 +19,9 @@ services.
 ## Read First
 
 - `dashboard-shell.tsx`: top-level dashboard layout.
-- `app-sidebar.tsx`: navigation and section switching.
+- `app-sidebar.tsx` and `area-subnavs.tsx`: sidebar navigation, agent selection and creation, and configured agent channel links. `frontend/lib/agent-channel-catalog.ts` maps channel configuration into the compact list.
+- `agent-view.tsx`: agent shell and persistent settings owner across cockpit tabs. It retains unsaved private instructions while Test Chat uses the real async save port in `frontend/lib/agent-draft-save-port.ts`.
+- `agent-revision-test-chat.tsx`: immutable single/comparison tests, proactive greeting startup when enabled, lazy first-send when disabled, history adoption, and revision eval evidence. Each test view renders in a card with a labelled revision header; the single header also offers the direct **Compare versions** action, and comparison cards expose a visible close control that retains the other version as a single private thread. Its title-row overflow menu uses the shell’s DOM portal target and does not switch comparison to single chat. Conversation rendering reuses `chat-message-thread.tsx`, while context and eval controls open on demand. `test-execution-history-view.tsx` reads paginated private execution history through `frontend/lib/api-agent-revisions.ts`; the state helper preserves recorded turn/attempt identities, and `frontend/lib/agent-revision-test-chat-session.ts` keeps the agent-scoped session alive across dashboard route remounts.
 - `workbench/chat-workbench.tsx`: the operator test-chat workbench (live chat +
   copyable conversation id + selectable turn inspector + recent test sessions).
   `chat-view.tsx` is a thin alias over it; the workbench owns its own layout so it
@@ -43,7 +45,7 @@ services.
 - Chat UI: `workbench/chat-workbench.tsx` (+ `chat-view.tsx` alias),
   `chat-message-thread.tsx`, `conversation-drawer.tsx`, `chat-citations.tsx`.
 - Turn diagnostics (both surfaces): `turn-inspector/turn-diagnostics-panel.tsx`.
-- Test history: the workbench's **History** mode renders
+- Test history: Test Chat combines durable immutable executions with earlier workbench sessions. The workbench's **History** mode renders
   `workbench/test-sessions-view.tsx` (an activity-style table of
   `chatApi.listChatHistory({ sourceScope: 'operator_test' })` that opens the shared
   `ConversationDrawer`). Dashboard test chats (`source_channel` = `authenticated_chat`)

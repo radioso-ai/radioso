@@ -302,8 +302,8 @@ describe("public chat contract", () => {
     expect(settings.status).toBe(200);
     const embedToken = settings.body.websiteEmbedToken as string;
     const agent = await dependencies.agentService.resolve(session.workspaceId);
-    const resolveForAgent = vi.spyOn(dependencies.contextVariableResolutionReader, "resolveForAgent")
-      .mockImplementation(async (_workspaceId, _agentId, scopes) =>
+    const resolveForEnablements = vi.spyOn(dependencies.contextVariableResolutionReader, "resolveForEnablements")
+      .mockImplementation(async (_workspaceId, _agentId, _enablements, scopes) =>
         scopes.some((scope) => scope.type === "customer" && scope.id === "customer-123")
           ? [{
               name: "cart",
@@ -340,7 +340,7 @@ describe("public chat contract", () => {
       .set("x-radioso-public-session", publicSession.body.publicSessionToken)
       .send({ message: "What is in my cart?", stream: false, signedIdentity });
     expect(valid.status).toBe(200);
-    expect(resolveForAgent).toHaveBeenLastCalledWith(session.workspaceId, agent.id, [
+    expect(resolveForEnablements).toHaveBeenLastCalledWith(session.workspaceId, agent.id, expect.any(Array), [
       { type: "session", id: publicSession.body.publicSessionId },
       { type: "customer", id: "customer-123" },
       { type: "agent", id: agent.id },
@@ -354,7 +354,7 @@ describe("public chat contract", () => {
       .set("x-radioso-public-session", publicSession.body.publicSessionToken)
       .send({ message: "What is in my cart now?", stream: false, signedIdentity: `${signedIdentity}x` });
     expect(invalid.status).toBe(200);
-    expect(resolveForAgent).toHaveBeenLastCalledWith(session.workspaceId, agent.id, [
+    expect(resolveForEnablements).toHaveBeenLastCalledWith(session.workspaceId, agent.id, expect.any(Array), [
       { type: "session", id: publicSession.body.publicSessionId },
       { type: "agent", id: agent.id },
       { type: "workspace", id: session.workspaceId },

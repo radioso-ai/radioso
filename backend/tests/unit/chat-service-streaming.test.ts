@@ -38,6 +38,8 @@ import {
   InMemoryAgentRepository,
   InMemoryConversationRepository,
   InMemoryMessageRepository,
+  pinExistingConversationsToPublishedRevisions,
+  publishedRevisionResolverFixture,
 } from "../support/fakes.js";
 import type { ConversationOwnershipRecord } from "../../src/modules/handoff/public.js";
 import {
@@ -228,8 +230,11 @@ const makeChatService = (
     clarificationStore: NonNullable<ChatServiceOptions["clarificationStore"]>;
   },
   coverageAssessorFactory?: ChatServiceOptions["coverageAssessorFactory"],
-): ChatService =>
-  new ChatService({
+): ChatService => {
+  if (conversationRepository instanceof InMemoryConversationRepository) {
+    pinExistingConversationsToPublishedRevisions(conversationRepository);
+  }
+  return new ChatService({
     conversationRepository,
     messageRepository,
     retrievalTurn,
@@ -245,6 +250,7 @@ const makeChatService = (
     workspaceRepository,
     usageLimitPolicy,
     agentService,
+    agentRevisionRuntimeResolver: publishedRevisionResolverFixture(),
     directiveSteering,
     selectionStrategy,
     turnRouter,
@@ -263,6 +269,7 @@ const makeChatService = (
     assistantTurnPersistence: routine?.assistantTurnPersistence,
     coverageAssessorFactory,
   });
+};
 
 const asChatActivityPipeline = (pipeline: Record<string, unknown>) => {
   if (
@@ -385,6 +392,7 @@ describe("chat service streaming", () => {
         },
       },
       conversationEngine: createConversationEngine(),
+      agentRevisionRuntimeResolver: publishedRevisionResolverFixture(),
     });
 
     const events: ChatStreamEvent[] = [];
@@ -434,6 +442,7 @@ describe("chat service streaming", () => {
         },
       },
       conversationEngine: createConversationEngine(),
+      agentRevisionRuntimeResolver: publishedRevisionResolverFixture(),
     });
 
     for await (const _event of service.streamAnswer({
@@ -704,6 +713,7 @@ describe("chat service streaming", () => {
         },
       },
       conversationEngine: createConversationEngine(),
+      agentRevisionRuntimeResolver: publishedRevisionResolverFixture(),
     });
     return { service, savedStates, auditEventRepository };
   };

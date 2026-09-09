@@ -159,6 +159,14 @@ const createDependencies = () =>
       start: vi.fn(),
       stop: vi.fn(async () => {}),
     },
+    testExecutionRetentionWorker: {
+      start: vi.fn(),
+      stop: vi.fn(async () => {}),
+    },
+    revisionEvalRunRetentionWorker: {
+      start: vi.fn(),
+      stop: vi.fn(async () => {}),
+    },
     agentBundleImportCleanupWorker: {
       start: vi.fn(),
       stop: vi.fn(async () => {}),
@@ -273,6 +281,8 @@ describe("runtime startup", () => {
     expect(dependencies.vectorIndexReconciler?.start).toHaveBeenCalledOnce();
     expect(dependencies.actionDispatchWorker.start).toHaveBeenCalledOnce();
     expect(dependencies.copilotRetentionWorker.start).toHaveBeenCalledOnce();
+    expect(dependencies.testExecutionRetentionWorker.start).toHaveBeenCalledOnce();
+    expect(dependencies.revisionEvalRunRetentionWorker.start).toHaveBeenCalledOnce();
     expect(dependencies.websiteCrawlWorker.start).not.toHaveBeenCalled();
     expect(dependencies.connectorRegistry.runMigrations).not.toHaveBeenCalled();
     expect(dependencies.connectorRegistry.initializeAll).not.toHaveBeenCalled();
@@ -282,6 +292,8 @@ describe("runtime startup", () => {
     expect(dependencies.vectorIndexReconciler?.stop).toHaveBeenCalledOnce();
     expect(dependencies.actionDispatchWorker.stop).toHaveBeenCalledOnce();
     expect(dependencies.copilotRetentionWorker.stop).toHaveBeenCalledOnce();
+    expect(dependencies.testExecutionRetentionWorker.stop).toHaveBeenCalledOnce();
+    expect(dependencies.revisionEvalRunRetentionWorker.stop).toHaveBeenCalledOnce();
     expect(dependencies.websiteCrawlWorker.stop).not.toHaveBeenCalled();
     expect(dependencies.realtimePublisherLifecycle.shutdown).toHaveBeenCalledOnce();
     expect(dependencies.applicationModules.shutdownAll).toHaveBeenCalledOnce();
@@ -540,6 +552,12 @@ describe("runtime startup", () => {
       },
       copilotRetentionWorker: {
         route: "POST /internal/tasks/copilot-retention/sweep",
+      },
+      testExecutionRetentionWorker: {
+        route: "POST /internal/tasks/agent-test-execution-retention/sweep",
+      },
+      revisionEvalRunRetentionWorker: {
+        route: "POST /internal/tasks/agent-revision-eval-run-retention/sweep",
       },
       agentBundleImportCleanupWorker: {
         route: "POST /internal/tasks/agent-bundle-imports/sweep",

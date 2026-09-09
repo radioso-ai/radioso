@@ -48,6 +48,14 @@ export interface OpenApiSchemaCatalog {
   AgentChannelCredentialMetadataSchema: z.ZodTypeAny;
   AgentChannelCredentialParamsSchema: RouteParameterSchema;
   AgentParamsSchema: RouteParameterSchema;
+  AgentRevisionStateSchema: z.ZodTypeAny;
+  AgentRevisionCandidateRequestSchema: z.ZodTypeAny;
+  AgentRevisionCandidateResponseSchema: z.ZodTypeAny;
+  AgentRevisionListResponseSchema: z.ZodTypeAny;
+  AgentRevisionDetailResponseSchema: z.ZodTypeAny;
+  AgentRevisionPublishRequestSchema: z.ZodTypeAny;
+  AgentRevisionPublishResponseSchema: z.ZodTypeAny;
+  AgentRevisionParamsSchema: RouteParameterSchema;
   AgentSchema: z.ZodTypeAny;
   AgentContextVariableEnablementListResponseSchema: z.ZodTypeAny;
   AgentContextVariableEnablementRequestSchema: z.ZodTypeAny;

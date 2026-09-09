@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { sql } from "kysely";
+import { sql, type Transaction } from "kysely";
 
 import {
   routineDefinitionDraftInputSchema,
@@ -19,7 +19,14 @@ import {
   type RoutineTerminalKind,
 } from "../../modules/routines/public.js";
 import { toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
-import type { Db } from "../../shared/infra/kysely/types.js";
+import type { DB, Db } from "../../shared/infra/kysely/types.js";
+import { withAgentDraftMutation } from "./agentDraftMutation.js";
+import { mapDirectiveRow, type AgentDirectiveRow } from "./agentRepository.js";
+import type { AgentRevisionSnapshot } from "../../modules/agents/public.js";
+import {
+  projectDirectiveScopeTagsForSelectedRoutines,
+  selectDraftRoutineDefinitions,
+} from "../../modules/routines/draftProjection.js";
 import { answerCoverageCriteriaSchema } from "../../modules/answerCoverage/public.js";
 
 interface RoutineDefinitionRow {
@@ -342,19 +349,211 @@ export class RoutineDefinitionRepository {
   }
 
   async listByAgent(agentId: string): Promise<RoutineDefinition[]> {
-    const result = await sql<RoutineDefinitionRow>`
-      ${definitionSelect}
-      WHERE d.agent_id = ${agentId}
-      ORDER BY d.status ASC, d.name ASC, d.version ASC, d.created_at ASC, d.id ASC
-    `.execute(this.db);
-    return result.rows.map(mapRow);
+    return this.listByAgentOn(this.db, agentId);
   }
 
   async findById(agentId: string, id: string): Promise<RoutineDefinition | null> {
+    return this.findByIdOn(this.db, agentId, id);
+  }
+
+  /**
+   * These lifecycle variants are the only authoring path used by the service.
+   * They keep the normalized routine graph and the agent draft projection in one
+   * transaction. The service may still use the legacy methods above in narrow
+   * repository tests, but application composition never gets a post-commit hook.
+   */
+  async createDraftWithAgentDraft(
+    workspaceId: string,
+    agentId: string,
+    input: RoutineDefinitionDraftInput,
+  ): Promise<RoutineDefinition> {
+    const draft = routineDefinitionDraftInputSchema.parse(input);
+    return this.mutateAgentDraft(workspaceId, agentId, async (trx) => {
+      const id = randomUUID();
+      await trx.insertInto("routine_definition").values({
+        id,
+        agent_id: agentId,
+        version: 1,
+        name: draft.name,
+        status: "draft",
+        activation_trigger_description: draft.activation.triggerDescription,
+        activation_gate_ref: draft.activation.gateRef,
+        activation_priority: draft.activation.priority,
+        activation_reentry_mode: draft.activation.reentryMode,
+        lineage_id: randomUUID(),
+      }).execute();
+      await this.replaceChildren(trx, id, draft);
+      return this.requireDefinition(trx, agentId, id);
+    });
+  }
+
+  async updateDraftWithAgentDraft(
+    workspaceId: string,
+    agentId: string,
+    id: string,
+    input: RoutineDefinitionDraftInput,
+    options: { expectedUpdatedAt?: Date } = {},
+  ): Promise<RoutineDefinition> {
+    const draft = routineDefinitionDraftInputSchema.parse(input);
+    return this.mutateAgentDraft(workspaceId, agentId, async (trx) => {
+      const current = await this.findByIdOn(trx, agentId, id);
+      if (!current || current.status !== "draft") {
+        throw new Error(`routine_definition_update_conflict:${id}`);
+      }
+      await lockLineage(trx, current.lineageId);
+      const updated = await trx.updateTable("routine_definition")
+        .set({
+          name: draft.name,
+          activation_trigger_description: draft.activation.triggerDescription,
+          activation_gate_ref: draft.activation.gateRef,
+          activation_priority: draft.activation.priority,
+          activation_reentry_mode: draft.activation.reentryMode,
+          updated_at: nextAuthoredUpdatedAt(),
+        })
+        .where("agent_id", "=", agentId)
+        .where("id", "=", id)
+        .where("status", "=", "draft")
+        .$if(options.expectedUpdatedAt !== undefined, (query) => query.where(matchesExpectedUpdatedAt(options.expectedUpdatedAt!)))
+        .returning("id")
+        .executeTakeFirst();
+      if (!updated) throw new Error(`routine_definition_update_conflict:${id}`);
+      await this.replaceChildren(trx, id, draft);
+      return this.requireDefinition(trx, agentId, id);
+    });
+  }
+
+  async publishWithAgentDraft(
+    workspaceId: string,
+    agentId: string,
+    draftId: string,
+    options: RoutineDefinitionPublishOptions = {},
+  ): Promise<RoutineDefinition> {
+    return this.mutateAgentDraft(workspaceId, agentId, async (trx) => {
+      const draft = await this.findByIdOn(trx, agentId, draftId);
+      if (!draft) throw new Error(`routine_definition_not_found:${draftId}`);
+      await lockLineage(trx, draft.lineageId);
+      const superseded = await trx.updateTable("routine_definition")
+        .set({ status: "superseded", updated_at: nextAuthoredUpdatedAt() })
+        .where("lineage_id", "=", draft.lineageId)
+        .where("status", "=", "published")
+        .returning("id")
+        .execute();
+      const published = await trx.updateTable("routine_definition")
+        .set({ status: "published", updated_at: nextAuthoredUpdatedAt() })
+        .where("agent_id", "=", agentId)
+        .where("id", "=", draftId)
+        .where("status", "=", "draft")
+        .$if(options.expectedUpdatedAt !== undefined, (query) => query.where(matchesExpectedUpdatedAt(options.expectedUpdatedAt!)))
+        .returning("id")
+        .executeTakeFirst();
+      if (!published) throw new Error(`routine_definition_publish_conflict:${draftId}`);
+      await this.touchCompletionExportDestinationRef(trx, draftId);
+      await options.onPublished?.({
+        previousPublishedId: superseded[0]?.id ?? null,
+        newDefinitionId: draftId,
+        transaction: trx,
+      });
+      return this.requireDefinition(trx, agentId, draftId);
+    });
+  }
+
+  async createRevisionDraftWithAgentDraft(
+    workspaceId: string,
+    agentId: string,
+    publishedId: string,
+  ): Promise<RoutineDefinition | null> {
+    return this.mutateAgentDraft(workspaceId, agentId, async (trx) => {
+      const published = await this.findByIdOn(trx, agentId, publishedId);
+      if (!published || published.status !== "published") return null;
+      await lockLineage(trx, published.lineageId);
+      const existing = await this.findDraftByLineageOn(trx, agentId, published.lineageId);
+      if (existing) return existing;
+      const id = randomUUID();
+      await trx.insertInto("routine_definition").values({
+        id,
+        agent_id: agentId,
+        version: sql<number>`(SELECT COALESCE(MAX(version), 0) + 1 FROM routine_definition WHERE lineage_id = ${published.lineageId})`,
+        name: published.name,
+        status: "draft",
+        activation_trigger_description: published.activation.triggerDescription,
+        activation_gate_ref: published.activation.gateRef,
+        activation_priority: published.activation.priority,
+        activation_reentry_mode: published.activation.reentryMode,
+        lineage_id: published.lineageId,
+      }).execute();
+      await this.replaceChildren(trx, id, published);
+      return this.requireDefinition(trx, agentId, id);
+    });
+  }
+
+  async archiveWithAgentDraft(
+    workspaceId: string,
+    agentId: string,
+    id: string,
+    options: { expectedDraftRevision?: { id: string; updatedAt: Date } | null } = {},
+  ): Promise<RoutineDefinition | null> {
+    return this.mutateAgentDraft(workspaceId, agentId, async (trx) => {
+      const routine = await this.findByIdOn(trx, agentId, id);
+      if (!routine || routine.status !== "published") return null;
+      await lockLineage(trx, routine.lineageId);
+      const archived = await trx.updateTable("routine_definition")
+        .set({ status: "archived", updated_at: nextAuthoredUpdatedAt() })
+        .where("agent_id", "=", agentId).where("id", "=", id).where("status", "=", "published")
+        .returning("id").executeTakeFirst();
+      if (!archived) return null;
+      const draft = await this.findDraftByLineageOn(trx, agentId, routine.lineageId);
+      const expected = options.expectedDraftRevision;
+      if (expected === null && draft) throw new Error(`routine_definition_archive_conflict:${id}`);
+      if (expected && (!draft || draft.id !== expected.id || draft.updatedAt.getTime() !== expected.updatedAt.getTime())) {
+        throw new Error(`routine_definition_archive_conflict:${id}`);
+      }
+      if (draft) await trx.deleteFrom("routine_definition").where("id", "=", draft.id).execute();
+      return this.requireDefinition(trx, agentId, id);
+    });
+  }
+
+  async restoreWithAgentDraft(workspaceId: string, agentId: string, id: string): Promise<RoutineDefinition | null> {
+    return this.mutateAgentDraft(workspaceId, agentId, async (trx) => {
+      const routine = await this.findByIdOn(trx, agentId, id);
+      if (!routine || routine.status !== "archived") return null;
+      await lockLineage(trx, routine.lineageId);
+      const restored = await trx.updateTable("routine_definition as target")
+        .set({ status: "published", updated_at: nextAuthoredUpdatedAt() })
+        .where("target.agent_id", "=", agentId).where("target.id", "=", id).where("target.status", "=", "archived")
+        .where((eb) => eb.not(eb.exists(eb.selectFrom("routine_definition as other").select(sql`1`.as("one"))
+          .whereRef("other.lineage_id", "=", "target.lineage_id").where("other.status", "=", "published").whereRef("other.id", "<>", "target.id"))))
+        .returning("target.id as id").executeTakeFirst();
+      if (!restored) return null;
+      await this.touchCompletionExportDestinationRef(trx, id);
+      return this.requireDefinition(trx, agentId, id);
+    });
+  }
+
+  async deleteDraftWithAgentDraft(
+    workspaceId: string,
+    agentId: string,
+    id: string,
+    options: { expectedUpdatedAt?: Date } = {},
+  ): Promise<RoutineDefinitionDeleteDraftResult> {
+    return this.mutateAgentDraft(workspaceId, agentId, async (trx) => {
+      const current = await this.findByIdOn(trx, agentId, id);
+      if (!current || current.status !== "draft") return { outcome: "not_found" };
+      await lockLineage(trx, current.lineageId);
+      const locked = await this.findByIdOn(trx, agentId, id);
+      if (!locked || locked.status !== "draft") return { outcome: "not_found" };
+      if (options.expectedUpdatedAt && locked.updatedAt.getTime() !== options.expectedUpdatedAt.getTime()) {
+        return { outcome: "conflict" };
+      }
+      const deleted = await trx.deleteFrom("routine_definition").where("agent_id", "=", agentId).where("id", "=", id).where("status", "=", "draft").returning("id").executeTakeFirst();
+      return deleted ? { outcome: "deleted" } : { outcome: "not_found" };
+    });
+  }
+
+  private async findByIdOn(db: Db, agentId: string, id: string): Promise<RoutineDefinition | null> {
     const result = await sql<RoutineDefinitionRow>`
       ${definitionSelect}
       WHERE d.agent_id = ${agentId} AND d.id = ${id}
-    `.execute(this.db);
+    `.execute(db);
     const row = result.rows[0];
     return row ? mapRow(row) : null;
   }
@@ -814,12 +1013,75 @@ export class RoutineDefinitionRepository {
   }
 
   private async findDraftByLineage(agentId: string, lineageId: string): Promise<RoutineDefinition | null> {
+    return this.findDraftByLineageOn(this.db, agentId, lineageId);
+  }
+
+  private async findDraftByLineageOn(db: Db, agentId: string, lineageId: string): Promise<RoutineDefinition | null> {
     const result = await sql<RoutineDefinitionRow>`
       ${definitionSelect}
       WHERE d.agent_id = ${agentId} AND d.lineage_id = ${lineageId} AND d.status = 'draft'
-    `.execute(this.db);
+    `.execute(db);
     const row = result.rows[0];
     return row ? mapRow(row) : null;
+  }
+
+  private async listByAgentOn(db: Db, agentId: string): Promise<RoutineDefinition[]> {
+    const result = await sql<RoutineDefinitionRow>`
+      ${definitionSelect}
+      WHERE d.agent_id = ${agentId}
+      ORDER BY d.status ASC, d.name ASC, d.version ASC, d.created_at ASC, d.id ASC
+    `.execute(db);
+    return result.rows.map(mapRow);
+  }
+
+  private async requireDefinition(db: Db, agentId: string, id: string): Promise<RoutineDefinition> {
+    const definition = await this.findByIdOn(db, agentId, id);
+    if (!definition) throw new Error(`routine_definition_not_found:${id}`);
+    return definition;
+  }
+
+  private async mutateAgentDraft<T>(
+    workspaceId: string,
+    agentId: string,
+    operation: (trx: Transaction<DB>) => Promise<T>,
+  ): Promise<T> {
+    return withAgentDraftMutation(this.db, workspaceId, agentId, async (trx, snapshot) => {
+      const result = await operation(trx);
+      if (result === null ||
+        (typeof result === "object" && result !== null && "outcome" in result && result.outcome !== "deleted")) {
+        return { result, unchanged: true };
+      }
+      return {
+        result,
+        snapshot: await this.projectDraftSnapshot(trx, agentId, snapshot),
+      };
+    });
+  }
+
+  /** Reads the final normalized graph after a lifecycle mutation, never a stale input object. */
+  private async projectDraftSnapshot(
+    trx: Transaction<DB>,
+    agentId: string,
+    snapshot: AgentRevisionSnapshot,
+  ): Promise<AgentRevisionSnapshot> {
+    const [definitions, directives] = await Promise.all([
+      this.listByAgentOn(trx, agentId),
+      sql<AgentDirectiveRow>`
+        SELECT * FROM agent_directives
+        WHERE agent_id = ${agentId}
+        ORDER BY created_at ASC, id ASC
+      `.execute(trx),
+    ]);
+    const selectedRoutines = selectDraftRoutineDefinitions(definitions);
+    return {
+      ...snapshot,
+      routines: selectedRoutines,
+      directives: projectDirectiveScopeTagsForSelectedRoutines(
+        directives.rows.map(mapDirectiveRow),
+        definitions,
+        selectedRoutines,
+      ),
+    };
   }
 
   private async touchCompletionExportDestinationRef(db: Db, definitionId: string): Promise<void> {

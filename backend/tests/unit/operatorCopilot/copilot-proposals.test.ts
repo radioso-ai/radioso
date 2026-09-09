@@ -345,7 +345,7 @@ describe("US3 copilot proposals", () => {
       payload: expect.objectContaining({ op: "remove" }),
     }));
     expect(result).toMatchObject({ targetType: "directive", targetLabel: "Avoid competitors" });
-    expect((result as { summary: string }).summary).toMatch(/permanently|cannot be undone/i);
+    expect((result as { summary: string }).summary).toMatch(/agent draft|Review & Publish/i);
     // Finding 1 (issue triage, next-ray-epic-issue): the operator-facing card must carry a
     // structural removal signal of its own, not just a summary sentence Ray happened to phrase
     // as irreversible - so the confirmation dialog can state plainly that Apply deletes the

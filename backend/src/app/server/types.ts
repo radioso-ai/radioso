@@ -36,6 +36,7 @@ import type { AuthService } from "../../modules/auth/services/authService.js";
 import type { EmailVerificationService } from "../../modules/auth/services/emailVerificationService.js";
 import type { PasswordResetService } from "../../modules/auth/services/passwordResetService.js";
 import type { AccountAccessService } from "../../modules/account/services/accountAccessService.js";
+import type { AgentRevisionService } from "../../modules/agents/public.js";
 import type { AccessGrantService } from "../../modules/accessGrants/services/accessGrantService.js";
 import type { AccountInvitationService } from "../../modules/account/services/accountInvitationService.js";
 import type { AuditService } from "../../modules/audit/composition.js";
@@ -116,6 +117,7 @@ import type { OperatorCopilotService } from "../../modules/operatorCopilot/publi
 import type { OperatorMcpApplicationService } from "../../modules/operatorCopilot/public.js";
 import type { CopilotRepositoryPort } from "../../modules/operatorCopilot/public.js";
 import type { CopilotRetentionWorker } from "../../modules/operatorCopilot/public.js";
+import type { TtlRetentionWorker } from "../../shared/domain/ttlRetentionWorker.js";
 import type { CopilotToolDescriptor, CopilotWorkspaceRouteKeyResolver } from "../../modules/operatorCopilot/public.js";
 import type { AgenticCapabilityRunner } from "../../shared/agent-runtime/index.js";
 import type { QualityTurnsService } from "../../modules/quality/composition.js";
@@ -138,6 +140,8 @@ import type {
   OperatorMcpGrantService,
 } from "../../modules/operatorMcpAuthorization/public.js";
 import type { PersistedOperatorMcpClient } from "../../modules/operatorMcpAuthorization/contracts.js";
+import type { TestExecutionService } from "../../modules/test-execution/testExecution.js";
+import type { RevisionEvalRunService } from "../../modules/eval/services/revisionEvalRun.js";
 
 export interface AppDependencies {
   env: Env;
@@ -225,10 +229,15 @@ export interface AppDependencies {
   approvalDecisionService: ApprovalDecisionService;
   operatorReplyService: OperatorReplyService;
   workbenchReplayRunner: WorkbenchReplayRunner;
+  /** Operator-only immutable candidate test executions; never mounted on public chat. */
+  testExecutionService: TestExecutionService;
   // Worker-process drain loop for the async conversation-action outbox (spec 070).
   // Present in every dependency build; only the worker runtime calls start/stop.
   actionDispatchWorker: ActionDispatchWorker;
   copilotRetentionWorker: CopilotRetentionWorker;
+  /** Purges old private test-execution/revision-eval-run evidence (JSONB transcripts, frozen snapshots). */
+  testExecutionRetentionWorker: TtlRetentionWorker;
+  revisionEvalRunRetentionWorker: TtlRetentionWorker;
   chatBootstrapService: ChatBootstrapService;
   chatHistoryService: ChatHistoryService;
   conversationForkService: ConversationForkService;
@@ -241,6 +250,7 @@ export interface AppDependencies {
   evalMessageCaseService: EvalMessageCaseService;
   evalCaseService: EvalCaseService;
   evalRunService: EvalRunService;
+  revisionEvalRunService?: RevisionEvalRunService;
   evalSuiteService: EvalSuiteService;
   platformSettingsService: PlatformSettingsService;
   skillCatalogService: SkillCatalogService;
@@ -248,6 +258,7 @@ export interface AppDependencies {
   skillCapabilityRegistry: SkillCapabilityRegistry;
   agentSkillsService: AgentSkillsService;
   agentService: AgentService;
+  agentRevisionService: AgentRevisionService;
   agentBundleExportService: AgentBundleExportService;
   agentBundleImportService: AgentBundleImportService;
   agentBundleImportCleanupWorker: AgentBundleImportCleanupWorker;

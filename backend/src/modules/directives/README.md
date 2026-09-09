@@ -13,6 +13,12 @@ The design rationale lives in `specs/067-conversational-directives/`.
 
 ## Boundaries
 
+Directive writes participate in the agent draft revision through the agents
+authoring boundary. This module owns directive validation and steering; it does
+not publish revisions or resolve candidate state. For draft generation,
+candidate selection, and publication, start at
+`../agents/README.md` and `../agents/agentRevision.ts`.
+
 The generic directive defaults now live in `@radioso/conversation-defaults`:
 catalog registration, deterministic/contextual matching, prompt construction,
 classification parsing, relationship resolution, and steering-rule mapping.

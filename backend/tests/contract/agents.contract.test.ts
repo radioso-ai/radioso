@@ -6,7 +6,12 @@ import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../src/modules/documents/
 import { defaultAnswerDirectives } from "../../src/modules/directives/public.js";
 import type { RoutineDefinitionDraftInput } from "../../src/modules/routines/public.js";
 import { REWRITE_TURN_KIND } from "../../src/modules/retrieval/domain/retrievalPipelineTypes.js";
-import { adminSessionHeaders, createTestApp, issueTestToken } from "../support/testApp.js";
+import {
+  adminSessionHeaders,
+  createTestApp,
+  issueTestToken,
+  publishTestAgentBaseline,
+} from "../support/testApp.js";
 import { forbidden } from "../../src/shared/domain/errors.js";
 import { textResult } from "../support/llmStubs.js";
 
@@ -202,6 +207,26 @@ describe("agents contract", () => {
       agentName: list.body.agents[0].name,
       answer: expect.any(String),
     });
+  });
+
+  it("returns an explicit not-found response when chat selects an unpublished agent", async () => {
+    const { app } = createTestApp();
+    const { token } = await issueTestToken(app, "agents-unpublished-runtime@example.com");
+    const authorization = `Bearer ${token}`;
+    const agent = await request(app)
+      .post("/api/v1/agents")
+      .set("Authorization", authorization)
+      .send({ name: "Unpublished agent" })
+      .expect(201);
+
+    await request(app)
+      .post("/api/v1/assistant/chat")
+      .set("Authorization", authorization)
+      .send({ agentId: agent.body.id, message: "hello", stream: false })
+      .expect(404)
+      .expect((response) => {
+        expect(response.body).toMatchObject({ error: { message: "Agent is not published" } });
+      });
   });
 
   it("persists selected source scope and validates source ownership", async () => {
@@ -636,7 +661,7 @@ describe("agents contract", () => {
 
   it("limits assistant retrieval to the selected agent sources", async () => {
     const { app } = createTestApp();
-    const { token } = await issueTestToken(app, "agents-source-retrieval@example.com");
+    const { token, workspaceId } = await issueTestToken(app, "agents-source-retrieval@example.com");
     const authorization = `Bearer ${token}`;
 
     await request(app)
@@ -685,6 +710,7 @@ describe("agents contract", () => {
         },
       })
       .expect(201);
+    await publishTestAgentBaseline(app, { workspaceId, agentId: scopedAgent.body.id });
 
     const scopedChat = await request(app)
       .post("/api/v1/assistant/chat")
@@ -705,6 +731,7 @@ describe("agents contract", () => {
         },
       })
       .expect(200);
+    await publishTestAgentBaseline(app, { workspaceId, agentId: scopedAgent.body.id });
 
     const allowedChat = await request(app)
       .post("/api/v1/assistant/chat")
@@ -738,6 +765,7 @@ describe("agents contract", () => {
         retrievalEnabled: false,
       })
       .expect(201);
+    await publishTestAgentBaseline(app, { workspaceId: first.workspaceId, agentId: agent.body.id });
 
     expect(agent.body).toMatchObject({
       retrievalEnabled: false,
@@ -1444,7 +1472,7 @@ describe("agents contract", () => {
         },
       },
     });
-    const { token } = await issueTestToken(app, "agents-streaming-identity@example.com");
+    const { token, workspaceId } = await issueTestToken(app, "agents-streaming-identity@example.com");
     const authorization = `Bearer ${token}`;
 
     const agent = await request(app)
@@ -1455,6 +1483,7 @@ describe("agents contract", () => {
         customInstruction: "You are Balaram, the course guide.",
       })
       .expect(201);
+    await publishTestAgentBaseline(app, { workspaceId, agentId: agent.body.id });
 
     const response = await request(app)
       .post("/api/v1/assistant/chat")
@@ -1608,6 +1637,7 @@ describe("agents contract", () => {
       .set("Cookie", cookie)
       .set("X-Workspace-Id", workspaceId)
       .expect(200);
+    await publishTestAgentBaseline(app, { workspaceId, agentId: sideAgent.body.id });
 
     expect(sideAnonymousToken.body.surfaceSettings.anonymousChat.token).not.toBe(defaultAnonymousToken.body.surfaceSettings.anonymousChat.token);
     expect(sideEmbedToken.body.surfaceSettings.websiteEmbed.token).not.toBe(defaultEmbedToken.body.surfaceSettings.websiteEmbed.token);

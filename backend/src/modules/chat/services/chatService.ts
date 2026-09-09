@@ -31,7 +31,7 @@ import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspace
 import type { BootstrapGreetingCacheRepositoryPort } from "../../../db/repositories/bootstrapGreetingCacheRepository.js";
 import type { ConversationOwnershipRepository } from "../../../db/repositories/conversationOwnershipRepository.js";
 import type { FacetExtractionJobStore } from "../../facets/public.js";
-import type { AgentService } from "../../agents/public.js";
+import type { AgentRevisionRuntimeResolver, AgentService } from "../../agents/public.js";
 import type { ContextVariableResolutionReaderPort } from "../../context-variables/public.js";
 import type { ApprovalResumeResult, ResumeRunner } from "../../approvals/public.js";
 import type { ChatGateway } from "../contracts/chatGateway.js";
@@ -189,6 +189,8 @@ export interface ChatServiceOptions {
   bootstrapGreetingCacheRepository?: BootstrapGreetingCacheRepositoryPort;
   usageLimitPolicy?: UsageLimitPolicy;
   agentService?: Pick<AgentService, "resolve">;
+  /** Immutable release resolver; default production composition always provides it. */
+  agentRevisionRuntimeResolver?: AgentRevisionRuntimeResolver;
   /** Optional: resolves the agent's enabled host context variables per turn. */
   contextVariableRepository?: ContextVariableResolutionReaderPort;
   directiveSteering?: RouteScopedDirectiveRuntime;
@@ -335,6 +337,7 @@ export class ChatService {
       bootstrapGreetingCacheRepository,
       usageLimitPolicy = new NoopUsageLimitPolicy(),
       agentService,
+      agentRevisionRuntimeResolver,
       contextVariableRepository,
       directiveSteering = noopRouteScopedDirectiveRuntime,
       directiveStateStore = noopDirectiveStateStore,
@@ -429,6 +432,7 @@ export class ChatService {
       logger,
       facetExtractionJobs,
       workspaceInvalidationPublisher,
+      agentRevisionRuntimeResolver,
     );
     this.chatTurnAssembly = turnAssemblyFactory?.create({
       chatSessionPreparer: this.chatSessionPreparer,

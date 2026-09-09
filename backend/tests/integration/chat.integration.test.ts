@@ -7,7 +7,7 @@ import type { TriggerAnalysisGateway } from "../../src/modules/retrieval/service
 import { SUGGESTIONS_SENTINEL } from "../../src/modules/chat/services/groundedAnswerEnvelope.js";
 import type { ProductAnalyticsEvent } from "../../src/shared/analytics/productAnalyticsTypes.js";
 import type { RoutineDefinitionDraftInput } from "../../src/modules/routines/public.js";
-import { createTestApp, issueTestToken } from "../support/testApp.js";
+import { createTestApp, issueTestToken, publishTestAgentBaseline } from "../support/testApp.js";
 import { InMemoryMessageRepository } from "../support/fakes.js";
 import { retrievalFixtureDocuments } from "../support/retrievalFixtures.js";
 import {
@@ -44,6 +44,7 @@ const getAnalyticsPayload = (metadata: Record<string, unknown>): ProductAnalytic
 };
 
 const updateRetrievalSkillSettings = async (
+  app: ReturnType<typeof createTestApp>["app"],
   dependencies: ReturnType<typeof createTestApp>["dependencies"],
   workspaceId: string,
   settings: Record<string, unknown>,
@@ -52,12 +53,14 @@ const updateRetrievalSkillSettings = async (
   // `customInstruction` is the agent's answer-instruction behavior field (read on both the
   // retrieval and the social/identity paths); the rest are retrieval skill settings.
   const { customInstruction, ...skillSettings } = settings;
-  return dependencies.agentService.update(workspaceId, agent.id, {
+  const updated = await dependencies.agentService.update(workspaceId, agent.id, {
     ...(customInstruction !== undefined ? { customInstruction: customInstruction as string } : {}),
     skillSettings: {
       "retrieval.answer": skillSettings,
     },
   });
+  await publishTestAgentBaseline(app, { workspaceId, agentId: agent.id });
+  return updated;
 };
 
 const supportIntakeRoutineDraft = (): RoutineDefinitionDraftInput => ({
@@ -110,6 +113,7 @@ const parseSseEvents = (body: string): Array<{ event: string; data: Record<strin
   });
 
 const bindAlwaysDirectiveToAgentSkill = async (
+  app: ReturnType<typeof createTestApp>["app"],
   dependencies: ReturnType<typeof createTestApp>["dependencies"],
   repositories: ReturnType<typeof createTestApp>["repositories"],
   workspaceId: string,
@@ -135,6 +139,7 @@ const bindAlwaysDirectiveToAgentSkill = async (
     action: "Look up the order.",
     binding: { kind: "skill", skillName },
   });
+  await publishTestAgentBaseline(app, { workspaceId, agentId: agent.id });
 };
 
 describe("chat integration", () => {
@@ -227,7 +232,7 @@ describe("chat integration", () => {
     ]);
     const { app, dependencies, repositories } = createTestApp({ skillExecutorRegistry });
     const { token, workspaceId } = await issueTestToken(app, "bound-agent-skill-json@example.com");
-    await bindAlwaysDirectiveToAgentSkill(dependencies, repositories, workspaceId, "order_lookup");
+    await bindAlwaysDirectiveToAgentSkill(app, dependencies, repositories, workspaceId, "order_lookup");
 
     const response = await request(app)
       .post("/api/v1/assistant/chat")
@@ -264,7 +269,7 @@ describe("chat integration", () => {
     ]);
     const { app, dependencies, repositories } = createTestApp({ skillExecutorRegistry });
     const { token, workspaceId } = await issueTestToken(app, "bound-agent-skill-stream@example.com");
-    await bindAlwaysDirectiveToAgentSkill(dependencies, repositories, workspaceId, "order_lookup");
+    await bindAlwaysDirectiveToAgentSkill(app, dependencies, repositories, workspaceId, "order_lookup");
 
     const response = await request(app)
       .post("/api/v1/assistant/chat")
@@ -378,6 +383,7 @@ describe("chat integration", () => {
       action: "Introduce yourself by name.",
       lifecycle: { kind: "once_per_conversation" },
     });
+    await publishTestAgentBaseline(app, { workspaceId, agentId: agent.id });
 
     const first = await request(app)
       .post("/api/v1/assistant/chat")
@@ -429,6 +435,7 @@ describe("chat integration", () => {
       action: "Mention the grounding context once.",
       lifecycle: { kind: "once_per_conversation" },
     });
+    await publishTestAgentBaseline(app, { workspaceId, agentId: agent.id });
 
     const first = await request(app)
       .post("/api/v1/assistant/chat")
@@ -484,7 +491,7 @@ describe("chat integration", () => {
       })
       .expect(202);
 
-    await updateRetrievalSkillSettings(dependencies, workspaceId, {
+    await updateRetrievalSkillSettings(app, dependencies, workspaceId, {
         queryRewriteEnabled: false,
         semanticRewriteInstructions: "",
         lexicalRewriteInstructions: "",
@@ -587,7 +594,7 @@ describe("chat integration", () => {
         },
       });
 
-    await updateRetrievalSkillSettings(dependencies, workspaceId, {
+    await updateRetrievalSkillSettings(app, dependencies, workspaceId, {
         queryRewriteEnabled: false,
         semanticRewriteInstructions: "Keep the query meaning-preserving and standalone.",
         lexicalRewriteInstructions: "Prefer exact literals, aliases, and corpus-native notation.",
@@ -1006,7 +1013,7 @@ describe("chat integration", () => {
       .set("Authorization", authorization)
       .send({ title: "Guide", content: "The page explains testing and parsing content for users." });
 
-    await updateRetrievalSkillSettings(dependencies, workspaceId, {
+    await updateRetrievalSkillSettings(app, dependencies, workspaceId, {
         queryRewriteEnabled: true,
         rerankEnabled: false,
         vectorTopK: 20,
@@ -1255,7 +1262,7 @@ describe("chat integration", () => {
         .send(document);
     }
 
-    await updateRetrievalSkillSettings(dependencies, workspaceId, {
+    await updateRetrievalSkillSettings(app, dependencies, workspaceId, {
         queryRewriteEnabled: false,
         rerankEnabled: false,
         vectorTopK: 20,
@@ -1316,7 +1323,7 @@ describe("chat integration", () => {
         .send(document);
     }
 
-    await updateRetrievalSkillSettings(dependencies, workspaceId, {
+    await updateRetrievalSkillSettings(app, dependencies, workspaceId, {
         queryRewriteEnabled: true,
         rerankEnabled: true,
         vectorTopK: 100,
@@ -1332,7 +1339,7 @@ describe("chat integration", () => {
         includeDebug: true,
       });
 
-    await updateRetrievalSkillSettings(dependencies, workspaceId, {
+    await updateRetrievalSkillSettings(app, dependencies, workspaceId, {
         queryRewriteEnabled: true,
         rerankEnabled: true,
         vectorTopK: 100,
@@ -1375,7 +1382,7 @@ describe("chat integration", () => {
       .set("Authorization", authorization)
       .send(retrievalFixtureDocuments.sessionCookie);
 
-    await updateRetrievalSkillSettings(dependencies, workspaceId, {
+    await updateRetrievalSkillSettings(app, dependencies, workspaceId, {
         queryRewriteEnabled: true,
         rerankEnabled: true,
         vectorTopK: 50,
@@ -1636,7 +1643,7 @@ describe("chat integration", () => {
       .set("Authorization", authorization)
       .send({ title: "Narayani", content: "Narayani is a teacher and speaker." });
 
-    await updateRetrievalSkillSettings(dependencies, workspaceId, {
+    await updateRetrievalSkillSettings(app, dependencies, workspaceId, {
         queryRewriteEnabled: true,
         rerankEnabled: false,
         vectorTopK: 20,
@@ -1702,7 +1709,7 @@ describe("chat integration", () => {
         content: "Narayani is the author of La mia anima ricorda Swami Kriyananda.",
       });
 
-    await updateRetrievalSkillSettings(dependencies, workspaceId, {
+    await updateRetrievalSkillSettings(app, dependencies, workspaceId, {
         queryRewriteEnabled: true,
         rerankEnabled: true,
         vectorTopK: 20,
@@ -1767,7 +1774,7 @@ describe("chat integration", () => {
     const { token, workspaceId } = await issueTestToken(app, "social-only@example.com");
     const authorization = `Bearer ${token}`;
 
-    await updateRetrievalSkillSettings(dependencies, workspaceId, {
+    await updateRetrievalSkillSettings(app, dependencies, workspaceId, {
         queryRewriteEnabled: true,
         semanticRewriteInstructions: "",
         lexicalRewriteInstructions: "",
@@ -1832,7 +1839,7 @@ describe("chat integration", () => {
     const { token, workspaceId } = await issueTestToken(app, "social-rewrite-disabled@example.com");
     const authorization = `Bearer ${token}`;
 
-    await updateRetrievalSkillSettings(dependencies, workspaceId, {
+    await updateRetrievalSkillSettings(app, dependencies, workspaceId, {
         queryRewriteEnabled: false,
         semanticRewriteInstructions: "",
         lexicalRewriteInstructions: "",
@@ -1901,7 +1908,7 @@ describe("chat integration", () => {
     const { token, workspaceId } = await issueTestToken(app, "assistant-identity@example.com");
     const authorization = `Bearer ${token}`;
 
-    await updateRetrievalSkillSettings(dependencies, workspaceId, {
+    await updateRetrievalSkillSettings(app, dependencies, workspaceId, {
         queryRewriteEnabled: true,
         semanticRewriteInstructions: "",
         lexicalRewriteInstructions: "",
@@ -1985,7 +1992,7 @@ describe("chat integration", () => {
     const { token, workspaceId } = await issueTestToken(app, "selected-agent-behavior@example.com");
     const authorization = `Bearer ${token}`;
 
-    await updateRetrievalSkillSettings(dependencies, workspaceId, {
+    await updateRetrievalSkillSettings(app, dependencies, workspaceId, {
         queryRewriteEnabled: true,
         semanticRewriteInstructions: "",
         lexicalRewriteInstructions: "",
@@ -2006,6 +2013,7 @@ describe("chat integration", () => {
         retrievalEnabled: true,
       })
       .expect(201);
+    await publishTestAgentBaseline(app, { workspaceId, agentId: agent.body.id });
 
     const response = await request(app)
       .post("/api/v1/assistant/chat")
@@ -2070,7 +2078,7 @@ describe("chat integration", () => {
       })
       .expect(202);
 
-    await updateRetrievalSkillSettings(dependencies, workspaceId, {
+    await updateRetrievalSkillSettings(app, dependencies, workspaceId, {
         queryRewriteEnabled: true,
         semanticRewriteInstructions: "",
         lexicalRewriteInstructions: "",
@@ -2145,7 +2153,7 @@ describe("chat integration", () => {
       })
       .expect(202);
 
-    await updateRetrievalSkillSettings(dependencies, workspaceId, {
+    await updateRetrievalSkillSettings(app, dependencies, workspaceId, {
         queryRewriteEnabled: true,
         semanticRewriteInstructions: "",
         lexicalRewriteInstructions: "",
@@ -2217,14 +2225,25 @@ describe("chat integration", () => {
         content: "Simple Living and High Thinking explores the course themes, community ideals, and practical applications.",
       });
 
-    await updateRetrievalSkillSettings(dependencies, workspaceId, {
+    await updateRetrievalSkillSettings(app, dependencies, workspaceId, {
         queryRewriteEnabled: true,
         rerankEnabled: false,
         vectorTopK: 20,
         rerankTopK: 5
       });
 
-    const conversation = await dependencies.conversationRepository.create(workspaceId);
+    const baselineAgent = await dependencies.agentService.resolve(workspaceId);
+    const baselineRevision = await publishTestAgentBaseline(app, { workspaceId, agentId: baselineAgent.id });
+    const conversation = await dependencies.conversationRepository.create(
+      workspaceId,
+      baselineAgent.id,
+      null,
+      null,
+      null,
+      null,
+      null,
+      { agentRevisionId: baselineRevision.id },
+    );
     await dependencies.messageRepository.create({
       conversationId: conversation.id,
       workspaceId,
@@ -2333,14 +2352,25 @@ describe("chat integration", () => {
         .send(document);
     }
 
-    await updateRetrievalSkillSettings(dependencies, workspaceId, {
+    await updateRetrievalSkillSettings(app, dependencies, workspaceId, {
         queryRewriteEnabled: true,
         rerankEnabled: false,
         vectorTopK: 20,
         rerankTopK: 5
       });
 
-    const conversation = await dependencies.conversationRepository.create(workspaceId);
+    const baselineAgent = await dependencies.agentService.resolve(workspaceId);
+    const baselineRevision = await publishTestAgentBaseline(app, { workspaceId, agentId: baselineAgent.id });
+    const conversation = await dependencies.conversationRepository.create(
+      workspaceId,
+      baselineAgent.id,
+      null,
+      null,
+      null,
+      null,
+      null,
+      { agentRevisionId: baselineRevision.id },
+    );
     await dependencies.messageRepository.create({
       conversationId: conversation.id,
       workspaceId,
@@ -2436,7 +2466,7 @@ describe("chat integration", () => {
       .set("Authorization", authorization)
       .send({ title: "Guide", content: "The page explains testing and parsing content for users." });
 
-    await updateRetrievalSkillSettings(dependencies, workspaceId, {
+    await updateRetrievalSkillSettings(app, dependencies, workspaceId, {
         queryRewriteEnabled: true,
         rerankEnabled: false,
         vectorTopK: 20,
@@ -2464,7 +2494,7 @@ describe("chat integration", () => {
       .set("Authorization", authorization)
       .send({ title: "Guide", content: "The page explains testing and parsing content for users." });
 
-    await updateRetrievalSkillSettings(dependencies, workspaceId, {
+    await updateRetrievalSkillSettings(app, dependencies, workspaceId, {
         queryRewriteEnabled: true,
         rerankEnabled: false,
         vectorTopK: 20,
@@ -2499,7 +2529,7 @@ describe("chat integration", () => {
       .set("Authorization", authorization)
       .send(retrievalFixtureDocuments.rateLimits);
 
-    await updateRetrievalSkillSettings(dependencies, workspaceId, {
+    await updateRetrievalSkillSettings(app, dependencies, workspaceId, {
         queryRewriteEnabled: true,
         rerankEnabled: true,
         vectorTopK: 50,

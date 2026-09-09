@@ -525,6 +525,39 @@ Related specs and issues:
 
 - `specs/100-portable-agent-authoring/` (`plan-agent-bundle.md` is the design record)
 
+## Private Test Execution
+
+Owns operator-private single and comparison conversations pinned to immutable
+agent revisions, including sample-value validation, stream identity, side
+fences, and failed-side retry. It does not publish revisions or expose private
+history through public channels.
+
+Public surfaces and key files:
+
+- `backend/src/modules/test-execution/README.md`
+- `backend/src/modules/test-execution/service.ts`
+- `backend/src/app/http/routes/testExecutionRoutes.ts`
+- `backend/src/app/http/openapi/paths/testExecutionPaths.ts`
+- `backend/src/modules/chat/services/trustedTestExecutionRunnerAdapter.ts`
+- `backend/tests/unit/test-execution-service.test.ts`
+- `backend/tests/integration/test-execution-routes.integration.test.ts`
+
+## Revision Eval Runs
+
+Owns durable eval evidence for selected immutable revisions. It freezes
+candidate, case, input, and policy provenance, presents partial results, and
+retries failed cases without replacing completed sibling evidence. The regular
+eval case/run flow remains under the existing eval service.
+
+Public surfaces and key files:
+
+- `backend/src/modules/eval/README.md`
+- `backend/src/modules/eval/services/revisionEvalRun.ts`
+- `backend/src/modules/eval/routes/revisionEvalRoutes.ts`
+- `backend/src/db/repositories/revisionEvalRunRepository.ts`
+- `backend/tests/unit/revision-eval-run-service.test.ts`
+- `backend/tests/integration/revision-eval-run-repository.integration.test.ts`
+
 ## Context Variables
 
 Owns workspace context-variable definitions, per-agent enablements, pushed
@@ -555,6 +588,27 @@ Related specs and issues:
 
 - `specs/097-visitor-context-variables/`
 - Issues `#1036`, `#1046`, and `#1115`
+
+## Agent Revisions
+
+Owns the mutable agent draft and immutable candidate/publication aggregate. A
+successful authoring write advances the draft generation; only explicit
+publication changes the revision used by new production conversations. Existing
+agents receive a backfilled live baseline; new or imported agents remain private
+until first publication.
+
+Public surfaces and key files:
+
+- `backend/src/modules/agents/README.md`
+- `backend/src/modules/agents/agentRevision.ts`
+- `backend/src/db/repositories/agentRevisionRepository.ts`
+- `backend/src/app/http/routes/agentRevisionRoutes.ts`
+- `backend/src/app/http/openapi/paths/agentsPaths.ts`
+- `backend/tests/unit/agent-revision-service.test.ts`
+- `backend/tests/integration/agent-revision-publication.integration.test.ts`
+
+Private Test Chat and revision evals consume the agents module's narrow
+revision-reader ports. They do not read mutable authoring rows directly.
 
 ## Conversation Engine Contracts
 

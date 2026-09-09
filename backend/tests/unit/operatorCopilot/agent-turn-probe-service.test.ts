@@ -26,6 +26,7 @@ const conversation = (overrides: Partial<ConversationRecord> = {}): Conversation
   id: ids.conversation,
   workspaceId: ids.workspace,
   agentId: ids.agent,
+  purpose: "production",
   agentName: "Ray test agent",
   agentInternalName: "ray-test-agent",
   sourceChannel: OPERATOR_COPILOT_PROBE_SOURCE_CHANNEL,

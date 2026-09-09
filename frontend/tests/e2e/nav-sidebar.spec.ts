@@ -25,15 +25,19 @@ test("active section's sub-nav nests inline in the rail; other sections stay col
   await expect(sidebar.getByRole("link", { name: "Sources" })).toBeVisible();
   await expect(sidebar.getByRole("link", { name: "Ingestion" })).toBeVisible();
 
-  // Switching sections collapses the previous section's items and reveals the new one's.
+  // Switching sections collapses the previous section's items and reveals the
+  // selected agent's compact navigation.
   await sidebar.getByRole("link", { name: "Agents" }).click();
   await expect(sidebar.getByRole("link", { name: "Ingestion" })).toHaveCount(0);
-  await expect(sidebar.getByRole("link", { name: "Profile" })).toBeVisible();
-  await expect(sidebar.getByRole("link", { name: "Skills" })).toBeVisible();
+  await expect(sidebar.getByRole("link", { name: "Test Chat" })).toBeVisible();
+  await expect(sidebar.getByRole("button", { name: "Channels", exact: true })).toBeVisible();
+  await expect(sidebar.getByRole("link", { name: "Profile" })).toHaveCount(0);
+  await expect(sidebar.getByRole("link", { name: "Skills" })).toHaveCount(0);
 
-  // In the Agents section the agent picker replaces the "Agents" row (no redundant entry).
-  await expect(sidebar.getByRole("button", { name: "Marta" })).toBeVisible();
-  await expect(sidebar.getByRole("link", { name: "Agents" })).toHaveCount(0);
+  // The top-level Agents destination remains the rail entry; the selected
+  // agent and its compact children are nested beneath it.
+  await expect(sidebar.getByRole("button", { name: /Marta/ })).toBeVisible();
+  await expect(sidebar.getByRole("link", { name: "Agents" })).toBeVisible();
 
   // Inbox is a flat top-level rail item — no Activity section, no nested
   // sub-nav; the Needs-you/All split lives inside the page as a lens toggle.

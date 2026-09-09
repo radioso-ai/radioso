@@ -3,6 +3,7 @@
 import { ExternalLink } from 'lucide-react'
 
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
+import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
@@ -14,7 +15,7 @@ const DEFAULT_BRANDING_SETTINGS: AgentBrandingSettings = {
   privacyPolicyUrl: null,
 }
 
-export interface ChatFooterCardProps {
+interface ChatFooterCardProps {
   branding: AgentBrandingSettings | null
   onBrandingChange: (next: AgentBrandingSettings) => void
 }
@@ -31,6 +32,10 @@ export function ChatFooterCard({ branding, onBrandingChange }: ChatFooterCardPro
       title="Footer"
       description="What appears below the chat composer."
     >
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+        <span>Branding changes apply live now and save automatically.</span>
+        <Badge variant="outline">Applies live now</Badge>
+      </div>
       <div className="divide-y divide-border rounded-lg border border-border">
         <div className="space-y-2 p-3">
           <Label htmlFor="brandingPrivacyPolicyUrl" className="text-foreground">

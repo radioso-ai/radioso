@@ -9,6 +9,7 @@ export function DashboardPage({
   description,
   backAction,
   titleAccessory,
+  titleAccessoryAlignment = 'end',
   headerContent,
   actions,
   children,
@@ -24,6 +25,7 @@ export function DashboardPage({
   description?: ReactNode
   backAction?: ReactNode
   titleAccessory?: ReactNode
+  titleAccessoryAlignment?: 'center' | 'end'
   headerContent?: ReactNode
   actions?: ReactNode
   children: ReactNode
@@ -51,7 +53,7 @@ export function DashboardPage({
           ) : null}
           <div className={cn('flex min-w-0 flex-wrap justify-between gap-3', description ? 'items-start' : 'items-center')}>
             <div className="min-w-0 flex-1">
-              <div className="flex min-w-0 items-end gap-3">
+              <div className={cn('flex min-w-0 gap-3', titleAccessoryAlignment === 'center' ? 'items-center' : 'items-end')}>
                 <h1 className="text-lg font-medium leading-none text-foreground">{title}</h1>
                 {titleAccessory}
               </div>

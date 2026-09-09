@@ -42,6 +42,7 @@ describe("Slack interruption", () => {
     const ctx = createTestDependencies({ chatGateway, turnRouter });
     const workspace = await ctx.dependencies.workspaceRepository.create("account-1", "Slack interruption workspace");
     const agent = await ctx.dependencies.agentService.resolve(workspace.id);
+    await ctx.publishedAgentRevisions.publish(agent);
     const installation = {
       id: "installation-1",
       connectionId: "connection-1",

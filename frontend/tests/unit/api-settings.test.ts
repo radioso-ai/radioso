@@ -78,4 +78,34 @@ describe('agentsApi.updateBehaviorSettings', () => {
       { withSession: true },
     )
   })
+
+  it('keeps an unsaved private instruction out of a live settings update', async () => {
+    const saved = behaviorSettings(false)
+    const next = { ...behaviorSettings(true), customInstruction: 'Private draft only' }
+    requestMock.mockResolvedValueOnce(responseAgent(next))
+
+    const { agentsApi } = await import('@/lib/api-settings')
+    await agentsApi.updateBehaviorSettings('agent-1', next, saved, 'live')
+
+    expect(requestMock).toHaveBeenCalledWith(
+      '/agents/agent-1',
+      { method: 'PUT', body: JSON.stringify({ handoffOnRetrievalMiss: true }) },
+      { withSession: true },
+    )
+  })
+
+  it('keeps unsaved live settings out of a private draft save', async () => {
+    const saved = behaviorSettings(false)
+    const next = { ...behaviorSettings(true), customInstruction: 'Private draft only' }
+    requestMock.mockResolvedValueOnce(responseAgent(next))
+
+    const { agentsApi } = await import('@/lib/api-settings')
+    await agentsApi.updateBehaviorSettings('agent-1', next, saved, 'draft')
+
+    expect(requestMock).toHaveBeenCalledWith(
+      '/agents/agent-1',
+      { method: 'PUT', body: JSON.stringify({ customInstruction: 'Private draft only' }) },
+      { withSession: true },
+    )
+  })
 })

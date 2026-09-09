@@ -13,15 +13,16 @@ import {
   type AuthoredDirectiveInput,
   type NormalizedAuthoredDirectiveInput,
 } from "../authoredDirectives.js";
+import type { AnswerCoverageCriteria } from "../../answerCoverage/public.js";
 import { authoredDirectiveToDirective } from "../authoredDirectiveMapper.js";
 import type { AgentRecord } from "../domain.js";
 
-export interface AuthoredDirectiveSaveResult {
+interface AuthoredDirectiveSaveResult {
   directive: AuthoredDirective;
   coherence: DirectiveCoherenceVerdict;
 }
 
-export type AuthoredDirectiveVersionOptions = AgentDirectiveUpdateOptions;
+type AuthoredDirectiveVersionOptions = AgentDirectiveUpdateOptions;
 
 // Every key the input schema declares, read from the schema itself rather than hand-listed, so a
 // field added to `authoredDirectiveInputSchema` is carried forward on update automatically instead
@@ -38,14 +39,20 @@ const authoredDirectiveInputKeys = Object.keys(authoredDirectiveInputSchema.shap
  * `??`'s "value ?? default" would silently narrow or reset a field like that on every unrelated
  * edit.
  */
+type AuthoredDirectivePatchInput = Omit<Partial<AuthoredDirectiveInput>, "coverageCriteria"> & {
+  coverageCriteria?: AnswerCoverageCriteria | null;
+};
+
 const carryForwardAuthoredDirectiveInput = (
-  input: Partial<AuthoredDirectiveInput>,
+  input: AuthoredDirectivePatchInput,
   existing: AuthoredDirective,
 ): AuthoredDirectiveInput =>
   Object.fromEntries(
     authoredDirectiveInputKeys.map((key) => [
       key,
-      Object.prototype.hasOwnProperty.call(input, key) ? input[key] : existing[key],
+      key === "coverageCriteria" && input.coverageCriteria === null
+        ? undefined
+        : Object.prototype.hasOwnProperty.call(input, key) ? input[key] : existing[key],
     ]),
     // `existing` is a prior successful parse of this same schema, so every value read from it here
     // is already valid raw input for the field it came from; the cast just restates that as the
@@ -103,7 +110,7 @@ export class AuthoredDirectiveService {
     workspaceId: string,
     agentId: string,
     directiveId: string,
-    input: Partial<AuthoredDirectiveInput>,
+    input: AuthoredDirectivePatchInput,
     options?: AuthoredDirectiveVersionOptions,
   ): Promise<AuthoredDirectiveSaveResult> {
     const agent = await this.requireAgent(workspaceId, agentId);

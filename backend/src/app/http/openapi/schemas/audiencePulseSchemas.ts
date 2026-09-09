@@ -35,12 +35,22 @@ export const registerAudiencePulseSchemas = (registry: OpenAPIRegistry, schemas:
     visitorQuestionCount: z.number().int().min(0),
     conversationCount: z.number().int().min(0),
   }));
+  const AnswerCoverageSchema = registry.register("AnswerCoverage", z.object({
+    availability: z.enum(["assessed", "not_recorded", "failed", "invalid"]),
+    coverage: z.enum(["answered", "partial", "unanswered", "unclear"]).optional(),
+    reason: z.enum(["sufficient_evidence", "insufficient_evidence", "conflicting_evidence", "ambiguous_request", "intentional_scope_boundary"]).optional(),
+  }).openapi({ description: "Recorded semantic coverage. Unresolved request text is intentionally excluded from Pulse." }));
+  const AudiencePulseSemanticCoverageSchema = registry.register("AudiencePulseSemanticCoverage", z.object({
+    answered: z.number().int().min(0), partial: z.number().int().min(0), unanswered: z.number().int().min(0), unclear: z.number().int().min(0),
+    unassessed: z.number().int().min(0), legacy: z.number().int().min(0), reasons: z.record(z.string(), z.number().int().min(0)),
+  }));
   const AudiencePulseEvidenceSchema = registry.register("AudiencePulseEvidence", z.object({
     reference: z.string(),
     conversationId: z.string().uuid(),
     messageId: z.string().uuid(),
     question: z.string().max(AUDIENCE_PULSE_EVIDENCE_EXCERPT_MAX_CHARACTERS),
     occurrenceCount: z.number().int().min(1),
+    answerCoverage: AnswerCoverageSchema.optional(),
   }));
   const AudiencePulseEvidenceAnchorRequestSchema = registry.register(
     "AudiencePulseEvidenceAnchorRequest",
@@ -80,6 +90,7 @@ export const registerAudiencePulseSchemas = (registry: OpenAPIRegistry, schemas:
     distinctQuestionCount: z.number().int().min(0),
     weeklyPulse: z.array(z.object({ weekStart: z.string().datetime(), count: z.number().int().min(0) })),
     grounding: AudiencePulseGroundingSchema,
+    coverage: AudiencePulseSemanticCoverageSchema.optional(),
     evidence: z.array(AudiencePulseEvidenceSchema),
   }));
   const AudiencePulseContentGapSchema = registry.register("AudiencePulseContentGap", z.object({

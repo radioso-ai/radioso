@@ -20,6 +20,7 @@ import {
 } from "../../modules/routines/public.js";
 import { toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
+import { answerCoverageCriteriaSchema } from "../../modules/answerCoverage/public.js";
 
 interface RoutineDefinitionRow {
   id: string;
@@ -32,6 +33,7 @@ interface RoutineDefinitionRow {
   activation_gate_ref: string | null;
   activation_priority: number;
   activation_reentry_mode: string;
+  activation_coverage_criteria: unknown;
   slots: unknown;
   steps: unknown;
   transitions: unknown;
@@ -47,7 +49,7 @@ interface RoutineTriggerEmbeddingSearchRow {
   no_vector: boolean;
 }
 
-export interface RoutineTriggerEmbeddingSearchResult {
+interface RoutineTriggerEmbeddingSearchResult {
   matches: Array<{ routineId: string; distance: number }>;
   noVectorRoutineIds: string[];
 }
@@ -171,6 +173,7 @@ const definitionSelect = sql`
     d.activation_gate_ref,
     d.activation_priority,
     d.activation_reentry_mode,
+    d.activation_coverage_criteria,
     COALESCE(slots.items, '[]'::json) AS slots,
     COALESCE(steps.items, '[]'::json) AS steps,
     COALESCE(transitions.items, '[]'::json) AS transitions,
@@ -260,6 +263,9 @@ const mapRow = (row: RoutineDefinitionRow): RoutineDefinition => ({
     reentryMode: routineReentryModes.includes(row.activation_reentry_mode as RoutineReentryMode)
       ? (row.activation_reentry_mode as RoutineReentryMode)
       : "once_per_conversation",
+    ...(answerCoverageCriteriaSchema.safeParse(row.activation_coverage_criteria).success
+      ? { coverageCriteria: answerCoverageCriteriaSchema.parse(row.activation_coverage_criteria) }
+      : {}),
   },
   slots: asArray(row.slots).map((slot) => ({
     stableSlotId: readString(slot, "stableSlotId"),
@@ -477,6 +483,7 @@ export class RoutineDefinitionRepository {
           activation_gate_ref: draft.activation.gateRef,
           activation_priority: draft.activation.priority,
           activation_reentry_mode: draft.activation.reentryMode,
+          activation_coverage_criteria: draft.activation.coverageCriteria ? toJsonb(draft.activation.coverageCriteria) : null,
           lineage_id: randomUUID(),
         })
         .execute();
@@ -505,6 +512,7 @@ export class RoutineDefinitionRepository {
           activation_gate_ref: draft.activation.gateRef,
           activation_priority: draft.activation.priority,
           activation_reentry_mode: draft.activation.reentryMode,
+          activation_coverage_criteria: draft.activation.coverageCriteria ? toJsonb(draft.activation.coverageCriteria) : null,
           updated_at: nextAuthoredUpdatedAt(),
         })
         .where("agent_id", "=", agentId)
@@ -618,6 +626,7 @@ export class RoutineDefinitionRepository {
             activation_gate_ref: published.activation.gateRef,
             activation_priority: published.activation.priority,
             activation_reentry_mode: published.activation.reentryMode,
+            activation_coverage_criteria: published.activation.coverageCriteria ? toJsonb(published.activation.coverageCriteria) : null,
             lineage_id: published.lineageId,
           })
           .execute();

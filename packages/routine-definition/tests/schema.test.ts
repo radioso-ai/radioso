@@ -48,6 +48,42 @@ const validTerminal = {
 } as const;
 
 describe("routine definition schemas", () => {
+  it("validates optional activation coverage criteria while preserving legacy activation", () => {
+    const base = {
+      name: "Coverage follow-up",
+      activation: { triggerDescription: "When evidence is incomplete", gateRef: null, priority: 0 },
+      slots: [], steps: [{ stableStepId: "ask", kind: "chat", instruction: "Ask a follow-up.", toolRef: null, actionType: null, captureKey: null, ordinal: 0, metadata: {} }],
+      transitions: [], terminals: [validTerminal],
+    };
+    expect(routineDefinitionDraftInputSchema.parse({
+      ...base,
+      activation: { ...base.activation, coverageCriteria: { coverage: ["unanswered"], reasons: ["insufficient_evidence"] } },
+    }).activation.coverageCriteria).toEqual({ coverage: ["unanswered"], reasons: ["insufficient_evidence"] });
+    expect(routineDefinitionDraftInputSchema.parse(base).activation.coverageCriteria).toBeUndefined();
+    expect(routineDefinitionDraftInputSchema.safeParse({ ...base, activation: { ...base.activation, coverageCriteria: { coverage: [] } } }).success).toBe(false);
+  });
+
+  it("rejects duplicate or incompatible coverage criteria so authoring matches runtime validation", () => {
+    const base = {
+      name: "Coverage follow-up",
+      activation: { triggerDescription: "When evidence is incomplete", gateRef: null, priority: 0 },
+      slots: [], steps: [{ stableStepId: "ask", kind: "chat", instruction: "Ask a follow-up.", toolRef: null, actionType: null, captureKey: null, ordinal: 0, metadata: {} }],
+      transitions: [], terminals: [validTerminal],
+    };
+
+    expect(routineDefinitionDraftInputSchema.safeParse({
+      ...base,
+      activation: { ...base.activation, coverageCriteria: { coverage: ["unanswered", "unanswered"] } },
+    }).success).toBe(false);
+    expect(routineDefinitionDraftInputSchema.safeParse({
+      ...base,
+      activation: { ...base.activation, coverageCriteria: { coverage: ["unclear"], reasons: ["insufficient_evidence"] } },
+    }).success).toBe(false);
+    expect(routineDefinitionDraftInputSchema.safeParse({
+      ...base,
+      activation: { ...base.activation, coverageCriteria: { coverage: ["unanswered"], reasons: ["insufficient_evidence", "insufficient_evidence"] } },
+    }).success).toBe(false);
+  });
   it("exports the validation-code vocabulary used by routine hosts", () => {
     expect(routineValidationCodes).toContain("unknown_context_variable");
     expect(routineValidationCodes).toContain("node_id_collision");

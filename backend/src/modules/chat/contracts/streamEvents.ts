@@ -4,6 +4,10 @@ import type { AnswerSegment, ChatCitation } from "./answerTypes.js";
 import type { ChatOwnershipAck, ChatRoute, ChatSuggestion } from "../types/chatResponses.js";
 import type { TurnTraceEnvelope } from "../services/turnTraceEnvelope.js";
 import type { ConversationTurnStage } from "./interruption.js";
+import type {
+  ChatAnswerCoverageAssessment,
+  ChatAnswerCoverageInteractionTrace,
+} from "./answerCoverage.js";
 
 type SkillStreamPhase = "active" | "completed" | "failed";
 export type ChatStatusStage = "interpreting" | "searching" | "composing";
@@ -59,6 +63,8 @@ export type ChatStreamEvent =
       activityTrace: ActivityTrace;
       ownership?: ChatOwnershipAck;
       turnTrace?: TurnTraceEnvelope;
+      answerCoverage?: ChatAnswerCoverageAssessment;
+      interactionTrace?: ChatAnswerCoverageInteractionTrace;
       route: ChatRoute;
       skill?: SkillStreamPayload;
     };

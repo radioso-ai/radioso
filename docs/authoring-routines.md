@@ -1,7 +1,7 @@
 ---
 title: "Authoring Routines"
 description: "Create and edit dashboard routines in the Document view, read the Map, connect skills, test drafts, and manage their lifecycle."
-last_updated: 2026-09-04
+last_updated: 2026-09-08
 ---
 
 # Authoring Routines
@@ -24,9 +24,9 @@ For the runtime model behind routines, see
 
 ## Start a routine
 
-Open **Routines** and choose **New routine**. At the top of the editor, set:
+Open **Routines** and choose **New routine**. Set the routine **Name** in the
+header. Open **Starts when** in the Document editor to set:
 
-- **Name** — the name shown in settings.
 - **Priority** — the tie-breaker when several routines match a turn.
 - **Reentry** — how the routine behaves after it finishes in a conversation.
 - **Activation trigger** — a plain-language account of when the routine starts.
@@ -34,6 +34,17 @@ Open **Routines** and choose **New routine**. At the top of the editor, set:
 Write the trigger as an operator would describe the task. Radioso judges its
 meaning, so “customer reports coffee that arrived damaged, stale, or wrong”
 gives the agent useful context.
+
+### Optional conditions
+
+Most routines need only **Starts when**. Open that line, then choose **Add
+condition** and **Answer coverage** when a flow should begin only after a
+grounded answer has left a particular kind of gap. Select the coverage values and, if useful, reasons
+that must also match. Both the semantic trigger and this condition must match;
+for example, a lodging follow-up can require **Unanswered** with **Insufficient
+evidence** without affecting an unrelated unanswered question.
+
+Remove the condition to return the routine to its normal semantic trigger.
 
 ### Reentry
 

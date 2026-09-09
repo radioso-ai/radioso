@@ -87,6 +87,39 @@ const optionalStructuredParamText = (maxLength: number) =>
 const optionalAuthoringParamText = (maxLength: number) =>
   z.string().trim().min(1).max(maxLength).optional().nullable();
 
+const answerCoverageValues = ["answered", "partial", "unanswered", "unclear"] as const;
+const answerCoverageReasonValues = [
+  "sufficient_evidence", "insufficient_evidence", "conflicting_evidence", "ambiguous_request", "intentional_scope_boundary",
+] as const;
+const compatibleCoverageReasons: Record<(typeof answerCoverageValues)[number], readonly (typeof answerCoverageReasonValues)[number][]> = {
+  answered: ["sufficient_evidence"],
+  partial: ["insufficient_evidence", "conflicting_evidence", "intentional_scope_boundary"],
+  unanswered: ["insufficient_evidence", "conflicting_evidence", "intentional_scope_boundary"],
+  unclear: ["ambiguous_request"],
+};
+
+const answerCoverageCriteriaSchema = z.object({
+  coverage: z.array(z.enum(answerCoverageValues)).min(1).refine(
+    (coverage) => new Set(coverage).size === coverage.length,
+    "Coverage criteria cannot repeat a coverage value",
+  ),
+  reasons: z.array(z.enum(answerCoverageReasonValues)).min(1).refine(
+    (reasons) => new Set(reasons).size === reasons.length,
+    "Coverage criteria cannot repeat a reason",
+  ).optional(),
+}).strict().superRefine((criteria, ctx) => {
+  for (const reason of criteria.reasons ?? []) {
+    const compatible = criteria.coverage.some((coverage) => compatibleCoverageReasons[coverage].includes(reason));
+    if (!compatible) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["reasons"],
+        message: `Reason ${reason} is incompatible with selected coverage`,
+      });
+    }
+  }
+});
+
 const stableIdSchema = trimmedText(ROUTINE_DEFINITION_LIMITS.stableId).regex(identifierPattern);
 // captureKey lives in the slot-key namespace (no dots/dashes): approval field
 // refs are built as `<captureKey>.id`, so a dotted key would be ambiguous.
@@ -373,6 +406,7 @@ const routineDefinitionDraftSchema = <
     gateRef: optionalTrimmedText(ROUTINE_DEFINITION_LIMITS.gateRef),
     priority: z.number().int(),
     reentryMode: z.enum(routineReentryModes).default("once_per_conversation"),
+    coverageCriteria: answerCoverageCriteriaSchema.optional(),
   }).strict(),
   slots,
   steps,

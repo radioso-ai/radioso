@@ -66,7 +66,14 @@ const baseInput = {
 
 describe("Audience Pulse report domain", () => {
   it("carries census transitions and prior full-membership counts into stored themes", () => {
-    const population = buildPopulation(13);
+    const population = buildPopulation(13, () => ({
+      answerCoverage: {
+        availability: "assessed",
+        coverage: "answered",
+        reason: "sufficient_evidence",
+        schemaVersion: 1,
+      },
+    }));
 
     const report = buildAudiencePulseReport({
       ...baseInput,
@@ -105,6 +112,7 @@ describe("Audience Pulse report domain", () => {
       dissolvedTopics: [],
     });
     expect(report.themes[0].evidenceIds).toHaveLength(12);
+    expect(Object.keys(report.themes[0].coverageByEvidenceId ?? {})).toHaveLength(12);
   });
 
   it("qualifies only the two typed retrieval outcomes with matching diagnostics", () => {

@@ -135,6 +135,7 @@ export interface AgentDirectives {
   binding: Json | null;
   condition_description: string | null;
   condition_kind: string;
+  coverage_criteria: Json | null;
   created_at: Generated<Timestamp>;
   depends_on: Generated<string[]>;
   description: string | null;
@@ -187,6 +188,41 @@ export interface AgentSkills {
   target_id: string | null;
   target_type: string | null;
   updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
+export interface AnswerCoverageAssessments {
+  assessed_at: Generated<Timestamp>;
+  assistant_message_id: string | null;
+  availability: string;
+  contextualized_request: string;
+  conversation_id: string;
+  coverage: string | null;
+  created_at: Generated<Timestamp>;
+  id: string;
+  interaction_evaluation_state: string | null;
+  originating_turn_id: string;
+  reason: string | null;
+  request_message_id: string;
+  schema_version: number;
+  unresolved_request: string | null;
+  workspace_id: string;
+}
+
+export interface AnswerCoverageReactionTraces {
+  assessment_id: string;
+  conversation_id: string;
+  created_at: Generated<Timestamp>;
+  decision: string;
+  directive_id: string | null;
+  evaluation_index: number;
+  evaluation_state: string;
+  id: string;
+  reaction_key: string;
+  reason_code: string;
+  routine_execution_id: string | null;
+  routine_id: string | null;
+  target_message_id: string;
   workspace_id: string;
 }
 
@@ -1062,6 +1098,7 @@ export interface RoutineCompletionExport {
 }
 
 export interface RoutineDefinition {
+  activation_coverage_criteria: Json | null;
   activation_gate_ref: string | null;
   activation_priority: Generated<number>;
   activation_reentry_mode: Generated<string>;
@@ -1093,6 +1130,7 @@ export interface RoutineSlot {
 export interface RoutineStates {
   attempts: Generated<Json>;
   created_at: Generated<Timestamp>;
+  execution_id: string | null;
   expires_at: Timestamp | null;
   path: Generated<string[]>;
   routine_id: string;
@@ -1477,6 +1515,8 @@ export interface DB {
   agent_document_sources: AgentDocumentSources;
   agent_skills: AgentSkills;
   agents: Agents;
+  answer_coverage_assessments: AnswerCoverageAssessments;
+  answer_coverage_reaction_traces: AnswerCoverageReactionTraces;
   api_credential_expiry_warnings: ApiCredentialExpiryWarnings;
   api_credentials: ApiCredentials;
   assistant_answer_feedback: AssistantAnswerFeedback;

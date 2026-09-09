@@ -27,6 +27,14 @@ The header has a **Chat** / **History** toggle. **Chat** is the live conversatio
 
 Click any message to slide out **Turn diagnostics** on the right. It shows the same trace the conversation drawer shows — how the turn was routed, what retrieval ran, and which stages fired. Select a user turn and the panel resolves forward to the assistant turn it produced. When a turn has a full trace, a **Flow** button opens a larger view of the turn's path.
 
+For a retrieved answer, diagnostics also separates **Answer coverage** from
+retrieval and citation facts. It shows whether the request was answered, partly
+answered, unanswered, or needs clarification, along with the recorded reason.
+When a coverage rule was evaluated, the trace shows its directive or routine
+decision and links back to the originating message; an activated routine also
+links to its execution. **Not assessed** means no semantic verdict was recorded,
+so it is never treated as an answered request.
+
 ## Capture a turn as an eval case
 
 When an answer is worth locking in — or worth catching if it regresses — hover the answer and click the **flask icon** in its action row. That opens **Save this turn as an eval**: name the case and confirm. Radioso snapshots the conversation and, when the answer is present, seeds the case with an LLM-judge expectation using that answer as the reference, then opens the eval editor. From there you can run it immediately or add more precise checks.

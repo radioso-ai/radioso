@@ -28,7 +28,7 @@ import type { CitationOpenResult } from '@/components/dashboard/chat-citations'
 import type { HistoryFilter, HistoryListItem, SelectedHistoryItem } from './history-list'
 
 export const HISTORY_PAGE_SIZE = 50
-export const MESSAGE_WINDOW_SIZE = 50
+const MESSAGE_WINDOW_SIZE = 50
 
 type PushHistoryRoute = (next: {
   filter?: HistoryFilter

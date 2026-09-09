@@ -14,7 +14,7 @@ export interface CensusServiceFactory {
   create(input: { workspaceId: string }): CensusService;
 }
 
-export interface ContextualCensusServiceFactoryDependencies {
+interface ContextualCensusServiceFactoryDependencies {
   historySource: Pick<AudiencePulseHistorySource, "listEligibleQuestionIds">;
   facetSource: CensusFacetSource;
   topicRepository: Pick<TopicRepositoryPort, "saveRun" | "listActiveTopics" | "listMatchableTopics">;

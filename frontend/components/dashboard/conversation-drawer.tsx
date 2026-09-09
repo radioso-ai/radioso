@@ -202,7 +202,7 @@ function SearchDiagnosticsPanel({
   )
 }
 
-export interface ConversationDrawerProps {
+interface ConversationDrawerProps {
   selectedItem: SelectedHistoryItem
   onSelectedItemChange: (item: SelectedHistoryItem) => void
   anchorMessageId?: string | null

@@ -63,7 +63,7 @@ export type InboxResponseSelection =
   | { source: 'item'; item: InboxItem }
   | { source: 'readonly'; conversationId: string; conversation?: ChatConversationSummary }
 
-export interface InboxResponseViewProps {
+interface InboxResponseViewProps {
   selection: InboxResponseSelection | null
   now: Date
   pendingDecisions: PendingApprovalDecision[]

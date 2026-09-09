@@ -1129,6 +1129,7 @@ test('keeps invalid context blocking after navigation until every field is corre
     enabledContextVariableIds: ['payload-a', 'payload-b'],
   })
   await page.goto(testUrl)
+  await testChatComposer(page).fill('Validate these samples')
 
   await clickTestChatAction(page, 'Test context')
   const contextDialog = page.getByRole('dialog')
@@ -1137,13 +1138,13 @@ test('keeps invalid context blocking after navigation until every field is corre
   await contextDialog.getByLabel('Payload B').fill('{"ok":true}')
   await expect(contextDialog.getByRole('alert')).toContainText('Payload A must contain valid JSON.')
   await contextDialog.getByRole('button', { name: 'Close', exact: true }).click()
-  await testChatComposer(page).fill('Validate these samples')
   await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeDisabled()
 
   const cockpit = page.getByRole('navigation', { name: 'Agent cockpit' })
   await cockpit.getByRole('tab', { name: 'Profile', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Profile', level: 1, exact: true })).toBeVisible()
   await page.getByRole('navigation', { name: 'Agent cockpit' }).getByRole('tab', { name: 'Test Chat', exact: true }).click()
+  await expect(testChatComposer(page)).toHaveValue('Validate these samples')
   await clickTestChatAction(page, 'Test context')
   await expect(page.getByRole('dialog').getByLabel('Payload A')).toHaveValue('{bad')
   await expect(page.getByRole('dialog').getByRole('alert')).toContainText('Payload A must contain valid JSON.')
@@ -1151,7 +1152,6 @@ test('keeps invalid context blocking after navigation until every field is corre
   await page.getByRole('dialog').getByLabel('Payload A').fill('{"fixed":true}')
   await expect(page.getByRole('dialog').getByRole('alert')).toHaveCount(0)
   await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click()
-  await testChatComposer(page).fill('Validate these samples')
   await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeEnabled()
 })
 

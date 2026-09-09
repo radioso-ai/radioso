@@ -35,7 +35,7 @@ describeDb("revision eval run repository", () => {
 
   it("preserves selected revision identity and requires explicit retry with a monotonic fence", async () => {
     const runId = randomUUID(), sideId = randomUUID(), runCaseId = randomUUID();
-    const run: RevisionEvalRun = { id: runId, workspaceId, agentId, actorAccountId: accountId, mode: "full_assistant", executionPolicy: "safe_test", testValues: [], state: "pending", createdAt: new Date(), sides: [{ id: sideId, ordinal: 0, revisionId, revision: frozenRevision(), state: "pending", cases: [{ id: runCaseId, caseId, frozenCase: { id: caseId, workspaceId, snapshotId, name: "case", assertions: [], executionMode: "safe_test", status: "pending", lastRunId: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, frozenSnapshot: { id: snapshotId, workspaceId, sourceConversationId: randomUUID(), sourceMessageId: null, replayTarget: null, fidelity: "full", messages: [], originalInstructionBlock: null, originalModelId: null, originalRetrievalSettings: null, originalAgent: null, originalAgentConfig: null, sourceAgentId: agentId, originalRoutineState: null, originalRetrievalResult: null, capturedAt: new Date().toISOString(), capturedBy: null }, state: "pending", outcome: "unavailable", result: null, activeAttemptId: null, activeFence: null, leaseExpiresAt: null }] }] };
+    const run: RevisionEvalRun = { id: runId, workspaceId, agentId, actorAccountId: accountId, mode: "full_assistant", executionPolicy: "safe_test", testValues: [], state: "pending", createdAt: new Date(), idempotencyKey: runId, sides: [{ id: sideId, ordinal: 0, revisionId, revision: frozenRevision(), state: "pending", cases: [{ id: runCaseId, caseId, frozenCase: { id: caseId, workspaceId, snapshotId, name: "case", assertions: [], executionMode: "safe_test", status: "pending", lastRunId: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, frozenSnapshot: { id: snapshotId, workspaceId, sourceConversationId: randomUUID(), sourceMessageId: null, replayTarget: null, fidelity: "full", messages: [], originalInstructionBlock: null, originalModelId: null, originalRetrievalSettings: null, originalAgent: null, originalAgentConfig: null, sourceAgentId: agentId, originalRoutineState: null, originalRetrievalResult: null, capturedAt: new Date().toISOString(), capturedBy: null }, state: "pending", outcome: "unavailable", result: null, activeAttemptId: null, activeFence: null, leaseExpiresAt: null }] }] };
     await repository.create(run);
     expect((await repository.find({ workspaceId, runId }))?.sides[0]?.revision.id).toBe(revisionId);
     const firstAttempt = randomUUID(); const first = await repository.claimNext({ workspaceId, runId, attemptId: firstAttempt, now: new Date(1_000), leaseMs: 1_000 });
@@ -76,7 +76,7 @@ describeDb("revision eval run repository", () => {
         },
       },
     });
-    const run = await service.start({ workspaceId, accountId, revisionIds: [revisionId], caseIds: burstCaseIds, testValues: [], mode: "retrieval_only", executionPolicy: "safe_test" });
+    const run = await service.start({ workspaceId, accountId, revisionIds: [revisionId], caseIds: burstCaseIds, testValues: [], mode: "retrieval_only", executionPolicy: "safe_test", idempotencyKey: randomUUID() });
 
     await Promise.all(Array.from({ length: 20 }, () => service.get({ workspaceId, runId: run.id, accountId: randomUUID() })));
     await waitFor(() => providerCalls > 0);
@@ -107,7 +107,7 @@ describeDb("revision eval run repository", () => {
       now: () => new Date(1_000),
       leaseMs: 1_000,
     });
-    const crashRun = await crashedService.start({ workspaceId, accountId, revisionIds: [revisionId], caseIds: [crashCaseId], testValues: [], mode: "retrieval_only", executionPolicy: "safe_test" });
+    const crashRun = await crashedService.start({ workspaceId, accountId, revisionIds: [revisionId], caseIds: [crashCaseId], testValues: [], mode: "retrieval_only", executionPolicy: "safe_test", idempotencyKey: randomUUID() });
     await waitFor(async () => (await repository.find({ workspaceId, runId: crashRun.id }))?.sides[0]?.cases[0]?.activeAttemptId !== null);
     const stalled = (await repository.find({ workspaceId, runId: crashRun.id }))?.sides[0]?.cases[0];
     if (!stalled?.activeAttemptId || stalled.activeFence === null) throw new Error("stalled claim missing");
@@ -157,7 +157,7 @@ describeDb("revision eval run repository", () => {
       contextCatalog: { async get() { return null; } },
       runner: evalRunner,
     });
-    const run = await service.start({ workspaceId, accountId, revisionIds: [revisionId], caseIds: [caseId, secondCaseId], testValues: [], mode: "retrieval_only", executionPolicy: "safe_test" });
+    const run = await service.start({ workspaceId, accountId, revisionIds: [revisionId], caseIds: [caseId, secondCaseId], testValues: [], mode: "retrieval_only", executionPolicy: "safe_test", idempotencyKey: randomUUID() });
     const waitFor = async (predicate: () => Promise<boolean>): Promise<void> => {
       for (let attempt = 0; attempt < 100; attempt += 1) {
         if (await predicate()) return;

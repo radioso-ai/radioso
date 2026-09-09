@@ -32,7 +32,7 @@ describeDb("test execution repository", () => {
 
   it("persists immutable sides, fences late completion, and replays a completed request identity", async () => {
     const executionId = randomUUID(), sideId = randomUUID(), conversationId = randomUUID(), turnId = randomUUID(), attemptId = randomUUID();
-    await repository.create({ id: executionId, workspaceId, agentId, mode: "single", generation: 1, testValues: [], sides: [{ id: sideId, executionId, revision: frozenRevision(), conversationId, state: "ready", retryable: false, history: [], continuation: null }] });
+    await repository.create({ id: executionId, workspaceId, agentId, mode: "single", generation: 1, testValues: [], idempotencyKey: executionId, sides: [{ id: sideId, executionId, revision: frozenRevision(), conversationId, state: "ready", retryable: false, history: [], continuation: null }] });
     const claimed = await repository.claimTurn({ workspaceId, agentId, executionId, sideIds: [sideId], generation: 1, turnId, attemptId, message: "hello", inputFingerprint: "hello", now: new Date(1000), leaseMs: 30_000, retry: false });
     if (typeof claimed === "string") throw new Error(`claim failed: ${claimed}`);
     const completed = await repository.complete({ workspaceId, agentId, executionId, sideId, turnId, attemptId, fence: claimed.claims[0].attempt.fence, result: { answer: "answer", messageId: randomUUID(), continuation: { version: 1 } }, now: new Date(2000) });
@@ -44,7 +44,7 @@ describeDb("test execution repository", () => {
 
   it("lists private execution evidence only inside its workspace and retains turn attempt metadata", async () => {
     const executionId = randomUUID(), sideId = randomUUID(), turnId = randomUUID(), attemptId = randomUUID();
-    await repository.create({ id: executionId, workspaceId, agentId, mode: "single", generation: 1, testValues: [{ name: "tier", value: "gold" } as never], sides: [{ id: sideId, executionId, revision: frozenRevision(), conversationId: randomUUID(), state: "ready", retryable: false, history: [], continuation: null }] });
+    await repository.create({ id: executionId, workspaceId, agentId, mode: "single", generation: 1, testValues: [{ name: "tier", value: "gold" } as never], idempotencyKey: executionId, sides: [{ id: sideId, executionId, revision: frozenRevision(), conversationId: randomUUID(), state: "ready", retryable: false, history: [], continuation: null }] });
     const claim = await repository.claimTurn({ workspaceId, agentId, executionId, sideIds: [sideId], generation: 1, turnId, attemptId, message: "history input", inputFingerprint: "history input", now: new Date(1_000), leaseMs: 1_000, retry: false });
     if (typeof claim === "string") throw new Error(claim);
     await repository.fail({ workspaceId, agentId, executionId, sideId, turnId, attemptId, fence: claim.claims[0].attempt.fence, code: "provider_timeout", now: new Date(2_000) });
@@ -62,7 +62,7 @@ describeDb("test execution repository", () => {
 
   it("claims all comparison sides atomically and serializes simultaneous completions", async () => {
     const executionId = randomUUID(), leftId = randomUUID(), rightId = randomUUID(), turnId = randomUUID(), attemptId = randomUUID();
-    await repository.create({ id: executionId, workspaceId, agentId, mode: "compare", generation: 1, testValues: [], sides: [
+    await repository.create({ id: executionId, workspaceId, agentId, mode: "compare", generation: 1, testValues: [], idempotencyKey: executionId, sides: [
       { id: leftId, executionId, revision: frozenRevision(), conversationId: randomUUID(), state: "ready", retryable: false, history: [], continuation: null },
       { id: rightId, executionId, revision: frozenRevision(secondRevisionId), conversationId: randomUUID(), state: "ready", retryable: false, history: [], continuation: null },
     ] });
@@ -77,7 +77,7 @@ describeDb("test execution repository", () => {
   it("atomically forks one settled comparison side while refusing a side with an active fenced attempt", async () => {
     const executionId = randomUUID(), leftId = randomUUID(), rightId = randomUUID(), leftConversationId = randomUUID();
     const history = [{ turnId: randomUUID(), attemptId: randomUUID(), role: "assistant" as const, content: "settled answer", messageId: randomUUID(), createdAt: new Date(1_000) }];
-    await repository.create({ id: executionId, workspaceId, agentId, mode: "compare", generation: 1, testValues: [{ name: "tier", value: "gold" } as never], sides: [
+    await repository.create({ id: executionId, workspaceId, agentId, mode: "compare", generation: 1, testValues: [{ name: "tier", value: "gold" } as never], idempotencyKey: executionId, sides: [
       { id: leftId, executionId, revision: frozenRevision(), conversationId: leftConversationId, state: "completed", retryable: false, history, continuation: { routine: "next" } },
       { id: rightId, executionId, revision: frozenRevision(secondRevisionId), conversationId: randomUUID(), state: "ready", retryable: false, history: [], continuation: null },
     ] });
@@ -88,7 +88,7 @@ describeDb("test execution repository", () => {
     await expect(repository.find({ workspaceId, agentId, executionId })).resolves.toMatchObject({ mode: "compare", sides: [{ id: leftId, history }, { id: rightId }] });
 
     const activeExecutionId = randomUUID(), activeLeftId = randomUUID(), activeRightId = randomUUID(), turnId = randomUUID(), attemptId = randomUUID();
-    await repository.create({ id: activeExecutionId, workspaceId, agentId, mode: "compare", generation: 1, testValues: [], sides: [
+    await repository.create({ id: activeExecutionId, workspaceId, agentId, mode: "compare", generation: 1, testValues: [], idempotencyKey: activeExecutionId, sides: [
       { id: activeLeftId, executionId: activeExecutionId, revision: frozenRevision(), conversationId: randomUUID(), state: "ready", retryable: false, history: [], continuation: null },
       { id: activeRightId, executionId: activeExecutionId, revision: frozenRevision(secondRevisionId), conversationId: randomUUID(), state: "ready", retryable: false, history: [], continuation: null },
     ] });
@@ -98,7 +98,7 @@ describeDb("test execution repository", () => {
 
   it("rejects a live different attempt and supersedes an expired lease with a monotonic fence", async () => {
     const executionId = randomUUID(), sideId = randomUUID(), turnId = randomUUID(), firstAttempt = randomUUID(), recoveryAttempt = randomUUID();
-    await repository.create({ id: executionId, workspaceId, agentId, mode: "single", generation: 1, testValues: [], sides: [{ id: sideId, executionId, revision: frozenRevision(), conversationId: randomUUID(), state: "ready", retryable: false, history: [], continuation: null }] });
+    await repository.create({ id: executionId, workspaceId, agentId, mode: "single", generation: 1, testValues: [], idempotencyKey: executionId, sides: [{ id: sideId, executionId, revision: frozenRevision(), conversationId: randomUUID(), state: "ready", retryable: false, history: [], continuation: null }] });
     const first = await repository.claimTurn({ workspaceId, agentId, executionId, sideIds: [sideId], generation: 1, turnId, attemptId: firstAttempt, message: "hello", inputFingerprint: "hello", now: new Date(1000), leaseMs: 1000, retry: false });
     if (typeof first === "string") throw new Error(first);
     await expect(repository.claimTurn({ workspaceId, agentId, executionId, sideIds: [sideId], generation: 1, turnId, attemptId: randomUUID(), message: "hello", inputFingerprint: "hello", now: new Date(1500), leaseMs: 1000, retry: true })).resolves.toBe("turn_conflict");
@@ -112,7 +112,7 @@ describeDb("test execution repository", () => {
   it("preserves input side order, keeps failed identities fenced, and re-delivers a completed side under a new retry identity", async () => {
     const executionId = randomUUID(), leftId = "ffffffff-ffff-4fff-8fff-ffffffffffff", rightId = "00000000-0000-4000-8000-000000000099";
     const turnId = randomUUID(), failedAttempt = randomUUID(), recoveredAttempt = randomUUID();
-    await repository.create({ id: executionId, workspaceId, agentId, mode: "compare", generation: 1, testValues: [], sides: [
+    await repository.create({ id: executionId, workspaceId, agentId, mode: "compare", generation: 1, testValues: [], idempotencyKey: executionId, sides: [
       { id: leftId, executionId, revision: frozenRevision(), conversationId: randomUUID(), state: "ready", retryable: false, history: [], continuation: null },
       { id: rightId, executionId, revision: frozenRevision(secondRevisionId), conversationId: randomUUID(), state: "ready", retryable: false, history: [], continuation: null },
     ] });
@@ -141,7 +141,7 @@ describeDb("test execution repository", () => {
 
   it("keeps the aggregate and active turn running until independently finishing comparison sides settle", async () => {
     const executionId = randomUUID(), leftId = randomUUID(), rightId = randomUUID(), turnId = randomUUID(), attemptId = randomUUID();
-    await repository.create({ id: executionId, workspaceId, agentId, mode: "compare", generation: 1, testValues: [], sides: [
+    await repository.create({ id: executionId, workspaceId, agentId, mode: "compare", generation: 1, testValues: [], idempotencyKey: executionId, sides: [
       { id: leftId, executionId, revision: frozenRevision(), conversationId: randomUUID(), state: "ready", retryable: false, history: [], continuation: null },
       { id: rightId, executionId, revision: frozenRevision(secondRevisionId), conversationId: randomUUID(), state: "ready", retryable: false, history: [], continuation: null },
     ] });
@@ -168,7 +168,7 @@ describeDb("test execution repository", () => {
       now: () => new Date(now),
       leaseMs: 1_000,
     });
-    const execution = await service.start({ workspaceId, agentId, accountId: null, mode: "single", revisionIds: [revisionId], testValues: [] });
+    const execution = await service.start({ workspaceId, agentId, accountId: null, mode: "single", revisionIds: [revisionId], testValues: [], idempotencyKey: randomUUID() });
     const turnId = randomUUID(), originalAttemptId = randomUUID(), recoveryAttemptId = randomUUID();
     const initial = await repository.claimTurn({ workspaceId, agentId, executionId: execution.id, sideIds: [execution.sides[0].id], generation: execution.generation, turnId, attemptId: originalAttemptId, message: "hello", inputFingerprint: JSON.stringify("hello"), now: new Date(now), leaseMs: 1_000, retry: false });
     if (typeof initial === "string") throw new Error(initial);
@@ -191,7 +191,7 @@ describeDb("test execution repository", () => {
       usageLimitPolicy: new NoopUsageLimitPolicy(),
       createId: randomUUID,
     });
-    const execution = await service.start({ workspaceId, agentId, accountId: null, mode: "single", revisionIds: [revisionId], testValues: [] });
+    const execution = await service.start({ workspaceId, agentId, accountId: null, mode: "single", revisionIds: [revisionId], testValues: [], idempotencyKey: randomUUID() });
     const turnId = randomUUID(), initialAttemptId = randomUUID(), retryAttemptId = randomUUID();
     await service.message({ workspaceId, agentId, accountId: null, executionId: execution.id, message: "hello", generation: execution.generation, turnId, attemptId: initialAttemptId });
     const beforeRetry = await repository.find({ workspaceId, agentId, executionId: execution.id });

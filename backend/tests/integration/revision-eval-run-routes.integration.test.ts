@@ -80,7 +80,7 @@ describeDb("revision eval run HTTP routes", () => {
       const known = error as { statusCode?: number; code?: string };
       res.status(known.statusCode ?? 500).json({ error: { code: known.code ?? "internal_error" } });
     });
-    const body = { revisionIds: [revisionId], caseIds: [caseId], testValues: [], mode: "retrieval_only", executionPolicy: "safe_test" };
+    const body = { revisionIds: [revisionId], caseIds: [caseId], testValues: [], mode: "retrieval_only", executionPolicy: "safe_test", idempotencyKey: randomUUID() };
     const created = await request(app).post("/api/v1/evals/revision-runs").send(body).expect(201);
     expect(created.body.state).toBe("running");
     expect(ownerLookups).toEqual([revisionId]);

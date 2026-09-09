@@ -193,6 +193,12 @@ describe("ChatSessionPreparer rolling conversation summary (#866)", () => {
     const agentRepository = new InMemoryAgentRepository();
     const agent = await agentRepository.create("ws-1", { name: "Bot" });
     const conversation = await conversationRepository.create("ws-1", agent.id);
+    await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "ws-1",
+      role: "user",
+      content: "Earlier message",
+    });
     const published: AgentRevision = {
       id: "66666666-6666-4666-8666-666666666666",
       snapshot: { customInstruction: "latest", directives: [], routines: [], contextVariableEnablements: [] },

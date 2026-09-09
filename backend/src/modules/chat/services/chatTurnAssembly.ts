@@ -340,6 +340,8 @@ interface CoverageRoutineEffects {
   pendingDecisionTransition?: ReturnType<typeof buildPendingDecisionTransition> | null;
   suspended?: boolean;
   commitRoutineState?: () => Promise<void>;
+  clarificationTransition?: CapturedClarificationTransition | null;
+  commitClarificationState?: () => Promise<void>;
   commitCoverageReactions?: () => Promise<void>;
 }
 
@@ -357,7 +359,7 @@ type PreparedChatStreamTurnEvent =
       suggestions: TurnStreamSuggestions;
       engineTrace?: ConversationTrace;
       actions?: RoutineActionRequest[];
-    };
+    } & CoverageRoutineEffects;
 
 export interface ChatTurnAssemblyOptions {
   chatGateway: Pick<ChatGateway, "answer">;
@@ -675,13 +677,22 @@ export class ChatTurnAssembly {
       query: string;
       userExpectedLocale?: string | null;
       accountId?: string;
+      responseLanguage?: Promise<string | undefined>;
+      clarification?: ChatTurnAssemblyClarification;
       coordination?: ChatTurnAssemblyCoordinationHook;
     },
   ): Promise<{
     presentation: ChatPresentedAnswer;
     engineTrace?: ConversationTrace;
     actions?: RoutineActionRequest[];
-  }> {
+  } & CoverageRoutineEffects> {
+    const coverageRoutineRuntime = await this.coverageRoutineRuntime(session, {
+      accountId: input.accountId,
+      responseLanguage: input.responseLanguage ?? Promise.resolve(undefined),
+      coordination: input.coordination,
+      getSession: () => session,
+      clarification: input.clarification,
+    });
     const { turnSkills, turnSkillSelector } = await this.turnSelectionRuntime(session, {
       coordination: input.coordination,
     });
@@ -706,8 +717,13 @@ export class ChatTurnAssembly {
         getSession: () => session,
         onRecorded: (reaction) => { applyCoverageInteractionTrace(session, reaction); },
       }),
+      ...coverageRoutineRuntime,
     });
-    return { presentation, engineTrace: result.trace, actions: result.actions };
+    return {
+      presentation,
+      engineTrace: result.trace,
+      ...(coverageRoutineRuntime.effects?.(result) ?? { actions: result.actions }),
+    };
   }
 
   async renderPreparedByEngine(
@@ -814,9 +830,18 @@ export class ChatTurnAssembly {
       query: string;
       userExpectedLocale?: string | null;
       accountId?: string;
+      responseLanguage?: Promise<string | undefined>;
+      clarification?: ChatTurnAssemblyClarification;
       coordination?: ChatTurnAssemblyCoordinationHook;
     },
   ): AsyncIterable<PreparedChatStreamTurnEvent> {
+    const coverageRoutineRuntime = await this.coverageRoutineRuntime(session, {
+      accountId: input.accountId,
+      responseLanguage: input.responseLanguage ?? Promise.resolve(undefined),
+      coordination: input.coordination,
+      getSession: () => session,
+      clarification: input.clarification,
+    });
     const { turnSkills, turnSkillSelector } = await this.turnSelectionRuntime(session, {
       coordination: input.coordination,
     });
@@ -842,6 +867,7 @@ export class ChatTurnAssembly {
         getSession: () => session,
         onRecorded: (reaction) => { applyCoverageInteractionTrace(session, reaction); },
       }),
+      ...coverageRoutineRuntime,
     })) {
       if (event.type === "status" || event.type === "chunk") {
         yield event;
@@ -852,7 +878,7 @@ export class ChatTurnAssembly {
         finalPresentation: event.presentation,
         suggestions: event.suggestions,
         engineTrace: event.engineTrace,
-        actions: event.result.actions,
+        ...(coverageRoutineRuntime.effects?.(event.result) ?? { actions: event.result.actions }),
       };
     }
   }

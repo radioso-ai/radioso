@@ -2445,6 +2445,7 @@ describe("chat service streaming", () => {
   const coverageRoutineService = (input: {
     handoffAndAwaitingDecision?: boolean;
     failReactionRecord?: boolean;
+    senseCompatible?: boolean;
     assistantTurnPersistence?: ChatServiceOptions["assistantTurnPersistence"];
   } = {}) => {
     const assessment: Extract<AnswerCoverageAssessment, { availability: "assessed" }> = {
@@ -2531,7 +2532,7 @@ describe("chat service streaming", () => {
       createConversationEngine(),
       { routineStore, routineProvider, assistantTurnPersistence: input.assistantTurnPersistence },
       undefined, undefined, undefined,
-      {
+      input.senseCompatible ? undefined : {
         interpretChatTurn: async () => ({
           route: "retrieval" as const,
           framing: { isIdentityQuestion: false },
@@ -2549,7 +2550,7 @@ describe("chat service streaming", () => {
           },
         }),
       },
-      undefined, undefined, undefined,
+      input.senseCompatible ? { detect: async () => [] } : undefined, undefined, undefined,
       coverageAssessorFactory,
     );
     return { service, persistedReactions, routineStore };
@@ -2580,6 +2581,70 @@ describe("chat service streaming", () => {
       },
     });
     expect(streaming.persistedReactions).toHaveLength(1);
+  });
+
+  it.each([false, true])("activates coverage routines and commits their effects through the public sense-compatible %s path", async (stream) => {
+    const coverage = coverageRoutineService({ senseCompatible: true });
+    const request = { workspaceId: "workspace-1", query: "Please arrange a consultation.", stream };
+
+    const response = stream
+      ? await (async () => {
+          const events: ChatStreamEvent[] = [];
+          for await (const event of coverage.service.streamAnswer(request)) events.push(event);
+          return events.find((event) => event.type === "done");
+        })()
+      : await coverage.service.answer(request);
+
+    expect(response).toMatchObject({
+      answer: "I can arrange a consultation.",
+      interactionTrace: {
+        state: "evaluated",
+        decisions: [expect.objectContaining({ target: "routine", targetId: "coverage.follow-up", decision: "activated" })],
+      },
+    });
+    expect(coverage.routineStore.save).toHaveBeenCalledOnce();
+    expect(coverage.persistedReactions).toHaveLength(1);
+  });
+
+  it.each([false, true])("forwards coverage handoff and approval effects through the public sense-compatible %s path", async (stream) => {
+    const assistantTurnPersistence = createCapturingAssistantTurnPersistence();
+    const coverage = coverageRoutineService({
+      senseCompatible: true,
+      handoffAndAwaitingDecision: true,
+      assistantTurnPersistence,
+    });
+
+    if (stream) {
+      for await (const _event of coverage.service.streamAnswer({
+        workspaceId: "workspace-1",
+        query: "Please arrange a consultation.",
+        stream: true,
+      })) {
+        // Drain the public stream to its lifecycle boundary.
+      }
+    } else {
+      await coverage.service.answer({
+        workspaceId: "workspace-1",
+        query: "Please arrange a consultation.",
+        stream: false,
+      });
+    }
+
+    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
+    expect(persisted.ownershipHandoff).toEqual({
+      reason: "routine_handoff",
+      routineId: "coverage.follow-up",
+      stepId: "operator_review",
+    });
+    expect(persisted.routineStateTransition).toMatchObject({
+      kind: "save",
+      state: { routineId: "coverage.follow-up", status: "suspended" },
+    });
+    expect(persisted.pendingDecisionTransition).toMatchObject({ routineId: "coverage.follow-up" });
+    expect(persisted.actions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: HANDOFF_NOTIFY_ACTION_TYPE }),
+      expect.objectContaining({ type: APPROVAL_REQUEST_ACTION_TYPE }),
+    ]));
   });
 
   it.each([false, true])("forwards coverage routine handoff and suspended approval effects through the public %s path", async (stream) => {

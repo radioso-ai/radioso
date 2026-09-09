@@ -1461,6 +1461,8 @@ export interface ProcessTurnResult {
     routineId: string;
     executionId?: string;
   };
+  /** Routine IDs actually presented in an activation clarification on this turn. */
+  routineClarificationRoutineIds?: string[];
   trace: ConversationTrace;
   /**
    * Fire-and-forget action requests a routine emitted this turn. The host persists

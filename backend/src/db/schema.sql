@@ -730,7 +730,7 @@ CREATE TABLE public.answer_coverage_reaction_traces (
     conversation_id uuid NOT NULL,
     reaction_key text NOT NULL,
     directive_id uuid,
-    routine_id uuid,
+    routine_id text,
     routine_execution_id uuid,
     target_message_id uuid NOT NULL,
     evaluation_state text NOT NULL,

@@ -110,6 +110,7 @@ const mergePostEvidenceRoutineResult = (
     actions: routineResult.actions,
     handoff: routineResult.handoff,
     routineExecution: routineResult.routineExecution,
+    routineClarificationRoutineIds: routineResult.routineClarificationRoutineIds,
     awaitingDecision: routineResult.awaitingDecision,
     awaitingSkillInput: routineResult.awaitingSkillInput,
   });
@@ -342,9 +343,10 @@ export class DefaultConversationEngine implements ConversationEngine {
           };
         });
         const routineExecution = postEvidenceRoutine?.routineExecution;
+        const offeredRoutineIds = new Set(postEvidenceRoutine?.routineClarificationRoutineIds ?? []);
         const routineReactions = coverageRoutineCandidates.map((candidate) => {
           const activated = routineExecution?.routineId === candidate.routineId;
-          const offered = postEvidenceRoutine?.decision.reason === "routine_activation_clarification";
+          const offered = offeredRoutineIds.has(candidate.routineId);
           return {
             reactionKey: `routine:${candidate.routineId}:${candidate.decision}`,
             routineId: candidate.routineId,

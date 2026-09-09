@@ -142,6 +142,7 @@ export const createProcessTurnResult = (input: {
   actions?: RoutineActionRequest[];
   handoff?: { routineId: string; stepId: string };
   routineExecution?: ProcessTurnResult["routineExecution"];
+  routineClarificationRoutineIds?: ProcessTurnResult["routineClarificationRoutineIds"];
   awaitingDecision?: RoutineAwaitingDecision;
   awaitingSkillInput?: AwaitingSkillInput[];
 }): ProcessTurnResult => ({
@@ -154,6 +155,9 @@ export const createProcessTurnResult = (input: {
   ...(input.actions && input.actions.length > 0 ? { actions: input.actions } : {}),
   ...(input.handoff ? { handoff: input.handoff } : {}),
   ...(input.routineExecution ? { routineExecution: input.routineExecution } : {}),
+  ...(input.routineClarificationRoutineIds && input.routineClarificationRoutineIds.length > 0
+    ? { routineClarificationRoutineIds: input.routineClarificationRoutineIds }
+    : {}),
   ...(input.awaitingDecision ? { awaitingDecision: input.awaitingDecision } : {}),
   ...(input.awaitingSkillInput && input.awaitingSkillInput.length > 0
     ? { awaitingSkillInput: input.awaitingSkillInput }

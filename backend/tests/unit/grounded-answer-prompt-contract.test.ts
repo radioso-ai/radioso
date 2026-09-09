@@ -187,6 +187,20 @@ describe("grounded answer prompt contract", () => {
     expect(result.systemPrompt).not.toContain("Whether one-day attendance is allowed");
   });
 
+  it.each(["failed", "invalid", "not_recorded"] as const)("does not steer answer composition for %s coverage diagnostics", (availability) => {
+    const result = composeGroundedAnswerSystemPrompt({
+      baseSystemPrompt: "BASE",
+      suggestedQuestionsEnabled: false,
+      suggestedQuestionsCount: 0,
+      hasRetrievedContexts: true,
+      conversationIntentSnapshot,
+      answerCoverage: { availability },
+    });
+
+    expect(result.systemPrompt).not.toContain("Coverage-aware response");
+    expect(result.conversationContextPrompt).not.toContain("untrusted diagnostic data");
+  });
+
   it("requires a direct response when the assessment says the request is resolved", () => {
     const result = composeGroundedAnswerSystemPrompt({
       baseSystemPrompt: "BASE",

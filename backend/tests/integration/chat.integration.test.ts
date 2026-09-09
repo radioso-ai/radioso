@@ -383,6 +383,7 @@ describe("chat integration", () => {
       action: "Introduce yourself by name.",
       lifecycle: { kind: "once_per_conversation" },
     });
+    await publishTestAgentBaseline(app, { workspaceId, agentId: agent.id });
 
     const first = await request(app)
       .post("/api/v1/assistant/chat")
@@ -434,6 +435,7 @@ describe("chat integration", () => {
       action: "Mention the grounding context once.",
       lifecycle: { kind: "once_per_conversation" },
     });
+    await publishTestAgentBaseline(app, { workspaceId, agentId: agent.id });
 
     const first = await request(app)
       .post("/api/v1/assistant/chat")
@@ -2011,6 +2013,7 @@ describe("chat integration", () => {
         retrievalEnabled: true,
       })
       .expect(201);
+    await publishTestAgentBaseline(app, { workspaceId, agentId: agent.body.id });
 
     const response = await request(app)
       .post("/api/v1/assistant/chat")
@@ -2229,7 +2232,18 @@ describe("chat integration", () => {
         rerankTopK: 5
       });
 
-    const conversation = await dependencies.conversationRepository.create(workspaceId);
+    const baselineAgent = await dependencies.agentService.resolve(workspaceId);
+    const baselineRevision = await publishTestAgentBaseline(app, { workspaceId, agentId: baselineAgent.id });
+    const conversation = await dependencies.conversationRepository.create(
+      workspaceId,
+      baselineAgent.id,
+      null,
+      null,
+      null,
+      null,
+      null,
+      { agentRevisionId: baselineRevision.id },
+    );
     await dependencies.messageRepository.create({
       conversationId: conversation.id,
       workspaceId,
@@ -2345,7 +2359,18 @@ describe("chat integration", () => {
         rerankTopK: 5
       });
 
-    const conversation = await dependencies.conversationRepository.create(workspaceId);
+    const baselineAgent = await dependencies.agentService.resolve(workspaceId);
+    const baselineRevision = await publishTestAgentBaseline(app, { workspaceId, agentId: baselineAgent.id });
+    const conversation = await dependencies.conversationRepository.create(
+      workspaceId,
+      baselineAgent.id,
+      null,
+      null,
+      null,
+      null,
+      null,
+      { agentRevisionId: baselineRevision.id },
+    );
     await dependencies.messageRepository.create({
       conversationId: conversation.id,
       workspaceId,

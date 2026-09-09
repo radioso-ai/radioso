@@ -64,8 +64,6 @@ export interface AudiencePulseThemeEvidence {
   occurrenceCount: number
   coverage?: 'answered' | 'partial' | 'unanswered' | 'unclear'
   coverageReason?: keyof AudiencePulseCoverageReasonSummary
-  unresolvedRequest?: string
-  routineProgress?: { executionId: string; state: string }
   answerCoverage?: ApiSchemas['AnswerCoverage']
 }
 

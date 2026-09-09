@@ -279,6 +279,19 @@ interface ChatTurnReceipt {
   userMessageId: string;
 }
 
+const routineActivationFailureFields = (error: unknown): Record<string, string> | undefined => {
+  if (!(error instanceof Error) || error.name !== "RoutineActivationFailure") {
+    return undefined;
+  }
+  const phase = "phase" in error && typeof error.phase === "string" ? error.phase : "unknown";
+  const cause = error.cause;
+  return {
+    event: "routine_activation_failed",
+    phase,
+    causeType: cause instanceof Error ? cause.name : typeof cause,
+  };
+};
+
 export class ChatService {
   private readonly conversationRepository: ConversationRepositoryPort;
   private readonly messageRepository: MessageRepositoryPort;
@@ -1151,6 +1164,14 @@ export class ChatService {
         throw preferredError;
       }
       const normalizedError = normalizeProviderCredentialError(preferredError);
+      const activationFailure = routineActivationFailureFields(preferredError);
+      if (activationFailure) {
+        this.logger?.warn({
+          ...activationFailure,
+          workspaceId: input.workspaceId,
+          conversationId: session?.conversation.id ?? input.conversationId,
+        }, "Routine activation failed");
+      }
       await this.chatTurnLifecycle.recordFailure(input, session, assistantMessageId, normalizedError, workflowPolicy);
       throw normalizedError;
     }
@@ -1710,6 +1731,14 @@ export class ChatService {
         return;
       }
       const normalizedError = normalizeProviderCredentialError(preferredError);
+      const activationFailure = routineActivationFailureFields(preferredError);
+      if (activationFailure) {
+        this.logger?.warn({
+          ...activationFailure,
+          workspaceId: input.workspaceId,
+          conversationId: session?.conversation.id ?? input.conversationId,
+        }, "Routine activation failed");
+      }
       await this.chatTurnLifecycle.recordFailure(input, session, assistantMessageId, normalizedError, workflowPolicy);
       throw normalizedError;
     } finally {

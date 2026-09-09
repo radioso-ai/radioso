@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  answerCoverageAwareOutcome,
   answerCoverageLabel,
   answerCoverageOutcomePresentation,
   normalizeAnswerCoverage,
   normalizeAnswerCoverageInteractionTrace,
   compatibleAnswerCoverageReasons,
 } from '@/lib/answer-coverage'
+import type { DiagnosticPresentation } from '@/lib/activity-diagnostics'
 
 describe('answer coverage wire normalization', () => {
   it('keeps assessed coverage and provenance', () => {
@@ -69,6 +71,40 @@ describe('answer coverage wire normalization', () => {
 })
 
 describe('answer coverage outcome presentation', () => {
+  const fallback: DiagnosticPresentation = {
+    title: 'Routine reply',
+    summary: 'The routine answered directly.',
+    facts: [],
+    tone: 'ok',
+  }
+
+  it('does not replace an outcome when coverage was not attempted', () => {
+    expect(answerCoverageAwareOutcome(fallback, {
+      availability: 'not_recorded',
+      originatingTurnId: 'turn-1',
+      originatingRequestId: 'request-1',
+    })).toEqual(fallback)
+    expect(answerCoverageAwareOutcome(fallback)).toEqual(fallback)
+  })
+
+  it('uses assessed answered coverage as the authoritative outcome', () => {
+    expect(answerCoverageAwareOutcome({
+      ...fallback,
+      title: 'Request unanswered',
+      tone: 'warning',
+    }, {
+      availability: 'assessed',
+      coverage: 'answered',
+      reason: 'sufficient_evidence',
+      originatingTurnId: 'turn-1',
+      originatingRequestId: 'request-1',
+      schemaVersion: 1,
+    })).toMatchObject({
+      title: 'Request answered',
+      tone: 'ok',
+    })
+  })
+
   it('distinguishes a wholly unanswered request from a partial response', () => {
     expect(answerCoverageOutcomePresentation('unanswered')).toMatchObject({
       title: 'Request remains unanswered',

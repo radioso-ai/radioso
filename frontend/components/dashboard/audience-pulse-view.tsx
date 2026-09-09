@@ -814,12 +814,6 @@ function TopicRow({
                           : null}
                         {evidence.answerCoverage?.coverage ? ` · ${evidence.answerCoverage.coverage.replaceAll('_', ' ')}` : evidence.coverage ? ` · ${evidence.coverage.replaceAll('_', ' ')}` : null}
                       </button>
-                      {evidence.unresolvedRequest || evidence.routineProgress ? (
-                        <span className="block pl-5 text-xs text-muted-foreground">
-                          {evidence.unresolvedRequest ? `Unresolved: ${evidence.unresolvedRequest}` : null}
-                          {evidence.routineProgress ? ` · Routine ${evidence.routineProgress.state} (${evidence.routineProgress.executionId})` : null}
-                        </span>
-                      ) : null}
                     </li>
                   ))}
                 </ul>

@@ -24,8 +24,6 @@ export interface AudiencePulseEvidence {
   grounding: AudiencePulseGroundingSignal;
   /** Recorded semantic assessment. Absent records are legacy, never inferred. */
   answerCoverage?: AnswerCoverageAssessment;
-  /** Follow-up lifecycle is observational and cannot alter semantic coverage. */
-  routineProgress?: { routineExecutionId: string; status: string }[];
   /** True when the coverage field was unavailable on a historical record. */
   legacyCoverage?: boolean;
   contentGapEligible: boolean;
@@ -421,7 +419,10 @@ export const buildAudiencePulseCensusReport = (input: {
       weeklyPulse: createWeeklyPulse(items, input.weeklyVolume),
       grounding: groundingSummary(items),
       coverage: coverageSummary(items),
-      coverageByEvidenceId: coverageByEvidenceId(items),
+      // Keep the per-evidence snapshot bounded to the same operator-visible
+      // examples as evidenceIds. The aggregate counts above still cover all
+      // members of the topic.
+      coverageByEvidenceId: coverageByEvidenceId(items.slice(0, AUDIENCE_PULSE_THEME_DISPLAY_EVIDENCE_MAX)),
     };
   });
 

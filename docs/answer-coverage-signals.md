@@ -1,7 +1,7 @@
 ---
 title: "Answer Coverage Signals"
 description: "Read semantic answer coverage in turn diagnostics and Audience Pulse, and use it to steer directives and routines."
-last_updated: 2026-09-08
+last_updated: 2026-09-09
 ---
 
 # Answer Coverage Signals
@@ -21,12 +21,13 @@ Open a turn's debug view to see its contextualized request, assessment availabil
 An assessment with `not_recorded`, `failed`, or `invalid` availability is displayed as **Not assessed**. The debug view does not infer a semantic answer from citations or a successful routine action.
 
 The Activity outcome uses a coverage-specific label when coverage was assessed:
-**Partly answered**, **Request unanswered**, **Needs clarification**, or
-**Coverage not assessed**. These are separate from **No context**, which means
-the retrieval answer path actually declined the request.
+**Request answered**, **Partly answered**, **Request unanswered**, or
+**Needs clarification**. These are separate from **Coverage not assessed**, which
+marks unavailable or legacy evaluation, and **No context**, which means the
+retrieval answer path actually declined the request.
 
 ## Read Audience Pulse
 
-Expanded topic details show exclusive semantic buckets for answered, partly answered, unanswered, needs clarification, and not assessed questions. Grounding counts remain a separate diagnostic. Pulse evidence carries the recorded assessment; unresolved request text stays in authorized turn diagnostics, where you can inspect it alongside linked routine progress after a follow-up flow completes.
+Expanded topic details show exclusive semantic buckets for answered, partly answered, unanswered, needs clarification, and not assessed questions. Grounding counts remain a separate diagnostic. Pulse evidence carries the recorded assessment; unresolved request text and routine reaction details stay in authorized turn diagnostics.
 
 Reports preserve records created before answer coverage was measured. Those records appear as legacy evidence and remain readable without manufacturing a new assessment.

@@ -62,6 +62,13 @@ const coverageRoutineFailureKind = (
   return error instanceof TypeError ? "type_error" : "activation_error";
 };
 
+const coverageRoutineFailureCauseType = (error: unknown): string => {
+  if (error instanceof RoutineActivationFailure) {
+    return error.cause instanceof Error ? error.cause.name : typeof error.cause;
+  }
+  return error instanceof Error ? error.name : typeof error;
+};
+
 interface PreparedTurnRun {
   stages: ConversationTraceStage[];
   events: ConversationEvent[];
@@ -322,7 +329,11 @@ export class DefaultConversationEngine implements ConversationEngine {
           id: "answer_coverage_routine_activation",
           kind: "answer_coverage_routine_activation",
           status: "fallback",
-          outputs: { availability: "failed", failureKind: coverageRoutineFailureKind(error) },
+          outputs: {
+            availability: "failed",
+            failureKind: coverageRoutineFailureKind(error),
+            causeType: coverageRoutineFailureCauseType(error),
+          },
         }));
       }
     }

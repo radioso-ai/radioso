@@ -28,6 +28,13 @@ export interface AgentRevisionState {
   proactiveGreetingEnabled?: boolean
 }
 
+/** Exactly the publish request body; the endpoint rejects any other key. */
+export interface PublishRevisionCommand {
+  expectedDraftGeneration: number
+  expectedPublishedRevisionId: string | null
+  idempotencyKey: string
+}
+
 export interface AgentRevisionDetail extends AgentRevisionSummary {
   snapshotFormatVersion: number
   scope: {
@@ -152,14 +159,16 @@ export const agentRevisionsApi = {
     return request<{ revision: AgentRevisionDetail }>(`/agents/${agentId}/revisions/${revisionId}`, { method: 'GET' })
   },
 
-  publish(agentId: string, revisionId: string, input: {
-    expectedDraftGeneration: number
-    expectedPublishedRevisionId: string | null
-    idempotencyKey: string
-  }): Promise<{ publication: { id: string; revisionId: string; publishedAt: string; idempotentReplay: boolean; revision: AgentRevisionSummary }; state: AgentRevisionState }> {
+  publish(agentId: string, revisionId: string, input: PublishRevisionCommand): Promise<{ publication: { id: string; revisionId: string; publishedAt: string; idempotentReplay: boolean; revision: AgentRevisionSummary }; state: AgentRevisionState }> {
     return request(`/agents/${agentId}/revisions/${revisionId}/publish`, {
       method: 'POST',
-      body: JSON.stringify(input),
+      // The endpoint rejects unknown keys, so the body is picked field by field
+      // rather than serialized from whatever wider command a caller holds.
+      body: JSON.stringify({
+        expectedDraftGeneration: input.expectedDraftGeneration,
+        expectedPublishedRevisionId: input.expectedPublishedRevisionId,
+        idempotencyKey: input.idempotencyKey,
+      }),
     })
   },
 

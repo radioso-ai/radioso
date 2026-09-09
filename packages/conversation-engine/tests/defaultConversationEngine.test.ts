@@ -1050,6 +1050,7 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
 
   it.each([false, true])("does not resume or replace an active routine that yielded before the %s coverage pass", async (stream) => {
     const active = { ...activeState, path: ["ask_email"], variables: { email: "visitor@example.test" } };
+    const record = vi.fn(async () => {});
     const routineStore = {
       loadActive: vi.fn(async () => active),
       save: vi.fn(async () => {}),
@@ -1073,6 +1074,7 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
         evaluateCandidates: vi.fn(() => [{ routineId: "coverage-follow-up", decision: "candidate" as const, reasonCode: "coverage_criteria_candidate" }]),
         activate: vi.fn(async () => ({ kind: "activate" as const, routineId: "coverage-follow-up" })),
       },
+      coverageReactionRecorder: { record },
       composer: {
         compose: vi.fn(async () => ({ answer: "Grounded answer." })),
         async *stream() { yield { type: "final" as const, response: { answer: "Grounded answer." } }; },
@@ -1090,6 +1092,14 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
 
     expect(runner.resume).toHaveBeenCalledOnce();
     expect(input.coverageRoutineActivator!.activate).not.toHaveBeenCalled();
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({
+      evaluationState: "evaluated",
+      reactions: [expect.objectContaining({
+        routineId: "coverage-follow-up",
+        decision: "suppressed",
+        reasonCode: "active_routine_keeps_control",
+      })],
+    }));
     expect(routineStore.save).not.toHaveBeenCalled();
     expect(routineStore.clear).not.toHaveBeenCalled();
     expect(active).toEqual({ ...activeState, path: ["ask_email"], variables: { email: "visitor@example.test" } });

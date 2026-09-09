@@ -345,6 +345,7 @@ export class DefaultConversationEngine implements ConversationEngine {
         });
         const routineExecution = postEvidenceRoutine?.routineExecution;
         const offeredRoutineIds = new Set(postEvidenceRoutine?.routineClarificationRoutineIds ?? []);
+        const activeRoutineKeepsControl = activeRoutineAtCoveragePass?.status === "active";
         const routineReactions = coverageRoutineCandidates.map((candidate) => {
           const activated = routineExecution?.routineId === candidate.routineId;
           const offered = offeredRoutineIds.has(candidate.routineId);
@@ -353,9 +354,11 @@ export class DefaultConversationEngine implements ConversationEngine {
             routineId: candidate.routineId,
             ...(activated && routineExecution?.executionId ? { routineExecutionId: routineExecution.executionId } : {}),
             decision: activated ? "activated" as const
+              : activeRoutineKeepsControl ? "suppressed" as const
               : candidate.decision === "suppressed" ? "suppressed" as const
               : offered ? "offered" as const : "skipped" as const,
             reasonCode: activated ? "coverage_criteria_activated"
+              : activeRoutineKeepsControl ? "active_routine_keeps_control"
               : candidate.decision === "suppressed" ? candidate.reasonCode
               : offered ? "coverage_activation_offered" : "coverage_activation_not_selected",
           };

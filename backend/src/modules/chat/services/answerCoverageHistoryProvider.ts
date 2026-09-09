@@ -70,10 +70,15 @@ export const loadAnswerCoverageHistoryProjection = async (
   requestMessageIds: readonly string[],
 ): Promise<AnswerCoverageHistoryProjection> => {
   const records = await reader.listByRequestMessageIds({ workspaceId, requestMessageIds });
-  const assessedRecords = [...records.values()].filter((record) => record.availability === "assessed");
+  // Migration 175 deliberately leaves pre-existing assessments unconfirmed. They have no
+  // exact assistant turn to anchor them to, so they must not become operator-facing verdicts.
+  const confirmedRecords = [...records].filter(([, record]) => record.assistantMessageId !== undefined);
+  const assessedRecords = confirmedRecords
+    .map(([, record]) => record)
+    .filter((record) => record.availability === "assessed");
   const reactionsByAssessmentId = await reader.listByAssessmentIds({ workspaceId, assessmentIds: assessedRecords.map((record) => record.id) });
   const projection: AnswerCoverageHistoryProjection = new Map();
-  for (const [requestMessageId, record] of records) {
+  for (const [requestMessageId, record] of confirmedRecords) {
     const reactions = record.availability === "assessed" ? reactionsByAssessmentId.get(record.id) ?? [] : [];
     const interactionTrace = record.availability === "assessed" && record.interactionEvaluationState === "evaluated"
       ? presentInteractions(record, reactions)

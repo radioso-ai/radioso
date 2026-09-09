@@ -727,6 +727,7 @@ describe("chat history service", () => {
       requestMessageId: user.id,
       originatingTurnId: user.id,
       contextualizedRequest: "user: What remains unresolved?",
+      assistantMessageId: assistant.id,
       availability: "assessed",
       coverage: "partial",
       reason: "insufficient_evidence",
@@ -800,6 +801,7 @@ describe("chat history service", () => {
     coverageReader.assessments.set(user.id, {
       id: "assessment-2", workspaceId: "workspace-1", conversationId: conversation.id,
       requestMessageId: user.id, originatingTurnId: user.id, contextualizedRequest: "Question",
+      assistantMessageId: assistant.id,
       availability: "assessed", coverage: "answered", reason: "sufficient_evidence", schemaVersion: 1,
       interactionEvaluationState: "evaluated",
       assessedAt: new Date("2026-09-08T10:00:00.000Z"), createdAt: new Date("2026-09-08T10:00:00.000Z"),

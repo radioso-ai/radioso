@@ -1326,7 +1326,7 @@ export function AgentRevisionTestChat({
               className={
                 mode === "compare"
                   ? "grid min-h-0 flex-1 gap-4 lg:grid-cols-2"
-                  : "flex min-h-0 flex-1 flex-col"
+                  : "mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col"
               }
             >
               {[0, ...(mode === "compare" ? [1] : [])].map((index) => (
@@ -1345,9 +1345,14 @@ export function AgentRevisionTestChat({
                     className={
                       mode === "compare"
                         ? "flex shrink-0 justify-end border-b border-border/70 bg-muted/20 px-3 py-2"
-                        : "flex shrink-0 items-center gap-2 border-b border-border/70 bg-muted/20 px-3 py-2"
+                        : "flex shrink-0 flex-wrap items-center gap-2 border-b border-border/70 bg-muted/20 px-3 py-2"
                     }
                   >
+                    {mode === "single" ? (
+                      <p className="basis-full text-sm text-muted-foreground sm:min-w-0 sm:flex-1 sm:basis-auto sm:truncate">
+                        Ask a question to test this version.
+                      </p>
+                    ) : null}
                     <Label className="sr-only" htmlFor={`revision-selector-${index}`}>
                       Select version for {revisionTriggerLabel(revisions.find((revision) => revision.id === selected[index]))} test results
                     </Label>
@@ -1416,7 +1421,7 @@ export function AgentRevisionTestChat({
                             onOpenDocument={async () => "unavailable"}
                             assistantAvatarLabel={assistantName}
                             assistantIdentity={assistantIdentity}
-                          /> : mode === "single" ? <p className="mx-auto max-w-3xl pt-8 text-sm text-muted-foreground">Ask a question to test this version.</p> : null}
+                          /> : null}
                           {side?.errorCode ? (
                             <p className="mt-3 text-sm text-destructive">
                               {failureLabel(side.errorCode)}

@@ -110,6 +110,7 @@ describe("createWhatsAppWebhookRouter", () => {
 
     expect(response.status).toBe(200);
     expect(response.text).toBe("12345");
+    expect(response.headers["x-content-type-options"]).toBe("nosniff");
   });
 
   it("rejects invalid verification tokens and invalid signatures", async () => {

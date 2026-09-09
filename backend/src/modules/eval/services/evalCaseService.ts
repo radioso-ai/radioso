@@ -6,6 +6,7 @@ import type {
   EvalCaseListItem,
   EvalCaseWithRuns,
 } from "../domain/types.js";
+import { compileEvalRegex } from "../domain/safeRegex.js";
 import type { EvalRepositoryPort } from "./evalRepository.js";
 
 export interface CreateEvalCaseInput {
@@ -62,11 +63,9 @@ const validateAssertion = (assertion: EvalAssertion): void => {
       }
       if (assertion.matchMode === "regex") {
         try {
-          new RegExp(assertion.pattern);
-        } catch (err) {
-          throw badRequest(
-            `Invalid regex pattern for ${assertion.type} assertion: ${err instanceof Error ? err.message : "unknown error"}`,
-          );
+          compileEvalRegex(assertion.pattern, assertion.caseSensitive ?? false);
+        } catch {
+          throw badRequest(`Unsafe or invalid regex pattern for ${assertion.type} assertion`);
         }
       }
       return;

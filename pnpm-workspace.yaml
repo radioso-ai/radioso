@@ -11,5 +11,6 @@ onlyBuiltDependencies:
   - "@scarf/scarf"
   - esbuild
   - protobufjs
+  - re2
   - sharp
   - unrs-resolver

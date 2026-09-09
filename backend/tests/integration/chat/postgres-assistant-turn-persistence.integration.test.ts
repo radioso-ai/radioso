@@ -384,6 +384,55 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
     expect(counts).toEqual({ messages: "0", actions: "0" });
   });
 
+  it("confirms only the exact request assessment with the assistant message in the committed turn transaction", async () => {
+    const { workspace, conversation } = await seedConversation();
+    const requestMessageId = randomUUID();
+    const assistantMessageId = randomUUID();
+    const laterAssistantMessageId = randomUUID();
+    const assessmentId = randomUUID();
+    await database.query("INSERT INTO messages(id, workspace_id, conversation_id, role, content) VALUES ($1, $2, $3, 'user', 'Question')", [requestMessageId, workspace.id, conversation.id]);
+    await database.query(`INSERT INTO answer_coverage_assessments(id, workspace_id, conversation_id, request_message_id, originating_turn_id, contextualized_request, availability, coverage, reason, schema_version) VALUES ($1, $2, $3, $4, $4, 'Question', 'assessed', 'unanswered', 'insufficient_evidence', 1)`, [assessmentId, workspace.id, conversation.id, requestMessageId]);
+
+    const complete = (assistantMessageId: string) => persistence.completeAssistantTurn({
+      workspaceId: workspace.id,
+      conversationId: conversation.id,
+      answerCoverageRequestMessageId: requestMessageId,
+      assistantMessage: { id: assistantMessageId, conversationId: conversation.id, workspaceId: workspace.id, role: "assistant", content: "The exact reply." },
+      auditEvent: { eventType: "chat.answer", eventStatus: "success", workspaceId: workspace.id, metadata: {} },
+    });
+    await complete(assistantMessageId);
+    await complete(laterAssistantMessageId);
+
+    const row = await database.queryOne<{ assistant_message_id: string | null }>("SELECT assistant_message_id FROM answer_coverage_assessments WHERE id = $1", [assessmentId]);
+    expect(row.assistant_message_id).toBe(assistantMessageId);
+  });
+
+  it("rolls back assessment confirmation with the cancelled caller-owned assistant turn", async () => {
+    const { workspace, conversation } = await seedConversation();
+    const requestMessageId = randomUUID();
+    const assistantMessageId = randomUUID();
+    const assessmentId = randomUUID();
+    await database.query("INSERT INTO messages(id, workspace_id, conversation_id, role, content) VALUES ($1, $2, $3, 'user', 'Question')", [requestMessageId, workspace.id, conversation.id]);
+    await database.query(`INSERT INTO answer_coverage_assessments(id, workspace_id, conversation_id, request_message_id, originating_turn_id, contextualized_request, availability, coverage, reason, schema_version) VALUES ($1, $2, $3, $4, $4, 'Question', 'assessed', 'unanswered', 'insufficient_evidence', 1)`, [assessmentId, workspace.id, conversation.id, requestMessageId]);
+
+    await expect(database.kysely.transaction().execute(async (transaction) => {
+      await persistence.completeAssistantTurn({
+        workspaceId: workspace.id,
+        conversationId: conversation.id,
+        answerCoverageRequestMessageId: requestMessageId,
+        assistantMessage: { id: assistantMessageId, conversationId: conversation.id, workspaceId: workspace.id, role: "assistant", content: "Cancelled before commit." },
+        auditEvent: { eventType: "chat.answer", eventStatus: "success", workspaceId: workspace.id, metadata: {} },
+        transaction,
+      });
+      throw new Error("cancelled");
+    })).rejects.toThrow("cancelled");
+
+    const row = await database.queryOne<{ assistant_message_id: string | null }>("SELECT assistant_message_id FROM answer_coverage_assessments WHERE id = $1", [assessmentId]);
+    expect(row.assistant_message_id).toBeNull();
+    const messageCount = await database.queryOne<{ count: string }>("SELECT COUNT(*)::text AS count FROM messages WHERE id = $1", [assistantMessageId]);
+    expect(messageCount.count).toBe("0");
+  });
+
   it("returns exact committed facts without translating them into product invalidations", async () => {
     const { accountId, workspace, conversation } = await seedConversation();
     const assistantMessageId = randomUUID();

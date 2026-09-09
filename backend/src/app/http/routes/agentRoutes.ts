@@ -39,6 +39,7 @@ import {
   routineDraftAssistRequestSchema,
 } from "../../../modules/routines/public.js";
 import type { AgentSettingsResource } from "../../../modules/agents/public.js";
+import { answerCoverageCriteriaSchema } from "../../../modules/answerCoverage/public.js";
 import { builtInAnswerDirectiveViews } from "../../../modules/directives/public.js";
 import {
   ASSISTANT_LOGO_MIME_TYPES,
@@ -64,7 +65,9 @@ const agentRoutineParamsSchema = z.object({
 });
 
 const authoredDirectiveBodySchema = authoredDirectiveInputSchema.omit({ routes: true });
-const authoredDirectivePatchBodySchema = authoredDirectiveBodySchema.partial().strict();
+const authoredDirectivePatchBodySchema = authoredDirectiveBodySchema.partial().extend({
+  coverageCriteria: z.union([answerCoverageCriteriaSchema, z.null()]).optional(),
+}).strict();
 const routineDefinitionBodySchema = routineDefinitionDraftInputSchema;
 
 export const agentBodySchema = z.object({

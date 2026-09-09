@@ -63,7 +63,7 @@ export type InboxResponseSelection =
   | { source: 'item'; item: InboxItem }
   | { source: 'readonly'; conversationId: string; conversation?: ChatConversationSummary }
 
-export interface InboxResponseViewProps {
+interface InboxResponseViewProps {
   selection: InboxResponseSelection | null
   now: Date
   pendingDecisions: PendingApprovalDecision[]
@@ -79,8 +79,9 @@ export interface InboxResponseViewProps {
   anchorMessageId?: string | null
   /**
    * True when `anchorMessageId` came from an Audience Pulse evidence handoff —
-   * narrows the loaded window to the anchor and its answer instead of the
-   * conversation's normal recent-messages window (see `useHistoryDetailState`).
+   * lets the detail fetch fall back to the bounded evidence-anchor endpoint when
+   * the cited question has scrolled out of the conversation's normal
+   * recent-messages window (see `useHistoryDetailState`).
    */
   isAudiencePulseEvidence?: boolean
   /**

@@ -60,6 +60,7 @@ export const streamChatEvents = async (
   let activityTrace: ActivityTrace | undefined
   let route: ChatResponse['route'] | undefined
   let ownership: ChatResponse['ownership'] | undefined
+  let debug: ChatResponse['debug'] | undefined
 
   const flushEvent = (rawEvent: string) => {
     if (!rawEvent.trim()) {
@@ -124,6 +125,7 @@ export const streamChatEvents = async (
       activityTrace = completionPayload.debug?.activityTrace
       route = completionPayload.debug?.route
       ownership = completionPayload.ownership
+      debug = completionPayload.debug
       handlers.onDone?.({
         conversationId,
         assistantMessageId,
@@ -197,6 +199,7 @@ export const streamChatEvents = async (
     answerSegments,
     suggestions,
     ownership,
+    ...(debug ? { debug } : {}),
     ...(activitySummary ? { activitySummary } : {}),
     ...(activityTrace ? { activityTrace } : {}),
   }

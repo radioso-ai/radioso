@@ -169,6 +169,11 @@ imports from `services/`.
   never both classified as the same) to the user message of a turn that never
   produced an assistant reply — the read-side counterpart to
   `recordSupersession`/`recordFailure`, both of which record `userMessageId`.
+  `answerCoverageHistoryProvider.ts` is the authorized read projection for
+  persisted coverage assessments and reaction traces. It batches request and
+  assessment reads per conversation, preserves absent evaluations as
+  `not_evaluated`, and exposes persisted target-message and routine-execution
+  identifiers without deriving either from response text.
 - Conversation summary: `services/summary/conversationSummaryService.ts` maintains
   a bounded, regenerated-per-update rolling summary per conversation (#866). State
   lives in `conversation_summaries` (`db/repositories/conversationSummaryRepository.ts`,

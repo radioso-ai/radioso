@@ -164,4 +164,20 @@ describe('activity diagnostics presentation', () => {
     expect(refused.title).toBe('No answer in workspace documents')
     expect(refused.tone).toBe('warning')
   })
+
+  it.each([
+    ['coverage_unanswered', 'Request unanswered', 'warning'],
+    ['coverage_partial', 'Partly answered from workspace documents', 'warning'],
+    ['coverage_unclear', 'Needs clarification', 'neutral'],
+    ['coverage_unavailable', 'Coverage not assessed', 'neutral'],
+  ] as const)('presents %s as a coverage status rather than a no-context refusal', (answerOutcome, title, tone) => {
+    const presentation = presentActivityOutcome({
+      trace: baseTrace([{ stageId: 'context_selection', kind: 'context_selection', label: 'Context selection', status: 'applied' }]),
+      answerOutcome,
+    })
+
+    expect(presentation.title).toBe(title)
+    expect(presentation.tone).toBe(tone)
+    expect(presentation.title).not.toBe('No answer in workspace documents')
+  })
 })

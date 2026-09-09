@@ -54,7 +54,6 @@ import {
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { getApiErrorMessage, getApiErrorStatus } from '@/lib/api-error'
@@ -65,7 +64,6 @@ import {
   webhookDestinationsApi,
   type RoutineDefinition,
   type RoutineDefinitionDraft,
-  type RoutineReentryMode,
   type RoutineValidationResult,
   type WebhookDestination,
 } from '@/lib/api'
@@ -126,13 +124,6 @@ function RoutineValidationStatusIcon({
   )
 }
 
-// Author-facing reentry policy options. Order puts the safe default first.
-const REENTRY_MODE_OPTIONS: { value: RoutineReentryMode; label: string; hint: string }[] = [
-  { value: 'once_per_conversation', label: 'Once per conversation', hint: 'Runs a single time; suppressed after it completes.' },
-  { value: 'always', label: 'Every time it matches', hint: 'Can run again after it completes.' },
-  { value: 'semantic', label: 'Let the assistant decide', hint: 'After it completes, the assistant decides whether to resume, restart, or skip it.' },
-]
-
 const draftError = (draft: RoutineDefinitionDraft): string | null => {
   if (!draft.name.trim()) return 'Name is required.'
   if (!draft.activation.triggerDescription.trim()) return 'Activation trigger is required.'
@@ -175,6 +166,7 @@ const headerFromDraft = (draft: RoutineDefinitionDraft | RoutineDefinition | Rou
     triggerDescription: draft.activation.triggerDescription,
     priority: String(draft.activation.priority),
     reentryMode: draft.activation.reentryMode ?? 'once_per_conversation',
+    coverageCriteria: draft.activation.coverageCriteria,
   },
 })
 
@@ -186,6 +178,7 @@ const draftWithHeader = (draft: RoutineDefinitionDraft, header: RoutineDraftHead
     triggerDescription: header.activation.triggerDescription.trim(),
     priority: Number.parseInt(header.activation.priority, 10) || 0,
     reentryMode: header.activation.reentryMode,
+    coverageCriteria: header.activation.coverageCriteria,
   },
 })
 
@@ -213,6 +206,7 @@ const mergeDocumentHeaderChange = (
       reentryMode: nextHeader.activation.reentryMode !== previousHeader.activation.reentryMode
         ? nextHeader.activation.reentryMode
         : currentHeader.activation.reentryMode,
+      coverageCriteria: nextHeader.activation.coverageCriteria,
     },
   })
 }
@@ -1269,63 +1263,19 @@ function RoutineEditorScreen({
             </div>
           ) : (
             <RoutineSkillCatalogProvider agentId={agentId}>
-            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_120px]">
-              <div className="space-y-1">
-                <Label htmlFor="routineName">Name</Label>
-                <Input
-                  id="routineName"
-                  value={draftHeader.name}
-                  onChange={(event) => {
-                    routineEditorDirtyRef.current = true
-                    setDraftHeader((current) => ({ ...current, name: event.target.value }))
-                  }}
-                  disabled={isReadOnly}
-                />
-                {nameLocalValidationError ? <p className="text-xs text-destructive" role="status">{nameLocalValidationError}</p> : null}
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="routinePriority">Priority</Label>
-                <Input
-                  id="routinePriority"
-                  type="number"
-                  value={draftHeader.activation.priority}
-                  onChange={(event) => {
-                    routineEditorDirtyRef.current = true
-                    setDraftHeader((current) => ({
-                      ...current,
-                      activation: { ...current.activation, priority: event.target.value },
-                    }))
-                  }}
-                  disabled={isReadOnly}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="routineReentryMode">Reentry</Label>
-                <Select
-                  value={draftHeader.activation.reentryMode}
-                  disabled={isReadOnly}
-                  onValueChange={(value) => {
-                    routineEditorDirtyRef.current = true
-                    setDraftHeader((current) => ({
-                      ...current,
-                      activation: { ...current.activation, reentryMode: value as RoutineReentryMode },
-                    }))
-                  }}
-                >
-                  <SelectTrigger id="routineReentryMode" aria-label="Routine reentry policy">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {REENTRY_MODE_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  {REENTRY_MODE_OPTIONS.find((option) => option.value === draftHeader.activation.reentryMode)?.hint}
-                </p>
-              </div>
-                          </div>
+            <div className="space-y-1">
+              <Label htmlFor="routineName">Name</Label>
+              <Input
+                id="routineName"
+                value={draftHeader.name}
+                onChange={(event) => {
+                  routineEditorDirtyRef.current = true
+                  setDraftHeader((current) => ({ ...current, name: event.target.value }))
+                }}
+                disabled={isReadOnly}
+              />
+              {nameLocalValidationError ? <p className="text-xs text-destructive" role="status">{nameLocalValidationError}</p> : null}
+            </div>
             <RoutineDiagnosticList diagnostics={routineDiagnostics} />
 
 

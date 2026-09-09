@@ -8,6 +8,7 @@ import { enrichCopilotToolCatalog } from "../../../src/modules/operatorCopilot/c
 import { OperatorMcpAccessError } from "../../../src/modules/operatorMcpAuthorization/public.js";
 import type { CopilotToolDescriptor } from "../../../src/modules/operatorCopilot/public.js";
 import type { OperatorMcpInvocationRepositoryPort } from "../../../src/modules/operatorCopilot/mcpContracts.js";
+import { badRequest } from "../../../src/shared/domain/errors.js";
 
 const uuid = (suffix: string) => `00000000-0000-4000-8000-${suffix.padStart(12, "0")}`;
 const now = new Date("2026-09-04T00:00:00Z");
@@ -239,6 +240,33 @@ describe("OperatorMcpApplicationService", () => {
     });
     expect(JSON.stringify(audit.record.mock.calls)).not.toContain("operator-access");
     expect(JSON.stringify(audit.record.mock.calls)).not.toContain("retrieval");
+  });
+
+  it("reports a descriptor's own bad-input rejection as a clean invalid_arguments refusal, not an opaque dependency failure", async () => {
+    // A tool can reject a caller's input for a reason schema validation cannot express (e.g. citing
+    // replay evidence over a transport with no Ray conversation to attribute it to). That is the
+    // same class of caller mistake as failing Zod validation, so it must not surface as the generic
+    // `dependency_error`/`failed` bucket the caller has no way to act on.
+    const rejectingDescriptor: CopilotToolDescriptor = {
+      ...descriptor,
+      createTool: () => ({
+        name: "workspace_settings", description: "Read settings",
+        inputSchema: z.object({ section: z.string() }), outputSchema: z.object({ section: z.string() }),
+        invoke: vi.fn(async () => { throw badRequest("Citing replay evidence requires a Ray conversation, which this transport does not have."); }),
+      }),
+    };
+    const { service, invocations, audit } = build(rejectingDescriptor);
+    const argumentsValue = { section: "retrieval" };
+    const bodyDigest = callDigest(argumentsValue);
+    const admitted = await service.admit({ accessToken: "operator-access", invocationId: uuid("12"), method: "tools/call", descriptorName: rejectingDescriptor.name, resource: principal.resource, timestamp: "1788480000", nonce: "edge", bodyDigest });
+
+    await expect(service.invoke({ proof: admitted.proof, name: rejectingDescriptor.name, arguments: argumentsValue, bodyDigest }))
+      .rejects.toMatchObject({ code: "invalid_arguments" });
+    expect(invocations.recordOutcome).toHaveBeenCalledWith(expect.objectContaining({ status: "refused", safeOutcomeCode: "invalid_arguments" }));
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
+      eventStatus: "failure",
+      metadata: expect.objectContaining({ outcome: "refused", reason: "invalid_arguments" }),
+    }));
   });
 
   it("closes a new receipt when a stable operation reconciles to an earlier result", async () => {

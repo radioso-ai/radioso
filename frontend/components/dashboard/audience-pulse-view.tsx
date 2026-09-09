@@ -792,6 +792,7 @@ function TopicRow({
           <div id={contentId} className="space-y-3 pt-1">
             <p className="text-sm text-muted-foreground">{theme.description}</p>
             <GroundingSummaryStrip grounding={theme.grounding} />
+            {theme.coverage ? <CoverageSummaryStrip coverage={theme.coverage} /> : null}
             {theme.evidence.length > 0 ? (
               <div>
                 <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -811,6 +812,7 @@ function TopicRow({
                         {evidence.occurrenceCount > 1
                           ? ` · asked ${numberFormat.format(evidence.occurrenceCount)}×`
                           : null}
+                        {evidence.answerCoverage?.coverage ? ` · ${evidence.answerCoverage.coverage.replaceAll('_', ' ')}` : evidence.coverage ? ` · ${evidence.coverage.replaceAll('_', ' ')}` : null}
                       </button>
                     </li>
                   ))}
@@ -929,6 +931,30 @@ function GroundingSummaryStrip({
           <span className="tabular-nums">{numberFormat.format(entry.value)}</span>
         </span>
       ))}
+    </div>
+  )
+}
+
+function CoverageSummaryStrip({
+  coverage,
+}: {
+  coverage: NonNullable<AudiencePulseTheme['coverage']>
+}) {
+  const entries = [
+    ['Answered', coverage.answered, 'border-emerald-500/40 bg-emerald-500/10 text-emerald-900 dark:text-emerald-100'],
+    ['Partly answered', coverage.partial, 'border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-100'],
+    ['Unanswered', coverage.unanswered, 'border-red-500/40 bg-red-500/10 text-red-900 dark:text-red-100'],
+    ['Needs clarification', coverage.unclear, 'border-blue-500/40 bg-blue-500/10 text-blue-900 dark:text-blue-100'],
+    ['Not assessed', coverage.unassessed, 'border-muted bg-muted text-muted-foreground'],
+  ] as const
+  return (
+    <div className="flex flex-wrap gap-2" aria-label="Answer coverage summary">
+      {entries.filter(([, value]) => value > 0).map(([label, value, tone]) => (
+        <span key={label} className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs ${tone}`}>
+          <span className="font-medium">{label}</span><span className="tabular-nums">{numberFormat.format(value)}</span>
+        </span>
+      ))}
+      {coverage.legacy > 0 ? <span className="inline-flex items-center rounded-md border border-muted bg-muted px-2 py-0.5 text-xs text-muted-foreground">Legacy evidence {numberFormat.format(coverage.legacy)}</span> : null}
     </div>
   )
 }

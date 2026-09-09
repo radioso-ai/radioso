@@ -830,6 +830,8 @@ Primary internals:
   clarification resolution, deferred commit, and metrics)
 - `backend/src/modules/chat/services/directTurnSkill.ts`
 - `backend/src/modules/chat/services/groundedAnswerPromptComposer.ts`
+- `backend/src/modules/answerCoverage/` (validated assessment producer,
+  immutable assessment/reaction storage, and history/Pulse read ports)
 - `backend/src/modules/chat/services/summary/conversationSummaryService.ts` (rolling
   per-conversation summary #866: regenerated post-turn, injected into interpretation
   and answer prompts; state in `conversation_summaries`. The same regeneration call
@@ -859,6 +861,7 @@ Related docs and specs:
 - `specs/044-async-chat-jobs/`
 - `specs/040-website-embed-widget/`
 - `specs/050-social-turn-intent/`
+- `specs/1149-answer-coverage-signals/`
 
 ## Directives
 

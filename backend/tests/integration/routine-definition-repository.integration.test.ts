@@ -106,6 +106,15 @@ describeIntegration("RoutineDefinitionRepository (Postgres)", () => {
     expect(created.completionExport?.enabled).toBe(false);
   });
 
+  it("round-trips activation coverage criteria and clears it on update", async () => {
+    const created = await repository.createDraft(agentId, baseDraft({
+      activation: { triggerDescription: "Coverage gap", gateRef: null, priority: 5, reentryMode: "once_per_conversation", coverageCriteria: { coverage: ["unanswered"], reasons: ["insufficient_evidence"] } },
+    }));
+    expect(created.activation.coverageCriteria).toEqual({ coverage: ["unanswered"], reasons: ["insufficient_evidence"] });
+    const cleared = await repository.updateDraft(agentId, created.id, baseDraft({ name: "Cleared coverage" }));
+    expect(cleared.activation.coverageCriteria).toBeUndefined();
+  });
+
   it("updateDraft replaces children and bumps updated_at; conflict when not a draft", async () => {
     const created = await repository.createDraft(agentId, baseDraft());
 

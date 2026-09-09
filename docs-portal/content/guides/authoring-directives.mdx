@@ -41,6 +41,15 @@ message it repeats word for word. Press Enter to break the instruction
 across lines when a rule reads better as two or three of them; the breaks are
 part of what the agent reads.
 
+### React to answer coverage
+
+Use **Answer coverage signal** when the rule should apply only after the agent
+has assessed whether the available workspace evidence answered the request.
+Choose values such as **Partly answered**, **Unanswered**, or **Needs
+clarification**, and optionally narrow them by reason. The directive then
+steers the reply in that same turn. A coverage signal does not change whether
+citations are valid and does not make a routine run.
+
 ## Know which rules share the contextual allowance
 
 An **Always** directive is included on every reply without using the allowance
@@ -141,6 +150,9 @@ with.
 - A contextual rule matched but did not shape the answer: inspect the turn
   trace for a count or token-limit reason, then narrow its **Situation** or
   raise its **Priority** relative to the other contextual rules.
+- An answer-coverage rule did not run: open Turn diagnostics and check whether
+  coverage was assessed. Older turns and failed assessments have no semantic
+  verdict to match.
 - Slack, email, webhook, or notify does not appear after `#`: add it as a
   routine step. It acts, rather than producing the reply a directive needs.
 - A selected skill is unavailable: enable it and set its invocation mode to

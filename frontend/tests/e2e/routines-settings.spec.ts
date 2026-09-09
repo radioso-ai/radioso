@@ -65,6 +65,89 @@ const clickBackToRoutines = async (page: Page) => {
   ]);
 };
 
+test("routine coverage criteria round-trip through the authored API payload", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+  const routine = {
+    ...baseRoutine,
+    id: "55555555-5555-4555-9555-000000000114",
+    status: "draft" as const,
+    version: 1,
+    activation: {
+      ...baseRoutine.activation,
+      coverageCriteria: {
+        coverage: ["unanswered" as const],
+        reasons: ["insufficient_evidence" as const],
+      },
+    },
+  };
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates, routines: [routine] });
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/${routine.id}`);
+
+  const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+  await documentEditor.getByRole("button", { name: "Starts when", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Add condition" })).toHaveCount(0);
+  await expect(page.getByLabel("Answer coverage condition")).toContainText("Only if");
+  await expect(page.getByRole("checkbox", { name: "unanswered" })).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByRole("checkbox", { name: "insufficient evidence" })).toHaveAttribute("aria-checked", "true");
+  await page.getByRole("checkbox", { name: "partial" }).click();
+  await page.getByRole("checkbox", { name: "unanswered" }).click();
+  const insufficient = page.getByRole("checkbox", { name: "insufficient evidence", exact: true });
+  const sufficient = page.getByRole("checkbox", { name: "sufficient evidence", exact: true });
+  await page.getByRole("checkbox", { name: "answered", exact: true }).click();
+  await page.getByRole("checkbox", { name: "partial", exact: true }).click();
+  await expect(insufficient).toBeDisabled();
+  await expect(insufficient).toHaveAttribute("aria-checked", "false");
+  await expect(sufficient).toBeEnabled();
+  await sufficient.click();
+  await page.getByRole("checkbox", { name: "partial", exact: true }).click();
+  await page.getByRole("checkbox", { name: "answered", exact: true }).click();
+  await expect(sufficient).toBeDisabled();
+  await expect(sufficient).toHaveAttribute("aria-checked", "false");
+  await page.getByRole("checkbox", { name: "conflicting evidence", exact: true }).click();
+
+  await expect.poll(() => routineUpdates.some((update) => update.method === "PATCH"), { timeout: 15_000 }).toBe(true);
+  const update = routineUpdates.filter((entry) => entry.method === "PATCH").at(-1);
+  expect(update).toMatchObject({
+    body: {
+      activation: {
+        coverageCriteria: {
+          coverage: ["partial"],
+          reasons: ["conflicting_evidence"],
+        },
+      },
+    },
+  });
+
+  await page.reload();
+  await documentEditor.getByRole("button", { name: "Starts when", exact: true }).click();
+  await expect(page.getByRole("checkbox", { name: "partial" })).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByRole("checkbox", { name: "conflicting evidence" })).toHaveAttribute("aria-checked", "true");
+
+  await page.getByRole("button", { name: "Remove condition" }).click();
+  await expect.poll(() => routineUpdates.filter((entry) => entry.method === "PATCH").at(-1)?.body?.activation?.coverageCriteria, { timeout: 15_000 }).toBeUndefined();
+  await page.reload();
+  await documentEditor.getByRole("button", { name: "Starts when", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Add condition" })).toBeVisible();
+
+  const updateCountBeforeAddingCondition = routineUpdates.filter((entry) => entry.method === "PATCH").length;
+  await page.getByRole("button", { name: "Add condition" }).click();
+  await page.getByRole("menuitem", { name: "Answer coverage" }).click();
+  await expect(page.getByLabel("Answer coverage condition")).toBeVisible();
+  await expect.poll(() => routineUpdates.filter((entry) => entry.method === "PATCH").length, { timeout: 1_000 }).toBe(updateCountBeforeAddingCondition);
+  await page.getByRole("checkbox", { name: "unanswered" }).click();
+  await page.getByRole("checkbox", { name: "insufficient evidence" }).click();
+  await expect.poll(() => routineUpdates.filter((entry) => entry.method === "PATCH").at(-1)?.body, { timeout: 15_000 }).toMatchObject({
+    activation: {
+      coverageCriteria: {
+        coverage: ["unanswered"],
+        reasons: ["insufficient_evidence"],
+      },
+    },
+  });
+});
+
 test("agent routines settings create, validate, publish, and persist", async ({ page }) => {
   const routineUpdates: RoutineMutationFixture[] = [];
 

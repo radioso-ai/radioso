@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type {
+  CopilotMcpProposalRecoveryPort,
   CopilotToolDescriptor,
 } from "../contracts.js";
 import { boundPayload } from "../payloadCompaction.js";
@@ -156,7 +157,30 @@ export const createContextVariablesCopilotTools = (
 
 export interface ContextVariableProposalCopilotToolDependencies extends CopilotProposalEvidenceDependencies, CopilotProposalToolDependencies {
   readonly agentLookup?: CopilotAgentLookupPort;
+  readonly proposalRecovery: CopilotMcpProposalRecoveryPort;
 }
+
+/** Mirrors the payload propose_context_variable persists (see createContextVariableCopilotProposalAdapter / contextVariableStoredPayloadSchema in proposalAdapters.ts). */
+const contextVariableProposalPayloadSchema = z.object({
+  name: z.string(),
+  definition: z.object({
+    name: z.string(),
+    description: z.string().nullable(),
+    valueType: z.enum(contextVariableValueTypes),
+    trustTier: z.enum(contextVariableTrustTiers),
+    sensitivity: z.enum(contextVariableSensitivities),
+    defaultSurfacing: z.enum(contextVariableSurfacings),
+  }).strict().nullable(),
+  enablement: z.object({
+    source: z.enum(contextVariableSources),
+    resolverSkillId: z.string().uuid().nullable(),
+    maxAgeSeconds: z.number().int().nonnegative().nullable(),
+    resolverTimeoutMs: z.number().int().positive().nullable(),
+    surfacing: z.enum(contextVariableSurfacings),
+    enabled: z.boolean(),
+  }).strict().nullable(),
+  rationale: z.string().optional(),
+}).strict();
 
 export const createContextVariableProposalCopilotTools = (
   deps: ContextVariableProposalCopilotToolDependencies,
@@ -169,6 +193,34 @@ export const createContextVariableProposalCopilotTools = (
       description,
       inputSchema: proposalInputSchema,
       outputSchema: proposalOutputSchema,
+      reconcileMcpInvocation: async ({ invocation, context, staleBefore, now }) => {
+        if (!invocation.operationId) return { status: "conflict" };
+        const recovery = await deps.proposalRecovery.recoverOperatorMcpProposal({
+          invocationId: invocation.id,
+          grantId: invocation.grantId,
+          workspaceId: context.workspaceId,
+          operatorUserId: context.operatorUserId,
+          operationId: invocation.operationId,
+          descriptorName: "propose_context_variable",
+          inputDigest: invocation.inputDigest,
+          staleBefore,
+          now,
+        });
+        if (recovery.status !== "recovered") return recovery;
+        if (recovery.proposal.targetType !== "context_variable") return { status: "conflict" };
+        const payload = contextVariableProposalPayloadSchema.safeParse(recovery.proposal.payload);
+        if (!payload.success) return { status: "conflict" };
+        return {
+          status: "recovered",
+          output: {
+            proposalId: recovery.proposal.id,
+            targetType: "context_variable" as const,
+            targetLabel: payload.data.name,
+            summary: payload.data.rationale ?? payload.data.name,
+            ...proposalEvidenceOutput(recovery.proposal.evidence),
+          },
+        };
+      },
       createTool: (context) => ({
         name: "propose_context_variable",
         description,

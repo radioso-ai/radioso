@@ -47,6 +47,14 @@ them against the selected versions. Results keep the revision and sample context
 changing the selector does not relabel older evidence. Detailed case authoring
 and run history remain in [Evals](/guides/evals).
 
+For a retrieved answer, diagnostics also separates **Answer coverage** from
+retrieval and citation facts. It shows whether the request was answered, partly
+answered, unanswered, or needs clarification, along with the recorded reason.
+When a coverage rule was evaluated, the trace shows its directive or routine
+decision and links back to the originating message; an activated routine also
+links to its execution. **Not assessed** means no semantic verdict was recorded,
+so it is never treated as an answered request.
+
 ## Inspect earlier workbench sessions
 
 History also keeps sessions recorded through the conversation workbench. Open one to inspect its transcript and available turn diagnostics. When that workbench offers **Save this turn as an eval**, you can capture an answer as a reference and continue in the eval editor.

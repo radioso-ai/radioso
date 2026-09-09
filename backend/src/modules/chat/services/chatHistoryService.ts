@@ -51,6 +51,15 @@ import {
   type AnswerFeedbackHistoryProviderPort,
   type ChatAnswerFeedbackEntry,
 } from "./answerFeedbackHistoryProvider.js";
+import {
+  loadAnswerCoverageHistoryProjection,
+  NoopAnswerCoverageHistoryReader,
+  type AnswerCoverageHistoryReader,
+} from "./answerCoverageHistoryProvider.js";
+import type {
+  ChatAnswerCoverageAssessment,
+  ChatAnswerCoverageInteractionTrace,
+} from "../contracts/answerCoverage.js";
 
 // Read-surface projection of conversation ownership (Date fields as ISO strings). Mirrors
 // the OpenAPI ConversationOwnership schema and the write surface's ownership envelope.
@@ -69,10 +78,12 @@ export interface ChatConversationOwnership {
 
 // Narrow read port the history service needs — single load for detail, batch for lists
 // (no N+1). A missing entry means AI-owned (the ownership table is lazy).
-export interface ConversationOwnershipHistoryReader {
+interface ConversationOwnershipHistoryReader {
   load(conversationId: string): Promise<ConversationOwnershipRecord | null>;
   loadByConversationIds(conversationIds: string[]): Promise<Map<string, ConversationOwnershipRecord>>;
 }
+
+/** Bounded persisted diagnostic read used only by the operator history projection. */
 
 class NoopConversationOwnershipReader implements ConversationOwnershipHistoryReader {
   async load(): Promise<ConversationOwnershipRecord | null> {
@@ -121,7 +132,7 @@ export interface ChatConversationSummary {
   ownership?: ChatConversationOwnership;
 }
 
-export interface ChatConversationTurnDebug {
+interface ChatConversationTurnDebug {
   // "cancelled" covers a turn that had already produced an assistant message (a
   // suspended/durable turn) before a newer message superseded it. Kept distinct from
   // "failure" so this never reads as an assistant error.
@@ -145,7 +156,12 @@ export interface ChatConversationTurnDebug {
     routeReason: string;
     retrievalInvoked: boolean;
   };
+  /** Persisted semantic assessment, deliberately separate from retrieval and citation diagnostics. */
+  answerCoverage?: ChatAnswerCoverageAssessment;
+  /** Recorded directive/routine evaluation in execution order. */
+  interactionTrace?: ChatAnswerCoverageInteractionTrace;
 }
+
 
 /**
  * Debug fact for a user turn that never got a reply: a genuine failure, or a turn a
@@ -155,7 +171,7 @@ export interface ChatConversationTurnDebug {
  * conversation. Deliberately a separate, smaller shape than `ChatConversationTurnDebug`:
  * there is no retrieval/activity/turn trace to show for a turn that never finished.
  */
-export interface ChatConversationTurnFailure {
+interface ChatConversationTurnFailure {
   eventStatus: "failure" | "cancelled";
   recordedAt: string;
   stream: boolean;
@@ -232,7 +248,7 @@ export interface ChatConversationDetail {
  * unanswered turns store their failure fact on the user message because there is
  * no assistant message to attach it to.
  */
-export interface ChatConversationTurnDetail {
+interface ChatConversationTurnDetail {
   conversationId: string;
   message: ChatConversationTurn;
   ownership?: ChatConversationOwnership;
@@ -244,7 +260,7 @@ export interface ChatConversationTail {
   ownership?: ChatConversationOwnership;
 }
 
-export interface ChatConversationPage {
+interface ChatConversationPage {
   conversations: ChatConversationSummary[];
   total: number;
   nextCursor: string | null;
@@ -271,19 +287,19 @@ export type HistoryItem =
       contact: ContactHistorySummary;
     };
 
-export interface HistoryItemsPage {
+interface HistoryItemsPage {
   items: HistoryItem[];
   total: number;
   nextCursor: null;
   hasMore: boolean;
 }
 
-export interface ContactHistoryDetailResponse {
+interface ContactHistoryDetailResponse {
   contact: ContactHistoryDetail;
   conversation: ChatConversationDetail;
 }
 
-export interface PublicConversationSummary {
+interface PublicConversationSummary {
   id: string;
   agentId: string | null;
   sourceChannel: string | null;
@@ -294,7 +310,7 @@ export interface PublicConversationSummary {
   updatedAt: string;
 }
 
-export interface PublicConversationPage {
+interface PublicConversationPage {
   conversations: PublicConversationSummary[];
   total: number;
   nextCursor: string | null;
@@ -770,6 +786,8 @@ export class ChatHistoryService {
       new NoopAnswerFeedbackHistoryProvider(),
     private readonly conversationOwnership: ConversationOwnershipHistoryReader =
       new NoopConversationOwnershipReader(),
+    private readonly answerCoverageHistoryReader: AnswerCoverageHistoryReader =
+      new NoopAnswerCoverageHistoryReader(),
   ) {}
 
   async listConversations(
@@ -996,6 +1014,11 @@ export class ChatHistoryService {
       conversation.id,
       assistantMessageIds,
     );
+    const answerCoverageByRequestMessageId = await loadAnswerCoverageHistoryProjection(
+      this.answerCoverageHistoryReader,
+      workspaceId,
+      this.coverageRequestMessageIds(messages, auditEvents),
+    );
     const turnFailureEvents = options.includeTurnFailureDebug
       ? await this.auditEventRepository.listUnansweredChatAnswerEventsByUserMessageIds(
           workspaceId,
@@ -1008,7 +1031,7 @@ export class ChatHistoryService {
       : new Map<string, ChatAnswerFeedbackEntry[]>();
 
     const artifactsByAssistantMessageId = this.buildArtifactsIndex(auditEvents);
-    const debugByAssistantMessageId = this.buildDebugIndex(auditEvents, messages);
+    const debugByAssistantMessageId = this.buildDebugIndex(auditEvents, messages, answerCoverageByRequestMessageId);
     const turnFailureByUserMessageId = options.includeTurnFailureDebug
       ? this.buildTurnFailureIndex(turnFailureEvents)
       : new Map<string, ChatConversationTurnFailure>();
@@ -1097,8 +1120,15 @@ export class ChatHistoryService {
         ? this.conversationOwnership.load(message.conversationId)
         : Promise.resolve(null),
     ]);
+    const answerCoverageByRequestMessageId = await loadAnswerCoverageHistoryProjection(
+      this.answerCoverageHistoryReader,
+      workspaceId,
+      this.coverageRequestMessageIds([message], auditEvents),
+    );
     const artifacts = isAssistant ? this.buildArtifactsIndex(auditEvents).get(message.id) : undefined;
-    const debug = isAssistant ? this.buildDebugIndex(auditEvents, [message]).get(message.id) : undefined;
+    const debug = isAssistant
+      ? this.buildDebugIndex(auditEvents, [message], answerCoverageByRequestMessageId).get(message.id)
+      : undefined;
     const turnFailure = isUser
       ? this.buildTurnFailureIndex(turnFailureEvents).get(message.id)
       : undefined;
@@ -1171,9 +1201,26 @@ export class ChatHistoryService {
     };
   }
 
+  private coverageRequestMessageIds(messages: MessageRecord[], auditEvents: AuditEventRecord[]): string[] {
+    const requestMessageIds = new Set(messages
+      .filter((message) => message.role === "user")
+      .map((message) => message.id));
+    for (const event of auditEvents) {
+      const userMessageId = (event.metadata as ChatAuditMetadata).userMessageId;
+      if (typeof userMessageId === "string") {
+        requestMessageIds.add(userMessageId);
+      }
+    }
+    return [...requestMessageIds];
+  }
+
   private buildDebugIndex(
     auditEvents: AuditEventRecord[],
     messages: MessageRecord[],
+    answerCoverageByRequestMessageId: Map<string, {
+      assessment: ChatAnswerCoverageAssessment;
+      interactionTrace?: ChatAnswerCoverageInteractionTrace;
+    }> = new Map(),
   ): Map<string, ChatConversationTurnDebug> {
     const index = new Map<string, ChatConversationTurnDebug>();
     const messagesById = new Map(messages.map((message) => [message.id, message]));
@@ -1218,6 +1265,9 @@ export class ChatHistoryService {
           skillName: skillTurnOutcome?.skillName,
           startedAt: toIsoString(event.createdAt),
         });
+      const coverageDebug = typeof metadata.userMessageId === "string"
+        ? answerCoverageByRequestMessageId.get(metadata.userMessageId)
+        : undefined;
       index.set(metadata.assistantMessageId, {
         // Preserve all three states: collapsing "cancelled" into "success" would show a
         // superseded turn as a completed answer; collapsing it into "failure" would show
@@ -1243,6 +1293,12 @@ export class ChatHistoryService {
         turnTrace,
         errorMessage: metadata.errorMessage ?? null,
         route,
+        ...(coverageDebug
+          ? {
+              answerCoverage: coverageDebug.assessment,
+              ...(coverageDebug.interactionTrace ? { interactionTrace: coverageDebug.interactionTrace } : {}),
+            }
+          : {}),
       });
     }
 

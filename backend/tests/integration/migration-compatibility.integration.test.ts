@@ -361,3 +361,83 @@ describeIfDatabase("topic transition title migration", () => {
     expect(historicalRun?.dissolvedTopics).toEqual([{ id: topicId, title: "Renamed topic" }]);
   });
 });
+
+const answerCoverageRoutineIdTextMigration = "174_answer_coverage_reaction_routine_id_text.sql";
+
+describeIfDatabase("answer coverage routine id text migration", () => {
+  const isolatedName = `mig174_coverage_routine_${randomUUID().replace(/-/g, "")}`;
+  let admin: Database;
+  let database: Database;
+
+  beforeAll(async () => {
+    admin = new Database(integrationDatabaseUrl!);
+    await admin.execute(`CREATE DATABASE "${isolatedName}"`);
+    database = new Database(isolatedDatabaseUrl(integrationDatabaseUrl!, isolatedName));
+    await runTestMigrationsBefore(database, answerCoverageRoutineIdTextMigration);
+  });
+
+  afterAll(async () => {
+    await database?.close().catch(() => undefined);
+    if (admin) {
+      await admin.execute(`DROP DATABASE IF EXISTS "${isolatedName}"`);
+      await admin.close().catch(() => undefined);
+    }
+  });
+
+  it("preserves UUID routine reactions and accepts opaque routine ids without deleting traces", async () => {
+    const accountId = randomUUID();
+    const workspaceId = randomUUID();
+    const conversationId = randomUUID();
+    const requestMessageId = randomUUID();
+    const assessmentId = randomUUID();
+    const uuidRoutineId = randomUUID();
+
+    await database.execute(
+      "INSERT INTO accounts(id, name, email, password_hash) VALUES ($1, 'Acct', $2, 'hash')",
+      [accountId, `mig174-${accountId}@example.com`],
+    );
+    await database.execute(
+      "INSERT INTO workspaces(id, account_id, name, public_route_key) VALUES ($1, $2, 'WS', $3)",
+      [workspaceId, accountId, `rk-${workspaceId}`],
+    );
+    await database.execute("INSERT INTO conversations(id, workspace_id) VALUES ($1, $2)", [conversationId, workspaceId]);
+    await database.execute(
+      "INSERT INTO messages(id, conversation_id, workspace_id, role, content) VALUES ($1, $2, $3, 'user', 'Question')",
+      [requestMessageId, conversationId, workspaceId],
+    );
+    await database.execute(
+      `INSERT INTO answer_coverage_assessments(
+         id, workspace_id, conversation_id, request_message_id, originating_turn_id,
+         contextualized_request, availability, schema_version
+       ) VALUES ($1, $2, $3, $4, $4, 'Question', 'failed', 1)`,
+      [assessmentId, workspaceId, conversationId, requestMessageId],
+    );
+    await database.execute(
+      `INSERT INTO answer_coverage_reaction_traces(
+         id, assessment_id, workspace_id, conversation_id, reaction_key, routine_id,
+         target_message_id, evaluation_state, evaluation_index, decision, reason_code
+       ) VALUES ($1, $2, $3, $4, 'legacy-uuid', $5, $6, 'evaluated', 0, 'matched', 'legacy')`,
+      [randomUUID(), assessmentId, workspaceId, conversationId, uuidRoutineId, requestMessageId],
+    );
+
+    await applyTestMigration(database, answerCoverageRoutineIdTextMigration);
+    await database.execute(
+      `INSERT INTO answer_coverage_reaction_traces(
+         id, assessment_id, workspace_id, conversation_id, reaction_key, routine_id,
+         target_message_id, evaluation_state, evaluation_index, decision, reason_code
+       ) VALUES ($1, $2, $3, $4, 'opaque-routine', 'contact.request', $5, 'evaluated', 1, 'activated', 'matched')`,
+      [randomUUID(), assessmentId, workspaceId, conversationId, requestMessageId],
+    );
+
+    const traces = await database.query<{ routine_id: string }>(
+      "SELECT routine_id FROM answer_coverage_reaction_traces WHERE assessment_id = $1 ORDER BY reaction_key",
+      [assessmentId],
+    );
+    const [column] = await database.query<{ data_type: string }>(
+      `SELECT data_type FROM information_schema.columns
+       WHERE table_name = 'answer_coverage_reaction_traces' AND column_name = 'routine_id'`,
+    );
+    expect(column.data_type).toBe("text");
+    expect(traces).toEqual([{ routine_id: uuidRoutineId }, { routine_id: "contact.request" }]);
+  });
+});

@@ -10,7 +10,7 @@ The package connects to an existing Radioso deployment over its public HTTP API 
 
 - `ask_agent` for a full agent reply (persona, directives, routines, history)
 
-**Operator surface (`/operator/mcp`).** An OAuth-capable remote client acts as the signed-in person who granted access. Its fresh catalog can expose `workspace_settings`, `retrieval_probe`, and `propose_ingestion_settings` when current scopes and permissions allow them. Agent revision publication, private candidate testing, and frozen revision evals remain REST/dashboard operations and are not MCP tools. See [Operator MCP OAuth access](../../docs/operator-mcp.md) for consent, grant management, and compatibility status.
+**Operator surface (`/operator/mcp`).** An OAuth-capable remote client acts as the signed-in person who granted access. Its fresh catalog exposes the reviewed subset of Ray's reads, probes, proposals, and acts that current scopes and permissions allow. Agent revision publication, private candidate testing, and frozen revision evals remain REST/dashboard operations and are not MCP tools. See [Operator MCP OAuth access](../../docs/operator-mcp.md) for the current tool boundary, consent, grant management, and compatibility status.
 
 
 The package owns MCP protocol handling, agent-channel credential validation seams, and audit logging. The backend owns session issuance and per-request grant checks; the package calls the backend converse endpoints over HTTP. The package does not import backend domain modules and does not access the database directly.

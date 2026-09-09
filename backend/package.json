@@ -144,7 +144,6 @@
     "vitest": "^4.1.8"
   },
   "overrides": {
-    "path-to-regexp": "0.1.13",
-    "@xmldom/xmldom": "0.9.10"
+    "path-to-regexp": "0.1.13"
   }
 }

@@ -6,6 +6,8 @@ import {
   type OperatorMcpScope,
 } from "@radioso/operator-mcp-contract";
 
+export const NATIVE_LOOPBACK_HOSTNAMES: readonly string[] = ["127.0.0.1", "[::1]", "localhost"];
+
 export const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 export const AUTHORIZATION_CODE_TTL_SECONDS = 5 * 60;
 export const REFRESH_IDLE_TTL_SECONDS = 30 * 24 * 60 * 60;
@@ -69,7 +71,7 @@ export const validateRedirectUri = (input: {
     return requested.toString();
   }
 
-  if (requested.protocol !== "http:" || (requested.hostname !== "127.0.0.1" && requested.hostname !== "[::1]")) {
+  if (requested.protocol !== "http:" || !NATIVE_LOOPBACK_HOSTNAMES.includes(requested.hostname)) {
     throw new OperatorMcpProtocolError("invalid_request", "Invalid redirect URI");
   }
   const matched = input.registered.some((candidate) => {

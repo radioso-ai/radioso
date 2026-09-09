@@ -210,7 +210,8 @@ describeDb("agent directive draft mutations", () => {
     ]);
     const draft = await revisions.readDraft(workspaceId, agentId);
 
-    expect(draft).toMatchObject({ generation: 2, snapshot: { directives: [created] } });
+    expect(draft?.generation).toBe(2);
+    expect(draft?.snapshot.directives).toEqual([created]);
     expect(draft?.basePublishedRevisionId).toBe(publication === "conflict" ? null : candidate.id);
   });
 

@@ -79,9 +79,12 @@ export function AgentRevisionHeader({
   const [error, setError] = useState<string | null>(null)
   const [publishing, setPublishing] = useState(false)
   const [reviewing, setReviewing] = useState(false)
+  /** Shared across loadState and review: any new request for this mounted agent supersedes an older one in flight. */
   const agentRequestGeneration = useRef(0)
   const loadState = useCallback(async () => {
-    const requestGeneration = agentRequestGeneration.current
+    // Bump before the request so an earlier call's response, arriving after a
+    // newer one already applied, is recognized as stale and discarded.
+    const requestGeneration = ++agentRequestGeneration.current
     try {
       const next = await agentRevisionsApi.getState(agentId)
       if (agentRequestGeneration.current !== requestGeneration) return
@@ -106,7 +109,7 @@ export function AgentRevisionHeader({
 
   const review = async () => {
     if (!state || reviewing || canSaveDraft) return
-    const requestGeneration = agentRequestGeneration.current
+    const requestGeneration = ++agentRequestGeneration.current
     setReviewing(true)
     try {
       const [candidateResult, variablesResult] = await Promise.all([

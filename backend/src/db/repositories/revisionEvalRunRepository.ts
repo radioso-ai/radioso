@@ -2,7 +2,7 @@ import { parseAgentRevisionSnapshot, type AgentRevision } from "../../modules/ag
 import type { EvalCase, EvalSnapshot } from "../../modules/eval/domain/types.js";
 import type { FrozenRevisionEvalCaseResult } from "../../modules/eval/services/evalRunService.js";
 import type { RevisionEvalCaseRecord, RevisionEvalRepositoryPort, RevisionEvalRun, RevisionEvalSide, RevisionEvalState } from "../../modules/eval/services/revisionEvalRun.js";
-import { currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import { currentTimestamp, toJsonb, transactionAdvisoryLock } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
 /**
@@ -26,21 +26,45 @@ const aggregate = (states: readonly string[]): RevisionEvalState => {
   if (states.some((state) => state === "partial")) return "partial";
   return states.some((state) => state === "completed") ? "partial" : "failed";
 };
+const revisionEvalStartLockKey = (workspaceId: string, agentId: string, idempotencyKey: string): string =>
+  `revision-eval-run-start:${workspaceId}:${agentId}:${idempotencyKey}`;
 
 export class RevisionEvalRunRepository implements RevisionEvalRepositoryPort {
   constructor(private readonly db: Db) {}
 
   async create(input: RevisionEvalRun): Promise<RevisionEvalRun> {
-    await this.db.transaction().execute(async (trx) => {
-      await trx.insertInto("revision_eval_runs").values({ id: input.id, workspace_id: input.workspaceId, agent_id: input.agentId, actor_account_id: input.actorAccountId, mode: input.mode, execution_policy: input.executionPolicy, test_values: toJsonb(input.testValues), state: input.state }).execute();
+    const existingId = await this.db.transaction().execute(async (trx) => {
+      // Serializes concurrent starts sharing one idempotency key so the second never races the
+      // first's insert; the lock is released automatically at transaction end either way.
+      await transactionAdvisoryLock(revisionEvalStartLockKey(input.workspaceId, input.agentId, input.idempotencyKey)).execute(trx);
+      const replay = await trx.selectFrom("revision_eval_runs").select("id").where("workspace_id", "=", input.workspaceId).where("agent_id", "=", input.agentId).where("idempotency_key", "=", input.idempotencyKey).executeTakeFirst();
+      if (replay) return replay.id;
+      await trx.insertInto("revision_eval_runs").values({ id: input.id, workspace_id: input.workspaceId, agent_id: input.agentId, actor_account_id: input.actorAccountId, mode: input.mode, execution_policy: input.executionPolicy, test_values: toJsonb(input.testValues), state: input.state, idempotency_key: input.idempotencyKey }).execute();
       for (const side of input.sides) {
         await trx.insertInto("revision_eval_run_sides").values({ id: side.id, run_id: input.id, revision_id: side.revisionId, side_ordinal: side.ordinal, frozen_revision: toJsonb({ ...side.revision, createdAt: side.revision.createdAt.toISOString(), publishedAt: side.revision.publishedAt?.toISOString() ?? null }), state: side.state }).execute();
         for (const item of side.cases) await trx.insertInto("revision_eval_run_cases").values({ id: item.id, side_id: side.id, case_id: item.caseId, frozen_case: toJsonb(item.frozenCase), frozen_snapshot: toJsonb(item.frozenSnapshot), state: item.state, outcome: item.outcome, assertion_verdicts: null, observed_output: null, resolved_config: null, outcome_reason: null, active_attempt_id: null, active_fence: null, lease_expires_at: null, completed_at: null }).execute();
       }
+      return input.id;
     });
-    const result = await this.find({ workspaceId: input.workspaceId, runId: input.id });
+    const result = await this.find({ workspaceId: input.workspaceId, runId: existingId });
     if (!result) throw new Error("revision_eval_run_create_lost");
     return result;
+  }
+
+  async findByIdempotencyKey(input: { workspaceId: string; agentId: string; idempotencyKey: string }): Promise<RevisionEvalRun | null> {
+    const row = await this.db.selectFrom("revision_eval_runs").select("id").where("workspace_id", "=", input.workspaceId).where("agent_id", "=", input.agentId).where("idempotency_key", "=", input.idempotencyKey).executeTakeFirst();
+    return row ? this.find({ workspaceId: input.workspaceId, runId: row.id }) : null;
+  }
+
+  /**
+   * Retention-only: unlike every other read here, a sweep is not scoped to one workspace/agent.
+   * Child sides/cases/attempts cascade from the run row.
+   */
+  async deleteRunsUpdatedBefore(input: { cutoff: Date; limit: number }): Promise<number> {
+    const result = await this.db.deleteFrom("revision_eval_runs")
+      .where("id", "in", (eb) => eb.selectFrom("revision_eval_runs").select("id").where("updated_at", "<", input.cutoff).orderBy("updated_at").limit(input.limit))
+      .executeTakeFirst();
+    return Number(result.numDeletedRows);
   }
 
   async find(input: { workspaceId: string; runId: string }): Promise<RevisionEvalRun | null> {
@@ -52,7 +76,7 @@ export class RevisionEvalRunRepository implements RevisionEvalRepositoryPort {
       const cases = caseRows.filter((item) => item.side_id === side.id).map((item): RevisionEvalCaseRecord => ({ id: item.id, caseId: item.case_id, frozenCase: asCase(item.frozen_case), frozenSnapshot: asSnapshot(item.frozen_snapshot), state: item.state as RevisionEvalCaseRecord["state"], outcome: item.outcome as RevisionEvalCaseRecord["outcome"], result: asResult(item), activeAttemptId: item.active_attempt_id, activeFence: item.active_fence, leaseExpiresAt: item.lease_expires_at, }));
       return { id: side.id, ordinal: side.side_ordinal, revisionId: side.revision_id, revision: revision(side), state: aggregate(cases.map((item) => item.state)), cases };
     });
-    return { id: run.id, workspaceId: run.workspace_id, agentId: run.agent_id, actorAccountId: run.actor_account_id, mode: run.mode as RevisionEvalRun["mode"], executionPolicy: "safe_test", testValues: run.test_values as unknown as RevisionEvalRun["testValues"], state: aggregate(sides.map((side) => side.state)), sides, createdAt: new Date(run.created_at) };
+    return { id: run.id, workspaceId: run.workspace_id, agentId: run.agent_id, actorAccountId: run.actor_account_id, mode: run.mode as RevisionEvalRun["mode"], executionPolicy: "safe_test", testValues: run.test_values as unknown as RevisionEvalRun["testValues"], state: aggregate(sides.map((side) => side.state)), sides, createdAt: new Date(run.created_at), idempotencyKey: run.idempotency_key };
   }
 
   async claimNext(input: { workspaceId: string; runId: string; now: Date; leaseMs: number; attemptId: string }): Promise<"none" | { run: RevisionEvalRun; side: RevisionEvalSide; evalCase: RevisionEvalCaseRecord; fence: number }> {

@@ -557,7 +557,79 @@ describe("EvalRunService.execute (retrieval_only)", () => {
     expect(workbench.calls[0]).toMatchObject({ candidateRevision: frozenCandidate, executionMode: "safe_test" });
     expect(workbench.calls[0]?.routineStartState).toBeUndefined();
   });
+});
 
+describe("EvalRunService.executeFrozenRevisionCase config validation", () => {
+  const trackedUsagePolicy = () => {
+    const commit = vi.fn(async () => {});
+    const release = vi.fn(async () => {});
+    const reserveAnswer = vi.fn(async (_input: { accountId?: string | null; workspaceId: string; surface: string }) => ({ commit, release }));
+    return { commit, release, reserveAnswer, policy: { reserveAnswer, reserveDocument: vi.fn(), reserveIndexedStorage: vi.fn(), reserveMonthlyIndexedContent: vi.fn() } };
+  };
+  const frozenCandidate: AgentRevision = {
+    id: "candidate-cfg", sourceDraftGeneration: 1, sourceBasePublishedRevisionId: null, createdAt: new Date(0), publishedAt: null, publishedVersion: null,
+    snapshot: { customInstruction: "Frozen candidate instruction.", directives: [], routines: [], contextVariableEnablements: [] },
+  };
+
+  it("throws a distinguishable config error and never reserves usage when live agent config is unavailable", async () => {
+    const agent = configuredAgent();
+    const frozenSnapshot = makeSnapshot({ sourceAgentId: agent.id });
+    const usage = trackedUsagePolicy();
+    const service = new EvalRunService(
+      new InMemoryEvalRepository(), new StubRunner([]), passJudge(), new StubWorkbenchReplayRunner(), undefined, usage.policy,
+      { async find() { return null; } },
+    );
+
+    await expect(service.executeFrozenRevisionCase({
+      workspaceId: "ws-1", agentId: agent.id, revision: frozenCandidate, snapshot: frozenSnapshot,
+      assertions: [], mode: "full_assistant", testValues: [], executionPolicy: "safe_test", correlationId: "frozen-cfg-1",
+    })).rejects.toMatchObject({ statusCode: 400, code: "bad_request" });
+
+    expect(usage.reserveAnswer).not.toHaveBeenCalled();
+    expect(usage.commit).not.toHaveBeenCalled();
+  });
+
+  it("throws a distinguishable config error and never reserves usage when full_assistant has no workbench replay runner configured", async () => {
+    const agent = configuredAgent();
+    const frozenSnapshot = makeSnapshot({ sourceAgentId: agent.id });
+    const usage = trackedUsagePolicy();
+    const service = new EvalRunService(
+      new InMemoryEvalRepository(), new StubRunner([]), passJudge(), undefined, undefined, usage.policy,
+      { async find() { return projectInternalAgentConfig(agent); } },
+    );
+
+    await expect(service.executeFrozenRevisionCase({
+      workspaceId: "ws-1", agentId: agent.id, revision: frozenCandidate, snapshot: frozenSnapshot,
+      assertions: [], mode: "full_assistant", testValues: [], executionPolicy: "safe_test", correlationId: "frozen-cfg-2",
+    })).rejects.toMatchObject({ statusCode: 400, code: "bad_request" });
+
+    expect(usage.reserveAnswer).not.toHaveBeenCalled();
+    expect(usage.commit).not.toHaveBeenCalled();
+  });
+
+  it("still swallows a genuine provider failure into a runner_failed result and commits the reservation already taken", async () => {
+    const agent = configuredAgent();
+    const frozenSnapshot = makeSnapshot({ sourceAgentId: agent.id });
+    const usage = trackedUsagePolicy();
+    const failingWorkbench: EvalWorkbenchReplayRunnerPort = { run: async () => { throw new Error("provider exploded"); } };
+    const service = new EvalRunService(
+      new InMemoryEvalRepository(), new StubRunner([]), passJudge(), failingWorkbench, undefined, usage.policy,
+      { async find() { return projectInternalAgentConfig(agent); } },
+    );
+
+    const result = await service.executeFrozenRevisionCase({
+      workspaceId: "ws-1", agentId: agent.id, revision: frozenCandidate, snapshot: frozenSnapshot,
+      assertions: [], mode: "full_assistant", testValues: [], executionPolicy: "safe_test", correlationId: "frozen-cfg-3",
+    });
+
+    expect(result.status).toBe("error");
+    expect(result.outcomeReason).toBe("runner_failed");
+    expect(usage.reserveAnswer).toHaveBeenCalledOnce();
+    expect(usage.commit).toHaveBeenCalledOnce();
+  });
+});
+
+describe("EvalRunService.execute (retrieval_only) case recording", () => {
   it("records a passing run when retrieval includes target document and updates case status", async () => {
     const snapshot = makeSnapshot();
     const repo = new InMemoryEvalRepository({ snapshots: [snapshot] });

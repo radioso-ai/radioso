@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { beginTestExecutionRetry, beginTestExecutionTurn, failTestExecutionSide, hydrateTestExecutionState, initializeTestExecutionState, reduceTestExecutionEvent } from '@/lib/agent-test-execution-state'
+import { beginTestExecutionRetry, beginTestExecutionTurn, failTestExecutionSide, finalizeTestExecutionStream, hydrateTestExecutionState, initializeTestExecutionState, reduceTestExecutionEvent } from '@/lib/agent-test-execution-state'
 
 const state = () => initializeTestExecutionState({
   id: 'execution-1',
@@ -109,5 +109,58 @@ describe('agent test execution state', () => {
     const retrying = beginTestExecutionRetry(reopened, 'right', 'attempt-3')
     expect(retrying.activeTurnId).toBe('turn-2')
     expect(retrying.sides.left.messages).toEqual(reopened.sides.left.messages)
+  })
+
+  describe('initializeTestExecutionState status derivation', () => {
+    const execution = (sides: Array<{ id: string; state: 'running' | 'failed' | 'completed' | 'missing' }>) => ({
+      id: 'execution-1',
+      generation: 2,
+      mode: 'compare' as const,
+      sides: sides.map(({ id, state: sideState }) => ({
+        id,
+        revision: { id: `revision-${id}`, label: id, kind: 'candidate' as const, versionNumber: null, createdAt: '' },
+        conversationId: `${id}-chat`,
+        state: sideState,
+        retryable: sideState === 'failed',
+      })),
+    })
+
+    it('is running while any side is still running', () => {
+      const initial = initializeTestExecutionState(execution([{ id: 'left', state: 'running' }, { id: 'right', state: 'completed' }]))
+      expect(initial.state).toBe('running')
+    })
+
+    it('is partial, not failed, when one side fails and none are running', () => {
+      const initial = initializeTestExecutionState(execution([{ id: 'left', state: 'completed' }, { id: 'right', state: 'failed' }]))
+      expect(initial.state).toBe('partial')
+    })
+
+    it('is partial even when every side has failed, matching the mid-stream finalizer', () => {
+      const initial = initializeTestExecutionState(execution([{ id: 'left', state: 'failed' }, { id: 'right', state: 'failed' }]))
+      expect(initial.state).toBe('partial')
+    })
+
+    it('is completed when every side is completed', () => {
+      const initial = initializeTestExecutionState(execution([{ id: 'left', state: 'completed' }, { id: 'right', state: 'completed' }]))
+      expect(initial.state).toBe('completed')
+    })
+
+    it('agrees with finalizeTestExecutionStream: a completed/failed side mix is partial everywhere, not just mid-stream', () => {
+      const mixed = {
+        executionId: 'execution-1',
+        generation: 2,
+        state: 'running' as const,
+        activeTurnId: 'turn-1',
+        activeAttemptId: 'attempt-1',
+        sides: {
+          left: { id: 'left', revisionId: 'revision-left', state: 'completed' as const, retryable: false, messages: [] },
+          right: { id: 'right', revisionId: 'revision-right', state: 'running' as const, retryable: false, messages: [] },
+        },
+      }
+      const initial = initializeTestExecutionState(execution([{ id: 'left', state: 'completed' }, { id: 'right', state: 'failed' }]))
+      const streamed = finalizeTestExecutionStream(mixed, 'stream_transport_failed')
+      expect(initial.state).toBe('partial')
+      expect(streamed.state).toBe('partial')
+    })
   })
 })

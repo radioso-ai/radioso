@@ -44,6 +44,27 @@ export const agentRevisionTestChatSessionKey = (workspaceId: string, agentId: st
 
 export const readAgentRevisionTestChatSession = (key: string) => sessions.get(key)
 
+/**
+ * A recursive poll loop captures the session's live values at scheduling time and must
+ * re-check them against the *shared* store (not just its own instance refs) before writing
+ * a result back. Refs alone do not catch an orphaned poll from a component instance that has
+ * since unmounted (e.g. a tab switch) and whose own refs were never invalidated by anyone else.
+ */
+export const isSessionExecutionEpochCurrent = (
+  session: AgentRevisionTestChatSession | undefined,
+  expectedEpoch: number,
+): boolean => session !== undefined && session.executionEpoch === expectedEpoch
+
+/**
+ * Eval evidence has its own, deliberately independent lifecycle: starting a new private chat
+ * test must not interrupt a running eval poll, so this checks the eval run's live identity
+ * rather than the chat `executionEpoch`.
+ */
+export const isSessionEvalRunCurrent = (
+  session: AgentRevisionTestChatSession | undefined,
+  expectedRunId: string,
+): boolean => session?.evalRun?.id === expectedRunId
+
 export const writeAgentRevisionTestChatSession = (
   key: string,
   update: Partial<AgentRevisionTestChatSession>,

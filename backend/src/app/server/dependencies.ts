@@ -5,6 +5,7 @@ import {
   createDefaultAgentSkillSettingsRegistry,
   createDefaultApplicationComposition,
   createDefaultFacetExtractionDrainDispatcher,
+  createLiveAgentConfigReader,
   createRealtimePublisherComposition,
   type ApplicationModule,
 } from "../composition/index.js";
@@ -73,6 +74,7 @@ import {
   RetrievalProbeService,
 } from "../../modules/operatorCopilot/public.js";
 import { AgenticCapabilityRunner, DefaultAgentRuntime } from "../../shared/agent-runtime/index.js";
+import { TtlRetentionWorker } from "../../shared/domain/ttlRetentionWorker.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 import { createCopilotDocumentAuthoringPort, createCopilotToolCatalog, createCopilotWorkspaceAccountResolver, createCopilotWorkspaceRouteKeyResolver, createCopilotWorkspaceSettingPort } from "../composition/copilotToolCatalog.js";
 import { ProbeConversationReader, ReplyDraftRunner } from "../../modules/chat/composition.js";
@@ -353,12 +355,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     repository: repositories.testExecutionRepository,
     runner: new TrustedTestExecutionRunnerAdapter({
       replay: chat.workbenchReplayRunner,
-      liveAgentConfig: {
-        async find({ workspaceId, agentId }) {
-          const agent = await repositories.agentRepository.findByIdAndWorkspaceId(agentId, workspaceId);
-          return agent ? projectInternalAgentConfig(agent) : null;
-        },
-      },
+      liveAgentConfig: createLiveAgentConfigReader({ agentRepository: repositories.agentRepository }),
       revisions: repositories.testExecutionRepository,
       bootstrap: chat.chatBootstrapService,
     }),
@@ -413,12 +410,14 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     retrievalDefaultsProvider,
     skillSettingsResolver,
     workspaceInvalidationPublisher: realtimePublisherComposition.publisher,
+    revisionEvalRunRetentionDays: env.AGENT_REVISION_EVAL_RUN_RETENTION_DAYS,
   });
   const {
     evalCaseService,
     evalMessageCaseService,
     evalRunService,
     revisionEvalRunService,
+    revisionEvalRunRetentionWorker,
     evalSnapshotService,
     evalSuiteService,
     operatorReplyService,
@@ -800,6 +799,13 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
     retentionDays: env.COPILOT_CONVERSATION_RETENTION_DAYS,
   });
+  const testExecutionRetentionWorker = new TtlRetentionWorker({
+    subject: "agent_test_execution",
+    sweep: { deleteBefore: (input) => repositories.testExecutionRepository.deleteExecutionsUpdatedBefore(input) },
+    audit: infrastructure.auditService,
+    logger,
+    retentionDays: env.AGENT_TEST_EXECUTION_RETENTION_DAYS,
+  });
   const operatorMcp = buildOperatorMcpServices({
     env,
     database: infrastructure.database,
@@ -960,6 +966,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     chatInferencePipeline,
     operatorCopilotService,
     copilotRetentionWorker,
+    testExecutionRetentionWorker,
+    revisionEvalRunRetentionWorker,
     copilotToolCatalog,
     copilotCapabilityRunner,
     copilotPrompt,

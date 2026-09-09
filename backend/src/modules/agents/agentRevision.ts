@@ -17,6 +17,29 @@ const contextVariableEnablementSnapshotSchema = z.object({
   surfacing: z.enum(["always", "on_reference", "operator_only"]), enabled: z.boolean(),
   createdAt: persistedDate, updatedAt: persistedDate,
 }).strict();
+// Mirrors AgentSkillSpine (agentSkills/domain.ts) structurally, but deliberately without
+// importing agentSkills' kind/invocationMode enums: agents already exports types agentSkills
+// consumes (AgentSkillRepositoryPort is type-only there), and agentSkills' repository needs
+// this module's snapshot-parsing helpers to project its writes into the draft snapshot, so a
+// value-level import in the other direction here would create a runtime module cycle. `kind`/
+// `invocationMode` stay as validated-shape-but-open strings for the same reason a frozen
+// historical snapshot should not re-validate against an enum that may evolve after the
+// snapshot was written; readers that need the narrower `AgentSkillSpine` type (see
+// `applyAgentRevisionSnapshot`) cast at that boundary, same as this repository's own row
+// mapper already does for a raw DB column.
+//
+// Optional on the snapshot itself (see agentSkills below) rather than required-with-a-
+// backfill-migration: repository writers (AgentSkillRepository,
+// AgentRevisionRepository#createCandidate) lazily seed it from the live agent_skills table
+// the first time they touch a draft/candidate whose snapshot predates this field, so no batch
+// migration has to touch every existing agent_drafts/agent_revisions row.
+const agentSkillSnapshotSchema = z.object({
+  id: z.string().uuid(), agentId: z.string().uuid(), workspaceId: z.string().uuid(),
+  skillName: z.string(), kind: z.string(), invocationMode: z.string(),
+  enabled: z.boolean(), targetType: z.string().nullable().optional(), targetId: z.string().nullable().optional(),
+  config: z.record(z.unknown()).optional(),
+  createdAt: persistedDate, updatedAt: persistedDate,
+}).strict();
 
 /** The four fields whose behavior is released together for an agent. */
 export const agentRevisionSnapshotSchema = z.object({
@@ -27,6 +50,13 @@ export const agentRevisionSnapshotSchema = z.object({
   // legacy conversation whose exact non-current definition was safely identified.
   retainedRoutineDefinitions: z.array(routineSnapshotSchema).optional(),
   contextVariableEnablements: z.array(contextVariableEnablementSnapshotSchema),
+  // Agent-selectable/routine-named skill definitions (MCP tools, webhooks, etc.), frozen
+  // the same way directives/routines are so a pinned conversation's turn dispatch cannot
+  // read an operator's in-flight live edit. Optional/absent means "not yet tracked for
+  // this draft/revision" (see the writers above), not "this agent has no skills" — a
+  // reader with an absent value must fall back to the live agent_skills table rather than
+  // treat it as an empty list.
+  agentSkills: z.array(agentSkillSnapshotSchema).optional(),
 }).strict();
 export type AgentRevisionSnapshot = z.infer<typeof agentRevisionSnapshotSchema>;
 export const parseAgentRevisionSnapshot = (value: unknown): AgentRevisionSnapshot => agentRevisionSnapshotSchema.parse(value);

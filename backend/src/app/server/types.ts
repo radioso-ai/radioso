@@ -117,6 +117,7 @@ import type { OperatorCopilotService } from "../../modules/operatorCopilot/publi
 import type { OperatorMcpApplicationService } from "../../modules/operatorCopilot/public.js";
 import type { CopilotRepositoryPort } from "../../modules/operatorCopilot/public.js";
 import type { CopilotRetentionWorker } from "../../modules/operatorCopilot/public.js";
+import type { TtlRetentionWorker } from "../../shared/domain/ttlRetentionWorker.js";
 import type { CopilotToolDescriptor, CopilotWorkspaceRouteKeyResolver } from "../../modules/operatorCopilot/public.js";
 import type { AgenticCapabilityRunner } from "../../shared/agent-runtime/index.js";
 import type { QualityTurnsService } from "../../modules/quality/composition.js";
@@ -234,6 +235,9 @@ export interface AppDependencies {
   // Present in every dependency build; only the worker runtime calls start/stop.
   actionDispatchWorker: ActionDispatchWorker;
   copilotRetentionWorker: CopilotRetentionWorker;
+  /** Purges old private test-execution/revision-eval-run evidence (JSONB transcripts, frozen snapshots). */
+  testExecutionRetentionWorker: TtlRetentionWorker;
+  revisionEvalRunRetentionWorker: TtlRetentionWorker;
   chatBootstrapService: ChatBootstrapService;
   chatHistoryService: ChatHistoryService;
   conversationForkService: ConversationForkService;

@@ -1,8 +1,11 @@
 import { randomUUID } from "node:crypto";
 
+import type { Transaction } from "kysely";
+
 import { assertCandidateSnapshotIsRunnable, equalScopedAuthoringSnapshots, parseAgentRevisionSnapshot, type AgentDraft, type AgentRevision, type AgentRevisionRepositoryPort, type AgentRevisionSnapshot, type AgentRevisionState, type PublicationResult } from "../../modules/agents/public.js";
+import { AgentSkillRepository } from "../../modules/agentSkills/repository.js";
 import { currentTimestamp, toSanitizedJsonb, transactionAdvisoryLock } from "../../shared/infra/kysely/sqlHelpers.js";
-import type { Db } from "../../shared/infra/kysely/types.js";
+import type { Db, DB } from "../../shared/infra/kysely/types.js";
 import { agentRevisionLockKey } from "./agentDraftMutation.js";
 
 const mapRevision = (row: {
@@ -23,12 +26,22 @@ const mapRevision = (row: {
   publishedVersion: row.published_version,
 });
 
+/** Live-reads agent_skills on the same transaction a draft/candidate write is already
+ * running on, for the writers below that must reconstruct `snapshot.agentSkills` the
+ * first time they touch a snapshot that predates skill tracking (see agentRevision.ts). */
+const liveAgentSkillsSnapshot = (
+  trx: Transaction<DB>,
+  workspaceId: string,
+  agentId: string,
+): Promise<AgentRevisionSnapshot["agentSkills"]> =>
+  new AgentSkillRepository(trx).listByAgent(workspaceId, agentId);
+
 export class AgentRevisionRepository implements AgentRevisionRepositoryPort {
   constructor(private readonly db: Db) {}
   async initializeDraft(workspaceId: string, agentId: string, customInstruction: string): Promise<void> {
     await this.db.transaction().execute(async (trx) => {
       await transactionAdvisoryLock(agentRevisionLockKey(workspaceId, agentId)).execute(trx);
-      await trx.insertInto("agent_drafts").values({ agent_id: agentId, workspace_id: workspaceId, snapshot: toSanitizedJsonb({ customInstruction, directives: [], routines: [], contextVariableEnablements: [] }) }).onConflict((oc) => oc.column("agent_id").doNothing()).execute();
+      await trx.insertInto("agent_drafts").values({ agent_id: agentId, workspace_id: workspaceId, snapshot: toSanitizedJsonb({ customInstruction, directives: [], routines: [], contextVariableEnablements: [], agentSkills: [] }) }).onConflict((oc) => oc.column("agent_id").doNothing()).execute();
     });
   }
   async mutateDraft(workspaceId: string, agentId: string, mutate: (snapshot: AgentRevisionSnapshot) => AgentRevisionSnapshot): Promise<AgentDraft | null> {
@@ -87,7 +100,13 @@ export class AgentRevisionRepository implements AgentRevisionRepositoryPort {
       await transactionAdvisoryLock(agentRevisionLockKey(workspaceId, agentId)).execute(trx);
       const draft = await trx.selectFrom("agent_drafts").select(["generation", "base_published_revision_id", "snapshot"]).where("workspace_id", "=", workspaceId).where("agent_id", "=", agentId).executeTakeFirst();
       if (!draft || draft.generation !== candidate.expectedDraftGeneration) return "conflict";
-      const parsedSnapshot = parseAgentRevisionSnapshot(draft.snapshot);
+      const draftSnapshot = parseAgentRevisionSnapshot(draft.snapshot);
+      // A candidate freezes the draft as it stands right now: reconstruct agentSkills from
+      // live state when the draft predates skill tracking, so this candidate's snapshot is
+      // never silently missing skills the operator never touched via AgentSkillRepository.
+      const parsedSnapshot: AgentRevisionSnapshot = draftSnapshot.agentSkills !== undefined
+        ? draftSnapshot
+        : { ...draftSnapshot, agentSkills: await liveAgentSkillsSnapshot(trx, workspaceId, agentId) };
       assertCandidateSnapshotIsRunnable(parsedSnapshot);
       let existingQuery = trx.selectFrom("agent_revisions")
         .select(["id", "snapshot", "source_draft_generation", "source_base_published_revision_id", "created_at", "published_at", "published_version"])

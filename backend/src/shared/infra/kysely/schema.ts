@@ -256,6 +256,7 @@ export interface AgentTestExecutions {
   created_at: Generated<Timestamp>;
   generation: Generated<number>;
   id: string;
+  idempotency_key: string;
   mode: string;
   state: string;
   test_values: Json;
@@ -274,6 +275,7 @@ export interface AgentTestExecutionSides {
   execution_id: string;
   history: Generated<Json>;
   id: string;
+  retained_execution_id: string | null;
   retryable: Generated<boolean>;
   revision_id: string;
   side_ordinal: number;
@@ -1176,6 +1178,7 @@ export interface RevisionEvalRuns {
   created_at: Generated<Timestamp>;
   execution_policy: string;
   id: string;
+  idempotency_key: string;
   mode: string;
   state: string;
   test_values: Json;

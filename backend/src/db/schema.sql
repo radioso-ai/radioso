@@ -780,6 +780,7 @@ CREATE TABLE public.agent_test_execution_sides (
     side_ordinal integer NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    retained_execution_id uuid,
     CONSTRAINT agent_test_execution_sides_active_attempt_check CHECK ((((active_turn_id IS NULL) AND (active_attempt_id IS NULL) AND (active_fence IS NULL)) OR ((active_turn_id IS NOT NULL) AND (active_attempt_id IS NOT NULL) AND (active_fence > 0)))),
     CONSTRAINT agent_test_execution_sides_state_check CHECK ((state = ANY (ARRAY['ready'::text, 'running'::text, 'failed'::text, 'completed'::text])))
 );
@@ -815,6 +816,7 @@ CREATE TABLE public.agent_test_executions (
     test_values jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    idempotency_key text NOT NULL,
     CONSTRAINT agent_test_executions_generation_check CHECK ((generation > 0)),
     CONSTRAINT agent_test_executions_mode_check CHECK ((mode = ANY (ARRAY['single'::text, 'compare'::text]))),
     CONSTRAINT agent_test_executions_state_check CHECK ((state = ANY (ARRAY['running'::text, 'partial'::text, 'failed'::text, 'completed'::text])))
@@ -2925,6 +2927,7 @@ CREATE TABLE public.revision_eval_runs (
     state text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    idempotency_key text NOT NULL,
     CONSTRAINT revision_eval_runs_execution_policy_check CHECK ((execution_policy = 'safe_test'::text)),
     CONSTRAINT revision_eval_runs_mode_check CHECK ((mode = ANY (ARRAY['retrieval_only'::text, 'full_assistant'::text]))),
     CONSTRAINT revision_eval_runs_state_check CHECK ((state = ANY (ARRAY['pending'::text, 'running'::text, 'partial'::text, 'failed'::text, 'completed'::text])))
@@ -5580,6 +5583,13 @@ CREATE UNIQUE INDEX agent_skills_one_default_answer ON public.agent_skills USING
 
 
 --
+-- Name: agent_test_executions_idempotency_key_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX agent_test_executions_idempotency_key_key ON public.agent_test_executions USING btree (workspace_id, agent_id, idempotency_key);
+
+
+--
 -- Name: audit_events_chat_answer_assistant_lookup_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7631,6 +7641,13 @@ CREATE INDEX pending_decisions_workspace_pending_idx ON public.pending_decisions
 
 
 --
+-- Name: revision_eval_runs_idempotency_key_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX revision_eval_runs_idempotency_key_key ON public.revision_eval_runs USING btree (workspace_id, agent_id, idempotency_key);
+
+
+--
 -- Name: routine_action_requests_claimable_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -9155,6 +9172,14 @@ ALTER TABLE ONLY public.agent_test_execution_sides
 
 ALTER TABLE ONLY public.agent_test_execution_sides
     ADD CONSTRAINT agent_test_execution_sides_execution_id_fkey FOREIGN KEY (execution_id) REFERENCES public.agent_test_executions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_test_execution_sides agent_test_execution_sides_retained_execution_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_test_execution_sides
+    ADD CONSTRAINT agent_test_execution_sides_retained_execution_id_fkey FOREIGN KEY (retained_execution_id) REFERENCES public.agent_test_executions(id) ON DELETE SET NULL;
 
 
 --

@@ -48,6 +48,12 @@ CREATE INDEX idx_conversations_agent_revision ON conversations(agent_revision_id
 
 -- Only unsafe legacy routine pins need durable operator follow-up. Safe pins are
 -- captured in their agent revision below; unsafe conversations remain unbound.
+-- An unbound conversation that receives another turn fails closed with a
+-- conversation_revision_unavailable AppError (see chatSessionPreparer.ts),
+-- logged with the conversationId; join that id against this table's
+-- conversation_id to see why it was left unbound (an ambiguous/missing/invalid
+-- routine pin here, or a NULL agent_id at migration time, which this table
+-- does not record). No operator-facing surface reads this table yet.
 CREATE TABLE agent_revision_migration_classifications (
   conversation_id UUID PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
   agent_id UUID NOT NULL REFERENCES agents(id) ON DELETE CASCADE,

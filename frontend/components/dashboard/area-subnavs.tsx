@@ -16,6 +16,7 @@ import {
   MessageCircle,
   MessageSquare,
   Plus,
+  Trash2,
   Wrench,
   type LucideIcon,
 } from 'lucide-react'
@@ -286,6 +287,9 @@ export function AgentAreaSubNav({ accountId, routeState }: { accountId: string; 
             <span className="flex-1 text-left">Channels</span>
           </button>
           {channelsOpen ? <SectionNavBody groups={channelGroups} /> : null}
+        </div>
+        <div className="pt-1.5">
+          <SubNavRow entry={{ id: 'danger', label: 'Danger zone', icon: Trash2, href: selectedAgentId ? agentHref(accountId, routeState, selectedAgentId, 'danger', workspaceParts.workspaceId, workspaceParts.workspacePublicRouteKey) : undefined, active: selectedSection === 'danger' }} />
         </div>
       </> : null}
       <div className="max-h-36 space-y-0.5 overflow-y-auto">

@@ -11,6 +11,7 @@ import { stringifyUnknown } from "../../shared/text/stringifyUnknown.js";
 import type { AgentSurfaceExtensionRegistry } from "./surfaceExtensions.js";
 import type { AgentSkillSettingsRegistry } from "./skillSettings.js";
 import type { AuthoredDirective } from "./authoredDirectives.js";
+import type { AgentSkillSpine } from "../agentSkills/public.js";
 
 const AGENT_PROVIDER_NAMES: readonly LlmProviderName[] = [
   "openai",
@@ -247,6 +248,14 @@ export interface ConversationAgent extends Agent, AgentBehaviorSettings, AgentGr
   skillSettings: Record<string, unknown>;
   chatModelOverride: AgentChatModelOverride | null;
   authoredDirectives?: AuthoredDirective[];
+  /**
+   * Agent-selectable/routine-named skills frozen from the conversation's pinned agent
+   * revision, mirroring `authoredDirectives`. Populated only by
+   * `applyAgentRevisionSnapshot`; a live-loaded AgentRecord (no revision applied) leaves
+   * this undefined, and turn-dispatch readers must fall back to a live skill lookup in
+   * that case rather than treat undefined as "no skills".
+   */
+  authoredAgentSkills?: AgentSkillSpine[];
 }
 
 export type AgentRecord = ConversationAgent;

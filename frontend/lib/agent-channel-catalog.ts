@@ -21,9 +21,11 @@ interface AgentChannelCatalogInput {
 
 /**
  * Resolve the sidebar's channel list from the same channel configuration
- * surfaces used by each settings card. Unsupported or entirely unconfigured
- * channels stay out of the compact list; configured attention states remain
- * visible so they can be repaired from their settings page.
+ * surfaces used by each settings card. Unsupported channels stay out of the
+ * compact list; configured attention states remain visible so they can be
+ * repaired from their settings page. WhatsApp is the one channel listed before
+ * configuration: when the connector is registered it appears as `available`, so
+ * operators can discover it from the sidebar.
  */
 export function resolveAgentChannelCatalog(input: AgentChannelCatalogInput): AgentChannelCatalogEntry[] {
   const entries: AgentChannelCatalogEntry[] = []

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { serializeAgentConfig, type AgentConfig, type ConversationAgent } from "../../agents/public.js";
 import { builtInAnswerDirectiveViews, type BuiltInDirectiveView } from "../../directives/public.js";
 import type {
+  CopilotMcpProposalRecoveryPort,
   CopilotToolDescriptor,
 } from "../contracts.js";
 import { requireCurrentCopilotPermissions } from "../authorization.js";
@@ -271,7 +272,13 @@ const projectDirectiveDetail = (
 
 export interface AgentSettingProposalCopilotToolDependencies extends CopilotProposalEvidenceDependencies, CopilotProposalToolDependencies {
   readonly agentLookup?: CopilotAgentLookupPort;
+  readonly proposalRecovery: CopilotMcpProposalRecoveryPort;
 }
+
+/** Mirrors the payload propose_agent_setting persists (see createAgentSettingCopilotProposalAdapter.validatePayload in proposalAdapters.ts). */
+const agentSettingProposalPayloadSchema = z.object({ value: z.unknown(), rationale: z.string().optional() }).passthrough();
+/** `targetLabel` on this tool's output is the setting key, which lives on the target ref rather than the payload. */
+const agentSettingProposalTargetRefSchema = z.object({ settingKey: z.string() }).passthrough();
 
 export const createAgentSettingProposalCopilotTools = (
   deps: AgentSettingProposalCopilotToolDependencies,
@@ -283,6 +290,35 @@ export const createAgentSettingProposalCopilotTools = (
       description: "Draft an agent setting change for the operator to review and apply. This does not change configuration.",
       inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), settingKey: z.string().trim().min(1).max(200), value: z.unknown(), rationale: z.string().trim().min(1).max(1_000).optional(), evidenceIds: citedEvidenceSchema }).strict(),
       outputSchema: proposalOutputSchema,
+      reconcileMcpInvocation: async ({ invocation, context, staleBefore, now }) => {
+        if (!invocation.operationId) return { status: "conflict" };
+        const recovery = await deps.proposalRecovery.recoverOperatorMcpProposal({
+          invocationId: invocation.id,
+          grantId: invocation.grantId,
+          workspaceId: context.workspaceId,
+          operatorUserId: context.operatorUserId,
+          operationId: invocation.operationId,
+          descriptorName: "propose_agent_setting",
+          inputDigest: invocation.inputDigest,
+          staleBefore,
+          now,
+        });
+        if (recovery.status !== "recovered") return recovery;
+        if (recovery.proposal.targetType !== "agent_setting") return { status: "conflict" };
+        const targetRef = agentSettingProposalTargetRefSchema.safeParse(recovery.proposal.targetRef);
+        const payload = agentSettingProposalPayloadSchema.safeParse(recovery.proposal.payload);
+        if (!targetRef.success || !payload.success) return { status: "conflict" };
+        return {
+          status: "recovered",
+          output: {
+            proposalId: recovery.proposal.id,
+            targetType: "agent_setting" as const,
+            targetLabel: targetRef.data.settingKey,
+            summary: payload.data.rationale ?? targetRef.data.settingKey,
+            ...proposalEvidenceOutput(recovery.proposal.evidence),
+          },
+        };
+      },
       createTool: (context) => ({
         name: "propose_agent_setting",
       description: "Draft an agent setting change for the operator to review and apply. This does not change configuration.",

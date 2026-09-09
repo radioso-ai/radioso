@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type {
+  CopilotMcpProposalRecoveryPort,
   CopilotToolDescriptor,
 } from "../contracts.js";
 import { boundPayload } from "../payloadCompaction.js";
@@ -151,7 +152,19 @@ const skillSettingsEvidenceKey = (capability: string, invocationMode: string): s
 
 export interface AgentSkillConfigProposalCopilotToolDependencies extends CopilotProposalEvidenceDependencies, CopilotProposalToolDependencies {
   readonly agentLookup?: CopilotAgentLookupPort;
+  readonly proposalRecovery: CopilotMcpProposalRecoveryPort;
 }
+
+/** Mirrors the payload propose_skill_config persists (see createAgentSkillCopilotProposalAdapter.validatePayload / skillConfigStoredPayloadSchema in proposalAdapters.ts). */
+const skillConfigProposalPayloadSchema = z.object({
+  name: z.string(),
+  capability: z.string(),
+  target: skillTargetInputSchema,
+  config: z.record(z.unknown()),
+  invocationMode: z.string(),
+  enabled: z.boolean(),
+  rationale: z.string().optional(),
+}).strict();
 
 export const createAgentSkillConfigProposalCopilotTools = (
   deps: AgentSkillConfigProposalCopilotToolDependencies,
@@ -164,6 +177,34 @@ export const createAgentSkillConfigProposalCopilotTools = (
       description,
       inputSchema: skillConfigInputSchema,
       outputSchema: proposalOutputSchema,
+      reconcileMcpInvocation: async ({ invocation, context, staleBefore, now }) => {
+        if (!invocation.operationId) return { status: "conflict" };
+        const recovery = await deps.proposalRecovery.recoverOperatorMcpProposal({
+          invocationId: invocation.id,
+          grantId: invocation.grantId,
+          workspaceId: context.workspaceId,
+          operatorUserId: context.operatorUserId,
+          operationId: invocation.operationId,
+          descriptorName: "propose_skill_config",
+          inputDigest: invocation.inputDigest,
+          staleBefore,
+          now,
+        });
+        if (recovery.status !== "recovered") return recovery;
+        if (recovery.proposal.targetType !== "agent_skill") return { status: "conflict" };
+        const payload = skillConfigProposalPayloadSchema.safeParse(recovery.proposal.payload);
+        if (!payload.success) return { status: "conflict" };
+        return {
+          status: "recovered",
+          output: {
+            proposalId: recovery.proposal.id,
+            targetType: "agent_skill" as const,
+            targetLabel: payload.data.name,
+            summary: payload.data.rationale ?? payload.data.name,
+            ...proposalEvidenceOutput(recovery.proposal.evidence),
+          },
+        };
+      },
       createTool: (context) => ({
         name: "propose_skill_config",
         description,

@@ -55,8 +55,11 @@ describe("copilot routine readers", () => {
 
     expect(result.routine.editable).toEqual({
       steps: [{ stableStepId: "collect_topic", kind: "chat", instruction: "Ask how we can help." }],
+      stepsTruncated: false,
       endings: [{ stableStepId: "done", kind: "complete", instruction: null }],
+      endingsTruncated: false,
       fields: [{ key: "order_number", type: "text", required: true, description: "The order" }],
+      fieldsTruncated: false,
     });
   });
 
@@ -70,6 +73,20 @@ describe("copilot routine readers", () => {
       .invoke({ routineId: "11111111-1111-4111-8111-111111111111" }, {} as never) as { routine: { editable: { steps: Array<{ instruction: string }> } } };
 
     expect(result.routine.editable.steps[0].instruction).toHaveLength(161);
+  });
+
+  it("caps the number of editable steps and reports the cut, matching portable.content's own omittedReason", async () => {
+    const manySteps = Array.from({ length: 50 }, (_, index) => ({
+      stableStepId: `step_${index}`, kind: "chat" as const, instruction: `Step ${index}`, toolRef: null, actionType: null, ordinal: index, metadata: {},
+    }));
+    const ports = dependencies([routine({ steps: manySteps })]);
+    const tool = ports.descriptors.find((descriptor) => descriptor.name === "routine_definition")!;
+
+    const result = await tool.createTool(context("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"))
+      .invoke({ routineId: "11111111-1111-4111-8111-111111111111" }, {} as never) as { routine: { editable: { steps: unknown[]; stepsTruncated: boolean } } };
+
+    expect(result.routine.editable.steps).toHaveLength(40);
+    expect(result.routine.editable.stepsTruncated).toBe(true);
   });
 
   it("reports nonportable routines without failing discovery or detail", async () => {

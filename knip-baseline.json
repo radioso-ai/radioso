@@ -751,8 +751,6 @@
   "types|backend/src/modules/operatorCopilot/ingestionSettingsProposalAdapter.ts|IngestionSettingsCopilotProposalAdapterDependencies",
   "types|backend/src/modules/operatorCopilot/neverList.ts|CopilotNeverListContextEntry",
   "types|backend/src/modules/operatorCopilot/neverList.ts|CopilotNeverListExclusion",
-  "types|backend/src/modules/operatorCopilot/payloadCompaction.ts|CompactionOptions",
-  "types|backend/src/modules/operatorCopilot/payloadCompaction.ts|CompactionResult",
   "types|backend/src/modules/operatorCopilot/proposalEvidence.ts|CopilotProposalEvidenceCase",
   "types|backend/src/modules/operatorCopilot/proposalEvidence.ts|CopilotProposalEvidenceSummary",
   "types|backend/src/modules/operatorCopilot/services/evalCaseCaptureService.ts|EvalCaseCaptureServiceDependencies",

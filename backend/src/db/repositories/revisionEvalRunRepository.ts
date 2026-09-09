@@ -1,4 +1,4 @@
-import { parseAgentRevisionSnapshot, type AgentRevision } from "../../modules/agents/agentRevision.js";
+import { parseAgentRevisionSnapshot, type AgentRevision } from "../../modules/agents/public.js";
 import type { EvalCase, EvalSnapshot } from "../../modules/eval/domain/types.js";
 import type { FrozenRevisionEvalCaseResult } from "../../modules/eval/services/evalRunService.js";
 import type { RevisionEvalCaseRecord, RevisionEvalRepositoryPort, RevisionEvalRun, RevisionEvalSide, RevisionEvalState } from "../../modules/eval/services/revisionEvalRun.js";

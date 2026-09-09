@@ -22,7 +22,7 @@ import { LlmHandoffWaitingMessageGenerator } from "../../../shared/services/hand
 import { PostgresAssistantTurnPersistence } from "../../../modules/chat/infra/postgresAssistantTurnPersistence.js";
 import { AccountAccessService } from "../../../modules/account/public.js";
 import { AgentService } from "../../../modules/agents/public.js";
-import { AgentRevisionRuntimeResolver } from "../../../modules/agents/runtime/agentRevisionRuntimeResolver.js";
+import { AgentRevisionRuntimeResolver } from "../../../modules/agents/public.js";
 import { AuditService } from "../../../modules/audit/composition.js";
 import { ApprovalDecisionService } from "../../../modules/approvals/public.js";
 import {

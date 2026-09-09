@@ -22,7 +22,7 @@ import { toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { DB, Db } from "../../shared/infra/kysely/types.js";
 import { withAgentDraftMutation } from "./agentDraftMutation.js";
 import { mapDirectiveRow, type AgentDirectiveRow } from "./agentRepository.js";
-import type { AgentRevisionSnapshot } from "../../modules/agents/agentRevision.js";
+import type { AgentRevisionSnapshot } from "../../modules/agents/public.js";
 import {
   projectDirectiveScopeTagsForSelectedRoutines,
   selectDraftRoutineDefinitions,

@@ -1,6 +1,6 @@
-import type { AgentRevision } from "../../modules/agents/agentRevision.js";
+import type { AgentRevision } from "../../modules/agents/public.js";
 import type { Transaction } from "kysely";
-import { parseAgentRevisionSnapshot } from "../../modules/agents/agentRevision.js";
+import { parseAgentRevisionSnapshot } from "../../modules/agents/public.js";
 import type { TestExecution, TestExecutionAttempt, TestExecutionAttemptRecord, TestExecutionClaim, TestExecutionHistoryItem, TestExecutionHistorySide, TestExecutionRepositoryPort, TestExecutionRunnerResult, TestExecutionSide, TestExecutionState } from "../../modules/test-execution/testExecution.js";
 import { currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { DB, Db } from "../../shared/infra/kysely/types.js";

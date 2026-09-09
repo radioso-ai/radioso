@@ -1,8 +1,8 @@
 import {
   parseAgentRevisionSnapshot,
   type AgentRevision,
-} from "../../modules/agents/agentRevision.js";
-import type { AgentRevisionRuntimeReaderPort } from "../../modules/agents/runtime/agentRevisionRuntimeResolver.js";
+  type AgentRevisionRuntimeReaderPort,
+} from "../../modules/agents/public.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
 const mapRevision = (row: {

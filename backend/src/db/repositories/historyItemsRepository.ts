@@ -152,6 +152,7 @@ interface HistoryItemsRow {
   conversation_id: string | null;
   conversation_workspace_id: string | null;
   conversation_agent_id: string | null;
+  conversation_purpose: "production" | "operator_test" | null;
   conversation_agent_name: string | null;
   conversation_agent_internal_name: string | null;
   source_channel: string | null;
@@ -216,6 +217,7 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
            c.id AS conversation_id,
            c.workspace_id AS conversation_workspace_id,
            c.agent_id AS conversation_agent_id,
+           c.purpose AS conversation_purpose,
            ag.name AS conversation_agent_name,
            ag.internal_name AS conversation_agent_internal_name,
            c.source_channel,
@@ -276,6 +278,7 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
             id: row.conversation_id,
             workspaceId: row.conversation_workspace_id,
             agentId: row.conversation_agent_id ?? null,
+            purpose: row.conversation_purpose ?? "production",
             agentName: row.conversation_agent_name ?? null,
             agentInternalName: normalizeNullableText(row.conversation_agent_internal_name),
             sourceChannel: row.source_channel,

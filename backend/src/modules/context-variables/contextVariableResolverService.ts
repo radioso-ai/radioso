@@ -1,4 +1,5 @@
 import type { ContextVariableResolverRepositoryPort } from "./repository.js";
+import { notFound } from "../../shared/domain/errors.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type {
@@ -21,7 +22,7 @@ export interface ContextResolverPort {
   }): Promise<{ value: unknown } | null>;
 }
 
-export interface ContextVariableResolverServiceOptions {
+interface ContextVariableResolverServiceOptions {
   repository: ContextVariableResolverRepositoryPort;
   resolver: ContextResolverPort;
   logger?: Pick<AppLogger, "info" | "warn">;
@@ -83,6 +84,27 @@ export class ContextVariableResolverService {
     }
 
     return [...pushed, ...resolverValues];
+  }
+
+  async resolveForEnablements(workspaceId: string, agentId: string, enablements: readonly AgentContextVariableEnablement[], scopes: ContextVariableScope[]): Promise<ResolvedVariableInput[]> {
+    const resolved: ResolvedVariableInput[] = [];
+    for (const enablement of enablements) {
+      if (!enablement.enabled) continue;
+      const variable = await this.repository.get(workspaceId, enablement.variableId);
+      if (!variable) throw notFound("A context variable selected by this revision no longer exists");
+      if (enablement.source === "pushed") {
+        for (const scope of scopes) {
+          const value = await this.repository.readValue(variable.id, scope);
+          if (value) { resolved.push(mapResolvedVariable(enablement, variable, value.data)); break; }
+        }
+        continue;
+      }
+      const scope = scopes[0];
+      if (!scope) continue;
+      const value = await this.resolveEnablement(workspaceId, agentId, scope, { ...enablement, variable });
+      if (value) resolved.push(value);
+    }
+    return resolved;
   }
 
   private async resolveEnablement(

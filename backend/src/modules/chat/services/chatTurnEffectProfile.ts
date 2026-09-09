@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 
 import type {
   ConversationClarificationStore,
-  ConversationRoutineStore,
   PendingClarification,
   RoutineState,
 } from "@radioso/conversation-contract";
@@ -27,12 +26,14 @@ import { InMemoryRoutineStore } from "./routines/inMemoryRoutineStore.js";
 const ephemeralConversation = (
   workspaceId: string,
   agentId: string | null,
+  conversationId?: string,
 ): ConversationRecord => {
   const now = new Date();
   return {
-    id: randomUUID(),
+    id: conversationId ?? randomUUID(),
     workspaceId,
     agentId,
+    purpose: "operator_test",
     agentName: null,
     agentInternalName: null,
     sourceChannel: "workbench_replay",
@@ -47,9 +48,13 @@ const ephemeralConversation = (
   };
 };
 
-const createEphemeralConversationRepository = (): ConversationRepositoryPort => ({
-  async create(workspaceId, agentId) {
-    return ephemeralConversation(workspaceId, agentId ?? null);
+const createEphemeralConversationRepository = (conversationId?: string): ConversationRepositoryPort => ({
+  async create(workspaceId, agentId, _sourceChannel, _anonymousSessionId, _sourceOrigin, _channelContext, _verifiedCustomerId, options) {
+    return {
+      ...ephemeralConversation(workspaceId, agentId ?? null, conversationId),
+      agentRevisionId: options?.agentRevisionId ?? null,
+      purpose: options?.purpose ?? "operator_test",
+    };
   },
   async createWithInitialAssistantMessage() {
     throw new Error("ephemeral_turn_unexpected_initial_assistant_message");
@@ -166,6 +171,10 @@ class EphemeralDirectiveStateStore implements DirectiveStateStore {
   async save(input: { state: DirectiveFiringState }): Promise<void> {
     this.state = cloneDirectiveFiringState(input.state);
   }
+
+  snapshot(): DirectiveFiringState | null {
+    return this.state ? cloneDirectiveFiringState(this.state) : null;
+  }
 }
 
 class InMemoryClarificationStore implements ConversationClarificationStore {
@@ -186,6 +195,10 @@ class InMemoryClarificationStore implements ConversationClarificationStore {
       this.pending = null;
     }
   }
+
+  snapshot(sessionId: string): PendingClarification | null {
+    return this.pending?.sessionId === sessionId ? { ...this.pending } : null;
+  }
 }
 
 /**
@@ -197,23 +210,43 @@ export interface EphemeralChatTurnEffectProfile {
   messageRepository: MessageRepositoryPort;
   auditService: AuditService;
   directiveStateStore: DirectiveStateStore;
-  routineStore(seed?: RoutineState | null): ConversationRoutineStore;
-  clarificationStore(seed?: PendingClarification | null): ConversationClarificationStore;
+  routineStore(seed?: RoutineState | null): InMemoryRoutineStore;
+  clarificationStore(seed?: PendingClarification | null): InMemoryClarificationStore;
+  snapshot(input: { sessionId: string; routineStore: InMemoryRoutineStore }): {
+    routineState: RoutineState | null;
+    pendingClarification: PendingClarification | null;
+    directiveState: DirectiveFiringState | null;
+  };
 }
 
 export const createEphemeralChatTurnEffectProfile = (
   history: readonly MessageRecord[],
-): EphemeralChatTurnEffectProfile => ({
-  conversationRepository: createEphemeralConversationRepository(),
-  messageRepository: createEphemeralMessageRepository(),
-  auditService: {
-    async record() {},
-    async getLatestSuccessfulChatAnswerMetadata() {
-      return null;
+  input: { conversationId?: string; directiveState?: DirectiveFiringState | null } = {},
+): EphemeralChatTurnEffectProfile => {
+  const directiveStateStore = new EphemeralDirectiveStateStore(
+    input.directiveState ?? directiveStateFromHistory(history),
+  );
+  let clarificationStore: InMemoryClarificationStore | null = null;
+  return {
+    conversationRepository: createEphemeralConversationRepository(input.conversationId),
+    messageRepository: createEphemeralMessageRepository(),
+    auditService: {
+      async record() {},
+      async getLatestSuccessfulChatAnswerMetadata() {
+        return null;
+      },
+      async updateChatAnswerSuggestions() {},
     },
-    async updateChatAnswerSuggestions() {},
-  },
-  directiveStateStore: new EphemeralDirectiveStateStore(directiveStateFromHistory(history)),
-  routineStore: (seed) => new InMemoryRoutineStore(seed),
-  clarificationStore: (seed) => new InMemoryClarificationStore(seed),
-});
+    directiveStateStore,
+    routineStore: (seed) => new InMemoryRoutineStore(seed),
+    clarificationStore: (seed) => {
+      clarificationStore = new InMemoryClarificationStore(seed);
+      return clarificationStore;
+    },
+    snapshot: ({ sessionId, routineStore }) => ({
+      routineState: routineStore.snapshot(sessionId),
+      pendingClarification: clarificationStore?.snapshot(sessionId) ?? null,
+      directiveState: directiveStateStore.snapshot(),
+    }),
+  };
+};

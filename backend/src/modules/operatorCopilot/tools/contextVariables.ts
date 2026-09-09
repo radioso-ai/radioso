@@ -18,6 +18,7 @@ import {
   type CopilotAgentLookupPort,
   type CopilotProposalEvidenceDependencies,
   proposalAdapterFor,
+  scopedAgentDraftPublicationNote,
   type CopilotProposalToolDependencies,
 } from "./shared.js";
 
@@ -161,7 +162,7 @@ export const createContextVariableProposalCopilotTools = (
   deps: ContextVariableProposalCopilotToolDependencies,
 ): ReadonlyArray<CopilotToolDescriptor> => {
   const adapter = proposalAdapterFor(deps.proposalAdapters, "context_variable");
-  const description = "Propose creating or updating a context variable's definition, an agent's enablement of it, or both, for the operator to review and apply. This does not change configuration. Values are supplied from what was already read, not invented.";
+  const description = `Propose creating or updating a context variable's definition, an agent's enablement of it, or both, for the operator to review and apply. This does not change configuration. Values are supplied from what was already read, not invented. ${scopedAgentDraftPublicationNote}`;
   return [
     {
       name: "propose_context_variable", shape: "propose", verificationCost: () => 0, uiLabel: "Drafting a context variable", contributingModule: "contextVariables", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"],

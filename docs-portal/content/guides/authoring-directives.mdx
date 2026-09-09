@@ -15,7 +15,9 @@ action. Use the agent's **Behavior** for a voice or rule that belongs on every
 answer; use a [routine](/guides/authoring-routines) when the request needs a
 sequence of steps, collected information, or an action such as a Slack post.
 
-In an agent's **Directives** settings, choose **New directive**.
+In an agent's **Directives** tab, choose **New directive**. Your edits are saved
+to the agent's private draft. The draft is the version you test; it becomes part
+of visitor conversations only when you choose **Review & Publish** and publish it.
 
 ![The dashboard Directives screen with an authored directive "Shipping delay empathy" above the read-only built-in directives, each with an Override button.](/screenshots/dashboard-agent-directives.png)
 
@@ -109,13 +111,26 @@ next. You can also keep a directive for the same situation when its job is to
 shape the reply — for example, “Do not promise a response time.” The routine
 posts; the directive steers.
 
-## Check the rule in a conversation
+## Test and publish the rule
 
-Save the directive, then open the [workbench](/guides/workbench) and try an
+Choose **Save draft**, then open **Test Chat** from the agent cockpit and try an
 example that should match. Inspect the turn's Directives node to confirm the
 rule applied and to see how it shaped the answer. Try a nearby example that
 should not match as well; a specific situation should not accidentally become a
 standing rule.
+
+Test Chat pins each conversation to the saved candidate you selected. Later draft
+edits stay private and do not change an earlier test. You can compare the draft
+with the published revision and run selected eval cases from Test Chat before
+publishing. Evals help you decide; they are optional, while validation and the
+explicit publish action are required.
+
+When the rule is ready, choose **Review & Publish**. Review the directive
+changes and the test evidence, then publish the candidate you inspected. Keep
+making edits in the draft after publishing when you want to prepare another
+change. The published revision is shared by newly started conversations across
+the agent's channels; an ongoing conversation keeps the version it started
+with.
 
 ## Common failure modes
 

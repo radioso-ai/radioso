@@ -158,6 +158,51 @@ export interface AgentDocumentSources {
   source_id: string | null;
 }
 
+export interface AgentDrafts {
+  agent_id: string;
+  base_published_revision_id: string | null;
+  created_at: Generated<Timestamp>;
+  generation: Generated<number>;
+  snapshot: Json;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
+export interface AgentPublications {
+  actor_account_id: string | null;
+  agent_id: string;
+  created_at: Generated<Timestamp>;
+  expected_draft_generation: number;
+  expected_published_revision_id: string | null;
+  id: string;
+  idempotency_key: string;
+  previous_revision_id: string | null;
+  revision_id: string;
+  workspace_id: string;
+}
+
+export interface AgentRevisionMigrationClassifications {
+  agent_id: string;
+  classification: string;
+  conversation_id: string;
+  created_at: Generated<Timestamp>;
+  routine_id: string;
+  workspace_id: string;
+}
+
+export interface AgentRevisions {
+  agent_id: string;
+  created_at: Generated<Timestamp>;
+  id: string;
+  published_at: Timestamp | null;
+  published_version: number | null;
+  snapshot: Json;
+  snapshot_format_version: Generated<number>;
+  source_base_published_revision_id: string | null;
+  source_draft_generation: number;
+  workspace_id: string;
+}
+
 export interface Agents {
   behavior_settings: Generated<Json>;
   chat_model: string | null;
@@ -168,6 +213,7 @@ export interface Agents {
   internal_name: Generated<string>;
   name: Generated<string>;
   output_modes: Generated<Json>;
+  published_revision_id: string | null;
   retrieval_enabled: Generated<boolean>;
   skill_settings: Generated<Json>;
   source_scope_mode: Generated<string>;
@@ -188,6 +234,62 @@ export interface AgentSkills {
   target_type: string | null;
   updated_at: Generated<Timestamp>;
   workspace_id: string;
+}
+
+export interface AgentTestExecutionAttempts {
+  attempt_id: string;
+  created_at: Generated<Timestamp>;
+  execution_id: string;
+  failure_code: string | null;
+  fence: number;
+  input_fingerprint: string;
+  lease_expires_at: Timestamp;
+  result: Json | null;
+  side_id: string;
+  state: string;
+  turn_id: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface AgentTestExecutions {
+  agent_id: string;
+  created_at: Generated<Timestamp>;
+  generation: Generated<number>;
+  id: string;
+  mode: string;
+  state: string;
+  test_values: Json;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
+export interface AgentTestExecutionSides {
+  active_attempt_id: string | null;
+  active_fence: number | null;
+  active_turn_id: string | null;
+  agent_id: string;
+  continuation: Json | null;
+  conversation_id: string;
+  created_at: Generated<Timestamp>;
+  execution_id: string;
+  history: Generated<Json>;
+  id: string;
+  retryable: Generated<boolean>;
+  revision_id: string;
+  side_ordinal: number;
+  state: string;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
+export interface AgentTestExecutionTurns {
+  created_at: Generated<Timestamp>;
+  execution_id: string;
+  input_fingerprint: string;
+  message: string;
+  state: string;
+  turn_id: string;
+  updated_at: Generated<Timestamp>;
 }
 
 export interface ApiCredentialExpiryWarnings {
@@ -439,11 +541,13 @@ export interface ConversationOwnership {
 
 export interface Conversations {
   agent_id: string | null;
+  agent_revision_id: string | null;
   anonymous_session_id: string | null;
   channel_context: Json | null;
   created_at: Generated<Timestamp>;
   entry_page_url: string | null;
   id: string;
+  purpose: Generated<string>;
   source_channel: string | null;
   source_origin: string | null;
   title: string | null;
@@ -1035,6 +1139,61 @@ export interface RetrievalSettings {
   workspace_id: string;
 }
 
+export interface RevisionEvalRunAttempts {
+  created_at: Generated<Timestamp>;
+  failure_code: string | null;
+  fence: number;
+  id: string;
+  lease_expires_at: Timestamp;
+  run_case_id: string;
+  state: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface RevisionEvalRunCases {
+  active_attempt_id: string | null;
+  active_fence: number | null;
+  assertion_verdicts: Json | null;
+  case_id: string;
+  completed_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  frozen_case: Json;
+  frozen_snapshot: Json;
+  id: string;
+  lease_expires_at: Timestamp | null;
+  observed_output: Json | null;
+  outcome: string;
+  outcome_reason: string | null;
+  resolved_config: Json | null;
+  side_id: string;
+  state: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface RevisionEvalRuns {
+  actor_account_id: string | null;
+  agent_id: string;
+  created_at: Generated<Timestamp>;
+  execution_policy: string;
+  id: string;
+  mode: string;
+  state: string;
+  test_values: Json;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
+export interface RevisionEvalRunSides {
+  created_at: Generated<Timestamp>;
+  frozen_revision: Json;
+  id: string;
+  revision_id: string;
+  run_id: string;
+  side_ordinal: number;
+  state: string;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface RoutineActionRequests {
   account_id: string | null;
   attempts: Generated<number>;
@@ -1475,7 +1634,15 @@ export interface DB {
   agent_converse_session_mappings: AgentConverseSessionMappings;
   agent_directives: AgentDirectives;
   agent_document_sources: AgentDocumentSources;
+  agent_drafts: AgentDrafts;
+  agent_publications: AgentPublications;
+  agent_revision_migration_classifications: AgentRevisionMigrationClassifications;
+  agent_revisions: AgentRevisions;
   agent_skills: AgentSkills;
+  agent_test_execution_attempts: AgentTestExecutionAttempts;
+  agent_test_execution_sides: AgentTestExecutionSides;
+  agent_test_execution_turns: AgentTestExecutionTurns;
+  agent_test_executions: AgentTestExecutions;
   agents: Agents;
   api_credential_expiry_warnings: ApiCredentialExpiryWarnings;
   api_credentials: ApiCredentials;
@@ -1536,6 +1703,10 @@ export interface DB {
   password_reset_tokens: PasswordResetTokens;
   pending_decisions: PendingDecisions;
   retrieval_settings: RetrievalSettings;
+  revision_eval_run_attempts: RevisionEvalRunAttempts;
+  revision_eval_run_cases: RevisionEvalRunCases;
+  revision_eval_run_sides: RevisionEvalRunSides;
+  revision_eval_runs: RevisionEvalRuns;
   routine_action_requests: RoutineActionRequests;
   routine_completion_export: RoutineCompletionExport;
   routine_definition: RoutineDefinition;

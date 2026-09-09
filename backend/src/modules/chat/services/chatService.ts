@@ -31,7 +31,7 @@ import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspace
 import type { BootstrapGreetingCacheRepositoryPort } from "../../../db/repositories/bootstrapGreetingCacheRepository.js";
 import type { ConversationOwnershipRepository } from "../../../db/repositories/conversationOwnershipRepository.js";
 import type { FacetExtractionJobStore } from "../../facets/public.js";
-import type { AgentService } from "../../agents/public.js";
+import type { AgentRevisionRuntimeResolver, AgentService } from "../../agents/public.js";
 import type { ContextVariableResolutionReaderPort } from "../../context-variables/public.js";
 import type { ApprovalResumeResult, ResumeRunner } from "../../approvals/public.js";
 import type { ChatGateway } from "../contracts/chatGateway.js";
@@ -152,7 +152,7 @@ export type { ChatStreamEvent } from "../contracts/streamEvents.js";
 export type { ChatRoutineProvider } from "./chatTurnAssembly.js";
 export { buildRoutinePendingDecisionTransition } from "./chatTurnAssembly.js";
 export { BlankChatAnswerError } from "./chatAnswerErrors.js";
-export { ModelChatGateway, OpenAIChatGateway } from "./chatGateways.js";
+export { ModelChatGateway } from "./chatGateways.js";
 export type { SuspendedRoutineReader } from "./approvalResumeTurn.js";
 export { ChatTurnSupersededError } from "./conversationTurnRegistry.js";
 
@@ -187,6 +187,8 @@ export interface ChatServiceOptions {
   bootstrapGreetingCacheRepository?: BootstrapGreetingCacheRepositoryPort;
   usageLimitPolicy?: UsageLimitPolicy;
   agentService?: Pick<AgentService, "resolve">;
+  /** Immutable release resolver; default production composition always provides it. */
+  agentRevisionRuntimeResolver?: AgentRevisionRuntimeResolver;
   /** Optional: resolves the agent's enabled host context variables per turn. */
   contextVariableRepository?: ContextVariableResolutionReaderPort;
   directiveSteering?: RouteScopedDirectiveRuntime;
@@ -244,7 +246,7 @@ interface TurnCoordinationState {
   lease?: ConversationTurnLease;
 }
 
-export interface ChatAnswerInput {
+interface ChatAnswerInput {
   workspaceId: string;
   agentId?: string | null;
   accountId?: string;
@@ -270,7 +272,7 @@ export interface ChatAnswerInput {
   executionMode?: TurnExecutionMode;
 }
 
-export interface ChatTurnReceipt {
+interface ChatTurnReceipt {
   response: ChatResponse;
   userMessageId: string;
 }
@@ -318,6 +320,7 @@ export class ChatService {
       bootstrapGreetingCacheRepository,
       usageLimitPolicy = new NoopUsageLimitPolicy(),
       agentService,
+      agentRevisionRuntimeResolver,
       contextVariableRepository,
       directiveSteering = noopRouteScopedDirectiveRuntime,
       directiveStateStore = noopDirectiveStateStore,
@@ -411,6 +414,7 @@ export class ChatService {
       logger,
       facetExtractionJobs,
       workspaceInvalidationPublisher,
+      agentRevisionRuntimeResolver,
     );
     this.chatTurnAssembly = turnAssemblyFactory?.create({
       chatSessionPreparer: this.chatSessionPreparer,

@@ -1,7 +1,7 @@
 ---
 title: "Agents and skills"
-description: "Configure workspace agents, directives, named agent skills, and inspect the read-only skills catalog exposed by the API."
-last_updated: 2026-09-04
+description: "Configure workspace agents, directives, named agent skills, revisions, and inspect the read-only skills catalog exposed by the API."
+last_updated: 2026-09-08
 ---
 
 # Agents and skills
@@ -9,6 +9,47 @@ last_updated: 2026-09-04
 This page configures three linked concepts: [agents](/concepts), the [directives](/concepts) that steer them turn by turn, and the named [skills](/concepts) an agent can use from routines or supported invocation modes. The read-only product skills catalog still describes stable platform contracts. Use a personal token or service credential for eligible authoring routes; lifecycle settings and credential management use the signed-in dashboard session. See [Personal tokens and service accounts](/api/workspaces-and-tokens).
 
 Authoring and execution are different. Agent skills are created through the agent skill endpoints. Runtime still dispatches through the capability executor behind the named skill.
+
+## Draft revisions and private tests
+
+Agent behavior is saved in a private draft. A successful directive, routine,
+context-variable, or agent-setting write advances the draft generation; it does
+not change the revision used by new visitor conversations. The dashboard then
+materializes one immutable candidate for that generation, lets you test it, and
+publishes it as a separate action.
+
+The revision API is available to workspace bearer credentials with the matching
+agent permission:
+
+```text
+GET  /api/v1/agents/{agentId}/revision-state
+POST /api/v1/agents/{agentId}/revisions/candidates
+GET  /api/v1/agents/{agentId}/revisions?include=published
+GET  /api/v1/agents/{agentId}/revisions/{revisionId}
+POST /api/v1/agents/{agentId}/revisions/{revisionId}/publish
+```
+
+`POST .../publish` requires the draft generation, the expected published
+revision, and an idempotency key. A stale request returns `409
+revision_conflict`; an invalid candidate returns `422 revision_invalid`.
+Each successful publication receives the next per-agent version number (`v1`,
+`v2`, and so on). Retrying the same publication command returns that same
+version. Publishing changes one agent revision across its channels.
+Conversations that are already running keep their starting revision; new
+conversations use the published revision.
+
+Private Test Chat selects a candidate or published revision and accepts sample
+values for the selected context variables. Test conversations and sample
+values stay operator-only. Test and eval evidence records the exact revision
+and inputs it used; changing the draft does not relabel earlier evidence.
+Selected eval cases can be run from Test Chat, and a failed side or case can be
+retried without replacing successful comparison evidence.
+
+Use `GET /api/v1/agents/{agentId}/test-executions?limit=50` to page through
+private Test Chat history, then `GET /api/v1/agents/{agentId}/test-executions/{executionId}`
+to reopen one execution with its frozen values, side transcripts, and retry
+evidence. These endpoints require `workspace.agents.manage` and never add test
+conversations to public or visitor history.
 
 ## Agents
 
@@ -265,7 +306,7 @@ Radioso sends the request with `POST`, follows redirects only to publicly routab
 
 ## Move an agent between workspaces
 
-In the dashboard, an agent's Profile page carries **Move this agent → Export bundle**, which downloads the file. To bring one in, open the agent switcher, choose **New agent**, then **Import a bundle**; the dialog shows what the file contains before it creates anything, and reports what needs your attention afterwards. The API below is the same pair of operations.
+In the dashboard, an agent's Profile page carries **Move this agent → Export bundle**, which downloads the file. To bring one in, open **Agents** in the sidebar, choose **New agent**, then **Import a bundle**; the dialog shows what the file contains before it creates anything, and reports what needs your attention afterwards. The API below is the same pair of operations.
 
 `GET /api/v1/agents/{agentId}/bundle` reads one agent — its configuration, published routines, context-variable enablements, and named skills — into a single portable document. `POST /api/v1/agents/bundle` reads that document back and creates a new agent from it. Use the pair to back up an agent, promote one from a staging workspace into production, or hand a configured agent to a teammate's workspace.
 

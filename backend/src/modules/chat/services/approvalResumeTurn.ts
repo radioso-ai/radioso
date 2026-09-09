@@ -44,9 +44,9 @@ export interface SuspendedRoutineReader {
   loadSuspended(input: { sessionId: string }): Promise<RoutineState | null>;
 }
 
-export type ApprovalResumeTurnInput = Parameters<ResumeRunner["resume"]>[0];
+type ApprovalResumeTurnInput = Parameters<ResumeRunner["resume"]>[0];
 
-export interface ApprovalResumeTurnOptions {
+interface ApprovalResumeTurnOptions {
   conversationRepository: Pick<ConversationRepositoryPort, "findByIdAndWorkspaceId">;
   messageRepository: Pick<MessageRepositoryPort, "listRecentByConversationId">;
   agentService?: Pick<AgentService, "resolve">;
@@ -141,6 +141,7 @@ export class ApprovalResumeTurn {
     const routineTurnPorts = await this.options.routineProvider.forTurn({
       modelGateway,
       agentId: session.agent.id,
+      agentRevisionId: session.conversation.agentRevisionId ?? undefined,
       workspaceId: session.conversation.workspaceId,
       accountId: input.decidedBy,
       pinnedRoutineIds: [input.record.routineId],

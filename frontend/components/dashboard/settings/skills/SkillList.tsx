@@ -161,6 +161,10 @@ export function SkillList({ agentId }: { agentId: string }) {
 
   return (
     <section id="assistant-skills-list" className="space-y-4 scroll-mt-24">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted/35 px-3 py-2 text-xs text-muted-foreground">
+        <span>Skill changes apply live now and are outside the agent publication release.</span>
+        <Badge variant="outline">Applies live now</Badge>
+      </div>
       {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
 
       {isLoading ? (

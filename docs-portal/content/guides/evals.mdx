@@ -5,7 +5,7 @@ description: Turn real conversations into repeatable eval cases, replay them aga
 
 # Evaluate answer quality
 
-An eval is a real conversation you froze so you can replay it and check the agent still answers the way you expect. It is how you catch a regression before a visitor does — after you add documents, retune retrieval, or edit a directive. You manage evals from **Quality → Evals** in the dashboard.
+An eval is a real conversation you froze so you can replay it and check the agent still answers the way you expect. It is how you catch a regression before a visitor does — after you add documents, retune retrieval, or edit a directive. You manage eval cases from **Quality → Evals** and can run selected cases against a saved candidate from an agent's **Test Chat**.
 
 ## Cases come from real conversations
 
@@ -90,6 +90,19 @@ POST /api/v1/evals/cases/{id}/runs   { mode, overrides? }
 The Evals page header shows how many cases pass — "1 of 1 case passing" — and a **Run all** button. Run all replays every case with assertions and reports each case's outcome plus the workspace pass rate. Cases with no assertions are skipped, because there is nothing to score. The suite runs case by case, so a large suite takes a moment.
 
 Watch the pass rate the way you watch a test suite: a change that drops it tells you something regressed, and the failing cases point at where.
+
+## Run evals while testing a draft
+
+From **Test Chat**, select existing cases and run them against the same candidate
+revision used by the private test conversation. You can compare the candidate
+with the current published revision using the same cases and sample context.
+Results retain the exact revision, case, and test inputs they used. A draft can
+change while a run is in progress; the result stays attached to the candidate
+that started it.
+
+Evals are evidence for the operator's publish decision. A missing, running, or
+failed case remains visible for review, and publishing does not silently turn an
+incomplete result into a pass.
 
 API clients run the same suite:
 

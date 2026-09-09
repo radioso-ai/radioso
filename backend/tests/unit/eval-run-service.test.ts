@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { ConversationAgent } from "../../src/modules/agents/domain.js";
+import type { AgentRevision } from "../../src/modules/agents/agentRevision.js";
 import { projectInternalAgentConfig } from "../../src/modules/agents/agentConfig.js";
 import { EvalRunService, type EvalWorkbenchReplayRunnerPort } from "../../src/modules/eval/services/evalRunService.js";
 import type {
@@ -501,6 +502,62 @@ const refundIncludes: EvalAssertion = {
 };
 
 describe("EvalRunService.execute (retrieval_only)", () => {
+  it("runs frozen retrieval candidates through retrieval only and never seeds post-turn routine state", async () => {
+    const agent = configuredAgent();
+    const frozenCandidate: AgentRevision = {
+      id: "candidate-1",
+      sourceDraftGeneration: 1,
+      sourceBasePublishedRevisionId: null,
+      createdAt: new Date(0),
+      publishedAt: null,
+      snapshot: {
+        customInstruction: "Frozen candidate instruction.",
+        directives: [],
+        routines: [],
+        contextVariableEnablements: [],
+      },
+    };
+    const frozenSnapshot = makeSnapshot({
+      sourceAgentId: agent.id,
+      originalRoutineState: {
+        routineId: "post-turn-routine",
+        path: ["already-answered"],
+        variables: { leaked: "post-turn" },
+        status: "active",
+      },
+    });
+    const retrieval = new StubRunner([{ chunkId: "candidate-chunk", documentId: "candidate-doc", title: "Candidate", rank: 0 }]);
+    const workbench = new StubWorkbenchReplayRunner();
+    const service = new EvalRunService(
+      new InMemoryEvalRepository(),
+      retrieval,
+      passJudge(),
+      workbench,
+      undefined,
+      undefined,
+      { async find() { return projectInternalAgentConfig(agent); } },
+    );
+
+    const retrievalResult = await service.executeFrozenRevisionCase({
+      workspaceId: "ws-1", agentId: agent.id, revision: frozenCandidate, snapshot: frozenSnapshot,
+      assertions: [], mode: "retrieval_only", testValues: [], executionPolicy: "safe_test", correlationId: "frozen-retrieval",
+    });
+
+    expect(retrieval.lastRetrieveCall).toMatchObject({ customInstruction: "Frozen candidate instruction.", agentId: agent.id });
+    expect(retrieval.lastAnswerCall).toBeNull();
+    expect(workbench.calls).toEqual([]);
+    expect(retrievalResult.observedOutput).toEqual(expect.objectContaining({ retrievedChunks: [expect.objectContaining({ chunkId: "candidate-chunk" })] }));
+    expect(retrievalResult.observedOutput.answer).toBeUndefined();
+
+    await service.executeFrozenRevisionCase({
+      workspaceId: "ws-1", agentId: agent.id, revision: frozenCandidate, snapshot: frozenSnapshot,
+      assertions: [], mode: "full_assistant", testValues: [], executionPolicy: "safe_test", correlationId: "frozen-full",
+    });
+
+    expect(workbench.calls[0]).toMatchObject({ candidateRevision: frozenCandidate, executionMode: "safe_test" });
+    expect(workbench.calls[0]?.routineStartState).toBeUndefined();
+  });
+
   it("records a passing run when retrieval includes target document and updates case status", async () => {
     const snapshot = makeSnapshot();
     const repo = new InMemoryEvalRepository({ snapshots: [snapshot] });

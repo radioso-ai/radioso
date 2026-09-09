@@ -16,6 +16,9 @@ describeIntegration("ConversationRepository (Postgres)", () => {
   const repository = new ConversationRepository(database.kysely);
   const accountId = randomUUID();
   const workspaceId = randomUUID();
+  const agentId = randomUUID();
+  const revisionId = randomUUID();
+  const revisionTwoId = randomUUID();
 
   beforeAll(async () => {
     await database.query(`INSERT INTO accounts (id, name, email, password_hash) VALUES ($1,$2,$3,$4)`, [
@@ -30,6 +33,33 @@ describeIntegration("ConversationRepository (Postgres)", () => {
       "Conv Workspace",
       `route-${workspaceId}`,
     ]);
+    await database.query(`INSERT INTO agents (id, workspace_id, name) VALUES ($1,$2,$3)`, [
+      agentId,
+      workspaceId,
+      "Revision test agent",
+    ]);
+    await database.query(
+      `INSERT INTO agent_revisions (id, agent_id, workspace_id, snapshot, source_draft_generation)
+       VALUES ($1,$2,$3,$4::jsonb,$5)`,
+      [
+        revisionId,
+        agentId,
+        workspaceId,
+        JSON.stringify({ customInstruction: "", directives: [], routines: [], contextVariableEnablements: [] }),
+        1,
+      ],
+    );
+    await database.query(
+      `INSERT INTO agent_revisions (id, agent_id, workspace_id, snapshot, source_draft_generation)
+       VALUES ($1,$2,$3,$4::jsonb,$5)`,
+      [
+        revisionTwoId,
+        agentId,
+        workspaceId,
+        JSON.stringify({ customInstruction: "second", directives: [], routines: [], contextVariableEnablements: [] }),
+        2,
+      ],
+    );
   });
 
   beforeEach(async () => {
@@ -59,6 +89,70 @@ describeIntegration("ConversationRepository (Postgres)", () => {
     const conv = await repository.create(workspaceId);
     expect((await repository.findByIdAndWorkspaceId(conv.id, workspaceId))?.id).toBe(conv.id);
     expect(await repository.findByIdAndWorkspaceId(conv.id, randomUUID())).toBeNull();
+  });
+
+  it("defaults conversations to production and preserves the private operator-test purpose", async () => {
+    const production = await repository.create(workspaceId);
+    const operatorTest = await repository.create(
+      workspaceId,
+      agentId,
+      "authenticated_chat",
+      null,
+      null,
+      null,
+      null,
+      { purpose: "operator_test" },
+    );
+
+    expect(production.purpose).toBe("production");
+    expect((await repository.findByIdAndWorkspaceId(operatorTest.id, workspaceId))?.purpose)
+      .toBe("operator_test");
+  });
+
+  it("never exposes an operator-test conversation through anonymous-session history lookups", async () => {
+    const anonymousSessionId = `operator-test-${randomUUID()}`;
+    const operatorTest = await repository.create(
+      workspaceId,
+      agentId,
+      "authenticated_chat",
+      anonymousSessionId,
+      null,
+      null,
+      null,
+      { purpose: "operator_test" },
+    );
+
+    expect(await repository.findByIdAndAnonymousSession(
+      operatorTest.id,
+      workspaceId,
+      anonymousSessionId,
+      agentId,
+    )).toBeNull();
+    expect((await repository.listPageByAnonymousSession(workspaceId, anonymousSessionId, { limit: 10 }))
+      .conversations).toEqual([]);
+  });
+
+  it("persists an immutable agent revision and atomically chooses one concurrent legacy binding", async () => {
+    const conversation = await repository.create(workspaceId, agentId);
+    const [left, right] = await Promise.all([
+      repository.bindAgentRevision({
+        conversationId: conversation.id,
+        workspaceId,
+        agentId,
+        agentRevisionId: revisionId,
+      }),
+      repository.bindAgentRevision({
+        conversationId: conversation.id,
+        workspaceId,
+        agentId,
+        agentRevisionId: revisionTwoId,
+      }),
+    ]);
+    const chosen = (await repository.findByIdAndWorkspaceId(conversation.id, workspaceId))?.agentRevisionId;
+
+    expect([revisionId, revisionTwoId]).toContain(chosen);
+    expect(left?.agentRevisionId).toBe(chosen);
+    expect(right?.agentRevisionId).toBe(chosen);
   });
 
   it("round-trips typed Slack channel context and defaults to null", async () => {

@@ -1,5 +1,6 @@
 export {
   routineDefinitionDraftInputSchema,
+  routineDefinitionSchema,
   routineDefinitionStatuses,
   routineGuardProvenance,
   routineReentryModes,

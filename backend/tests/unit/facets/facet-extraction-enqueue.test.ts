@@ -10,6 +10,7 @@ import {
   InMemoryAgentRepository,
   InMemoryConversationRepository,
   InMemoryMessageRepository,
+  publishedRevisionResolverFor,
 } from "../../support/fakes.js";
 
 const fixedRetrievalResult = (request: RetrievalPipelineRequest): RetrievalPipelineResult => {
@@ -82,6 +83,7 @@ const preparerWith = async (
       { warn: vi.fn() },
       facetExtractionJobs,
       workspaceInvalidationPublisher as never,
+      publishedRevisionResolverFor(agent),
     ),
   };
 };

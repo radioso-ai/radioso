@@ -20,6 +20,13 @@ Create a personal token or a service-account credential under **Settings → API
 
 To expose one agent as a chat channel, create a separate credential from **Channels → API** or **Channels → MCP**. A REST-audience credential calls `POST /api/v1/agents/{agentId}/chat`; an MCP-audience credential reaches `ask_agent`. These credentials have no workspace role.
 
+The SDK's OpenAPI snapshot and generated types include the agent revision,
+private test-execution, and frozen revision-eval routes. The published
+high-level client does not currently add resource wrappers for these routes;
+call the REST API directly when you need them. They use workspace bearer
+credentials and the documented workspace permissions; channel credentials
+cannot call them.
+
 ## Install
 
 ```bash

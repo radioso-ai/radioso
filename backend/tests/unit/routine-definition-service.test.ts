@@ -245,6 +245,28 @@ class FakeRoutineDefinitionRepository implements RoutineDefinitionRepositoryPort
     this.items.delete(id);
     return { outcome: "deleted" };
   }
+
+  createDraftWithAgentDraft(_workspaceId: string, inputAgentId: string, input: RoutineDefinitionDraftInput) {
+    return this.createDraft(inputAgentId, input);
+  }
+  updateDraftWithAgentDraft(_workspaceId: string, inputAgentId: string, id: string, input: RoutineDefinitionDraftInput, options?: RoutineDefinitionWriteGuard) {
+    return this.updateDraft(inputAgentId, id, input, options);
+  }
+  publishWithAgentDraft(_workspaceId: string, inputAgentId: string, id: string, options?: Parameters<RoutineDefinitionRepositoryPort["publish"]>[2]) {
+    return this.publish(inputAgentId, id, options);
+  }
+  createRevisionDraftWithAgentDraft(_workspaceId: string, inputAgentId: string, id: string) {
+    return this.createRevisionDraft(inputAgentId, id);
+  }
+  async archiveWithAgentDraft(_workspaceId: string, inputAgentId: string, id: string, options?: RoutineDefinitionArchiveGuard): Promise<RoutineDefinition | null> {
+    return await this.archive(inputAgentId, id, options) ? this.findById(inputAgentId, id) : null;
+  }
+  async restoreWithAgentDraft(_workspaceId: string, inputAgentId: string, id: string): Promise<RoutineDefinition | null> {
+    return await this.restore(inputAgentId, id) ? this.findById(inputAgentId, id) : null;
+  }
+  deleteDraftWithAgentDraft(_workspaceId: string, inputAgentId: string, id: string, options?: RoutineDefinitionWriteGuard) {
+    return this.deleteDraft(inputAgentId, id, options);
+  }
 }
 
 const validDraft = (): RoutineDefinitionDraftInput => ({

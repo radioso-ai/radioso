@@ -36,8 +36,15 @@ import type {
   ResolvedVariableInput,
   ContextVariableScope,
   ContextVariableResolutionReaderPort,
+  AgentContextVariableEnablement,
 } from "../../context-variables/public.js";
-import type { AgentRecord, AgentService } from "../../agents/public.js";
+import type {
+  AgentRecord,
+  AgentRevision,
+  AgentRevisionRuntimeResolver,
+  AgentService,
+} from "../../agents/public.js";
+import { applyAgentRevisionSnapshot } from "../../agents/public.js";
 import { DEFAULT_CONTACT_REQUEST_DELIVERY, defaultAgentBrandingSettings, isAgentRetrievalEnabled } from "../../agents/public.js";
 import { defaultWebsiteEmbedSettings } from "../../settings/contracts/websiteEmbed.js";
 import type { AssistantPageContext } from "../types/assistantApi.js";
@@ -160,6 +167,10 @@ export interface PreparedSession {
   /** Optional caller-owned usage attribution shared by every model call in this turn. */
   usageAttribution?: ModelCallUsageAttribution;
   executionMode?: TurnExecutionMode;
+  /** Immutable per-agent enablements selected by the conversation's pinned release. */
+  revisionContextVariableEnablements?: readonly AgentContextVariableEnablement[];
+  /** Trusted safe-test samples retained when the turn re-prepares retrieval/direct context. */
+  preResolvedHostVariables?: readonly ResolvedVariableInput[];
 }
 
 export interface PrepareChatSessionInput {
@@ -196,9 +207,24 @@ export interface PrepareChatSessionInput {
   previewRoutineIds?: string[];
 }
 
-export interface PrepareChatSessionOptions {
+interface PrepareChatSessionOptions {
   skipRetrieval?: boolean;
   preResolvedAgent?: AgentRecord;
+  /** Trusted internal workbench/eval-only candidate; public chat has no path to supply it. */
+  preResolvedRevision?: AgentRevision;
+  /** Internal-only authority for an operator safe-test runner with a supplied baseline agent. */
+  trustedTestRunner?: true;
+  /**
+   * Workbench-only authority for a historical immutable baseline replay. It permits
+   * the supplied baseline agent only; it never permits a candidate revision or
+   * live resolver bypass on a production chat request.
+   */
+  historicalWorkbenchReplayBaseline?: WorkbenchReplayBaselineCapability;
+  /**
+   * Already-validated test values supplied by a trusted safe-test runner. They never
+   * consult the live context-variable resolver and are not a public chat input.
+   */
+  preResolvedHostVariables?: readonly ResolvedVariableInput[];
   preResolvedHistory?: MessageRecord[];
   /**
    * Rolling conversation summary (#866) supplied by a hermetic caller (workbench
@@ -209,6 +235,20 @@ export interface PrepareChatSessionOptions {
    */
   preResolvedConversationSummary?: string;
 }
+
+const historicalWorkbenchReplayBaselineBrand: unique symbol = Symbol("historicalWorkbenchReplayBaseline");
+
+/**
+ * Internal Workbench capability. It is deliberately not part of a transport or
+ * app-composition dependency: only hermetic replay creates a baseline session.
+ */
+interface WorkbenchReplayBaselineCapability {
+  readonly [historicalWorkbenchReplayBaselineBrand]: true;
+}
+
+export const historicalWorkbenchReplayBaseline: WorkbenchReplayBaselineCapability = {
+  [historicalWorkbenchReplayBaselineBrand]: true,
+};
 
 export class ChatSessionPreparer {
   constructor(
@@ -225,6 +265,8 @@ export class ChatSessionPreparer {
     /** Optional: when wired, an eligible visitor message enqueues a facet extraction job. */
     private readonly facetExtractionJobs?: Pick<FacetExtractionJobStore, "enqueue">,
     private readonly workspaceInvalidationPublisher?: WorkspaceInvalidationPublisher,
+    /** Required by production composition; absent only for explicitly pre-resolved fixture/replay sessions. */
+    private readonly agentRevisionRuntimeResolver?: AgentRevisionRuntimeResolver,
   ) {}
 
   async prepare(input: PrepareChatSessionInput, options: PrepareChatSessionOptions = {}): Promise<PreparedSession> {
@@ -239,17 +281,40 @@ export class ChatSessionPreparer {
       }
     };
     const chatSessionId = input.chatSessionId ?? input.anonymousSessionId ?? null;
+    const trustedTestRunner = options.trustedTestRunner === true
+      && input.executionMode === "safe_test"
+      && Boolean(options.preResolvedAgent);
+    const trustedHistoricalReplay = options.historicalWorkbenchReplayBaseline
+      === historicalWorkbenchReplayBaseline
+      && input.sourceChannel === "workbench_replay"
+      && Boolean(options.preResolvedAgent);
+    if (options.preResolvedHostVariables && !trustedTestRunner) {
+      throw new Error("pre_resolved_host_variables_require_trusted_runner");
+    }
     const conversation = input.conversationId
       ? await timed("conversation", () =>
           this.ensureConversation(input.conversationId!, input.workspaceId, chatSessionId))
       : null;
-    const agent = options.preResolvedAgent ?? (this.agentService
+    if (conversation?.purpose === "operator_test" && !trustedTestRunner) {
+      throw notFound("Conversation not found");
+    }
+    const resolvedLiveAgent = options.preResolvedAgent ?? (this.agentService
       ? await timed("agent", () =>
           this.agentService!.resolve(input.workspaceId, input.agentId ?? conversation?.agentId ?? null))
       : await timed("agent", () => this.resolveLegacyAgent(input.workspaceId)));
-    if (conversation?.agentId && conversation.agentId !== agent.id) {
+    if (conversation?.agentId && conversation.agentId !== resolvedLiveAgent.id) {
       throw notFound("Conversation not found");
     }
+    const revisionResolved = await timed("agentRevision", () =>
+      this.resolveRuntimeRevision({
+        workspaceId: input.workspaceId,
+        conversation,
+        agent: resolvedLiveAgent,
+        trustedTestRunner,
+        trustedHistoricalReplay,
+        preResolvedRevision: options.preResolvedRevision,
+      }));
+    const agent = revisionResolved.agent;
     const effectiveVerifiedCustomerId = input.verifiedCustomerId ?? conversation?.verifiedCustomerId ?? null;
     const history = options.preResolvedHistory ?? (conversation
       ? await timed("history", () => this.messageRepository.listRecentByConversationId(
@@ -277,7 +342,11 @@ export class ChatSessionPreparer {
         input.sourceOrigin ?? null,
         input.channelContext ?? null,
         input.verifiedCustomerId ?? null,
-        { entryPageUrl: input.pageContext?.pageUrl ?? null },
+        {
+          entryPageUrl: input.pageContext?.pageUrl ?? null,
+          ...(revisionResolved.revisionId ? { agentRevisionId: revisionResolved.revisionId } : {}),
+          ...(trustedTestRunner ? { purpose: "operator_test" as const } : {}),
+        },
       );
     if (!conversation) {
       this.workspaceInvalidationPublisher?.enqueue(input.workspaceId, ["conversation.created"]);
@@ -309,8 +378,14 @@ export class ChatSessionPreparer {
     this.enqueueFacetExtraction(userMessage, persistedConversation);
     // The direct-only (non-grounded) base turn. Used as-is when retrieval is
     // skipped, otherwise as the throwaway base `prepareRetrieval` recomputes from.
-    const hostVariables = await timed("hostVariables", () =>
-      this.resolveHostVariables(input, agent, effectiveVerifiedCustomerId, chatSessionId));
+    const hostVariables = options.preResolvedHostVariables ?? await timed("hostVariables", () =>
+      this.resolveHostVariables(
+        input,
+        agent,
+        effectiveVerifiedCustomerId,
+        chatSessionId,
+        revisionResolved.contextVariableEnablements,
+      ));
     const directOnlyTurn = this.prepareDirectOnlyTurn(
       this.buildPipelineInput(input, agent, turnHistory, conversationForTurn, userMessage),
       agent,
@@ -352,9 +427,61 @@ export class ChatSessionPreparer {
       conversationSummary,
       usageAttribution: input.usageAttribution,
       executionMode: input.executionMode,
+      ...(revisionResolved.contextVariableEnablements
+        ? { revisionContextVariableEnablements: revisionResolved.contextVariableEnablements }
+        : {}),
+      ...(options.preResolvedHostVariables ? { preResolvedHostVariables: options.preResolvedHostVariables } : {}),
       previewRoutineIds: input.previewRoutineIds,
       ...this.stagedSpineFor(retrieval, null, hostVariables),
     };
+  }
+
+  private async resolveRuntimeRevision(input: {
+    workspaceId: string;
+    conversation: ConversationRecord | null;
+    agent: AgentRecord;
+    trustedTestRunner: boolean;
+    trustedHistoricalReplay: boolean;
+    preResolvedRevision?: AgentRevision;
+  }): Promise<{
+    agent: AgentRecord;
+    revisionId: string | null;
+    contextVariableEnablements: readonly AgentContextVariableEnablement[] | null;
+  }> {
+    if (input.preResolvedRevision) {
+      if (!input.trustedTestRunner) {
+        throw new Error("agent_revision_candidate_requires_trusted_runner");
+      }
+      return {
+        agent: applyAgentRevisionSnapshot(input.agent, input.preResolvedRevision),
+        revisionId: input.preResolvedRevision.id,
+        contextVariableEnablements: input.preResolvedRevision.snapshot.contextVariableEnablements,
+      };
+    }
+    if (!this.agentRevisionRuntimeResolver) {
+      if (input.trustedTestRunner || input.trustedHistoricalReplay) {
+        return { agent: input.agent, revisionId: null, contextVariableEnablements: null };
+      }
+      throw new Error("agent_revision_runtime_not_configured");
+    }
+    if (input.conversation?.agentRevisionId) {
+      return this.agentRevisionRuntimeResolver.resolvePinned({
+        workspaceId: input.workspaceId,
+        agent: input.agent,
+        revisionId: input.conversation.agentRevisionId,
+        allowCandidate: input.trustedTestRunner,
+      });
+    }
+    if (input.conversation) {
+      // Migration 171 binds attributable legacy conversations to their rollout
+      // baseline. A null here is therefore not permission to select today's
+      // published release: that would rewrite an ongoing conversation's behavior.
+      throw new Error("conversation_revision_unavailable");
+    }
+    return this.agentRevisionRuntimeResolver.resolveNew({
+      workspaceId: input.workspaceId,
+      agent: input.agent,
+    });
   }
 
   /**
@@ -508,6 +635,7 @@ export class ChatSessionPreparer {
     agent: AgentRecord,
     effectiveVerifiedCustomerId: string | null = input.verifiedCustomerId ?? null,
     chatSessionId: string | null = input.chatSessionId ?? input.anonymousSessionId ?? null,
+    revisionContextVariableEnablements: readonly AgentContextVariableEnablement[] | null = null,
   ): Promise<ResolvedVariableInput[]> {
     // A resolver can be backed by a live agent-skill executor. Safe-test turns fail
     // closed at this boundary because the repository port does not expose a
@@ -524,6 +652,24 @@ export class ChatSessionPreparer {
     }
     scopes.push({ type: "agent", id: agent.id });
     scopes.push({ type: "workspace", id: input.workspaceId });
+    if (revisionContextVariableEnablements) {
+      const resolved = await this.contextVariableRepository.resolveForEnablements(
+        input.workspaceId,
+        agent.id,
+        revisionContextVariableEnablements,
+        scopes,
+      );
+      return input.verifiedIdentity
+        ? [...resolved, {
+            name: "visitor_identity",
+            description: "Verified visitor identity supplied by the host.",
+            value: input.verifiedIdentity,
+            surfacing: "on_reference",
+            sensitive: true,
+            trust: "verified",
+          }]
+        : resolved;
+    }
     try {
       const resolved = await this.contextVariableRepository.resolveForAgent(input.workspaceId, agent.id, scopes);
       if (!input.verifiedIdentity) {
@@ -562,11 +708,12 @@ export class ChatSessionPreparer {
     framing: TurnRouting["framing"] = defaultTurnFraming(),
     hostVariables?: readonly ResolvedVariableInput[],
   ): Promise<PreparedSession> {
-    const variables = hostVariables ?? (await this.resolveHostVariables(
+    const variables = hostVariables ?? session.preResolvedHostVariables ?? (await this.resolveHostVariables(
       input,
       session.agent,
       input.verifiedCustomerId ?? session.conversation.verifiedCustomerId ?? null,
       input.chatSessionId ?? input.anonymousSessionId ?? session.conversation.anonymousSessionId ?? null,
+      session.revisionContextVariableEnablements,
     ));
     const pipelineInput = this.buildPipelineInput(
       input,
@@ -603,11 +750,12 @@ export class ChatSessionPreparer {
     framing: TurnRouting["framing"] = defaultTurnFraming(),
     hostVariables?: readonly ResolvedVariableInput[],
   ): Promise<PreparedSession> {
-    const variables = hostVariables ?? (await this.resolveHostVariables(
+    const variables = hostVariables ?? session.preResolvedHostVariables ?? (await this.resolveHostVariables(
       input,
       session.agent,
       input.verifiedCustomerId ?? session.conversation.verifiedCustomerId ?? null,
       input.chatSessionId ?? input.anonymousSessionId ?? session.conversation.anonymousSessionId ?? null,
+      session.revisionContextVariableEnablements,
     ));
     const pipelineInput = {
       ...this.buildPipelineInput(

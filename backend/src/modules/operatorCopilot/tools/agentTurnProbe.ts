@@ -59,7 +59,7 @@ const clientContextCapabilitiesSchema = z.object({
   }).strict().optional(),
 }).strict();
 
-export const agentTurnProbeInputSchema = z.object({
+const agentTurnProbeInputSchema = z.object({
   agentId: idSchema.optional(),
   agentName: z.string().trim().min(1).max(160).optional(),
   conversationId: idSchema.optional(),
@@ -100,7 +100,7 @@ const traceSchema = z.object({
   }).strict().optional(),
 }).strict();
 
-export const agentTurnProbeOutputSchema = z.object({
+const agentTurnProbeOutputSchema = z.object({
   probe: z.object({
     conversationId: idSchema,
     userMessageId: idSchema,
@@ -154,12 +154,12 @@ export const createAgentTurnProbeCopilotTools = (
     "workspace.history.read",
     "workspace.agents.manage",
   ],
-  description: "Run one bounded, non-streaming operator test turn against an agent, optionally previewing unpublished routine drafts.",
+  description: "Run one bounded, non-streaming, one-off safe probe against an agent, optionally previewing unpublished routine drafts. This does not publish changes or produce version-bound evidence for a draft.",
   inputSchema: agentTurnProbeInputSchema,
   outputSchema: agentTurnProbeOutputSchema,
   createTool: (context) => ({
     name: "test_agent_turn",
-    description: "Run one bounded, non-streaming operator test turn against an agent, optionally previewing unpublished routine drafts.",
+    description: "Run one bounded, non-streaming, one-off safe probe against an agent, optionally previewing unpublished routine drafts. This does not publish changes or produce version-bound evidence for a draft.",
     inputSchema: agentTurnProbeInputSchema,
     outputSchema: agentTurnProbeOutputSchema,
     invoke: async (input) => {

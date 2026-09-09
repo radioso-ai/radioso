@@ -104,6 +104,7 @@ export const requiredCopilotConversation = (context: { copilotConversationId?: s
   if (!conversationId) throw new Error("Copilot proposal drafting requires a persisted conversation");
   return conversationId;
 };
+export const scopedAgentDraftPublicationNote = "It drafts a proposal for operator review and changes nothing until the operator applies it. Applying a scoped authoring change saves a private agent draft. The current published revision and ongoing conversations are retained; use Review & Publish before new customer conversations use the change. Unversioned/live fields remain live.";
 export const copilotProposalOrigin = (context: { copilotConversationId?: string; operatorMcpInvocationId?: string }) => {
   if (context.operatorMcpInvocationId && !context.copilotConversationId) {
     return { type: "operator_mcp_invocation" as const, invocationId: context.operatorMcpInvocationId };

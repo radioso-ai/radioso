@@ -79,6 +79,23 @@ export {
 } from "./externalSkillsConfig.js";
 export { createWebsiteEmbedSurfaceExtension } from "./services/websiteEmbedSurfaceExtension.js";
 export {
+  AgentRevisionService,
+  assertCandidateSnapshotIsRunnable,
+  equalScopedAuthoringSnapshots,
+  parseAgentRevisionSnapshot,
+  type AgentRevision,
+  type AgentDraft,
+  type AgentRevisionRepositoryPort,
+  type AgentRevisionSnapshot,
+  type AgentRevisionState,
+  type PublicationResult,
+} from "./agentRevision.js";
+export {
+  AgentRevisionRuntimeResolver,
+  applyAgentRevisionSnapshot,
+  type AgentRevisionRuntimeReaderPort,
+} from "./runtime/agentRevisionRuntimeResolver.js";
+export {
   embedConfigCachePath,
   noopEmbedConfigCacheInvalidator,
   type EmbedConfigCacheInvalidator,

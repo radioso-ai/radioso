@@ -46,6 +46,7 @@ const conversation = (): ConversationRecord => ({
   id: "conv_1",
   workspaceId: "workspace_1",
   agentId: "agent_1",
+  purpose: "production",
   agentName: "Support",
   agentInternalName: null,
   sourceChannel: null,

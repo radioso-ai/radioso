@@ -3655,6 +3655,431 @@
           }
         }
       },
+      "AgentRevisionSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "label": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "candidate",
+              "published"
+            ]
+          },
+          "versionNumber": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "exclusiveMinimum": 0
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "kind",
+          "versionNumber",
+          "createdAt"
+        ]
+      },
+      "AgentRevisionState": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "unpublished",
+              "draft_clean",
+              "draft_dirty",
+              "published_changed_since_draft"
+            ]
+          },
+          "draft": {
+            "type": "object",
+            "properties": {
+              "generation": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "basePublishedRevisionId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "updatedAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "generation",
+              "basePublishedRevisionId",
+              "updatedAt"
+            ]
+          },
+          "publishedRevision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentRevisionSummary"
+              },
+              {
+                "type": "null"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "canPublish": {
+            "type": "boolean"
+          },
+          "proactiveGreetingEnabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "agentId",
+          "status",
+          "draft",
+          "publishedRevision",
+          "canPublish",
+          "proactiveGreetingEnabled"
+        ]
+      },
+      "AgentRevisionCandidateRequest": {
+        "type": "object",
+        "properties": {
+          "expectedDraftGeneration": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          }
+        },
+        "required": [
+          "expectedDraftGeneration"
+        ],
+        "additionalProperties": false
+      },
+      "AgentRevisionCandidateResponse": {
+        "type": "object",
+        "properties": {
+          "candidate": {
+            "$ref": "#/components/schemas/AgentRevisionSummary"
+          }
+        },
+        "required": [
+          "candidate"
+        ]
+      },
+      "AgentRevisionListResponse": {
+        "type": "object",
+        "properties": {
+          "revisions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentRevisionSummary"
+            }
+          }
+        },
+        "required": [
+          "revisions"
+        ]
+      },
+      "AgentRevisionDetailResponse": {
+        "type": "object",
+        "properties": {
+          "revision": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AgentRevisionSummary"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "snapshotFormatVersion": {
+                    "type": "number",
+                    "enum": [
+                      1
+                    ]
+                  },
+                  "scope": {
+                    "type": "object",
+                    "properties": {
+                      "customInstructions": {
+                        "type": "boolean",
+                        "enum": [
+                          true
+                        ]
+                      },
+                      "directives": {
+                        "type": "boolean",
+                        "enum": [
+                          true
+                        ]
+                      },
+                      "routines": {
+                        "type": "boolean",
+                        "enum": [
+                          true
+                        ]
+                      },
+                      "contextVariableEnablements": {
+                        "type": "boolean",
+                        "enum": [
+                          true
+                        ]
+                      }
+                    },
+                    "required": [
+                      "customInstructions",
+                      "directives",
+                      "routines",
+                      "contextVariableEnablements"
+                    ]
+                  },
+                  "dependencyWarnings": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "enabledContextVariableIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  },
+                  "scopedChanges": {
+                    "type": "object",
+                    "properties": {
+                      "customInstruction": {
+                        "type": "object",
+                        "properties": {
+                          "before": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "after": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "changed": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "before",
+                          "after",
+                          "changed"
+                        ]
+                      },
+                      "directives": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "change": {
+                              "type": "string",
+                              "enum": [
+                                "added",
+                                "removed",
+                                "changed"
+                              ]
+                            },
+                            "before": {},
+                            "after": {}
+                          },
+                          "required": [
+                            "id",
+                            "change"
+                          ]
+                        }
+                      },
+                      "routines": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "definitionId": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "change": {
+                              "type": "string",
+                              "enum": [
+                                "added",
+                                "removed",
+                                "changed"
+                              ]
+                            },
+                            "before": {},
+                            "after": {}
+                          },
+                          "required": [
+                            "definitionId",
+                            "change"
+                          ]
+                        }
+                      },
+                      "contextVariableEnablements": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "contextVariableId": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "change": {
+                              "type": "string",
+                              "enum": [
+                                "added",
+                                "removed",
+                                "changed"
+                              ]
+                            },
+                            "before": {},
+                            "after": {}
+                          },
+                          "required": [
+                            "contextVariableId",
+                            "change"
+                          ]
+                        }
+                      }
+                    },
+                    "required": [
+                      "customInstruction",
+                      "directives",
+                      "routines",
+                      "contextVariableEnablements"
+                    ]
+                  }
+                },
+                "required": [
+                  "snapshotFormatVersion",
+                  "scope",
+                  "dependencyWarnings",
+                  "enabledContextVariableIds",
+                  "scopedChanges"
+                ]
+              }
+            ]
+          }
+        },
+        "required": [
+          "revision"
+        ]
+      },
+      "AgentRevisionPublishRequest": {
+        "type": "object",
+        "properties": {
+          "expectedDraftGeneration": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "expectedPublishedRevisionId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "expectedDraftGeneration",
+          "expectedPublishedRevisionId",
+          "idempotencyKey"
+        ],
+        "additionalProperties": false
+      },
+      "AgentRevisionPublishResponse": {
+        "type": "object",
+        "properties": {
+          "publication": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "revisionId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "publishedAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "idempotentReplay": {
+                "type": "boolean"
+              },
+              "revision": {
+                "$ref": "#/components/schemas/AgentRevisionSummary"
+              }
+            },
+            "required": [
+              "id",
+              "revisionId",
+              "publishedAt",
+              "idempotentReplay",
+              "revision"
+            ]
+          },
+          "state": {
+            "$ref": "#/components/schemas/AgentRevisionState"
+          }
+        },
+        "required": [
+          "publication",
+          "state"
+        ]
+      },
       "AgentChannelLifecycle": {
         "type": "object",
         "properties": {
@@ -17721,6 +18146,853 @@
         "description": "A server-sent event stream with named ready, invalidate, and resync events. Each data field is JSON matching the corresponding WorkspaceEvent*Data schema. Heartbeat records are SSE comments (`: heartbeat`) and carry no data. Protocol version 1 has no event ID, cursor, replay, timestamp, or resource identifier.",
         "example": "event: ready\ndata: {\"protocolVersion\":1}\n\nevent: invalidate\ndata: {\"protocolVersion\":1,\"changeKinds\":[\"document.status_changed\"]}\n\nevent: resync\ndata: {\"protocolVersion\":1}\n"
       },
+      "TestExecutionEvent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "side_started"
+                ]
+              },
+              "executionId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "generation": {
+                "type": "integer"
+              },
+              "turnId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "attemptId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "sideId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "type",
+              "executionId",
+              "generation",
+              "turnId",
+              "attemptId",
+              "sideId"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "message_delta"
+                ]
+              },
+              "executionId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "generation": {
+                "type": "integer"
+              },
+              "turnId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "attemptId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "sideId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "delta": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "executionId",
+              "generation",
+              "turnId",
+              "attemptId",
+              "sideId",
+              "delta"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "side_completed"
+                ]
+              },
+              "executionId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "generation": {
+                "type": "integer"
+              },
+              "turnId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "attemptId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "sideId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "messageId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "type",
+              "executionId",
+              "generation",
+              "turnId",
+              "attemptId",
+              "sideId",
+              "messageId"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "side_failed"
+                ]
+              },
+              "executionId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "generation": {
+                "type": "integer"
+              },
+              "turnId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "attemptId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "sideId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "code": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "type",
+              "executionId",
+              "generation",
+              "turnId",
+              "attemptId",
+              "sideId",
+              "code",
+              "retryable"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "execution_partial"
+                ]
+              },
+              "executionId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "generation": {
+                "type": "integer"
+              },
+              "turnId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "attemptId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "type",
+              "executionId",
+              "generation",
+              "turnId",
+              "attemptId"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "execution_completed"
+                ]
+              },
+              "executionId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "generation": {
+                "type": "integer"
+              },
+              "turnId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "attemptId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "type",
+              "executionId",
+              "generation",
+              "turnId",
+              "attemptId"
+            ]
+          }
+        ]
+      },
+      "TestExecutionSide": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "revision": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "label": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "candidate",
+                  "published"
+                ]
+              },
+              "versionNumber": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "exclusiveMinimum": 0
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "publishedAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "id",
+              "label",
+              "kind",
+              "versionNumber",
+              "createdAt"
+            ]
+          },
+          "conversationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "running",
+              "partial",
+              "failed",
+              "completed"
+            ]
+          },
+          "retryable": {
+            "type": "boolean"
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "turnId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "user",
+                    "assistant"
+                  ]
+                },
+                "content": {
+                  "type": "string"
+                },
+                "messageId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "attemptId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "required": [
+                "turnId",
+                "role",
+                "content",
+                "attemptId",
+                "createdAt"
+              ]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "revision",
+          "conversationId",
+          "state",
+          "retryable",
+          "history"
+        ]
+      },
+      "StartTestExecutionRequest": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "single",
+              "compare"
+            ]
+          },
+          "revisionIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "testValues": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "contextVariableId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "value": {}
+              },
+              "required": [
+                "contextVariableId"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 100
+          },
+          "expectedDraftGeneration": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          }
+        },
+        "required": [
+          "mode",
+          "revisionIds",
+          "testValues"
+        ],
+        "additionalProperties": false
+      },
+      "TestExecution": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "generation": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "single",
+              "compare"
+            ]
+          },
+          "sides": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TestExecutionSide"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "generation",
+          "mode",
+          "sides"
+        ]
+      },
+      "TestExecutionMessageRequest": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20000
+          },
+          "executionGeneration": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "turnId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "attemptId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "message",
+          "executionGeneration",
+          "turnId",
+          "attemptId"
+        ],
+        "additionalProperties": false
+      },
+      "TestExecutionRetryRequest": {
+        "type": "object",
+        "properties": {
+          "executionGeneration": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "turnId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "attemptId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "executionGeneration",
+          "turnId",
+          "attemptId"
+        ],
+        "additionalProperties": false
+      },
+      "TestExecutionHistoryItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "generation": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "single",
+              "compare"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "running",
+              "partial",
+              "failed",
+              "completed"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "sides": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "revision": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "candidate",
+                        "published"
+                      ]
+                    },
+                    "versionNumber": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "exclusiveMinimum": 0
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "publishedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "label",
+                    "kind",
+                    "versionNumber",
+                    "createdAt"
+                  ]
+                },
+                "conversationId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "ready",
+                    "running",
+                    "failed",
+                    "completed"
+                  ]
+                },
+                "retryable": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "revision",
+                "conversationId",
+                "state",
+                "retryable"
+              ]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "generation",
+          "mode",
+          "state",
+          "createdAt",
+          "sides"
+        ]
+      },
+      "TestExecutionAttemptRecord": {
+        "type": "object",
+        "properties": {
+          "executionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sideId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "turnId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "attemptId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "fence": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "running",
+              "failed",
+              "completed"
+            ]
+          },
+          "failureCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "leaseExpiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "executionId",
+          "sideId",
+          "turnId",
+          "attemptId",
+          "fence",
+          "state",
+          "failureCode",
+          "leaseExpiresAt",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "TestExecutionHistoryDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/TestExecutionHistoryItem"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "sides": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "revision": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "candidate",
+                            "published"
+                          ]
+                        },
+                        "versionNumber": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "exclusiveMinimum": 0
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "publishedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "label",
+                        "kind",
+                        "versionNumber",
+                        "createdAt"
+                      ]
+                    },
+                    "conversationId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "ready",
+                        "running",
+                        "failed",
+                        "completed"
+                      ]
+                    },
+                    "retryable": {
+                      "type": "boolean"
+                    },
+                    "history": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "turnId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "role": {
+                            "type": "string",
+                            "enum": [
+                              "user",
+                              "assistant"
+                            ]
+                          },
+                          "content": {
+                            "type": "string"
+                          },
+                          "messageId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "attemptId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        },
+                        "required": [
+                          "turnId",
+                          "role",
+                          "content",
+                          "attemptId",
+                          "createdAt"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "revision",
+                    "conversationId",
+                    "state",
+                    "retryable",
+                    "history"
+                  ]
+                }
+              },
+              "testValues": {
+                "type": "array",
+                "items": {}
+              },
+              "attempts": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/TestExecutionAttemptRecord"
+                }
+              }
+            },
+            "required": [
+              "testValues",
+              "attempts"
+            ]
+          }
+        ]
+      },
+      "TestExecutionHistoryListResponse": {
+        "type": "object",
+        "properties": {
+          "executions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TestExecutionHistoryItem"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hasMore": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "executions",
+          "nextCursor",
+          "hasMore"
+        ]
+      },
+      "TestExecutionHistoryDetailResponse": {
+        "type": "object",
+        "properties": {
+          "execution": {
+            "$ref": "#/components/schemas/TestExecutionHistoryDetail"
+          }
+        },
+        "required": [
+          "execution"
+        ]
+      },
       "PendingApprovalDecisionOption": {
         "type": "object",
         "properties": {
@@ -17813,6 +19085,189 @@
         },
         "required": [
           "decisions"
+        ]
+      },
+      "StartRevisionEvalRun": {
+        "type": "object",
+        "properties": {
+          "revisionIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "caseIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "minItems": 1,
+            "maxItems": 500
+          },
+          "testValues": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "contextVariableId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "value": {}
+              },
+              "required": [
+                "contextVariableId"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 100
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "retrieval_only",
+              "full_assistant"
+            ]
+          },
+          "executionPolicy": {
+            "type": "string",
+            "enum": [
+              "safe_test"
+            ]
+          }
+        },
+        "required": [
+          "revisionIds",
+          "caseIds",
+          "testValues",
+          "mode",
+          "executionPolicy"
+        ],
+        "additionalProperties": false
+      },
+      "RevisionEvalCaseOutcome": {
+        "type": "object",
+        "properties": {
+          "caseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "running",
+              "failed",
+              "completed"
+            ]
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "pass",
+              "fail",
+              "partial",
+              "unavailable"
+            ]
+          }
+        },
+        "required": [
+          "caseId",
+          "state",
+          "outcome"
+        ]
+      },
+      "RevisionEvalRun": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "running",
+              "partial",
+              "failed",
+              "completed"
+            ]
+          },
+          "sides": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "revisionId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "revision": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "versionNumber": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "exclusiveMinimum": 0
+                    },
+                    "label": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "versionNumber",
+                    "label"
+                  ]
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "running",
+                    "partial",
+                    "failed",
+                    "completed"
+                  ]
+                },
+                "evidenceState": {
+                  "type": "string",
+                  "enum": [
+                    "current",
+                    "configuration_changed",
+                    "environment_changed",
+                    "comparability_unknown"
+                  ]
+                },
+                "cases": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RevisionEvalCaseOutcome"
+                  }
+                }
+              },
+              "required": [
+                "revisionId",
+                "revision",
+                "state",
+                "evidenceState",
+                "cases"
+              ]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "state",
+          "sides"
         ]
       },
       "EvalAssertion": {
@@ -28003,6 +29458,270 @@
         }
       }
     },
+    "/api/v1/agents/{agentId}/revision-state": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Get agent draft publication state",
+        "operationId": "getAgentRevisionState",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Revision state returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRevisionState"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/revisions/candidates": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Create immutable draft candidate",
+        "operationId": "createAgentRevisionCandidate",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentRevisionCandidateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Candidate created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRevisionCandidateResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "revision_conflict when the saved draft generation changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/revisions": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "List agent revisions",
+        "operationId": "listAgentRevisions",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "published"
+              ]
+            },
+            "required": false,
+            "name": "include",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Revisions returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRevisionListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/revisions/{revisionId}": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Get agent revision detail",
+        "operationId": "getAgentRevision",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "revisionId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Revision returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRevisionDetailResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/revisions/{revisionId}/publish": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Publish an immutable candidate",
+        "operationId": "publishAgentRevision",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "revisionId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentRevisionPublishRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Revision published",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRevisionPublishResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "revision_conflict when the revision, draft generation, pointer, or idempotency command is stale",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "revision_invalid when the immutable candidate cannot run",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/agents/bundle/imports/{importId}": {
       "get": {
         "tags": [
@@ -30377,6 +32096,330 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/test-executions": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "List private immutable revision tests",
+        "operationId": "listAgentTestExecutions",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Private test history returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestExecutionHistoryListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Start an operator-private immutable revision test",
+        "operationId": "startAgentTestExecution",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartTestExecutionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Private test execution created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestExecution"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/test-executions/{executionId}": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Get private immutable revision test evidence",
+        "operationId": "getAgentTestExecution",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "executionId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Private test evidence returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestExecutionHistoryDetailResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/test-executions/{executionId}/messages": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Run a fenced private test turn",
+        "operationId": "sendAgentTestExecutionMessage",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "executionId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestExecutionMessageRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Fenced side events",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestExecutionEvent"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/test-executions/{executionId}/sides/{sideId}/retain": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Continue one settled comparison version as a private test",
+        "operationId": "retainAgentTestExecutionSide",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "executionId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "sideId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Single private test execution created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestExecution"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/test-executions/{executionId}/sides/{sideId}/retry": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Retry one failed private test side",
+        "operationId": "retryAgentTestExecutionSide",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "executionId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "sideId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestExecutionRetryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Fenced side events",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestExecutionEvent"
                 }
               }
             }
@@ -45016,6 +47059,194 @@
           },
           "409": {
             "description": "Proposal is not pending"
+          }
+        }
+      }
+    },
+    "/api/v1/evals/revision-runs": {
+      "post": {
+        "tags": [
+          "Evals"
+        ],
+        "summary": "Run frozen Eval cases against immutable agent candidates",
+        "operationId": "createRevisionEvalRun",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartRevisionEvalRun"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Revision Eval run created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevisionEvalRun"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid immutable run selection",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent-manage permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/evals/revision-runs/{runId}": {
+      "get": {
+        "tags": [
+          "Evals"
+        ],
+        "summary": "Get frozen revision Eval evidence",
+        "operationId": "getRevisionEvalRun",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "runId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Revision Eval evidence",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevisionEvalRun"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent-read permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Revision Eval run not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/evals/revision-runs/{runId}/sides/{revisionId}/cases/{caseId}/retry": {
+      "post": {
+        "tags": [
+          "Evals"
+        ],
+        "summary": "Retry one failed frozen revision Eval case",
+        "operationId": "retryRevisionEvalCase",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "runId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "revisionId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "caseId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Revision Eval retry accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevisionEvalRun"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent-manage permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Failed revision Eval case not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }

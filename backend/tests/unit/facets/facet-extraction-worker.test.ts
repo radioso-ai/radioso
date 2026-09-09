@@ -38,6 +38,7 @@ const buildStore = (batches: FacetExtractionJob[][]): StoreStub => {
   const queue = [...batches];
   return {
     enqueue: vi.fn<FacetExtractionJobStore["enqueue"]>(async () => ({ id: "job-1", created: true })),
+    enqueueMany: vi.fn<FacetExtractionJobStore["enqueueMany"]>(async () => undefined),
     claimBatch: vi.fn<FacetExtractionJobStore["claimBatch"]>(async () => queue.shift() ?? []),
     markCompleted: vi.fn<FacetExtractionJobStore["markCompleted"]>(async () => true),
     markSkipped: vi.fn<FacetExtractionJobStore["markSkipped"]>(async () => true),

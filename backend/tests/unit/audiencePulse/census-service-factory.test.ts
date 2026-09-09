@@ -51,7 +51,7 @@ describe("ContextualCensusServiceFactory (composition)", () => {
   });
 
   it("constructs a real CensusService when a facetRequeue dependency is supplied", () => {
-    const facetRequeue = { enqueue: vi.fn(async () => undefined) };
+    const facetRequeue = { enqueueMany: vi.fn(async () => undefined) };
     const factory = new ContextualCensusServiceFactory({
       historySource: new PostgresAudiencePulseHistorySource(fakeDb),
       facetSource: new MessageFacetRepository(fakeDb),

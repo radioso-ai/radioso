@@ -59,6 +59,19 @@ export interface FacetExtractionJobStore {
     restartTerminal?: boolean;
   }): Promise<FacetExtractionEnqueueResult>;
   /**
+   * Bulk variant of `enqueue` for a reconciliation sweep that can name far more
+   * message ids than a request should fire as individual round trips: one INSERT
+   * statement instead of up to 3 round trips per message. Idempotent the same way
+   * `enqueue` is (the `message_id` unique constraint), and `restartTerminal` has the
+   * same meaning. Callers own chunking for very large id lists -- this issues exactly
+   * one statement per call.
+   */
+  enqueueMany(input: {
+    messageIds: string[];
+    workspaceId: string;
+    restartTerminal?: boolean;
+  }): Promise<void>;
+  /**
    * Atomically claim up to `limit` due (`queued`, `scheduled_at <= now`) jobs, moving
    * them to `processing` and counting the attempt. Implementations must use
    * `FOR UPDATE SKIP LOCKED` so concurrent workers claim disjoint rows.

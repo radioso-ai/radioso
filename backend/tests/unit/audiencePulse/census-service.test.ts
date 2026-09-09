@@ -15,6 +15,7 @@ import type {
 } from "../../../src/modules/audiencePulse/contracts/topicLabel.js";
 import {
   CensusService,
+  FACET_REQUEUE_CHUNK_SIZE,
   type CensusFacetSource,
   type CensusServiceDependencies,
 } from "../../../src/modules/audiencePulse/services/censusService.js";
@@ -469,14 +470,17 @@ describe("CensusService.run facet requeue (backfill convergence)", () => {
       },
       // missingFacetId has no row at all.
     ];
-    const facetRequeue = { enqueue: vi.fn(async () => undefined) };
+    const facetRequeue = { enqueueMany: vi.fn(async () => undefined) };
     const service = new CensusService({ ...buildDependencies({ eligibleIds, facets }), facetRequeue });
 
     const result = await service.run({ workspaceId, windowStart, windowEnd });
 
-    expect(facetRequeue.enqueue).toHaveBeenCalledTimes(2);
-    expect(facetRequeue.enqueue).toHaveBeenCalledWith({ messageId: missingFacetId, workspaceId, restartTerminal: true });
-    expect(facetRequeue.enqueue).toHaveBeenCalledWith({ messageId: staleFacetId, workspaceId, restartTerminal: true });
+    expect(facetRequeue.enqueueMany).toHaveBeenCalledTimes(1);
+    expect(facetRequeue.enqueueMany).toHaveBeenCalledWith({
+      messageIds: [missingFacetId, staleFacetId],
+      workspaceId,
+      restartTerminal: true,
+    });
     expect(result.requeuedForExtraction).toBe(2);
   });
 
@@ -507,29 +511,55 @@ describe("CensusService.run facet requeue (backfill convergence)", () => {
       },
     ];
     const facetRequeue = {
-      enqueue: vi.fn()
-        .mockRejectedValueOnce(new Error("requeue failed for missing"))
-        .mockResolvedValueOnce(undefined),
+      enqueueMany: vi.fn().mockRejectedValueOnce(new Error("requeue failed")),
     };
     const service = new CensusService({ ...buildDependencies({ eligibleIds, facets }), facetRequeue });
 
     const result = await service.run({ workspaceId, windowStart, windowEnd });
 
-    expect(facetRequeue.enqueue).toHaveBeenCalledTimes(2);
-    expect(result.requeuedForExtraction).toBe(1);
+    expect(facetRequeue.enqueueMany).toHaveBeenCalledTimes(1);
+    expect(result.requeuedForExtraction).toBe(0);
     expect(result.populationSize).toBe(10);
   });
 
-  it("never calls facetRequeue.enqueue and reports zero requeued when the run is fully facet-ready", async () => {
+  it("never calls facetRequeue.enqueueMany and reports zero requeued when the run is fully facet-ready", async () => {
     const clusterableFacets = buildClusterableFacets();
     const eligibleIds = clusterableFacets.map((facet) => facet.messageId);
-    const facetRequeue = { enqueue: vi.fn(async () => undefined) };
+    const facetRequeue = { enqueueMany: vi.fn(async () => undefined) };
     const service = new CensusService({ ...buildDependencies({ eligibleIds, facets: clusterableFacets }), facetRequeue });
 
     const result = await service.run({ workspaceId, windowStart, windowEnd });
 
-    expect(facetRequeue.enqueue).not.toHaveBeenCalled();
+    expect(facetRequeue.enqueueMany).not.toHaveBeenCalled();
     expect(result.requeuedForExtraction).toBe(0);
+  });
+
+  it("chunks a large excluded-id backlog into multiple bounded enqueueMany calls, and one chunk failing does not prevent another from counting", async () => {
+    const clusterableFacets = buildClusterableFacets();
+    const missingFacetIds = Array.from({ length: FACET_REQUEUE_CHUNK_SIZE + 1 }, () => randomUUID());
+    // missingFacetIds have no facet row at all -- they, plus the fully-covered
+    // clusterableFacets, make up the eligible population for this run.
+    const eligibleIds = [...clusterableFacets.map((facet) => facet.messageId), ...missingFacetIds];
+    const facetRequeue = {
+      enqueueMany: vi.fn()
+        .mockRejectedValueOnce(new Error("first chunk failed"))
+        .mockResolvedValueOnce(undefined),
+    };
+    const service = new CensusService({
+      ...buildDependencies({ eligibleIds, facets: clusterableFacets }),
+      facetRequeue,
+    });
+
+    const result = await service.run({ workspaceId, windowStart, windowEnd });
+
+    expect(facetRequeue.enqueueMany).toHaveBeenCalledTimes(2);
+    for (const call of facetRequeue.enqueueMany.mock.calls) {
+      expect(call[0].messageIds.length).toBeLessThanOrEqual(FACET_REQUEUE_CHUNK_SIZE);
+    }
+    // mockRejectedValueOnce/mockResolvedValueOnce apply in call order, so the first
+    // invocation's 200-id batch "fails" and the second invocation's 1-id batch
+    // "succeeds" -- deterministically, regardless of which resolves first.
+    expect(result.requeuedForExtraction).toBe(1);
   });
 });
 

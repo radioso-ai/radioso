@@ -9,7 +9,7 @@ import type {
 import { compileEvalRegex } from "../domain/safeRegex.js";
 import type { EvalRepositoryPort } from "./evalRepository.js";
 
-export interface CreateEvalCaseInput {
+interface CreateEvalCaseInput {
   workspaceId: string;
   snapshotId: string;
   name: string;

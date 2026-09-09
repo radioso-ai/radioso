@@ -331,10 +331,7 @@ export function AgentView({
   const saveStateAccessory = <SaveStateIndicator saveState={saveState} />
   const handleSaveStateChange = useCallback((next: AgentPageSaveState) => {
     setSaveState(next)
-    if (next.state === 'saved' && selectedAgentId) {
-      window.dispatchEvent(new CustomEvent('radioso:agent-draft-saved', { detail: { agentId: selectedAgentId } }))
-    }
-  }, [selectedAgentId])
+  }, [])
 
   const cockpitTab = (section: AgentSectionId): AgentCockpitTab | null =>
     section === 'chat' || section === 'profile' || section === 'directives' || section === 'routines' || section === 'skills' || section === 'context-variables'

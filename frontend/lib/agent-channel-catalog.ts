@@ -14,6 +14,9 @@ interface AgentChannelCatalogInput {
   slackConfigured: boolean
   slackConnected: boolean
   slackBound: boolean
+  whatsappAvailable: boolean
+  whatsappConfigured: boolean
+  whatsappError: boolean
 }
 
 /**
@@ -38,6 +41,13 @@ export function resolveAgentChannelCatalog(input: AgentChannelCatalogInput): Age
       id: 'slack-channel',
       status: input.slackConnected && input.slackBound ? 'active' : 'attention',
       statusLabel: input.slackConnected && input.slackBound ? 'Active' : 'Needs setup',
+    })
+  }
+  if (input.whatsappAvailable || input.whatsappConfigured || input.whatsappError) {
+    entries.push({
+      id: 'whatsapp-channel',
+      status: input.whatsappError ? 'attention' : input.whatsappConfigured ? 'active' : 'available',
+      statusLabel: input.whatsappError ? 'Needs setup' : input.whatsappConfigured ? 'Active' : 'Available',
     })
   }
   return entries

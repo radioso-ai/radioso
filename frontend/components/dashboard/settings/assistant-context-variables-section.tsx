@@ -169,9 +169,11 @@ const labelClassName = 'text-[11px] font-medium uppercase tracking-wide text-mut
 export function AssistantContextVariablesSection({
   agentId,
   onSaveStateChange,
+  onEnablementSaved,
 }: {
   agentId: string
   onSaveStateChange?: (input: SaveState) => void
+  onEnablementSaved?: () => void
 }) {
   const [catalog, setCatalog] = useState<ContextVariable[]>([])
   const [enablements, setEnablements] = useState<AgentContextVariableEnablement[]>([])
@@ -308,6 +310,7 @@ export function AssistantContextVariablesSection({
       if (!isCurrentSave(saveId)) return
       mergeEnablement(response.enablement)
       markSaved()
+      onEnablementSaved?.()
     } catch (saveError) {
       if (!isCurrentSave(saveId)) return
       const message = getApiErrorMessage(saveError, 'Failed to update context variable.')
@@ -329,6 +332,7 @@ export function AssistantContextVariablesSection({
       if (!isCurrentSave(saveId)) return
       setEnablements((current) => current.filter((item) => item.variableId !== variable.id))
       markSaved()
+      onEnablementSaved?.()
     } catch (saveError) {
       if (!isCurrentSave(saveId)) return
       const message = getApiErrorMessage(saveError, 'Failed to disable context variable.')

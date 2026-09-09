@@ -119,6 +119,8 @@ const liveAssistantBehaviorSettings = (settings: AssistantBehaviorSettings) => {
   return liveSettings
 }
 
+type SaveState = { state: 'idle' | 'saved' | 'saving' | 'error'; message?: string | null }
+
 export function WorkspaceAssistantChannelsTab({
   accountId,
   mode,
@@ -136,7 +138,7 @@ export function WorkspaceAssistantChannelsTab({
   agentSection?: AgentSectionId
   routeState?: DashboardRouteState
   profileHref?: string
-  onSaveStateChange?: (input: { state: 'idle' | 'saved' | 'saving' | 'error'; message?: string | null }) => void
+  onSaveStateChange?: (input: SaveState) => void
   onDraftDirtyChange?: (dirty: boolean) => void
 }) {
   const router = useRouter()
@@ -176,6 +178,13 @@ export function WorkspaceAssistantChannelsTab({
   const [isAssistantBehaviorLoading, setIsAssistantBehaviorLoading] = useState(mode === 'assistant')
   const [isAssistantLogoSaving, setIsAssistantLogoSaving] = useState(false)
   const { setSaveState, setSaveError, saveSequenceRef } = useSettingsSaveStatus(onSaveStateChange)
+  const dispatchDraftSaved = useCallback(() => {
+    if (agentId) window.dispatchEvent(new CustomEvent('radioso:agent-draft-saved', { detail: { agentId } }))
+  }, [agentId])
+  const handleRevisionSaveStateChange = useCallback((next: SaveState) => {
+    onSaveStateChange?.(next)
+    if (next.state === 'saved') dispatchDraftSaved()
+  }, [dispatchDraftSaved, onSaveStateChange])
   const [assistantSettingsError, setAssistantSettingsError] = useState<string | null>(null)
   const [assistantLocaleInput, setAssistantLocaleInput] = useState(NO_GREETING_LOCALE_LABEL)
   const [selectedChannel, setSelectedChannel] = useState<ChannelId | null>(null)
@@ -909,13 +918,17 @@ export function WorkspaceAssistantChannelsTab({
 
           {mode === 'assistant' && agentId && showSection('context-variables') ? (
           <section id="assistant-context-variables" className="space-y-6 scroll-mt-24">
-            <AssistantContextVariablesSection agentId={agentId} onSaveStateChange={onSaveStateChange} />
+            <AssistantContextVariablesSection
+              agentId={agentId}
+              onSaveStateChange={onSaveStateChange}
+              onEnablementSaved={dispatchDraftSaved}
+            />
           </section>
           ) : null}
 
           {mode === 'assistant' && agentId && showSection('directives') ? (
           <section id="assistant-directives" className="space-y-6 scroll-mt-24">
-            <AssistantDirectivesSection agentId={agentId} onSaveStateChange={onSaveStateChange} />
+            <AssistantDirectivesSection agentId={agentId} onSaveStateChange={handleRevisionSaveStateChange} />
           </section>
           ) : null}
 
@@ -925,7 +938,7 @@ export function WorkspaceAssistantChannelsTab({
               accountId={accountId}
               agentId={agentId}
               routeState={routeState}
-              onSaveStateChange={onSaveStateChange}
+              onSaveStateChange={handleRevisionSaveStateChange}
             />
           </section>
           ) : null}

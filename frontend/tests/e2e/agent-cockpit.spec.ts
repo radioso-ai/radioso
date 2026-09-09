@@ -305,6 +305,24 @@ test('retries a failed revision eval case without replacing its sibling evidence
   await expect(page.getByRole('cell', { name: 'Passed Completed · Current' })).toBeVisible()
 })
 
+test('accepts a revision eval retry after returning to cached evidence', async ({ page }) => {
+  await installCockpitMocks(page, { failEvalCase: true })
+  await page.goto(testUrl)
+  await clickTestChatAction(page, 'Evals')
+  await page.getByLabel('Welcome answer is concise').check()
+  await page.getByRole('dialog').getByRole('button', { name: 'Run evals' }).click()
+  await expect(page.getByRole('button', { name: 'Retry case' })).toBeVisible()
+
+  const cockpit = page.getByRole('navigation', { name: 'Agent cockpit' })
+  await cockpit.getByRole('tab', { name: 'Profile', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Profile', level: 1, exact: true })).toBeVisible()
+  await cockpit.getByRole('tab', { name: 'Test Chat', exact: true }).click()
+  await clickTestChatAction(page, 'Evals')
+  await page.getByRole('button', { name: 'Retry case' }).click()
+
+  await expect(page.getByRole('cell', { name: 'Passed Completed · Current' })).toBeVisible()
+})
+
 test('keeps completed quality failures as evidence without offering retry', async ({ page }) => {
   await installCockpitMocks(page, { qualityFailEvalCase: true })
   await page.goto(testUrl)
@@ -995,6 +1013,22 @@ test('keeps live and private profile writes isolated while edits are interleaved
   expect(agentUpdates).not.toContainEqual(expect.objectContaining({ customInstruction: 'Keep this private until review.', citationDisplayEnabled: false }))
 })
 
+test('does not announce a draft save for a live-only profile autosave', async ({ page }) => {
+  const agentUpdates: unknown[] = []
+  await installCockpitMocks(page, { agentUpdates })
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-profile`)
+  await page.evaluate(() => {
+    document.body.dataset.draftSaveEvents = '0'
+    window.addEventListener('radioso:agent-draft-saved', () => {
+      document.body.dataset.draftSaveEvents = String(Number(document.body.dataset.draftSaveEvents ?? '0') + 1)
+    })
+  })
+
+  await page.getByLabel('Show source citations').click()
+  await expect.poll(() => agentUpdates).toEqual(expect.arrayContaining([expect.objectContaining({ citationDisplayEnabled: false })]))
+  await expect(page.locator('body')).toHaveAttribute('data-draft-save-events', '0')
+})
+
 test('captures the populated comparison cockpit at desktop and mobile widths', async ({ page }) => {
   const question = 'My order is late — can you check its status?'
   const replies = [
@@ -1083,6 +1117,39 @@ test('keeps the private test execution and draft inputs across cockpit navigatio
   await page.setViewportSize({ width: 390, height: 844 })
   await expect(page.getByRole('button', { name: 'Compare versions', exact: true })).toBeInViewport()
   await page.screenshot({ path: resolve(process.cwd(), '..', '.context', 'cockpit-single-card-mobile.png'), fullPage: true })
+})
+
+test('keeps invalid context blocking after navigation until every field is corrected', async ({ page }) => {
+  await installCockpitMocks(page, {
+    contextVariables: [
+      { id: 'payload-a', name: 'Payload A', description: null, valueType: 'json' },
+      { id: 'payload-b', name: 'Payload B', description: null, valueType: 'json' },
+    ],
+    enabledContextVariableIds: ['payload-a', 'payload-b'],
+  })
+  await page.goto(testUrl)
+
+  await clickTestChatAction(page, 'Test context')
+  const contextDialog = page.getByRole('dialog')
+  await expect(contextDialog.getByLabel('Payload A')).toBeVisible()
+  await contextDialog.getByLabel('Payload A').fill('{bad')
+  await contextDialog.getByLabel('Payload B').fill('{"ok":true}')
+  await expect(contextDialog.getByRole('alert')).toContainText('Payload A must contain valid JSON.')
+  await contextDialog.getByRole('button', { name: 'Close', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeDisabled()
+
+  const cockpit = page.getByRole('navigation', { name: 'Agent cockpit' })
+  await cockpit.getByRole('tab', { name: 'Profile', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Profile', level: 1, exact: true })).toBeVisible()
+  await page.getByRole('navigation', { name: 'Agent cockpit' }).getByRole('tab', { name: 'Test Chat', exact: true }).click()
+  await clickTestChatAction(page, 'Test context')
+  await expect(page.getByRole('dialog').getByLabel('Payload A')).toHaveValue('{bad')
+  await expect(page.getByRole('dialog').getByRole('alert')).toContainText('Payload A must contain valid JSON.')
+
+  await page.getByRole('dialog').getByLabel('Payload A').fill('{"fixed":true}')
+  await expect(page.getByRole('dialog').getByRole('alert')).toHaveCount(0)
+  await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeEnabled()
 })
 
 test('keeps the private comparison isolated while leaving and returning through Inbox', async ({ page }) => {

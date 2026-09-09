@@ -201,7 +201,7 @@ export function AgentRevisionTestChat({
     cachedSession?.contextVariables ?? [],
   );
   const [valueInputs, setValueInputs] = useState<Record<string, string>>(cachedSession?.valueInputs ?? {});
-  const [revisionValueError, setRevisionValueError] = useState<string | null>(cachedSession?.valueError ?? null);
+  const [revisionValueError, setRevisionValueError] = useState<string | null>(cachedSession?.revisionValueError ?? null);
   const [isSending, setIsSending] = useState(cachedSession?.isSending ?? false);
   const [isStarting, setIsStarting] = useState(cachedSession?.isStarting ?? false);
   const [isRunningEvals, setIsRunningEvals] = useState(cachedSession?.isRunningEvals ?? false);
@@ -211,7 +211,7 @@ export function AgentRevisionTestChat({
   const evalPollTimeout = useRef<number | null>(null);
   const executionPollTimeout = useRef<number | null>(null);
   const reopenedExecutionId = useRef<string | null>(null);
-  const activeEvalRunId = useRef<string | null>(null);
+  const activeEvalRunId = useRef<string | null>(cachedSession?.evalRun?.id ?? null);
   const evalRequestGeneration = useRef(0);
   const loadRequestGeneration = useRef(0);
   const testRequestGeneration = useRef(0);
@@ -334,6 +334,7 @@ export function AgentRevisionTestChat({
       contextVariables,
       valueInputs,
       valueError,
+      revisionValueError,
       isSending,
       isStarting,
       isRunningEvals,
@@ -362,6 +363,7 @@ export function AgentRevisionTestChat({
     state,
     valueError,
     valueInputs,
+    revisionValueError,
     view,
   ]);
   useEffect(

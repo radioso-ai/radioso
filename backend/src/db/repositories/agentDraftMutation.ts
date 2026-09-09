@@ -6,7 +6,7 @@ import type { DB, Db } from "../../shared/infra/kysely/types.js";
 import {
   parseAgentRevisionSnapshot,
   type AgentRevisionSnapshot,
-} from "../../modules/agents/agentRevision.js";
+} from "../../modules/agents/public.js";
 
 /** All draft writers and revision materializers serialize on this exact key. */
 export const agentRevisionLockKey = (workspaceId: string, agentId: string): string =>

@@ -1,6 +1,6 @@
 import type { RoutineRegistration } from "../../modules/chat/composition.js";
 import type { RoutineDefinitionRepository } from "../../db/repositories/routineDefinitionRepository.js";
-import type { AgentRevision } from "../../modules/agents/agentRevision.js";
+import type { AgentRevision } from "../../modules/agents/public.js";
 import {
   compileRoutineDefinition,
   legacyCompiledRoutineId,

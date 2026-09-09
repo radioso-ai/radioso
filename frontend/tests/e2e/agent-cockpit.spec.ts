@@ -312,6 +312,7 @@ test('accepts a revision eval retry after returning to cached evidence', async (
   await page.getByLabel('Welcome answer is concise').check()
   await page.getByRole('dialog').getByRole('button', { name: 'Run evals' }).click()
   await expect(page.getByRole('button', { name: 'Retry case' })).toBeVisible()
+  await page.keyboard.press('Escape')
 
   const cockpit = page.getByRole('navigation', { name: 'Agent cockpit' })
   await cockpit.getByRole('tab', { name: 'Profile', exact: true }).click()
@@ -1136,6 +1137,7 @@ test('keeps invalid context blocking after navigation until every field is corre
   await contextDialog.getByLabel('Payload B').fill('{"ok":true}')
   await expect(contextDialog.getByRole('alert')).toContainText('Payload A must contain valid JSON.')
   await contextDialog.getByRole('button', { name: 'Close', exact: true }).click()
+  await testChatComposer(page).fill('Validate these samples')
   await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeDisabled()
 
   const cockpit = page.getByRole('navigation', { name: 'Agent cockpit' })
@@ -1149,6 +1151,7 @@ test('keeps invalid context blocking after navigation until every field is corre
   await page.getByRole('dialog').getByLabel('Payload A').fill('{"fixed":true}')
   await expect(page.getByRole('dialog').getByRole('alert')).toHaveCount(0)
   await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click()
+  await testChatComposer(page).fill('Validate these samples')
   await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeEnabled()
 })
 

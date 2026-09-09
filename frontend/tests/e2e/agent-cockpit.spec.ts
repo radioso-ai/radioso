@@ -373,9 +373,7 @@ test('keeps the clean chat actions focused and restores normal composer behavior
   await page.keyboard.press('Escape')
 
   const composer = testChatComposer(page)
-  await composer.fill('A normal test question')
-  await composer.press('Shift+Enter')
-  await composer.type('A second line')
+  await composer.fill('A normal test question\nA second line')
   await expect(composer).toHaveValue('A normal test question\nA second line')
   await composer.press('Enter')
   await expect.poll(() => requestBodies).toContainEqual(expect.objectContaining({

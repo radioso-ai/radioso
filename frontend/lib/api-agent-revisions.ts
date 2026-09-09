@@ -1,4 +1,5 @@
 import { API_BASE, buildError, getStoredActiveWorkspaceId, request } from './api-client'
+import { createClientId } from './client-id'
 
 export type RevisionStatus = 'unpublished' | 'draft_clean' | 'draft_dirty' | 'published_changed_since_draft'
 export type EvidenceState = 'current' | 'configuration_changed' | 'environment_changed' | 'comparability_unknown'
@@ -170,7 +171,7 @@ export const agentRevisionsApi = {
   }, signal?: AbortSignal): Promise<TestExecution> {
     return request<TestExecution>(`/agents/${agentId}/test-executions`, {
       method: 'POST',
-      body: JSON.stringify(input),
+      body: JSON.stringify({ ...input, idempotencyKey: createClientId('test-execution') }),
       signal,
     })
   },

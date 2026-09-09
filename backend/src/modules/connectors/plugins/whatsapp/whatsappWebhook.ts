@@ -140,11 +140,10 @@ export const createWhatsAppWebhookRouter = ({
         return;
       }
 
-      res
-        .status(200)
-        .set("X-Content-Type-Options", "nosniff")
-        .type("text/plain")
-        .send(typeof challenge === "string" ? challenge : "");
+      res.status(200);
+      res.set("X-Content-Type-Options", "nosniff");
+      res.type("text/plain");
+      res.send(typeof challenge === "string" ? challenge : "");
     } catch (error) {
       next(error);
     }

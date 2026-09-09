@@ -20,7 +20,7 @@ const answerMatches = (
     try {
       const re = compileEvalRegex(pattern, caseSensitive);
       return { matched: re.test(answer) };
-    } catch (err) {
+    } catch {
       return { matched: false, error: "Unsafe or invalid regex pattern." };
     }
   }

@@ -33,3 +33,33 @@ export const createAssistantLogoUploadHandler = () => {
       });
     });
 };
+
+/** The stored logo descriptor, narrowed to what serving the bytes needs. */
+interface ServableAssistantLogo {
+  bucket: string;
+  objectPath: string;
+  generation?: string | null;
+  mimeType: string;
+}
+
+/**
+ * Writes a stored assistant logo to the response. Both the visitor route and the
+ * operator route serve the same bytes, so the content-type narrowing that keeps an
+ * unexpected stored mime type from being sniffed lives here rather than in either route.
+ */
+export const sendAssistantLogo = async (input: {
+  res: Response;
+  logo: ServableAssistantLogo;
+  documentStorage: { read(input: { bucket: string; objectPath: string; generation: string | null }): Promise<Buffer> };
+  cacheControl: string;
+}): Promise<void> => {
+  const buffer = await input.documentStorage.read({
+    bucket: input.logo.bucket,
+    objectPath: input.logo.objectPath,
+    generation: input.logo.generation ?? null,
+  });
+  input.res.setHeader("Content-Type", ASSISTANT_LOGO_MIME_TYPES.has(input.logo.mimeType) ? input.logo.mimeType : "application/octet-stream");
+  input.res.setHeader("Content-Disposition", 'inline; filename="logo"');
+  input.res.setHeader("Cache-Control", input.cacheControl);
+  input.res.status(200).send(buffer);
+};

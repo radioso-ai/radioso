@@ -44,6 +44,11 @@ export const buildCopilotDashboardLink = (
       return subject.id ? `${base}/eval/${encodeURIComponent(subject.id)}` : `${base}/eval`;
     case "audience_topics":
       return `${base}/quality?view=audience-pulse`;
+    // Product documentation is published outside the dashboard, so there is no in-app place to hand
+    // an operator to. The tool result carries the page's canonical documentation URL instead; this
+    // returns the workspace home so the handoff is neutral rather than pointing somewhere unrelated.
+    case "documentation":
+      return base;
     case "workspace":
     default:
       return `${base}/agents`;

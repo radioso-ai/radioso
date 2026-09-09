@@ -19,6 +19,7 @@ import { SettingsRow, SettingsRowList } from '@/components/dashboard/settings/se
 import { type AgentSectionId } from '@/lib/dashboard-areas'
 import { type DashboardRouteState } from '@/lib/dashboard-routes'
 import { getAgentOperatorLabel } from '@/lib/agent-label'
+import { mergeGeneralSettingsSnapshot } from '@/lib/general-settings-snapshot'
 import {
   getAssistantLocaleLabel,
   NO_GREETING_LOCALE_LABEL,
@@ -189,6 +190,9 @@ export function WorkspaceAssistantChannelsTab({
   const organizationDraftVersionRef = useRef(0)
   const workspaceDraftVersionRef = useRef(0)
   const anonDraftVersionRef = useRef(0)
+  // Bumped by every logo write so a settings save that started earlier cannot restore
+  // the replaced logo URL, whose stored object the upload already deleted.
+  const assistantLogoWriteRef = useRef(0)
   const assistantBehaviorDraftVersionRef = useRef(0)
   const privateInstructionSaveRef = useRef(0)
   const liveBehaviorSaveRef = useRef(0)
@@ -360,12 +364,14 @@ export function WorkspaceAssistantChannelsTab({
 
   const handleAnonToggle = async (enabled: boolean) => {
     setIsAnonSaving(true)
+    const logoWriteAtRequestStart = assistantLogoWriteRef.current
     try {
       const updated = await updateGeneralSettings({
         anonymousChatEnabled: enabled,
       })
-      setAnonSettings(updated)
-      setSavedAnonSettings(updated)
+      const hasNewerLogo = assistantLogoWriteRef.current !== logoWriteAtRequestStart
+      setAnonSettings((current) => mergeGeneralSettingsSnapshot(current, updated, { hasNewerLogo }))
+      setSavedAnonSettings((current) => mergeGeneralSettingsSnapshot(current, updated, { hasNewerLogo }))
     } catch (error) {
       console.error('Failed to update anonymous chat settings:', error)
     } finally {
@@ -490,6 +496,7 @@ export function WorkspaceAssistantChannelsTab({
     setSaveError(null)
     try {
       const updated = await uploadAssistantLogo(file)
+      assistantLogoWriteRef.current += 1
       setAnonSettings(updated)
       setSavedAnonSettings(updated)
       setSaveState('saved')
@@ -509,6 +516,7 @@ export function WorkspaceAssistantChannelsTab({
     setSaveError(null)
     try {
       const updated = await deleteAssistantLogo()
+      assistantLogoWriteRef.current += 1
       setAnonSettings(updated)
       setSavedAnonSettings(updated)
       setSaveState('saved')
@@ -691,6 +699,7 @@ export function WorkspaceAssistantChannelsTab({
     const timeout = window.setTimeout(() => {
       void (async () => {
         const draftVersionAtRequestStart = anonDraftVersionRef.current
+        const logoWriteAtRequestStart = assistantLogoWriteRef.current
         const saveId = saveSequenceRef.current + 1
         saveSequenceRef.current = saveId
         setIsAnonSaving(true)
@@ -704,9 +713,10 @@ export function WorkspaceAssistantChannelsTab({
             proactiveGreetingEnabled: anonSettings.proactiveGreetingEnabled,
           })
           if (saveSequenceRef.current !== saveId) return
+          const hasNewerLogo = assistantLogoWriteRef.current !== logoWriteAtRequestStart
           const nameChanged = savedAnonSettings.assistantName !== updated.assistantName
           const internalNameChanged = (savedAnonSettings.internalName ?? '') !== (updated.internalName ?? '')
-          setSavedAnonSettings(updated)
+          setSavedAnonSettings((current) => mergeGeneralSettingsSnapshot(current, updated, { hasNewerLogo }))
           setAssistantSettingsError(null)
           // Both feed the agent switcher's label; either change should refresh it.
           if (nameChanged || internalNameChanged) {
@@ -715,7 +725,7 @@ export function WorkspaceAssistantChannelsTab({
             }))
           }
           if (anonDraftVersionRef.current === draftVersionAtRequestStart) {
-            setAnonSettings(updated)
+            setAnonSettings((current) => mergeGeneralSettingsSnapshot(current, updated, { hasNewerLogo }))
             setSaveState('saved')
           }
         } catch (error) {
@@ -788,12 +798,14 @@ export function WorkspaceAssistantChannelsTab({
   const handleAnonymousChatTokenRotate = async () => {
     if (!anonSettings) return
     setIsAnonSaving(true)
+    const logoWriteAtRequestStart = assistantLogoWriteRef.current
     try {
       const updated = agentId
         ? await agentsApi.rotateAnonymousChatToken(agentId)
         : await generalSettingsApi.rotateAnonymousChatToken({ auth: 'session' })
-      setAnonSettings(updated)
-      setSavedAnonSettings(updated)
+      const hasNewerLogo = assistantLogoWriteRef.current !== logoWriteAtRequestStart
+      setAnonSettings((current) => mergeGeneralSettingsSnapshot(current, updated, { hasNewerLogo }))
+      setSavedAnonSettings((current) => mergeGeneralSettingsSnapshot(current, updated, { hasNewerLogo }))
     } catch (error) {
       console.error('Failed to rotate anonymous chat token:', error)
     } finally {
@@ -997,6 +1009,7 @@ export function WorkspaceAssistantChannelsTab({
               updateGeneralSettings={updateGeneralSettings}
               rotateWebsiteEmbedToken={rotateWebsiteEmbedToken}
               anonDraftVersionRef={anonDraftVersionRef}
+              assistantLogoWriteRef={assistantLogoWriteRef}
               saveSequenceRef={saveSequenceRef}
               setSaveState={setSaveState}
               setSaveError={setSaveError}

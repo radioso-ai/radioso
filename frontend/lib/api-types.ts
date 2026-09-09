@@ -654,23 +654,18 @@ const hashLogoCacheKeyPart = (value: string): string => {
   return (hash >>> 0).toString(36)
 }
 
+/**
+ * The operator route names the agent rather than a public launch token, because a launch
+ * token only exists once a visitor channel is enabled and the logo is editable before that.
+ */
 const buildAgentAssistantLogoUrl = (agent: AgentSettings): string | null => {
   if (!agent.logo || typeof window === 'undefined') {
     return null
   }
 
-  const publicChatToken = agent.surfaceSettings.anonymousChat.enabled
-    ? agent.surfaceSettings.anonymousChat.token
-    : agent.surfaceSettings.websiteEmbed.enabled
-      ? agent.surfaceSettings.websiteEmbed.token
-      : null
-
-  if (!publicChatToken) {
-    return null
-  }
-
   const apiBaseUrl = new URL(API_BASE.endsWith('/') ? API_BASE : `${API_BASE}/`, window.location.origin)
-  const logoUrl = new URL(`public/chat/${encodeURIComponent(publicChatToken)}/assistant-logo`, apiBaseUrl)
+  const logoUrl = new URL(`agents/${encodeURIComponent(agent.id)}/assistant-logo`, apiBaseUrl)
+  logoUrl.searchParams.set('workspaceId', agent.workspaceId)
   logoUrl.searchParams.set('v', [
     hashLogoCacheKeyPart(agent.logo.objectPath),
     agent.logo.generation ?? '',

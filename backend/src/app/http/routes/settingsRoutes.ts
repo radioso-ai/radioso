@@ -56,10 +56,12 @@ export const createSettingsRoutes = (dependencies: SettingsRouteDependencies): R
   const supportedEmbeddingModels = () =>
     dependencies.ingestionSettingsService.listSupportedEmbeddingModels?.() ?? embeddingModelIds;
 
-  router.get("/", workspaceSession, settingsRead, async (_req, res, next) => {
+  router.get("/", workspaceSession, settingsRead, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
-      const settings = await dependencies.platformSettingsService.getForWorkspace(workspaceId);
+      const settings = await dependencies.platformSettingsService.getForWorkspace(workspaceId, {
+        forwardedPrefix: req.get("x-forwarded-prefix"),
+      });
       res.status(200).json(settings);
     } catch (error) {
       next(error);
@@ -69,7 +71,10 @@ export const createSettingsRoutes = (dependencies: SettingsRouteDependencies): R
   router.put("/", workspaceSession, requireWorkspacePermission(dependencies, "workspace.settings.manage"), validateBody(updatePlatformSettingsSchema), async (req, res, next) => {
     try {
       const { accountId, workspaceId } = res.locals as { accountId: string; workspaceId: string };
-      const settings = await dependencies.platformSettingsService.updateForWorkspace(workspaceId, req.body, { accountId });
+      const settings = await dependencies.platformSettingsService.updateForWorkspace(workspaceId, req.body, {
+        accountId,
+        forwardedPrefix: req.get("x-forwarded-prefix"),
+      });
       res.status(200).json(settings);
     } catch (error) {
       next(error);
@@ -177,10 +182,12 @@ export const createSettingsRoutes = (dependencies: SettingsRouteDependencies): R
 
   // --- General settings (anonymous chat) ---
 
-  router.get("/general", workspaceSession, settingsRead, async (_req, res, next) => {
+  router.get("/general", workspaceSession, settingsRead, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
-      const settings = await dependencies.platformSettingsService.getForWorkspace(workspaceId);
+      const settings = await dependencies.platformSettingsService.getForWorkspace(workspaceId, {
+        forwardedPrefix: req.get("x-forwarded-prefix"),
+      });
       res.status(200).json(presentGeneralSettings(settings));
     } catch (error) {
       next(error);
@@ -193,7 +200,7 @@ export const createSettingsRoutes = (dependencies: SettingsRouteDependencies): R
       const settings = await dependencies.platformSettingsService.updateForWorkspace(
         workspaceId,
         toGeneralSettingsPatch(req.body),
-        { accountId },
+        { accountId, forwardedPrefix: req.get("x-forwarded-prefix") },
       );
 
       res.status(200).json(presentGeneralSettings(settings));
@@ -202,13 +209,13 @@ export const createSettingsRoutes = (dependencies: SettingsRouteDependencies): R
     }
   });
 
-  router.post("/general/anonymous-chat-token/rotate", workspaceSession, requireWorkspacePermission(dependencies, "workspace.settings.manage"), async (_req, res, next) => {
+  router.post("/general/anonymous-chat-token/rotate", workspaceSession, requireWorkspacePermission(dependencies, "workspace.settings.manage"), async (req, res, next) => {
     try {
       const { accountId, workspaceId } = res.locals as { accountId: string; workspaceId: string };
       const settings = await dependencies.platformSettingsService.updateForWorkspace(
         workspaceId,
         anonymousChatTokenRotationPatch(),
-        { accountId },
+        { accountId, forwardedPrefix: req.get("x-forwarded-prefix") },
       );
       res.status(200).json(presentGeneralSettings(settings));
     } catch (error) {
@@ -216,13 +223,13 @@ export const createSettingsRoutes = (dependencies: SettingsRouteDependencies): R
     }
   });
 
-  router.post("/general/website-embed-token/rotate", requireSurfaceExtension(dependencies.agentSurfaceExtensions, "websiteEmbed"), workspaceSession, requireWorkspacePermission(dependencies, "workspace.settings.manage"), async (_req, res, next) => {
+  router.post("/general/website-embed-token/rotate", requireSurfaceExtension(dependencies.agentSurfaceExtensions, "websiteEmbed"), workspaceSession, requireWorkspacePermission(dependencies, "workspace.settings.manage"), async (req, res, next) => {
     try {
       const { accountId, workspaceId } = res.locals as { accountId: string; workspaceId: string };
       const settings = await dependencies.platformSettingsService.updateForWorkspace(
         workspaceId,
         websiteEmbedTokenRotationPatch(),
-        { accountId },
+        { accountId, forwardedPrefix: req.get("x-forwarded-prefix") },
       );
       res.status(200).json(presentGeneralSettings(settings));
     } catch (error) {
@@ -280,13 +287,15 @@ export const createSettingsRoutes = (dependencies: SettingsRouteDependencies): R
         });
       }
 
-      res.status(200).json(presentGeneralSettings(await dependencies.platformSettingsService.getForWorkspace(workspaceId)));
+      res.status(200).json(presentGeneralSettings(await dependencies.platformSettingsService.getForWorkspace(workspaceId, {
+        forwardedPrefix: req.get("x-forwarded-prefix"),
+      })));
     } catch (error) {
       next(error);
     }
   });
 
-  router.delete("/general/assistant-logo", workspaceSession, requireWorkspacePermission(dependencies, "workspace.settings.manage"), async (_req, res, next) => {
+  router.delete("/general/assistant-logo", workspaceSession, requireWorkspacePermission(dependencies, "workspace.settings.manage"), async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const current = await dependencies.agentService.resolve(workspaceId);
@@ -304,7 +313,9 @@ export const createSettingsRoutes = (dependencies: SettingsRouteDependencies): R
         });
       }
 
-      res.status(200).json(presentGeneralSettings(await dependencies.platformSettingsService.getForWorkspace(workspaceId)));
+      res.status(200).json(presentGeneralSettings(await dependencies.platformSettingsService.getForWorkspace(workspaceId, {
+        forwardedPrefix: req.get("x-forwarded-prefix"),
+      })));
     } catch (error) {
       next(error);
     }

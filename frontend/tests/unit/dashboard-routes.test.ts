@@ -93,6 +93,21 @@ describe('dashboard route state', () => {
     })
   })
 
+  // The backend mints this exact shape for operator escalation email links — see
+  // `conversationPermalink` in backend/src/shared/domain/dashboardLinks.ts. If the parser stops
+  // honouring it, those emails start pointing at the dashboard's not-found redirect.
+  it('parses the conversation permalink the backend sends in escalation email', () => {
+    const permalink = new URL('http://localhost:3000/w/support-abc123/activity?tab=all&filter=chat&itemKind=chat&itemId=conversation-1')
+
+    expect(parseDashboardRoute(['activity'], permalink.searchParams)).toEqual({
+      section: 'activity',
+      activityTab: 'all',
+      historyFilter: 'chat',
+      historyItemKind: 'chat',
+      historyItemId: 'conversation-1',
+    })
+  })
+
   it('parses contact activity filter and selected request state', () => {
     const params = new URLSearchParams({
       filter: 'contact',

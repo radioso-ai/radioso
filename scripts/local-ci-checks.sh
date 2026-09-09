@@ -116,6 +116,10 @@ else
         backend=true
         mcp_server=true
         ;;
+      packages/product-docs/*)
+        backend=true
+        mcp_server=true
+        ;;
       packages/crawler/*)
         backend=true
         crawler=true
@@ -282,7 +286,8 @@ if [ "$frontend" = true ]; then
 fi
 
 if [ "$docs" = true ]; then
-  run pnpm install --frozen-lockfile --filter radioso-docs-portal...
+  run pnpm install --frozen-lockfile --filter radioso-docs-portal... --filter @radioso/product-docs...
+  run_sh "pnpm --filter @radioso/product-docs run sync:check"
   run_sh "cd docs-portal && NODE_ENV=production pnpm run build"
 fi
 

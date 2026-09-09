@@ -78,7 +78,12 @@ export default tseslint.config(
     languageOptions: {
       parserOptions: {
         projectService: {
-          allowDefaultProject: ['packages/operator-mcp-contract/tests/operatorMcpContract.test.ts'],
+          allowDefaultProject: [
+            'packages/operator-mcp-contract/tests/operatorMcpContract.test.ts',
+            'packages/product-docs/scripts/buildCorpus.ts',
+            'packages/product-docs/tests/productDocs.test.ts',
+            'packages/product-docs/vitest.config.ts',
+          ],
         },
         tsconfigRootDir: import.meta.dirname,
       },

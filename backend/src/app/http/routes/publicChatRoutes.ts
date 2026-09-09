@@ -8,7 +8,7 @@ import { resolveAnonymousSession } from "../middleware/resolveAnonymousSession.j
 import { requirePublicChatPermission } from "../middleware/requirePermission.js";
 import { anonymousRateLimiters, publicChatSessionExchangeRateLimiter, type AnonymousRateLimiterDependencies } from "../middleware/anonymousRateLimiter.js";
 import { requireSurfaceExtension } from "../shared/requireSurfaceExtension.js";
-import { ASSISTANT_LOGO_MIME_TYPES } from "../shared/assistantIdentity.js";
+import { sendAssistantLogo } from "../shared/assistantIdentity.js";
 import { validateBody } from "../middleware/validate.js";
 import { collectionPageQuerySchema, conversationTailQuerySchema, conversationWindowQuerySchema } from "./conversationRouteSchemas.js";
 import { isAllowedWebsiteEmbedOrigin } from "../../../shared/domain/websiteEmbed.js";
@@ -36,9 +36,6 @@ import {
   websiteEmbedLaunchAllowedAuditEvent,
   websiteEmbedLaunchDeniedAuditEvent,
 } from "../presenters/publicChatPresenter.js";
-
-const resolveServedAssistantLogoContentType = (mimeType: string) =>
-  ASSISTANT_LOGO_MIME_TYPES.has(mimeType) ? mimeType : "application/octet-stream";
 
 type PublicChatRouteDependencies = AnonymousRateLimiterDependencies & Pick<
   AppDependencies,
@@ -281,15 +278,12 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
           res.setHeader("Access-Control-Allow-Origin", origin);
         }
       }
-      const buffer = await dependencies.documentStorage.read({
-        bucket: logo.bucket,
-        objectPath: logo.objectPath,
-        generation: logo.generation ?? null,
+      await sendAssistantLogo({
+        res,
+        logo,
+        documentStorage: dependencies.documentStorage,
+        cacheControl: "public, max-age=300",
       });
-      res.setHeader("Content-Type", resolveServedAssistantLogoContentType(logo.mimeType));
-      res.setHeader("Content-Disposition", 'inline; filename="logo"');
-      res.setHeader("Cache-Control", "public, max-age=300");
-      res.status(200).send(buffer);
     } catch (error) {
       next(error);
     }

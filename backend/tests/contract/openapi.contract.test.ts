@@ -55,6 +55,21 @@ describe("openapi contract", () => {
     });
   });
 
+  it("documents the operator assistant logo route with its session auth and image formats", () => {
+    const operation = createOpenApiDocument().paths?.["/api/v1/agents/{agentId}/assistant-logo"]?.get as {
+      security?: unknown;
+      responses?: Record<string, { content?: Record<string, unknown> }>;
+    } | undefined;
+
+    expect(operation?.security).toEqual([{ sessionCookie: [], workspaceSelection: [] }]);
+    expect(operation?.responses?.["200"]?.content).toEqual({
+      "image/png": { schema: { type: "string", format: "binary" } },
+      "image/jpeg": { schema: { type: "string", format: "binary" } },
+      "image/webp": { schema: { type: "string", format: "binary" } },
+      "image/gif": { schema: { type: "string", format: "binary" } },
+    });
+  });
+
   it("publishes the complete discriminated Eval assertion contract", () => {
     const schemas = createOpenApiDocument().components?.schemas ?? {};
     const assertions = schemas.EvalAssertion as {

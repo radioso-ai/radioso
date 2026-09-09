@@ -8,9 +8,13 @@ export const workspaceId = "workspace-1";
 export const workspaceKey = "workspace-key";
 export const accountId = "account-1";
 export const defaultAgentId = "67acb0c8-caad-4a1b-9fef-70cbca3f7d12";
+const defaultCandidateRevisionId = "11111111-1111-4111-8111-111111111111";
+const defaultPublishedRevisionId = "22222222-2222-4222-8222-222222222222";
 
 export const nowIso = "2026-04-26T12:00:00.000Z";
 
+type AgentRevisionSummaryFixture = ApiSchemas["AgentRevisionSummary"];
+type AgentRevisionStateFixture = ApiSchemas["AgentRevisionState"];
 type AuthoredDirectiveFixture = ApiSchemas["AuthoredDirective"];
 // What a spec has to state to seed a directive: the rest is filled from the same defaults the
 // API applies.
@@ -190,6 +194,59 @@ export type WebhookDestinationMutationFixture = {
   destinationId?: string;
   body?: unknown;
 };
+
+const defaultPublishedRevision: AgentRevisionSummaryFixture = {
+  id: defaultPublishedRevisionId,
+  label: "v1",
+  kind: "published",
+  versionNumber: 1,
+  createdAt: nowIso,
+  publishedAt: nowIso,
+};
+
+const defaultCandidateRevision: AgentRevisionSummaryFixture = {
+  id: defaultCandidateRevisionId,
+  label: "Draft",
+  kind: "candidate",
+  versionNumber: null,
+  createdAt: nowIso,
+};
+
+const baseAgentRevisionState = (): AgentRevisionStateFixture => ({
+  agentId: defaultAgentId,
+  status: "draft_clean",
+  draft: {
+    generation: 1,
+    basePublishedRevisionId: defaultPublishedRevisionId,
+    updatedAt: nowIso,
+  },
+  publishedRevision: defaultPublishedRevision,
+  canPublish: true,
+  proactiveGreetingEnabled: false,
+});
+
+const buildRevisionDetail = (
+  revision: AgentRevisionSummaryFixture,
+): ApiSchemas["AgentRevisionDetailResponse"] => ({
+  revision: {
+    ...revision,
+    snapshotFormatVersion: 1,
+    scope: {
+      customInstructions: true,
+      directives: true,
+      routines: true,
+      contextVariableEnablements: true,
+    },
+    dependencyWarnings: [],
+    enabledContextVariableIds: [],
+    scopedChanges: {
+      customInstruction: { before: "Existing instructions", after: "Existing instructions", changed: false },
+      directives: [],
+      routines: [],
+      contextVariableEnablements: [],
+    },
+  },
+});
 
 export const basePlatformSettings = (): ApiSchemas["PlatformSettingsResponse"] => ({
   assistant: {
@@ -892,6 +949,8 @@ export const installDashboardApiMocks = async (
   const documentTypeCatalogUpdates = options.documentTypeCatalogUpdates;
   let documentTypeCatalogStaleRevisionPending = options.documentTypeCatalogStaleRevision ?? false;
   let agentSettings = buildDefaultAgentSettings(platformSettings);
+  let agentRevisionState = baseAgentRevisionState();
+  let nextTestExecutionIndex = 1;
   let channelsLifecycle = buildDefaultChannelsLifecycle(platformSettings);
   const providerEncryptionConfigured = options.providerEncryptionConfigured ?? true;
   const providerCredentials: Record<string, { updatedAt: string } | null> = {
@@ -1655,6 +1714,98 @@ export const installDashboardApiMocks = async (
         websiteEmbed: { lastUsedAt: null },
       };
       await json(route, agentSettings);
+      return;
+    }
+
+    if (request.method() === "GET" && path === `/agents/${defaultAgentId}/revision-state`) {
+      await json(route, agentRevisionState);
+      return;
+    }
+
+    if (request.method() === "GET" && path === `/agents/${defaultAgentId}/revisions`) {
+      await json(route, { revisions: url.searchParams.get("include") === "published" ? [defaultPublishedRevision] : [defaultCandidateRevision, defaultPublishedRevision] });
+      return;
+    }
+
+    if (request.method() === "POST" && path === `/agents/${defaultAgentId}/revisions/candidates`) {
+      await json(route, { candidate: defaultCandidateRevision }, 201);
+      return;
+    }
+
+    if (request.method() === "GET" && path === `/agents/${defaultAgentId}/revisions/${defaultCandidateRevisionId}`) {
+      await json(route, buildRevisionDetail(defaultCandidateRevision));
+      return;
+    }
+
+    if (request.method() === "GET" && path === `/agents/${defaultAgentId}/revisions/${defaultPublishedRevisionId}`) {
+      await json(route, buildRevisionDetail(defaultPublishedRevision));
+      return;
+    }
+
+    if (request.method() === "POST" && path === `/agents/${defaultAgentId}/revisions/${defaultCandidateRevisionId}/publish`) {
+      agentRevisionState = {
+        ...agentRevisionState,
+        status: "draft_clean",
+        publishedRevision: defaultCandidateRevision,
+        canPublish: false,
+      };
+      await json(route, {
+        publication: {
+          id: "publication-1",
+          revisionId: defaultCandidateRevisionId,
+          publishedAt: nowIso,
+          idempotentReplay: false,
+          revision: defaultCandidateRevision,
+        },
+        state: agentRevisionState,
+      });
+      return;
+    }
+
+    if (request.method() === "GET" && path === "/evals/cases") {
+      await json(route, { cases: [], summary: {} });
+      return;
+    }
+
+    if (request.method() === "GET" && path === `/agents/${defaultAgentId}/test-executions`) {
+      await json(route, { executions: [], nextCursor: null, hasMore: false });
+      return;
+    }
+
+    if (request.method() === "POST" && path === `/agents/${defaultAgentId}/test-executions`) {
+      const body = request.postDataJSON() as { mode?: "single" | "compare"; revisionIds?: string[] };
+      const generation = nextTestExecutionIndex;
+      nextTestExecutionIndex += 1;
+      await json(route, {
+        id: `execution-${generation}`,
+        generation,
+        mode: body.mode ?? "single",
+        sides: (body.revisionIds?.length ? body.revisionIds : [defaultCandidateRevisionId]).map((revisionId, index) => ({
+          id: `side-${generation}-${index}`,
+          revision: revisionId === defaultPublishedRevisionId ? defaultPublishedRevision : defaultCandidateRevision,
+          conversationId: `conversation-${generation}-${index}`,
+          state: "running",
+          retryable: false,
+          history: [],
+        })),
+      }, 201);
+      return;
+    }
+
+    if (request.method() === "POST" && /\/agents\/[^/]+\/test-executions\/[^/]+\/messages$/.test(path)) {
+      const body = request.postDataJSON() as { message?: string; executionGeneration?: number; turnId?: string; attemptId?: string };
+      const generation = body.executionGeneration ?? 1;
+      const turnId = body.turnId ?? `turn-${generation}`;
+      const attemptId = body.attemptId ?? `attempt-${generation}`;
+      const answer = `Chat answer: ${body.message ?? ""}`;
+      await route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body: [
+          { type: "message_delta", executionId: `execution-${generation}`, generation, sideId: `side-${generation}-0`, delta: answer, turnId, attemptId },
+          { type: "side_completed", executionId: `execution-${generation}`, generation, sideId: `side-${generation}-0`, messageId: `message-${generation}`, turnId, attemptId },
+        ].map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""),
+      });
       return;
     }
 

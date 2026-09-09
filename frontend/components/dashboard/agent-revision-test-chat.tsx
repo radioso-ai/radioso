@@ -20,6 +20,7 @@ import {
   ChatMessageThread,
   type ChatThreadMessage,
 } from "@/components/dashboard/chat-message-thread";
+import { buildAssistantIdentity } from "@/components/chat/assistant-identity";
 import { TestExecutionHistoryView } from "@/components/dashboard/test-execution-history-view";
 import { TestSessionsView } from "@/components/dashboard/workbench/test-sessions-view";
 import {
@@ -68,6 +69,7 @@ import { evalsApi, type EvalCaseListItem } from "@/lib/api-eval";
 import { contextVariablesApi } from "@/lib/api-context-variables";
 import { validateTestValueInputs } from "@/lib/agent-revision-test-values";
 import { isAgentDraftDirty, saveAgentDraft } from "@/lib/agent-draft-save-port";
+import { DEFAULT_WEBSITE_EMBED_COPY } from "@/lib/embed-widget";
 import {
   agentRevisionTestChatSessionKey,
   readAgentRevisionTestChatSession,
@@ -169,11 +171,13 @@ const parseEvents = async (
 export function AgentRevisionTestChat({
   agentId,
   workspaceId,
+  assistantName,
   evalsHref,
   actionsContainer,
 }: {
   agentId: string;
   workspaceId: string;
+  assistantName?: string;
   evalsHref: string;
   actionsContainer: HTMLElement | null;
 }) {
@@ -288,6 +292,10 @@ export function AgentRevisionTestChat({
   const agentCases = useMemo(
     () => cases.filter((evalCase) => evalCase.agent.agentId === agentId),
     [agentId, cases],
+  );
+  const assistantIdentity = useMemo(
+    () => buildAssistantIdentity(DEFAULT_WEBSITE_EMBED_COPY, assistantName?.trim() || "Your agent"),
+    [assistantName],
   );
   const availableSelectedCaseIds = selectedCaseIds.filter((caseId) =>
     agentCases.some((evalCase) => evalCase.id === caseId),
@@ -1380,6 +1388,8 @@ export function AgentRevisionTestChat({
                           {messages.length ? <ChatMessageThread
                             messages={messages}
                             onOpenDocument={async () => "unavailable"}
+                            assistantAvatarLabel={assistantName}
+                            assistantIdentity={assistantIdentity}
                           /> : mode === "single" ? <p className="mx-auto max-w-3xl pt-8 text-sm text-muted-foreground">Ask a question to test this version.</p> : null}
                           {side?.errorCode ? (
                             <p className="mt-3 text-sm text-destructive">

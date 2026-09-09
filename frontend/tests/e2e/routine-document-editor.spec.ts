@@ -108,8 +108,8 @@ test("author, validate, and read a routine through the Document tab", async ({ p
   ];
   for (const line of documentLines) expect(editableRestText).toContain(line);
 
-  await page.getByRole("button", { name: "Publish", exact: true }).click();
-  await expect(page.getByText("published v1 (read-only)", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Prepare for agent release", exact: true }).click();
+  await expect(page.getByText("prepared v1 (read-only)", { exact: true })).toBeVisible();
 
   const documentReader = page.getByRole("article", { name: "Routine document" });
   const readerText = await documentReader.innerText();

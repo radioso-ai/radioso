@@ -471,7 +471,7 @@ export function AgentView({
           />
         ) : (
           <DashboardPage title="Test Chat" actions={<>{cockpitActions}<div ref={setTestActionsContainer} /></>} actionsClassName="w-full max-w-full justify-start sm:w-auto sm:justify-end" headerContent={cockpitNavigation} contentClassName="min-h-0 overflow-hidden p-0" contentScroll={false}>
-            <AgentRevisionTestChat key={selectedAgentId} agentId={selectedAgentId} workspaceId={activeWorkspaceId ?? selectedAgent.workspaceId} evalsHref={evalsHref} actionsContainer={testActionsContainer} />
+            <AgentRevisionTestChat key={selectedAgentId} agentId={selectedAgentId} workspaceId={activeWorkspaceId ?? selectedAgent.workspaceId} assistantName={selectedAgent?.name} evalsHref={evalsHref} actionsContainer={testActionsContainer} />
           </DashboardPage>
         )
       ) : null}

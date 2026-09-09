@@ -60,7 +60,8 @@ test("the workbench Sessions table shows the generated topic title over the raw 
   });
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=chat`);
-  await page.getByRole("button", { name: "History", exact: true }).click();
+  await page.getByRole("button", { name: "Test chat actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "History", exact: true }).click();
 
   // Titled session shows the generated topic, not the raw first message.
   await expect(page.getByRole("button", { name: "Square root calculation walkthrough" })).toBeVisible();

@@ -112,6 +112,28 @@ const sanitizeDestinationParts = (input: {
   }
 };
 
+const BROWSER_EXTENSION_STACK_SCHEMES = [
+  "chrome-extension",
+  "moz-extension",
+  "safari-web-extension",
+];
+
+// Mirrors the frontend report-time filter: when the topmost frame with a source
+// URL comes from a browser extension (a crypto wallet or ad blocker fighting over
+// globals such as `window.ethereum`), no Radioso code is on the stack. Reading the
+// first `scheme://` skips engine frames such as `<anonymous>` that carry no URL, so
+// the first URL belongs to the topmost frame with a real origin.
+const STACK_FRAME_SCHEME_PATTERN = /([a-z][a-z0-9+.-]*):\/\//iu;
+
+const topStackFrameUsesBrowserExtensionScheme = (stack: string | undefined): boolean => {
+  const scheme = stack?.match(STACK_FRAME_SCHEME_PATTERN)?.[1]?.toLowerCase();
+  return scheme !== undefined && BROWSER_EXTENSION_STACK_SCHEMES.includes(scheme);
+};
+
+const DROPPED_BROWSER_EXTENSION_ERROR_METRIC = "frontend_errors_dropped_browser_extension_total";
+const DROPPED_BROWSER_EXTENSION_ERROR_METRIC_HELP =
+  "Frontend error reports dropped because their top stack frame came from a browser extension.";
+
 const sanitizeFrontendErrorStack = (stack: string | undefined): string | undefined => {
   if (!stack) {
     return undefined;
@@ -124,7 +146,7 @@ const sanitizeFrontendErrorStack = (stack: string | undefined): string | undefin
 };
 
 export const createObservabilityRoutes = (
-  dependencies: Pick<AppDependencies, "abuseControlService" | "auditService" | "errorReportingService" | "productAnalyticsService">,
+  dependencies: Pick<AppDependencies, "abuseControlService" | "auditService" | "errorReportingService" | "productAnalyticsService" | "metricsRegistry">,
 ): Router => {
   const router = Router();
   const frontendProductAnalyticsRateLimit = createRateLimitMiddleware({
@@ -195,6 +217,14 @@ export const createObservabilityRoutes = (
     validateBody(frontendErrorSchema),
     async (req, res, next) => {
       try {
+        if (topStackFrameUsesBrowserExtensionScheme(req.body.stack)) {
+          dependencies.metricsRegistry?.incrementCounter(DROPPED_BROWSER_EXTENSION_ERROR_METRIC, {
+            help: DROPPED_BROWSER_EXTENSION_ERROR_METRIC_HELP,
+          });
+          res.status(202).json({ accepted: true, recorded: false });
+          return;
+        }
+
         const route = req.body.path ? sanitizeFrontendPageViewPath(req.body.path) : undefined;
         const event = await dependencies.errorReportingService.report({
           errorType: req.body.errorType,

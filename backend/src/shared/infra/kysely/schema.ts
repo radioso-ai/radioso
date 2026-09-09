@@ -192,8 +192,8 @@ export interface AgentSkills {
 }
 
 export interface AnswerCoverageAssessments {
-  assistant_message_id: string | null;
   assessed_at: Generated<Timestamp>;
+  assistant_message_id: string | null;
   availability: string;
   contextualized_request: string;
   conversation_id: string;

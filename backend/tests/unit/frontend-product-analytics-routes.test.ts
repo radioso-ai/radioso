@@ -313,6 +313,38 @@ describe("frontend error reporting routes", () => {
     }));
   });
 
+  it("drops browser extension crashes and counts them instead of recording them", async () => {
+    const { app, repositories, dependencies } = createTestApp({
+      envOverrides: { METRICS_ENABLED: true, METRICS_AUTH_TOKEN: "metrics-auth-token-000000" },
+    });
+
+    await request(app)
+      .post("/api/v1/observability/frontend-errors")
+      .send({
+        errorType: "frontend.runtime.unhandled",
+        message: "Cannot redefine property: ethereum",
+        errorClass: "TypeError",
+        stack: [
+          "TypeError: Cannot redefine property: ethereum",
+          "    at Object.defineProperty (<anonymous>)",
+          "    at chrome-extension://bfnaelmomeimhlpmgjnjophhpkkoljpa/evmAsk.js:1:1234",
+        ].join("\n"),
+        path: "/w/acme/chat",
+        source: "embed",
+      })
+      .expect(202, {
+        accepted: true,
+        recorded: false,
+      });
+
+    expect(repositories.auditEventRepository.items).not.toContainEqual(expect.objectContaining({
+      eventType: "error.recorded",
+    }));
+    expect(dependencies.metricsRegistry?.renderPrometheus()).toContain(
+      "radioso_frontend_errors_dropped_browser_extension_total 1",
+    );
+  });
+
   it("rejects forged identity and unsupported frontend error types", async () => {
     const { app } = createTestApp();
 

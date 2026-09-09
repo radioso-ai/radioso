@@ -6,8 +6,10 @@ import {
   FRONTEND_ERROR_MESSAGE_MAX_LENGTH,
   FRONTEND_ERROR_STACK_MAX_LENGTH,
   createFrontendErrorReporter,
+  getDroppedBrowserExtensionErrorCount,
   sanitizeFrontendErrorPath,
   serializeFrontendThrowable,
+  topStackFrameUsesBrowserExtensionScheme,
 } from '@/lib/frontend-errors'
 
 describe('frontend error reporting', () => {
@@ -68,6 +70,42 @@ describe('frontend error reporting', () => {
       errorClass: 'string',
       message: 'plain failure',
     })
+  })
+
+  it('drops browser extension crashes and counts them instead of reporting them', async () => {
+    const sink = {
+      record: vi.fn().mockResolvedValue(undefined),
+    }
+    const reporter = createFrontendErrorReporter({ sinks: [sink] })
+    const droppedBefore = getDroppedBrowserExtensionErrorCount()
+
+    const event = await reporter.report({
+      errorType: 'frontend.runtime.unhandled',
+      message: 'Cannot redefine property: ethereum',
+      errorClass: 'TypeError',
+      stack: [
+        'TypeError: Cannot redefine property: ethereum',
+        '    at Object.defineProperty (<anonymous>)',
+        '    at chrome-extension://bfnaelmomeimhlpmgjnjophhpkkoljpa/evmAsk.js:1:1234',
+      ].join('\n'),
+      source: 'frontend',
+    })
+
+    expect(event).toBeNull()
+    expect(sink.record).not.toHaveBeenCalled()
+    expect(getDroppedBrowserExtensionErrorCount()).toBe(droppedBefore + 1)
+  })
+
+  it('classifies the top source frame by scheme, ignoring extension frames deeper in the stack', () => {
+    expect(topStackFrameUsesBrowserExtensionScheme(
+      'someFn@moz-extension://uuid/inpage.js:1:1',
+    )).toBe(true)
+    expect(topStackFrameUsesBrowserExtensionScheme([
+      'TypeError: x is undefined',
+      '    at Dashboard (https://app.example/_next/static/chunk.js:1:1)',
+      '    at listener (chrome-extension://abc/inject.js:1:1)',
+    ].join('\n'))).toBe(false)
+    expect(topStackFrameUsesBrowserExtensionScheme(undefined)).toBe(false)
   })
 
   it('truncates the client envelope before delivery', async () => {

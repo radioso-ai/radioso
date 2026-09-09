@@ -140,10 +140,16 @@ export const createWhatsAppWebhookRouter = ({
         return;
       }
 
+      // Meta's verification handshake echoes hub.challenge verbatim; restrict it to a safe
+      // charset before reflecting it so the response can never carry an injected payload.
+      const safeChallenge = typeof challenge === "string" && /^[\w-]{1,512}$/.test(challenge)
+        ? challenge
+        : "";
+
       res.status(200);
       res.set("X-Content-Type-Options", "nosniff");
       res.type("text/plain");
-      res.send(typeof challenge === "string" ? challenge : "");
+      res.send(safeChallenge);
     } catch (error) {
       next(error);
     }

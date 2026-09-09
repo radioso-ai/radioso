@@ -16,6 +16,7 @@ import {
 import type { CopilotRepositoryPort } from "../service.js";
 import { summarizeProposalEvidence } from "../proposalEvidence.js";
 import { resolveProposalEvidence, type ProposalChange, type ProposalEvidenceDependencies } from "../services/proposalEvidenceService.js";
+import { badRequest } from "../../../shared/domain/errors.js";
 
 export interface CopilotAgentListItem {
   readonly id: string;
@@ -156,21 +157,38 @@ export interface CopilotProposalEvidenceDependencies {
   readonly proposalEvidence: ProposalEvidenceDependencies;
 }
 
-/** Resolves the ids a draft cites into the measurements stored on the proposal. */
+/**
+ * Resolves the ids a draft cites into the measurements stored on the proposal. A conversation is
+ * required only when there is evidence to attribute to it: `resolveProposalEvidence` never reads
+ * `copilotConversationId` for an empty citation, so an MCP invocation proposing unmeasured (the
+ * common case, since `replay_eval_case` itself is Ray-conversation-only) must not be forced through
+ * a conversation it does not have.
+ */
 export const citedProposalEvidence = async (
   deps: CopilotProposalEvidenceDependencies,
   context: { workspaceId: string; operatorUserId: string; copilotConversationId?: string },
   agentId: string,
   evidenceIds: ReadonlyArray<string> | undefined,
   change: ProposalChange,
-): Promise<CopilotProposalEvidence | null> => resolveProposalEvidence(deps.proposalEvidence, {
-  workspaceId: context.workspaceId,
-  operatorUserId: context.operatorUserId,
-  copilotConversationId: requiredCopilotConversation(context),
-  agentId,
-  evidenceIds: evidenceIds ?? [],
-  change,
-});
+): Promise<CopilotProposalEvidence | null> => {
+  if (!evidenceIds || evidenceIds.length === 0) return null;
+  // A domain rejection here, not `requiredCopilotConversation`'s plain Error: the only legitimate
+  // source of an evidence id, `replay_eval_case`, is itself Ray-conversation-only, so a caller on a
+  // transport with no conversation citing one has made a request error, not hit a dependency
+  // failure — and only a domain `AppError` is translated into a clean rejection instead of an
+  // opaque one at the MCP boundary (see mcpApplicationService's invoke `catch`).
+  if (!context.copilotConversationId) {
+    throw badRequest("Citing replay evidence requires a Ray conversation, which this transport does not have; omit evidenceIds to propose unmeasured.");
+  }
+  return resolveProposalEvidence(deps.proposalEvidence, {
+    workspaceId: context.workspaceId,
+    operatorUserId: context.operatorUserId,
+    copilotConversationId: context.copilotConversationId,
+    agentId,
+    evidenceIds,
+    change,
+  });
+};
 
 export const proposalEvidenceOutput = (evidence: CopilotProposalEvidence | null) =>
   evidence ? { evidence: summarizeProposalEvidence(evidence) } : {};

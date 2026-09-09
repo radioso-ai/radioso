@@ -346,7 +346,7 @@ describe("resolvePendingClarification", () => {
     });
   });
 
-  it("clears declined and unrelated ask replies without exposing a chosen candidate and suppresses new clarification", async () => {
+  it("clears declined and unrelated ask replies without exposing a chosen candidate and guards the same candidates", async () => {
     const store = storeWith(pending());
 
     const resolved = await resolvePendingClarification({
@@ -363,6 +363,7 @@ describe("resolvePendingClarification", () => {
       resolvedPending: true,
       suppressNewClarification: true,
       outcome: "declined",
+      loopGuardCandidateIds: ["alpha", "beta"],
     });
   });
 

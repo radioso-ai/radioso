@@ -74,7 +74,9 @@ export const resumeRoutine = async (input: {
 
   const events = [] as Awaited<ReturnType<typeof createInputEvent>>[];
   const inputEvent = createInputEvent(request);
-  await request.stores.appendEvent(inputEvent);
+  if (!request.inputEventAlreadyAppended) {
+    await request.stores.appendEvent(inputEvent);
+  }
   events.push(inputEvent);
 
   if (result.nextState) {
@@ -142,6 +144,10 @@ export const resumeRoutine = async (input: {
     handoff: result.terminal?.kind === "handoff"
       ? { routineId: state.routineId, stepId: result.terminal.stepId }
       : undefined,
+    routineExecution: {
+      routineId: state.routineId,
+      ...(state.executionId ? { executionId: state.executionId } : {}),
+    },
     awaitingDecision: result.awaitingDecision,
     trace: createTrace(routineTraceStages),
   });

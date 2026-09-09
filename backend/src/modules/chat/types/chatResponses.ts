@@ -2,6 +2,10 @@ import type { AnswerSegment, ChatCitation } from "../contracts/answerTypes.js";
 import type { ActivitySummary, ActivityTrace } from "../../retrieval/public.js";
 import type { SkillDisplayMetadata } from "../../skills/public.js";
 import type { TurnTraceEnvelope } from "../services/turnTraceEnvelope.js";
+import type {
+  ChatAnswerCoverageAssessment,
+  ChatAnswerCoverageInteractionTrace,
+} from "../contracts/answerCoverage.js";
 
 export type ChatSuggestionKind = string;
 
@@ -55,6 +59,8 @@ export interface ChatResponse {
    * read path consume the envelope, then drop.
    */
   turnTrace?: TurnTraceEnvelope;
+  answerCoverage?: ChatAnswerCoverageAssessment;
+  interactionTrace?: ChatAnswerCoverageInteractionTrace;
 }
 
 export type ChatBootstrapResponse = Omit<ChatResponse, "conversationId" | "assistantMessageId"> & {

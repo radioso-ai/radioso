@@ -233,4 +233,20 @@ describe("routine edit descriptions", () => {
       slots: [{ key: "order_number", required: false }],
     }))).toBe("name, trigger, priority, step confirm, field order_number");
   });
+
+  it("describes a coverage-only condition and keeps mixed summaries free of empty segments", () => {
+    expect(describeRoutineFieldPatch(routineFieldPatchSchema.parse({
+      activation: {
+        coverageCriteria: {
+          coverage: ["unanswered"],
+          reasons: ["insufficient_evidence"],
+        },
+      },
+    }))).toBe("answer coverage unanswered (insufficient evidence)");
+
+    expect(describeRoutineFieldPatch(routineFieldPatchSchema.parse({
+      activation: { coverageCriteria: { coverage: ["answered", "partial"] } },
+      steps: [{ stableStepId: "confirm", instruction: "Read it back." }],
+    }))).toBe("answer coverage answered or partial, step confirm");
+  });
 });

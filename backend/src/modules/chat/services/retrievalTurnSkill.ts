@@ -38,7 +38,7 @@ import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { BoundedGroundingStreamGate } from "./boundedGroundingStreamGate.js";
 import { recordDirectiveSurfaceRendered } from "./directives/directiveSurfaceRendering.js";
 
-export class GroundingStreamGateBoundError extends Error {
+class GroundingStreamGateBoundError extends Error {
   constructor() {
     super("grounding_stream_gate_bound");
     this.name = "GroundingStreamGateBoundError";
@@ -187,6 +187,7 @@ export class RetrievalAnswerComposer {
       conversationSummary: session.conversationSummary,
       steering: session.directiveSteering?.rules ?? [],
       retrievalSenseOfferAlternatives: session.retrievalSenseOfferAlternatives,
+      answerCoverage: session.answerCoverage,
     });
     if (session.directiveSteering) {
       // Whether the follow-up question generator's block went into the prompt at all.

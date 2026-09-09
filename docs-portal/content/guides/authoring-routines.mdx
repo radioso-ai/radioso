@@ -52,6 +52,12 @@ At the top of the editor, set four things:
 The trigger is judged by meaning, so write it the way an operator would describe
 the task: “customer reports coffee that arrived damaged, stale, or wrong.”
 
+You can also select an **Answer coverage signal** in the activation header.
+For example, a routine can be eligible when a request is **Unanswered** because
+of **Insufficient evidence**. This is an extra typed condition alongside the
+trigger. Normal activation, confirmation, and action permissions still apply;
+recognizing a gap alone does not start an external action.
+
 ### Reentry
 
 A routine can finish more than once in one conversation. Reentry decides what a
@@ -126,6 +132,9 @@ branches, endings, and handoffs before publishing.
 - A routine fails to start: the trigger describes the wrong situation, or a
   higher-priority routine claims the turn first. Test the trigger with
   **Test draft**.
+- A coverage condition does not activate: inspect the originating turn. A
+  failed or unavailable assessment is recorded as not assessed and never
+  activates a coverage condition.
 - A step skips value collection: add the value with `@` in the instruction so the
   step refers to the stored information.
 - A backward jump fails validation: set **Max N** so the loop has a bounded

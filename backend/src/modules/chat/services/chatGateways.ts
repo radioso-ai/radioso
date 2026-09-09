@@ -51,5 +51,3 @@ export class ModelChatGateway implements ChatGateway {
     }
   }
 }
-
-export class OpenAIChatGateway extends ModelChatGateway {}

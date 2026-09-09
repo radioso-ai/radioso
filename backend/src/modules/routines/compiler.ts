@@ -236,6 +236,7 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
       // Default keeps definitions authored before reentry modes existed suppressing
       // on completion (the historical, safe behaviour).
       reentryMode: definition.activation.reentryMode ?? "once_per_conversation",
+      ...(definition.activation.coverageCriteria ? { coverageCriteria: definition.activation.coverageCriteria } : {}),
     },
     metadata: {
       definitionId: definition.id,

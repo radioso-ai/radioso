@@ -134,6 +134,7 @@ const fullyConfiguredAgent = (): ConversationAgent => ({
     description: "Operator-authored behavior rule.",
     binding: { kind: "skill", skillName: "order.lookup" },
     lifecycle: null,
+    coverageCriteria: { coverage: ["unanswered"], reasons: ["insufficient_evidence"] },
     enabled: false,
     metadata: { owner: "ops" },
     createdAt: new Date(0),
@@ -333,6 +334,7 @@ describe("serializeAgentConfig", () => {
       description: "Operator-authored behavior rule.",
       binding: { kind: "skill", skillName: "order.lookup" },
       lifecycle: null,
+      coverageCriteria: { coverage: ["unanswered"], reasons: ["insufficient_evidence"] },
       enabled: false,
       metadata: { owner: "ops" },
     }]);
@@ -466,6 +468,7 @@ describe("serializeAgentConfig", () => {
       description: "Operator-authored behavior rule.",
       binding: { kind: "skill", skillName: "order.lookup" },
       lifecycle: null,
+      coverageCriteria: { coverage: ["unanswered"], reasons: ["insufficient_evidence"] },
       enabled: false,
       metadata: { owner: "ops" },
       createdAt: new Date(0),

@@ -1918,10 +1918,14 @@ export const installDashboardApiMocks = async (
           await json(route, { error: { code: "not_found", message: "Directive not found" } }, 404);
           return;
         }
+        const { coverageCriteria, ...directivePatch } = body;
         const directive = {
           ...existing,
-          ...body,
+          ...directivePatch,
           condition: body.condition ?? existing.condition,
+          ...(coverageCriteria === null
+            ? { coverageCriteria: undefined }
+            : coverageCriteria === undefined ? {} : { coverageCriteria }),
           updatedAt: nowIso,
         };
         directives = directives.map((item) => item.id === directiveId ? directive : item);

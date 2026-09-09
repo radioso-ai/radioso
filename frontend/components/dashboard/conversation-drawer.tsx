@@ -158,6 +158,8 @@ function buildHistoryTurnDiagnostics({
     activityTrace: activityTrace ?? debug?.activityTrace,
     turnTrace: activeEnvelope,
     visitorContext,
+    answerCoverage: debug?.answerCoverage,
+    interactionTrace: debug?.interactionTrace,
   }
 }
 
@@ -536,6 +538,7 @@ export function ConversationDrawer({
                       routineNamesById={routineNamesById}
                       selectedStageId={selectedStageId}
                       onSelectLeafStage={setSelectedStageId}
+                      onOpenTargetMessage={handleSelectThreadMessage}
                     />
                   </div>
                 ) : null}

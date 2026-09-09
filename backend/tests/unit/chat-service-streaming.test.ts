@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { ConversationEngine, RoutineState } from "@radioso/conversation-contract";
+import type {
+  AnswerCoverageAssessment,
+  AnswerCoverageRecord,
+  ConversationCoverageReactionRecorder,
+  ConversationEngine,
+  RoutineState,
+} from "@radioso/conversation-contract";
 import { createConversationEngine } from "@radioso/conversation-engine";
 import {
   BlankChatAnswerError,
@@ -12,6 +18,7 @@ import {
   type ChatStreamEvent,
 } from "../../src/modules/chat/services/chatService.js";
 import { HANDOFF_NOTIFY_ACTION_TYPE } from "../../src/modules/chat/services/routines/contactRoutine.js";
+import { APPROVAL_REQUEST_ACTION_TYPE } from "../../src/modules/chat/services/actions/approvalRequestActionHandler.js";
 import { SKILL_TURN_OUTCOME } from "../../src/modules/chat/services/assistantTurnOutcomeTypes.js";
 import {
   buildChatTurnRuntime,
@@ -220,6 +227,7 @@ const makeChatService = (
     clarifier: NonNullable<ChatServiceOptions["clarifier"]>;
     clarificationStore: NonNullable<ChatServiceOptions["clarificationStore"]>;
   },
+  coverageAssessorFactory?: ChatServiceOptions["coverageAssessorFactory"],
 ): ChatService =>
   new ChatService({
     conversationRepository,
@@ -253,6 +261,7 @@ const makeChatService = (
     clarificationStore: clarification?.clarificationStore,
     actionOutbox: routine?.actionOutbox,
     assistantTurnPersistence: routine?.assistantTurnPersistence,
+    coverageAssessorFactory,
   });
 
 const asChatActivityPipeline = (pipeline: Record<string, unknown>) => {
@@ -2432,6 +2441,424 @@ describe("chat service streaming", () => {
     };
     return { routineStore, routineProvider };
   };
+
+  const coverageRoutineService = (input: {
+    handoffAndAwaitingDecision?: boolean;
+    failReactionRecord?: boolean;
+    senseCompatible?: boolean;
+    clarify?: boolean;
+    directiveOnly?: boolean;
+    conversationRepository?: InMemoryConversationRepository;
+    blockFirstAssessment?: { started: () => void; release: Promise<void> };
+    assistantTurnPersistence?: ChatServiceOptions["assistantTurnPersistence"];
+  } = {}) => {
+    const assessment: Extract<AnswerCoverageAssessment, { availability: "assessed" }> = {
+      availability: "assessed",
+      coverage: "unanswered",
+      reason: "insufficient_evidence",
+      schemaVersion: 1,
+    };
+    const assessmentRecord: AnswerCoverageRecord = {
+      ...assessment,
+      id: "coverage-assessment-1",
+      workspaceId: "workspace-1",
+      conversationId: "coverage-conversation-1",
+      requestMessageId: "coverage-request-1",
+      originatingTurnId: "coverage-request-1",
+      contextualizedRequest: "Please arrange a consultation.",
+      assessedAt: new Date("2026-01-01T00:00:00.000Z"),
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    };
+    const persistedReactions: Parameters<ConversationCoverageReactionRecorder["record"]>[0][] = [];
+    const pendingClarifications: unknown[] = [];
+    const coverageAssessorFactory = {
+      create: ({ onAssessment }: {
+        onAssessment?: (input: {
+          assessment: AnswerCoverageAssessment;
+          record?: AnswerCoverageRecord;
+        }) => void;
+      }) => ({
+        assess: async () => {
+          if (input.blockFirstAssessment && assessmentCalls++ === 0) {
+            input.blockFirstAssessment.started();
+            await input.blockFirstAssessment.release;
+          }
+          onAssessment?.({ assessment, record: assessmentRecord });
+          return assessment;
+        },
+      }),
+      createReactionRecorder: ({ onRecorded }: { onRecorded?: (reaction: Parameters<ConversationCoverageReactionRecorder["record"]>[0]) => void }) => ({
+        record: async (reaction: Parameters<ConversationCoverageReactionRecorder["record"]>[0]) => {
+          if (input.failReactionRecord) {
+            throw new Error("coverage reaction store unavailable");
+          }
+          persistedReactions.push(reaction);
+          onRecorded?.(reaction);
+        },
+      }),
+    } as unknown as NonNullable<ChatServiceOptions["coverageAssessorFactory"]>;
+    let assessmentCalls = 0;
+    const routineStore: NonNullable<ChatServiceOptions["routineStore"]> = {
+      loadActive: async () => null,
+      loadCompleted: async () => [],
+      save: vi.fn(async () => {}),
+      clear: vi.fn(async () => {}),
+    };
+    const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      forTurn: async () => ({
+        activator: { activate: async () => null },
+        ...(!input.directiveOnly ? { coverageActivator: {
+          evaluateCandidates: () => [{ routineId: "coverage.follow-up", decision: "candidate" as const, reasonCode: "coverage_criteria_candidate" }],
+          activate: async () => input.clarify
+            ? {
+                kind: "clarify" as const,
+                candidates: [{
+                  id: "coverage-choice",
+                  label: "Arrange a consultation",
+                  confidence: 0.8,
+                  payload: { routineId: "coverage.follow-up" },
+                }],
+              }
+            : ({ kind: "activate" as const, routineId: "coverage.follow-up" }),
+        } } : {}),
+        runner: {
+          resume: async ({ state }) => ({
+            response: { answer: "I can arrange a consultation." },
+            nextState: input.handoffAndAwaitingDecision
+              ? { ...state, path: ["operator_review"], status: "suspended" as const }
+              : { ...state, path: ["consultation"], status: "active" as const },
+            ...(input.handoffAndAwaitingDecision
+              ? {
+                  terminal: { kind: "handoff" as const, stepId: "operator_review" },
+                  awaitingDecision: {
+                    stepId: "operator_review",
+                    captureKey: "operator_approval",
+                    options: [{ id: "approve", label: "Approve" }],
+                  },
+                }
+              : {}),
+          }),
+        },
+      }),
+    };
+    const service = makeChatService(
+      input.conversationRepository ?? new InMemoryConversationRepository(),
+      new InMemoryMessageRepository(),
+      new RetrievalTurnController(asChatActivityPipeline(createGroundedPipeline()) as never),
+      { async answer() { return "unused"; }, async *streamAnswer() { yield "unused"; } },
+      createAuditService(),
+      fallbackReplyComposer,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+      createConversationEngine(),
+      { routineStore, routineProvider, assistantTurnPersistence: input.assistantTurnPersistence },
+      undefined, undefined, undefined,
+      input.senseCompatible ? undefined : {
+        interpretChatTurn: async () => ({
+          route: "retrieval" as const,
+          framing: { isIdentityQuestion: false },
+          rewriteProposal: {
+            rewrittenQuery: "known topic",
+            semanticQuery: "known topic",
+            lexicalQuery: "known topic",
+            queryShape: "general_grounding" as const,
+            temporalQueryMode: "none" as const,
+            retrievalSubqueries: [],
+            turnKind: "fresh_subject" as const,
+            relatedEntities: [],
+            unresolved: false,
+            confidence: 0.9,
+          },
+        }),
+      },
+      input.senseCompatible ? { detect: async () => [] } : undefined, undefined,
+      input.clarify ? {
+        clarifier: {
+          phraseQuestion: async () => "Would you like me to arrange a consultation?",
+          mapReply: async () => ({ kind: "chosen" as const, id: "coverage-choice" }),
+        },
+        clarificationStore: {
+          loadPending: async () => null,
+          save: async (pending) => { pendingClarifications.push(pending); },
+          clear: async () => {},
+        },
+      } : undefined,
+      coverageAssessorFactory,
+    );
+    return { service, persistedReactions, routineStore, pendingClarifications };
+  };
+
+  it("returns the evaluated coverage interaction trace only after a coverage routine commits in nonstream and stream paths", async () => {
+    const nonstream = coverageRoutineService();
+    const response = await nonstream.service.answer({ workspaceId: "workspace-1", query: "Please arrange a consultation.", stream: false });
+    expect(response.answer).toBe("I can arrange a consultation.");
+    expect(nonstream.persistedReactions).toHaveLength(1);
+    expect(response.interactionTrace).toMatchObject({
+      state: "evaluated",
+      consumedAssessment: { coverage: "unanswered", reason: "insufficient_evidence" },
+      decisions: [expect.objectContaining({ target: "routine", targetId: "coverage.follow-up", decision: "activated" })],
+    });
+
+    const streaming = coverageRoutineService();
+    const events: ChatStreamEvent[] = [];
+    for await (const event of streaming.service.streamAnswer({ workspaceId: "workspace-1", query: "Please arrange a consultation.", stream: true })) {
+      events.push(event);
+    }
+    const done = events.find((event) => event.type === "done");
+    expect(done).toMatchObject({
+      interactionTrace: {
+        state: "evaluated",
+        consumedAssessment: { coverage: "unanswered", reason: "insufficient_evidence" },
+        decisions: [expect.objectContaining({ target: "routine", targetId: "coverage.follow-up", decision: "activated" })],
+      },
+    });
+    expect(streaming.persistedReactions).toHaveLength(1);
+  });
+
+  it.each([false, true])("activates coverage routines and commits their effects through the public sense-compatible %s path", async (stream) => {
+    const coverage = coverageRoutineService({ senseCompatible: true });
+    const request = { workspaceId: "workspace-1", query: "Please arrange a consultation.", stream };
+
+    const response = stream
+      ? await (async () => {
+          const events: ChatStreamEvent[] = [];
+          for await (const event of coverage.service.streamAnswer(request)) events.push(event);
+          return events.find((event) => event.type === "done");
+        })()
+      : await coverage.service.answer(request);
+
+    expect(response).toMatchObject({
+      answer: "I can arrange a consultation.",
+      interactionTrace: {
+        state: "evaluated",
+        decisions: [expect.objectContaining({ target: "routine", targetId: "coverage.follow-up", decision: "activated" })],
+      },
+    });
+    expect(coverage.routineStore.save).toHaveBeenCalledOnce();
+    expect(coverage.persistedReactions).toHaveLength(1);
+  });
+
+  it.each([
+    { senseCompatible: false, stream: false }, { senseCompatible: true, stream: false },
+    { senseCompatible: false, stream: true }, { senseCompatible: true, stream: true },
+  ])("defers directive-only coverage reactions until the public $stream/$senseCompatible lifecycle commits", async ({ senseCompatible, stream }) => {
+    const coverage = coverageRoutineService({ senseCompatible, directiveOnly: true });
+    const request = { workspaceId: "workspace-1", query: "Please arrange a consultation.", stream };
+    const response = stream
+      ? await (async () => {
+          const events: ChatStreamEvent[] = [];
+          for await (const event of coverage.service.streamAnswer(request)) events.push(event);
+          return events.find((event) => event.type === "done");
+        })()
+      : await coverage.service.answer(request);
+    expect(response.interactionTrace).toMatchObject({ state: "evaluated" });
+    expect(coverage.persistedReactions).toHaveLength(1);
+  });
+
+  it("does not commit a buffered directive-only reaction when a competing turn supersedes it", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const conversation = await conversationRepository.create("workspace-1", null);
+    let release!: () => void;
+    let started!: () => void;
+    const barrier = new Promise<void>((resolve) => { release = resolve; });
+    const assessed = new Promise<void>((resolve) => { started = resolve; });
+    const coverage = coverageRoutineService({
+      directiveOnly: true,
+      conversationRepository,
+      blockFirstAssessment: { started, release: barrier },
+    });
+    const first = coverage.service.answer({
+      workspaceId: "workspace-1", conversationId: conversation.id, query: "Please arrange a consultation.", stream: false,
+    });
+    await assessed;
+    const latest = coverage.service.answer({
+      workspaceId: "workspace-1", conversationId: conversation.id, query: "A new question", stream: false,
+    });
+    release();
+
+    await expect(first).rejects.toBeInstanceOf(ChatTurnSupersededError);
+    await expect(latest).resolves.toMatchObject({ answer: "unused" });
+    expect(coverage.persistedReactions).toHaveLength(1);
+  });
+
+  it.each([
+    { senseCompatible: false, stream: false }, { senseCompatible: true, stream: false },
+    { senseCompatible: false, stream: true }, { senseCompatible: true, stream: true },
+  ])("does not evaluate directive-only coverage when the public $stream/$senseCompatible lifecycle rejects", async ({ senseCompatible, stream }) => {
+    const assistantTurnPersistence = {
+      completeAssistantTurn: vi.fn(async () => { throw new Error("transaction rejected"); }),
+    } satisfies NonNullable<ChatServiceOptions["assistantTurnPersistence"]>;
+    const coverage = coverageRoutineService({ senseCompatible, directiveOnly: true, assistantTurnPersistence });
+    const request = { workspaceId: "workspace-1", query: "Please arrange a consultation.", stream };
+    if (stream) {
+      await expect((async () => {
+        for await (const _event of coverage.service.streamAnswer(request)) { /* drain */ }
+      })()).rejects.toThrow("transaction rejected");
+    } else {
+      await expect(coverage.service.answer(request)).rejects.toThrow("transaction rejected");
+    }
+    expect(coverage.persistedReactions).toEqual([]);
+  });
+
+  it.each([false, true])("renders and persists a coverage clarification through the public %s ChatService path", async (senseCompatible) => {
+    const coverage = coverageRoutineService({ senseCompatible, clarify: true });
+    const response = await coverage.service.answer({
+      workspaceId: "workspace-1",
+      query: "Please arrange a consultation.",
+      stream: false,
+    });
+
+    expect(response.answer).toBe("Would you like me to arrange a consultation?");
+    expect(coverage.pendingClarifications).toEqual([
+      expect.objectContaining({
+        source: "routine_activation",
+        candidates: [expect.objectContaining({ id: "coverage-choice" })],
+        status: "pending",
+      }),
+    ]);
+  });
+
+  it.each([false, true])("forwards coverage handoff and approval effects through the public sense-compatible %s path", async (stream) => {
+    const assistantTurnPersistence = createCapturingAssistantTurnPersistence();
+    const coverage = coverageRoutineService({
+      senseCompatible: true,
+      handoffAndAwaitingDecision: true,
+      assistantTurnPersistence,
+    });
+
+    if (stream) {
+      for await (const _event of coverage.service.streamAnswer({
+        workspaceId: "workspace-1",
+        query: "Please arrange a consultation.",
+        stream: true,
+      })) {
+        // Drain the public stream to its lifecycle boundary.
+      }
+    } else {
+      await coverage.service.answer({
+        workspaceId: "workspace-1",
+        query: "Please arrange a consultation.",
+        stream: false,
+      });
+    }
+
+    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
+    expect(persisted.ownershipHandoff).toEqual({
+      reason: "routine_handoff",
+      routineId: "coverage.follow-up",
+      stepId: "operator_review",
+    });
+    expect(persisted.routineStateTransition).toMatchObject({
+      kind: "save",
+      state: { routineId: "coverage.follow-up", status: "suspended" },
+    });
+    expect(persisted.pendingDecisionTransition).toMatchObject({ routineId: "coverage.follow-up" });
+    expect(persisted.actions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: HANDOFF_NOTIFY_ACTION_TYPE }),
+      expect.objectContaining({ type: APPROVAL_REQUEST_ACTION_TYPE }),
+    ]));
+  });
+
+  it.each([false, true])("forwards coverage routine handoff and suspended approval effects through the public %s path", async (stream) => {
+    const assistantTurnPersistence = createCapturingAssistantTurnPersistence();
+    const coverage = coverageRoutineService({
+      handoffAndAwaitingDecision: true,
+      assistantTurnPersistence,
+    });
+
+    if (stream) {
+      for await (const _event of coverage.service.streamAnswer({
+        workspaceId: "workspace-1",
+        query: "Please arrange a consultation.",
+        stream: true,
+      })) {
+        // Consume the public stream so ChatService reaches its post-commit response.
+      }
+    } else {
+      await coverage.service.answer({
+        workspaceId: "workspace-1",
+        query: "Please arrange a consultation.",
+        stream: false,
+      });
+    }
+
+    expect(assistantTurnPersistence.completeAssistantTurn).toHaveBeenCalledOnce();
+    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
+    expect(persisted.ownershipHandoff).toEqual({
+      reason: "routine_handoff",
+      routineId: "coverage.follow-up",
+      stepId: "operator_review",
+    });
+    expect(persisted.pendingDecisionTransition).toMatchObject({
+      routineId: "coverage.follow-up",
+      stepId: "operator_review",
+      options: [{ id: "approve", label: "Approve" }],
+    });
+    expect(persisted.routineStateTransition).toMatchObject({
+      kind: "save",
+      state: expect.objectContaining({ routineId: "coverage.follow-up", status: "suspended" }),
+    });
+    expect(persisted.actions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: HANDOFF_NOTIFY_ACTION_TYPE }),
+      expect.objectContaining({ type: APPROVAL_REQUEST_ACTION_TYPE }),
+    ]));
+  });
+
+  it.each([false, true])("does not commit deferred coverage state or reactions when public %s lifecycle persistence rejects", async (stream) => {
+    const assistantTurnPersistence = {
+      completeAssistantTurn: vi.fn(async () => {
+        throw new Error("assistant turn transaction rejected");
+      }),
+    } satisfies NonNullable<ChatServiceOptions["assistantTurnPersistence"]>;
+    const coverage = coverageRoutineService({ assistantTurnPersistence });
+    const request = {
+      workspaceId: "workspace-1",
+      query: "Please arrange a consultation.",
+      stream,
+    };
+
+    if (stream) {
+      await expect((async () => {
+        for await (const _event of coverage.service.streamAnswer(request)) {
+          // Consume the public stream until lifecycle persistence rejects.
+        }
+      })()).rejects.toThrow("assistant turn transaction rejected");
+    } else {
+      await expect(coverage.service.answer(request)).rejects.toThrow("assistant turn transaction rejected");
+    }
+
+    expect(assistantTurnPersistence.completeAssistantTurn).toHaveBeenCalledOnce();
+    expect(coverage.routineStore.save).not.toHaveBeenCalled();
+    expect(coverage.persistedReactions).toEqual([]);
+  });
+
+  it.each([false, true])("keeps a truthful not-evaluated coverage trace when the post-commit reaction recorder fails in public %s mode", async (stream) => {
+    const coverage = coverageRoutineService({ failReactionRecord: true });
+    const request = {
+      workspaceId: "workspace-1",
+      query: "Please arrange a consultation.",
+      stream,
+    };
+
+    const response = stream
+      ? await (async () => {
+          const events: ChatStreamEvent[] = [];
+          for await (const event of coverage.service.streamAnswer(request)) {
+            events.push(event);
+          }
+          return events.find((event) => event.type === "done");
+        })()
+      : await coverage.service.answer(request);
+
+    expect(response).toMatchObject({
+      answer: "I can arrange a consultation.",
+      interactionTrace: {
+        state: "not_evaluated",
+        decisions: [],
+      },
+    });
+    expect(coverage.routineStore.save).toHaveBeenCalledOnce();
+    expect(coverage.persistedReactions).toEqual([]);
+  });
 
   it("enqueues the routine's action before advancing routine state (recoverable until enqueued)", async () => {
     const order: string[] = [];

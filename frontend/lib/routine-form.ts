@@ -23,7 +23,7 @@ export type RoutineSlotForm = {
   mutable: boolean
 }
 
-export type RoutineTransitionForm = {
+type RoutineTransitionForm = {
   fromStep: string
   toRef: string
   guardKind: RoutineGuardKind
@@ -40,7 +40,7 @@ export type RoutineTransitionForm = {
 // An approval option as authored in the Form editor: its id/label/description plus the
 // step or terminal the routine branches to when a human picks it. The target is synthesized
 // into a deterministic field-guard transition on save (see formToRoutineDraft).
-export type RoutineApprovalOptionForm = {
+type RoutineApprovalOptionForm = {
   id: string
   label: string
   description: string
@@ -73,6 +73,10 @@ export type RoutineFormState = {
     triggerDescription: string
     priority: string
     reentryMode: RoutineReentryMode
+    coverageCriteria?: {
+      coverage: Array<'answered' | 'partial' | 'unanswered' | 'unclear'>
+      reasons?: Array<'sufficient_evidence' | 'insufficient_evidence' | 'conflicting_evidence' | 'ambiguous_request' | 'intentional_scope_boundary'>
+    }
   }
   slots: RoutineSlotForm[]
   steps: RoutineStepForm[]
@@ -119,18 +123,18 @@ const slugifySlotKey = (value: string, fallback: string): string =>
 // with a `/`), so both the draft builder and the editor's diagnostic anchors go through
 // these helpers — one definition of "what will this artifact be called on the wire".
 
-export const draftSlotKey = (slot: RoutineSlotForm, index: number): string =>
+const draftSlotKey = (slot: RoutineSlotForm, index: number): string =>
   slugify(slot.key, `slot_${index + 1}`).replace(/[^A-Za-z0-9_]/gu, '_')
 
-export const draftStepId = (step: RoutineStepForm, index: number): string =>
+const draftStepId = (step: RoutineStepForm, index: number): string =>
   slugify(step.stableStepId, `step_${index + 1}`)
 
-export const draftTerminalId = (terminal: RoutineTerminalForm, index: number): string =>
+const draftTerminalId = (terminal: RoutineTerminalForm, index: number): string =>
   slugify(terminal.stableStepId, `complete_${index + 1}`)
 
-export const draftTransitionTargetRef = (toRef: string): string => slugify(toRef, 'complete')
+const draftTransitionTargetRef = (toRef: string): string => slugify(toRef, 'complete')
 
-export const draftTransitionId = (
+const draftTransitionId = (
   step: RoutineStepForm,
   transition: RoutineTransitionForm,
 ): string =>
@@ -140,7 +144,7 @@ export const draftTransitionId = (
 // diagnostics it can attract (`approval_step_unknown_option`, `field_guard_*`) arrive under
 // that edge's location rather than the step's. Returns null for an unwired option, which
 // synthesizes no edge at all.
-export const draftApprovalOptionTransitionId = (
+const draftApprovalOptionTransitionId = (
   step: RoutineStepForm,
   stepIndex: number,
   option: RoutineApprovalOptionForm,
@@ -148,13 +152,6 @@ export const draftApprovalOptionTransitionId = (
   option.target.trim().length > 0
     ? `${draftStepId(step, stepIndex)}->${draftTransitionTargetRef(option.target)}`
     : null
-
-// Every id a diagnostic's `step:`/`node:` form can name, in draft space. Terminals are in
-// this set because they share the step id namespace.
-export const draftNodeIds = (form: RoutineFormState): ReadonlySet<string> => new Set([
-  ...form.steps.map((step, index) => draftStepId(step, index)),
-  ...form.terminals.map((terminal, index) => draftTerminalId(terminal, index)),
-])
 
 type LegacyRoutineStepKind = RoutineStepKind | 'fork'
 type LegacyRoutineGuardKind = RoutineGuardKind | 'always' | 'fallback'
@@ -198,48 +195,6 @@ export const createEmptyRoutineForm = (): RoutineFormState => ({
   },
 })
 
-export const createSlotForm = (index: number): RoutineSlotForm => ({
-  stableSlotId: `slot_${index + 1}`,
-  key: `slot_${index + 1}`,
-  type: 'text',
-  required: true,
-  description: '',
-  mutable: false,
-})
-
-export const createStepForm = (index: number): RoutineStepForm => ({
-  stableStepId: `step_${index + 1}`,
-  kind: 'chat',
-  instruction: '',
-  toolRef: '',
-  actionType: '',
-  captureKey: '',
-  options: [],
-  metadata: {},
-  transitions: [],
-})
-
-export const createApprovalOptionForm = (index: number): RoutineApprovalOptionForm => ({
-  id: `option_${index + 1}`,
-  label: '',
-  description: '',
-  target: '',
-})
-
-// A fresh approval gate seeds the two choices every approval needs — approve and decline —
-// so the author starts from a real decision (the validator requires at least two) and only
-// has to point each at a branch. Targets stay empty so the author wires them deliberately.
-export const createDefaultApprovalOptions = (): RoutineApprovalOptionForm[] => ([
-  { id: 'approve', label: 'Approve', description: '', target: '' },
-  { id: 'decline', label: 'Decline', description: '', target: '' },
-])
-
-export const createTerminalForm = (index: number): RoutineTerminalForm => ({
-  stableStepId: `complete_${index + 1}`,
-  kind: 'complete',
-  instruction: '',
-})
-
 export const createTransitionForm = (fromStep: string, toRef: string): RoutineTransitionForm => ({
   fromStep,
   toRef,
@@ -280,6 +235,7 @@ export const routineToForm = (routine: RoutineDefinition): RoutineFormState => {
       triggerDescription: routine.activation.triggerDescription,
       priority: String(routine.activation.priority),
       reentryMode: routine.activation.reentryMode ?? 'once_per_conversation',
+      coverageCriteria: routine.activation.coverageCriteria,
     },
     slots: [...routine.slots].sort((left, right) => left.ordinal - right.ordinal).map((slot) => ({
       stableSlotId: slot.stableSlotId,
@@ -358,6 +314,7 @@ export const formToRoutineDraft = (
       triggerDescription: header.activation.triggerDescription.trim(),
       priority: Number.parseInt(header.activation.priority, 10) || 0,
       reentryMode: header.activation.reentryMode,
+      ...(header.activation.coverageCriteria ? { coverageCriteria: header.activation.coverageCriteria } : {}),
     },
     slots: form.slots.map((slot, index) => {
       const key = draftSlotKey(slot, index)

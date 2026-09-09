@@ -19,8 +19,10 @@ import {
   type AudiencePulseGroundingSignal,
 } from "../../shared/domain/audiencePulseContentGap.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
+import { audiencePulseCoverageGapEligible } from "../../shared/domain/audiencePulseContentGap.js";
+import type { AnswerCoverageRepositoryPort } from "../answerCoverage/public.js";
 
-export interface AudiencePulseEligibleQuestionMetadataRow {
+interface AudiencePulseEligibleQuestionMetadataRow {
   id: string;
   conversation_id: string;
   created_at: Date;
@@ -110,7 +112,7 @@ const hasCompleteGrounding = (row: AudiencePulseConversationMessageRow): boolean
     && row.grounding_unsourced_claim_count !== null
     && row.grounding_invalid_source_count !== null;
 
-export const classifyAudiencePulseAnswerWindow = (messages: AudiencePulseConversationMessageRow[]): {
+const classifyAudiencePulseAnswerWindow = (messages: AudiencePulseConversationMessageRow[]): {
   grounding: AudiencePulseGroundingSignal;
   contentGapEligible: boolean;
 } => {
@@ -360,7 +362,10 @@ const presentAudiencePulseAnchorSource = (
  * it cannot select message rows or reinterpret pairing/authorship rules itself.
  */
 export class PostgresAudiencePulseHistorySource implements AudiencePulseHistorySource {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    private readonly answerCoverageRepository?: Pick<AnswerCoverageRepositoryPort, "listByRequestMessageIds">,
+  ) {}
 
   /** Reuses the eligible-question predicate this file already owns; adds no new rule. */
   async listEligibleQuestionIds(input: {
@@ -413,12 +418,20 @@ export class PostgresAudiencePulseHistorySource implements AudiencePulseHistoryS
       analysisEnd: input.analysisEnd,
       questions: rows,
     });
+    const assessments = this.answerCoverageRepository
+      ? await this.answerCoverageRepository.listByRequestMessageIds({
+          workspaceId: input.workspaceId,
+          requestMessageIds: rows.map((row) => row.id),
+        })
+      : new Map();
 
     // The message id doubles as the evidence id: the census's own membership is
     // keyed by message id, so a topic's member ids resolve directly against this
     // population with no separate translation table.
     const evidence: AudiencePulseEvidence[] = rows.map((question) => {
       const answer = classifyAudiencePulseAnswerWindow(answerWindows.get(question.id) ?? []);
+      const assessment = assessments.get(question.id);
+      const confirmedAssessment = assessment?.assistantMessageId ? assessment : undefined;
       return {
         id: question.id,
         reference: { messageId: question.id, conversationId: question.conversation_id },
@@ -426,7 +439,12 @@ export class PostgresAudiencePulseHistorySource implements AudiencePulseHistoryS
         weekStart: audiencePulseWeekStartUtc(question.created_at),
         channel: question.source_channel,
         grounding: answer.grounding,
-        contentGapEligible: answer.contentGapEligible,
+        ...(confirmedAssessment
+          ? { answerCoverage: confirmedAssessment, legacyCoverage: false }
+          : assessment ? { legacyCoverage: false } : { legacyCoverage: true }),
+        contentGapEligible: confirmedAssessment
+          ? audiencePulseCoverageGapEligible(confirmedAssessment)
+          : assessment ? false : answer.contentGapEligible,
       };
     });
 

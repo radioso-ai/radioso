@@ -6,6 +6,44 @@
 
 export type ConversationRole = "system" | "user" | "assistant" | "tool";
 
+/** Provider-neutral semantic state for whether a request is resolved by admitted evidence. */
+export type AnswerCoverage = "answered" | "partial" | "unanswered" | "unclear";
+export type AnswerCoverageReason =
+  | "sufficient_evidence"
+  | "insufficient_evidence"
+  | "conflicting_evidence"
+  | "ambiguous_request"
+  | "intentional_scope_boundary";
+export type AnswerCoverageAvailability = "assessed" | "not_recorded" | "failed" | "invalid";
+export type AnswerCoverageAssessment =
+  | {
+      availability: "assessed";
+      coverage: AnswerCoverage;
+      reason: AnswerCoverageReason;
+      unresolvedRequest?: string;
+      schemaVersion: number;
+    }
+  | { availability: Exclude<AnswerCoverageAvailability, "assessed"> };
+
+/** Bounded, admitted evidence passed to the semantic assessor. It is never telemetry. */
+export interface AnswerCoverageEvidence {
+  id: string;
+  content: string;
+  sourceLabel?: string;
+}
+
+/** A narrow, assessed-only signal available to authored interaction criteria. */
+export interface AnswerCoverageSignal {
+  coverage: AnswerCoverage;
+  reason: AnswerCoverageReason;
+}
+
+/** Absent criteria preserve all legacy directive and routine behavior. */
+export interface AnswerCoverageCriteria {
+  coverage: AnswerCoverage[];
+  reasons?: AnswerCoverageReason[];
+}
+
 export type MessageSource =
   | "customer"
   | "ai_agent"
@@ -140,6 +178,8 @@ export interface Directive {
   excludes?: string[];
   description?: string;
   metadata?: Record<string, unknown>;
+  /** Optional typed semantic gate; absent retains the historical matching path. */
+  coverageCriteria?: AnswerCoverageCriteria;
 }
 
 export type DirectiveLifecycle =
@@ -789,6 +829,8 @@ export interface ConversationTurnStreamComposer extends ConversationTurnComposer
 export interface RoutineState {
   sessionId: string;
   routineId: string;
+  /** Stable identifier for this concrete routine run, when the host persists one. */
+  executionId?: string;
   path: string[];
   variables: Record<string, unknown>;
   /** Per-step entry counts, used by deterministic counter guards. */
@@ -945,6 +987,8 @@ export interface RoutineActivation {
   reentryMode: RoutineReentryMode;
   /** Optional skill/gate the host consults before offering the routine. */
   gateRef?: string;
+  /** Optional typed semantic gate; absent retains the historical activation path. */
+  coverageCriteria?: AnswerCoverageCriteria;
 }
 
 export interface Routine {
@@ -1259,6 +1303,24 @@ export interface ConversationRoutineActivator {
   >;
 }
 
+/** Post-evidence routine activator with bounded, non-content diagnostics. */
+export interface ConversationCoverageRoutineActivator extends ConversationRoutineActivator {
+  evaluateCandidates(input: {
+    turn: TurnContext;
+    suppressedRoutineIds?: readonly string[];
+  }): readonly {
+    routineId: string;
+    decision: "candidate" | "suppressed";
+    reasonCode: string;
+  }[];
+  /**
+   * Applies semantic reentry only after the current turn has a fresh matching
+   * coverage assessment. The normal pre-evidence reentry port must not see
+   * these routines.
+   */
+  reentryGate?: ConversationRoutineReentryGate;
+}
+
 export interface ProcessTurnInput {
   agent: ConversationAgentConfig;
   sessionId: string;
@@ -1291,6 +1353,39 @@ export interface ProcessTurnInput {
   clarificationStore?: ConversationClarificationStore;
   loopGuardCandidateIds?: string[];
   suppressNewClarification?: boolean;
+  /**
+   * Runs after admitted evidence is available and before coverage-gated directive
+   * matching or response composition. The engine does not know provider or evidence
+   * storage details; a host supplies the bounded semantic assessor.
+   */
+  coverageAssessor?: ConversationCoverageAssessor;
+  /**
+   * Optional second activation pass for routines explicitly gated by coverage
+   * criteria. The normal routine activator always runs first, so an active routine
+   * keeps control and legacy activation behavior is unchanged.
+   */
+  coverageRoutineActivator?: ConversationCoverageRoutineActivator;
+  /** Records bounded post-evidence decisions without exposing request/evidence text. */
+  coverageReactionRecorder?: ConversationCoverageReactionRecorder;
+}
+
+export interface ConversationCoverageAssessor {
+  assess(input: { turn: TurnContext }): Promise<AnswerCoverageAssessment>;
+}
+
+export interface ConversationCoverageReactionRecorder {
+  record(input: {
+    assessment: Extract<AnswerCoverageAssessment, { availability: "assessed" }>;
+    evaluationState: "evaluated" | "suppressed";
+    reactions: readonly {
+      reactionKey: string;
+      directiveId?: string;
+      routineId?: string;
+      routineExecutionId?: string;
+      decision: "matched" | "applied" | "offered" | "activated" | "skipped" | "suppressed";
+      reasonCode: string;
+    }[];
+  }): Promise<void>;
 }
 
 export type ConversationProgressPhase =
@@ -1322,6 +1417,15 @@ export interface AttemptRoutineInput {
   sessionId: string;
   inputEvent: ConversationInputEvent;
   stores: ConversationStores;
+  /**
+   * Optional host-prepared turn context. Post-evidence activation supplies this so
+   * a coverage-gated routine sees the same admitted evidence and assessment signal
+   * that selected it. Legacy activation continues to construct its historical
+   * empty-context turn when this is absent.
+   */
+  turnContext?: TurnContext;
+  /** The host already durably appended this input event; routine output still references it. */
+  inputEventAlreadyAppended?: boolean;
   directives?: Directive[];
   directiveMatcher?: ConversationDirectiveMatcher;
   steeringResolver?: SteeringResolver;
@@ -1354,6 +1458,13 @@ export interface ProcessTurnResult {
   decision: SelectionDecision;
   outcomes: TurnOutcome[];
   response: RenderableTurn;
+  /** Present only when this turn started or resumed a concrete routine execution. */
+  routineExecution?: {
+    routineId: string;
+    executionId?: string;
+  };
+  /** Routine IDs actually presented in an activation clarification on this turn. */
+  routineClarificationRoutineIds?: string[];
   trace: ConversationTrace;
   /**
    * Fire-and-forget action requests a routine emitted this turn. The host persists

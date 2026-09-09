@@ -627,6 +627,7 @@ CREATE TABLE public.agent_directives (
     lifecycle jsonb,
     surfaces text[] DEFAULT '{}'::text[] NOT NULL,
     enabled boolean DEFAULT true NOT NULL,
+    coverage_criteria jsonb,
     CONSTRAINT agent_directives_check CHECK ((((condition_kind = 'always'::text) AND (condition_description IS NULL)) OR ((condition_kind = 'contextual'::text) AND (NULLIF(btrim(condition_description), ''::text) IS NOT NULL)))),
     CONSTRAINT agent_directives_condition_kind_check CHECK ((condition_kind = ANY (ARRAY['always'::text, 'contextual'::text])))
 );
@@ -688,6 +689,59 @@ CREATE TABLE public.agents (
     CONSTRAINT agents_chat_override_pair CHECK ((((chat_provider IS NULL) AND (chat_model IS NULL)) OR ((chat_provider IS NOT NULL) AND (chat_model IS NOT NULL)))),
     CONSTRAINT agents_chat_provider_check CHECK (((chat_provider IS NULL) OR (chat_provider = ANY (ARRAY['openai'::text, 'openai-compatible'::text, 'gemini'::text, 'claude'::text])))),
     CONSTRAINT agents_source_scope_mode_check CHECK ((source_scope_mode = ANY (ARRAY['all'::text, 'selected'::text])))
+);
+
+
+--
+-- Name: answer_coverage_assessments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.answer_coverage_assessments (
+    id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    conversation_id uuid NOT NULL,
+    request_message_id uuid NOT NULL,
+    originating_turn_id uuid NOT NULL,
+    contextualized_request text NOT NULL,
+    availability text NOT NULL,
+    coverage text,
+    reason text,
+    unresolved_request text,
+    schema_version integer NOT NULL,
+    interaction_evaluation_state text,
+    assessed_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+    created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+    assistant_message_id uuid,
+    CONSTRAINT answer_coverage_assessments_availability_check CHECK ((availability = ANY (ARRAY['assessed'::text, 'not_recorded'::text, 'failed'::text, 'invalid'::text]))),
+    CONSTRAINT answer_coverage_assessments_check CHECK ((((availability = 'assessed'::text) AND (coverage IS NOT NULL) AND (reason IS NOT NULL)) OR ((availability <> 'assessed'::text) AND (coverage IS NULL) AND (reason IS NULL) AND (unresolved_request IS NULL)))),
+    CONSTRAINT answer_coverage_assessments_coverage_check CHECK ((coverage = ANY (ARRAY['answered'::text, 'partial'::text, 'unanswered'::text, 'unclear'::text]))),
+    CONSTRAINT answer_coverage_assessments_interaction_evaluation_state_check CHECK ((interaction_evaluation_state = 'evaluated'::text)),
+    CONSTRAINT answer_coverage_assessments_reason_check CHECK ((reason = ANY (ARRAY['sufficient_evidence'::text, 'insufficient_evidence'::text, 'conflicting_evidence'::text, 'ambiguous_request'::text, 'intentional_scope_boundary'::text])))
+);
+
+
+--
+-- Name: answer_coverage_reaction_traces; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.answer_coverage_reaction_traces (
+    id uuid NOT NULL,
+    assessment_id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    conversation_id uuid NOT NULL,
+    reaction_key text NOT NULL,
+    directive_id uuid,
+    routine_id text,
+    routine_execution_id uuid,
+    target_message_id uuid NOT NULL,
+    evaluation_state text NOT NULL,
+    evaluation_index integer NOT NULL,
+    decision text NOT NULL,
+    reason_code text NOT NULL,
+    created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+    CONSTRAINT answer_coverage_reaction_traces_decision_check CHECK ((decision = ANY (ARRAY['matched'::text, 'applied'::text, 'offered'::text, 'activated'::text, 'skipped'::text, 'suppressed'::text]))),
+    CONSTRAINT answer_coverage_reaction_traces_evaluation_index_check CHECK ((evaluation_index >= 0)),
+    CONSTRAINT answer_coverage_reaction_traces_evaluation_state_check CHECK ((evaluation_state = ANY (ARRAY['evaluated'::text, 'not_applicable'::text, 'suppressed'::text])))
 );
 
 
@@ -2745,6 +2799,7 @@ CREATE TABLE public.routine_definition (
     trigger_embedding public.vector,
     trigger_embedding_model text,
     trigger_embedding_hash text,
+    activation_coverage_criteria jsonb,
     CONSTRAINT routine_definition_activation_reentry_mode_check CHECK ((activation_reentry_mode = ANY (ARRAY['once_per_conversation'::text, 'always'::text, 'semantic'::text]))),
     CONSTRAINT routine_definition_activation_trigger_description_check CHECK ((NULLIF(btrim(activation_trigger_description), ''::text) IS NOT NULL)),
     CONSTRAINT routine_definition_name_check CHECK ((NULLIF(btrim(name), ''::text) IS NOT NULL)),
@@ -2786,7 +2841,8 @@ CREATE TABLE public.routine_states (
     expires_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    attempts jsonb DEFAULT '{}'::jsonb NOT NULL
+    attempts jsonb DEFAULT '{}'::jsonb NOT NULL,
+    execution_id uuid
 );
 
 
@@ -3722,6 +3778,54 @@ ALTER TABLE ONLY public.agent_skills
 
 ALTER TABLE ONLY public.agents
     ADD CONSTRAINT agents_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: answer_coverage_assessments answer_coverage_assessments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.answer_coverage_assessments
+    ADD CONSTRAINT answer_coverage_assessments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: answer_coverage_assessments answer_coverage_assessments_request_message_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.answer_coverage_assessments
+    ADD CONSTRAINT answer_coverage_assessments_request_message_id_key UNIQUE (request_message_id);
+
+
+--
+-- Name: answer_coverage_assessments answer_coverage_assessments_workspace_conversation_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.answer_coverage_assessments
+    ADD CONSTRAINT answer_coverage_assessments_workspace_conversation_id_key UNIQUE (workspace_id, conversation_id, id);
+
+
+--
+-- Name: answer_coverage_assessments answer_coverage_assessments_workspace_id_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.answer_coverage_assessments
+    ADD CONSTRAINT answer_coverage_assessments_workspace_id_id_key UNIQUE (workspace_id, id);
+
+
+--
+-- Name: answer_coverage_reaction_traces answer_coverage_reaction_traces_assessment_id_reaction_key_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.answer_coverage_reaction_traces
+    ADD CONSTRAINT answer_coverage_reaction_traces_assessment_id_reaction_key_key UNIQUE (assessment_id, reaction_key);
+
+
+--
+-- Name: answer_coverage_reaction_traces answer_coverage_reaction_traces_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.answer_coverage_reaction_traces
+    ADD CONSTRAINT answer_coverage_reaction_traces_pkey PRIMARY KEY (id);
 
 
 --
@@ -5170,6 +5274,20 @@ CREATE UNIQUE INDEX agent_skills_one_default_answer ON public.agent_skills USING
 
 
 --
+-- Name: answer_coverage_assessments_workspace_conversation_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX answer_coverage_assessments_workspace_conversation_idx ON public.answer_coverage_assessments USING btree (workspace_id, conversation_id, assessed_at);
+
+
+--
+-- Name: answer_coverage_reaction_traces_assessment_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX answer_coverage_reaction_traces_assessment_idx ON public.answer_coverage_reaction_traces USING btree (assessment_id, created_at);
+
+
+--
 -- Name: audit_events_chat_answer_assistant_lookup_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6423,6 +6541,13 @@ CREATE INDEX idx_conversations_workspace_id ON public.conversations USING btree 
 
 
 --
+-- Name: idx_conversations_workspace_id_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_conversations_workspace_id_unique ON public.conversations USING btree (workspace_id, id);
+
+
+--
 -- Name: idx_document_processing_jobs_claim; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6672,6 +6797,13 @@ CREATE INDEX idx_mcp_connections_agent ON public.mcp_connections USING btree (ag
 --
 
 CREATE INDEX idx_message_facets_workspace_prompt_version ON public.message_facets USING btree (workspace_id, prompt_version);
+
+
+--
+-- Name: idx_messages_workspace_conversation_id_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_messages_workspace_conversation_id_unique ON public.messages USING btree (workspace_id, conversation_id, id);
 
 
 --
@@ -8532,6 +8664,78 @@ ALTER TABLE ONLY public.agent_skills
 
 ALTER TABLE ONLY public.agents
     ADD CONSTRAINT agents_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: answer_coverage_assessments answer_coverage_assessments_conversation_assistant_message_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.answer_coverage_assessments
+    ADD CONSTRAINT answer_coverage_assessments_conversation_assistant_message_fkey FOREIGN KEY (workspace_id, conversation_id, assistant_message_id) REFERENCES public.messages(workspace_id, conversation_id, id) ON DELETE SET NULL (assistant_message_id);
+
+
+--
+-- Name: answer_coverage_assessments answer_coverage_assessments_workspace_id_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.answer_coverage_assessments
+    ADD CONSTRAINT answer_coverage_assessments_workspace_id_conversation_id_fkey FOREIGN KEY (workspace_id, conversation_id) REFERENCES public.conversations(workspace_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: answer_coverage_assessments answer_coverage_assessments_workspace_id_conversation_id_o_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.answer_coverage_assessments
+    ADD CONSTRAINT answer_coverage_assessments_workspace_id_conversation_id_o_fkey FOREIGN KEY (workspace_id, conversation_id, originating_turn_id) REFERENCES public.messages(workspace_id, conversation_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: answer_coverage_assessments answer_coverage_assessments_workspace_id_conversation_id_r_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.answer_coverage_assessments
+    ADD CONSTRAINT answer_coverage_assessments_workspace_id_conversation_id_r_fkey FOREIGN KEY (workspace_id, conversation_id, request_message_id) REFERENCES public.messages(workspace_id, conversation_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: answer_coverage_assessments answer_coverage_assessments_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.answer_coverage_assessments
+    ADD CONSTRAINT answer_coverage_assessments_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: answer_coverage_reaction_traces answer_coverage_reaction_tra_workspace_id_conversation_id_fkey1; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.answer_coverage_reaction_traces
+    ADD CONSTRAINT answer_coverage_reaction_tra_workspace_id_conversation_id_fkey1 FOREIGN KEY (workspace_id, conversation_id, target_message_id) REFERENCES public.messages(workspace_id, conversation_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: answer_coverage_reaction_traces answer_coverage_reaction_trac_workspace_id_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.answer_coverage_reaction_traces
+    ADD CONSTRAINT answer_coverage_reaction_trac_workspace_id_conversation_id_fkey FOREIGN KEY (workspace_id, conversation_id) REFERENCES public.conversations(workspace_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: answer_coverage_reaction_traces answer_coverage_reaction_traces_workspace_conversation_assessme; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.answer_coverage_reaction_traces
+    ADD CONSTRAINT answer_coverage_reaction_traces_workspace_conversation_assessme FOREIGN KEY (workspace_id, conversation_id, assessment_id) REFERENCES public.answer_coverage_assessments(workspace_id, conversation_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: answer_coverage_reaction_traces answer_coverage_reaction_traces_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.answer_coverage_reaction_traces
+    ADD CONSTRAINT answer_coverage_reaction_traces_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

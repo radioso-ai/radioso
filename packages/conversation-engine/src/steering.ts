@@ -11,7 +11,8 @@ import { effectiveSurfaces, resolveRenderSurfaces } from "./generationSurface.js
 import { timedStage } from "./traceStages.js";
 import { summarizeDirectiveMatch } from "./traceSummaries.js";
 
-export const directiveMatchToSteering = (match: DirectiveMatch): SteeringRule => ({
+const directiveMatchToSteering = (match: DirectiveMatch): SteeringRule => ({
+  ...(match.directive.id ? { id: match.directive.id } : {}),
   directiveName: match.directive.name,
   action: match.directive.action,
   condition: match.directive.condition.kind === "contextual"
@@ -123,12 +124,11 @@ export const buildResolvedSteering = async (input: {
   // A host may retain a match for trace and directive-to-skill binding after its
   // steering bound withheld it from every generator. Never rebuild those retained
   // diagnostics into an engine-owned routine or clarification prompt.
-  const directiveSteering = directiveMatches
-    .filter((match) => match.renderInSteering !== false)
-    .map(directiveMatchToSteering);
-  const combined = [...(input.baseSteering ?? []), ...directiveSteering];
-  const steering = (input.steeringResolver ?? defaultSteeringResolver).resolve(combined, {
-    turnContext: input.turn,
+  const steering = resolveDirectiveMatches({
+    turn: input.turn,
+    directiveMatches,
+    baseSteering: input.baseSteering,
+    steeringResolver: input.steeringResolver,
   });
   const completedAtMs = Date.now();
 
@@ -145,4 +145,20 @@ export const buildResolvedSteering = async (input: {
       completedAtMs,
     }),
   };
+};
+
+/** Applies one common precedence pass after hosts assemble multiple match sources. */
+export const resolveDirectiveMatches = (input: {
+  turn: TurnContext;
+  directiveMatches: readonly DirectiveMatch[];
+  baseSteering?: SteeringRule[];
+  steeringResolver?: SteeringResolver;
+}): SteeringRule[] => {
+  const directiveSteering = input.directiveMatches
+    .filter((match) => match.renderInSteering !== false)
+    .map(directiveMatchToSteering);
+  return (input.steeringResolver ?? defaultSteeringResolver).resolve(
+    [...(input.baseSteering ?? []), ...directiveSteering],
+    { turnContext: input.turn },
+  );
 };

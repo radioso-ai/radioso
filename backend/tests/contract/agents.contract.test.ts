@@ -837,6 +837,7 @@ describe("agents contract", () => {
         action: "Use a formal register.",
         tags: ["step:contact:ask_email"],
         binding: { kind: "skill", skillName: "order.lookup" },
+        coverageCriteria: { coverage: ["unanswered"], reasons: ["insufficient_evidence"] },
       })
       .expect(201);
 
@@ -859,6 +860,27 @@ describe("agents contract", () => {
         rationale: expect.any(String),
       },
     });
+
+    const omittedCoverage = await request(app)
+      .patch(`/api/v1/agents/${agent.body.id}/directives/${create.body.directive.id}`)
+      .set("Authorization", authorization)
+      .send({ action: "Keep the coverage condition." })
+      .expect(200);
+    expect(omittedCoverage.body.directive.coverageCriteria)
+      .toEqual({ coverage: ["unanswered"], reasons: ["insufficient_evidence"] });
+
+    await request(app)
+      .patch(`/api/v1/agents/${agent.body.id}/directives/${create.body.directive.id}`)
+      .set("Authorization", authorization)
+      .send({ coverageCriteria: null })
+      .expect(200)
+      .expect((response) => expect(response.body.directive.coverageCriteria).toBeUndefined());
+
+    await request(app)
+      .get(`/api/v1/agents/${agent.body.id}/directives`)
+      .set("Authorization", authorization)
+      .expect(200)
+      .expect((response) => expect(response.body.directives[0].coverageCriteria).toBeUndefined());
 
     const list = await request(app)
       .get(`/api/v1/agents/${agent.body.id}/directives`)

@@ -13,6 +13,10 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import type { RoutineDefinitionDraft, RoutineFieldGuardOp, RoutineFieldGuardUnit, RoutineGuardKind, RoutineReentryMode, RoutineSlotType, RoutineStepKind, RoutineValidationDiagnostic } from '@/lib/api'
+import {
+  compatibleAnswerCoverageReasons,
+  type AnswerCoverageValue,
+} from '@/lib/answer-coverage'
 import { documentDiagnosticText, formatBindingLine, formatBranchTargetLabel, instructionToProseParagraphs, proseParagraphsToInstruction, sanitizeDraftContentForSave } from '@/lib/routine-document'
 import { diagnosticTargetFor } from '@/lib/routine-form'
 import {
@@ -66,6 +70,19 @@ const instructionsEqual = (left: RoutineBlockInstructionSegment[], right: Routin
     return candidate.kind === 'slotReference' && segment.key === candidate.key && segment.source === candidate.source
   })
 
+const coverageCriteriaForSelection = (
+  current: RoutineBlockDoc['activation']['coverageCriteria'],
+  coverage: AnswerCoverageValue[],
+): RoutineBlockDoc['activation']['coverageCriteria'] => {
+  if (coverage.length === 0) return undefined
+  const compatibleReasons = new Set(compatibleAnswerCoverageReasons(coverage))
+  const reasons = current?.reasons?.filter((reason) => compatibleReasons.has(reason)) ?? []
+  return {
+    coverage,
+    ...(reasons.length > 0 ? { reasons } : {}),
+  }
+}
+
 const endingList = (doc: RoutineBlockDoc): RoutineBlockEnding[] => {
   const endings = new Map<string, RoutineBlockEnding>()
   for (const ending of doc.unreferencedEndings) endings.set(ending.stableStepId, ending)
@@ -85,6 +102,54 @@ function RoutineDocumentReader({ doc }: { doc: RoutineBlockDoc }) {
     <RoutineEndingsSection endings={doc.unreferencedEndings} />
     <RoutineInformationSection slots={doc.information} />
   </article>
+}
+
+function RoutineActivationEditor({ doc, apply, onDone }: {
+  doc: RoutineBlockDoc
+  apply: (edit: (current: RoutineBlockDoc) => RoutineBlockDoc) => void
+  onDone: () => void
+}) {
+  const criteria = doc.activation.coverageCriteria
+  const [addingCoverageCondition, setAddingCoverageCondition] = useState(false)
+  const showingCoverageCondition = Boolean(criteria) || addingCoverageCondition
+  return <div className="mt-3 space-y-3">
+    <Textarea aria-label="Activation trigger" value={doc.activation.triggerDescription} onChange={(event) => apply((current) => updateActivation(current, { triggerDescription: event.target.value }))} placeholder="Starts when…" rows={2} />
+    <div className="flex flex-wrap gap-2">
+      <label className="min-w-56 flex-1 text-xs">Reentry<select aria-label="Reentry" value={doc.activation.reentryMode ?? 'once_per_conversation'} onChange={(event) => apply((current) => updateActivation(current, { reentryMode: event.target.value as RoutineReentryMode }))} className="mt-1 h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm"><option value="once_per_conversation">Once per conversation</option><option value="always">Every time it matches</option><option value="semantic">Let the assistant decide</option></select></label>
+      <label className="min-w-32 flex-1 text-xs">Priority<Input aria-label="Priority" type="number" value={doc.activation.priority} onChange={(event) => apply((current) => updateActivation(current, { priority: Number(event.target.value) || 0 }))} /></label>
+    </div>
+    {showingCoverageCondition ? <div className="space-y-2 rounded-md border border-border bg-muted/20 p-3" aria-label="Answer coverage condition">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div><Label>Only if</Label><p className="mt-1 text-xs text-muted-foreground">Starts when matches and the recorded answer coverage matches these values.</p></div>
+        <Button type="button" size="sm" variant="ghost" onClick={() => { setAddingCoverageCondition(false); apply((current) => updateActivation(current, { coverageCriteria: undefined })) }}>Remove condition</Button>
+      </div>
+      <div><p className="mb-1 text-xs font-medium text-foreground">Answer coverage</p><div className="flex flex-wrap gap-2">{(['answered', 'partial', 'unanswered', 'unclear'] as const).map((coverage) => {
+        const selected = criteria?.coverage.includes(coverage) ?? false
+        return <button key={coverage} type="button" role="checkbox" aria-checked={selected} onClick={() => apply((current) => {
+          const currentCriteria = current.activation.coverageCriteria
+          const selectedCoverage = currentCriteria?.coverage ?? []
+          const nextCoverage = selected ? selectedCoverage.filter((item) => item !== coverage) : [...selectedCoverage, coverage]
+          if (nextCoverage.length === 0) setAddingCoverageCondition(false)
+          return updateActivation(current, { coverageCriteria: coverageCriteriaForSelection(currentCriteria, nextCoverage) })
+        })} className={selected ? 'rounded-full border border-primary bg-muted/40 px-3 py-1.5 text-sm' : 'rounded-full border border-border px-3 py-1.5 text-sm text-muted-foreground'}>{coverage.replaceAll('_', ' ')}</button>
+      })}</div></div>
+      <div><p className="mb-1 text-xs font-medium text-foreground">Reason <span className="font-normal text-muted-foreground">(optional)</span></p><div className="flex flex-wrap gap-2">{(['sufficient_evidence', 'insufficient_evidence', 'conflicting_evidence', 'ambiguous_request', 'intentional_scope_boundary'] as const).map((reason) => {
+        const selected = criteria?.reasons?.includes(reason) ?? false
+        const compatible = criteria
+          ? compatibleAnswerCoverageReasons(criteria.coverage).includes(reason)
+          : false
+        return <button key={reason} type="button" role="checkbox" aria-checked={selected} disabled={!compatible} onClick={() => apply((current) => {
+          const currentCriteria = current.activation.coverageCriteria!
+          const reasons = currentCriteria.reasons ?? []
+          const nextReasons = selected ? reasons.filter((item) => item !== reason) : [...reasons, reason]
+          const withoutReasons = { ...currentCriteria }
+          delete withoutReasons.reasons
+          return updateActivation(current, { coverageCriteria: nextReasons.length > 0 ? { ...withoutReasons, reasons: nextReasons } : withoutReasons })
+        })} className={selected ? 'rounded-full border border-primary bg-muted/40 px-3 py-1.5 text-xs disabled:cursor-not-allowed disabled:opacity-50' : 'rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50'}>{reason.replaceAll('_', ' ')}</button>
+      })}</div></div>
+    </div> : <div className="flex flex-wrap items-center gap-2"><DropdownMenu><DropdownMenuTrigger asChild><Button type="button" size="sm" variant="outline"><Plus className="mr-1.5 h-4 w-4" />Add condition</Button></DropdownMenuTrigger><DropdownMenuContent align="start"><DropdownMenuItem onSelect={() => setAddingCoverageCondition(true)}>Answer coverage</DropdownMenuItem></DropdownMenuContent></DropdownMenu><Button type="button" size="sm" onClick={onDone}>Done</Button></div>}
+    {showingCoverageCondition ? <Button type="button" size="sm" onClick={onDone}>Done</Button> : null}
+  </div>
 }
 
 function GuardEditor({ branch, slots, outcomes = [], onChange }: { branch: RoutineBlockBranch; slots: RoutineBlockDoc['information']; outcomes?: { status: string; displayName: string }[]; onChange: (patch: Partial<RoutineBlockGuard>) => void }) {
@@ -147,7 +212,7 @@ function DocumentEditor({ initialDoc, onDraftChange, diagnostics }: { initialDoc
   const targetOptions = (stepId: string) => <><option value="">Choose target…</option>{doc.steps.filter((step) => step.stableStepId !== stepId).map((step) => <option key={step.stableStepId} value={`step:${step.stableStepId}`}>Step: {step.instruction.map((segment) => segment.kind === 'text' ? segment.text : segment.key).join('').trim() || step.stableStepId}</option>)}{endings.map((ending) => <option key={ending.stableStepId} value={`ending:${ending.stableStepId}`}>{formatBranchTargetLabel(ending)}</option>)}</>
   const close = () => setEditing(null)
   return <article className="space-y-6 rounded-lg border border-border bg-background p-5" aria-label="Routine document editor">
-    <RoutineDocumentHeader doc={doc} editable onEdit={() => setEditing('activation')} editor={editing === 'activation' ? <div className="mt-3 space-y-3"><Textarea aria-label="Activation trigger" value={doc.activation.triggerDescription} onChange={(event) => apply((current) => updateActivation(current, { triggerDescription: event.target.value }))} placeholder="Starts when…" rows={2} /><div className="grid gap-2 sm:grid-cols-2"><label className="text-xs">Reentry<select aria-label="Reentry" value={doc.activation.reentryMode ?? 'once_per_conversation'} onChange={(event) => apply((current) => updateActivation(current, { reentryMode: event.target.value as RoutineReentryMode }))} className="mt-1 h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm"><option value="once_per_conversation">Once per conversation</option><option value="always">Every time it matches</option><option value="semantic">Let the assistant decide</option></select></label><label className="text-xs">Priority<Input aria-label="Priority" type="number" value={doc.activation.priority} onChange={(event) => apply((current) => updateActivation(current, { priority: Number(event.target.value) || 0 }))} /></label></div><Button type="button" size="sm" onClick={close}>Done</Button></div> : undefined} />
+    <RoutineDocumentHeader doc={doc} editable onEdit={() => setEditing('activation')} editor={editing === 'activation' ? <RoutineActivationEditor doc={doc} apply={apply} onDone={close} /> : undefined} />
     <section aria-labelledby="routine-document-steps"><h3 id="routine-document-steps" className="sr-only">Steps</h3><div className="flex items-center justify-end"><DropdownMenu><DropdownMenuTrigger asChild><Button type="button" size="sm" variant="ghost"><Plus className="mr-1 h-4 w-4" />Step</Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={() => apply((current) => addStep(current, 'chat'))}>Chat</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuLabel>Tool steps</DropdownMenuLabel><p className="px-2 pb-2 text-xs text-muted-foreground">Call a skill, wait for its result, and branch on its outcome.</p>{catalog.skills.map((skill) => <DropdownMenuItem key={skill.skillName} onSelect={() => apply((current) => { const next = addStep(current, 'tool'); return updateStep(next, next.steps.at(-1)!.stableStepId, { toolRef: skill.skillName }) })}>{skill.displayName}</DropdownMenuItem>)}<DropdownMenuSeparator /><DropdownMenuItem onSelect={() => apply((current) => addStep(current, 'approval'))}>Approval</DropdownMenuItem><DropdownMenuLabel>Action steps</DropdownMenuLabel><p className="px-2 pb-2 text-xs text-muted-foreground">Dispatch an outbox side effect, then continue.</p>{catalog.skills.map((skill) => <DropdownMenuItem key={`action-${skill.skillName}`} onSelect={() => apply((current) => { const next = addStep(current, 'action'); return updateStep(next, next.steps.at(-1)!.stableStepId, { actionType: skill.skillName }) })}>{skill.displayName}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu></div><ol className="mt-1 divide-y divide-border">{doc.steps.map((step, stepIndex) => <StepEditor key={step.stableStepId} notes={stepNotes(step)} step={step} stepIndex={stepIndex} doc={doc} slotNames={slotNames} documentIndex={documentIndex} nextStepId={doc.steps[stepIndex + 1]?.stableStepId ?? null} variables={variables} targetOptions={targetOptions} apply={apply} addVariable={addVariable} editing={editing} setEditing={setEditing} />)}</ol></section>
     <RoutineEndingsSection endings={doc.unreferencedEndings} notesFor={(ending) => diagnosticNotes.get(`step:${ending.stableStepId}`)} onAdd={(kind) => apply((current) => addEnding(current, kind))} editable editingEndingId={editing?.startsWith('ending:') ? editing.slice(7) : null} onEdit={(ending) => setEditing(`ending:${ending.stableStepId}`)} renderEditor={(ending) => <div className="flex flex-wrap gap-2"><Input aria-label={`${ending.stableStepId} id`} className="h-9 w-40" defaultValue={ending.stableStepId} onBlur={(event) => apply((current) => renameEnding(current, ending.stableStepId, event.target.value))} /><select aria-label={`${ending.stableStepId} kind`} value={ending.kind} onChange={(event) => apply((current) => updateEnding(current, ending.stableStepId, { kind: event.target.value as RoutineBlockEnding['kind'] }))} className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"><option value="complete">Finish</option><option value="handoff">Hand off</option></select><Input aria-label={`${ending.stableStepId} message`} value={ending.instruction ?? ''} onChange={(event) => apply((current) => updateEnding(current, ending.stableStepId, { instruction: event.target.value }))} placeholder="Message (optional)" /><Button type="button" size="sm" onClick={close}>Done</Button><Button type="button" size="icon" variant="ghost" aria-label={`Remove ${ending.stableStepId}`} onClick={() => { const refs = endingReferences(doc, ending.stableStepId); if (refs.length) { setEndingRemovalError(`Can't remove ${ending.stableStepId}; ${refs.join(', ')} still ends here. Point those branches elsewhere first.`); return } setEndingRemovalError(null); apply((current) => removeEnding(current, ending.stableStepId)); close() }}><Trash2 className="h-4 w-4" /></Button></div>} />
     <RoutineInformationSection slots={doc.information} notesFor={(slot) => diagnosticNotes.get(`slot:${slot.key}`)} editable editingSlotId={editing?.startsWith('slot:') ? editing.slice(5) : null} onEditSlot={(slot) => setEditing(`slot:${slot.stableSlotId}`)} renderEditor={(slot) => <div className="grid gap-2 sm:grid-cols-[130px_120px_1fr_auto]"><Input aria-label={`Slot ${slot.key} name`} value={slot.key} onChange={(event) => apply((current) => renameSlot(current, slot.stableSlotId, event.target.value))} /><select aria-label={`Slot ${slot.key} type`} value={slot.type} onChange={(event) => apply((current) => updateSlot(current, slot.stableSlotId, { type: event.target.value as RoutineSlotType }))} className="h-9 rounded-md border border-input bg-transparent px-2 text-sm">{slotTypes.map((type) => <option key={type}>{type}</option>)}</select><Input aria-label={`Slot ${slot.key} description`} value={slot.description ?? ''} onChange={(event) => apply((current) => updateSlot(current, slot.stableSlotId, { description: event.target.value || null }))} placeholder="Description" /><div className="flex items-center gap-2"><Label className="text-xs">Required</Label><Switch checked={slot.required} onCheckedChange={(checked) => apply((current) => updateSlot(current, slot.stableSlotId, { required: checked }))} /><Button type="button" size="sm" onClick={close}>Done</Button><Button type="button" size="icon" variant="ghost" aria-label={`Remove slot ${slot.key}`} onClick={() => { const refs = slotReferences(doc, slot.key); if (refs.length) { setSlotRemovalError(`Can't remove ${slot.key}; it is referenced by ${refs.join(', ')}. Remove those references first.`); return } setSlotRemovalError(null); apply((current) => removeSlot(current, slot.stableSlotId)); close() }}><Trash2 className="h-4 w-4" /></Button></div></div>} />

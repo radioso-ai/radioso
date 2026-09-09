@@ -4380,6 +4380,41 @@
           }
         ]
       },
+      "AnswerCoverageCriteria": {
+        "type": "object",
+        "properties": {
+          "coverage": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "answered",
+                "partial",
+                "unanswered",
+                "unclear"
+              ]
+            },
+            "minItems": 1
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "sufficient_evidence",
+                "insufficient_evidence",
+                "conflicting_evidence",
+                "ambiguous_request",
+                "intentional_scope_boundary"
+              ]
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "coverage"
+        ]
+      },
       "GenerationSurface": {
         "type": "string",
         "enum": [
@@ -4484,6 +4519,9 @@
               }
             ]
           },
+          "coverageCriteria": {
+            "$ref": "#/components/schemas/AnswerCoverageCriteria"
+          },
           "enabled": {
             "type": "boolean",
             "description": "Reversible off switch. A disabled directive keeps its authored text but never reaches the matcher. Defaults to true."
@@ -4587,6 +4625,19 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/AuthoredDirectiveLifecycle"
+              },
+              {
+                "type": "null"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "coverageCriteria": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnswerCoverageCriteria"
               },
               {
                 "type": "null"
@@ -4808,6 +4859,9 @@
               }
             ]
           },
+          "coverageCriteria": {
+            "$ref": "#/components/schemas/AnswerCoverageCriteria"
+          },
           "enabled": {
             "type": "boolean"
           },
@@ -4987,6 +5041,42 @@
                   "semantic"
                 ],
                 "default": "once_per_conversation"
+              },
+              "coverageCriteria": {
+                "type": "object",
+                "properties": {
+                  "coverage": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "answered",
+                        "partial",
+                        "unanswered",
+                        "unclear"
+                      ]
+                    },
+                    "minItems": 1
+                  },
+                  "reasons": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "sufficient_evidence",
+                        "insufficient_evidence",
+                        "conflicting_evidence",
+                        "ambiguous_request",
+                        "intentional_scope_boundary"
+                      ]
+                    },
+                    "minItems": 1
+                  }
+                },
+                "required": [
+                  "coverage"
+                ],
+                "additionalProperties": false
               }
             },
             "required": [
@@ -5509,6 +5599,42 @@
                   "semantic"
                 ],
                 "default": "once_per_conversation"
+              },
+              "coverageCriteria": {
+                "type": "object",
+                "properties": {
+                  "coverage": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "answered",
+                        "partial",
+                        "unanswered",
+                        "unclear"
+                      ]
+                    },
+                    "minItems": 1
+                  },
+                  "reasons": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "sufficient_evidence",
+                        "insufficient_evidence",
+                        "conflicting_evidence",
+                        "ambiguous_request",
+                        "intentional_scope_boundary"
+                      ]
+                    },
+                    "minItems": 1
+                  }
+                },
+                "required": [
+                  "coverage"
+                ],
+                "additionalProperties": false
               }
             },
             "required": [
@@ -6111,6 +6237,42 @@
                   "semantic"
                 ],
                 "default": "once_per_conversation"
+              },
+              "coverageCriteria": {
+                "type": "object",
+                "properties": {
+                  "coverage": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "answered",
+                        "partial",
+                        "unanswered",
+                        "unclear"
+                      ]
+                    },
+                    "minItems": 1
+                  },
+                  "reasons": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "sufficient_evidence",
+                        "insufficient_evidence",
+                        "conflicting_evidence",
+                        "ambiguous_request",
+                        "intentional_scope_boundary"
+                      ]
+                    },
+                    "minItems": 1
+                  }
+                },
+                "required": [
+                  "coverage"
+                ],
+                "additionalProperties": false
               }
             },
             "required": [
@@ -6782,6 +6944,42 @@
                       "semantic"
                     ],
                     "default": "once_per_conversation"
+                  },
+                  "coverageCriteria": {
+                    "type": "object",
+                    "properties": {
+                      "coverage": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "answered",
+                            "partial",
+                            "unanswered",
+                            "unclear"
+                          ]
+                        },
+                        "minItems": 1
+                      },
+                      "reasons": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "sufficient_evidence",
+                            "insufficient_evidence",
+                            "conflicting_evidence",
+                            "ambiguous_request",
+                            "intentional_scope_boundary"
+                          ]
+                        },
+                        "minItems": 1
+                      }
+                    },
+                    "required": [
+                      "coverage"
+                    ],
+                    "additionalProperties": false
                   }
                 },
                 "required": [
@@ -7838,6 +8036,9 @@
               }
             ]
           },
+          "coverageCriteria": {
+            "$ref": "#/components/schemas/AnswerCoverageCriteria"
+          },
           "enabled": {
             "type": "boolean"
           },
@@ -8405,6 +8606,42 @@
                       "semantic"
                     ],
                     "default": "once_per_conversation"
+                  },
+                  "coverageCriteria": {
+                    "type": "object",
+                    "properties": {
+                      "coverage": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "answered",
+                            "partial",
+                            "unanswered",
+                            "unclear"
+                          ]
+                        },
+                        "minItems": 1
+                      },
+                      "reasons": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "sufficient_evidence",
+                            "insufficient_evidence",
+                            "conflicting_evidence",
+                            "ambiguous_request",
+                            "intentional_scope_boundary"
+                          ]
+                        },
+                        "minItems": 1
+                      }
+                    },
+                    "required": [
+                      "coverage"
+                    ],
+                    "additionalProperties": false
                   }
                 },
                 "required": [
@@ -13073,6 +13310,157 @@
           },
           "turnTrace": {
             "$ref": "#/components/schemas/TurnTraceEnvelope"
+          },
+          "answerCoverage": {
+            "type": "object",
+            "properties": {
+              "availability": {
+                "type": "string",
+                "enum": [
+                  "assessed",
+                  "not_recorded",
+                  "failed",
+                  "invalid"
+                ]
+              },
+              "coverage": {
+                "type": "string",
+                "enum": [
+                  "answered",
+                  "partial",
+                  "unanswered",
+                  "unclear"
+                ]
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "sufficient_evidence",
+                  "insufficient_evidence",
+                  "conflicting_evidence",
+                  "ambiguous_request",
+                  "intentional_scope_boundary"
+                ]
+              },
+              "contextualizedRequest": {
+                "type": "string"
+              },
+              "unresolvedRequest": {
+                "type": "string"
+              },
+              "originatingTurnId": {
+                "type": "string"
+              },
+              "originatingRequestId": {
+                "type": "string"
+              },
+              "schemaVersion": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "assessedAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "availability",
+              "originatingTurnId",
+              "originatingRequestId"
+            ]
+          },
+          "interactionTrace": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "not_evaluated",
+                  "evaluated"
+                ]
+              },
+              "consumedAssessment": {
+                "type": "object",
+                "properties": {
+                  "coverage": {
+                    "type": "string",
+                    "enum": [
+                      "answered",
+                      "partial",
+                      "unanswered",
+                      "unclear"
+                    ]
+                  },
+                  "reason": {
+                    "type": "string",
+                    "enum": [
+                      "sufficient_evidence",
+                      "insufficient_evidence",
+                      "conflicting_evidence",
+                      "ambiguous_request",
+                      "intentional_scope_boundary"
+                    ]
+                  }
+                },
+                "required": [
+                  "coverage",
+                  "reason"
+                ]
+              },
+              "decisions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "assessmentRequestId": {
+                      "type": "string"
+                    },
+                    "target": {
+                      "type": "string",
+                      "enum": [
+                        "directive",
+                        "routine"
+                      ]
+                    },
+                    "targetId": {
+                      "type": "string"
+                    },
+                    "decision": {
+                      "type": "string",
+                      "enum": [
+                        "matched",
+                        "applied",
+                        "offered",
+                        "activated",
+                        "skipped",
+                        "suppressed"
+                      ]
+                    },
+                    "reasonCode": {
+                      "type": "string"
+                    },
+                    "routineExecutionId": {
+                      "type": "string"
+                    },
+                    "targetMessageId": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  },
+                  "required": [
+                    "assessmentRequestId",
+                    "target",
+                    "decision",
+                    "reasonCode",
+                    "targetMessageId"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "state",
+              "decisions"
+            ]
           }
         },
         "required": [
@@ -13963,6 +14351,159 @@
           "hasMore"
         ]
       },
+      "AnswerCoverageAssessment": {
+        "type": "object",
+        "properties": {
+          "availability": {
+            "type": "string",
+            "enum": [
+              "assessed",
+              "not_recorded",
+              "failed",
+              "invalid"
+            ]
+          },
+          "coverage": {
+            "type": "string",
+            "enum": [
+              "answered",
+              "partial",
+              "unanswered",
+              "unclear"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "sufficient_evidence",
+              "insufficient_evidence",
+              "conflicting_evidence",
+              "ambiguous_request",
+              "intentional_scope_boundary"
+            ]
+          },
+          "contextualizedRequest": {
+            "type": "string"
+          },
+          "unresolvedRequest": {
+            "type": "string"
+          },
+          "originatingTurnId": {
+            "type": "string"
+          },
+          "originatingRequestId": {
+            "type": "string"
+          },
+          "schemaVersion": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "assessedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "availability",
+          "originatingTurnId",
+          "originatingRequestId"
+        ],
+        "description": "Persisted semantic coverage for this assistant turn. It is independent from retrieval evidence, citation validation, and the response outcome."
+      },
+      "AnswerCoverageInteractionTrace": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "not_evaluated",
+              "evaluated"
+            ]
+          },
+          "consumedAssessment": {
+            "type": "object",
+            "properties": {
+              "coverage": {
+                "type": "string",
+                "enum": [
+                  "answered",
+                  "partial",
+                  "unanswered",
+                  "unclear"
+                ]
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "sufficient_evidence",
+                  "insufficient_evidence",
+                  "conflicting_evidence",
+                  "ambiguous_request",
+                  "intentional_scope_boundary"
+                ]
+              }
+            },
+            "required": [
+              "coverage",
+              "reason"
+            ]
+          },
+          "decisions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "assessmentRequestId": {
+                  "type": "string"
+                },
+                "target": {
+                  "type": "string",
+                  "enum": [
+                    "directive",
+                    "routine"
+                  ]
+                },
+                "targetId": {
+                  "type": "string"
+                },
+                "decision": {
+                  "type": "string",
+                  "enum": [
+                    "matched",
+                    "applied",
+                    "offered",
+                    "activated",
+                    "skipped",
+                    "suppressed"
+                  ]
+                },
+                "reasonCode": {
+                  "type": "string"
+                },
+                "routineExecutionId": {
+                  "type": "string"
+                },
+                "targetMessageId": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "required": [
+                "assessmentRequestId",
+                "target",
+                "decision",
+                "reasonCode",
+                "targetMessageId"
+              ]
+            }
+          }
+        },
+        "required": [
+          "state",
+          "decisions"
+        ],
+        "description": "Recorded coverage-dependent directive and routine evaluation in execution order. `evaluated` with an empty decisions list means no rule matched; `not_evaluated` means no coverage rule ran."
+      },
       "ChatConversationMessageDebug": {
         "type": "object",
         "properties": {
@@ -13991,7 +14532,11 @@
             "enum": [
               "grounded_success",
               "no_context_refusal",
-              "non_retrieval_response"
+              "non_retrieval_response",
+              "coverage_partial",
+              "coverage_unanswered",
+              "coverage_unclear",
+              "coverage_unavailable"
             ]
           },
           "skillName": {
@@ -14024,6 +14569,12 @@
           },
           "turnTrace": {
             "$ref": "#/components/schemas/TurnTraceEnvelope"
+          },
+          "answerCoverage": {
+            "$ref": "#/components/schemas/AnswerCoverageAssessment"
+          },
+          "interactionTrace": {
+            "$ref": "#/components/schemas/AnswerCoverageInteractionTrace"
           },
           "errorMessage": {
             "type": [
@@ -17473,6 +18024,88 @@
           "conversationCount"
         ]
       },
+      "AnswerCoverage": {
+        "type": "object",
+        "properties": {
+          "availability": {
+            "type": "string",
+            "enum": [
+              "assessed",
+              "not_recorded",
+              "failed",
+              "invalid"
+            ]
+          },
+          "coverage": {
+            "type": "string",
+            "enum": [
+              "answered",
+              "partial",
+              "unanswered",
+              "unclear"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "sufficient_evidence",
+              "insufficient_evidence",
+              "conflicting_evidence",
+              "ambiguous_request",
+              "intentional_scope_boundary"
+            ]
+          }
+        },
+        "required": [
+          "availability"
+        ],
+        "description": "Recorded semantic coverage. Unresolved request text is intentionally excluded from Pulse."
+      },
+      "AudiencePulseSemanticCoverage": {
+        "type": "object",
+        "properties": {
+          "answered": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "partial": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "unanswered": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "unclear": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "unassessed": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "legacy": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "reasons": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "required": [
+          "answered",
+          "partial",
+          "unanswered",
+          "unclear",
+          "unassessed",
+          "legacy",
+          "reasons"
+        ]
+      },
       "AudiencePulseEvidence": {
         "type": "object",
         "properties": {
@@ -17494,6 +18127,9 @@
           "occurrenceCount": {
             "type": "integer",
             "minimum": 1
+          },
+          "answerCoverage": {
+            "$ref": "#/components/schemas/AnswerCoverage"
           }
         },
         "required": [
@@ -17703,6 +18339,9 @@
           },
           "grounding": {
             "$ref": "#/components/schemas/AudiencePulseGrounding"
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/AudiencePulseSemanticCoverage"
           },
           "evidence": {
             "type": "array",
@@ -18540,12 +19179,18 @@
           "expectedDraftGeneration": {
             "type": "integer",
             "exclusiveMinimum": 0
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
           }
         },
         "required": [
           "mode",
           "revisionIds",
-          "testValues"
+          "testValues",
+          "idempotencyKey"
         ],
         "additionalProperties": false
       },
@@ -19138,6 +19783,11 @@
             "enum": [
               "safe_test"
             ]
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
           }
         },
         "required": [
@@ -19145,7 +19795,8 @@
           "caseIds",
           "testValues",
           "mode",
-          "executionPolicy"
+          "executionPolicy",
+          "idempotencyKey"
         ],
         "additionalProperties": false
       },

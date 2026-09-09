@@ -4970,6 +4970,10 @@ export interface components {
             kind: "cooldown";
             turns: number;
         };
+        AnswerCoverageCriteria: {
+            coverage: ("answered" | "partial" | "unanswered" | "unclear")[];
+            reasons?: ("sufficient_evidence" | "insufficient_evidence" | "conflicting_evidence" | "ambiguous_request" | "intentional_scope_boundary")[];
+        };
         /**
          * @description Generator a directive addresses. Omitted or empty means the answer body only.
          * @enum {string}
@@ -4988,6 +4992,7 @@ export interface components {
             description?: string | null;
             binding?: components["schemas"]["AuthoredDirectiveBinding"] | null;
             lifecycle?: components["schemas"]["AuthoredDirectiveLifecycle"] | null;
+            coverageCriteria?: components["schemas"]["AnswerCoverageCriteria"];
             /** @description Reversible off switch. A disabled directive keeps its authored text but never reaches the matcher. Defaults to true. */
             enabled?: boolean;
             metadata?: {
@@ -5007,6 +5012,7 @@ export interface components {
             description?: string | null;
             binding?: components["schemas"]["AuthoredDirectiveBinding"] | null;
             lifecycle?: components["schemas"]["AuthoredDirectiveLifecycle"] | null;
+            coverageCriteria?: components["schemas"]["AnswerCoverageCriteria"] | null;
             /** @description Reversible off switch. A disabled directive keeps its authored text but never reaches the matcher. Defaults to true. */
             enabled?: boolean;
             metadata?: {
@@ -5053,6 +5059,7 @@ export interface components {
             description: string | null;
             binding: components["schemas"]["AuthoredDirectiveBinding"] | null;
             lifecycle: components["schemas"]["AuthoredDirectiveLifecycle"] | null;
+            coverageCriteria?: components["schemas"]["AnswerCoverageCriteria"];
             enabled: boolean;
             metadata: {
                 [key: string]: unknown;
@@ -5097,6 +5104,10 @@ export interface components {
                  * @enum {string}
                  */
                 reentryMode: "once_per_conversation" | "always" | "semantic";
+                coverageCriteria?: {
+                    coverage: ("answered" | "partial" | "unanswered" | "unclear")[];
+                    reasons?: ("sufficient_evidence" | "insufficient_evidence" | "conflicting_evidence" | "ambiguous_request" | "intentional_scope_boundary")[];
+                };
             };
             /** @default [] */
             slots: {
@@ -5192,6 +5203,10 @@ export interface components {
                  * @enum {string}
                  */
                 reentryMode: "once_per_conversation" | "always" | "semantic";
+                coverageCriteria?: {
+                    coverage: ("answered" | "partial" | "unanswered" | "unclear")[];
+                    reasons?: ("sufficient_evidence" | "insufficient_evidence" | "conflicting_evidence" | "ambiguous_request" | "intentional_scope_boundary")[];
+                };
             };
             /** @default [] */
             slots: {
@@ -5299,6 +5314,10 @@ export interface components {
                  * @enum {string}
                  */
                 reentryMode: "once_per_conversation" | "always" | "semantic";
+                coverageCriteria?: {
+                    coverage: ("answered" | "partial" | "unanswered" | "unclear")[];
+                    reasons?: ("sufficient_evidence" | "insufficient_evidence" | "conflicting_evidence" | "ambiguous_request" | "intentional_scope_boundary")[];
+                };
             };
             /** @default [] */
             slots: {
@@ -5435,6 +5454,10 @@ export interface components {
                      * @enum {string}
                      */
                     reentryMode: "once_per_conversation" | "always" | "semantic";
+                    coverageCriteria?: {
+                        coverage: ("answered" | "partial" | "unanswered" | "unclear")[];
+                        reasons?: ("sufficient_evidence" | "insufficient_evidence" | "conflicting_evidence" | "ambiguous_request" | "intentional_scope_boundary")[];
+                    };
                 };
                 /** @default [] */
                 slots: {
@@ -5655,6 +5678,7 @@ export interface components {
             description: string | null;
             binding: components["schemas"]["AuthoredDirectiveBinding"] | null;
             lifecycle: components["schemas"]["AuthoredDirectiveLifecycle"] | null;
+            coverageCriteria?: components["schemas"]["AnswerCoverageCriteria"];
             enabled: boolean;
             metadata: {
                 [key: string]: unknown;
@@ -5794,6 +5818,10 @@ export interface components {
                      * @enum {string}
                      */
                     reentryMode: "once_per_conversation" | "always" | "semantic";
+                    coverageCriteria?: {
+                        coverage: ("answered" | "partial" | "unanswered" | "unclear")[];
+                        reasons?: ("sufficient_evidence" | "insufficient_evidence" | "conflicting_evidence" | "ambiguous_request" | "intentional_scope_boundary")[];
+                    };
                 };
                 /** @default [] */
                 slots: {
@@ -6990,6 +7018,43 @@ export interface components {
             activitySummary: components["schemas"]["ActivitySummary"];
             activityTrace: components["schemas"]["ActivityTrace"];
             turnTrace?: components["schemas"]["TurnTraceEnvelope"];
+            answerCoverage?: {
+                /** @enum {string} */
+                availability: "assessed" | "not_recorded" | "failed" | "invalid";
+                /** @enum {string} */
+                coverage?: "answered" | "partial" | "unanswered" | "unclear";
+                /** @enum {string} */
+                reason?: "sufficient_evidence" | "insufficient_evidence" | "conflicting_evidence" | "ambiguous_request" | "intentional_scope_boundary";
+                contextualizedRequest?: string;
+                unresolvedRequest?: string;
+                originatingTurnId: string;
+                originatingRequestId: string;
+                schemaVersion?: number;
+                /** Format: date-time */
+                assessedAt?: string;
+            };
+            interactionTrace?: {
+                /** @enum {string} */
+                state: "not_evaluated" | "evaluated";
+                consumedAssessment?: {
+                    /** @enum {string} */
+                    coverage: "answered" | "partial" | "unanswered" | "unclear";
+                    /** @enum {string} */
+                    reason: "sufficient_evidence" | "insufficient_evidence" | "conflicting_evidence" | "ambiguous_request" | "intentional_scope_boundary";
+                };
+                decisions: {
+                    assessmentRequestId: string;
+                    /** @enum {string} */
+                    target: "directive" | "routine";
+                    targetId?: string;
+                    /** @enum {string} */
+                    decision: "matched" | "applied" | "offered" | "activated" | "skipped" | "suppressed";
+                    reasonCode: string;
+                    routineExecutionId?: string;
+                    /** Format: uuid */
+                    targetMessageId: string;
+                }[];
+            };
         };
         ChatResponse: {
             /** Format: uuid */
@@ -7221,6 +7286,45 @@ export interface components {
             nextCursor: null;
             hasMore: boolean;
         };
+        /** @description Persisted semantic coverage for this assistant turn. It is independent from retrieval evidence, citation validation, and the response outcome. */
+        AnswerCoverageAssessment: {
+            /** @enum {string} */
+            availability: "assessed" | "not_recorded" | "failed" | "invalid";
+            /** @enum {string} */
+            coverage?: "answered" | "partial" | "unanswered" | "unclear";
+            /** @enum {string} */
+            reason?: "sufficient_evidence" | "insufficient_evidence" | "conflicting_evidence" | "ambiguous_request" | "intentional_scope_boundary";
+            contextualizedRequest?: string;
+            unresolvedRequest?: string;
+            originatingTurnId: string;
+            originatingRequestId: string;
+            schemaVersion?: number;
+            /** Format: date-time */
+            assessedAt?: string;
+        };
+        /** @description Recorded coverage-dependent directive and routine evaluation in execution order. `evaluated` with an empty decisions list means no rule matched; `not_evaluated` means no coverage rule ran. */
+        AnswerCoverageInteractionTrace: {
+            /** @enum {string} */
+            state: "not_evaluated" | "evaluated";
+            consumedAssessment?: {
+                /** @enum {string} */
+                coverage: "answered" | "partial" | "unanswered" | "unclear";
+                /** @enum {string} */
+                reason: "sufficient_evidence" | "insufficient_evidence" | "conflicting_evidence" | "ambiguous_request" | "intentional_scope_boundary";
+            };
+            decisions: {
+                assessmentRequestId: string;
+                /** @enum {string} */
+                target: "directive" | "routine";
+                targetId?: string;
+                /** @enum {string} */
+                decision: "matched" | "applied" | "offered" | "activated" | "skipped" | "suppressed";
+                reasonCode: string;
+                routineExecutionId?: string;
+                /** Format: uuid */
+                targetMessageId: string;
+            }[];
+        };
         ChatConversationMessageDebug: {
             /**
              * @description "cancelled" means a newer message superseded this turn after it had already produced an assistant message (a suspended/durable turn). It is not an error.
@@ -7232,7 +7336,7 @@ export interface components {
             stream: boolean;
             citationCount: number;
             /** @enum {string} */
-            answerOutcome?: "grounded_success" | "no_context_refusal" | "non_retrieval_response";
+            answerOutcome?: "grounded_success" | "no_context_refusal" | "non_retrieval_response" | "coverage_partial" | "coverage_unanswered" | "coverage_unclear" | "coverage_unavailable";
             skillName?: string;
             skillOutcome?: string;
             /** @enum {string} */
@@ -7241,6 +7345,8 @@ export interface components {
             activitySummary?: components["schemas"]["ActivitySummary"];
             activityTrace?: components["schemas"]["ActivityTrace"];
             turnTrace?: components["schemas"]["TurnTraceEnvelope"];
+            answerCoverage?: components["schemas"]["AnswerCoverageAssessment"];
+            interactionTrace?: components["schemas"]["AnswerCoverageInteractionTrace"];
             errorMessage?: string | null;
         };
         /** @description Dashboard-only debug for a user turn that never got a reply — a genuine failure or a turn a newer message superseded. Attached to the user's message because no assistant message exists for it. */
@@ -8083,6 +8189,26 @@ export interface components {
             visitorQuestionCount: number;
             conversationCount: number;
         };
+        /** @description Recorded semantic coverage. Unresolved request text is intentionally excluded from Pulse. */
+        AnswerCoverage: {
+            /** @enum {string} */
+            availability: "assessed" | "not_recorded" | "failed" | "invalid";
+            /** @enum {string} */
+            coverage?: "answered" | "partial" | "unanswered" | "unclear";
+            /** @enum {string} */
+            reason?: "sufficient_evidence" | "insufficient_evidence" | "conflicting_evidence" | "ambiguous_request" | "intentional_scope_boundary";
+        };
+        AudiencePulseSemanticCoverage: {
+            answered: number;
+            partial: number;
+            unanswered: number;
+            unclear: number;
+            unassessed: number;
+            legacy: number;
+            reasons: {
+                [key: string]: number;
+            };
+        };
         AudiencePulseEvidence: {
             reference: string;
             /** Format: uuid */
@@ -8091,6 +8217,7 @@ export interface components {
             messageId: string;
             question: string;
             occurrenceCount: number;
+            answerCoverage?: components["schemas"]["AnswerCoverage"];
         };
         AudiencePulseEvidenceAnchorRequest: {
             /** Format: uuid */
@@ -8142,6 +8269,7 @@ export interface components {
                 count: number;
             }[];
             grounding: components["schemas"]["AudiencePulseGrounding"];
+            coverage?: components["schemas"]["AudiencePulseSemanticCoverage"];
             evidence: components["schemas"]["AudiencePulseEvidence"][];
         };
         AudiencePulseContentGap: {
@@ -8369,6 +8497,7 @@ export interface components {
                 value?: unknown;
             }[];
             expectedDraftGeneration?: number;
+            idempotencyKey: string;
         };
         TestExecution: {
             /** Format: uuid */
@@ -8526,6 +8655,7 @@ export interface components {
             mode: "retrieval_only" | "full_assistant";
             /** @enum {string} */
             executionPolicy: "safe_test";
+            idempotencyKey: string;
         };
         RevisionEvalCaseOutcome: {
             /** Format: uuid */

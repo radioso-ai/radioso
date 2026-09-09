@@ -25,6 +25,7 @@ import { createAgentSettingProposalCopilotTools } from "../../../src/modules/ope
 import { createAgentSkillConfigProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/agentSkills.js";
 import { createDirectiveProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/directives.js";
 import { createRoutineProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/routines.js";
+import { citedProposalEvidence } from "../../../src/modules/operatorCopilot/tools/shared.js";
 import { conflict } from "../../../src/shared/domain/errors.js";
 
 const workspaceId = randomUUID();
@@ -43,6 +44,28 @@ type ProposalToolDependencies = Parameters<typeof createDirectiveProposalCopilot
 const unmeasured = () => ({
   evidence: { record: vi.fn(), findMany: vi.fn(async () => []) },
   agentVersion: { get: vi.fn(async () => ({ updatedAt: new Date("2026-08-25T10:00:00.000Z") })) },
+});
+
+describe("citedProposalEvidence", () => {
+  it("rejects citing evidence over a transport with no Ray conversation, cleanly rather than opaquely", async () => {
+    await expect(citedProposalEvidence(
+      { proposalEvidence: unmeasured() },
+      { workspaceId, operatorUserId },
+      agentId,
+      [randomUUID()],
+      { targetType: "context_variable" },
+    )).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  it("proposes unmeasured without requiring a conversation when no evidence is cited", async () => {
+    await expect(citedProposalEvidence(
+      { proposalEvidence: unmeasured() },
+      { workspaceId, operatorUserId },
+      agentId,
+      undefined,
+      { targetType: "context_variable" },
+    )).resolves.toBeNull();
+  });
 });
 
 const proposalOriginFields = (input: CopilotProposalDraft) => {
@@ -188,6 +211,7 @@ describe("US3 copilot proposals", () => {
     const descriptors = createProposalTools({
       proposalRepository: { createProposal },
       proposalEvidence: unmeasured(),
+      proposalRecovery: { recoverOperatorMcpProposal: vi.fn() },
       proposalAdapters: [
         {
           targetType: "directive",
@@ -240,6 +264,7 @@ describe("US3 copilot proposals", () => {
     const descriptors = createDirectiveProposalCopilotTools({
       proposalRepository: { createProposal },
       proposalEvidence: unmeasured(),
+      proposalRecovery: { recoverOperatorMcpProposal: vi.fn() },
       proposalAdapters: [{ targetType: "directive", readVersionToken, preview, applyIfVersionMatches: vi.fn(), draft: vi.fn() }],
       auditService: auditService(),
     });
@@ -274,6 +299,7 @@ describe("US3 copilot proposals", () => {
     const descriptors = createDirectiveProposalCopilotTools({
       proposalRepository: { createProposal },
       proposalEvidence: unmeasured(),
+      proposalRecovery: { recoverOperatorMcpProposal: vi.fn() },
       proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(async () => "directive-version"), preview, applyIfVersionMatches: vi.fn(), draft: vi.fn() }],
       auditService: auditService(),
     });
@@ -295,6 +321,7 @@ describe("US3 copilot proposals", () => {
     const descriptors = createDirectiveProposalCopilotTools({
       proposalRepository: { createProposal },
       proposalEvidence: unmeasured(),
+      proposalRecovery: { recoverOperatorMcpProposal: vi.fn() },
       proposalAdapters: [
         {
           targetType: "directive",
@@ -331,6 +358,7 @@ describe("US3 copilot proposals", () => {
     const descriptors = createDirectiveProposalCopilotTools({
       proposalRepository: { createProposal },
       proposalEvidence: unmeasured(),
+      proposalRecovery: { recoverOperatorMcpProposal: vi.fn() },
       proposalAdapters: [
         {
           targetType: "directive",
@@ -358,6 +386,7 @@ describe("US3 copilot proposals", () => {
     const descriptors = createProposalTools({
       proposalRepository: { createProposal },
       proposalEvidence: unmeasured(),
+      proposalRecovery: { recoverOperatorMcpProposal: vi.fn() },
       proposalAdapters: [
         { targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn() },
         { targetType: "agent_setting", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(), validatePayload: vi.fn() },
@@ -395,6 +424,7 @@ describe("US3 copilot proposals", () => {
     const [descriptor] = createDirectiveProposalCopilotTools({
       proposalRepository: { createProposal },
       proposalEvidence: unmeasured(),
+      proposalRecovery: { recoverOperatorMcpProposal: vi.fn() },
       proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(async () => "directive-version"), preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft }],
       auditService: auditService(),
     });
@@ -426,6 +456,7 @@ describe("US3 copilot proposals", () => {
     const [descriptor] = createAgentSettingProposalCopilotTools({
       proposalRepository: { createProposal },
       proposalEvidence: unmeasured(),
+      proposalRecovery: { recoverOperatorMcpProposal: vi.fn() },
       proposalAdapters: [{ targetType: "agent_setting", validatePayload, readVersionToken: vi.fn(async () => "agent-version"), preview: vi.fn(), applyIfVersionMatches: vi.fn() }],
       auditService: auditService(),
     });
@@ -460,6 +491,7 @@ describe("US3 copilot proposals", () => {
     const descriptors = createRoutineProposalCopilotTools({
       proposalRepository: { createProposal },
       proposalEvidence: unmeasured(),
+      proposalRecovery: { recoverOperatorMcpProposal: vi.fn() },
       proposalAdapters: [{ targetType: "routine", readVersionToken: vi.fn(async () => "routine-version"), draftEdit, draftLifecycle: vi.fn(), draft: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn() }],
       auditService: auditService(),
     });
@@ -2429,5 +2461,223 @@ describe("routine lifecycle proposal adapter", () => {
       outcome: "applied", appliedRef: { agentId, routineId: targetRef.routineId },
     });
     expect(restorePorts.restore).toHaveBeenCalledWith(workspaceId, agentId, targetRef.routineId);
+  });
+});
+
+describe("operator MCP proposal reconciliation", () => {
+  const mcpContext = {
+    workspaceId, accountId, operatorUserId, surface: "mcp" as const, currentAuthorization,
+    pageContext: { view: "other" as const, agentId: null, conversationId: null, selection: null, entities: [] },
+    operatorMcpInvocationId: "33333333-3333-4333-8333-333333333333",
+  };
+  const invocationRaw = {
+    id: "11111111-1111-4111-8111-111111111111",
+    grantId: "22222222-2222-4222-8222-222222222222",
+    operationId: "stable-operation",
+    inputDigest: "keyed-input-digest",
+  };
+  const invocation = invocationRaw as never;
+  const now = new Date("2026-09-09T00:03:00.000Z");
+  const staleBefore = new Date("2026-09-09T00:01:00.000Z");
+
+  /** Fills in the `CopilotProposal` fields a reconciliation test does not care about. */
+  const recoveredProposal = (
+    overrides: Partial<CopilotProposal> & Pick<CopilotProposal, "id" | "targetType" | "payload">,
+  ): CopilotProposal => ({
+    workspaceId,
+    operatorUserId,
+    origin: { type: "operator_mcp_invocation", invocationId: mcpContext.operatorMcpInvocationId },
+    conversationId: null,
+    operatorMcpInvocationId: mcpContext.operatorMcpInvocationId,
+    messageId: null,
+    targetRef: null,
+    versionToken: "recovered-version",
+    evidence: null,
+    status: "pending",
+    reason: null,
+    appliedRef: null,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  });
+
+  it("reconstructs propose_directive's result from a recovered save proposal", async () => {
+    const recoverOperatorMcpProposal = vi.fn();
+    recoverOperatorMcpProposal.mockResolvedValueOnce({
+      status: "recovered" as const,
+      proposal: recoveredProposal({ id: "proposal-1", targetType: "directive", payload: { name: "Avoid competitors", rationale: "Draft directive" } }),
+    });
+    const [descriptor] = createDirectiveProposalCopilotTools({
+      proposalRepository: { createProposal: vi.fn() },
+      proposalRecovery: { recoverOperatorMcpProposal },
+      proposalEvidence: unmeasured(),
+      proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn() }],
+      auditService: auditService(),
+    });
+
+    await expect(descriptor.reconcileMcpInvocation!({ invocation, context: mcpContext, now, staleBefore }))
+      .resolves.toEqual({
+        status: "recovered",
+        output: { proposalId: "proposal-1", targetType: "directive", targetLabel: "Avoid competitors", summary: "Draft directive" },
+      });
+    expect(recoverOperatorMcpProposal).toHaveBeenCalledWith(expect.objectContaining({
+      invocationId: "11111111-1111-4111-8111-111111111111",
+      descriptorName: "propose_directive",
+      operationId: "stable-operation",
+      inputDigest: "keyed-input-digest",
+    }));
+  });
+
+  it("reports a conflict for propose_directive when the recovered proposal is not a directive save payload", async () => {
+    const recoverOperatorMcpProposal = vi.fn(async () => ({
+      status: "recovered" as const,
+      // A removal payload has no `condition`/`action`, so it must not be mistaken for a save.
+      proposal: recoveredProposal({ id: "proposal-1", targetType: "directive", payload: { op: "remove", name: "Avoid competitors", rationale: "Remove it" } }),
+    }));
+    const [descriptor] = createDirectiveProposalCopilotTools({
+      proposalRepository: { createProposal: vi.fn() },
+      proposalRecovery: { recoverOperatorMcpProposal },
+      proposalEvidence: unmeasured(),
+      proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn() }],
+      auditService: auditService(),
+    });
+
+    await expect(descriptor.reconcileMcpInvocation!({ invocation, context: mcpContext, now, staleBefore }))
+      .resolves.toEqual({ status: "conflict" });
+  });
+
+  it("reconstructs propose_directive_removal's result with the removal flag set", async () => {
+    const recoverOperatorMcpProposal = vi.fn(async () => ({
+      status: "recovered" as const,
+      proposal: recoveredProposal({ id: "proposal-2", targetType: "directive", payload: { op: "remove", name: "Avoid competitors", rationale: "Permanently remove the directive \"Avoid competitors\". This cannot be undone." } }),
+    }));
+    const descriptors = createDirectiveProposalCopilotTools({
+      proposalRepository: { createProposal: vi.fn() },
+      proposalRecovery: { recoverOperatorMcpProposal },
+      proposalEvidence: unmeasured(),
+      proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn() }],
+      auditService: auditService(),
+    });
+    const descriptor = descriptors.find((candidate) => candidate.name === "propose_directive_removal")!;
+
+    await expect(descriptor.reconcileMcpInvocation!({ invocation, context: mcpContext, now, staleBefore }))
+      .resolves.toEqual({
+        status: "recovered",
+        output: {
+          proposalId: "proposal-2",
+          targetType: "directive",
+          targetLabel: "Avoid competitors",
+          summary: "Permanently remove the directive \"Avoid competitors\". This cannot be undone.",
+          removal: true,
+        },
+      });
+  });
+
+  it("reconstructs propose_agent_setting's result, reading the setting key back off the target ref", async () => {
+    const recoverOperatorMcpProposal = vi.fn(async () => ({
+      status: "recovered" as const,
+      proposal: recoveredProposal({
+        id: "proposal-3",
+        targetType: "agent_setting",
+        targetRef: { agentId, settingKey: "retrievalEnabled" },
+        payload: { value: false, rationale: "Turn retrieval off for this agent." },
+      }),
+    }));
+    const [descriptor] = createAgentSettingProposalCopilotTools({
+      proposalRepository: { createProposal: vi.fn() },
+      proposalRecovery: { recoverOperatorMcpProposal },
+      proposalEvidence: unmeasured(),
+      proposalAdapters: [{ targetType: "agent_setting", validatePayload: vi.fn(), readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn() }],
+      auditService: auditService(),
+    });
+
+    await expect(descriptor.reconcileMcpInvocation!({ invocation, context: mcpContext, now, staleBefore }))
+      .resolves.toEqual({
+        status: "recovered",
+        output: { proposalId: "proposal-3", targetType: "agent_setting", targetLabel: "retrievalEnabled", summary: "Turn retrieval off for this agent." },
+      });
+  });
+
+  it("reconstructs propose_routine_edit's result, reporting unmeasured validation since diagnostics are never persisted", async () => {
+    const recoverOperatorMcpProposal = vi.fn(async () => ({
+      status: "recovered" as const,
+      proposal: recoveredProposal({
+        id: "proposal-4",
+        targetType: "routine",
+        payload: { kind: "edit", name: "Return intake", changes: { name: "Returns intake" }, rationale: "Edit routine Return intake: rename to Returns intake." },
+      }),
+    }));
+    const descriptors = createRoutineProposalCopilotTools({
+      proposalRepository: { createProposal: vi.fn() },
+      proposalRecovery: { recoverOperatorMcpProposal },
+      proposalEvidence: unmeasured(),
+      proposalAdapters: [{ targetType: "routine", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn(), draftEdit: vi.fn(), draftLifecycle: vi.fn() }],
+      auditService: auditService(),
+    });
+    const descriptor = descriptors.find((candidate) => candidate.name === "propose_routine_edit")!;
+
+    await expect(descriptor.reconcileMcpInvocation!({ invocation, context: mcpContext, now, staleBefore }))
+      .resolves.toEqual({
+        status: "recovered",
+        output: {
+          proposalId: "proposal-4",
+          targetType: "routine",
+          targetLabel: "Return intake",
+          summary: "Edit routine Return intake: rename to Returns intake.",
+          // Known limitation documented on reconcileRoutineProposalPayload: the routine's real
+          // diagnostics are never persisted on the proposal row, so a recovered response cannot
+          // restate them.
+          validation: { ok: true, diagnostics: [] },
+        },
+      });
+  });
+
+  it("reports a conflict for a routine reconciliation whose recovered proposal is not shaped like this tool's payload", async () => {
+    const recoverOperatorMcpProposal = vi.fn(async () => ({
+      status: "recovered" as const,
+      // A lifecycle payload, recovered by the edit descriptor: `kind` mismatches.
+      proposal: recoveredProposal({ id: "proposal-5", targetType: "routine", payload: { kind: "lifecycle", action: "publish", name: "Return intake", rationale: "Publish routine Return intake." } }),
+    }));
+    const descriptors = createRoutineProposalCopilotTools({
+      proposalRepository: { createProposal: vi.fn() },
+      proposalRecovery: { recoverOperatorMcpProposal },
+      proposalEvidence: unmeasured(),
+      proposalAdapters: [{ targetType: "routine", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn(), draftEdit: vi.fn(), draftLifecycle: vi.fn() }],
+      auditService: auditService(),
+    });
+    const descriptor = descriptors.find((candidate) => candidate.name === "propose_routine_edit")!;
+
+    await expect(descriptor.reconcileMcpInvocation!({ invocation, context: mcpContext, now, staleBefore }))
+      .resolves.toEqual({ status: "conflict" });
+  });
+
+  it("passes through a non-recovered status from the recovery port unchanged", async () => {
+    const recoverOperatorMcpProposal = vi.fn(async () => ({ status: "retry_prepare" as const }));
+    const [descriptor] = createDirectiveProposalCopilotTools({
+      proposalRepository: { createProposal: vi.fn() },
+      proposalRecovery: { recoverOperatorMcpProposal },
+      proposalEvidence: unmeasured(),
+      proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn() }],
+      auditService: auditService(),
+    });
+
+    await expect(descriptor.reconcileMcpInvocation!({ invocation, context: mcpContext, now, staleBefore }))
+      .resolves.toEqual({ status: "retry_prepare" });
+  });
+
+  it("reports a conflict without calling the recovery port when the invocation carries no operationId", async () => {
+    const recoverOperatorMcpProposal = vi.fn();
+    const [descriptor] = createDirectiveProposalCopilotTools({
+      proposalRepository: { createProposal: vi.fn() },
+      proposalRecovery: { recoverOperatorMcpProposal },
+      proposalEvidence: unmeasured(),
+      proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn() }],
+      auditService: auditService(),
+    });
+    const invocationWithoutOperationId = { ...invocationRaw, operationId: undefined } as never;
+
+    await expect(descriptor.reconcileMcpInvocation!({ invocation: invocationWithoutOperationId, context: mcpContext, now, staleBefore }))
+      .resolves.toEqual({ status: "conflict" });
+    expect(recoverOperatorMcpProposal).not.toHaveBeenCalled();
   });
 });

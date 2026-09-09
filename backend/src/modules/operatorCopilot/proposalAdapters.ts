@@ -952,6 +952,7 @@ const directivePayload = (value: unknown): AuthoredDirectiveInput => {
     description: z.string().optional(),
     binding: z.unknown().optional(),
     lifecycle: z.unknown().optional(),
+    coverageCriteria: z.unknown().optional(),
     metadata: z.record(z.unknown()).optional(),
   }).parse(value);
   return draft as AuthoredDirectiveInput;

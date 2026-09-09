@@ -28,6 +28,7 @@ import {
   type NormalizedAuthoredDirectiveInput,
 } from "../../modules/agents/public.js";
 import { parseDirectiveLifecycle } from "../../modules/directives/public.js";
+import { answerCoverageCriteriaSchema } from "../../modules/answerCoverage/public.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../modules/documents/contracts/index.js";
 import { currentTimestamp, optionalTimestampMatch, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { DB, Db } from "../../shared/infra/kysely/types.js";
@@ -73,6 +74,7 @@ export interface AgentDirectiveRow {
   binding: AuthoredDirectiveBinding;
   lifecycle: AuthoredDirectiveLifecycle;
   enabled: boolean;
+  coverage_criteria: unknown;
   metadata: Record<string, unknown>;
   created_at: Date;
   updated_at: Date;
@@ -94,6 +96,7 @@ interface LoadedDirectiveJson {
   description?: unknown;
   binding?: unknown;
   lifecycle?: unknown;
+  coverageCriteria?: unknown;
   enabled?: unknown;
   metadata?: unknown;
   createdAt?: unknown;
@@ -213,6 +216,7 @@ const agentColumns = sql`
           'binding', agent_directives.binding,
           'lifecycle', agent_directives.lifecycle,
           'enabled', agent_directives.enabled,
+          'coverageCriteria', agent_directives.coverage_criteria,
           'metadata', agent_directives.metadata,
           'createdAt', agent_directives.created_at,
           'updatedAt', agent_directives.updated_at
@@ -340,6 +344,8 @@ const mapDirectiveJson = (agentId: string, value: LoadedDirectiveJson): Authored
     description: typeof value.description === "string" ? value.description : null,
     binding: asDirectiveBinding(value.binding),
     lifecycle: asDirectiveLifecycle(value.lifecycle),
+    coverageCriteria: answerCoverageCriteriaSchema.safeParse(value.coverageCriteria).success
+      ? answerCoverageCriteriaSchema.parse(value.coverageCriteria) : undefined,
     // A snapshot loaded from before this column existed carries no `enabled` at all;
     // its absence must read as "live," never as "off" (mirrors agentConfig materialize).
     enabled: typeof value.enabled === "boolean" ? value.enabled : true,
@@ -374,6 +380,8 @@ export const mapDirectiveRow = (row: AgentDirectiveRow): AuthoredDirective => ({
   description: row.description,
   binding: asDirectiveBinding(row.binding),
   lifecycle: asDirectiveLifecycle(row.lifecycle),
+  coverageCriteria: answerCoverageCriteriaSchema.safeParse(row.coverage_criteria).success
+    ? answerCoverageCriteriaSchema.parse(row.coverage_criteria) : undefined,
   enabled: row.enabled,
   metadata: asMetadata(row.metadata),
   createdAt: new Date(row.created_at),
@@ -861,6 +869,7 @@ export class AgentRepository implements AgentRepositoryPort {
             binding,
             lifecycle,
             enabled,
+            coverage_criteria,
             metadata
           )
           SELECT
@@ -880,6 +889,7 @@ export class AgentRepository implements AgentRepositoryPort {
             ${toJsonb(directive.binding)},
             ${toJsonb(directive.lifecycle)},
             ${directive.enabled},
+            ${directive.coverageCriteria ? toJsonb(directive.coverageCriteria) : null},
             ${toJsonb(directive.metadata)}
           FROM matched_agent
           RETURNING *
@@ -940,6 +950,7 @@ export class AgentRepository implements AgentRepositoryPort {
         description: hasOwn(input, "description") ? input.description : existing.description,
         binding: hasOwn(input, "binding") ? input.binding : existing.binding,
         lifecycle: hasOwn(input, "lifecycle") ? input.lifecycle : existing.lifecycle,
+        coverageCriteria: hasOwn(input, "coverageCriteria") ? input.coverageCriteria : existing.coverageCriteria,
         enabled: hasOwn(input, "enabled") ? input.enabled : existing.enabled,
         metadata: input.metadata ?? existing.metadata,
       });
@@ -963,6 +974,7 @@ export class AgentRepository implements AgentRepositoryPort {
             binding = ${toJsonb(directive.binding)},
             lifecycle = ${toJsonb(directive.lifecycle)},
             enabled = ${directive.enabled},
+            coverage_criteria = ${directive.coverageCriteria ? toJsonb(directive.coverageCriteria) : null},
             metadata = ${toJsonb(directive.metadata)},
             updated_at = ${currentTimestamp()}
           FROM agents

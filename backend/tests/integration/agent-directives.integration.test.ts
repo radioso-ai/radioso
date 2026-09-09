@@ -99,6 +99,21 @@ describeIfDatabase("agent directives persistence", () => {
     await database.query("DELETE FROM accounts WHERE id = $1", [account.id]);
   });
 
+  it("persists coverage criteria, preserves omitted updates, and clears explicit null", async () => {
+    const { workspace, agent } = await createAgent();
+    const created = await agentRepository.createDirective(agent.id, workspace.id, {
+      name: "coverage-follow-up", condition: { kind: "always" }, action: "Offer a follow-up.",
+      requiredCapabilities: [], dependsOn: [], excludes: [],
+      coverageCriteria: { coverage: ["partial"], reasons: ["insufficient_evidence"] },
+    });
+    expect((await agentRepository.findByIdAndWorkspaceId(agent.id, workspace.id))?.authoredDirectives?.[0]?.coverageCriteria)
+      .toEqual({ coverage: ["partial"], reasons: ["insufficient_evidence"] });
+    expect((await agentRepository.updateDirective(agent.id, workspace.id, created.id, { action: "Offer a precise follow-up." })).coverageCriteria)
+      .toEqual({ coverage: ["partial"], reasons: ["insufficient_evidence"] });
+    expect((await agentRepository.updateDirective(agent.id, workspace.id, created.id, { coverageCriteria: undefined })).coverageCriteria)
+      .toBeUndefined();
+  });
+
   it("round-trips a directive lifecycle policy through create, update, and clear (#865)", async () => {
     const { account, workspace, agent } = await createAgent();
 

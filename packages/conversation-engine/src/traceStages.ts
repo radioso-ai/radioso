@@ -26,7 +26,7 @@ export const reportProgress = (
   }
 };
 
-export const nowIso = (): string => new Date().toISOString();
+const nowIso = (): string => new Date().toISOString();
 
 export const stage = (
   input: Omit<ConversationTraceStage, "startedAt" | "completedAt">,
@@ -49,7 +49,7 @@ export const timedStage = (
   completedAt: new Date(completedAtMs).toISOString(),
 });
 
-export const HISTORY_TAIL_LIMIT = 12;
+const HISTORY_TAIL_LIMIT = 12;
 
 export const createTrace = (
   stages: ConversationTraceStage[],
@@ -113,7 +113,7 @@ export const skillInputResolutionStage = (input: {
     : timedStage(input.startedAtMs, input.completedAtMs, traceInput);
 };
 
-export const historyReferences = (history: ConversationMessage[]): Record<string, unknown>[] =>
+const historyReferences = (history: ConversationMessage[]): Record<string, unknown>[] =>
   history.slice(-HISTORY_TAIL_LIMIT).map((entry, index, slice) => ({
     index: history.length - slice.length + index,
     role: entry.role,
@@ -141,6 +141,8 @@ export const createProcessTurnResult = (input: {
   trace: ConversationTrace;
   actions?: RoutineActionRequest[];
   handoff?: { routineId: string; stepId: string };
+  routineExecution?: ProcessTurnResult["routineExecution"];
+  routineClarificationRoutineIds?: ProcessTurnResult["routineClarificationRoutineIds"];
   awaitingDecision?: RoutineAwaitingDecision;
   awaitingSkillInput?: AwaitingSkillInput[];
 }): ProcessTurnResult => ({
@@ -152,6 +154,10 @@ export const createProcessTurnResult = (input: {
   trace: input.trace,
   ...(input.actions && input.actions.length > 0 ? { actions: input.actions } : {}),
   ...(input.handoff ? { handoff: input.handoff } : {}),
+  ...(input.routineExecution ? { routineExecution: input.routineExecution } : {}),
+  ...(input.routineClarificationRoutineIds && input.routineClarificationRoutineIds.length > 0
+    ? { routineClarificationRoutineIds: input.routineClarificationRoutineIds }
+    : {}),
   ...(input.awaitingDecision ? { awaitingDecision: input.awaitingDecision } : {}),
   ...(input.awaitingSkillInput && input.awaitingSkillInput.length > 0
     ? { awaitingSkillInput: input.awaitingSkillInput }

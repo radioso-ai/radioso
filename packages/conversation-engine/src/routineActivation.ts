@@ -20,6 +20,25 @@ import {
   stage,
 } from "./traceStages.js";
 
+const routineIdFromClarificationCandidate = (candidate: { payload: unknown }): string | undefined => {
+  const payload = candidate.payload;
+  if (typeof payload !== "object" || payload === null || !("routineId" in payload)) {
+    return undefined;
+  }
+  return typeof payload.routineId === "string" ? payload.routineId : undefined;
+};
+
+/**
+ * Carries only the activation boundary that failed. The engine maps this to a
+ * safe trace value and must never expose the originating error detail.
+ */
+export class RoutineActivationFailure extends Error {
+  constructor(readonly phase: "selection" | "resume", cause?: unknown) {
+    super(`Routine ${phase} failed`, cause === undefined ? undefined : { cause });
+    this.name = "RoutineActivationFailure";
+  }
+}
+
 const buildSlotCorrectionTurn = async (
   input: AttemptRoutineInput,
   routineId: string,
@@ -131,6 +150,7 @@ const tryCompletedRoutineReentry = async (
     return {
       sessionId: input.sessionId,
       routineId: completedState.routineId,
+      executionId: completedState.executionId ?? globalThis.crypto.randomUUID(),
       path: [],
       variables: { ...completedState.variables },
       status: "active",
@@ -140,6 +160,7 @@ const tryCompletedRoutineReentry = async (
     return {
       sessionId: input.sessionId,
       routineId: completedState.routineId,
+      executionId: globalThis.crypto.randomUUID(),
       path: [],
       variables: {},
       status: "active",
@@ -148,14 +169,19 @@ const tryCompletedRoutineReentry = async (
   return null;
 };
 
-export const attemptRoutine = async (input: AttemptRoutineInput): Promise<ProcessTurnResult | null> => {
+const attemptRoutineWithMode = async (
+  input: AttemptRoutineInput,
+  mode: "normal" | "activation_only",
+): Promise<ProcessTurnResult | null> => {
   if (!input.routineStore || !input.routineRunner) {
     return null;
   }
-  const active = await input.routineStore.loadActive({ sessionId: input.sessionId });
+  const active = mode === "normal"
+    ? await input.routineStore.loadActive({ sessionId: input.sessionId })
+    : null;
   const resuming = !!active && active.status === "active";
   const history = await input.stores.loadHistory({ sessionId: input.sessionId });
-  const baseTurn: TurnContext = {
+  const baseTurn: TurnContext = input.turnContext ?? {
     agent: input.agent,
     sessionId: input.sessionId,
     inputEvent: input.inputEvent,
@@ -167,9 +193,11 @@ export const attemptRoutine = async (input: AttemptRoutineInput): Promise<Proces
   let activationClarificationStage: ConversationTraceStage | null = null;
   const completedStates = state ? [] : ((await input.routineStore.loadCompleted?.({ sessionId: input.sessionId })) ?? []);
   if (!state) {
-    const correction = await tryCompletedRoutineCorrection(input, baseTurn, completedStates);
-    if (correction) {
-      return correction;
+    if (mode === "normal") {
+      const correction = await tryCompletedRoutineCorrection(input, baseTurn, completedStates);
+      if (correction) {
+        return correction;
+      }
     }
     state = await tryCompletedRoutineReentry(input, baseTurn, completedStates);
   }
@@ -178,12 +206,17 @@ export const attemptRoutine = async (input: AttemptRoutineInput): Promise<Proces
       return null;
     }
     const completedRoutineIds = completedStates.map((completed) => completed.routineId);
-    const activation = await input.routineActivator.activate({
-      turn: baseTurn,
-      ...(input.loopGuardCandidateIds ? { loopGuardCandidateIds: input.loopGuardCandidateIds } : {}),
-      ...(completedRoutineIds.length > 0 ? { suppressedRoutineIds: completedRoutineIds } : {}),
-      ...(input.suppressNewClarification ? { suppressClarificationAsk: input.suppressNewClarification } : {}),
-    });
+    let activation;
+    try {
+      activation = await input.routineActivator.activate({
+        turn: baseTurn,
+        ...(input.loopGuardCandidateIds ? { loopGuardCandidateIds: input.loopGuardCandidateIds } : {}),
+        ...(completedRoutineIds.length > 0 ? { suppressedRoutineIds: completedRoutineIds } : {}),
+        ...(input.suppressNewClarification ? { suppressClarificationAsk: input.suppressNewClarification } : {}),
+      });
+    } catch (error) {
+      throw new RoutineActivationFailure("selection", error);
+    }
     if (!activation) {
       return null;
     }
@@ -216,7 +249,9 @@ export const attemptRoutine = async (input: AttemptRoutineInput): Promise<Proces
       const response: RenderableTurn = { answer };
       const events = [] as Awaited<ReturnType<typeof createInputEvent>>[];
       const inputEvent = createInputEvent(input);
-      await input.stores.appendEvent(inputEvent);
+      if (!input.inputEventAlreadyAppended) {
+        await input.stores.appendEvent(inputEvent);
+      }
       events.push(inputEvent);
       const responseEvent = createResponseEvent(input.sessionId, response);
       await input.stores.appendEvent(responseEvent);
@@ -237,6 +272,10 @@ export const attemptRoutine = async (input: AttemptRoutineInput): Promise<Proces
         decision: { selected: [], reason: "routine_activation_clarification" },
         outcomes: [],
         response,
+        routineClarificationRoutineIds: activation.candidates.flatMap((candidate) => {
+          const routineId = routineIdFromClarificationCandidate(candidate);
+          return routineId ? [routineId] : [];
+        }),
         trace: createTrace([
           stage({
             id: "message",
@@ -261,18 +300,36 @@ export const attemptRoutine = async (input: AttemptRoutineInput): Promise<Proces
     state = {
       sessionId: input.sessionId,
       routineId: activation.routineId,
+      executionId: globalThis.crypto.randomUUID(),
       path: [],
       variables: activation.variables ?? {},
       status: "active",
     };
   }
 
-  return resumeRoutine({
-    request: input,
-    baseTurn,
-    state,
-    resuming,
-    history,
-    activationClarificationStage,
-  });
+  try {
+    return await resumeRoutine({
+      request: input,
+      baseTurn,
+      state,
+      resuming,
+      history,
+      activationClarificationStage,
+    });
+  } catch (error) {
+    throw new RoutineActivationFailure("resume", error);
+  }
 };
+
+/**
+ * Full pre-retrieval routine pass: resumes an active routine before selecting a new one.
+ */
+export const attemptRoutine = async (input: AttemptRoutineInput): Promise<ProcessTurnResult | null> =>
+  attemptRoutineWithMode(input, "normal");
+
+/**
+ * Post-evidence coverage pass: may start or reenter a completed routine, but never
+ * consumes an active routine or applies a completed-slot correction.
+ */
+export const attemptRoutineActivation = async (input: AttemptRoutineInput): Promise<ProcessTurnResult | null> =>
+  attemptRoutineWithMode(input, "activation_only");

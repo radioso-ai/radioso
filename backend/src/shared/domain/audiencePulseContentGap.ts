@@ -1,3 +1,5 @@
+import type { AnswerCoverageAssessment } from "@radioso/conversation-contract";
+
 /**
  * Typed outcome rule shared by the Chat history adapter and Audience Pulse report
  * projection. It accepts no content and deliberately cannot infer corpus coverage.
@@ -24,3 +26,9 @@ export const audiencePulseContentGapEligible = (input: {
   return (input.skillOutcome === "no_context" && input.grounding === "no_support")
     || (input.skillOutcome === "grounded_degraded" && input.grounding === "degraded");
 };
+
+/** Semantic eligibility for newly assessed records; legacy grounding stays separate. */
+export const audiencePulseCoverageGapEligible = (assessment: AnswerCoverageAssessment | undefined): boolean =>
+  assessment?.availability === "assessed"
+    && (assessment.coverage === "partial" || assessment.coverage === "unanswered")
+    && (assessment.reason === "insufficient_evidence" || assessment.reason === "conflicting_evidence");

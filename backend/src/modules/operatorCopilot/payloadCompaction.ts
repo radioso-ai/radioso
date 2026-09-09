@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 export const MAX_STRING_CHARS = 500;
 export const MAX_ARRAY_ITEMS = 40;
 
@@ -10,12 +12,12 @@ export interface TruncationEntry {
   retainedLength?: number;
 }
 
-export interface CompactionOptions {
+interface CompactionOptions {
   maxStringChars: number;
   maxArrayItems: number;
 }
 
-export interface CompactionResult<T> {
+interface CompactionResult<T> {
   value: T;
   truncation: TruncationEntry[];
 }
@@ -86,6 +88,22 @@ export const withTruncation = <T extends Record<string, unknown>>(
       },
     };
 
+/**
+ * The shape `withTruncation` attaches, for an output schema to declare explicitly. Without this a
+ * result compacted through `boundPayload` parses back to whatever the schema already named — the
+ * signal that something was cut is silently stripped, and a caller with no dashboard to eyeball a
+ * suspiciously short list has no way to know its result is incomplete.
+ */
+export const truncationRecordSchema = z.object({
+  truncated: z.literal(true),
+  entries: z.array(z.object({
+    path: z.string(),
+    reason: z.enum(["string_length", "array_length", "budget_omitted"]),
+    originalLength: z.number().int().nonnegative().optional(),
+    retainedLength: z.number().int().nonnegative().optional(),
+  })),
+}).optional();
+
 const fitsBudget = <T extends Record<string, unknown>>(
   result: CompactionResult<T>,
   charBudget: number,
@@ -151,6 +169,13 @@ export const compactForBudget = <T extends Record<string, unknown>>(
  * Generic model-result compaction shared by every copilot family reader. It
  * bounds scalar and collection fan-out without making the copilot depend on a
  * particular owning module's result shape.
+ *
+ * Attaches `truncationRecordSchema`'s shape when compaction actually cut something, the same
+ * signal `boundConversationPayload`/`boundTurnTracePayload` already expose — a caller's own output
+ * schema must declare `truncation: truncationRecordSchema` for it to survive validation rather than
+ * being stripped as an unrecognized field.
  */
-export const boundPayload = <T extends Record<string, unknown>>(payload: T): T =>
-  compactRecord(payload, { maxStringChars: MAX_STRING_CHARS, maxArrayItems: MAX_ARRAY_ITEMS }).value;
+export const boundPayload = <T extends Record<string, unknown>>(payload: T): T => {
+  const { value, truncation } = compactRecord(payload, { maxStringChars: MAX_STRING_CHARS, maxArrayItems: MAX_ARRAY_ITEMS });
+  return withTruncation(value, truncation);
+};

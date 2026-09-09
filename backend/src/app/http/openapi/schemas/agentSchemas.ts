@@ -333,6 +333,13 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       z.object({ kind: z.literal("cooldown"), turns: z.number().int().min(1).max(1000) }).strict(),
     ]),
   );
+  const AnswerCoverageCriteriaSchema = registry.register(
+    "AnswerCoverageCriteria",
+    z.object({
+      coverage: z.array(z.enum(["answered", "partial", "unanswered", "unclear"])).min(1),
+      reasons: z.array(z.enum(["sufficient_evidence", "insufficient_evidence", "conflicting_evidence", "ambiguous_request", "intentional_scope_boundary"])).min(1).optional(),
+    }),
+  );
 
   const GenerationSurfaceSchema = registry.register(
     "GenerationSurface",
@@ -355,6 +362,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     description: z.string().min(1).max(1000).nullable().optional(),
     binding: z.union([AuthoredDirectiveBindingSchema, z.null()]).optional(),
     lifecycle: z.union([AuthoredDirectiveLifecycleSchema, z.null()]).optional(),
+    coverageCriteria: AnswerCoverageCriteriaSchema.optional(),
     enabled: z.boolean().optional().openapi({
       description: "Reversible off switch. A disabled directive keeps its authored text but never reaches the matcher. Defaults to true.",
     }),
@@ -368,7 +376,10 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
 
   const AuthoredDirectiveUpdateRequestSchema = registry.register(
     "AuthoredDirectiveUpdateRequest",
-    AuthoredDirectiveRequestBaseSchema.partial().strict(),
+    AuthoredDirectiveRequestBaseSchema.partial().extend({
+      // PATCH omission preserves the stored condition; explicit null removes it.
+      coverageCriteria: z.union([AnswerCoverageCriteriaSchema, z.null()]).optional(),
+    }).strict(),
   );
 
   const DirectiveDraftRequestSchema = registry.register(
@@ -422,6 +433,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       description: z.string().nullable(),
       binding: z.union([AuthoredDirectiveBindingSchema, z.null()]),
       lifecycle: z.union([AuthoredDirectiveLifecycleSchema, z.null()]),
+      coverageCriteria: AnswerCoverageCriteriaSchema.optional(),
       enabled: z.boolean(),
       metadata: z.record(z.unknown()),
       createdAt: z.string().datetime(),
@@ -753,6 +765,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       description: z.string().nullable(),
       binding: z.union([AuthoredDirectiveBindingSchema, z.null()]),
       lifecycle: z.union([AuthoredDirectiveLifecycleSchema, z.null()]),
+      coverageCriteria: AnswerCoverageCriteriaSchema.optional(),
       enabled: z.boolean(),
       metadata: z.record(z.unknown()),
     }).openapi({

@@ -39,7 +39,19 @@ import { createSkillOutcomeCapabilityProvider } from "../../src/modules/chat/ser
 import { RetrievalTurnController } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import { AssistantChatService } from "../../src/modules/chat/services/assistantChatService.js";
 import { AssistantHistoryService } from "../../src/modules/chat/services/assistantHistoryService.js";
-import { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService, DirectiveAuthorService, serializeAuthoredDirectivesWithIds } from "../../src/modules/agents/public.js";
+import {
+  AgentRevisionRuntimeResolver,
+  AgentRevisionService,
+  AgentService,
+  AgentSurfaceExtensionRegistry,
+  AuthoredDirectiveService,
+  DirectiveAuthorService,
+  serializeAuthoredDirectivesWithIds,
+  type AgentRecord,
+  type AgentRevision,
+  type AgentRevisionRuntimeReaderPort,
+} from "../../src/modules/agents/public.js";
+import type { TestExecutionService } from "../../src/modules/test-execution/testExecution.js";
 import { ProbeRoutineReader, RoutineDefinitionService, RoutineDraftAssistService } from "../../src/modules/routines/public.js";
 import {
   type ComposedDecline,
@@ -413,10 +425,53 @@ interface TestRepositories {
   agentSkillRepository: InMemoryAgentSkillRepository;
   routineDefinitionRepository: InMemoryRoutineDefinitionRepository;
   machineAccessRepository: InMemoryMachineAccessRepository;
+  workspaceRepository: InMemoryWorkspaceRepository;
 }
 
 const appDependencyMap = new WeakMap<object, AppDependencies>();
 const appRepositoryMap = new WeakMap<object, TestRepositories>();
+const appRevisionFixtures = new WeakMap<object, PublishedTestAgentRevisionReader>();
+
+/**
+ * Contract-test-only immutable release storage. Test agents stay unpublished until
+ * a fixture explicitly records a baseline; this mirrors the production resolver's
+ * selected-release reads without making chat fall back to mutable authoring rows.
+ */
+class PublishedTestAgentRevisionReader implements AgentRevisionRuntimeReaderPort {
+  private readonly revisions = new Map<string, AgentRevision>();
+
+  publish(agent: AgentRecord): AgentRevision {
+    const revision: AgentRevision = {
+      id: randomUUID(),
+      snapshot: {
+        customInstruction: agent.customInstruction,
+        directives: agent.authoredDirectives ?? [],
+        routines: [],
+        contextVariableEnablements: [],
+      },
+      sourceDraftGeneration: 1,
+      sourceBasePublishedRevisionId: null,
+      createdAt: new Date(),
+      publishedAt: new Date(),
+      publishedVersion: 1,
+    };
+    this.revisions.set(this.key(agent.workspaceId, agent.id), revision);
+    return revision;
+  }
+
+  async findCurrentPublished(input: { workspaceId: string; agentId: string }): Promise<AgentRevision | null> {
+    return this.revisions.get(this.key(input.workspaceId, input.agentId)) ?? null;
+  }
+
+  async findRevision(input: { workspaceId: string; agentId: string; revisionId: string }): Promise<AgentRevision | null> {
+    const revision = this.revisions.get(this.key(input.workspaceId, input.agentId));
+    return revision?.id === input.revisionId ? revision : null;
+  }
+
+  private key(workspaceId: string, agentId: string): string {
+    return `${workspaceId}:${agentId}`;
+  }
+}
 
 class TestFallbackReplyComposer implements FallbackReplyComposer {
   async composeNoContext(): Promise<ComposedDecline> {
@@ -608,6 +663,10 @@ class InMemoryContextVariableRepository implements ContextVariableRepositoryPort
     return [];
   }
 
+  async resolveForEnablements(): Promise<ResolvedVariableInput[]> {
+    return [];
+  }
+
   // In-memory analogue of the real repository's transaction: both version guards are checked
   // before either write is applied, so a failing guard never leaves a partial write behind.
   async applyProposal(input: ApplyContextVariableProposalInput): Promise<ApplyContextVariableProposalResult> {
@@ -700,7 +759,8 @@ export const createTestDependencies = (overrides: {
   skillExecutorRegistry?: SkillExecutorRegistry;
   agentSkillTurnSkillProvider?: AgentSkillTurnSkillProvider;
   realtimeRolloutPolicy?: RealtimeRolloutPolicy;
-} = {}): { dependencies: AppDependencies; repositories: TestRepositories; routineStateStore: InMemoryRoutineStateStore; directiveStateStore: InMemoryDirectiveStateStore } => {
+  testExecutionService?: TestExecutionService;
+} = {}): { dependencies: AppDependencies; repositories: TestRepositories; routineStateStore: InMemoryRoutineStateStore; directiveStateStore: InMemoryDirectiveStateStore; publishedAgentRevisions: PublishedTestAgentRevisionReader } => {
   const env = {
     ...createTestEnv(),
     ...overrides.envOverrides,
@@ -1500,6 +1560,23 @@ export const createTestDependencies = (overrides: {
     undefined,
     accessGrantService,
   );
+  const publishedAgentRevisions = new PublishedTestAgentRevisionReader();
+  const agentRevisionService = new AgentRevisionService({
+    async initializeDraft() {},
+    async mutateDraft() { return null; },
+    async readDraft() { return null; },
+    async readState() { return null; },
+    async findRevision() { return null; },
+    async findRevisionByWorkspace() { return null; },
+    async listRevisions() { return []; },
+    async createCandidate() { return "conflict"; },
+    async publish() { return "conflict"; },
+  }, randomUUID);
+  const testExecutionService = overrides.testExecutionService ?? {
+    async start() { throw new Error("Test execution is not configured in this test app"); },
+    async *streamMessage() { throw new Error("Test execution is not configured in this test app"); },
+    async *streamRetry() { throw new Error("Test execution is not configured in this test app"); },
+  } as unknown as TestExecutionService;
   const contextVariableService = new ContextVariableService({
     repository: contextVariableRepository,
     agentReader: { get: agentService.get.bind(agentService) },
@@ -1703,6 +1780,7 @@ export const createTestDependencies = (overrides: {
     bootstrapGreetingCacheRepository,
     usageLimitPolicy,
     agentService,
+    agentRevisionRuntimeResolver: new AgentRevisionRuntimeResolver(publishedAgentRevisions),
     contextVariableRepository,
     turnRouter,
     conversationEngine: createConversationEngine(),
@@ -2265,6 +2343,7 @@ export const createTestDependencies = (overrides: {
     approvalDecisionService,
     operatorReplyService,
     workbenchReplayRunner: workbenchReplayRunner as any,
+    testExecutionService,
     actionDispatchWorker,
     copilotRetentionWorker: new CopilotRetentionWorker({
       retention: copilotRepository,
@@ -2287,6 +2366,7 @@ export const createTestDependencies = (overrides: {
     evalSuiteService,
     platformSettingsService,
     agentService,
+    agentRevisionService,
     authoredDirectiveService,
     routineDefinitionService,
     routineDraftAssistService,
@@ -2335,6 +2415,7 @@ export const createTestDependencies = (overrides: {
     dependencies,
     routineStateStore,
     directiveStateStore,
+    publishedAgentRevisions,
     repositories: {
       auditEventRepository,
       accessGrantRepository,
@@ -2352,6 +2433,7 @@ export const createTestDependencies = (overrides: {
       agentSkillRepository,
       routineDefinitionRepository,
       machineAccessRepository,
+      workspaceRepository,
     },
   };
 };
@@ -2378,11 +2460,19 @@ export const createTestApp = (overrides: {
   skillExecutorRegistry?: SkillExecutorRegistry;
   agentSkillTurnSkillProvider?: AgentSkillTurnSkillProvider;
   realtimeRolloutPolicy?: RealtimeRolloutPolicy;
+  testExecutionService?: TestExecutionService;
 } = {}) => {
-  const { dependencies, repositories, routineStateStore, directiveStateStore } = createTestDependencies(overrides);
+  const {
+    dependencies,
+    repositories,
+    routineStateStore,
+    directiveStateStore,
+    publishedAgentRevisions,
+  } = createTestDependencies(overrides);
   const app = createApp(dependencies);
   appDependencyMap.set(app, dependencies);
   appRepositoryMap.set(app, repositories);
+  appRevisionFixtures.set(app, publishedAgentRevisions);
   return {
     app,
     dependencies,
@@ -2447,6 +2537,15 @@ export const issueTestSession = async (
     email,
     password,
   });
+  const revisions = appRevisionFixtures.get(app);
+  if (!revisions) {
+    throw new Error("Test app revision fixture was not registered");
+  }
+  // This is the seeded/default contract fixture, not an authoring fallback. New
+  // agents created by a test remain unpublished until publishTestAgentBaseline.
+  const defaultAgent = await dependencies.agentService.resolve(login.workspaceId);
+  repositories.workspaceRepository.setDefaultAgentForTest(login.workspaceId, defaultAgent.id);
+  revisions.publish(defaultAgent);
 
   return {
     cookie: login.sessionCookie,
@@ -2454,6 +2553,18 @@ export const issueTestSession = async (
     userId: login.userId,
     accountId: login.accountId,
   };
+};
+
+/** Explicitly publishes the current immutable baseline for a contract-test agent. */
+export const publishTestAgentBaseline = async (
+  app: ReturnType<typeof createTestApp>["app"],
+  input: { workspaceId: string; agentId?: string },
+): Promise<AgentRevision> => {
+  const [dependencies, revisions] = [appDependencyMap.get(app), appRevisionFixtures.get(app)];
+  if (!dependencies || !revisions) {
+    throw new Error("Test app revision fixture was not registered");
+  }
+  return revisions.publish(await dependencies.agentService.resolve(input.workspaceId, input.agentId));
 };
 
 export const adminSessionHeaders = (session: { cookie: string; workspaceId: string }) => ({

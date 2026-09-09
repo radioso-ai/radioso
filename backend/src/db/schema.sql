@@ -644,6 +644,77 @@ CREATE TABLE public.agent_document_sources (
 
 
 --
+-- Name: agent_drafts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_drafts (
+    agent_id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    generation integer DEFAULT 1 NOT NULL,
+    base_published_revision_id uuid,
+    snapshot jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT agent_drafts_generation_check CHECK ((generation > 0))
+);
+
+
+--
+-- Name: agent_publications; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_publications (
+    id uuid NOT NULL,
+    agent_id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    revision_id uuid NOT NULL,
+    previous_revision_id uuid,
+    idempotency_key text NOT NULL,
+    expected_draft_generation integer NOT NULL,
+    expected_published_revision_id uuid,
+    actor_account_id uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT agent_publications_expected_draft_generation_check CHECK ((expected_draft_generation > 0))
+);
+
+
+--
+-- Name: agent_revision_migration_classifications; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_revision_migration_classifications (
+    conversation_id uuid NOT NULL,
+    agent_id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    routine_id text NOT NULL,
+    classification text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT agent_revision_migration_classifications_classification_check CHECK ((classification = ANY (ARRAY['missing_routine_definition'::text, 'ambiguous_routine_definition'::text, 'invalid_routine_pin'::text])))
+);
+
+
+--
+-- Name: agent_revisions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_revisions (
+    id uuid NOT NULL,
+    agent_id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    snapshot_format_version integer DEFAULT 1 NOT NULL,
+    snapshot jsonb NOT NULL,
+    source_draft_generation integer NOT NULL,
+    source_base_published_revision_id uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    published_at timestamp with time zone,
+    published_version integer,
+    CONSTRAINT agent_revisions_published_version_check CHECK ((((published_at IS NULL) AND (published_version IS NULL)) OR ((published_at IS NOT NULL) AND (published_version IS NOT NULL) AND (published_version > 0)))),
+    CONSTRAINT agent_revisions_snapshot_format_version_check CHECK ((snapshot_format_version > 0)),
+    CONSTRAINT agent_revisions_source_draft_generation_check CHECK ((source_draft_generation > 0))
+);
+
+
+--
 -- Name: agent_skills; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -667,6 +738,90 @@ CREATE TABLE public.agent_skills (
 
 
 --
+-- Name: agent_test_execution_attempts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_test_execution_attempts (
+    execution_id uuid NOT NULL,
+    side_id uuid NOT NULL,
+    turn_id uuid NOT NULL,
+    attempt_id uuid NOT NULL,
+    input_fingerprint text NOT NULL,
+    fence integer NOT NULL,
+    state text NOT NULL,
+    lease_expires_at timestamp with time zone NOT NULL,
+    result jsonb,
+    failure_code text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT agent_test_execution_attempts_fence_check CHECK ((fence > 0)),
+    CONSTRAINT agent_test_execution_attempts_state_check CHECK ((state = ANY (ARRAY['running'::text, 'failed'::text, 'completed'::text])))
+);
+
+
+--
+-- Name: agent_test_execution_sides; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_test_execution_sides (
+    id uuid NOT NULL,
+    execution_id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    agent_id uuid NOT NULL,
+    revision_id uuid NOT NULL,
+    conversation_id uuid NOT NULL,
+    state text NOT NULL,
+    retryable boolean DEFAULT false NOT NULL,
+    history jsonb DEFAULT '[]'::jsonb NOT NULL,
+    continuation jsonb,
+    active_turn_id uuid,
+    active_attempt_id uuid,
+    active_fence integer,
+    side_ordinal integer NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT agent_test_execution_sides_active_attempt_check CHECK ((((active_turn_id IS NULL) AND (active_attempt_id IS NULL) AND (active_fence IS NULL)) OR ((active_turn_id IS NOT NULL) AND (active_attempt_id IS NOT NULL) AND (active_fence > 0)))),
+    CONSTRAINT agent_test_execution_sides_state_check CHECK ((state = ANY (ARRAY['ready'::text, 'running'::text, 'failed'::text, 'completed'::text])))
+);
+
+
+--
+-- Name: agent_test_execution_turns; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_test_execution_turns (
+    execution_id uuid NOT NULL,
+    turn_id uuid NOT NULL,
+    message text NOT NULL,
+    input_fingerprint text NOT NULL,
+    state text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT agent_test_execution_turns_state_check CHECK ((state = ANY (ARRAY['running'::text, 'partial'::text, 'completed'::text])))
+);
+
+
+--
+-- Name: agent_test_executions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_test_executions (
+    id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    agent_id uuid NOT NULL,
+    mode text NOT NULL,
+    generation integer DEFAULT 1 NOT NULL,
+    state text NOT NULL,
+    test_values jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT agent_test_executions_generation_check CHECK ((generation > 0)),
+    CONSTRAINT agent_test_executions_mode_check CHECK ((mode = ANY (ARRAY['single'::text, 'compare'::text]))),
+    CONSTRAINT agent_test_executions_state_check CHECK ((state = ANY (ARRAY['running'::text, 'partial'::text, 'failed'::text, 'completed'::text])))
+);
+
+
+--
 -- Name: agents; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -685,6 +840,7 @@ CREATE TABLE public.agents (
     chat_model text,
     skill_settings jsonb DEFAULT '{}'::jsonb NOT NULL,
     internal_name text DEFAULT ''::text NOT NULL,
+    published_revision_id uuid,
     CONSTRAINT agents_chat_override_pair CHECK ((((chat_provider IS NULL) AND (chat_model IS NULL)) OR ((chat_provider IS NOT NULL) AND (chat_model IS NOT NULL)))),
     CONSTRAINT agents_chat_provider_check CHECK (((chat_provider IS NULL) OR (chat_provider = ANY (ARRAY['openai'::text, 'openai-compatible'::text, 'gemini'::text, 'claude'::text])))),
     CONSTRAINT agents_source_scope_mode_check CHECK ((source_scope_mode = ANY (ARRAY['all'::text, 'selected'::text])))
@@ -1841,7 +1997,10 @@ CREATE TABLE public.conversations (
     channel_context jsonb,
     verified_customer_id text,
     entry_page_url text,
-    title text
+    title text,
+    agent_revision_id uuid,
+    purpose text DEFAULT 'production'::text NOT NULL,
+    CONSTRAINT conversations_purpose_check CHECK ((purpose = ANY (ARRAY['production'::text, 'operator_test'::text])))
 );
 
 
@@ -2685,6 +2844,90 @@ CREATE TABLE public.retrieval_settings (
     CONSTRAINT retrieval_settings_rerank_provider_check CHECK (((rerank_provider IS NULL) OR (rerank_provider = ANY (ARRAY['openai'::text, 'openai-compatible'::text, 'gemini'::text, 'claude'::text])))),
     CONSTRAINT retrieval_settings_rewrite_capability_pair CHECK ((((rewrite_provider IS NULL) AND (rewrite_model IS NULL)) OR ((rewrite_provider IS NOT NULL) AND (rewrite_model IS NOT NULL)))),
     CONSTRAINT retrieval_settings_rewrite_provider_check CHECK (((rewrite_provider IS NULL) OR (rewrite_provider = ANY (ARRAY['openai'::text, 'openai-compatible'::text, 'gemini'::text, 'claude'::text]))))
+);
+
+
+--
+-- Name: revision_eval_run_attempts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.revision_eval_run_attempts (
+    id uuid NOT NULL,
+    run_case_id uuid NOT NULL,
+    fence integer NOT NULL,
+    state text NOT NULL,
+    lease_expires_at timestamp with time zone NOT NULL,
+    failure_code text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT revision_eval_run_attempts_fence_check CHECK ((fence > 0)),
+    CONSTRAINT revision_eval_run_attempts_state_check CHECK ((state = ANY (ARRAY['running'::text, 'failed'::text, 'completed'::text])))
+);
+
+
+--
+-- Name: revision_eval_run_cases; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.revision_eval_run_cases (
+    id uuid NOT NULL,
+    side_id uuid NOT NULL,
+    case_id uuid NOT NULL,
+    frozen_case jsonb NOT NULL,
+    frozen_snapshot jsonb NOT NULL,
+    state text NOT NULL,
+    outcome text NOT NULL,
+    assertion_verdicts jsonb,
+    observed_output jsonb,
+    resolved_config jsonb,
+    outcome_reason text,
+    active_attempt_id uuid,
+    active_fence integer,
+    lease_expires_at timestamp with time zone,
+    completed_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT revision_eval_run_cases_outcome_check CHECK ((outcome = ANY (ARRAY['pass'::text, 'fail'::text, 'partial'::text, 'unavailable'::text]))),
+    CONSTRAINT revision_eval_run_cases_state_check CHECK ((state = ANY (ARRAY['pending'::text, 'running'::text, 'failed'::text, 'completed'::text])))
+);
+
+
+--
+-- Name: revision_eval_run_sides; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.revision_eval_run_sides (
+    id uuid NOT NULL,
+    run_id uuid NOT NULL,
+    revision_id uuid NOT NULL,
+    side_ordinal integer NOT NULL,
+    frozen_revision jsonb NOT NULL,
+    state text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT revision_eval_run_sides_side_ordinal_check CHECK ((side_ordinal >= 0)),
+    CONSTRAINT revision_eval_run_sides_state_check CHECK ((state = ANY (ARRAY['pending'::text, 'running'::text, 'partial'::text, 'failed'::text, 'completed'::text])))
+);
+
+
+--
+-- Name: revision_eval_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.revision_eval_runs (
+    id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    agent_id uuid NOT NULL,
+    actor_account_id uuid,
+    mode text NOT NULL,
+    execution_policy text NOT NULL,
+    test_values jsonb NOT NULL,
+    state text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT revision_eval_runs_execution_policy_check CHECK ((execution_policy = 'safe_test'::text)),
+    CONSTRAINT revision_eval_runs_mode_check CHECK ((mode = ANY (ARRAY['retrieval_only'::text, 'full_assistant'::text]))),
+    CONSTRAINT revision_eval_runs_state_check CHECK ((state = ANY (ARRAY['pending'::text, 'running'::text, 'partial'::text, 'failed'::text, 'completed'::text])))
 );
 
 
@@ -3701,6 +3944,46 @@ ALTER TABLE ONLY public.agent_directives
 
 
 --
+-- Name: agent_drafts agent_drafts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_drafts
+    ADD CONSTRAINT agent_drafts_pkey PRIMARY KEY (agent_id);
+
+
+--
+-- Name: agent_publications agent_publications_agent_id_idempotency_key_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_publications
+    ADD CONSTRAINT agent_publications_agent_id_idempotency_key_key UNIQUE (agent_id, idempotency_key);
+
+
+--
+-- Name: agent_publications agent_publications_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_publications
+    ADD CONSTRAINT agent_publications_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: agent_revision_migration_classifications agent_revision_migration_classifications_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_revision_migration_classifications
+    ADD CONSTRAINT agent_revision_migration_classifications_pkey PRIMARY KEY (conversation_id);
+
+
+--
+-- Name: agent_revisions agent_revisions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_revisions
+    ADD CONSTRAINT agent_revisions_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: agent_skills agent_skills_agent_id_skill_name_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3714,6 +3997,62 @@ ALTER TABLE ONLY public.agent_skills
 
 ALTER TABLE ONLY public.agent_skills
     ADD CONSTRAINT agent_skills_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: agent_test_execution_attempts agent_test_execution_attempts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_test_execution_attempts
+    ADD CONSTRAINT agent_test_execution_attempts_pkey PRIMARY KEY (execution_id, side_id, turn_id, attempt_id);
+
+
+--
+-- Name: agent_test_execution_sides agent_test_execution_sides_conversation_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_test_execution_sides
+    ADD CONSTRAINT agent_test_execution_sides_conversation_id_key UNIQUE (conversation_id);
+
+
+--
+-- Name: agent_test_execution_sides agent_test_execution_sides_execution_id_revision_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_test_execution_sides
+    ADD CONSTRAINT agent_test_execution_sides_execution_id_revision_id_key UNIQUE (execution_id, revision_id);
+
+
+--
+-- Name: agent_test_execution_sides agent_test_execution_sides_execution_id_side_ordinal_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_test_execution_sides
+    ADD CONSTRAINT agent_test_execution_sides_execution_id_side_ordinal_key UNIQUE (execution_id, side_ordinal);
+
+
+--
+-- Name: agent_test_execution_sides agent_test_execution_sides_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_test_execution_sides
+    ADD CONSTRAINT agent_test_execution_sides_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: agent_test_execution_turns agent_test_execution_turns_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_test_execution_turns
+    ADD CONSTRAINT agent_test_execution_turns_pkey PRIMARY KEY (execution_id, turn_id);
+
+
+--
+-- Name: agent_test_executions agent_test_executions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_test_executions
+    ADD CONSTRAINT agent_test_executions_pkey PRIMARY KEY (id);
 
 
 --
@@ -4749,6 +5088,70 @@ ALTER TABLE ONLY public.retrieval_settings
 
 
 --
+-- Name: revision_eval_run_attempts revision_eval_run_attempts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.revision_eval_run_attempts
+    ADD CONSTRAINT revision_eval_run_attempts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: revision_eval_run_attempts revision_eval_run_attempts_run_case_id_fence_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.revision_eval_run_attempts
+    ADD CONSTRAINT revision_eval_run_attempts_run_case_id_fence_key UNIQUE (run_case_id, fence);
+
+
+--
+-- Name: revision_eval_run_cases revision_eval_run_cases_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.revision_eval_run_cases
+    ADD CONSTRAINT revision_eval_run_cases_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: revision_eval_run_cases revision_eval_run_cases_side_id_case_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.revision_eval_run_cases
+    ADD CONSTRAINT revision_eval_run_cases_side_id_case_id_key UNIQUE (side_id, case_id);
+
+
+--
+-- Name: revision_eval_run_sides revision_eval_run_sides_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.revision_eval_run_sides
+    ADD CONSTRAINT revision_eval_run_sides_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: revision_eval_run_sides revision_eval_run_sides_run_id_revision_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.revision_eval_run_sides
+    ADD CONSTRAINT revision_eval_run_sides_run_id_revision_id_key UNIQUE (run_id, revision_id);
+
+
+--
+-- Name: revision_eval_run_sides revision_eval_run_sides_run_id_side_ordinal_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.revision_eval_run_sides
+    ADD CONSTRAINT revision_eval_run_sides_run_id_side_ordinal_key UNIQUE (run_id, side_ordinal);
+
+
+--
+-- Name: revision_eval_runs revision_eval_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.revision_eval_runs
+    ADD CONSTRAINT revision_eval_runs_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: routine_action_requests routine_action_requests_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5160,6 +5563,13 @@ CREATE INDEX agent_bundle_imports_stale_applying_idx ON public.agent_bundle_impo
 --
 
 CREATE UNIQUE INDEX agent_bundle_imports_workspace_idempotency_active_idx ON public.agent_bundle_imports USING btree (workspace_id, idempotency_key) WHERE ((idempotency_key IS NOT NULL) AND (state = ANY (ARRAY['queued'::text, 'applying'::text, 'applied'::text])));
+
+
+--
+-- Name: agent_revisions_agent_published_version_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX agent_revisions_agent_published_version_key ON public.agent_revisions USING btree (agent_id, published_version) WHERE (published_version IS NOT NULL);
 
 
 --
@@ -6234,6 +6644,27 @@ CREATE INDEX idx_agent_document_sources_source ON public.agent_document_sources 
 
 
 --
+-- Name: idx_agent_publications_agent_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_publications_agent_created ON public.agent_publications USING btree (agent_id, created_at DESC);
+
+
+--
+-- Name: idx_agent_revision_migration_classifications_agent; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_revision_migration_classifications_agent ON public.agent_revision_migration_classifications USING btree (agent_id, created_at DESC);
+
+
+--
+-- Name: idx_agent_revisions_agent_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_revisions_agent_created ON public.agent_revisions USING btree (agent_id, created_at DESC);
+
+
+--
 -- Name: idx_agent_skills_agent; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6255,10 +6686,38 @@ CREATE INDEX idx_agent_skills_workspace ON public.agent_skills USING btree (work
 
 
 --
+-- Name: idx_agent_test_execution_attempts_recovery; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_test_execution_attempts_recovery ON public.agent_test_execution_attempts USING btree (execution_id, side_id, turn_id, state, lease_expires_at);
+
+
+--
+-- Name: idx_agent_test_execution_sides_execution; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_test_execution_sides_execution ON public.agent_test_execution_sides USING btree (execution_id);
+
+
+--
+-- Name: idx_agent_test_executions_scope; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_test_executions_scope ON public.agent_test_executions USING btree (workspace_id, agent_id, created_at DESC);
+
+
+--
 -- Name: idx_agents_anonymous_chat_token_unique; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX idx_agents_anonymous_chat_token_unique ON public.agents USING btree (((output_modes #>> '{anonymousChat,token}'::text[]))) WHERE ((output_modes #>> '{anonymousChat,token}'::text[]) IS NOT NULL);
+
+
+--
+-- Name: idx_agents_published_revision; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agents_published_revision ON public.agents USING btree (published_revision_id) WHERE (published_revision_id IS NOT NULL);
 
 
 --
@@ -6395,10 +6854,24 @@ CREATE INDEX idx_context_variable_values_workspace_variable_scope ON public.cont
 
 
 --
+-- Name: idx_conversations_agent_revision; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_conversations_agent_revision ON public.conversations USING btree (agent_revision_id) WHERE (agent_revision_id IS NOT NULL);
+
+
+--
 -- Name: idx_conversations_anonymous_session; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_conversations_anonymous_session ON public.conversations USING btree (workspace_id, anonymous_session_id) WHERE (anonymous_session_id IS NOT NULL);
+
+
+--
+-- Name: idx_conversations_operator_test_purpose; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_conversations_operator_test_purpose ON public.conversations USING btree (workspace_id, purpose) WHERE (purpose = 'operator_test'::text);
 
 
 --
@@ -6693,6 +7166,20 @@ CREATE INDEX idx_password_reset_tokens_user_active ON public.password_reset_toke
 --
 
 CREATE INDEX idx_password_reset_tokens_user_created ON public.password_reset_tokens USING btree (user_id, created_at DESC);
+
+
+--
+-- Name: idx_revision_eval_run_cases_claim; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_revision_eval_run_cases_claim ON public.revision_eval_run_cases USING btree (state, lease_expires_at);
+
+
+--
+-- Name: idx_revision_eval_runs_scope; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_revision_eval_runs_scope ON public.revision_eval_runs USING btree (workspace_id, agent_id, created_at DESC);
 
 
 --
@@ -8511,6 +8998,110 @@ ALTER TABLE ONLY public.agent_document_sources
 
 
 --
+-- Name: agent_drafts agent_drafts_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_drafts
+    ADD CONSTRAINT agent_drafts_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_drafts agent_drafts_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_drafts
+    ADD CONSTRAINT agent_drafts_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_publications agent_publications_actor_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_publications
+    ADD CONSTRAINT agent_publications_actor_account_id_fkey FOREIGN KEY (actor_account_id) REFERENCES public.accounts(id) ON DELETE SET NULL;
+
+
+--
+-- Name: agent_publications agent_publications_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_publications
+    ADD CONSTRAINT agent_publications_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_publications agent_publications_expected_published_revision_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_publications
+    ADD CONSTRAINT agent_publications_expected_published_revision_id_fkey FOREIGN KEY (expected_published_revision_id) REFERENCES public.agent_revisions(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: agent_publications agent_publications_previous_revision_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_publications
+    ADD CONSTRAINT agent_publications_previous_revision_id_fkey FOREIGN KEY (previous_revision_id) REFERENCES public.agent_revisions(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: agent_publications agent_publications_revision_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_publications
+    ADD CONSTRAINT agent_publications_revision_id_fkey FOREIGN KEY (revision_id) REFERENCES public.agent_revisions(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: agent_publications agent_publications_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_publications
+    ADD CONSTRAINT agent_publications_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_revision_migration_classifications agent_revision_migration_classifications_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_revision_migration_classifications
+    ADD CONSTRAINT agent_revision_migration_classifications_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_revision_migration_classifications agent_revision_migration_classifications_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_revision_migration_classifications
+    ADD CONSTRAINT agent_revision_migration_classifications_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_revision_migration_classifications agent_revision_migration_classifications_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_revision_migration_classifications
+    ADD CONSTRAINT agent_revision_migration_classifications_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_revisions agent_revisions_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_revisions
+    ADD CONSTRAINT agent_revisions_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_revisions agent_revisions_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_revisions
+    ADD CONSTRAINT agent_revisions_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: agent_skills agent_skills_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8524,6 +9115,94 @@ ALTER TABLE ONLY public.agent_skills
 
 ALTER TABLE ONLY public.agent_skills
     ADD CONSTRAINT agent_skills_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_test_execution_attempts agent_test_execution_attempts_execution_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_test_execution_attempts
+    ADD CONSTRAINT agent_test_execution_attempts_execution_id_fkey FOREIGN KEY (execution_id) REFERENCES public.agent_test_executions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_test_execution_attempts agent_test_execution_attempts_execution_id_turn_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_test_execution_attempts
+    ADD CONSTRAINT agent_test_execution_attempts_execution_id_turn_id_fkey FOREIGN KEY (execution_id, turn_id) REFERENCES public.agent_test_execution_turns(execution_id, turn_id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_test_execution_attempts agent_test_execution_attempts_side_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_test_execution_attempts
+    ADD CONSTRAINT agent_test_execution_attempts_side_id_fkey FOREIGN KEY (side_id) REFERENCES public.agent_test_execution_sides(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_test_execution_sides agent_test_execution_sides_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_test_execution_sides
+    ADD CONSTRAINT agent_test_execution_sides_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_test_execution_sides agent_test_execution_sides_execution_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_test_execution_sides
+    ADD CONSTRAINT agent_test_execution_sides_execution_id_fkey FOREIGN KEY (execution_id) REFERENCES public.agent_test_executions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_test_execution_sides agent_test_execution_sides_revision_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_test_execution_sides
+    ADD CONSTRAINT agent_test_execution_sides_revision_id_fkey FOREIGN KEY (revision_id) REFERENCES public.agent_revisions(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: agent_test_execution_sides agent_test_execution_sides_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_test_execution_sides
+    ADD CONSTRAINT agent_test_execution_sides_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_test_execution_turns agent_test_execution_turns_execution_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_test_execution_turns
+    ADD CONSTRAINT agent_test_execution_turns_execution_id_fkey FOREIGN KEY (execution_id) REFERENCES public.agent_test_executions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_test_executions agent_test_executions_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_test_executions
+    ADD CONSTRAINT agent_test_executions_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_test_executions agent_test_executions_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_test_executions
+    ADD CONSTRAINT agent_test_executions_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agents agents_published_revision_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agents
+    ADD CONSTRAINT agents_published_revision_id_fkey FOREIGN KEY (published_revision_id) REFERENCES public.agent_revisions(id) ON DELETE RESTRICT;
 
 
 --
@@ -8820,6 +9499,14 @@ ALTER TABLE ONLY public.conversation_summaries
 
 ALTER TABLE ONLY public.conversations
     ADD CONSTRAINT conversations_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id) ON DELETE SET NULL;
+
+
+--
+-- Name: conversations conversations_agent_revision_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversations
+    ADD CONSTRAINT conversations_agent_revision_id_fkey FOREIGN KEY (agent_revision_id) REFERENCES public.agent_revisions(id) ON DELETE SET NULL;
 
 
 --
@@ -9508,6 +10195,70 @@ ALTER TABLE ONLY public.password_reset_tokens
 
 ALTER TABLE ONLY public.retrieval_settings
     ADD CONSTRAINT retrieval_settings_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: revision_eval_run_attempts revision_eval_run_attempts_run_case_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.revision_eval_run_attempts
+    ADD CONSTRAINT revision_eval_run_attempts_run_case_id_fkey FOREIGN KEY (run_case_id) REFERENCES public.revision_eval_run_cases(id) ON DELETE CASCADE;
+
+
+--
+-- Name: revision_eval_run_cases revision_eval_run_cases_case_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.revision_eval_run_cases
+    ADD CONSTRAINT revision_eval_run_cases_case_id_fkey FOREIGN KEY (case_id) REFERENCES public.eval_cases(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: revision_eval_run_cases revision_eval_run_cases_side_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.revision_eval_run_cases
+    ADD CONSTRAINT revision_eval_run_cases_side_id_fkey FOREIGN KEY (side_id) REFERENCES public.revision_eval_run_sides(id) ON DELETE CASCADE;
+
+
+--
+-- Name: revision_eval_run_sides revision_eval_run_sides_revision_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.revision_eval_run_sides
+    ADD CONSTRAINT revision_eval_run_sides_revision_id_fkey FOREIGN KEY (revision_id) REFERENCES public.agent_revisions(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: revision_eval_run_sides revision_eval_run_sides_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.revision_eval_run_sides
+    ADD CONSTRAINT revision_eval_run_sides_run_id_fkey FOREIGN KEY (run_id) REFERENCES public.revision_eval_runs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: revision_eval_runs revision_eval_runs_actor_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.revision_eval_runs
+    ADD CONSTRAINT revision_eval_runs_actor_account_id_fkey FOREIGN KEY (actor_account_id) REFERENCES public.accounts(id) ON DELETE SET NULL;
+
+
+--
+-- Name: revision_eval_runs revision_eval_runs_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.revision_eval_runs
+    ADD CONSTRAINT revision_eval_runs_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id) ON DELETE CASCADE;
+
+
+--
+-- Name: revision_eval_runs revision_eval_runs_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.revision_eval_runs
+    ADD CONSTRAINT revision_eval_runs_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

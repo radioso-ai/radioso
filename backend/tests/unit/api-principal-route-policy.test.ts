@@ -62,6 +62,27 @@ describe("API principal route policy", () => {
     expect(allowsMachinePrincipal(method, path, service)).toBe(true);
   });
 
+  it("explicitly authorizes revision, private test, and frozen eval routes", () => {
+    const routes = [
+      ["GET", "/api/v1/agents/:agentId/revision-state", "/api/v1/agents/agent/revision-state", "workspace.agents.read"],
+      ["POST", "/api/v1/agents/:agentId/revisions/candidates", "/api/v1/agents/agent/revisions/candidates", "workspace.agents.manage"],
+      ["GET", "/api/v1/agents/:agentId/revisions", "/api/v1/agents/agent/revisions", "workspace.agents.read"],
+      ["GET", "/api/v1/agents/:agentId/revisions/:revisionId", "/api/v1/agents/agent/revisions/revision", "workspace.agents.read"],
+      ["POST", "/api/v1/agents/:agentId/revisions/:revisionId/publish", "/api/v1/agents/agent/revisions/revision/publish", "workspace.agents.manage"],
+      ["POST", "/api/v1/agents/:agentId/test-executions", "/api/v1/agents/agent/test-executions", "workspace.agents.manage"],
+      ["POST", "/api/v1/agents/:agentId/test-executions/:executionId/messages", "/api/v1/agents/agent/test-executions/execution/messages", "workspace.agents.manage"],
+      ["POST", "/api/v1/agents/:agentId/test-executions/:executionId/sides/:sideId/retain", "/api/v1/agents/agent/test-executions/execution/sides/side/retain", "workspace.agents.manage"],
+      ["POST", "/api/v1/agents/:agentId/test-executions/:executionId/sides/:sideId/retry", "/api/v1/agents/agent/test-executions/execution/sides/side/retry", "workspace.agents.manage"],
+      ["POST", "/api/v1/evals/revision-runs", "/api/v1/evals/revision-runs", "workspace.agents.manage"],
+      ["GET", "/api/v1/evals/revision-runs/:runId", "/api/v1/evals/revision-runs/run", "workspace.agents.read"],
+      ["POST", "/api/v1/evals/revision-runs/:runId/sides/:revisionId/cases/:caseId/retry", "/api/v1/evals/revision-runs/run/sides/revision/cases/case/retry", "workspace.agents.manage"],
+    ] as const;
+    for (const [method, pattern, path, permission] of routes) {
+      expect(allowsMachinePrincipal(method, path, personal), `${method} ${path}`).toBe(true);
+      expect(apiPrincipalRoutePolicy[`${method} ${pattern}`], `${method} ${pattern}`).toMatchObject({ permission, sessionOnly: false });
+    }
+  });
+
   it.each([
     ["GET", "/api/v1/settings"],
     ["PUT", "/api/v1/settings"],

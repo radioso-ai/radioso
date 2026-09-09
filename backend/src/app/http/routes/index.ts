@@ -41,6 +41,7 @@ import { createOperatorMcpSetupRoutes } from "../../../modules/operatorMcpSetup/
 import { createOperatorMcpDashboardRoutes } from "../../../modules/operatorMcpAuthorization/dashboardRoutes.js";
 import { createOperatorMcpDiscoveryRoutes, createOperatorMcpOauthRoutes } from "../../../modules/operatorMcpAuthorization/routes.js";
 import { createOperatorMcpInternalRoutes } from "../../../modules/operatorCopilot/mcpRoutes.js";
+import { createTestExecutionRoutes } from "./testExecutionRoutes.js";
 
 type ApiRouteMount = {
   path: string;
@@ -67,6 +68,7 @@ export const createApiRouteMounts = (_dependencies: AppDependencies): readonly A
   { path: "/api/v1", createRouter: createSlackConnectionRoutes },
   { path: "/api/v1", createRouter: createEmailSkillActivityRoutes },
   { path: "/api/v1/agents", createRouter: createAgentRoutes },
+  { path: "/api/v1/agents", createRouter: createTestExecutionRoutes },
   { path: "/api/v1", createRouter: createContextVariableRoutes },
   { path: "/api/v1/agents", createRouter: createDecisionRoutes },
   { path: "/api/v1/decisions", createRouter: createDecisionsQueryRoutes },
@@ -97,6 +99,7 @@ export const createApiRouteMounts = (_dependencies: AppDependencies): readonly A
       messageCaseService: appDependencies.evalMessageCaseService,
       caseService: appDependencies.evalCaseService,
       runService: appDependencies.evalRunService,
+      revisionEvalRunService: appDependencies.revisionEvalRunService,
       suiteService: appDependencies.evalSuiteService,
       logger: appDependencies.logger,
     }),

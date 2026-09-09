@@ -22,6 +22,7 @@ import {
   proposalOutputSchema,
   type CopilotProposalEvidenceDependencies,
   proposalAdapterFor,
+  scopedAgentDraftPublicationNote,
   type CopilotProposalToolDependencies,
 } from "./shared.js";
 
@@ -346,12 +347,12 @@ export const createRoutineProposalCopilotTools = (deps: RoutineProposalCopilotTo
   return [
     {
       name: "propose_routine", shape: "propose", verificationCost: () => 0, uiLabel: "Drafting a routine", contributingModule: "routines", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"],
-      description: "Draft a new routine proposal for the operator to review and apply. This does not change configuration.",
+      description: `Draft a new routine proposal for the operator to review and apply. This does not change configuration. ${scopedAgentDraftPublicationNote}`,
       inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), intent: z.string().trim().min(1).max(2_000), evidenceIds: citedEvidenceSchema }).strict(),
       outputSchema: routineProposalOutputSchema,
       createTool: (context) => ({
         name: "propose_routine",
-      description: "Draft a new routine proposal for the operator to review and apply. This does not change configuration.",
+      description: `Draft a new routine proposal for the operator to review and apply. This does not change configuration. ${scopedAgentDraftPublicationNote}`,
         inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), intent: z.string().trim().min(1).max(2_000), evidenceIds: citedEvidenceSchema }).strict(),
         outputSchema: routineProposalOutputSchema,
         invoke: async ({ agentId, intent, evidenceIds }) => {
@@ -391,11 +392,11 @@ export const createRoutineProposalCopilotTools = (deps: RoutineProposalCopilotTo
       name: "propose_routine_edit", shape: "propose", verificationCost: () => 0, uiLabel: "Drafting a routine edit", contributingModule: "routines", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"],
       // The tool transport renders a nested input object as the bare word "object", so the shape
       // of `changes` has to live in the description or the model invents one of its own.
-      description: "Propose an edit to an existing routine's wording, name, or trigger. `changes` takes at least one of: `name` (string); `activation` ({triggerDescription?, priority?, reentryMode?}); `steps` ([{stableStepId, instruction}]); `terminals` ([{stableStepId, instruction}], an ending); `slots` ([{key, description?, required?}], an information field). Example: {\"steps\":[{\"stableStepId\":\"ask_order_number\",\"instruction\":\"Ask for the order number and say why we need it.\"}]}. Every id comes from the `editable` block `routine_definition` returns — read the routine first and never invent one. It edits elements that already exist: it cannot add or remove a step or rework branching, so send the operator to the routine editor for those. Applying an edit to a published routine revises it into a draft; it does not change what is serving until the draft is published. It drafts a proposal for operator review and changes nothing until the operator applies it.",
+      description: `Propose an edit to an existing routine's wording, name, or trigger. \`changes\` takes at least one of: \`name\` (string); \`activation\` ({triggerDescription?, priority?, reentryMode?}); \`steps\` ([{stableStepId, instruction}]); \`terminals\` ([{stableStepId, instruction}], an ending); \`slots\` ([{key, description?, required?}], an information field). Example: {"steps":[{"stableStepId":"ask_order_number","instruction":"Ask for the order number and say why we need it."}]}. Every id comes from the \`editable\` block \`routine_definition\` returns — read the routine first and never invent one. It edits elements that already exist: it cannot add or remove a step or rework branching, so send the operator to the routine editor for those. Applying an edit to a published routine revises it into a draft; it does not change what is serving until Review & Publish. It drafts a proposal for operator review and changes nothing until the operator applies it. ${scopedAgentDraftPublicationNote}`,
       inputSchema: routineEditInputSchema, outputSchema: routineProposalOutputSchema,
       createTool: (context) => ({
         name: "propose_routine_edit",
-      description: "Propose an edit to an existing routine's wording, name, or trigger. `changes` takes at least one of: `name` (string); `activation` ({triggerDescription?, priority?, reentryMode?}); `steps` ([{stableStepId, instruction}]); `terminals` ([{stableStepId, instruction}], an ending); `slots` ([{key, description?, required?}], an information field). Example: {\"steps\":[{\"stableStepId\":\"ask_order_number\",\"instruction\":\"Ask for the order number and say why we need it.\"}]}. Every id comes from the `editable` block `routine_definition` returns — read the routine first and never invent one. It edits elements that already exist: it cannot add or remove a step or rework branching, so send the operator to the routine editor for those. Applying an edit to a published routine revises it into a draft; it does not change what is serving until the draft is published. It drafts a proposal for operator review and changes nothing until the operator applies it.",
+      description: `Propose an edit to an existing routine's wording, name, or trigger. \`changes\` takes at least one of: \`name\` (string); \`activation\` ({triggerDescription?, priority?, reentryMode?}); \`steps\` ([{stableStepId, instruction}]); \`terminals\` ([{stableStepId, instruction}], an ending); \`slots\` ([{key, description?, required?}], an information field). Example: {"steps":[{"stableStepId":"ask_order_number","instruction":"Ask for the order number and say why we need it."}]}. Every id comes from the \`editable\` block \`routine_definition\` returns — read the routine first and never invent one. It edits elements that already exist: it cannot add or remove a step or rework branching, so send the operator to the routine editor for those. Applying an edit to a published routine revises it into a draft; it does not change what is serving until Review & Publish. It drafts a proposal for operator review and changes nothing until the operator applies it. ${scopedAgentDraftPublicationNote}`,
         inputSchema: routineEditInputSchema,
         outputSchema: routineProposalOutputSchema,
         invoke: async ({ agentId, routineId, changes, rationale, evidenceIds }) => {

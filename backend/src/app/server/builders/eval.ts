@@ -9,6 +9,10 @@ import {
   EvalSuiteService,
   RetrievalPipelineEvalRunner,
 } from "../../../modules/eval/composition.js";
+import { RevisionEvalRunRepository } from "../../../db/repositories/revisionEvalRunRepository.js";
+import { ContextVariableRepository } from "../../../db/repositories/contextVariableRepository.js";
+import { RevisionEvalRunService } from "../../../modules/eval/services/revisionEvalRun.js";
+import { projectInternalAgentConfig } from "../../../modules/agents/public.js";
 import {
   CustomerReplyDeliveryDispatcher,
 } from "../../../modules/customerReplyDelivery/public.js";
@@ -78,8 +82,27 @@ export const buildEvalServices = (input: {
     input.chat.workbenchReplayRunner,
     input.logger,
     input.infrastructure.usageLimitPolicy,
+    {
+      find: async ({ workspaceId, agentId }) => {
+        const agent = await input.repositories.agentRepository.findByIdAndWorkspaceId(agentId, workspaceId);
+        return agent ? projectInternalAgentConfig(agent) : null;
+      },
+    },
   );
   const evalSuiteService = new EvalSuiteService(evalRepository, evalRunService, input.logger);
+  const revisionEvalRunService = new RevisionEvalRunService({
+    repository: new RevisionEvalRunRepository(input.infrastructure.database.kysely),
+    revisions: {
+      findRevisionByWorkspace: async ({ workspaceId, revisionId }) =>
+        input.repositories.agentRevisionRepository.findRevisionByWorkspace({ workspaceId, revisionId }),
+      findRevision: ({ workspaceId, agentId, revisionId }) =>
+        input.repositories.agentRevisionRepository.findRevision(workspaceId, agentId, revisionId),
+    },
+    cases: evalRepository,
+    contextCatalog: new ContextVariableRepository(input.infrastructure.database.kysely),
+    runner: evalRunService,
+    logger: input.logger,
+  });
   const customerReplyDelivery = new CustomerReplyDeliveryDispatcher({
     slack: new SlackCustomerReplyDeliverer({
       installations: input.repositories.slackInstallationRepository,
@@ -105,6 +128,7 @@ export const buildEvalServices = (input: {
     evalCaseService,
     evalMessageCaseService,
     evalRunService,
+    revisionEvalRunService,
     evalSnapshotService,
     evalSuiteService,
     operatorReplyService,

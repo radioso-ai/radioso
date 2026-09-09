@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { sql } from "kysely";
 
 import type {
   AgentContextVariableEnablement,
@@ -11,6 +12,7 @@ import type {
   ContextVariableValueType,
 } from "../../modules/context-variables/public.js";
 import type { ContextVariableSurfacing, ResolvedVariableInput } from "../../modules/context-variables/public.js";
+import type { AgentRevisionSnapshot } from "../../modules/agents/public.js";
 import type {
   AgentContextVariableEnablementRecord,
   ApplyContextVariableProposalInput,
@@ -19,9 +21,10 @@ import type {
   ContextVariableRepositoryPort,
   ContextVariableUpdateRecord,
 } from "../../modules/context-variables/public.js";
-import { badRequest, conflict } from "../../shared/domain/errors.js";
-import { currentTimestamp, optionalTimestampMatch, timestampMatchOrAbsent, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import { badRequest, conflict, notFound } from "../../shared/domain/errors.js";
+import { currentTimestamp, optionalTimestampMatch, timestampMatchOrAbsent, toJsonb, transactionAdvisoryLock } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
+import { agentRevisionLockKey, withAgentDraftMutation } from "./agentDraftMutation.js";
 
 interface ContextVariableRow {
   id: string;
@@ -155,6 +158,25 @@ const mapAgentContextVariableWithVariableRow = (
   updatedAt: new Date(row.variable_updated_at),
 });
 
+const toRevisionEnablement = (
+  enablement: AgentContextVariableEnablement,
+): AgentRevisionSnapshot["contextVariableEnablements"][number] => ({
+  id: enablement.id,
+  agentId: enablement.agentId,
+  variableId: enablement.variableId,
+  source: enablement.source,
+  resolverSkillId: enablement.resolverSkillId,
+  maxAgeSeconds: enablement.maxAgeSeconds,
+  resolverTimeoutMs: enablement.resolverTimeoutMs,
+  surfacing: enablement.surfacing,
+  enabled: enablement.enabled,
+  createdAt: enablement.createdAt,
+  updatedAt: enablement.updatedAt,
+});
+
+const snapshotSelectsVariable = (variableId: string) =>
+  sql<boolean>`snapshot @> ${toJsonb({ contextVariableEnablements: [{ variableId }] })}`;
+
 const mapContextVariableValueRow = (row: ContextVariableValueRow): ContextVariableValue => ({
   id: row.id,
   workspaceId: row.workspace_id,
@@ -258,12 +280,76 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
   }
 
   async delete(workspaceId: string, id: string): Promise<boolean> {
-    const result = await this.db
-      .deleteFrom("context_variables")
-      .where("workspace_id", "=", workspaceId)
-      .where("id", "=", id)
-      .executeTakeFirst();
-    return (result?.numDeletedRows ?? 0n) > 0n;
+    const agentIds = await this.findVariableReferencingAgentIds(this.db, workspaceId, id);
+    return this.db.transaction().execute(async (trx) => {
+      // Snapshot writers take the agent lock before their variable FK key-share lock.
+      // Match that order so a delete cannot race a candidate or a draft projection.
+      for (const agentId of agentIds) {
+        await transactionAdvisoryLock(agentRevisionLockKey(workspaceId, agentId)).execute(trx);
+      }
+      const variable = await trx
+        .selectFrom("context_variables")
+        .select("id")
+        .where("workspace_id", "=", workspaceId)
+        .where("id", "=", id)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!variable) return false;
+
+      const [revision, draft, enablement] = await Promise.all([
+        trx
+          .selectFrom("agent_revisions")
+          .select("id")
+          .where("workspace_id", "=", workspaceId)
+          .where(snapshotSelectsVariable(id))
+          .executeTakeFirst(),
+        trx
+          .selectFrom("agent_drafts")
+          .select("agent_id")
+          .where("workspace_id", "=", workspaceId)
+          .where(snapshotSelectsVariable(id))
+          .executeTakeFirst(),
+        trx
+          .selectFrom("agent_context_variables as enablement")
+          .innerJoin("agents as agent", "agent.id", "enablement.agent_id")
+          .select("enablement.id")
+          .where("agent.workspace_id", "=", workspaceId)
+          .where("enablement.variable_id", "=", id)
+          .executeTakeFirst(),
+      ]);
+      if (revision) {
+        throw conflict("Cannot delete a context variable selected by an immutable agent revision");
+      }
+      if (draft || enablement) {
+        throw conflict("Cannot delete a context variable while an agent draft still selects it");
+      }
+
+      await trx
+        .deleteFrom("context_variables")
+        .where("workspace_id", "=", workspaceId)
+        .where("id", "=", id)
+        .executeTakeFirst();
+      return true;
+    });
+  }
+
+  private async findVariableReferencingAgentIds(db: Db, workspaceId: string, variableId: string): Promise<string[]> {
+    const [drafts, enablements] = await Promise.all([
+      db
+        .selectFrom("agent_drafts")
+        .select("agent_id")
+        .where("workspace_id", "=", workspaceId)
+        .where(snapshotSelectsVariable(variableId))
+        .execute(),
+      db
+        .selectFrom("agent_context_variables as enablement")
+        .innerJoin("agents as agent", "agent.id", "enablement.agent_id")
+        .select("enablement.agent_id")
+        .where("agent.workspace_id", "=", workspaceId)
+        .where("enablement.variable_id", "=", variableId)
+        .execute(),
+    ]);
+    return [...new Set([...drafts, ...enablements].map((row) => row.agent_id))].sort();
   }
 
   async listByWorkspace(workspaceId: string): Promise<ContextVariable[]> {
@@ -287,7 +373,8 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
   }
 
   async upsertEnablement(input: AgentContextVariableEnablementRecord): Promise<AgentContextVariableEnablement> {
-    return this.db.transaction().execute(async (trx) => {
+    const workspaceId = await this.requireEnablementWorkspace(input.variableId);
+    return withAgentDraftMutation(this.db, workspaceId, input.agentId, async (trx, snapshot) => {
       if (input.source === "resolver" && input.resolverSkillId) {
         const state = await lockResolverSkillForEnablement(trx, {
           agentId: input.agentId,
@@ -328,17 +415,59 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
         )
         .returning(agentContextVariableColumns)
         .executeTakeFirstOrThrow();
-      return mapAgentContextVariableRow(row);
+      const saved = mapAgentContextVariableRow(row);
+      return {
+        result: saved,
+        snapshot: {
+          ...snapshot,
+          contextVariableEnablements: [
+            ...snapshot.contextVariableEnablements.filter((enablement) => enablement.variableId !== saved.variableId),
+            toRevisionEnablement(saved),
+          ],
+        },
+      };
     });
   }
 
   async deleteEnablement(agentId: string, variableId: string): Promise<boolean> {
-    const result = await this.db
-      .deleteFrom("agent_context_variables")
-      .where("agent_id", "=", agentId)
-      .where("variable_id", "=", variableId)
+    const existing = await this.db
+      .selectFrom("agent_context_variables")
+      .innerJoin("context_variables", "context_variables.id", "agent_context_variables.variable_id")
+      .select("context_variables.workspace_id")
+      .where("agent_context_variables.agent_id", "=", agentId)
+      .where("agent_context_variables.variable_id", "=", variableId)
       .executeTakeFirst();
-    return (result?.numDeletedRows ?? 0n) > 0n;
+    if (!existing) return false;
+
+    return withAgentDraftMutation(this.db, existing.workspace_id, agentId, async (trx, snapshot) => {
+      const result = await trx
+        .deleteFrom("agent_context_variables")
+        .where("agent_id", "=", agentId)
+        .where("variable_id", "=", variableId)
+        .executeTakeFirst();
+      const deleted = (result?.numDeletedRows ?? 0n) > 0n;
+      return deleted
+        ? {
+            result: true,
+            snapshot: {
+              ...snapshot,
+              contextVariableEnablements: snapshot.contextVariableEnablements.filter(
+                (enablement) => enablement.variableId !== variableId,
+              ),
+            },
+          }
+        : { result: false, unchanged: true };
+    });
+  }
+
+  private async requireEnablementWorkspace(variableId: string): Promise<string> {
+    const variable = await this.db
+      .selectFrom("context_variables")
+      .select("workspace_id")
+      .where("id", "=", variableId)
+      .executeTakeFirst();
+    if (!variable) throw notFound("Context variable not found");
+    return variable.workspace_id;
   }
 
   async listByAgent(workspaceId: string, agentId: string): Promise<AgentContextVariableEnablement[]> {
@@ -470,8 +599,9 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
   }
 
   async applyProposal(input: ApplyContextVariableProposalInput): Promise<ApplyContextVariableProposalResult> {
-    return this.db.transaction().execute(async (trx) => {
+    return withAgentDraftMutation(this.db, input.workspaceId, input.agentId, async (trx, snapshot) => {
       let variableId = input.variableId;
+      let savedEnablement: AgentContextVariableEnablement | null = null;
 
       if (input.definition) {
         if (variableId) {
@@ -601,17 +731,32 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
             // unqualified column is ambiguous between the target row and the `excluded` row.
             })).where((eb) => timestampMatchOrAbsent(eb.ref("agent_context_variables.updated_at"), input.expectedEnablementUpdatedAt)),
           )
-          .returning(["id"])
+          .returning(agentContextVariableColumns)
           .executeTakeFirst();
         if (!row) {
           throw conflict("Context variable enablement was updated by another writer; reload before saving again");
         }
+        savedEnablement = mapAgentContextVariableRow(row);
       }
 
       if (!variableId) {
         throw badRequest("A context variable proposal must include a definition or target an existing variable");
       }
-      return { variableId };
+      const result = { variableId };
+      return savedEnablement
+        ? {
+            result,
+            snapshot: {
+              ...snapshot,
+              contextVariableEnablements: [
+                ...snapshot.contextVariableEnablements.filter(
+                  (enablement) => enablement.variableId !== savedEnablement.variableId,
+                ),
+                toRevisionEnablement(savedEnablement),
+              ],
+            },
+          }
+        : { result, unchanged: true };
     });
   }
 }

@@ -105,7 +105,7 @@ export const shouldSuppressRetrievalSenseClarification = (
 
 type PrepareRetrievalInput = Parameters<ChatSessionPreparer["prepareRetrieval"]>[0];
 
-export type RetrievalSenseClarificationTurn =
+type RetrievalSenseClarificationTurn =
   | {
       kind: "ask";
       presentation: ChatPresentedAnswer;
@@ -143,6 +143,8 @@ export interface ChatRoutineProvider {
   forTurn(input: {
     modelGateway: ConversationModelGateway;
     agentId: string;
+    /** Immutable release pinned on the conversation; absent only for fixture/replay paths. */
+    agentRevisionId?: string;
     workspaceId?: string;
     accountId?: string;
     pinnedRoutineIds?: string[];
@@ -268,7 +270,7 @@ export interface ChatTurnAssemblyRoutineResult {
   commitClarificationState?: () => Promise<void>;
 }
 
-export type PreparedChatStreamTurnEvent =
+type PreparedChatStreamTurnEvent =
   | { type: "status"; stage: ChatStatusStage }
   | {
       type: "chunk";
@@ -309,12 +311,12 @@ export interface ChatTurnAssemblyOptions {
   logger?: Pick<AppLogger, "warn">;
 }
 
-export type ChatTurnAssemblySharedOptions = Omit<
+type ChatTurnAssemblySharedOptions = Omit<
   ChatTurnAssemblyOptions,
   "chatSessionPreparer" | "directiveStateStore" | "routineStore"
 >;
 
-export interface ChatTurnAssemblyEffectPorts {
+interface ChatTurnAssemblyEffectPorts {
   chatSessionPreparer: ChatSessionPreparer;
   directiveStateStore: DirectiveStateStore;
   routineStore?: ConversationRoutineStore;
@@ -359,6 +361,7 @@ export class ChatTurnAssembly {
     const routineTurnPorts = await this.options.routineProvider.forTurn({
       modelGateway,
       agentId: session.agent.id,
+      agentRevisionId: session.conversation.agentRevisionId ?? undefined,
       workspaceId: session.conversation.workspaceId,
       accountId: input.accountId,
       pinnedRoutineIds: await this.routineCatalogPinIds(session, input.activeRoutine),

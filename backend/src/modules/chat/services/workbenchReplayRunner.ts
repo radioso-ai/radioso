@@ -8,6 +8,7 @@ import type {
 } from "@radioso/conversation-contract";
 
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
+import type { AgentRevision } from "../../agents/public.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { ModelCallUsageAttribution } from "../../../shared/domain/modelCallUsageContext.js";
 import type { ResponseLanguageDetector } from "../../../shared/services/responseLanguageDetector.js";
@@ -38,6 +39,7 @@ import type { AgentSkillTurnSkillProvider } from "./agentSkillTurnSkillProvider.
 import { DeferredClarificationStore } from "./clarification/deferredClarificationStore.js";
 import {
   ChatSessionPreparer,
+  historicalWorkbenchReplayBaseline,
   type PrepareChatSessionInput,
   type PreparedSession,
 } from "./chatSessionPreparer.js";
@@ -50,7 +52,14 @@ import {
   type ChatTurnAssemblyOptions,
   type ChatTurnAssemblyRoutineResult,
 } from "./chatTurnAssembly.js";
-import { createEphemeralChatTurnEffectProfile } from "./chatTurnEffectProfile.js";
+import {
+  createEphemeralChatTurnEffectProfile,
+  type EphemeralChatTurnEffectProfile,
+} from "./chatTurnEffectProfile.js";
+import {
+  exportTestExecutionReplayContinuation,
+  type TestExecutionReplayContinuationV1,
+} from "./testExecutionContinuation.js";
 import { buildTurnTraceForPresentation } from "./chatTurnLifecycle.js";
 import {
   resolveConversationTurnInterpretationContext,
@@ -126,6 +135,8 @@ export interface WorkbenchReplayResolvedConfig {
 
 export interface WorkbenchReplayResult {
   answer: string;
+  /** Ephemeral turn identity; never a production conversation-message row. */
+  messageId?: string;
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
   /** Follow-up questions the replayed turn would offer, for previewing a directive
@@ -136,10 +147,12 @@ export interface WorkbenchReplayResult {
   actions?: RoutineActionRequest[];
   pendingDecisionTransition?: ChatTurnAssemblyRoutineResult["pendingDecisionTransition"];
   handoff?: ChatTurnAssemblyRoutineResult["handoff"];
+  /** Present only for the trusted multi-turn test-execution adapter. */
+  continuation?: TestExecutionReplayContinuationV1;
   resolvedConfig: WorkbenchReplayResolvedConfig;
 }
 
-export interface WorkbenchReplayRunnerOptions {
+interface WorkbenchReplayRunnerOptions {
   retrievalTurn: RetrievalTurnPort;
   /** @deprecated Replay uses an in-memory no-op audit adapter. */
   auditService: AuditService;
@@ -188,6 +201,10 @@ export interface WorkbenchReplayInput {
   executionMode: TurnExecutionMode;
   accountId?: string | null;
   sourceAgentId: string;
+  /** Stable private identity supplied by a trusted execution aggregate. */
+  conversationId?: string;
+  /** Trusted runner-only immutable candidate. Public chat never accepts this input. */
+  candidateRevision?: AgentRevision;
   baselineAgentConfig: InternalAgentConfig;
   agentConfigOverride?: Partial<InternalAgentConfig>;
   query: string;
@@ -196,6 +213,10 @@ export interface WorkbenchReplayInput {
   clientContextCapabilities?: AssistantClientContextCapabilities;
   userExpectedLocale?: string | null;
   routineStartState?: WorkbenchReplayRoutineStartState | null;
+  pendingClarificationStartState?: Omit<import("@radioso/conversation-contract").PendingClarification, "sessionId"> | null;
+  directiveStateStartState?: import("../../directives/public.js").DirectiveFiringState | null;
+  /** Already validated safe-test samples. They bypass every live resolver. */
+  preResolvedHostVariables?: readonly import("../../context-variables/public.js").ResolvedVariableInput[];
   retrievalSettingsOverride?: Partial<RetrievalSettingsRecord>;
   usageAttribution?: ModelCallUsageAttribution;
   /**
@@ -209,6 +230,9 @@ export class WorkbenchReplayRunner {
   constructor(private readonly options: WorkbenchReplayRunnerOptions) {}
 
   async run(input: WorkbenchReplayInput): Promise<WorkbenchReplayResult> {
+    if (input.candidateRevision && input.executionMode !== "safe_test") {
+      throw new Error("workbench_candidate_revision_requires_safe_test");
+    }
     const mergedConfig = applyAgentConfigOverride(
       input.baselineAgentConfig,
       input.agentConfigOverride ?? {},
@@ -217,7 +241,10 @@ export class WorkbenchReplayRunner {
       agentId: input.sourceAgentId,
       workspaceId: input.workspaceId,
     });
-    const effects = createEphemeralChatTurnEffectProfile(input.history);
+    const effects = createEphemeralChatTurnEffectProfile(input.history, {
+      conversationId: input.conversationId,
+      directiveState: input.directiveStateStartState,
+    });
     const preparer = new ChatSessionPreparer(
       effects.conversationRepository,
       effects.messageRepository,
@@ -243,6 +270,13 @@ export class WorkbenchReplayRunner {
     const session = await preparer.prepare(prepareInput, {
       skipRetrieval: true,
       preResolvedAgent: agent,
+      preResolvedRevision: input.candidateRevision,
+      trustedTestRunner: input.executionMode === "safe_test" ? true : undefined,
+      // A full-execution replay reuses an immutable baseline captured with the
+      // workbench/eval case. It is not current authoring state and it is never
+      // available on a public chat path.
+      historicalWorkbenchReplayBaseline,
+      preResolvedHostVariables: input.executionMode === "safe_test" ? input.preResolvedHostVariables : undefined,
       preResolvedHistory: input.history,
       preResolvedConversationSummary: input.conversationSummary ?? undefined,
     });
@@ -253,7 +287,11 @@ export class WorkbenchReplayRunner {
         : null,
     );
     const clarificationStore = new DeferredClarificationStore(
-      effects.clarificationStore(),
+      effects.clarificationStore(
+        input.pendingClarificationStartState
+          ? { ...input.pendingClarificationStartState, sessionId: session.conversation.id }
+          : null,
+      ),
     );
     const clarifier = this.options.clarifierFactory?.({
       session,
@@ -307,6 +345,9 @@ export class WorkbenchReplayRunner {
       clarification,
     });
     if (routineResult) {
+      await routineResult.commitRoutineState();
+      await routineResult.commitClarificationState?.();
+      await session.directiveStateStore?.commit();
       return this.presentResult({
         input,
         agent,
@@ -317,6 +358,7 @@ export class WorkbenchReplayRunner {
         actions: routineResult.actions,
         pendingDecisionTransition: routineResult.pendingDecisionTransition,
         handoff: routineResult.handoff,
+        continuation: this.continuation(effects, session.conversation.id, routineStore),
       });
     }
 
@@ -333,6 +375,8 @@ export class WorkbenchReplayRunner {
       clarification,
       activeRoutineAtTurnStart: Boolean(activeRoutine),
     });
+    await clarificationStore.commit();
+    await rendered.session.directiveStateStore?.commit();
     return this.presentResult({
       input,
       agent,
@@ -341,6 +385,7 @@ export class WorkbenchReplayRunner {
       engineTrace: rendered.engineTrace,
       answerStartedAt,
       actions: rendered.actions,
+      continuation: this.continuation(effects, session.conversation.id, routineStore),
     });
   }
 
@@ -449,6 +494,7 @@ export class WorkbenchReplayRunner {
     actions?: RoutineActionRequest[];
     pendingDecisionTransition?: ChatTurnAssemblyRoutineResult["pendingDecisionTransition"];
     handoff?: ChatTurnAssemblyRoutineResult["handoff"];
+    continuation?: TestExecutionReplayContinuationV1;
   }): WorkbenchReplayResult {
     const tracePresentation = buildTurnTraceForPresentation({
       workspaceId: input.input.workspaceId,
@@ -461,6 +507,7 @@ export class WorkbenchReplayRunner {
     });
     return {
       answer: input.presentation.answer,
+      messageId: input.session.userMessage.id,
       citations: input.presentation.citations,
       answerSegments: input.presentation.answerSegments,
       // Carried so a coach preview can show the effect of a directive addressed to
@@ -471,6 +518,7 @@ export class WorkbenchReplayRunner {
       actions: input.actions,
       pendingDecisionTransition: input.pendingDecisionTransition,
       handoff: input.handoff,
+      ...(input.continuation ? { continuation: input.continuation } : {}),
       resolvedConfig: {
         composedInstructions: input.session.retrieval.systemPrompt,
         modelProvider: input.agent.chatModelOverride?.provider,
@@ -494,5 +542,13 @@ export class WorkbenchReplayRunner {
         })),
       },
     };
+  }
+
+  private continuation(
+    effects: ReturnType<typeof createEphemeralChatTurnEffectProfile>,
+    sessionId: string,
+    routineStore: ReturnType<EphemeralChatTurnEffectProfile["routineStore"]>,
+  ): TestExecutionReplayContinuationV1 {
+    return exportTestExecutionReplayContinuation(effects.snapshot({ sessionId, routineStore }));
   }
 }

@@ -5,7 +5,7 @@ import { type AgentTab, type DashboardRouteState } from '@/lib/dashboard-routes'
  * It maps 1:1 to a section, so the rail highlight and the rendered content key
  * off the same value — no divergent mappings.
  */
-export type DashboardArea = 'agents' | 'knowledge' | 'settings' | 'account'
+type DashboardArea = 'agents' | 'knowledge' | 'settings' | 'account'
 
 /** The area whose sub-nav should show, or null for areas without one. */
 export function activeArea(routeState: Pick<DashboardRouteState, 'section'>): DashboardArea | null {
@@ -35,6 +35,7 @@ export type AgentSectionId =
   | 'mcp-channel'
   | 'slack-channel'
   | 'whatsapp-channel'
+  | 'channels-overview'
   | 'danger'
 
 type AgentSectionRoute = { agentTab: AgentTab; anchor?: string }
@@ -51,6 +52,7 @@ const AGENT_SECTION_ROUTES: Record<AgentSectionId, AgentSectionRoute> = {
   'mcp-channel': { agentTab: 'channels', anchor: 'mcp-channel' },
   'slack-channel': { agentTab: 'channels', anchor: 'slack-channel' },
   'whatsapp-channel': { agentTab: 'channels', anchor: 'whatsapp-channel' },
+  'channels-overview': { agentTab: 'channels' },
   danger: { agentTab: 'behavior', anchor: 'agent-danger-zone' },
 }
 
@@ -94,7 +96,7 @@ export function agentSectionFromRoute(routeState: Pick<DashboardRouteState, 'age
     return 'chat'
   }
   if (tab === 'channels') {
-    return (anchor && CHANNEL_ANCHORS[anchor]) || 'web-chat'
+    return (anchor && CHANNEL_ANCHORS[anchor]) || 'channels-overview'
   }
   return (anchor && ASSISTANT_ANCHORS[anchor]) || 'profile'
 }

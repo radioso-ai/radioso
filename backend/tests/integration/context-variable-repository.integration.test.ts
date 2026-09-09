@@ -18,6 +18,15 @@ describeIntegration("ContextVariableRepository (Postgres)", () => {
   const workspaceId = randomUUID();
   const agentId = randomUUID();
 
+  const initializeDraft = (id: string) => database.query(
+    "INSERT INTO agent_drafts (agent_id, workspace_id, generation, snapshot) VALUES ($1, $2, 1, $3::jsonb)",
+    [
+      id,
+      workspaceId,
+      JSON.stringify({ customInstruction: null, directives: [], routines: [], contextVariableEnablements: [] }),
+    ],
+  );
+
   beforeAll(async () => {
     await database.query(`INSERT INTO accounts (id, name, email, password_hash) VALUES ($1,$2,$3,$4)`, [
       accountId,
@@ -36,6 +45,7 @@ describeIntegration("ContextVariableRepository (Postgres)", () => {
       workspaceId,
       "Context Variable Agent",
     ]);
+    await initializeDraft(agentId);
   });
 
   afterAll(async () => {
@@ -106,6 +116,37 @@ describeIntegration("ContextVariableRepository (Postgres)", () => {
     expect(await repository.deleteEnablement(agentId, variable.id)).toBe(true);
     expect(await repository.delete(workspaceId, variable.id)).toBe(true);
     expect(await repository.get(workspaceId, variable.id)).toBeNull();
+  });
+
+  it("rejects deletion when a candidate snapshot still selects the variable", async () => {
+    const variable = await repository.create({
+      workspaceId,
+      name: `pinned_${randomUUID().replaceAll("-", "_")}`,
+      valueType: "string",
+      trustTier: "unverified",
+      sensitivity: "normal",
+      defaultSurfacing: "always",
+    });
+    await repository.upsertEnablement({
+      agentId,
+      variableId: variable.id,
+      source: "pushed",
+      surfacing: "always",
+    });
+    const [draft] = await database.query<{ generation: number; snapshot: unknown }>(
+      "SELECT generation, snapshot FROM agent_drafts WHERE agent_id = $1",
+      [agentId],
+    );
+    await database.query(
+      "INSERT INTO agent_revisions (id, agent_id, workspace_id, snapshot, source_draft_generation) VALUES ($1, $2, $3, $4::jsonb, $5)",
+      [randomUUID(), agentId, workspaceId, JSON.stringify(draft!.snapshot), draft!.generation],
+    );
+
+    await expect(repository.delete(workspaceId, variable.id)).rejects.toMatchObject({
+      statusCode: 409,
+      code: "conflict",
+    } as Partial<AppError>);
+    await expect(repository.get(workspaceId, variable.id)).resolves.toMatchObject({ id: variable.id });
   });
 
   it("upserts, reads, and deletes scoped JSON values", async () => {
@@ -186,6 +227,7 @@ describeIntegration("ContextVariableRepository (Postgres)", () => {
       workspaceId,
       "Context Variable Skip Agent",
     ]);
+    await initializeDraft(isolatedAgentId);
     const scopes = [{ type: "workspace" as const, id: workspaceId }];
     const active = await repository.create({
       workspaceId,
@@ -272,6 +314,7 @@ describeIntegration("ContextVariableRepository (Postgres)", () => {
       workspaceId,
       "Proposal Agent",
     ]);
+    await initializeDraft(proposalAgentId);
 
     const result = await repository.applyProposal({
       workspaceId,
@@ -310,6 +353,7 @@ describeIntegration("ContextVariableRepository (Postgres)", () => {
       workspaceId,
       "Duplicate Name Agent",
     ]);
+    await initializeDraft(proposalAgentId);
     const name = `dup_${randomUUID().replaceAll("-", "_")}`;
     const definition = {
       name,
@@ -399,6 +443,7 @@ describeIntegration("ContextVariableRepository (Postgres)", () => {
       workspaceId,
       "Atomic Apply Agent",
     ]);
+    await initializeDraft(proposalAgentId);
     // A concurrent enablement write lands after the proposal was drafted (drafted against "no
     // enablement exists yet"), so expectedEnablementUpdatedAt: null in the call below no longer
     // reflects reality.
@@ -463,6 +508,7 @@ describeIntegration("ContextVariableRepository (Postgres)", () => {
       workspaceId,
       "Both Apply Agent",
     ]);
+    await initializeDraft(proposalAgentId);
     const enablement = await repository.upsertEnablement({
       agentId: proposalAgentId,
       variableId: variable.id,

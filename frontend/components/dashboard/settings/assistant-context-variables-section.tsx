@@ -383,6 +383,7 @@ export function AssistantContextVariablesSection({
           and isn&apos;t listed here; this section is for your own host-defined variables. Use the{' '}
           <span className="font-medium text-foreground">?</span> on any field for a plain-language explanation.
         </p>
+        <p className="text-xs text-muted-foreground">Shared variable definitions apply live to every agent that uses them. This agent&apos;s enablement changes are saved to its private draft and go live on Review &amp; Publish.</p>
 
         {isLoading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -510,7 +511,7 @@ export function AssistantContextVariablesSection({
           <DialogHeader>
             <DialogTitle>{editingVariable ? 'Edit context variable' : 'Add context variable'}</DialogTitle>
             <DialogDescription>
-              Declare the variable once for the workspace catalog. Each agent chooses whether to enable it.
+              Shared definition — changes apply live to every agent using it. Each agent separately chooses whether to enable it in its private draft.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">

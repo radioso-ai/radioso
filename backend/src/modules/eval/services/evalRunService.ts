@@ -3,12 +3,15 @@ import { randomUUID } from "node:crypto";
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
 import {
+  applyAgentRevisionSnapshot,
   materializeAgentFromConfig,
+  type AgentRevision,
   type InternalAgentConfig,
 } from "../../agents/public.js";
 import type { WorkbenchReplayResult } from "../../chat/contracts/index.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import type { ModelCallUsageAttribution } from "../../../shared/domain/modelCallUsageContext.js";
+import type { ResolvedVariableInput } from "../../context-variables/public.js";
 import { combineVerdicts, evaluateAssertion, isLlmJudgeAssertion } from "../domain/outcomes.js";
 import type {
   AssertionVerdict,
@@ -16,6 +19,7 @@ import type {
   EvalCaseStatus,
   EvalRun,
   EvalRunMode,
+  EvalRunStatus,
   EvalRunObservedOutput,
   EvalRunOverrides,
   EvalRunResolvedConfig,
@@ -31,6 +35,9 @@ export interface EvalWorkbenchReplayRunnerPort {
     workspaceId: string;
     accountId?: string | null;
     sourceAgentId: string;
+    /** An immutable candidate is only accepted for a private safe-test replay. */
+    candidateRevision?: AgentRevision;
+    preResolvedHostVariables?: readonly ResolvedVariableInput[];
     /** Whether the replayed turn's skills act for real. Stated by the caller; never defaulted. */
     executionMode: TurnExecutionMode;
     baselineAgentConfig: NonNullable<EvalSnapshot["originalAgentConfig"]>;
@@ -44,6 +51,36 @@ export interface EvalWorkbenchReplayRunnerPort {
      * sees the same pre-window context a live turn would. */
     conversationSummary?: string;
   }): Promise<WorkbenchReplayResult>;
+}
+
+/** Live, explicitly non-versioned settings/credentials still apply to a candidate replay. */
+interface EvalRevisionLiveAgentConfigReaderPort {
+  find(input: { workspaceId: string; agentId: string }): Promise<NonNullable<EvalSnapshot["originalAgentConfig"]> | null>;
+}
+
+/**
+ * The revision-run aggregate owns persistence and retries.  This narrow result is deliberately
+ * not an `eval_runs` record: trying a candidate must not replace a case's ordinary evidence.
+ */
+interface FrozenRevisionEvalCaseInput {
+  workspaceId: string;
+  agentId: string;
+  accountId?: string | null;
+  revision: AgentRevision;
+  snapshot: EvalSnapshot;
+  assertions: EvalCase["assertions"];
+  mode: EvalRunMode;
+  testValues: readonly ResolvedVariableInput[];
+  executionPolicy: "safe_test";
+  correlationId: string;
+}
+
+export interface FrozenRevisionEvalCaseResult {
+  status: EvalRunStatus;
+  outcomeReason: string | null;
+  assertionVerdicts: AssertionVerdict[];
+  observedOutput: EvalRunObservedOutput;
+  resolvedConfig: EvalRunResolvedConfig;
 }
 
 export interface EvalRunInput {
@@ -73,7 +110,7 @@ export interface EvalRunOutcome {
   case: EvalCase | null;
 }
 
-export interface EvalReplayLoggerPort {
+interface EvalReplayLoggerPort {
   info(fields: Record<string, unknown>, message: string): void;
 }
 
@@ -163,6 +200,7 @@ export class EvalRunService {
     private readonly workbenchReplayRunner?: EvalWorkbenchReplayRunnerPort,
     private readonly logger?: EvalReplayLoggerPort,
     private readonly usageLimitPolicy: UsageLimitPolicy = new NoopUsageLimitPolicy(),
+    private readonly revisionLiveAgentConfig?: EvalRevisionLiveAgentConfigReaderPort,
   ) {}
 
   /**
@@ -179,6 +217,106 @@ export class EvalRunService {
    */
   async execute(input: EvalRunInput): Promise<EvalRunOutcome> {
     return this.metered(input, (reserve) => this.executeReserved(input, reserve));
+  }
+
+  /** Runs a frozen revision/case pair without writing `eval_runs` or case last-run state. */
+  async executeFrozenRevisionCase(input: FrozenRevisionEvalCaseInput): Promise<FrozenRevisionEvalCaseResult> {
+    return this.metered(input, (reserve) => this.executeFrozenRevisionCaseReserved(input, reserve));
+  }
+
+  private async executeFrozenRevisionCaseReserved(input: FrozenRevisionEvalCaseInput, reserve: () => Promise<void>): Promise<FrozenRevisionEvalCaseResult> {
+    if (input.executionPolicy !== "safe_test") {
+      throw badRequest("Revision evaluations require safe_test execution policy");
+    }
+    const replay = buildReplayInputs(input.snapshot);
+    if (!replay) throw badRequest("Frozen eval snapshot has no user message to replay");
+
+    const startedAtMs = Date.now();
+    let observed: EvalRunObservedOutput;
+    const resolvedConfig: EvalRunResolvedConfig = { executionMode: "safe_test" };
+    try {
+      await reserve();
+      const baselineAgentConfig = await this.revisionLiveAgentConfig?.find({ workspaceId: input.workspaceId, agentId: input.agentId });
+      if (!baselineAgentConfig) throw badRequest("Live agent configuration is unavailable for revision evaluation");
+      const candidateAgent = applyAgentRevisionSnapshot(
+        materializeAgentFromConfig(baselineAgentConfig, {
+          agentId: input.agentId,
+          workspaceId: input.workspaceId,
+        }),
+        input.revision,
+      );
+      if (input.mode === "retrieval_only") {
+        // Retrieval has no generation, workbench, routine, or host-variable execution path.
+        // Its scope is the frozen candidate's released agent behavior projected over current
+        // unversioned runtime config (credentials/settings), just as the trusted replay does.
+        const result = await this.retrievalRunner.retrieve({
+          workspaceId: input.workspaceId,
+          query: replay.query,
+          history: replay.history,
+          context: { agent: candidateAgent },
+          retrievalSettingsOverride: resolveReplayRetrievalSettingsOverride(
+            input.snapshot.originalRetrievalSettings,
+            undefined,
+          ),
+        });
+        observed = { retrievedChunks: result.chunks, activityTrace: result.activityTrace };
+        resolvedConfig.retrievalSettings = result.resolvedSettings;
+      } else {
+        if (!this.workbenchReplayRunner) throw badRequest("Workbench replay runner is not configured");
+        const result = await this.workbenchReplayRunner.run({
+          workspaceId: input.workspaceId,
+          accountId: input.accountId,
+          sourceAgentId: input.agentId,
+          candidateRevision: input.revision,
+          baselineAgentConfig,
+          executionMode: "safe_test",
+          query: replay.query,
+          history: replay.history,
+          // `originalRoutineState` is the post-turn/current state. A replay starts at the
+          // preceding user turn, so historical replay deliberately never feeds it as pre-turn
+          // state; no pre-turn routine/clarification/directive-firing snapshot exists.
+          preResolvedHostVariables: input.testValues,
+          usageAttribution: { surface: "eval", requestId: input.correlationId },
+          conversationSummary: replay.conversationSummary,
+        });
+        observed = {
+          retrievedChunks: result.resolvedConfig.retrievedChunks,
+          answer: result.answer,
+          citations: result.citations,
+          answerSegments: result.answerSegments,
+          suggestions: result.suggestions,
+          ...toObservedGrounding(result.groundingSummary),
+          turnTrace: result.turnTrace,
+        };
+        resolvedConfig.composedInstructions = result.resolvedConfig.composedInstructions;
+        resolvedConfig.modelProvider = result.resolvedConfig.modelProvider;
+        resolvedConfig.modelId = result.resolvedConfig.modelId;
+        resolvedConfig.retrievalSettings = result.resolvedConfig.retrievalSettings;
+        if (result.resolvedConfig.conversationSummary) resolvedConfig.conversationSummary = result.resolvedConfig.conversationSummary;
+      }
+    } catch {
+      // Provider errors are intentionally reduced before durable operator evidence/logging.
+      observed = { retrievedChunks: [], error: { message: "revision_eval_runner_failed", code: "runner_failed" } };
+    }
+    const verdicts = observed.error
+      ? input.assertions.map((assertion) => ({ assertion, status: "error" as const, reason: observed.error!.code ?? "runner_failed" }))
+      : await Promise.all(input.assertions.map(async (assertion, assertionIndex) => {
+        if (isLlmJudgeAssertion(assertion)) {
+          if (typeof observed.answer !== "string") return { assertion, status: "error" as const, reason: "llm_judge_requires_answer" };
+          const verdict = await this.judge.judge({ workspaceId: input.workspaceId, accountId: input.accountId, runId: input.correlationId, assertionIndex, assertion, observedAnswer: observed.answer, question: replay.query });
+          // Provider and parser details are not durable revision-eval evidence. The status still
+          // makes this retryable while retaining the assertion that could not be judged.
+          return verdict.status === "error" ? { ...verdict, reason: "judge_failed" } : verdict;
+        }
+        return evaluateAssertion(assertion, observed);
+      }));
+    const aggregate = combineVerdicts(verdicts);
+    // Empty assertion sets ordinarily produce `recorded`; a failed provider is never a
+    // successful recording, however. Keep its sanitized evidence and make the attempt retryable.
+    const status = observed.error ? "error" as const : aggregate.status;
+    const outcomeReason = observed.error?.code ?? aggregate.reason;
+    this.logger?.info({ workspaceId: input.workspaceId, revisionId: input.revision.id, correlationId: input.correlationId, status, executionMode: "safe_test", latencyMs: Date.now() - startedAtMs }, "Revision eval case completed");
+    return { status, outcomeReason, assertionVerdicts: aggregate.verdicts, observedOutput: observed, resolvedConfig };
   }
 
   /**

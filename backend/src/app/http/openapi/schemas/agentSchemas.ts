@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { publicChatSessionSchema } from "../../routes/publicChatRouteSchemas.js";
+import { createRevisionCandidateBodySchema, publishRevisionBodySchema } from "../../routes/agentRevisionRequestSchemas.js";
 import {
   agentChannelChatSchema,
   agentChannelCredentialIssueSchema,
@@ -227,6 +228,15 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
   const AgentParamsSchema = z.object({
     agentId: z.string().uuid(),
   });
+  const AgentRevisionParamsSchema = z.object({ agentId: z.string().uuid(), revisionId: z.string().uuid() });
+  const AgentRevisionSummarySchema = registry.register("AgentRevisionSummary", z.object({ id: z.string().uuid(), label: z.string(), kind: z.enum(["candidate", "published"]), versionNumber: z.number().int().positive().nullable(), createdAt: z.string().datetime(), publishedAt: z.string().datetime().optional() }));
+  const AgentRevisionStateSchema = registry.register("AgentRevisionState", z.object({ agentId: z.string().uuid(), status: z.enum(["unpublished", "draft_clean", "draft_dirty", "published_changed_since_draft"]), draft: z.object({ generation: z.number().int().positive(), basePublishedRevisionId: z.string().uuid().nullable(), updatedAt: z.string().datetime() }), publishedRevision: z.union([AgentRevisionSummarySchema, z.null()]), canPublish: z.boolean(), proactiveGreetingEnabled: z.boolean() }));
+  const AgentRevisionCandidateRequestSchema = registry.register("AgentRevisionCandidateRequest", createRevisionCandidateBodySchema);
+  const AgentRevisionCandidateResponseSchema = registry.register("AgentRevisionCandidateResponse", z.object({ candidate: AgentRevisionSummarySchema }));
+  const AgentRevisionListResponseSchema = registry.register("AgentRevisionListResponse", z.object({ revisions: z.array(AgentRevisionSummarySchema) }));
+  const AgentRevisionDetailResponseSchema = registry.register("AgentRevisionDetailResponse", z.object({ revision: AgentRevisionSummarySchema.extend({ snapshotFormatVersion: z.literal(1), scope: z.object({ customInstructions: z.literal(true), directives: z.literal(true), routines: z.literal(true), contextVariableEnablements: z.literal(true) }), dependencyWarnings: z.array(z.object({ code: z.string(), message: z.string() })), enabledContextVariableIds: z.array(z.string().uuid()), scopedChanges: z.object({ customInstruction: z.object({ before: z.string().nullable(), after: z.string().nullable(), changed: z.boolean() }), directives: z.array(z.object({ id: z.string().uuid(), change: z.enum(["added", "removed", "changed"]), before: z.unknown().optional(), after: z.unknown().optional() })), routines: z.array(z.object({ definitionId: z.string().uuid(), change: z.enum(["added", "removed", "changed"]), before: z.unknown().optional(), after: z.unknown().optional() })), contextVariableEnablements: z.array(z.object({ contextVariableId: z.string().uuid(), change: z.enum(["added", "removed", "changed"]), before: z.unknown().optional(), after: z.unknown().optional() })) }) }) }));
+  const AgentRevisionPublishRequestSchema = registry.register("AgentRevisionPublishRequest", publishRevisionBodySchema);
+  const AgentRevisionPublishResponseSchema = registry.register("AgentRevisionPublishResponse", z.object({ publication: z.object({ id: z.string().uuid(), revisionId: z.string().uuid(), publishedAt: z.string().datetime(), idempotentReplay: z.boolean(), revision: AgentRevisionSummarySchema }), state: AgentRevisionStateSchema }));
 
   const AgentChannelLifecycleSchema = registry.register(
     "AgentChannelLifecycle",
@@ -1064,6 +1074,14 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     AgentChannelCredentialMetadataSchema,
     AgentChannelCredentialParamsSchema: agentChannelCredentialParamsSchema,
     AgentParamsSchema,
+    AgentRevisionParamsSchema,
+    AgentRevisionStateSchema,
+    AgentRevisionCandidateRequestSchema,
+    AgentRevisionCandidateResponseSchema,
+    AgentRevisionListResponseSchema,
+    AgentRevisionDetailResponseSchema,
+    AgentRevisionPublishRequestSchema,
+    AgentRevisionPublishResponseSchema,
     AuthoredDirectiveConditionSchema,
     AuthoredDirectiveBindingSchema,
     AuthoredDirectiveCreateRequestSchema,

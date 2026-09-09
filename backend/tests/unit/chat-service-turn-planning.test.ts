@@ -4,6 +4,8 @@ import { createConversationEngine } from "@radioso/conversation-engine";
 import { RoutineRegistry, type RoutineRegistration } from "@radioso/conversation-defaults";
 import type { ConversationRoutineRunner, Routine, StagedContext } from "@radioso/conversation-contract";
 import type { AgentRecord } from "../../src/modules/agents/domain.js";
+import type { AgentRevision } from "../../src/modules/agents/agentRevision.js";
+import { AgentRevisionRuntimeResolver } from "../../src/modules/agents/runtime/agentRevisionRuntimeResolver.js";
 
 import {
   ChatService,
@@ -264,6 +266,29 @@ const noPendingClarification = () => ({
   },
 });
 
+const publishedRuntimeResolver = (
+  snapshot: AgentRevision["snapshot"] = {
+    customInstruction: "",
+    directives: [],
+    routines: [],
+    contextVariableEnablements: [],
+  },
+): AgentRevisionRuntimeResolver => {
+  const revision: AgentRevision = {
+    id: "11111111-1111-4111-8111-111111111111",
+    snapshot,
+    sourceDraftGeneration: 1,
+    sourceBasePublishedRevisionId: null,
+    createdAt: new Date(0),
+    publishedAt: new Date(0),
+    publishedVersion: 1,
+  };
+  return new AgentRevisionRuntimeResolver({
+    findCurrentPublished: async () => revision,
+    findRevision: async () => revision,
+  });
+};
+
 const buildService = (input: {
   planner?: TurnPlanGatewayFactory;
   pipeline: Record<string, unknown>;
@@ -279,6 +304,7 @@ const buildService = (input: {
   turnPlanInterpretationContextSettings?: ChatServiceOptions["turnPlanInterpretationContextSettings"];
   contextVariableRepository?: ChatServiceOptions["contextVariableRepository"];
   agentService?: ChatServiceOptions["agentService"];
+  agentRevisionRuntimeResolver?: ChatServiceOptions["agentRevisionRuntimeResolver"];
   clarification?: {
     clarifier: NonNullable<ChatServiceOptions["clarifier"]>;
     clarificationStore: NonNullable<ChatServiceOptions["clarificationStore"]>;
@@ -299,6 +325,7 @@ const buildService = (input: {
     responseLanguageDetector: input.staged.responseLanguageDetector,
     directiveSteering: input.directiveSteering,
     agentService: input.agentService,
+    agentRevisionRuntimeResolver: input.agentRevisionRuntimeResolver ?? publishedRuntimeResolver(),
     conversationEngine: createConversationEngine(),
     routineStore: input.routine?.routineStore,
     routineProvider: input.routine?.routineProvider,
@@ -622,6 +649,7 @@ describe("chat service fused turn planning", () => {
       }),
       turnRouter: staged.turnRouter,
       responseLanguageDetector: staged.responseLanguageDetector,
+      agentRevisionRuntimeResolver: publishedRuntimeResolver(),
       conversationEngine: createConversationEngine(),
       turnPlanCoordinator: new TurnPlanCoordinator(
         new TurnPlanService(planner, { timeoutMs: 10 }),
@@ -1056,6 +1084,12 @@ describe("chat service fused turn planning", () => {
         registrations: [],
       }),
       agentService: { resolve: async () => agentRecord },
+      agentRevisionRuntimeResolver: publishedRuntimeResolver({
+        customInstruction: agentRecord.customInstruction,
+        directives: agentRecord.authoredDirectives ?? [],
+        routines: [],
+        contextVariableEnablements: [],
+      }),
     });
 
     await service.answer({ workspaceId: "workspace-1", query: "what's your tone?", stream: false });
@@ -1097,7 +1131,29 @@ describe("chat service fused turn planning", () => {
           { name: "cart_value", value: 120, surfacing: "on_reference" },
           { name: "customer_email", value: "buyer@example.com", surfacing: "on_reference", sensitive: true },
         ],
+        resolveForEnablements: async () => [
+          { name: "cart_value", value: 120, surfacing: "on_reference" },
+          { name: "customer_email", value: "buyer@example.com", surfacing: "on_reference", sensitive: true },
+        ],
       },
+      agentRevisionRuntimeResolver: publishedRuntimeResolver({
+        customInstruction: "",
+        directives: [],
+        routines: [],
+        contextVariableEnablements: [{
+          id: "33333333-3333-4333-8333-333333333333",
+          agentId: "workspace-1",
+          variableId: "44444444-4444-4444-8444-444444444444",
+          source: "pushed",
+          resolverSkillId: null,
+          maxAgeSeconds: null,
+          resolverTimeoutMs: null,
+          surfacing: "on_reference",
+          enabled: true,
+          createdAt: new Date(0),
+          updatedAt: new Date(0),
+        }],
+      }),
     });
 
     await service.answer({

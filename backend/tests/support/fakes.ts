@@ -64,6 +64,10 @@ import {
   type AuthoredDirective,
   type AuthoredDirectiveInput,
 } from "../../src/modules/agents/public.js";
+import {
+  AgentRevisionRuntimeResolver,
+  type AgentRevision,
+} from "../../src/modules/agents/public.js";
 import type {
   BootstrapGreetingCacheRecord,
   BootstrapGreetingCacheRepositoryPort,
@@ -968,6 +972,15 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
     return this.items.get(id) ?? null;
   }
 
+  /** Test-harness seeding only: mirrors the persisted default-agent pointer. */
+  setDefaultAgentForTest(workspaceId: string, agentId: string): void {
+    const workspace = this.items.get(workspaceId);
+    if (!workspace) {
+      throw new Error(`Workspace ${workspaceId} not found`);
+    }
+    this.items.set(workspaceId, { ...workspace, defaultAgentId: agentId, updatedAt: new Date() });
+  }
+
   async findByIdAndAccountId(workspaceId: string, accountId: string): Promise<WorkspaceRecord | null> {
     const item = this.items.get(workspaceId);
     return item && item.accountId === accountId ? item : null;
@@ -1550,6 +1563,30 @@ export class InMemoryRoutineDefinitionRepository implements RoutineDefinitionRep
     }
     this.items.delete(id);
     return { outcome: "deleted" as const };
+  }
+
+  // In-memory tests do not model SQL transactions; these preserve the authoring
+  // service port while the Postgres repository owns the atomic draft projection.
+  createDraftWithAgentDraft(_workspaceId: string, agentId: string, input: RoutineDefinitionDraftInput) {
+    return this.createDraft(agentId, input);
+  }
+  updateDraftWithAgentDraft(_workspaceId: string, agentId: string, id: string, input: RoutineDefinitionDraftInput, options?: RoutineDefinitionWriteGuard) {
+    return this.updateDraft(agentId, id, input, options);
+  }
+  publishWithAgentDraft(_workspaceId: string, agentId: string, id: string, options?: Parameters<RoutineDefinitionRepositoryPort["publish"]>[2]) {
+    return this.publish(agentId, id, options);
+  }
+  createRevisionDraftWithAgentDraft(_workspaceId: string, agentId: string, id: string) {
+    return this.createRevisionDraft(agentId, id);
+  }
+  async archiveWithAgentDraft(_workspaceId: string, agentId: string, id: string, options?: RoutineDefinitionArchiveGuard): Promise<RoutineDefinition | null> {
+    return await this.archive(agentId, id, options) ? this.findById(agentId, id) : null;
+  }
+  async restoreWithAgentDraft(_workspaceId: string, agentId: string, id: string): Promise<RoutineDefinition | null> {
+    return await this.restore(agentId, id) ? this.findById(agentId, id) : null;
+  }
+  deleteDraftWithAgentDraft(_workspaceId: string, agentId: string, id: string, options?: RoutineDefinitionWriteGuard) {
+    return this.deleteDraft(agentId, id, options);
   }
 
   async listPublishedRoutineNamesReferencingDestination(
@@ -3753,6 +3790,70 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
   }
 }
 
+/** Explicit immutable-release fixture wiring for chat unit tests. */
+export const publishedRevisionResolverFor = (agent: AgentRecord): AgentRevisionRuntimeResolver => {
+  const revision: AgentRevision = {
+    id: randomUUID(),
+    snapshot: {
+      customInstruction: agent.customInstruction,
+      directives: agent.authoredDirectives ?? [],
+      routines: [],
+      contextVariableEnablements: [],
+    },
+    sourceDraftGeneration: 1,
+    sourceBasePublishedRevisionId: null,
+    createdAt: new Date(),
+    publishedAt: new Date(),
+    publishedVersion: 1,
+  };
+  return new AgentRevisionRuntimeResolver({
+    findCurrentPublished: async () => revision,
+    findRevision: async () => revision,
+  });
+};
+
+/**
+ * Explicit release fixture for chat service suites which create several agents.
+ * The revision id is deterministic so a test can pin an existing conversation to
+ * the same immutable release through `conversationRepository.create(..., { agentRevisionId })`.
+ */
+export const publishedRevisionIdFor = (agentId: string): string => `test-published-revision:${agentId}`;
+
+export const publishedRevisionResolverFixture = (): AgentRevisionRuntimeResolver => {
+  const revisionFor = (agentId: string): AgentRevision => ({
+    id: publishedRevisionIdFor(agentId),
+    snapshot: {
+      customInstruction: "",
+      directives: [],
+      routines: [],
+      contextVariableEnablements: [],
+    },
+    sourceDraftGeneration: 1,
+    sourceBasePublishedRevisionId: null,
+    createdAt: new Date(),
+    publishedAt: new Date(),
+    publishedVersion: 1,
+  });
+  return new AgentRevisionRuntimeResolver({
+    findCurrentPublished: async ({ agentId }) => revisionFor(agentId),
+    findRevision: async ({ agentId, revisionId }) =>
+      revisionId === publishedRevisionIdFor(agentId) ? revisionFor(agentId) : null,
+  });
+};
+
+/** Pins pre-existing in-memory conversations to the release fixture used by a chat suite. */
+export const pinExistingConversationsToPublishedRevisions = (
+  repository: InMemoryConversationRepository,
+): void => {
+  for (const conversation of repository.items.values()) {
+    if (conversation.agentRevisionId) continue;
+    repository.items.set(conversation.id, {
+      ...conversation,
+      agentRevisionId: publishedRevisionIdFor(conversation.agentId ?? conversation.workspaceId),
+    });
+  }
+};
+
 export class InMemoryConversationRepository implements ConversationRepositoryPort {
   readonly items = new Map<string, ConversationRecord>();
   private messageRepository: InMemoryMessageRepository | null = null;
@@ -3806,12 +3907,14 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
     sourceOrigin: string | null = null,
     channelContext: ConversationRecord["channelContext"] = null,
     verifiedCustomerId: string | null = null,
-    options?: { entryPageUrl?: string | null },
+    options?: { entryPageUrl?: string | null; agentRevisionId?: string | null; purpose?: ConversationRecord["purpose"] },
   ): Promise<ConversationRecord> {
     const record: ConversationRecord = {
       id: randomUUID(),
       workspaceId,
       agentId,
+      agentRevisionId: options?.agentRevisionId ?? null,
+      purpose: options?.purpose ?? "production",
       agentName: null,
       agentInternalName: null,
       sourceChannel,
@@ -3826,6 +3929,19 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
     };
     this.items.set(record.id, record);
     return record;
+  }
+
+  async bindAgentRevision(input: {
+    conversationId: string;
+    workspaceId: string;
+    agentId: string;
+    agentRevisionId: string;
+  }): Promise<ConversationRecord | null> {
+    const existing = await this.findByIdAndWorkspaceId(input.conversationId, input.workspaceId);
+    if (!existing || existing.agentId !== input.agentId) return null;
+    const bound = existing.agentRevisionId ? existing : { ...existing, agentRevisionId: input.agentRevisionId };
+    this.items.set(bound.id, bound);
+    return bound;
   }
 
   async createWithInitialAssistantMessage(input: {

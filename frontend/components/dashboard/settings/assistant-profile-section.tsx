@@ -8,6 +8,7 @@ import { BlockHeading } from '@/components/dashboard/settings/block-heading'
 import { ModelPicker } from '@/components/dashboard/settings/model-picker'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import {
   Dialog,
   DialogContent,
@@ -232,10 +233,11 @@ export function AssistantProfileSection({
     >
       <div className="space-y-8">
         <div className="space-y-4">
-          <BlockHeading
-            title="Name"
-            description="What visitors call this agent, and what you call it in the dashboard."
-          />
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <BlockHeading title="Name" description="What visitors call this agent, and what you call it in the dashboard." />
+            <Badge variant="outline">Applies live now</Badge>
+          </div>
+          <p className="text-xs text-muted-foreground">Name, locale, and greeting changes save automatically and affect current agent settings.</p>
           <div className="space-y-2">
             <Label htmlFor="assistantName" className="text-foreground">Assistant name</Label>
             <Input
@@ -269,10 +271,11 @@ export function AssistantProfileSection({
         </div>
 
         <div className="space-y-4">
-          <BlockHeading
-            title="Instructions"
-            description="The always-on persona applied to every answer this agent gives."
-          />
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <BlockHeading title="Instructions" description="The always-on persona applied to every answer this agent gives." />
+            <Badge variant="outline">Saved to draft</Badge>
+          </div>
+          <p className="text-xs text-muted-foreground">Private draft — goes live only after Review &amp; Publish.</p>
           <div className="space-y-2">
             <Label htmlFor="assistantAnswerInstruction" className="text-foreground">
               Instructions for the assistant
@@ -315,19 +318,23 @@ export function AssistantProfileSection({
         </div>
 
         {assistantBehaviorSettings.chatModelOverride !== undefined ? (
-          <ChatModelOverrideBlock
-            value={assistantBehaviorSettings.chatModelOverride}
-            onChange={(next) =>
-              onAssistantBehaviorDraft((current) => ({ ...current, chatModelOverride: next }))
-            }
-          />
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs text-muted-foreground">Model changes apply live and save automatically.</p><Badge variant="outline">Applies live now</Badge></div>
+            <ChatModelOverrideBlock
+              value={assistantBehaviorSettings.chatModelOverride}
+              onChange={(next) =>
+                onAssistantBehaviorDraft((current) => ({ ...current, chatModelOverride: next }))
+              }
+            />
+          </div>
         ) : null}
 
         <div className="space-y-4">
-          <BlockHeading
-            title="Answers"
-            description="What every reply carries, and how a conversation opens."
-          />
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <BlockHeading title="Answers" description="What every reply carries, and how a conversation opens." />
+            <Badge variant="outline">Applies live now</Badge>
+          </div>
+          <p className="text-xs text-muted-foreground">Answer, branding, and model settings save automatically and do not wait for publication.</p>
           <div className="divide-y divide-border rounded-lg border border-border">
             <div className="flex items-start justify-between gap-4 p-3">
               <div className="min-w-0">

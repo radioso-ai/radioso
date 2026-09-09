@@ -227,6 +227,55 @@ const stubTurnRouter = (route: "retrieval" | "direct" = "retrieval"): TurnRouter
 });
 
 describe("WorkbenchReplayRunner", () => {
+  it("injects trusted sample values into a safe-test turn without a live resolver", async () => {
+    const skill = answerSkill();
+    const dispatch = skill.dispatch;
+    let seen: unknown;
+    skill.dispatch = (session) => {
+      seen = session.resolvedContext.snapshot.plan;
+      return dispatch(session);
+    };
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]), auditService: createAuditService(), turnSkills: [skill],
+      conversationEngine: new DefaultConversationEngine(), turnRouter: stubTurnRouter(),
+    });
+
+    await runner.run({
+      workspaceId: "ws-1", executionMode: "safe_test", sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()), query: "what is my plan?", history: [],
+      preResolvedHostVariables: [{ name: "plan", value: "gold", surfacing: "always", trust: "verified" }],
+    });
+
+    expect(seen).toBe("gold");
+  });
+
+  it("rejects candidate revision selection outside the trusted safe-test runner", async () => {
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: stubTurnRouter(),
+    });
+
+    await expect(runner.run({
+      workspaceId: "ws-1",
+      executionMode: "live",
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      candidateRevision: {
+        id: "11111111-1111-4111-8111-111111111111",
+        snapshot: { customInstruction: "candidate", directives: [], routines: [], contextVariableEnablements: [] },
+        sourceDraftGeneration: 1,
+        sourceBasePublishedRevisionId: null,
+        createdAt: new Date(),
+        publishedAt: null,
+      },
+      query: "Hi",
+      history: [],
+    })).rejects.toThrow("workbench_candidate_revision_requires_safe_test");
+  });
+
   it("runs a replay through the non-streaming engine and returns answer, citations, trace, and resolved config without repository writes", async () => {
     const capturedRequests: RetrievalPipelineRequest[] = [];
     const classify = vi.fn(async () => ({ route: "retrieval" as const, framing: { isIdentityQuestion: false } }));
@@ -242,7 +291,7 @@ describe("WorkbenchReplayRunner", () => {
 
     const result = await runner.run({
       workspaceId: "ws-1",
-      executionMode: "live" as const,
+      executionMode: "safe_test" as const,
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(agent()),
       agentConfigOverride: {
@@ -325,7 +374,7 @@ describe("WorkbenchReplayRunner", () => {
 
     await runner.run({
       workspaceId: "ws-1",
-      executionMode: "live" as const,
+      executionMode: "safe_test" as const,
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(agent()),
       query: "Kui kaua tagasimakse aega võtab?",
@@ -387,7 +436,7 @@ describe("WorkbenchReplayRunner", () => {
 
     const result = await runner.run({
       workspaceId: "ws-1",
-      executionMode: "live" as const,
+      executionMode: "safe_test" as const,
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(agent()),
       query: "How long do refunds take?",
@@ -432,7 +481,7 @@ describe("WorkbenchReplayRunner", () => {
     await runner.run({
       workspaceId: "ws-1",
       accountId: "acct-1",
-      executionMode: "live" as const,
+      executionMode: "safe_test" as const,
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(agent()),
       query: "How long will it take?",
@@ -488,7 +537,7 @@ describe("WorkbenchReplayRunner", () => {
 
     const result = await runner.run({
       workspaceId: "ws-1",
-      executionMode: "live" as const,
+      executionMode: "safe_test" as const,
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(agent()),
       query: "How long do refunds take?",
@@ -571,7 +620,7 @@ describe("WorkbenchReplayRunner", () => {
 
     const result = await runner.run({
       workspaceId: "ws-1",
-      executionMode: "live" as const,
+      executionMode: "safe_test" as const,
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(agent()),
       query: "How long do refunds take?",
@@ -616,7 +665,7 @@ describe("WorkbenchReplayRunner", () => {
 
     await runner.run({
       workspaceId: "ws-1",
-      executionMode: "live" as const,
+      executionMode: "safe_test" as const,
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(agent()),
       query: "¿Cuánto tardan los reembolsos?",
@@ -704,7 +753,7 @@ describe("WorkbenchReplayRunner", () => {
 
     await runner.run({
       workspaceId: "ws-1",
-      executionMode: "live" as const,
+      executionMode: "safe_test" as const,
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(boundAgent),
       query: "what's your tone?",
@@ -784,7 +833,7 @@ describe("WorkbenchReplayRunner", () => {
 
     const result = await runner.run({
       workspaceId: "ws-1",
-      executionMode: "live" as const,
+      executionMode: "safe_test" as const,
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(boundAgent),
       query: "Where is order 123?",
@@ -884,7 +933,7 @@ describe("WorkbenchReplayRunner", () => {
 
     const result = await runner.run({
       workspaceId: "ws-1",
-      executionMode: "live" as const,
+      executionMode: "safe_test" as const,
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(boundAgent),
       query: "Where is order 123 now?",
@@ -894,6 +943,14 @@ describe("WorkbenchReplayRunner", () => {
     expect(result.answer).toBe("Answered with Answer from the operator baseline.");
     const selection = result.turnTrace?.spine.stages.find((stage) => stage.kind === "skill_selection");
     expect(selection?.outputs?.reason).not.toBe("directive:order-status");
+
+    const continued = await runner.run({
+      workspaceId: "ws-1", executionMode: "safe_test", sourceAgentId: "agent-1", conversationId: "private-directive-side",
+      baselineAgentConfig: projectInternalAgentConfig(boundAgent), query: "And now?", history: [],
+      directiveStateStartState: result.continuation!.directiveState,
+    });
+    const continuedSelection = continued.turnTrace?.spine.stages.find((stage) => stage.kind === "skill_selection");
+    expect(continuedSelection?.outputs?.reason).not.toBe("directive:order-status");
   });
 
   it("stages directive-bound retrieval skills before replay grounding runs", async () => {
@@ -945,7 +1002,7 @@ describe("WorkbenchReplayRunner", () => {
 
     await runner.run({
       workspaceId: "ws-1",
-      executionMode: "live" as const,
+      executionMode: "safe_test" as const,
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(boundAgent),
       query: "How long do refunds take?",
@@ -969,7 +1026,7 @@ describe("WorkbenchReplayRunner", () => {
 
     const result = await runner.run({
       workspaceId: "ws-1",
-      executionMode: "live" as const,
+      executionMode: "safe_test" as const,
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(agent()),
       query: "Please contact me at alex@example.com",
@@ -1014,7 +1071,7 @@ describe("WorkbenchReplayRunner", () => {
 
     const result = await runner.run({
       workspaceId: "ws-1",
-      executionMode: "live" as const,
+      executionMode: "safe_test" as const,
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(agent()),
       query: "How does yearly billing save?",
@@ -1076,7 +1133,7 @@ describe("WorkbenchReplayRunner", () => {
 
     const result = await runner.run({
       workspaceId: "ws-1",
-      executionMode: "live" as const,
+      executionMode: "safe_test" as const,
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(agent()),
       query: "I need help",
@@ -1127,7 +1184,7 @@ describe("WorkbenchReplayRunner", () => {
 
     const result = await runner.run({
       workspaceId: "ws-1",
-      executionMode: "live" as const,
+      executionMode: "safe_test" as const,
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(agent()),
       query: "Please contact me",
@@ -1177,7 +1234,7 @@ describe("WorkbenchReplayRunner", () => {
 
     const result = await runner.run({
       workspaceId: "ws-1",
-      executionMode: "live" as const,
+      executionMode: "safe_test" as const,
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(agent()),
       query: "Here's my email",
@@ -1193,6 +1250,82 @@ describe("WorkbenchReplayRunner", () => {
     expect(result.answer).toBe('resumed:ask_email_on_interest:{"customer_email":"buyer@example.com"}');
     // The store is keyed by the ephemeral conversation id the runner injects.
     expect(seen!.sessionId).toBeTruthy();
+  });
+
+  it("exports an advanced routine continuation and imports it into the next private turn", async () => {
+    const seenSessionIds: string[] = [];
+    const fakeEngine = {
+      async attemptRoutine(input: AttemptRoutineInput): Promise<ProcessTurnResult | null> {
+        seenSessionIds.push(input.sessionId);
+        const active = await input.routineStore!.loadActive({ sessionId: input.sessionId });
+        if (!active) {
+          await input.routineStore!.save({
+            sessionId: input.sessionId,
+            routineId: "checkout",
+            path: ["collect_address"],
+            variables: { cart: "gold" },
+            status: "active",
+          });
+          return { response: { answer: "ask-address" }, trace: emptyTrace(), decision: { reason: "started" }, actions: [] } as unknown as ProcessTurnResult;
+        }
+        return { response: { answer: `resumed:${active.path.at(-1)}` }, trace: emptyTrace(), decision: { reason: "resumed" }, actions: [] } as unknown as ProcessTurnResult;
+      },
+      async processTurn(): Promise<ProcessTurnResult> { throw new Error("routine must claim both turns"); },
+    } as unknown as ConversationEngine;
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]), auditService: createAuditService(), turnSkills: [answerSkill()],
+      conversationEngine: fakeEngine, turnRouter: stubTurnRouter("retrieval"), routineProvider: routineProviderStub(),
+      chatGateway: chatGatewayStub(), chatAnswerPresenter: presenterStub(),
+    });
+    const first = await runner.run({
+      workspaceId: "ws-1", executionMode: "safe_test", sourceAgentId: "agent-1", conversationId: "private-side-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()), query: "start", history: [],
+    });
+    const second = await runner.run({
+      workspaceId: "ws-1", executionMode: "safe_test", sourceAgentId: "agent-1", conversationId: "private-side-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()), query: "continue", history: [],
+      routineStartState: first.continuation!.routineState,
+    });
+
+    expect(first.continuation?.routineState).toMatchObject({ routineId: "checkout", path: ["collect_address"], variables: { cart: "gold" } });
+    expect(second.answer).toBe("resumed:collect_address");
+    expect(seenSessionIds).toEqual(["private-side-1", "private-side-1"]);
+  });
+
+  it("exports pending clarification without treating text history as its substitute", async () => {
+    let secondSawPending = false;
+    const fakeEngine = {
+      async attemptRoutine(input: AttemptRoutineInput): Promise<ProcessTurnResult | null> {
+        const pending = await input.clarificationStore!.loadPending({ sessionId: input.sessionId });
+        if (pending) {
+          secondSawPending = pending.candidates[0]?.id === "refund";
+          return { response: { answer: "clarified" }, trace: emptyTrace(), decision: { reason: "resolved" }, actions: [] } as unknown as ProcessTurnResult;
+        }
+        await input.clarificationStore!.save({
+          sessionId: input.sessionId, source: "routine", candidates: [{ id: "refund", label: "Refund", confidence: 1, payload: {} }],
+          status: "pending", expiresAt: "2026-12-01T00:00:00.000Z",
+        });
+        return { response: { answer: "which option?" }, trace: emptyTrace(), decision: { reason: "ask" }, actions: [] } as unknown as ProcessTurnResult;
+      },
+      async processTurn(): Promise<ProcessTurnResult> { throw new Error("routine must claim both turns"); },
+    } as unknown as ConversationEngine;
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]), auditService: createAuditService(), turnSkills: [answerSkill()],
+      conversationEngine: fakeEngine, turnRouter: stubTurnRouter("retrieval"), routineProvider: routineProviderStub(),
+      chatGateway: chatGatewayStub(), chatAnswerPresenter: presenterStub(),
+    });
+    const first = await runner.run({
+      workspaceId: "ws-1", executionMode: "safe_test", sourceAgentId: "agent-1", conversationId: "private-side-clarification",
+      baselineAgentConfig: projectInternalAgentConfig(agent()), query: "help", history: [],
+    });
+    await runner.run({
+      workspaceId: "ws-1", executionMode: "safe_test", sourceAgentId: "agent-1", conversationId: "private-side-clarification",
+      baselineAgentConfig: projectInternalAgentConfig(agent()), query: "refund", history: [],
+      pendingClarificationStartState: first.continuation!.pendingClarification,
+    });
+
+    expect(first.continuation?.pendingClarification).toMatchObject({ source: "routine", status: "pending" });
+    expect(secondSawPending).toBe(true);
   });
 
   it("falls through to grounding when routine ports are wired but no routine claims the turn", async () => {
@@ -1220,7 +1353,7 @@ describe("WorkbenchReplayRunner", () => {
 
     const result = await runner.run({
       workspaceId: "ws-1",
-      executionMode: "live" as const,
+      executionMode: "safe_test" as const,
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(agent()),
       query: "What is the refund policy?",

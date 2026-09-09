@@ -24,6 +24,9 @@ export {
   WorkbenchReplayRunner,
   type WorkbenchReplayResult,
 } from "./services/workbenchReplayRunner.js";
+export {
+  TrustedTestExecutionRunnerAdapter,
+} from "./services/trustedTestExecutionRunnerAdapter.js";
 export { TurnPlanService } from "./services/turnPlanService.js";
 export {
   TurnPlanCoordinator,

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { getEnv, type Env } from "../config/env.js";
 import { apiPrincipalRouteInventory } from "../http/apiPrincipalRoutePolicy.js";
 import {
@@ -11,8 +12,9 @@ import { parseRealtimeConfig } from "../../modules/realtime/infrastructure/confi
 import { createRealtimeRolloutPolicy } from "../../modules/realtime/domain/realtimeRolloutPolicy.js";
 import { resolveGcpRedisCredentialsProvider } from "../../runtime/gcpMetadataRedisCredentials.js";
 import type { RealtimePublisherComposition } from "../composition/realtimePublisherComposition.js";
-import { AgentService, AgentSurfaceExtensionRegistry, projectInternalAgentConfig, projectInternalAgentExternalSkills, serializeAuthoredDirectivesWithIds } from "../../modules/agents/public.js";
-import { InMemoryPublicConversationEventBus } from "../../modules/chat/composition.js";
+import { AgentRevisionService, AgentService, AgentSurfaceExtensionRegistry, projectInternalAgentConfig, projectInternalAgentExternalSkills, serializeAuthoredDirectivesWithIds } from "../../modules/agents/public.js";
+import { InMemoryPublicConversationEventBus, TrustedTestExecutionRunnerAdapter } from "../../modules/chat/composition.js";
+import { TestExecutionService } from "../../modules/test-execution/testExecution.js";
 import {
   createFacetExtractionWorker,
   FacetExtractionService,
@@ -207,6 +209,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     access.accessGrantService,
     agentSkillRepository,
   );
+  const agentRevisionService = new AgentRevisionService(repositories.agentRevisionRepository, randomUUID);
   // Shared by routine publishing (write-time trigger embedding) and the chat
   // activation prefilter (lazy self-heal of unembedded/stale rows) so both
   // paths dedup concurrent embedding work through one instance.
@@ -343,6 +346,26 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     agentReader: { get: agentService.get.bind(agentService) },
     agentSkillsReader: { list: agentSkillsService.list.bind(agentSkillsService) },
   });
+  const testExecutionService = new TestExecutionService({
+    revisions: repositories.testExecutionRepository,
+    contextCatalog: contextVariableRepository,
+    repository: repositories.testExecutionRepository,
+    runner: new TrustedTestExecutionRunnerAdapter({
+      replay: chat.workbenchReplayRunner,
+      liveAgentConfig: {
+        async find({ workspaceId, agentId }) {
+          const agent = await repositories.agentRepository.findByIdAndWorkspaceId(agentId, workspaceId);
+          return agent ? projectInternalAgentConfig(agent) : null;
+        },
+      },
+      revisions: repositories.testExecutionRepository,
+      bootstrap: chat.chatBootstrapService,
+    }),
+    usageLimitPolicy: infrastructure.usageLimitPolicy,
+    audit: infrastructure.auditService,
+    logger,
+    createId: randomUUID,
+  });
 
   // Lazy-loaded crawler utility provider for EE agent wizard, also reused by
   // the connector ingestion port for HTML-to-text normalisation.
@@ -394,6 +417,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     evalCaseService,
     evalMessageCaseService,
     evalRunService,
+    revisionEvalRunService,
     evalSnapshotService,
     evalSuiteService,
     operatorReplyService,
@@ -884,6 +908,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     approvalDecisionService: chat.approvalDecisionService,
     operatorReplyService,
     workbenchReplayRunner: chat.workbenchReplayRunner,
+    testExecutionService,
     chatBootstrapService: chat.chatBootstrapService,
     chatHistoryService: chat.chatHistoryService,
     conversationForkService: chat.conversationForkService,
@@ -897,9 +922,11 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     evalMessageCaseService,
     evalCaseService,
     evalRunService,
+    revisionEvalRunService,
     evalSuiteService,
     platformSettingsService,
     agentService,
+    agentRevisionService,
     authoredDirectiveService,
     agentBundleExportService: agentBundleServices.exportService,
     agentBundleImportService: agentBundleServices.importService,

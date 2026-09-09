@@ -49,8 +49,18 @@ test('agent sidebar keeps the selected hierarchy and configured channel catalog'
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=chat`)
   const sidebar = page.locator('[data-sidebar="sidebar"]')
+  const selectedAgent = sidebar.getByRole('button', { name: 'Marta', exact: true })
   await expect(sidebar.getByText('Marta', { exact: true })).toBeVisible()
   await expect(sidebar.getByText('sales', { exact: true })).toBeVisible()
+  await expect(selectedAgent).not.toHaveAttribute('aria-current')
+  await expect(sidebar.getByRole('link', { name: 'Test Chat', exact: true })).toHaveAttribute('aria-current', 'page')
+
+  await selectedAgent.click()
+  await expect(selectedAgent).toHaveAttribute('aria-current', 'page')
+  await expect(sidebar.getByRole('link', { name: 'Test Chat', exact: true })).toBeHidden()
+  await selectedAgent.click()
+  await expect(selectedAgent).not.toHaveAttribute('aria-current')
+  await expect(sidebar.getByRole('link', { name: 'Test Chat', exact: true })).toHaveAttribute('aria-current', 'page')
 
   await sidebar.getByRole('button', { name: 'Channels', exact: true }).click()
   await expect(sidebar.getByText('Web chat', { exact: true })).toBeVisible()

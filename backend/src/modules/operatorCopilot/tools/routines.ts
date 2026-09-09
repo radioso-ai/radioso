@@ -1,7 +1,10 @@
 import { z } from "zod";
 
-import { projectRoutineToPortableDocument, routineFieldPatchSchema, type RoutineDefinition } from "../../routines/public.js";
+import { projectRoutineToPortableDocument, routineDefinitionDraftInputSchema, routineFieldPatchSchema, type RoutineDefinition } from "../../routines/public.js";
 import type {
+  CopilotMcpInvocationReconciliation,
+  CopilotMcpProposalRecoveryPort,
+  CopilotProposal,
   CopilotRoutineProposalDraft,
   CopilotEntityDescription,
   CopilotRoutineProposalAdapter,
@@ -42,6 +45,7 @@ const routineDefinitionOutputSchema = z.object({
 const copilotRoutineListLimit = 40;
 const copilotRoutineContentCharLimit = 20_000;
 const copilotRoutineDiagnosticLimit = 40;
+const copilotRoutineEditableElementLimit = 40;
 
 const routineDiagnosticSchema = z.object({ code: z.string(), location: z.string(), message: z.string() });
 const validateRoutineInputSchema = z.object({
@@ -73,8 +77,12 @@ export interface CopilotRoutineDefinitionPort {
 
 // Every routine write addresses one routine. Name resolution rewrites `routineTitle` into
 // `routineId` before invocation, so an id still missing here means the operator never named one.
+// The error names only routineId: routineTitle only ever resolves through describeEntity, which
+// runs in the Ray dashboard turn loop and never over the MCP transport, so promising it here would
+// mislead an MCP caller who hits this error. routineTitle stays supported in the input schema for
+// dashboard use; this is only about what the error text can honestly tell every caller.
 const requiredRoutine = (routineId: string | undefined): string => {
-  if (!routineId) throw new Error("Name the routine first: pass routineId, or routineTitle to resolve one by name.");
+  if (!routineId) throw new Error("Name the routine first: pass routineId.");
   return routineId;
 };
 export interface RoutineDefinitionCopilotToolDependencies {
@@ -208,11 +216,25 @@ const locator = (text: string | null): string | null =>
  * which leaves guessing an id as the only move. Each entry carries enough text to tell the elements
  * apart; the wording itself is in `portable.content`.
  */
-const projectRoutineEditableElements = (routine: RoutineDefinition) => ({
-  steps: routine.steps.map((step) => ({ stableStepId: step.stableStepId, kind: step.kind, instruction: locator(step.instruction) })),
-  endings: routine.terminals.map((terminal) => ({ stableStepId: terminal.stableStepId, kind: terminal.kind, instruction: locator(terminal.instruction ?? null) })),
-  fields: (routine.slots ?? []).map((slot) => ({ key: slot.key, type: slot.type, required: slot.required, description: locator(slot.description ?? null) })),
+/** Caps one editable element array to `copilotRoutineEditableElementLimit`, the same signal `portable.content`'s `omittedReason` gives when its own cap cuts something. */
+const cappedEditableElements = <T>(elements: ReadonlyArray<T>): { items: T[]; truncated: boolean } => ({
+  items: elements.slice(0, copilotRoutineEditableElementLimit),
+  truncated: elements.length > copilotRoutineEditableElementLimit,
 });
+
+const projectRoutineEditableElements = (routine: RoutineDefinition) => {
+  const steps = cappedEditableElements(routine.steps.map((step) => ({ stableStepId: step.stableStepId, kind: step.kind, instruction: locator(step.instruction) })));
+  const endings = cappedEditableElements(routine.terminals.map((terminal) => ({ stableStepId: terminal.stableStepId, kind: terminal.kind, instruction: locator(terminal.instruction ?? null) })));
+  const fields = cappedEditableElements((routine.slots ?? []).map((slot) => ({ key: slot.key, type: slot.type, required: slot.required, description: locator(slot.description ?? null) })));
+  return {
+    steps: steps.items,
+    stepsTruncated: steps.truncated,
+    endings: endings.items,
+    endingsTruncated: endings.truncated,
+    fields: fields.items,
+    fieldsTruncated: fields.truncated,
+  };
+};
 
 const projectRoutineDetail = (routine: RoutineDefinition): Record<string, unknown> => {
   const projected = projectRoutineToPortableDocument(routine);
@@ -340,7 +362,64 @@ const routineValidationOutput = (draft: CopilotRoutineProposalDraft) => ({
 export interface RoutineProposalCopilotToolDependencies extends CopilotProposalEvidenceDependencies, CopilotProposalToolDependencies {
   readonly agentLookup?: CopilotAgentLookupPort;
   readonly routineDefinitionService?: Pick<CopilotRoutineDefinitionPort, "list">;
+  readonly proposalRecovery: CopilotMcpProposalRecoveryPort;
 }
+
+/**
+ * Mirrors the payload propose_routine persists: the routine draft plus the drafted rationale used
+ * to rebuild the card's summary (see createRoutineCopilotProposalAdapter.draft in
+ * proposalAdapters.ts).
+ */
+const routineDraftProposalPayloadSchema = routineDefinitionDraftInputSchema.extend({ rationale: z.string() });
+/** Mirrors the payload propose_routine_edit persists (see .draftEdit in proposalAdapters.ts). */
+const routineEditProposalPayloadSchema = z.object({
+  kind: z.literal("edit"),
+  name: z.string(),
+  changes: routineFieldPatchSchema,
+  rationale: z.string().optional(),
+}).strict();
+/** Mirrors the payload propose_routine_lifecycle persists (see .draftLifecycle in proposalAdapters.ts). */
+const routineLifecycleProposalPayloadSchema = z.object({
+  kind: z.literal("lifecycle"),
+  action: z.enum(["publish", "archive", "restore"]),
+  name: z.string(),
+  rationale: z.string().optional(),
+  discardsDraftRevisionId: z.string().uuid().optional(),
+  discardsDraftRevisionUpdatedAt: z.string().optional(),
+}).strict();
+
+/**
+ * Reconstructs a recovered routine proposal's output from its persisted payload. Shared by all
+ * three routine proposal tools since each writes `targetType: "routine"` and the reconstruction
+ * (targetLabel/summary from name/rationale) is identical; only the payload schema differs.
+ *
+ * `validation` cannot be faithfully reconstructed: the diagnostics a draft call computes are
+ * reported to the caller in the moment but never persisted on the proposal row (see
+ * CopilotRoutineProposalDraft — only `payload`, `targetLabel`, and `summary` survive to storage).
+ * A recovered response therefore always reports `{ ok: true, diagnostics: [] }` rather than
+ * guessing; the routine's real diagnostics remain visible whenever the proposal or routine is next
+ * read or validated. This is a known limitation, not a claim that the routine is clean.
+ */
+const reconcileRoutineProposalPayload = (
+  proposal: CopilotProposal,
+  schema: { safeParse(value: unknown): { success: true; data: { name: string; rationale?: string } } | { success: false } },
+): CopilotMcpInvocationReconciliation<z.infer<typeof routineProposalOutputSchema>> => {
+  if (proposal.targetType !== "routine") return { status: "conflict" };
+  const payload = schema.safeParse(proposal.payload);
+  if (!payload.success) return { status: "conflict" };
+  return {
+    status: "recovered",
+    output: {
+      proposalId: proposal.id,
+      targetType: "routine" as const,
+      targetLabel: payload.data.name,
+      summary: payload.data.rationale ?? payload.data.name,
+      validation: { ok: true, diagnostics: [] },
+      ...proposalEvidenceOutput(proposal.evidence),
+    },
+  };
+};
+
 export const createRoutineProposalCopilotTools = (deps: RoutineProposalCopilotToolDependencies): ReadonlyArray<CopilotToolDescriptor> => {
   const routineAdapter = proposalAdapterFor(deps.proposalAdapters, "routine");
   return [
@@ -349,6 +428,22 @@ export const createRoutineProposalCopilotTools = (deps: RoutineProposalCopilotTo
       description: "Draft a new routine proposal for the operator to review and apply. This does not change configuration.",
       inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), intent: z.string().trim().min(1).max(2_000), evidenceIds: citedEvidenceSchema }).strict(),
       outputSchema: routineProposalOutputSchema,
+      reconcileMcpInvocation: async ({ invocation, context, staleBefore, now }) => {
+        if (!invocation.operationId) return { status: "conflict" };
+        const recovery = await deps.proposalRecovery.recoverOperatorMcpProposal({
+          invocationId: invocation.id,
+          grantId: invocation.grantId,
+          workspaceId: context.workspaceId,
+          operatorUserId: context.operatorUserId,
+          operationId: invocation.operationId,
+          descriptorName: "propose_routine",
+          inputDigest: invocation.inputDigest,
+          staleBefore,
+          now,
+        });
+        if (recovery.status !== "recovered") return recovery;
+        return reconcileRoutineProposalPayload(recovery.proposal, routineDraftProposalPayloadSchema);
+      },
       createTool: (context) => ({
         name: "propose_routine",
       description: "Draft a new routine proposal for the operator to review and apply. This does not change configuration.",
@@ -393,6 +488,22 @@ export const createRoutineProposalCopilotTools = (deps: RoutineProposalCopilotTo
       // of `changes` has to live in the description or the model invents one of its own.
       description: "Propose an edit to an existing routine's wording, name, or trigger. `changes` takes at least one of: `name` (string); `activation` ({triggerDescription?, priority?, reentryMode?}); `steps` ([{stableStepId, instruction}]); `terminals` ([{stableStepId, instruction}], an ending); `slots` ([{key, description?, required?}], an information field). Example: {\"steps\":[{\"stableStepId\":\"ask_order_number\",\"instruction\":\"Ask for the order number and say why we need it.\"}]}. Every id comes from the `editable` block `routine_definition` returns — read the routine first and never invent one. It edits elements that already exist: it cannot add or remove a step or rework branching, so send the operator to the routine editor for those. Applying an edit to a published routine revises it into a draft; it does not change what is serving until the draft is published. It drafts a proposal for operator review and changes nothing until the operator applies it.",
       inputSchema: routineEditInputSchema, outputSchema: routineProposalOutputSchema,
+      reconcileMcpInvocation: async ({ invocation, context, staleBefore, now }) => {
+        if (!invocation.operationId) return { status: "conflict" };
+        const recovery = await deps.proposalRecovery.recoverOperatorMcpProposal({
+          invocationId: invocation.id,
+          grantId: invocation.grantId,
+          workspaceId: context.workspaceId,
+          operatorUserId: context.operatorUserId,
+          operationId: invocation.operationId,
+          descriptorName: "propose_routine_edit",
+          inputDigest: invocation.inputDigest,
+          staleBefore,
+          now,
+        });
+        if (recovery.status !== "recovered") return recovery;
+        return reconcileRoutineProposalPayload(recovery.proposal, routineEditProposalPayloadSchema);
+      },
       createTool: (context) => ({
         name: "propose_routine_edit",
       description: "Propose an edit to an existing routine's wording, name, or trigger. `changes` takes at least one of: `name` (string); `activation` ({triggerDescription?, priority?, reentryMode?}); `steps` ([{stableStepId, instruction}]); `terminals` ([{stableStepId, instruction}], an ending); `slots` ([{key, description?, required?}], an information field). Example: {\"steps\":[{\"stableStepId\":\"ask_order_number\",\"instruction\":\"Ask for the order number and say why we need it.\"}]}. Every id comes from the `editable` block `routine_definition` returns — read the routine first and never invent one. It edits elements that already exist: it cannot add or remove a step or rework branching, so send the operator to the routine editor for those. Applying an edit to a published routine revises it into a draft; it does not change what is serving until the draft is published. It drafts a proposal for operator review and changes nothing until the operator applies it.",
@@ -416,6 +527,22 @@ export const createRoutineProposalCopilotTools = (deps: RoutineProposalCopilotTo
       name: "propose_routine_lifecycle", shape: "propose", verificationCost: () => 0, uiLabel: "Drafting a routine lifecycle change", contributingModule: "routines", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"],
       description: "Propose taking a routine live, out of service, or back into service: publish a draft, archive a published routine, or restore an archived one. Applying it is the only thing that changes what an agent is actually running, which is why it is proposed separately from editing a routine's content. It drafts a proposal for operator review and changes nothing until the operator applies it.",
       inputSchema: routineLifecycleInputSchema, outputSchema: routineProposalOutputSchema,
+      reconcileMcpInvocation: async ({ invocation, context, staleBefore, now }) => {
+        if (!invocation.operationId) return { status: "conflict" };
+        const recovery = await deps.proposalRecovery.recoverOperatorMcpProposal({
+          invocationId: invocation.id,
+          grantId: invocation.grantId,
+          workspaceId: context.workspaceId,
+          operatorUserId: context.operatorUserId,
+          operationId: invocation.operationId,
+          descriptorName: "propose_routine_lifecycle",
+          inputDigest: invocation.inputDigest,
+          staleBefore,
+          now,
+        });
+        if (recovery.status !== "recovered") return recovery;
+        return reconcileRoutineProposalPayload(recovery.proposal, routineLifecycleProposalPayloadSchema);
+      },
       createTool: (context) => ({
         name: "propose_routine_lifecycle",
       description: "Propose taking a routine live, out of service, or back into service: publish a draft, archive a published routine, or restore an archived one. Applying it is the only thing that changes what an agent is actually running, which is why it is proposed separately from editing a routine's content. It drafts a proposal for operator review and changes nothing until the operator applies it.",

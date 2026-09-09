@@ -23,6 +23,7 @@ import type { AuditPort } from "../audit/contracts/index.js";
 import type { CopilotCurrentAuthorizationPort, CopilotToolInvocationContext } from "./contracts.js";
 import { OperatorMcpCatalogError, OperatorMcpCatalogService } from "./mcpCatalog.js";
 import type { OperatorMcpInvocationRecord, OperatorMcpInvocationRepositoryPort } from "./mcpContracts.js";
+import { AppError } from "../../shared/domain/errors.js";
 
 const MAX_RESULT_BYTES = 256 * 1024;
 const PROOF_TTL_MS = 15_000;
@@ -454,7 +455,15 @@ export class OperatorMcpApplicationService {
         reason: "completed",
       });
       return { structuredContent: output as Record<string, unknown>, content: [], safeOutcomeCode: "completed", ...(reference ? { resultReference: reference } : {}) };
-    } catch (error) {
+    } catch (rawError) {
+      // A tool's own domain rejection of the caller's input (e.g. citing evidence over a transport
+      // with no Ray conversation to attribute it to) is the same class of mistake schema validation
+      // above already reports as `invalid_arguments`. Without this, `mcpRoutes.ts`'s error handler
+      // — which only recognizes `OperatorMcpApplicationError` — falls back to a generic 503
+      // unavailability the caller cannot act on for what is actually a clean, correctable rejection.
+      const error = rawError instanceof AppError && rawError.statusCode === 400
+        ? new OperatorMcpApplicationError("invalid_arguments")
+        : rawError;
       const reason = error instanceof OperatorMcpApplicationError
         ? error.code
         : error instanceof OperatorMcpCatalogError ? error.code : "dependency_error";

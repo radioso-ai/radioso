@@ -69,6 +69,27 @@ describe('agentRevisionsApi', () => {
     }))
   })
 
+  it('omits caller-held fields that are not part of the publish request body', async () => {
+    vi.stubGlobal('window', { localStorage: storage() })
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ publication: {}, state: {} }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const command = {
+      revisionId: 'candidate-8',
+      expectedDraftGeneration: 8,
+      expectedPublishedRevisionId: 'published-7',
+      idempotencyKey: 'publish-1',
+    }
+    await agentRevisionsApi.publish('agent-1', command.revisionId, command)
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(init.body).toBe(JSON.stringify({
+      expectedDraftGeneration: 8,
+      expectedPublishedRevisionId: 'published-7',
+      idempotencyKey: 'publish-1',
+    }))
+  })
+
   it('retries one failed case for one immutable revision', async () => {
     vi.stubGlobal('window', { localStorage: storage() })
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: 'run-1', state: 'running', sides: [] }))

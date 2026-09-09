@@ -118,13 +118,15 @@ describe("propose_context_variable", () => {
       })),
     };
     const auditService = { record: vi.fn() };
+    const recoverOperatorMcpProposal = vi.fn();
     const descriptors = createContextVariableProposalCopilotTools({
       proposalRepository: { createProposal: createProposal as never },
+      proposalRecovery: { recoverOperatorMcpProposal },
       proposalAdapters: [adapter as never],
       auditService,
       ...unmeasured(),
     });
-    return { descriptors, createProposal, adapter, auditService };
+    return { descriptors, createProposal, adapter, auditService, recoverOperatorMcpProposal };
   };
 
   it("creates a pending proposal for a new variable definition", async () => {

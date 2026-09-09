@@ -230,14 +230,19 @@ export class EvalRunService {
     }
     const replay = buildReplayInputs(input.snapshot);
     if (!replay) throw badRequest("Frozen eval snapshot has no user message to replay");
+    // Configuration/wiring is validated before usage is reserved and before the broad provider-error
+    // boundary below: a badRequest here means the run never dispatched to a provider, so it must
+    // propagate with its own distinguishable reason rather than being billed and reported as a
+    // generic runner failure.
+    const baselineAgentConfig = await this.revisionLiveAgentConfig?.find({ workspaceId: input.workspaceId, agentId: input.agentId });
+    if (!baselineAgentConfig) throw badRequest("Live agent configuration is unavailable for revision evaluation");
+    if (input.mode !== "retrieval_only" && !this.workbenchReplayRunner) throw badRequest("Workbench replay runner is not configured");
 
     const startedAtMs = Date.now();
     let observed: EvalRunObservedOutput;
     const resolvedConfig: EvalRunResolvedConfig = { executionMode: "safe_test" };
     try {
       await reserve();
-      const baselineAgentConfig = await this.revisionLiveAgentConfig?.find({ workspaceId: input.workspaceId, agentId: input.agentId });
-      if (!baselineAgentConfig) throw badRequest("Live agent configuration is unavailable for revision evaluation");
       const candidateAgent = applyAgentRevisionSnapshot(
         materializeAgentFromConfig(baselineAgentConfig, {
           agentId: input.agentId,
@@ -262,8 +267,8 @@ export class EvalRunService {
         observed = { retrievedChunks: result.chunks, activityTrace: result.activityTrace };
         resolvedConfig.retrievalSettings = result.resolvedSettings;
       } else {
-        if (!this.workbenchReplayRunner) throw badRequest("Workbench replay runner is not configured");
-        const result = await this.workbenchReplayRunner.run({
+        // Presence is validated above, before usage is reserved.
+        const result = await this.workbenchReplayRunner!.run({
           workspaceId: input.workspaceId,
           accountId: input.accountId,
           sourceAgentId: input.agentId,

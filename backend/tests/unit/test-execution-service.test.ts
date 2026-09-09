@@ -29,11 +29,31 @@ class MemoryRepository implements TestExecutionRepositoryPort {
   completeCalls = 0;
   replay?: TestExecutionRunnerResult;
   failThrows = false;
+  byIdempotencyKey = new Map<string, TestExecution>();
   async create(input: Parameters<TestExecutionRepositoryPort["create"]>[0]) {
+    const existing = this.byIdempotencyKey.get(input.idempotencyKey);
+    if (existing) return existing;
     this.execution = { ...input, state: input.state ?? "running", createdAt: new Date(0) };
+    this.byIdempotencyKey.set(input.idempotencyKey, this.execution);
     return this.execution;
   }
+  async findByIdempotencyKey(input: Parameters<TestExecutionRepositoryPort["findByIdempotencyKey"]>[0]): Promise<TestExecution | null> {
+    return this.byIdempotencyKey.get(input.idempotencyKey) ?? null;
+  }
   async find(): Promise<TestExecution | null> { return this.execution; }
+  recoverExpiredSidesCalls = 0;
+  async recoverExpiredSides(input: Parameters<TestExecutionRepositoryPort["recoverExpiredSides"]>[0]): Promise<TestExecution | null> {
+    this.recoverExpiredSidesCalls += 1;
+    if (!this.execution) return null;
+    for (const side of this.execution.sides) {
+      if (side.state !== "running" || !this.staleLease || this.staleLease > input.now) continue;
+      side.state = "failed"; side.retryable = true;
+    }
+    this.execution.state = this.execution.sides.every((item) => item.state === "completed") ? "completed"
+      : this.execution.sides.some((item) => item.state === "running" || item.state === "ready") ? "running" : "partial";
+    return this.execution;
+  }
+  staleLease: Date | null = null;
   async retainSide(input: Parameters<TestExecutionRepositoryPort["retainSide"]>[0]) {
     const source = this.execution;
     const side = source?.sides.find((candidate) => candidate.id === input.sideId);
@@ -99,7 +119,7 @@ const setup = (
 describe("TestExecutionService", () => {
   it("freezes distinct selected revisions and validated samples before creating independent compare sides", async () => {
     const { service, repository } = setup();
-    const execution = await service.start({ workspaceId, agentId, accountId: null, mode: "compare", revisionIds: [ids[0], ids[1]], testValues: [{ contextVariableId: "40000000-0000-4000-8000-000000000001", value: "gold" }], expectedDraftGeneration: 1 });
+    const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "compare", revisionIds: [ids[0], ids[1]], testValues: [{ contextVariableId: "40000000-0000-4000-8000-000000000001", value: "gold" }], expectedDraftGeneration: 1 });
     expect(execution.sides).toHaveLength(2);
     expect(execution.sides.map((side) => side.conversationId)).not.toContain(undefined);
     expect(execution.testValues[0]).toMatchObject({ name: "account_tier", trust: "verified", value: "gold" });
@@ -118,7 +138,7 @@ describe("TestExecutionService", () => {
       runner: { bootstrap, run: vi.fn() }, usageLimitPolicy: new NoopUsageLimitPolicy(), createId: () => ids[2], now: () => new Date(1000),
     });
 
-    const execution = await service.start({ workspaceId, agentId, accountId: "account-1", mode: "compare", revisionIds: [ids[0], ids[1]], testValues: [] });
+    const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: "account-1", mode: "compare", revisionIds: [ids[0], ids[1]], testValues: [] });
 
     expect(bootstrap).toHaveBeenCalledTimes(2);
     expect(bootstrap).toHaveBeenNthCalledWith(1, expect.objectContaining({ candidateRevision: expect.objectContaining({ id: ids[0] }) }));
@@ -130,15 +150,15 @@ describe("TestExecutionService", () => {
 
   it("keeps lazy first send when no runner bootstrap is configured", async () => {
     const { service } = setup();
-    const execution = await service.start({ workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [] });
+    const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [] });
 
     expect(execution.sides[0]?.history).toEqual([]);
   });
 
   it("rejects duplicate, disabled, and incompatible supplied samples instead of omitting them", async () => {
     const { service } = setup();
-    await expect(service.start({ workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [{ contextVariableId: "40000000-0000-4000-8000-000000000001", value: "a" }, { contextVariableId: "40000000-0000-4000-8000-000000000001", value: "b" }] })).rejects.toMatchObject({ code: "bad_request" });
-    await expect(service.start({ workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [{ contextVariableId: "40000000-0000-4000-8000-000000000001", value: 3 }] })).rejects.toMatchObject({ code: "bad_request" });
+    await expect(service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [{ contextVariableId: "40000000-0000-4000-8000-000000000001", value: "a" }, { contextVariableId: "40000000-0000-4000-8000-000000000001", value: "b" }] })).rejects.toMatchObject({ code: "bad_request" });
+    await expect(service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [{ contextVariableId: "40000000-0000-4000-8000-000000000001", value: 3 }] })).rejects.toMatchObject({ code: "bad_request" });
   });
 
   it("rejects a selected deleted definition without a sample and freezes candidate and supplied JSON values", async () => {
@@ -150,7 +170,7 @@ describe("TestExecutionService", () => {
       contextCatalog: { get: vi.fn(async () => null) }, repository,
       runner: { run: vi.fn() }, usageLimitPolicy: new NoopUsageLimitPolicy(), createId: () => ids[2], now: () => new Date(1000),
     });
-    await expect(service.start({ workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [] })).rejects.toMatchObject({ code: "bad_request" });
+    await expect(service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [] })).rejects.toMatchObject({ code: "bad_request" });
 
     const jsonRevision = structuredClone(sourceRevision);
     jsonRevision.snapshot.contextVariableEnablements[0].variableId = "40000000-0000-4000-8000-000000000009";
@@ -171,7 +191,7 @@ describe("TestExecutionService", () => {
   it("passes persisted side continuation into the next safe-test turn only after the claim is durable", async () => {
     const runner = vi.fn(async (input: { continuation: unknown }): Promise<TestExecutionRunnerResult> => ({ answer: "answer", messageId: ids[6], continuation: input.continuation ? { routine: "later" } : { routine: "next" } }));
     const { service, repository } = setup(runner as never);
-    const execution = await service.start({ workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [] });
+    const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [] });
     await service.message({ workspaceId, agentId, accountId: null, executionId: execution.id, message: "first", generation: 1, turnId: ids[6], attemptId: ids[7] });
     repository.execution!.state = "completed";
     await service.message({ workspaceId, agentId, accountId: null, executionId: execution.id, message: "second", generation: 1, turnId: "50000000-0000-4000-8000-000000000001", attemptId: "60000000-0000-4000-8000-000000000001" });
@@ -185,7 +205,7 @@ describe("TestExecutionService", () => {
       answer: "answer", messageId: ids[6], continuation: input.continuation ? { routine: "later" } : { routine: "next" },
     }));
     const { service, repository } = setup(runner as never);
-    const comparison = await service.start({ workspaceId, agentId, accountId: null, mode: "compare", revisionIds: [ids[0], ids[1]], testValues: [] });
+    const comparison = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "compare", revisionIds: [ids[0], ids[1]], testValues: [] });
     await service.message({ workspaceId, agentId, accountId: null, executionId: comparison.id, message: "first", generation: 1, turnId: ids[6], attemptId: ids[7] });
     const retained = await service.retainSide({ workspaceId, agentId, accountId: null, executionId: comparison.id, sideId: comparison.sides[1].id });
 
@@ -209,7 +229,7 @@ describe("TestExecutionService", () => {
       return { answer: input.candidateRevision.id, messageId: ids[6], continuation: null };
     });
     const { service, repository } = setup(runner as never);
-    const execution = await service.start({ workspaceId, agentId, accountId: null, mode: "compare", revisionIds: [ids[0], ids[1]], testValues: [] });
+    const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "compare", revisionIds: [ids[0], ids[1]], testValues: [] });
     const initial = await service.message({ workspaceId, agentId, accountId: null, executionId: execution.id, message: "test", generation: 1, turnId: ids[6], attemptId: ids[7] });
     expect(initial.some((event) => event.type === "execution_partial")).toBe(true);
     const successful = repository.execution!.sides.find((side) => side.state === "completed")!;
@@ -223,7 +243,7 @@ describe("TestExecutionService", () => {
     const commit = vi.fn(async () => undefined);
     const reserveAnswer = vi.fn(async () => ({ commit, release: vi.fn(async () => undefined) }));
     const { service, repository, runner } = setup(undefined, { reserveAnswer });
-    const execution = await service.start({ workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [] });
+    const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [] });
     await service.message({ workspaceId, agentId, accountId: null, executionId: execution.id, message: "first", generation: 1, turnId: ids[6], attemptId: ids[7] });
     repository.replay = { answer: "cached", messageId: ids[6], continuation: null };
     const replay = await service.retry({ workspaceId, agentId, accountId: null, executionId: execution.id, sideId: execution.sides[0].id, generation: 1, turnId: ids[6], attemptId: "70000000-0000-4000-8000-000000000001" });
@@ -238,7 +258,7 @@ describe("TestExecutionService", () => {
     const commit = vi.fn(async () => undefined);
     const reserveAnswer = vi.fn(async () => ({ commit, release: vi.fn(async () => undefined) }));
     const { service, runner } = setup(undefined, { reserveAnswer });
-    const execution = await service.start({ workspaceId, agentId, accountId: "account-1", mode: "compare", revisionIds: [ids[0], ids[1]], testValues: [] });
+    const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: "account-1", mode: "compare", revisionIds: [ids[0], ids[1]], testValues: [] });
 
     await service.message({ workspaceId, agentId, accountId: "account-1", executionId: execution.id, message: "first", generation: 1, turnId: ids[6], attemptId: ids[7] });
 
@@ -253,7 +273,7 @@ describe("TestExecutionService", () => {
     const runner = vi.fn(async (): Promise<TestExecutionRunnerResult> => ({ answer: "answer", messageId: ids[6], continuation: null }));
     const reserveAnswer = vi.fn(async () => { throw Object.assign(new Error("Usage limit exceeded"), { code: "usage_limit_exceeded", statusCode: 429 }); });
     const { service } = setup(runner, { reserveAnswer });
-    const execution = await service.start({ workspaceId, agentId, accountId: "account-1", mode: "single", revisionIds: [ids[0]], testValues: [] });
+    const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: "account-1", mode: "single", revisionIds: [ids[0]], testValues: [] });
 
     const events = await service.message({ workspaceId, agentId, accountId: "account-1", executionId: execution.id, message: "first", generation: 1, turnId: ids[6], attemptId: ids[7] });
 
@@ -266,7 +286,7 @@ describe("TestExecutionService", () => {
     const reserveAnswer = vi.fn(async () => ({ commit, release: vi.fn(async () => undefined) }));
     const runner = vi.fn(async (): Promise<TestExecutionRunnerResult> => { throw new Error("provider unavailable"); });
     const { service } = setup(runner, { reserveAnswer });
-    const execution = await service.start({ workspaceId, agentId, accountId: "account-1", mode: "single", revisionIds: [ids[0]], testValues: [] });
+    const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: "account-1", mode: "single", revisionIds: [ids[0]], testValues: [] });
 
     await service.message({ workspaceId, agentId, accountId: "account-1", executionId: execution.id, message: "first", generation: 1, turnId: ids[6], attemptId: ids[7] });
 
@@ -282,7 +302,7 @@ describe("TestExecutionService", () => {
       return calls === 1 ? { answer: "fast", messageId: ids[6], continuation: null } : slow;
     });
     const { service } = setup(runner);
-    const execution = await service.start({ workspaceId, agentId, accountId: null, mode: "compare", revisionIds: [ids[0], ids[1]], testValues: [] });
+    const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "compare", revisionIds: [ids[0], ids[1]], testValues: [] });
     const stream = service.streamMessage({ workspaceId, agentId, accountId: null, executionId: execution.id, message: "test", generation: 1, turnId: ids[6], attemptId: ids[7] });
     expect((await stream.next()).value).toMatchObject({ type: "side_started" });
     expect((await stream.next()).value).toMatchObject({ type: "side_started" });
@@ -294,8 +314,33 @@ describe("TestExecutionService", () => {
     const runner = vi.fn(async (): Promise<TestExecutionRunnerResult> => { throw new Error("provider unavailable"); });
     const { service, repository } = setup(runner);
     repository.failThrows = true;
-    const execution = await service.start({ workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [] });
+    const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [] });
     const events = await service.message({ workspaceId, agentId, accountId: null, executionId: execution.id, message: "first", generation: 1, turnId: ids[6], attemptId: ids[7] });
     expect(events).toEqual(expect.arrayContaining([expect.objectContaining({ type: "side_failed", code: "persistence_failed", retryable: false })]));
+  });
+
+  it("self-heals a side stuck running past its lease on a plain detail read, without requiring a client-driven retry", async () => {
+    const { service, repository } = setup();
+    const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [] });
+    repository.execution!.sides[0]!.state = "running";
+    repository.execution!.state = "running";
+    repository.staleLease = new Date(500);
+
+    const detail = await service.detail({ workspaceId, agentId, executionId: execution.id });
+
+    expect(repository.recoverExpiredSidesCalls).toBe(1);
+    expect(detail.execution.sides[0]?.state).toBe("failed");
+    expect(detail.execution.sides[0]?.retryable).toBe(true);
+  });
+
+  it("does not attempt lease recovery on a read once the execution has already settled", async () => {
+    const { service, repository } = setup();
+    const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [] });
+    repository.execution!.sides[0]!.state = "completed";
+    repository.execution!.state = "completed";
+
+    await service.detail({ workspaceId, agentId, executionId: execution.id });
+
+    expect(repository.recoverExpiredSidesCalls).toBe(0);
   });
 });

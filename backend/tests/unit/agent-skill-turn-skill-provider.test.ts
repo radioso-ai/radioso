@@ -296,6 +296,53 @@ describe("RepositoryAgentSkillTurnSkillProvider", () => {
     expect((invocation?.skill as { requiredCapabilities?: string[] }).requiredCapabilities).toEqual(["external_skills.invoke"]);
   });
 
+  // Finding 2 (agent-revision-versioning audit): directives already read from the
+  // conversation's frozen agent revision (session.agent.authoredDirectives); agent-selectable
+  // skills must do the same, or an operator rewiring an MCP tool mid-conversation changes
+  // behavior for a customer already pinned to an older revision.
+  it("reads agent-selectable skills from the frozen revision snapshot, not live config, when a revision is pinned", async () => {
+    const frozenSkill = agentSkill({ skillName: "order_lookup", targetId: "frozen-target" });
+    const liveRepository = repositoryWith([
+      // Live state has since been rewired to a different MCP target — a pinned session must
+      // never see this.
+      agentSkill({ skillName: "order_lookup", id: frozenSkill.id, targetId: "rewired-target" }),
+    ]);
+    const provider = new RepositoryAgentSkillTurnSkillProvider({
+      agentSkills: liveRepository,
+      executorRegistry: new SkillExecutorRegistry([]),
+      capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+    });
+    const baseSession = sessionWithBinding("order_lookup");
+    const pinnedSession: PreparedSession = {
+      ...baseSession,
+      agent: { ...baseSession.agent, authoredAgentSkills: [frozenSkill] },
+    } as PreparedSession;
+
+    const runtime = await provider.forSession(pinnedSession);
+
+    expect(liveRepository.listByAgent).not.toHaveBeenCalled();
+    expect(runtime.skillStates.get("order_lookup")).toEqual({ enabled: true, turnCapable: true, stagingCapable: false });
+    expect(runtime.turnSkills).toHaveLength(1);
+    expect(runtime.turnSkills[0]?.definition.name).toBe("order_lookup");
+  });
+
+  it("falls back to a live skill lookup when the session carries no frozen revision snapshot", async () => {
+    const liveRepository = repositoryWith([agentSkill({ skillName: "order_lookup" })]);
+    const provider = new RepositoryAgentSkillTurnSkillProvider({
+      agentSkills: liveRepository,
+      executorRegistry: new SkillExecutorRegistry([]),
+      capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+    });
+    // No `authoredAgentSkills` — e.g. a trusted historical replay baseline with no pinned
+    // revision at all (see chatSessionPreparer.ts's resolveRuntimeRevision).
+    const session = sessionWithBinding("order_lookup");
+
+    const runtime = await provider.forSession(session);
+
+    expect(liveRepository.listByAgent).toHaveBeenCalledWith(workspaceId, agentId);
+    expect(runtime.turnSkills).toHaveLength(1);
+  });
+
   it("checks cancellation immediately before external skill dispatch", async () => {
     const dispatch = vi.fn(async (): Promise<SkillDispatchResult> => ({
       disposition: "settled",

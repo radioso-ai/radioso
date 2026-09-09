@@ -5,6 +5,8 @@ import {
   agentRevisionTestChatSessionKey,
   disposeAllAgentRevisionTestChatSessions,
   endAgentRevisionTestChatAuthSession,
+  isSessionEvalRunCurrent,
+  isSessionExecutionEpochCurrent,
   readAgentRevisionTestChatSession,
   startAgentRevisionTestChatSession,
   writeAgentRevisionTestChatSession,
@@ -70,5 +72,43 @@ describe('agent revision test chat session', () => {
     endAgentRevisionTestChatAuthSession()
 
     expect(readAgentRevisionTestChatSession(key)).toBeUndefined()
+  })
+
+  describe('isSessionExecutionEpochCurrent', () => {
+    it('is true when the session epoch matches what a poll captured', () => {
+      expect(isSessionExecutionEpochCurrent({ ...session(), executionEpoch: 2 }, 2)).toBe(true)
+    })
+
+    it('is false once a newer test bumps the shared session epoch past what a poll captured', () => {
+      expect(isSessionExecutionEpochCurrent({ ...session(), executionEpoch: 3 }, 2)).toBe(false)
+    })
+
+    it('is false when the session has been disposed (undefined)', () => {
+      expect(isSessionExecutionEpochCurrent(undefined, 0)).toBe(false)
+    })
+  })
+
+  describe('isSessionEvalRunCurrent', () => {
+    const evalRun = (id: string): AgentRevisionTestChatSession['evalRun'] => ({
+      id,
+      state: 'running',
+      sides: [],
+    })
+
+    it('is true when the session eval run id matches what a poll captured', () => {
+      expect(isSessionEvalRunCurrent({ ...session(), evalRun: evalRun('run-1') }, 'run-1')).toBe(true)
+    })
+
+    it('is false once a newer eval run replaces the one a poll captured', () => {
+      expect(isSessionEvalRunCurrent({ ...session(), evalRun: evalRun('run-2') }, 'run-1')).toBe(false)
+    })
+
+    it('is false once the session eval run is cleared', () => {
+      expect(isSessionEvalRunCurrent({ ...session(), evalRun: null }, 'run-1')).toBe(false)
+    })
+
+    it('is false when the session has been disposed (undefined)', () => {
+      expect(isSessionEvalRunCurrent(undefined, 'run-1')).toBe(false)
+    })
   })
 })

@@ -6,7 +6,7 @@ import type {
   StagedContext,
 } from "@radioso/conversation-contract";
 
-import { notFound } from "../../../shared/domain/errors.js";
+import { AppError, notFound } from "../../../shared/domain/errors.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { toConversationTrace, toPreparedStagedContext } from "./conversationContractMappers.js";
 import type { ConversationRecord, ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
@@ -71,6 +71,40 @@ interface ChatAnswerAuditMetadata {
 const defaultTurnFraming = (): TurnRouting["framing"] => ({
   isIdentityQuestion: false,
 });
+
+// Runtime-revision failure vocabulary. Every case here is either an operator-
+// recoverable data state (an unbindable legacy conversation) or a deployment
+// wiring gap (a resolver/repository capability that isn't configured) — never
+// a caller bug, so none of these should surface as an unhandled 500. Codes
+// stay stable and machine-readable; the errorHandler classifies AppError by
+// `statusCode` and reports it without the unhandled-crash path.
+const conversationRevisionBindingUnavailable = (): AppError =>
+  new AppError(
+    503,
+    "conversation_revision_binding_unavailable",
+    "This deployment's conversation store cannot bind an agent revision to a conversation. Revision-aware chat is not fully configured here; contact support.",
+  );
+
+const agentRevisionCandidateRequiresTrustedRunner = (): AppError =>
+  new AppError(
+    403,
+    "agent_revision_candidate_requires_trusted_runner",
+    "A candidate agent revision may only be supplied by a trusted safe-test runner.",
+  );
+
+const agentRevisionRuntimeNotConfigured = (): AppError =>
+  new AppError(
+    503,
+    "agent_revision_runtime_not_configured",
+    "Agent revision resolution is not configured for this deployment.",
+  );
+
+const conversationRevisionUnavailable = (): AppError =>
+  new AppError(
+    409,
+    "conversation_revision_unavailable",
+    "This conversation predates revision tracking and could not be bound to a rollout baseline automatically. An operator needs to review it before it can continue.",
+  );
 
 /**
  * The same eligibility rule Audience Pulse reads history with
@@ -351,7 +385,7 @@ export class ChatSessionPreparer {
       );
     if (conversation && !conversation.agentRevisionId && revisionResolved.revisionId) {
       if (!this.conversationRepository.bindAgentRevision) {
-        throw new Error("conversation_revision_binding_unavailable");
+        throw conversationRevisionBindingUnavailable();
       }
       persistedConversation = await this.conversationRepository.bindAgentRevision({
         conversationId: conversation.id,
@@ -463,7 +497,7 @@ export class ChatSessionPreparer {
   }> {
     if (input.preResolvedRevision) {
       if (!input.trustedTestRunner) {
-        throw new Error("agent_revision_candidate_requires_trusted_runner");
+        throw agentRevisionCandidateRequiresTrustedRunner();
       }
       return {
         agent: applyAgentRevisionSnapshot(input.agent, input.preResolvedRevision),
@@ -475,7 +509,7 @@ export class ChatSessionPreparer {
       if (input.trustedTestRunner || input.trustedHistoricalReplay) {
         return { agent: input.agent, revisionId: null, contextVariableEnablements: null };
       }
-      throw new Error("agent_revision_runtime_not_configured");
+      throw agentRevisionRuntimeNotConfigured();
     }
     if (input.conversation?.agentRevisionId) {
       return this.agentRevisionRuntimeResolver.resolvePinned({
@@ -487,9 +521,23 @@ export class ChatSessionPreparer {
     }
     if (input.conversation && input.conversationHasHistory) {
       // Migration 171 binds attributable legacy conversations to their rollout
-      // baseline. A null here is therefore not permission to select today's
-      // published release: that would rewrite an ongoing conversation's behavior.
-      throw new Error("conversation_revision_unavailable");
+      // baseline; conversations it could not classify safely (see
+      // agent_revision_migration_classifications) or that had no agent at
+      // migration time are left unbound on purpose. A null here is therefore
+      // not permission to select today's published release: that would
+      // rewrite an ongoing conversation's behavior. It is an operator-visible,
+      // recoverable state, not an unhandled crash — operators can correlate
+      // the conversationId logged below against
+      // agent_revision_migration_classifications.conversation_id to see why.
+      this.logger?.warn(
+        {
+          conversationId: input.conversation.id,
+          agentId: input.agent.id,
+          workspaceId: input.workspaceId,
+        },
+        "Legacy conversation has no bound agent revision and cannot resume automatically",
+      );
+      throw conversationRevisionUnavailable();
     }
     return this.agentRevisionRuntimeResolver.resolveNew({
       workspaceId: input.workspaceId,

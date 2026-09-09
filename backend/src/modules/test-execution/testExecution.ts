@@ -161,8 +161,12 @@ export interface TestExecutionRunnerResult {
 }
 
 export interface TestExecutionRepositoryPort {
-  create(input: Omit<TestExecution, "createdAt" | "state"> & { state?: TestExecutionState }): Promise<TestExecution>;
+  /** `idempotencyKey` fences a start: a repeated key for the same workspace/agent replays the execution it already created instead of starting a second one. */
+  create(input: Omit<TestExecution, "createdAt" | "state"> & { state?: TestExecutionState; idempotencyKey: string }): Promise<TestExecution>;
   find(input: { workspaceId: string; agentId: string; executionId: string }): Promise<TestExecution | null>;
+  findByIdempotencyKey(input: { workspaceId: string; agentId: string; idempotencyKey: string }): Promise<TestExecution | null>;
+  /** Self-heals a side stuck "running" past its lease (an abandoned attempt) into "failed, retryable". */
+  recoverExpiredSides(input: { workspaceId: string; agentId: string; executionId: string; now: Date }): Promise<TestExecution | null>;
   retainSide(input: { workspaceId: string; agentId: string; executionId: string; sideId: string; retainedExecutionId: string; retainedSideId: string; retainedConversationId: string }): Promise<"not_found" | "not_comparison" | "unsettled" | TestExecution>;
   list(input: { workspaceId: string; agentId: string; limit: number; cursor?: string }): Promise<TestExecutionHistoryPage>;
   listAttempts(input: { workspaceId: string; agentId: string; executionId: string }): Promise<readonly TestExecutionAttemptRecord[]>;
@@ -200,7 +204,11 @@ export class TestExecutionService {
     this.leaseMs = options.leaseMs ?? 30_000;
   }
 
-  async start(input: { workspaceId: string; agentId: string; accountId: string | null; mode: TestExecutionMode; revisionIds: readonly string[]; testValues: readonly TestValue[]; expectedDraftGeneration?: number }): Promise<TestExecution> {
+  async start(input: { workspaceId: string; agentId: string; accountId: string | null; mode: TestExecutionMode; revisionIds: readonly string[]; testValues: readonly TestValue[]; expectedDraftGeneration?: number; idempotencyKey: string }): Promise<TestExecution> {
+    // A retried or double-clicked start must never re-run the greeting bootstrap or mint a
+    // second execution. Checked first, before any revision lookup or provider call.
+    const replay = await this.options.repository.findByIdempotencyKey({ workspaceId: input.workspaceId, agentId: input.agentId, idempotencyKey: input.idempotencyKey });
+    if (replay) return replay;
     const expectedCount = input.mode === "single" ? 1 : 2;
     if (input.revisionIds.length !== expectedCount || new Set(input.revisionIds).size !== expectedCount) {
       throw badRequest("Test execution requires distinct immutable revision IDs for its selected mode.");
@@ -237,7 +245,7 @@ export class TestExecutionService {
     }));
     const execution = await this.options.repository.create({
       id: executionId, workspaceId: input.workspaceId, agentId: input.agentId, mode: input.mode,
-      generation: 1, testValues, sides,
+      generation: 1, testValues, sides, idempotencyKey: input.idempotencyKey,
     });
     await this.audit(input, "agent.test_execution.started", "success", { executionId, mode: input.mode, sideCount: sides.length });
     return execution;
@@ -250,7 +258,12 @@ export class TestExecutionService {
   async detail(input: { workspaceId: string; agentId: string; executionId: string }): Promise<TestExecutionDetail> {
     const execution = await this.options.repository.find(input);
     if (!execution) throw notFound("Test execution is unavailable.");
-    return { execution, attempts: await this.options.repository.listAttempts(input) };
+    // A stuck side (e.g. a dropped SSE connection) self-heals on a plain read, the same terms
+    // RevisionEvalRunService.get() reclaims a stuck revision-eval case on every poll.
+    const current = execution.state === "running"
+      ? (await this.options.repository.recoverExpiredSides({ ...input, now: this.now() })) ?? execution
+      : execution;
+    return { execution: current, attempts: await this.options.repository.listAttempts(input) };
   }
 
   /**

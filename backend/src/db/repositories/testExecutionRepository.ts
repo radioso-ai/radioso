@@ -2,7 +2,7 @@ import type { AgentRevision } from "../../modules/agents/public.js";
 import type { Transaction } from "kysely";
 import { parseAgentRevisionSnapshot } from "../../modules/agents/public.js";
 import type { TestExecution, TestExecutionAttempt, TestExecutionAttemptRecord, TestExecutionClaim, TestExecutionHistoryItem, TestExecutionHistorySide, TestExecutionRepositoryPort, TestExecutionRunnerResult, TestExecutionSide, TestExecutionState } from "../../modules/test-execution/testExecution.js";
-import { currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import { currentTimestamp, toJsonb, transactionAdvisoryLock } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { DB, Db } from "../../shared/infra/kysely/types.js";
 import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
 
@@ -22,6 +22,8 @@ const parseHistory = (value: unknown): TestExecutionSide["history"] => Array.isA
 const parseResult = (value: unknown): TestExecutionRunnerResult | undefined => value && typeof value === "object" ? value as TestExecutionRunnerResult : undefined;
 const appendUser = (history: TestExecutionSide["history"], input: ClaimInput) => history.some((entry) => entry.role === "user" && entry.turnId === input.turnId) ? history : [...history, { turnId: input.turnId, attemptId: input.attemptId, role: "user" as const, content: input.message, createdAt: input.now }];
 const appendAssistant = (history: TestExecutionSide["history"], input: CompleteInput) => [...history, { turnId: input.turnId, attemptId: input.attemptId, role: "assistant" as const, content: input.result.answer, messageId: input.result.messageId, createdAt: input.now }];
+const testExecutionStartLockKey = (workspaceId: string, agentId: string, idempotencyKey: string): string =>
+  `test-execution-start:${workspaceId}:${agentId}:${idempotencyKey}`;
 
 /** Postgres system of record for private test execution state and side-level fencing. */
 export class TestExecutionRepository implements TestExecutionRepositoryPort {
@@ -38,13 +40,35 @@ export class TestExecutionRepository implements TestExecutionRepositoryPort {
   }
 
   async create(input: Parameters<TestExecutionRepositoryPort["create"]>[0]): Promise<TestExecution> {
-    await this.db.transaction().execute(async (trx) => {
-      await trx.insertInto("agent_test_executions").values({ id: input.id, workspace_id: input.workspaceId, agent_id: input.agentId, mode: input.mode, generation: input.generation, state: input.state ?? "running", test_values: toJsonb(input.testValues) }).execute();
+    const existingId = await this.db.transaction().execute(async (trx) => {
+      // Serializes concurrent starts sharing one idempotency key so the second never races the
+      // first's insert; the lock is released automatically at transaction end either way.
+      await transactionAdvisoryLock(testExecutionStartLockKey(input.workspaceId, input.agentId, input.idempotencyKey)).execute(trx);
+      const replay = await trx.selectFrom("agent_test_executions").select("id").where("workspace_id", "=", input.workspaceId).where("agent_id", "=", input.agentId).where("idempotency_key", "=", input.idempotencyKey).executeTakeFirst();
+      if (replay) return replay.id;
+      await trx.insertInto("agent_test_executions").values({ id: input.id, workspace_id: input.workspaceId, agent_id: input.agentId, mode: input.mode, generation: input.generation, state: input.state ?? "running", test_values: toJsonb(input.testValues), idempotency_key: input.idempotencyKey }).execute();
       for (const [sideOrdinal, side] of input.sides.entries()) await trx.insertInto("agent_test_execution_sides").values({ id: side.id, execution_id: input.id, workspace_id: input.workspaceId, agent_id: input.agentId, revision_id: side.revision.id, conversation_id: side.conversationId, state: side.state, retryable: side.retryable, history: toJsonb(side.history), continuation: side.continuation === null ? null : toJsonb(side.continuation), active_turn_id: null, active_attempt_id: null, active_fence: null, side_ordinal: sideOrdinal }).execute();
+      return input.id;
     });
-    const created = await this.find({ workspaceId: input.workspaceId, agentId: input.agentId, executionId: input.id });
+    const created = await this.find({ workspaceId: input.workspaceId, agentId: input.agentId, executionId: existingId });
     if (!created) throw new Error("test_execution_create_lost");
     return created;
+  }
+
+  async findByIdempotencyKey(input: { workspaceId: string; agentId: string; idempotencyKey: string }): Promise<TestExecution | null> {
+    const row = await this.db.selectFrom("agent_test_executions").select("id").where("workspace_id", "=", input.workspaceId).where("agent_id", "=", input.agentId).where("idempotency_key", "=", input.idempotencyKey).executeTakeFirst();
+    return row ? this.find({ workspaceId: input.workspaceId, agentId: input.agentId, executionId: row.id }) : null;
+  }
+
+  /**
+   * Retention-only: unlike every other read here, a sweep is not scoped to one workspace/agent.
+   * Child sides/turns/attempts cascade from the execution row.
+   */
+  async deleteExecutionsUpdatedBefore(input: { cutoff: Date; limit: number }): Promise<number> {
+    const result = await this.db.deleteFrom("agent_test_executions")
+      .where("id", "in", (eb) => eb.selectFrom("agent_test_executions").select("id").where("updated_at", "<", input.cutoff).orderBy("updated_at").limit(input.limit))
+      .executeTakeFirst();
+    return Number(result.numDeletedRows);
   }
 
   async find(input: { workspaceId: string; agentId: string; executionId: string }): Promise<TestExecution | null> {
@@ -65,21 +89,28 @@ export class TestExecutionRepository implements TestExecutionRepositoryPort {
         .where("id", "=", input.sideId).where("execution_id", "=", input.executionId).where("workspace_id", "=", input.workspaceId).where("agent_id", "=", input.agentId)
         .forUpdate().executeTakeFirst();
       if (!side) return "not_found" as const;
+      // Consumed: a side already retained replays the execution it produced instead of
+      // spawning another one, so a repeated retain call (a retry, a double-click) is a no-op.
+      if (side.retained_execution_id !== null) return { retainedExecutionId: side.retained_execution_id } as const;
       if (side.active_attempt_id !== null || side.state === "failed") return "unsettled" as const;
       const state: TestExecutionState = side.state === "completed" ? "completed" : "running";
       await trx.insertInto("agent_test_executions").values({
         id: input.retainedExecutionId, workspace_id: input.workspaceId, agent_id: input.agentId,
         mode: "single", generation: 1, state, test_values: toJsonb(source.test_values),
+        // Retained executions are minted server-side, never client-retried directly; the new
+        // execution's own id is a stable, always-unique fence for this NOT NULL column.
+        idempotency_key: input.retainedExecutionId,
       }).execute();
       await trx.insertInto("agent_test_execution_sides").values({
         id: input.retainedSideId, execution_id: input.retainedExecutionId, workspace_id: input.workspaceId, agent_id: input.agentId,
         revision_id: side.revision_id, conversation_id: input.retainedConversationId, state: side.state, retryable: side.retryable,
         history: toJsonb(side.history), continuation: side.continuation === null ? null : toJsonb(side.continuation), active_turn_id: null, active_attempt_id: null, active_fence: null, side_ordinal: 0,
       }).execute();
-      return "retained" as const;
+      await trx.updateTable("agent_test_execution_sides").set({ retained_execution_id: input.retainedExecutionId, updated_at: currentTimestamp() }).where("id", "=", side.id).execute();
+      return { retainedExecutionId: input.retainedExecutionId } as const;
     });
-    if (retained !== "retained") return retained;
-    return (await this.find({ workspaceId: input.workspaceId, agentId: input.agentId, executionId: input.retainedExecutionId })) ?? "not_found";
+    if (retained === "not_found" || retained === "not_comparison" || retained === "unsettled") return retained;
+    return (await this.find({ workspaceId: input.workspaceId, agentId: input.agentId, executionId: retained.retainedExecutionId })) ?? "not_found";
   }
 
   async list(input: { workspaceId: string; agentId: string; limit: number; cursor?: string }): Promise<{ executions: readonly TestExecutionHistoryItem[]; nextCursor: string | null; hasMore: boolean }> {
@@ -224,10 +255,46 @@ export class TestExecutionRepository implements TestExecutionRepositoryPort {
       };
     }
     if (side.active_attempt_id !== null) {
-      if (side.active_turn_id !== input.turnId || latest.state !== "running" || latest.lease_expires_at > input.now) return "turn_conflict";
+      if (side.active_turn_id !== input.turnId || !this.isStaleRunningAttempt(latest, input.now)) return "turn_conflict";
       await trx.updateTable("agent_test_execution_attempts").set({ state: "failed", failure_code: "lease_expired", updated_at: currentTimestamp() }).where("execution_id", "=", input.executionId).where("side_id", "=", side.id).where("turn_id", "=", input.turnId).where("attempt_id", "=", side.active_attempt_id).execute();
     } else if (turnState !== "partial" || side.state !== "failed") return "retry_invalid";
     return this.startClaims(trx, [side], input, (side.active_fence ?? latest.fence) + 1);
+  }
+
+  /**
+   * The one stuck-run recovery rule shared by an explicit retry (above) and a plain read
+   * (below): an attempt still marked "running" past its lease is abandoned, most often a
+   * dropped SSE connection, never a still-working provider call.
+   */
+  private isStaleRunningAttempt(attempt: { state: string; lease_expires_at: Date } | undefined, now: Date): boolean {
+    return attempt !== undefined && attempt.state === "running" && attempt.lease_expires_at <= now;
+  }
+
+  /**
+   * Self-heals on a plain read, the same terms RevisionEvalRunService.get() reclaims a stuck
+   * revision-eval case on every poll: a side whose lease expired is released to "failed,
+   * retryable" without requiring the client to already know it must call retry with the
+   * original turnId. Unlike the eval-run path, this never re-dispatches provider work on its
+   * own — test-execution work only ever runs from an explicit client-driven message/retry call.
+   */
+  async recoverExpiredSides(input: { workspaceId: string; agentId: string; executionId: string; now: Date }): Promise<TestExecution | null> {
+    const found = await this.db.transaction().execute(async (trx) => {
+      const execution = await trx.selectFrom("agent_test_executions").selectAll().where("id", "=", input.executionId).where("workspace_id", "=", input.workspaceId).where("agent_id", "=", input.agentId).forUpdate().executeTakeFirst();
+      if (!execution) return false;
+      const sides = await trx.selectFrom("agent_test_execution_sides").select(["id", "active_turn_id", "active_attempt_id"]).where("execution_id", "=", input.executionId).where("active_attempt_id", "is not", null).forUpdate().execute();
+      const recoveredTurnIds = new Set<string>();
+      for (const side of sides) {
+        const attempt = await trx.selectFrom("agent_test_execution_attempts").select(["state", "lease_expires_at"]).where("execution_id", "=", input.executionId).where("side_id", "=", side.id).where("turn_id", "=", side.active_turn_id!).where("attempt_id", "=", side.active_attempt_id!).forUpdate().executeTakeFirst();
+        if (!this.isStaleRunningAttempt(attempt, input.now)) continue;
+        await trx.updateTable("agent_test_execution_attempts").set({ state: "failed", failure_code: "lease_expired", updated_at: currentTimestamp() }).where("execution_id", "=", input.executionId).where("side_id", "=", side.id).where("turn_id", "=", side.active_turn_id!).where("attempt_id", "=", side.active_attempt_id!).execute();
+        await trx.updateTable("agent_test_execution_sides").set({ state: "failed", retryable: true, active_turn_id: null, active_attempt_id: null, active_fence: null, updated_at: currentTimestamp() }).where("id", "=", side.id).execute();
+        recoveredTurnIds.add(side.active_turn_id!);
+      }
+      for (const turnId of recoveredTurnIds) await this.syncAggregateState(trx, input.executionId, turnId);
+      return true;
+    });
+    if (!found) return null;
+    return this.find({ workspaceId: input.workspaceId, agentId: input.agentId, executionId: input.executionId });
   }
 
   private async finish(input: CompleteInput | FailInput, state: "completed" | "failed"): Promise<"stale" | TestExecution> {
@@ -241,15 +308,21 @@ export class TestExecutionRepository implements TestExecutionRepositoryPort {
       const result = "result" in input ? input.result : undefined;
       await trx.updateTable("agent_test_execution_attempts").set({ state, result: result ? toJsonb(result) : null, failure_code: "code" in input ? input.code : null, lease_expires_at: input.now, updated_at: currentTimestamp() }).where("execution_id", "=", input.executionId).where("side_id", "=", input.sideId).where("turn_id", "=", input.turnId).where("attempt_id", "=", input.attemptId).execute();
       await trx.updateTable("agent_test_execution_sides").set({ state, retryable: state === "failed", history: toJsonb(state === "completed" && result ? appendAssistant(parseHistory(side.history), input as CompleteInput) : parseHistory(side.history)), continuation: state === "completed" && result ? toJsonb(result.continuation) : side.continuation, active_turn_id: null, active_attempt_id: null, active_fence: null, updated_at: currentTimestamp() }).where("id", "=", side.id).execute();
-      const allSides = await trx.selectFrom("agent_test_execution_sides").select("state").where("execution_id", "=", input.executionId).execute();
-      const executionState: TestExecutionState = allSides.every((item) => item.state === "completed") ? "completed" : allSides.some((item) => item.state === "running" || item.state === "ready") ? "running" : "partial";
-      const turnState = executionState === "completed" ? "completed" : executionState === "running" ? "running" : "partial";
-      await trx.updateTable("agent_test_execution_turns").set({ state: turnState, updated_at: currentTimestamp() }).where("execution_id", "=", input.executionId).where("turn_id", "=", input.turnId).execute();
-      await trx.updateTable("agent_test_executions").set({ state: executionState, updated_at: currentTimestamp() }).where("id", "=", input.executionId).execute();
+      await this.syncAggregateState(trx, input.executionId, input.turnId);
       return true;
     });
     if (!changed) return "stale";
     return (await this.find({ workspaceId: input.workspaceId, agentId: input.agentId, executionId: input.executionId })) ?? "stale";
+  }
+
+  /** Recomputes execution/turn state from current side states. Shared so a settle (above) and
+   * a lease-expiry recovery (above) never disagree on how sides roll up. */
+  private async syncAggregateState(trx: TransactionDb, executionId: string, turnId: string): Promise<void> {
+    const allSides = await trx.selectFrom("agent_test_execution_sides").select("state").where("execution_id", "=", executionId).execute();
+    const executionState: TestExecutionState = allSides.every((item) => item.state === "completed") ? "completed" : allSides.some((item) => item.state === "running" || item.state === "ready") ? "running" : "partial";
+    const turnState = executionState === "completed" ? "completed" : executionState === "running" ? "running" : "partial";
+    await trx.updateTable("agent_test_execution_turns").set({ state: turnState, updated_at: currentTimestamp() }).where("execution_id", "=", executionId).where("turn_id", "=", turnId).execute();
+    await trx.updateTable("agent_test_executions").set({ state: executionState, updated_at: currentTimestamp() }).where("id", "=", executionId).execute();
   }
 
   private mapAttempt(row: { execution_id: string; side_id: string; turn_id: string; attempt_id: string; input_fingerprint: string; fence: number; lease_expires_at: Date; state: string; result: unknown }, message: string): TestExecutionAttempt {

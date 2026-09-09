@@ -14,6 +14,7 @@ export const startTestExecutionSchema = z.object({
   revisionIds: z.array(z.string().uuid()).min(1).max(2),
   testValues: z.array(testValueSchema).max(100),
   expectedDraftGeneration: z.number().int().positive().optional(),
+  idempotencyKey: z.string().trim().min(1).max(200),
 }).strict();
 export const sendTestExecutionMessageSchema = z.object({
   message: z.string().min(1).max(20_000),
@@ -28,4 +29,5 @@ export const startRevisionEvalRunSchema = z.object({
   testValues: z.array(testValueSchema).max(100),
   mode: z.enum(["retrieval_only", "full_assistant"]),
   executionPolicy: z.literal("safe_test"),
+  idempotencyKey: z.string().trim().min(1).max(200),
 }).strict();

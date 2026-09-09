@@ -12,7 +12,8 @@ import {
 import { RevisionEvalRunRepository } from "../../../db/repositories/revisionEvalRunRepository.js";
 import { ContextVariableRepository } from "../../../db/repositories/contextVariableRepository.js";
 import { RevisionEvalRunService } from "../../../modules/eval/services/revisionEvalRun.js";
-import { projectInternalAgentConfig } from "../../../modules/agents/public.js";
+import { createLiveAgentConfigReader } from "../../composition/liveAgentConfigReader.js";
+import { TtlRetentionWorker } from "../../../shared/domain/ttlRetentionWorker.js";
 import {
   CustomerReplyDeliveryDispatcher,
 } from "../../../modules/customerReplyDelivery/public.js";
@@ -45,6 +46,7 @@ export const buildEvalServices = (input: {
   retrievalDefaultsProvider: ConstructorParameters<typeof RetrievalPipelineEvalRunner>[3];
   skillSettingsResolver: NonNullable<ConstructorParameters<typeof RetrievalPipelineEvalRunner>[5]>;
   workspaceInvalidationPublisher: WorkspaceInvalidationPublisher;
+  revisionEvalRunRetentionDays: number;
 }) => {
   const evalRepository = new EvalRepository(input.infrastructure.database.kysely);
   const evalSnapshotService = new EvalSnapshotService(
@@ -82,16 +84,12 @@ export const buildEvalServices = (input: {
     input.chat.workbenchReplayRunner,
     input.logger,
     input.infrastructure.usageLimitPolicy,
-    {
-      find: async ({ workspaceId, agentId }) => {
-        const agent = await input.repositories.agentRepository.findByIdAndWorkspaceId(agentId, workspaceId);
-        return agent ? projectInternalAgentConfig(agent) : null;
-      },
-    },
+    createLiveAgentConfigReader({ agentRepository: input.repositories.agentRepository }),
   );
   const evalSuiteService = new EvalSuiteService(evalRepository, evalRunService, input.logger);
+  const revisionEvalRunRepository = new RevisionEvalRunRepository(input.infrastructure.database.kysely);
   const revisionEvalRunService = new RevisionEvalRunService({
-    repository: new RevisionEvalRunRepository(input.infrastructure.database.kysely),
+    repository: revisionEvalRunRepository,
     revisions: {
       findRevisionByWorkspace: async ({ workspaceId, revisionId }) =>
         input.repositories.agentRevisionRepository.findRevisionByWorkspace({ workspaceId, revisionId }),
@@ -101,7 +99,17 @@ export const buildEvalServices = (input: {
     cases: evalRepository,
     contextCatalog: new ContextVariableRepository(input.infrastructure.database.kysely),
     runner: evalRunService,
+    audit: input.infrastructure.auditService,
     logger: input.logger,
+  });
+  // Runs in the worker process, same as every other retention sweep: periodic maintenance with
+  // no request behind it, so the HTTP process must not do it once per replica.
+  const revisionEvalRunRetentionWorker = new TtlRetentionWorker({
+    subject: "agent_revision_eval_run",
+    sweep: { deleteBefore: (sweepInput) => revisionEvalRunRepository.deleteRunsUpdatedBefore(sweepInput) },
+    audit: input.infrastructure.auditService,
+    logger: input.logger,
+    retentionDays: input.revisionEvalRunRetentionDays,
   });
   const customerReplyDelivery = new CustomerReplyDeliveryDispatcher({
     slack: new SlackCustomerReplyDeliverer({
@@ -129,6 +137,7 @@ export const buildEvalServices = (input: {
     evalMessageCaseService,
     evalRunService,
     revisionEvalRunService,
+    revisionEvalRunRetentionWorker,
     evalSnapshotService,
     evalSuiteService,
     operatorReplyService,

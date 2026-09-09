@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { AppError } from "../../src/shared/domain/errors.js";
 import { ChatSessionPreparer } from "../../src/modules/chat/services/chatSessionPreparer.js";
 import {
   AgentRevisionRuntimeResolver,
@@ -119,12 +120,22 @@ describe("ChatSessionPreparer rolling conversation summary (#866)", () => {
       { resolve: async () => agent },
     );
 
-    await expect(preparer.prepare({ workspaceId: "ws-1", agentId: agent.id, query: "Hi" }))
-      .rejects.toThrow("agent_revision_runtime_not_configured");
-    await expect(preparer.prepare(
+    const first = preparer.prepare({ workspaceId: "ws-1", agentId: agent.id, query: "Hi" });
+    await expect(first).rejects.toThrow(AppError);
+    await expect(first).rejects.toMatchObject({
+      code: "agent_revision_runtime_not_configured",
+      statusCode: 503,
+    });
+    await expect(first).rejects.toBeInstanceOf(AppError);
+    const second = preparer.prepare(
       { workspaceId: "ws-1", agentId: agent.id, query: "Hi" },
       { preResolvedAgent: agent },
-    )).rejects.toThrow("agent_revision_runtime_not_configured");
+    );
+    await expect(second).rejects.toThrow(AppError);
+    await expect(second).rejects.toMatchObject({
+      code: "agent_revision_runtime_not_configured",
+      statusCode: 503,
+    });
   });
 
   it("accepts pre-resolved host values only from the trusted safe-test runner", async () => {
@@ -211,15 +222,32 @@ describe("ChatSessionPreparer rolling conversation summary (#866)", () => {
       findCurrentPublished: vi.fn(async () => published),
       findRevision: vi.fn(async () => published),
     });
+    const logger = { warn: vi.fn() };
     const preparer = new ChatSessionPreparer(
       conversationRepository, messageRepository, retrievalTurn, createAuditService(), undefined,
-      { resolve: async () => agent }, undefined, undefined, undefined, undefined,
+      { resolve: async () => agent }, undefined, undefined, undefined, logger,
       undefined, undefined, resolver,
     );
 
-    await expect(preparer.prepare({
+    const outcome = preparer.prepare({
       workspaceId: "ws-1", conversationId: conversation.id, query: "Continue",
-    })).rejects.toThrow("conversation_revision_unavailable");
+    });
+    await expect(outcome).rejects.toThrow(AppError);
+    await expect(outcome).rejects.toMatchObject({
+      code: "conversation_revision_unavailable",
+      statusCode: 409,
+    });
+    await expect(outcome).rejects.toBeInstanceOf(AppError);
+    // Operators must be able to correlate this recoverable, non-crash state
+    // back to the conversation instead of it reading as an unhandled 500.
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: conversation.id,
+        agentId: agent.id,
+        workspaceId: "ws-1",
+      }),
+      expect.stringContaining("revision"),
+    );
   });
 
   it("rejects a public resume of an operator-test conversation even after its candidate is published", async () => {

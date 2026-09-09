@@ -76,6 +76,20 @@ test('agent sidebar keeps new-agent setup choices under the agent group', async 
   await expect(page.getByRole('button', { name: 'Create manually', exact: true })).toBeVisible()
 })
 
+test('Danger zone stays reachable from the agent sidebar', async ({ page }) => {
+  await seedDashboardStorage(page)
+  await installDashboardApiMocks(page, { platformSettings: basePlatformSettings() })
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=chat`)
+
+  const sidebar = page.locator('[data-sidebar="sidebar"]')
+  const dangerZoneLink = sidebar.getByRole('link', { name: 'Danger zone', exact: true })
+  await expect(dangerZoneLink).toBeVisible()
+  await dangerZoneLink.click()
+
+  await expect(page.getByRole('heading', { name: 'Danger zone', level: 1, exact: true })).toBeVisible()
+  await expect(page.getByText('Delete this agent', { exact: true })).toBeVisible()
+})
+
 test('Manage channels opens the real channel overview', async ({ page }) => {
   await seedDashboardStorage(page)
   const settings = basePlatformSettings()

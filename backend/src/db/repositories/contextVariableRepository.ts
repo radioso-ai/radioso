@@ -375,6 +375,28 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
   async upsertEnablement(input: AgentContextVariableEnablementRecord): Promise<AgentContextVariableEnablement> {
     const workspaceId = await this.requireEnablementWorkspace(input.variableId);
     return withAgentDraftMutation(this.db, workspaceId, input.agentId, async (trx, snapshot) => {
+      // Locked (SELECT ... FOR UPDATE), the same guard applyProposal's enablement branch
+      // already takes for the identical reason: delete()'s own protection is a set of
+      // per-agent advisory locks computed from whichever agents it finds already
+      // referencing this variable *before* it opens its transaction. An enablement for an
+      // agent not yet in that set at that moment is not covered by any of those locks, so
+      // without this row lock a concurrent delete() can commit between this check and the
+      // insert below, and the insert would surface as a raw
+      // agent_context_variables_variable_id_fkey violation (unhandled 500) instead of this
+      // conflict(). Locking the variable row itself — the one resource both delete() (via
+      // its own `.forUpdate()`) and every enablement writer touch — closes the race for any
+      // agent, not just the ones delete() happened to already know about.
+      const variableRow = await trx
+        .selectFrom("context_variables")
+        .select("id")
+        .where("workspace_id", "=", workspaceId)
+        .where("id", "=", input.variableId)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!variableRow) {
+        throw conflict("Context variable no longer exists");
+      }
+
       if (input.source === "resolver" && input.resolverSkillId) {
         const state = await lockResolverSkillForEnablement(trx, {
           agentId: input.agentId,

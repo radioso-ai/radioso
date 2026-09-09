@@ -28,10 +28,26 @@ export interface TestExecutionState {
   sides: Record<string, TestExecutionSideState>
 }
 
+/**
+ * Aggregate independent side outcomes into one execution status. A side still
+ * running keeps the whole execution running; once none are, a side failure
+ * makes the execution partial rather than uniformly failed, matching how a
+ * mid-turn side failure is already surfaced everywhere else in this state
+ * machine (see `reduceTestExecutionEvent` and `failTestExecutionSide`). Shared
+ * by the initializer and the mid-stream finalizer so a freshly started
+ * execution and a stream that ends early agree on the same status.
+ */
+const deriveExecutionState = (sideStates: ReadonlyArray<ExecutionState | 'ready'>): ExecutionState =>
+  sideStates.some((sideState) => sideState === 'running')
+    ? 'running'
+    : sideStates.some((sideState) => sideState === 'failed')
+      ? 'partial'
+      : 'completed'
+
 export const initializeTestExecutionState = (execution: TestExecution): TestExecutionState => ({
   executionId: execution.id,
   generation: execution.generation,
-  state: execution.sides.some((side) => side.state === 'running') ? 'running' : execution.sides.some((side) => side.state === 'failed') ? 'failed' : 'completed',
+  state: deriveExecutionState(execution.sides.map((side) => side.state)),
   activeTurnId: null,
   activeAttemptId: null,
   sides: Object.fromEntries(execution.sides.map((side) => [side.id, {
@@ -163,7 +179,7 @@ export const beginTestExecutionRetry = (
 export const finalizeTestExecutionStream = (state: TestExecutionState, code: string): TestExecutionState => {
   const incompleteSideIds = Object.values(state.sides).filter((side) => side.state === 'running').map((side) => side.id)
   if (!incompleteSideIds.length) {
-    return { ...state, state: Object.values(state.sides).some((side) => side.state === 'failed') ? 'partial' : 'completed' }
+    return { ...state, state: deriveExecutionState(Object.values(state.sides).map((side) => side.state)) }
   }
   return incompleteSideIds.reduce((current, sideId) => failTestExecutionSide(current, sideId, code), state)
 }

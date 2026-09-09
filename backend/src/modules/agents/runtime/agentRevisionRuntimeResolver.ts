@@ -1,6 +1,7 @@
 import { notFound } from "../../../shared/domain/errors.js";
 import type { AgentRecord } from "../public.js";
 import type { AgentRevision, AgentRevisionSnapshot } from "../agentRevision.js";
+import type { AgentSkillSpine } from "../../agentSkills/public.js";
 
 /**
  * Runtime-only revision read surface. Authoring owns candidates and publication;
@@ -23,6 +24,18 @@ export const applyAgentRevisionSnapshot = (agent: AgentRecord, revision: AgentRe
   ...agent,
   customInstruction: revision.snapshot.customInstruction ?? "",
   authoredDirectives: revision.snapshot.directives,
+  // `agentSkills` is absent on snapshots predating skill tracking (see
+  // agentRevision.ts); leave `authoredAgentSkills` undefined in that case so
+  // turn-dispatch composition (agentSkillTurnSkillProvider) knows to fall back
+  // to a live lookup instead of treating an absent field as "no skills". The
+  // snapshot's `kind`/`invocationMode` are validated-shape-but-open strings (see
+  // agentRevision.ts for why); every element was already validated against the
+  // narrower AgentSkillSpine shape by AgentSkillsService before it was ever
+  // written to agent_skills, so this cast is safe the same way this repository
+  // family already casts a raw DB column to AgentSkillKind elsewhere.
+  ...(revision.snapshot.agentSkills !== undefined
+    ? { authoredAgentSkills: revision.snapshot.agentSkills as unknown as AgentSkillSpine[] }
+    : {}),
 });
 
 /**

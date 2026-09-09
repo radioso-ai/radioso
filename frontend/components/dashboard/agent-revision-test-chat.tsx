@@ -72,6 +72,8 @@ import { isAgentDraftDirty, saveAgentDraft } from "@/lib/agent-draft-save-port";
 import { DEFAULT_WEBSITE_EMBED_COPY } from "@/lib/embed-widget";
 import {
   agentRevisionTestChatSessionKey,
+  isSessionEvalRunCurrent,
+  isSessionExecutionEpochCurrent,
   readAgentRevisionTestChatSession,
   startAgentRevisionTestChatSession,
   subscribeAgentRevisionTestChatSession,
@@ -820,16 +822,21 @@ export function AgentRevisionTestChat({
     }
   };
   const pollEval = async (runId: string, requestGeneration: number) => {
+    // Instance refs alone do not catch an orphaned poll from a torn-down component
+    // instance (e.g. a tab switch): its own refs are never invalidated by anyone else,
+    // so it must also cross-check the *shared* session store before writing a result.
     if (
       activeEvalRunId.current !== runId ||
-      evalRequestGeneration.current !== requestGeneration
+      evalRequestGeneration.current !== requestGeneration ||
+      !isSessionEvalRunCurrent(readAgentRevisionTestChatSession(sessionKey), runId)
     )
       return;
     try {
       const next = await agentRevisionsApi.getEval(runId);
       if (
         activeEvalRunId.current !== runId ||
-        evalRequestGeneration.current !== requestGeneration
+        evalRequestGeneration.current !== requestGeneration ||
+        !isSessionEvalRunCurrent(readAgentRevisionTestChatSession(sessionKey), runId)
       )
         return;
       setEvalRunState(next);
@@ -841,7 +848,8 @@ export function AgentRevisionTestChat({
     } catch (cause) {
       if (
         activeEvalRunId.current === runId &&
-        evalRequestGeneration.current === requestGeneration
+        evalRequestGeneration.current === requestGeneration &&
+        isSessionEvalRunCurrent(readAgentRevisionTestChatSession(sessionKey), runId)
       )
         setError(
           cause instanceof Error
@@ -1017,10 +1025,19 @@ export function AgentRevisionTestChat({
     async function pollReopenedExecution(
       executionId: string,
       requestGeneration: number,
+      executionEpoch: number,
     ) {
+      // Instance refs alone do not catch an orphaned poll from a torn-down component
+      // instance (e.g. a tab switch): its own refs are never invalidated by anyone else,
+      // so it must also cross-check the shared session store's live executionEpoch,
+      // exactly like the send/retry paths do.
       if (
         reopenedExecutionId.current !== executionId ||
-        testRequestGeneration.current !== requestGeneration
+        testRequestGeneration.current !== requestGeneration ||
+        !isSessionExecutionEpochCurrent(
+          readAgentRevisionTestChatSession(sessionKey),
+          executionEpoch,
+        )
       )
         return;
       try {
@@ -1030,7 +1047,11 @@ export function AgentRevisionTestChat({
         );
         if (
           reopenedExecutionId.current !== executionId ||
-          testRequestGeneration.current !== requestGeneration
+          testRequestGeneration.current !== requestGeneration ||
+          !isSessionExecutionEpochCurrent(
+            readAgentRevisionTestChatSession(sessionKey),
+            executionEpoch,
+          )
         )
           return;
         const next = hydrateTestExecutionState(response.execution);
@@ -1041,13 +1062,17 @@ export function AgentRevisionTestChat({
           )
         ) {
           executionPollTimeout.current = window.setTimeout(() => {
-            void pollReopenedExecution(executionId, requestGeneration);
+            void pollReopenedExecution(executionId, requestGeneration, executionEpoch);
           }, 750);
         }
       } catch (cause) {
         if (
           reopenedExecutionId.current === executionId &&
-          testRequestGeneration.current === requestGeneration
+          testRequestGeneration.current === requestGeneration &&
+          isSessionExecutionEpochCurrent(
+            readAgentRevisionTestChatSession(sessionKey),
+            executionEpoch,
+          )
         ) {
           setError(
             cause instanceof Error
@@ -1057,7 +1082,7 @@ export function AgentRevisionTestChat({
         }
       }
     },
-    [agentId, setExecutionState],
+    [agentId, sessionKey, setExecutionState],
   );
 
   const reopenExecution = useCallback(
@@ -1092,12 +1117,13 @@ export function AgentRevisionTestChat({
       );
       if (saved.attempts.some((attempt) => attempt.state === "running")) {
         const requestGeneration = testRequestGeneration.current;
+        const executionEpoch = readAgentRevisionTestChatSession(sessionKey)?.executionEpoch ?? 0;
         reopenedExecutionId.current = saved.id;
-        void pollReopenedExecution(saved.id, requestGeneration);
+        void pollReopenedExecution(saved.id, requestGeneration, executionEpoch);
       }
       setView("chat");
     },
-    [clearChatExecution, pollReopenedExecution, setExecutionState],
+    [clearChatExecution, pollReopenedExecution, sessionKey, setExecutionState],
   );
 
   if (loading)

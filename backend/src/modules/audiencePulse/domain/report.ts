@@ -84,7 +84,14 @@ const coverageSummary = (items: AudiencePulseEvidence[]): AudiencePulseCoverageS
   };
   for (const item of items) {
     const assessment = item.answerCoverage;
-    if (!assessment) { summary.legacy += 1; continue; }
+    if (!assessment) {
+      // A present-but-unconfirmed assessment is intentionally omitted from the
+      // evidence payload. It is unassessed, not legacy: falling back to grounding
+      // would recreate the false association this lifecycle boundary prevents.
+      if (item.legacyCoverage === false) summary.unassessed += 1;
+      else summary.legacy += 1;
+      continue;
+    }
     if (assessment.availability !== "assessed") { summary.unassessed += 1; continue; }
     summary[assessment.coverage] += 1;
     summary.reasons[assessment.reason] = (summary.reasons[assessment.reason] ?? 0) + 1;

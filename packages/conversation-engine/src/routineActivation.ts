@@ -249,7 +249,9 @@ const attemptRoutineWithMode = async (
       const response: RenderableTurn = { answer };
       const events = [] as Awaited<ReturnType<typeof createInputEvent>>[];
       const inputEvent = createInputEvent(input);
-      await input.stores.appendEvent(inputEvent);
+      if (!input.inputEventAlreadyAppended) {
+        await input.stores.appendEvent(inputEvent);
+      }
       events.push(inputEvent);
       const responseEvent = createResponseEvent(input.sessionId, response);
       await input.stores.appendEvent(responseEvent);

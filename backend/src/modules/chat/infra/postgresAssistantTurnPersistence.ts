@@ -324,6 +324,20 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
         throw new Error("Expected inserted assistant message");
       }
 
+      if (input.answerCoverageRequestMessageId) {
+        // Coverage assessment is deliberately saved before a reply is durable so a
+        // retry can reuse it. This is the sole confirmation point: the exact request
+        // and assistant reply now exist in the same committing transaction.
+        await sql`
+          UPDATE answer_coverage_assessments
+          SET assistant_message_id = ${messageId}
+          WHERE workspace_id = ${input.workspaceId}
+            AND conversation_id = ${input.conversationId}
+            AND request_message_id = ${input.answerCoverageRequestMessageId}
+            AND assistant_message_id IS NULL
+        `.execute(db);
+      }
+
       await sql`
         UPDATE conversations SET updated_at = now() WHERE id = ${input.conversationId} AND workspace_id = ${input.workspaceId}
       `.execute(db);

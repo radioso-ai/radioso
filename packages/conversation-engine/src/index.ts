@@ -314,6 +314,7 @@ export class DefaultConversationEngine implements ConversationEngine {
             ? { routineReentryGate: input.coverageRoutineActivator.reentryGate }
             : {}),
           turnContext: selectedTurn,
+          inputEventAlreadyAppended: true,
         });
       } catch (error) {
         coverageRoutineEvaluationFailed = true;

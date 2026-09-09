@@ -14,20 +14,21 @@ describe("Audience Pulse semantic coverage eligibility", () => {
   });
 });
 
-it("keeps exclusive recorded coverage buckets and legacy members in the topic report", () => {
+it("keeps provisional coverage unassessed and reserves legacy for absent assessments", () => {
   const report = buildAudiencePulseReport({
     period: { start: new Date("2026-01-01T00:00:00.000Z"), end: new Date("2026-02-01T00:00:00.000Z") },
     generatedAt: new Date("2026-02-01T00:00:00.000Z"), isFirstCensus: false,
-    coverage: { populationSize: 2, sampleSize: 2, sampled: false, facetReadyQuestionCount: 2 },
+    coverage: { populationSize: 3, sampleSize: 3, sampled: false, facetReadyQuestionCount: 3 },
     weeklyVolume: [],
     population: [
       { id: "a", reference: { messageId: "a", conversationId: "c1" }, question: "A", weekStart: "2026-01-01T00:00:00.000Z", channel: null, grounding: "grounded", contentGapEligible: false, answerCoverage: { availability: "assessed", coverage: "answered", reason: "sufficient_evidence", schemaVersion: 1 } },
       { id: "b", reference: { messageId: "b", conversationId: "c2" }, question: "B", weekStart: "2026-01-01T00:00:00.000Z", channel: null, grounding: "no_support", contentGapEligible: true, legacyCoverage: true },
+      { id: "c", reference: { messageId: "c", conversationId: "c3" }, question: "C", weekStart: "2026-01-01T00:00:00.000Z", channel: null, grounding: "grounded", contentGapEligible: false, legacyCoverage: false },
     ],
-    topics: [{ id: "topic", title: "Topic", description: "Topic", evidenceIds: ["a", "b"] }],
+    topics: [{ id: "topic", title: "Topic", description: "Topic", evidenceIds: ["a", "b", "c"] }],
     model: { summary: "Summary", themes: [], recommendations: [], caveats: [] },
   });
-  expect(report.themes[0]?.coverage).toEqual({ answered: 1, partial: 0, unanswered: 0, unclear: 0, unassessed: 0, legacy: 1, reasons: { sufficient_evidence: 1 } });
+  expect(report.themes[0]?.coverage).toEqual({ answered: 1, partial: 0, unanswered: 0, unclear: 0, unassessed: 1, legacy: 1, reasons: { sufficient_evidence: 1 } });
 });
 
 it("never persists unresolved visitor text in a Pulse report", () => {

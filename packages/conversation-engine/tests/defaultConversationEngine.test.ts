@@ -975,6 +975,10 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
     expect(input.routineRunner?.resume).toHaveBeenCalledWith(expect.objectContaining({ activationTurn: true }));
     expect(input.selector.select).not.toHaveBeenCalled();
     expect(result.response.answer).toBe("I can connect you with support.");
+    expect(vi.mocked(input.stores.appendEvent).mock.calls.map(([event]) => event.id)).toEqual([
+      "input_1",
+      expect.any(String),
+    ]);
   });
 
   it("keeps post-evidence coverage and reaction stages when a routine short-circuits composition", async () => {
@@ -1038,6 +1042,10 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
     expect(stageIds).toContain("answer_coverage_assessment");
     expect(stageIds).toContain("routine:support");
     expect(new Set(stageIds).size).toBe(stageIds.length);
+    expect(vi.mocked(input.stores.appendEvent).mock.calls.map(([event]) => event.id)).toEqual([
+      "input_1",
+      expect.any(String),
+    ]);
   });
 
   it.each([false, true])("does not resume or replace an active routine that yielded before the %s coverage pass", async (stream) => {
@@ -1259,6 +1267,10 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
         expect.objectContaining({ routineId: "handoff", decision: "skipped" }),
       ]),
     }));
+    expect(vi.mocked(input.stores.appendEvent).mock.calls.map(([event]) => event.id)).toEqual([
+      "input_1",
+      expect.any(String),
+    ]);
   });
 
   it("resumes an active routine before normal selection and short-circuits select/dispatch/compose", async () => {

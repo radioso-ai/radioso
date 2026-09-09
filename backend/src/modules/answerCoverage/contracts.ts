@@ -73,6 +73,8 @@ export type AnswerCoverageRecord = AnswerCoverageAssessment & {
   requestMessageId: string;
   originatingTurnId: string;
   contextualizedRequest: string;
+  /** Present only after the exact assistant turn that evaluated this request commits. */
+  assistantMessageId?: string;
   schemaVersion: number;
   /** Absent means evaluation was never completed; evaluated with zero reactions means no match. */
   interactionEvaluationState?: "evaluated";

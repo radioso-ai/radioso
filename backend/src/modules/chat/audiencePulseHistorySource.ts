@@ -431,6 +431,7 @@ export class PostgresAudiencePulseHistorySource implements AudiencePulseHistoryS
     const evidence: AudiencePulseEvidence[] = rows.map((question) => {
       const answer = classifyAudiencePulseAnswerWindow(answerWindows.get(question.id) ?? []);
       const assessment = assessments.get(question.id);
+      const confirmedAssessment = assessment?.assistantMessageId ? assessment : undefined;
       return {
         id: question.id,
         reference: { messageId: question.id, conversationId: question.conversation_id },
@@ -438,10 +439,12 @@ export class PostgresAudiencePulseHistorySource implements AudiencePulseHistoryS
         weekStart: audiencePulseWeekStartUtc(question.created_at),
         channel: question.source_channel,
         grounding: answer.grounding,
-        ...(assessment ? { answerCoverage: assessment, legacyCoverage: false } : { legacyCoverage: true }),
-        contentGapEligible: assessment
-          ? audiencePulseCoverageGapEligible(assessment)
-          : answer.contentGapEligible,
+        ...(confirmedAssessment
+          ? { answerCoverage: confirmedAssessment, legacyCoverage: false }
+          : assessment ? { legacyCoverage: false } : { legacyCoverage: true }),
+        contentGapEligible: confirmedAssessment
+          ? audiencePulseCoverageGapEligible(confirmedAssessment)
+          : assessment ? false : answer.contentGapEligible,
       };
     });
 

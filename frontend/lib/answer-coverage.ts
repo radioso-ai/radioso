@@ -29,6 +29,19 @@ export interface AnswerCoverageAssessment {
   assessedAt?: string
 }
 
+const answerCoverageReasonsByCoverage = {
+  answered: ['sufficient_evidence'],
+  partial: ['insufficient_evidence', 'conflicting_evidence', 'intentional_scope_boundary'],
+  unanswered: ['insufficient_evidence', 'conflicting_evidence', 'intentional_scope_boundary'],
+  unclear: ['ambiguous_request'],
+} as const satisfies Record<AnswerCoverageValue, readonly AnswerCoverageReason[]>
+
+export const compatibleAnswerCoverageReasons = (
+  coverage: readonly AnswerCoverageValue[],
+): AnswerCoverageReason[] => Array.from(new Set(
+  coverage.flatMap((value) => answerCoverageReasonsByCoverage[value]),
+))
+
 export interface AnswerCoverageInteractionTrace {
   state: 'not_evaluated' | 'evaluated'
   consumedAssessment?: { coverage: AnswerCoverageValue; reason: AnswerCoverageReason }

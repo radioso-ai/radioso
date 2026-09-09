@@ -51,6 +51,11 @@ import {
   type SkillCapabilityDescriptor,
 } from '@/lib/api-skills'
 import { normalizeSkillName } from '@/lib/external-skills'
+import {
+  compatibleAnswerCoverageReasons,
+  type AnswerCoverageReason,
+  type AnswerCoverageValue,
+} from '@/lib/answer-coverage'
 import { cn } from '@/lib/utils'
 
 type DirectiveFormState = {
@@ -72,7 +77,7 @@ type DirectiveFormState = {
   // Carried invisibly through the dialog: the row toggle is the only control that changes this,
   // so editing a disabled directive's text must not flip it back on as a side effect of saving.
   enabled: boolean
-  coverageCriteria: { coverage: Array<'answered' | 'partial' | 'unanswered' | 'unclear'>; reasons?: Array<'sufficient_evidence' | 'insufficient_evidence' | 'conflicting_evidence' | 'ambiguous_request' | 'intentional_scope_boundary'> }
+  coverageCriteria: { coverage: AnswerCoverageValue[]; reasons?: AnswerCoverageReason[] }
 }
 
 // `default` mirrors AUTHORED_DIRECTIVE_STEERING_DEFAULT_PRIORITY in
@@ -166,6 +171,18 @@ const recognizedMentions = (directive: Directive): string[] =>
 const actionWithBinding = (action: string, skillName: string): string => {
   if (!skillName || mentionsSkill(action, skillName)) return action
   return `${action.trimEnd()} #${skillName}`.trim()
+}
+
+const coverageCriteriaForSelection = (
+  current: DirectiveFormState['coverageCriteria'],
+  coverage: AnswerCoverageValue[],
+): DirectiveFormState['coverageCriteria'] => {
+  const compatibleReasons = new Set(compatibleAnswerCoverageReasons(coverage))
+  const reasons = current.reasons?.filter((reason) => compatibleReasons.has(reason)) ?? []
+  return {
+    coverage,
+    ...(reasons.length > 0 ? { reasons } : {}),
+  }
 }
 
 const directiveToForm = (directive: Directive): DirectiveFormState => ({
@@ -1170,15 +1187,15 @@ export function AssistantDirectivesSection({
                   const selected = form.coverageCriteria.coverage.includes(coverage)
                   return (
                     <button key={coverage} type="button" role="checkbox" aria-checked={selected}
-                      onClick={() => setForm((current) => ({
-                        ...current,
-                        coverageCriteria: {
-                          ...current.coverageCriteria,
-                          coverage: selected
-                            ? current.coverageCriteria.coverage.filter((item) => item !== coverage)
-                            : [...current.coverageCriteria.coverage, coverage],
-                        },
-                      }))}
+                      onClick={() => setForm((current) => {
+                        const selectedCoverage = selected
+                          ? current.coverageCriteria.coverage.filter((item) => item !== coverage)
+                          : [...current.coverageCriteria.coverage, coverage]
+                        return {
+                          ...current,
+                          coverageCriteria: coverageCriteriaForSelection(current.coverageCriteria, selectedCoverage),
+                        }
+                      })}
                       className={cn('rounded-full border px-3 py-1.5 text-sm', selected ? 'border-primary bg-muted/40' : 'border-border text-muted-foreground')}
                     >{coverage.replaceAll('_', ' ')}</button>
                   )
@@ -1187,7 +1204,8 @@ export function AssistantDirectivesSection({
               <div className="flex flex-wrap gap-2">
                 {(['sufficient_evidence', 'insufficient_evidence', 'conflicting_evidence', 'ambiguous_request', 'intentional_scope_boundary'] as const).map((reason) => {
                   const selected = form.coverageCriteria.reasons?.includes(reason) ?? false
-                  return <button key={reason} type="button" role="checkbox" aria-checked={selected}
+                  const compatible = compatibleAnswerCoverageReasons(form.coverageCriteria.coverage).includes(reason)
+                  return <button key={reason} type="button" role="checkbox" aria-checked={selected} disabled={!compatible}
                     onClick={() => setForm((current) => {
                       const reasons = selected
                         ? (current.coverageCriteria.reasons ?? []).filter((item) => item !== reason)
@@ -1197,7 +1215,7 @@ export function AssistantDirectivesSection({
                       else delete coverageCriteria.reasons
                       return { ...current, coverageCriteria }
                     })}
-                    className={cn('rounded-full border px-3 py-1.5 text-xs', selected ? 'border-primary bg-muted/40' : 'border-border text-muted-foreground')}
+                    className={cn('rounded-full border px-3 py-1.5 text-xs disabled:cursor-not-allowed disabled:opacity-50', selected ? 'border-primary bg-muted/40' : 'border-border text-muted-foreground')}
                   >{reason.replaceAll('_', ' ')}</button>
                 })}
               </div>

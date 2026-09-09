@@ -74,6 +74,35 @@ describe("public chat presenter", () => {
     expect(result.answerSegments).toEqual([{ text: "Grounded answer." }]);
   });
 
+  it("removes coverage diagnostics from public JSON and done events without mutating the operator payload", async () => {
+    const operatorPayload = {
+      ...payload(),
+      answerCoverage: { availability: "assessed", unresolvedRequest: "Private request" },
+      interactionTrace: { state: "evaluated", decisions: [{ targetId: "routine-private" }] },
+      debug: { answerCoverage: { contextualizedRequest: "Private request" } },
+    };
+    const json = stripPublicChatCitationArtifacts(operatorPayload, true) as Record<string, unknown>;
+    const events = await collect(stripPublicStreamCitationArtifacts((async function* () {
+      yield {
+        type: "done" as const,
+        conversationId: "c1",
+        assistantMessageId: "m1",
+        route: { type: "retrieval", reason: "evidence_required" },
+        activitySummary: {},
+        activityTrace: {},
+        ...operatorPayload,
+      } as unknown as ChatStreamEvent;
+    })(), true));
+
+    expect(json).not.toHaveProperty("answerCoverage");
+    expect(json).not.toHaveProperty("interactionTrace");
+    expect(json).not.toHaveProperty("debug");
+    expect(events[0]).not.toHaveProperty("answerCoverage");
+    expect(events[0]).not.toHaveProperty("interactionTrace");
+    expect(events[0]).not.toHaveProperty("debug");
+    expect(operatorPayload.answerCoverage).toEqual(expect.objectContaining({ unresolvedRequest: "Private request" }));
+  });
+
   it("exposes labels and links but never internal identifiers when citation display is enabled", () => {
     const result = stripPublicChatCitationArtifacts(payload(), true) as Record<string, unknown>;
 

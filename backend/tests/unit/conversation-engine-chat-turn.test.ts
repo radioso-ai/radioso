@@ -262,6 +262,45 @@ const drivingEngine = (): { engine: ConversationEngine; dispatched: string[]; se
 };
 
 describe("runPreparedChatTurnWithConversationEngine", () => {
+  it("presents a typed coverage routine clarification without requiring a routine execution", async () => {
+    const result: ProcessTurnResult = {
+      sessionId: "conv_1",
+      events: [],
+      decision: { selected: [], reason: "routine_activation_clarification" },
+      outcomes: [],
+      response: {
+        answer: "Would you like a consultation or a callback?",
+        metadata: { skillName: "routine", skillOutcome: "clarification", skillStatus: "completed" },
+      },
+      routineClarificationRoutineIds: ["consultation", "callback"],
+      trace: { traceId: "clarification", startedAt: new Date(0).toISOString(), stages: [] },
+    };
+    const engine: ConversationEngine = {
+      attemptRoutine: async () => null,
+      processTurn: async () => result,
+      resumeAwaitingDecision: async () => ({ resumed: false, response: { answer: "" }, nextState: null }),
+      async *processTurnStream() { yield { type: "final" as const, result }; },
+    };
+    const input = {
+      engine,
+      session: session(),
+      chatAnswerPresenter,
+      turnSkillSelector: new ChatTurnSkillSelector([], new DefaultTurnSelectionStrategy()),
+      turnSkills: [],
+      query: "Arrange help",
+    };
+
+    await expect(runPreparedChatTurnWithConversationEngine(input)).resolves.toMatchObject({
+      presentation: { answer: "Would you like a consultation or a callback?" },
+    });
+    const events: RunPreparedChatTurnStreamWithConversationEngineEvent[] = [];
+    for await (const event of runPreparedChatTurnStreamWithConversationEngine(input)) events.push(event);
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "final",
+      presentation: expect.objectContaining({ answer: "Would you like a consultation or a callback?" }),
+    }));
+  });
+
   it("yields mapped, deduplicated progress while the engine remains blocked", async () => {
     let release!: () => void;
     const blocked = new Promise<void>((resolve) => {

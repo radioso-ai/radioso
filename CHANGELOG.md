@@ -9,6 +9,59 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [0.3.0] - 2026-09-09
+
+### Added
+
+- add agent draft revision publishing ([#1233](https://github.com/radioso-ai/radioso/pull/1233))
+- add answer coverage signals ([#1228](https://github.com/radioso-ai/radioso/pull/1228))
+- **mcp:** expand operator MCP catalog to reads, proposals, and one act ([#1234](https://github.com/radioso-ai/radioso/pull/1234))
+- **mail:** brand transactional email and link escalations to the conversation ([#1227](https://github.com/radioso-ai/radioso/pull/1227))
+
+### Fixed
+
+- send a valid publish body and gate publication on draft changes ([#1239](https://github.com/radioso-ai/radioso/pull/1239))
+- remediate ReDoS, missing nosniff, and regex-based changelog matching ([#1238](https://github.com/radioso-ai/radioso/pull/1238))
+- remediate Dependabot vulnerabilities ([#1236](https://github.com/radioso-ai/radioso/pull/1236))
+- correct Test Chat request and navigation states ([#1237](https://github.com/radioso-ai/radioso/pull/1237))
+- **observability:** drop browser-extension crashes from frontend error reports ([#1232](https://github.com/radioso-ai/radioso/pull/1232))
+- **audience-pulse:** requeue stale facets and stop truncating evidence conversations ([#1231](https://github.com/radioso-ai/radioso/pull/1231))
+
+### Documentation
+
+- lead the readme with the cloud, sharpen the license carve-out ([#1222](https://github.com/radioso-ai/radioso/pull/1222))
+
+### Internal
+
+- **deps:** bump multer from 2.2.0 to 2.3.0 ([#1229](https://github.com/radioso-ai/radioso/pull/1229))
+- **deps:** bump next from 16.3.1 to 16.3.3 ([#1235](https://github.com/radioso-ai/radioso/pull/1235))
+- upgrade Speckit to v1.0.4 ([#1223](https://github.com/radioso-ai/radioso/pull/1223))
+
+### Other
+
+- Update readme.md ([`60aef29`](https://github.com/radioso-ai/radioso/commit/60aef29b25774a41c8bc00ee50c1e422bd16c6d5))
+- Update readme.md ([`6a95d4b`](https://github.com/radioso-ai/radioso/commit/6a95d4b752661f8aa09860209e2612d64ba79384))
+- Update readme.md ([`c337118`](https://github.com/radioso-ai/radioso/commit/c33711807dbebe2039b6ad9212a626b598e808e7))
+
+### Database migrations
+
+This release adds 12 migrations. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `171_agent_draft_revisions.sql`
+- `171_answer_coverage_assessments.sql`
+- `172_agent_private_test_conversations.sql`
+- `172_answer_coverage_authoring_criteria.sql`
+- `173_agent_test_executions.sql`
+- `173_answer_coverage_reaction_assessment_conversation.sql`
+- `174_answer_coverage_reaction_routine_id_text.sql`
+- `175_answer_coverage_assessment_assistant_message.sql`
+- `175_revision_eval_runs.sql`
+- `178_agent_revision_published_versions.sql`
+- `179_test_and_revision_eval_start_idempotency.sql`
+- `180_test_execution_side_retained_marker.sql`
+
+[0.3.0]: https://github.com/radioso-ai/radioso/compare/v0.2.0...v0.3.0
+
 ## [0.2.0] - 2026-09-08
 
 ### Added

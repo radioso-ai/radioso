@@ -55,6 +55,22 @@ const toPersistedTransitionKind = (kind: CensusTopicTransitionKind): TopicTransi
   TOPIC_TRANSITION_KIND_PARITY[kind];
 
 /**
+ * Rows per bulk facet-requeue statement. 200 rows keeps bound parameters (3 per
+ * row here) far under Postgres's ~65535 limit while keeping each statement's lock
+ * footprint small; a large excluded-id backlog becomes `ceil(n / 200)` concurrent
+ * statements instead of `n` individual round trips.
+ */
+export const FACET_REQUEUE_CHUNK_SIZE = 200;
+
+const chunk = <T>(items: readonly T[], size: number): T[][] => {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+};
+
+/**
  * What `censusService` needs to read a stored facet: message id, facet text, its
  * embedding (`null` when not yet embedded), and the prompt version it was extracted
  * at. Declared locally and narrower than `MessageFacetRepositoryPort`
@@ -79,6 +95,19 @@ export interface CensusFacetRecord {
 
 export interface CensusEmbeddingSpaceResolver {
   resolveClusteringSpace(input: { workspaceId: string }): Promise<{ id: string }>;
+}
+
+/**
+ * Requeues messages for facet extraction when this run found no current facet for
+ * them -- missing entirely, or extracted under a stale prompt/embedding version.
+ * Declared locally, narrower than `FacetExtractionJobStore.enqueueMany`
+ * (`modules/facets/contracts.ts`) -- see `CensusFacetSource` above for why
+ * audiencePulse doesn't import facets' contract directly. Composition can satisfy
+ * this with the same `FacetExtractionJobRepository` instance `facets` already uses:
+ * its wider `enqueueMany` structurally satisfies this narrower shape.
+ */
+export interface CensusFacetRequeuePort {
+  enqueueMany(input: { messageIds: string[]; workspaceId: string; restartTerminal?: boolean }): Promise<void>;
 }
 
 export interface CensusRunTopicResult {
@@ -113,6 +142,8 @@ export interface CensusRunResult {
   facetReadyQuestionCount: number;
   /** Whether every question in the run had a current embedded facet. */
   fullyFacetReady: boolean;
+  /** Excluded messages requeued for facet extraction this run (best-effort; 0 when no facetRequeue dependency is configured). */
+  requeuedForExtraction: number;
   topics: CensusRunTopicResult[];
   /** Topic identities retired by this fully facet-ready run. */
   dissolvedTopicIds: string[];
@@ -131,6 +162,8 @@ export interface CensusServiceDependencies {
   /** The facet extraction prompt version a stored facet must carry to count as current. */
   currentFacetPromptVersion: string;
   telemetryService?: Pick<TelemetryService, "emit">;
+  /** Optional: when supplied, a run requeues any excluded message for re-extraction so a later refresh can converge. Omitted in tests/contexts that don't need backfill. */
+  facetRequeue?: CensusFacetRequeuePort;
 }
 
 interface ClusterableFacet {
@@ -150,8 +183,9 @@ const partitionEligibleQuestions = (input: {
   facetsByMessageId: ReadonlyMap<string, CensusFacetRecord>;
   currentFacetPromptVersion: string;
   currentEmbeddingProfileId: string;
-}): { clusterable: ClusterableFacet[]; excludedCount: number } => {
+}): { clusterable: ClusterableFacet[]; excludedCount: number; excludedIds: string[] } => {
   const clusterable: ClusterableFacet[] = [];
+  const excludedIds: string[] = [];
   let excludedCount = 0;
   for (const messageId of input.eligibleIds) {
     const facet = input.facetsByMessageId.get(messageId);
@@ -161,11 +195,12 @@ const partitionEligibleQuestions = (input: {
       && facet.embeddingProfileId === input.currentEmbeddingProfileId;
     if (!isCurrent) {
       excludedCount += 1;
+      excludedIds.push(messageId);
       continue;
     }
     clusterable.push({ messageId, facetText: facet.facetText, vector: facet.embedding! });
   }
-  return { clusterable, excludedCount };
+  return { clusterable, excludedCount, excludedIds };
 };
 
 /**
@@ -288,12 +323,30 @@ export class CensusService {
       : await this.dependencies.facetSource.listForWindow({ workspaceId, messageIds: [...eligibleIds] });
     const facetsByMessageId = new Map(facetRecords.map((record) => [record.messageId, record]));
 
-    const { clusterable, excludedCount } = partitionEligibleQuestions({
+    const { clusterable, excludedCount, excludedIds } = partitionEligibleQuestions({
       eligibleIds,
       facetsByMessageId,
       currentFacetPromptVersion: this.dependencies.currentFacetPromptVersion,
       currentEmbeddingProfileId: currentEmbeddingSpace.id,
     });
+
+    // Best-effort: a requeue failure for one or all chunks must never fail the
+    // whole census run, since the report below still computes normally from
+    // whatever facets are currently available. Convergence over a later refresh is
+    // preferred to an aborted run. Chunking bounds how many statements fire at once
+    // for a large excluded-id backlog (see FACET_REQUEUE_CHUNK_SIZE).
+    let requeuedForExtraction = 0;
+    if (excludedIds.length > 0 && this.dependencies.facetRequeue) {
+      const batches = chunk(excludedIds, FACET_REQUEUE_CHUNK_SIZE);
+      const outcomes = await Promise.allSettled(
+        batches.map((batch) =>
+          this.dependencies.facetRequeue!.enqueueMany({ messageIds: batch, workspaceId, restartTerminal: true })),
+      );
+      requeuedForExtraction = outcomes.reduce(
+        (sum, outcome, index) => (outcome.status === "fulfilled" ? sum + batches[index].length : sum),
+        0,
+      );
+    }
 
     const censusItems: CensusItem[] = clusterable.map((facet) => ({
       id: facet.messageId,
@@ -499,6 +552,7 @@ export class CensusService {
         populationSize,
         unclassifiedCount,
         facetReadyQuestionCount: clusterable.length,
+        requeuedForExtractionCount: requeuedForExtraction,
         topicCount: topics.length,
         clusteringDurationMs,
         namingDurationMs,
@@ -535,6 +589,7 @@ export class CensusService {
       unclassifiedCount,
       facetReadyQuestionCount: clusterable.length,
       fullyFacetReady,
+      requeuedForExtraction,
       topics: reportTopics,
       dissolvedTopicIds: fullyFacetReady ? [...dissolvedTopicIds] : [],
       dissolvedTopics,

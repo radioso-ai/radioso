@@ -25,7 +25,6 @@ import {
   NO_GREETING_LOCALE_LABEL,
   resolveAssistantLocaleInput,
 } from '@/components/dashboard/settings/assistant-locale-options'
-import { DEFAULT_ASSISTANT_THEME } from '@/components/dashboard/settings/assistant-theme-form-helpers'
 import { AgentBundleExportCard } from '@/components/dashboard/settings/agent-bundle-export-card'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { SettingsTabShell } from '@/components/dashboard/settings/settings-tab-shell'
@@ -58,6 +57,7 @@ import {
   type RetrievalDefaults,
 } from '@/lib/api'
 import { useWorkspace } from '@/lib/workspace-context'
+import { registerAgentDraftSaver } from '@/lib/agent-draft-save-port'
 
 const getOrganizationNameCacheKey = (accountId: string) => `radioso.organizationName:${accountId}`
 
@@ -113,6 +113,14 @@ const normalizeAssistantBehaviorSettingsByAgent = (agentId: string | undefined, 
   sourceScope: agentId ? settings.sourceScope ?? { mode: 'all' } : undefined,
 })
 
+const liveAssistantBehaviorSettings = (settings: AssistantBehaviorSettings) => {
+  const { customInstruction, ...liveSettings } = settings
+  void customInstruction
+  return liveSettings
+}
+
+type SaveState = { state: 'idle' | 'saved' | 'saving' | 'error'; message?: string | null }
+
 export function WorkspaceAssistantChannelsTab({
   accountId,
   mode,
@@ -121,6 +129,7 @@ export function WorkspaceAssistantChannelsTab({
   routeState,
   profileHref,
   onSaveStateChange,
+  onDraftDirtyChange,
 }: {
   accountId: string
   mode: 'workspace' | 'assistant' | 'channels'
@@ -129,7 +138,8 @@ export function WorkspaceAssistantChannelsTab({
   agentSection?: AgentSectionId
   routeState?: DashboardRouteState
   profileHref?: string
-  onSaveStateChange?: (input: { state: 'idle' | 'saved' | 'saving' | 'error'; message?: string | null }) => void
+  onSaveStateChange?: (input: SaveState) => void
+  onDraftDirtyChange?: (dirty: boolean) => void
 }) {
   const router = useRouter()
   const { activeWorkspaceId, activeWorkspace, workspaces, renameWorkspace, deleteWorkspace, isLoading: isWorkspaceLoading } = useWorkspace()
@@ -168,6 +178,13 @@ export function WorkspaceAssistantChannelsTab({
   const [isAssistantBehaviorLoading, setIsAssistantBehaviorLoading] = useState(mode === 'assistant')
   const [isAssistantLogoSaving, setIsAssistantLogoSaving] = useState(false)
   const { setSaveState, setSaveError, saveSequenceRef } = useSettingsSaveStatus(onSaveStateChange)
+  const dispatchDraftSaved = useCallback(() => {
+    if (agentId) window.dispatchEvent(new CustomEvent('radioso:agent-draft-saved', { detail: { agentId } }))
+  }, [agentId])
+  const handleRevisionSaveStateChange = useCallback((next: SaveState) => {
+    onSaveStateChange?.(next)
+    if (next.state === 'saved') dispatchDraftSaved()
+  }, [dispatchDraftSaved, onSaveStateChange])
   const [assistantSettingsError, setAssistantSettingsError] = useState<string | null>(null)
   const [assistantLocaleInput, setAssistantLocaleInput] = useState(NO_GREETING_LOCALE_LABEL)
   const [selectedChannel, setSelectedChannel] = useState<ChannelId | null>(null)
@@ -178,7 +195,7 @@ export function WorkspaceAssistantChannelsTab({
   const isChannelId = (id: AgentSectionId | undefined): id is ChannelId =>
     id === 'web-chat' || id === 'api-channel' || id === 'mcp-channel' || id === 'slack-channel' || id === 'whatsapp-channel'
   const resolvedChannel: ChannelId | null = isChannelId(agentSection) ? agentSection : selectedChannel
-  const channelIndexEnabled = !agentSection
+  const channelIndexEnabled = !agentSection || agentSection === 'channels-overview'
   const organizationDraftVersionRef = useRef(0)
   const workspaceDraftVersionRef = useRef(0)
   const anonDraftVersionRef = useRef(0)
@@ -186,6 +203,8 @@ export function WorkspaceAssistantChannelsTab({
   // the replaced logo URL, whose stored object the upload already deleted.
   const assistantLogoWriteRef = useRef(0)
   const assistantBehaviorDraftVersionRef = useRef(0)
+  const privateInstructionSaveRef = useRef(0)
+  const liveBehaviorSaveRef = useRef(0)
   const canManageOrganization = currentAccountRole === 'owner' || currentAccountRole === 'admin'
   const canManageWorkspaceLifecycle = currentAccountRole === 'owner' || currentAccountRole === 'admin'
   const loadGeneralSettings = useCallback(async () => {
@@ -221,11 +240,12 @@ export function WorkspaceAssistantChannelsTab({
   const updateAssistantBehaviorSettings = useCallback(async (
     data: AssistantBehaviorSettings,
     saved: AssistantBehaviorSettings,
+    scope: 'draft' | 'live',
   ) => {
     if (!agentId) {
       throw new Error('Assistant behavior settings require an agent')
     }
-    return agentsApi.updateBehaviorSettings(agentId, data, saved)
+    return agentsApi.updateBehaviorSettings(agentId, data, saved, scope)
   }, [agentId])
 
   useEffect(() => {
@@ -529,20 +549,76 @@ export function WorkspaceAssistantChannelsTab({
         )
       : false
 
-  const hasAssistantBehaviorChanges =
-    assistantBehaviorSettings && savedAssistantBehaviorSettings
-      ? (
-          assistantBehaviorSettings.customInstruction !== savedAssistantBehaviorSettings.customInstruction ||
-          assistantBehaviorSettings.suggestedQuestionsEnabled !== savedAssistantBehaviorSettings.suggestedQuestionsEnabled ||
-          assistantBehaviorSettings.assistantLinkUtmEnabled !== savedAssistantBehaviorSettings.assistantLinkUtmEnabled ||
-          assistantBehaviorSettings.citationDisplayEnabled !== savedAssistantBehaviorSettings.citationDisplayEnabled ||
-          assistantBehaviorSettings.handoffOnRetrievalMiss !== savedAssistantBehaviorSettings.handoffOnRetrievalMiss ||
-          JSON.stringify(assistantBehaviorSettings.theme ?? DEFAULT_ASSISTANT_THEME) !==
-            JSON.stringify(savedAssistantBehaviorSettings.theme ?? DEFAULT_ASSISTANT_THEME) ||
-          JSON.stringify(assistantBehaviorSettings.branding ?? null) !==
-            JSON.stringify(savedAssistantBehaviorSettings.branding ?? null)
+  const hasPrivateInstructionChanges = Boolean(
+    assistantBehaviorSettings
+    && savedAssistantBehaviorSettings
+    && assistantBehaviorSettings.customInstruction !== savedAssistantBehaviorSettings.customInstruction,
+  )
+
+  const hasLiveAssistantBehaviorChanges = Boolean(
+    assistantBehaviorSettings
+    && savedAssistantBehaviorSettings
+    && JSON.stringify(liveAssistantBehaviorSettings(assistantBehaviorSettings))
+      !== JSON.stringify(liveAssistantBehaviorSettings(savedAssistantBehaviorSettings)),
+  )
+
+  useEffect(() => {
+    // Only the private instruction participates in the agent revision. Names and
+    // all other profile settings apply immediately and must never enable Save Draft.
+    onDraftDirtyChange?.(hasPrivateInstructionChanges)
+  }, [hasPrivateInstructionChanges, onDraftDirtyChange])
+
+  useEffect(() => {
+    const saveDraftNow = async () => {
+      if (!agentId || !assistantBehaviorSettings || !savedAssistantBehaviorSettings) {
+        throw new Error('The agent editor is still loading.')
+      }
+      if (!hasPrivateInstructionChanges) return
+      const saveId = privateInstructionSaveRef.current + 1
+      privateInstructionSaveRef.current = saveId
+      const draftAtSaveStart = assistantBehaviorSettings
+      setSaveState('saving')
+      setSaveError(null)
+      try {
+        const updated = normalizeAssistantBehaviorSettingsByAgent(
+          agentId,
+          await updateAssistantBehaviorSettings(draftAtSaveStart, savedAssistantBehaviorSettings, 'draft'),
         )
-      : false
+        if (privateInstructionSaveRef.current !== saveId) {
+          throw new Error('A newer draft save superseded this request.')
+        }
+        setSavedAssistantBehaviorSettings(updated)
+        // Agent updates return a full record. Keep live fields currently being
+        // edited rather than replacing them with the record returned by this
+        // private-only save.
+        setAssistantBehaviorSettings((current) => current ? { ...updated, ...current } : updated)
+        setAssistantSettingsError(null)
+        setSaveState('saved')
+        window.dispatchEvent(new CustomEvent('radioso:agent-draft-saved', { detail: { agentId } }))
+      } catch (error) {
+        if (privateInstructionSaveRef.current === saveId) {
+          setAssistantSettingsError(getApiErrorMessage(error, 'Failed to save draft changes.'))
+          setSaveState('error')
+          setSaveError('Failed to save draft changes')
+        }
+        throw error
+      }
+    }
+    const unregister = mode === 'assistant' && agentId
+      ? registerAgentDraftSaver(agentId, {
+          save: saveDraftNow,
+          isDirty: () => hasPrivateInstructionChanges,
+        })
+      : undefined
+    const handler = (event: Event) => {
+      if ((event as CustomEvent<{ agentId?: string }>).detail?.agentId === agentId) void saveDraftNow().catch(() => undefined)
+    }
+    if (mode === 'assistant') window.addEventListener('radioso:save-agent-draft', handler)
+    return () => {
+      unregister?.()
+      if (mode === 'assistant') window.removeEventListener('radioso:save-agent-draft', handler)
+    }
+  }, [agentId, assistantBehaviorSettings, hasPrivateInstructionChanges, mode, savedAssistantBehaviorSettings, setSaveError, setSaveState, updateAssistantBehaviorSettings])
 
   useEffect(() => {
     if (!accountId || isOrganizationLoading || !canManageOrganization) {
@@ -678,31 +754,37 @@ export function WorkspaceAssistantChannelsTab({
   }, [anonSettings, hasAssistantChanges, saveSequenceRef, savedAnonSettings, setSaveError, setSaveState, updateGeneralSettings])
 
   useEffect(() => {
-    if (!assistantBehaviorSettings || !savedAssistantBehaviorSettings || !hasAssistantBehaviorChanges) {
+    if (!assistantBehaviorSettings || !savedAssistantBehaviorSettings || !hasLiveAssistantBehaviorChanges) {
       return
     }
 
     const timeout = window.setTimeout(() => {
       void (async () => {
-        const draftVersionAtRequestStart = assistantBehaviorDraftVersionRef.current
-        const saveId = saveSequenceRef.current + 1
-        saveSequenceRef.current = saveId
+        const saveId = liveBehaviorSaveRef.current + 1
+        liveBehaviorSaveRef.current = saveId
+        const liveAtSaveStart = assistantBehaviorSettings
         setSaveState('saving')
         setSaveError(null)
         try {
           const updated = normalizeAssistantBehaviorSettingsByAgent(
             agentId,
-            await updateAssistantBehaviorSettings(assistantBehaviorSettings, savedAssistantBehaviorSettings),
+            await updateAssistantBehaviorSettings(liveAtSaveStart, savedAssistantBehaviorSettings, 'live'),
           )
-          if (saveSequenceRef.current !== saveId) return
-          setSavedAssistantBehaviorSettings(updated)
+          if (liveBehaviorSaveRef.current !== saveId) return
+          // The live write must not turn an unsaved private instruction into a
+          // saved-looking value when the endpoint returns the whole agent.
+          setSavedAssistantBehaviorSettings((current) => current ? {
+            ...updated,
+            customInstruction: current.customInstruction,
+          } : updated)
           setAssistantSettingsError(null)
-          if (assistantBehaviorDraftVersionRef.current === draftVersionAtRequestStart) {
-            setAssistantBehaviorSettings(updated)
-            setSaveState('saved')
-          }
+          setAssistantBehaviorSettings((current) => current ? {
+            ...updated,
+            ...current,
+          } : updated)
+          setSaveState('saved')
         } catch (error) {
-          if (saveSequenceRef.current !== saveId) return
+          if (liveBehaviorSaveRef.current !== saveId) return
           console.error('Failed to update assistant behavior settings:', error)
           setAssistantSettingsError(getApiErrorMessage(error, 'Failed to update assistant settings.'))
           setSaveState('error')
@@ -715,8 +797,7 @@ export function WorkspaceAssistantChannelsTab({
   }, [
     agentId,
     assistantBehaviorSettings,
-    hasAssistantBehaviorChanges,
-    saveSequenceRef,
+    hasLiveAssistantBehaviorChanges,
     savedAssistantBehaviorSettings,
     setSaveError,
     setSaveState,
@@ -837,13 +918,17 @@ export function WorkspaceAssistantChannelsTab({
 
           {mode === 'assistant' && agentId && showSection('context-variables') ? (
           <section id="assistant-context-variables" className="space-y-6 scroll-mt-24">
-            <AssistantContextVariablesSection agentId={agentId} onSaveStateChange={onSaveStateChange} />
+            <AssistantContextVariablesSection
+              agentId={agentId}
+              onSaveStateChange={onSaveStateChange}
+              onEnablementSaved={dispatchDraftSaved}
+            />
           </section>
           ) : null}
 
           {mode === 'assistant' && agentId && showSection('directives') ? (
           <section id="assistant-directives" className="space-y-6 scroll-mt-24">
-            <AssistantDirectivesSection agentId={agentId} onSaveStateChange={onSaveStateChange} />
+            <AssistantDirectivesSection agentId={agentId} onSaveStateChange={handleRevisionSaveStateChange} />
           </section>
           ) : null}
 
@@ -853,7 +938,7 @@ export function WorkspaceAssistantChannelsTab({
               accountId={accountId}
               agentId={agentId}
               routeState={routeState}
-              onSaveStateChange={onSaveStateChange}
+              onSaveStateChange={handleRevisionSaveStateChange}
             />
           </section>
           ) : null}
@@ -899,7 +984,7 @@ export function WorkspaceAssistantChannelsTab({
               <SettingsRow
                 icon={<MessageCircle className="h-5 w-5 text-primary" />}
                 title={CHANNEL_TITLES['whatsapp-channel']}
-                description="Reply to WhatsApp Business messages with this agent."
+                description="Manage the workspace WhatsApp connection."
                 onClick={() => setSelectedChannel('whatsapp-channel')}
               />
             </SettingsRowList>

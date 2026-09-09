@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createPublishedRoutineRegistrationSource } from "../../src/app/composition/routineDefinitionSource.js";
 import type { RoutineDefinitionRepository } from "../../src/db/repositories/routineDefinitionRepository.js";
 import type { RoutineDefinition } from "../../src/modules/routines/public.js";
+import type { AgentRevision } from "../../src/modules/agents/agentRevision.js";
 
 const DEFINITION_ID = "11111111-1111-4111-9111-111111111111";
 
@@ -25,6 +26,37 @@ const definition: RoutineDefinition = {
 type SourceRepository = Pick<RoutineDefinitionRepository, "listPublishedByAgent" | "listByAgent" | "findPinnedById" | "findById">;
 
 describe("DB-backed routine composition source", () => {
+  it("loads the complete routine closure from a pinned agent revision instead of mutable routine rows", async () => {
+    const mutableDefinition = { ...definition, name: "mutable latest" };
+    const frozenDefinition = { ...definition, activation: { ...definition.activation, priority: 12 } };
+    const repository = {
+      listPublishedByAgent: vi.fn(async () => [mutableDefinition]),
+      listByAgent: vi.fn(async () => [mutableDefinition]),
+      findPinnedById: vi.fn(async () => mutableDefinition),
+      findById: vi.fn(async () => mutableDefinition),
+    } as SourceRepository;
+    const frozenRevision: AgentRevision = {
+      id: "77777777-7777-4777-8777-777777777777",
+      snapshot: { customInstruction: "", directives: [], routines: [frozenDefinition], contextVariableEnablements: [] },
+      sourceDraftGeneration: 1,
+      sourceBasePublishedRevisionId: null,
+      createdAt: new Date(),
+      publishedAt: new Date(),
+    };
+    const revisionReader = { findRevision: vi.fn(async () => frozenRevision) };
+    const source = createPublishedRoutineRegistrationSource(repository, { revisionReader });
+
+    const registrations = await source.load({ agentId: "agent_1", workspaceId: "ws_1", agentRevisionId: frozenRevision.id });
+
+    expect(registrations.map((registration) => registration.trigger.priority)).toEqual([12]);
+    expect(repository.listPublishedByAgent).not.toHaveBeenCalled();
+    expect(revisionReader.findRevision).toHaveBeenCalledWith({
+      agentId: "agent_1",
+      workspaceId: "ws_1",
+      revisionId: frozenRevision.id,
+    });
+  });
+
   it("carries persisted coverage criteria into the engine activation", async () => {
     const repository = {
       listPublishedByAgent: vi.fn(async () => [{ ...definition, activation: { ...definition.activation, coverageCriteria: { coverage: ["partial"], reasons: ["insufficient_evidence"] } } }]),
@@ -33,6 +65,7 @@ describe("DB-backed routine composition source", () => {
     const registrations = await createPublishedRoutineRegistrationSource(repository).load({ agentId: "agent_1" });
     expect(registrations[0].routine.activation?.coverageCriteria).toEqual({ coverage: ["partial"], reasons: ["insufficient_evidence"] });
   });
+
   it("compiles published definitions with the definition id as the routine id (scope-tag identity)", async () => {
     const repository = {
       listPublishedByAgent: vi.fn(async () => [definition]),

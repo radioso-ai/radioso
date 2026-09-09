@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
+import type { Transaction } from "kysely";
 
-import type { Db } from "../../shared/infra/kysely/types.js";
-import { currentTimestamp, optionalTimestampMatch, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { DB, Db } from "../../shared/infra/kysely/types.js";
+import { currentTimestamp, optionalTimestampMatch, toJsonb, toSanitizedJsonb, transactionAdvisoryLock } from "../../shared/infra/kysely/sqlHelpers.js";
+import { agentRevisionLockKey, withAgentDraftMutation } from "../../db/repositories/agentDraftMutation.js";
+import { parseAgentRevisionSnapshot } from "../agents/public.js";
 import { mergeSkillConfig } from "./configMerge.js";
 import type { AgentSkillInvocationMode, AgentSkillKind, AgentSkillSpine } from "./domain.js";
 
@@ -96,24 +99,37 @@ const mapRow = (row: AgentSkillRow): AgentSkillSpine => ({
 export class AgentSkillRepository implements AgentSkillRepositoryPort {
   constructor(private readonly db: Db) {}
 
+  /**
+   * Also projects the new skill into the agent's draft revision snapshot, in the same
+   * transaction, so a conversation pinned to a frozen revision never observes this write
+   * (see `agentSkillTurnSkillProvider.ts`). When the draft predates skill tracking
+   * (`snapshot.agentSkills` absent), it re-reads the live table instead of seeding just
+   * this one row, so pre-existing skills are not silently dropped from the snapshot.
+   */
   async create(input: AgentSkillCreateRecord): Promise<AgentSkillSpine> {
-    const row = await this.db
-      .insertInto("agent_skills")
-      .values({
-        id: randomUUID(),
-        workspace_id: input.workspaceId,
-        agent_id: input.agentId,
-        skill_name: input.skillName,
-        kind: input.kind,
-        target_type: input.targetType ?? null,
-        target_id: input.targetId ?? null,
-        config: toJsonb(input.config ?? {}),
-        invocation_mode: input.invocationMode,
-        enabled: input.enabled ?? true,
-      })
-      .returningAll()
-      .executeTakeFirstOrThrow();
-    return mapRow(row);
+    return withAgentDraftMutation(this.db, input.workspaceId, input.agentId, async (trx, snapshot) => {
+      const row = await trx
+        .insertInto("agent_skills")
+        .values({
+          id: randomUUID(),
+          workspace_id: input.workspaceId,
+          agent_id: input.agentId,
+          skill_name: input.skillName,
+          kind: input.kind,
+          target_type: input.targetType ?? null,
+          target_id: input.targetId ?? null,
+          config: toJsonb(input.config ?? {}),
+          invocation_mode: input.invocationMode,
+          enabled: input.enabled ?? true,
+        })
+        .returningAll()
+        .executeTakeFirstOrThrow();
+      const spine = mapRow(row);
+      const agentSkills = snapshot.agentSkills
+        ? [...snapshot.agentSkills, spine]
+        : await new AgentSkillRepository(trx).listByAgent(input.workspaceId, input.agentId);
+      return { result: spine, snapshot: { ...snapshot, agentSkills } };
+    });
   }
 
   async findById(workspaceId: string, agentId: string, id: string): Promise<AgentSkillSpine | null> {
@@ -180,15 +196,34 @@ export class AgentSkillRepository implements AgentSkillRepositoryPort {
     return rows.map((row) => mapRow(row as AgentSkillRow));
   }
 
+  /**
+   * Also projects the outcome into the draft revision snapshot, inside the same
+   * transaction/lock the config-merge already runs in — unlike `create`, `update`
+   * deliberately tolerates a foreign/nonexistent `agentId` as a silent no-op (existing,
+   * tested contract: the row-scoped WHERE clause below simply matches nothing), so this
+   * cannot use `withAgentDraftMutation`, which requires a draft row to exist up front.
+   * `syncDraftAgentSkill` below only projects when a draft row for this agent actually
+   * exists; a real agent lacking one is a data-integrity condition this repository does
+   * not paper over.
+   */
   async update(
     workspaceId: string,
     agentId: string,
     id: string,
     input: AgentSkillUpdateRecord,
   ): Promise<AgentSkillSpine | null> {
-    return input.config !== undefined && input.replaceConfig === undefined
-      ? this.updateWithConfigMerge(workspaceId, agentId, id, input)
-      : this.applyUpdate(this.db, workspaceId, agentId, id, input, input.replaceConfig);
+    return this.db.transaction().execute(async (trx) => {
+      await transactionAdvisoryLock(agentRevisionLockKey(workspaceId, agentId)).execute(trx);
+      const updated = input.config !== undefined && input.replaceConfig === undefined
+        ? await this.updateWithConfigMerge(trx, workspaceId, agentId, id, input)
+        : await this.applyUpdate(trx, workspaceId, agentId, id, input, input.replaceConfig);
+      if (!updated) {
+        return null;
+      }
+      await this.syncDraftAgentSkill(trx, workspaceId, agentId, (agentSkills) =>
+        agentSkills?.map((skill) => (skill.id === id ? updated : skill)));
+      return updated;
+    });
   }
 
   /**
@@ -204,29 +239,33 @@ export class AgentSkillRepository implements AgentSkillRepositoryPort {
    * validateMergedConfig`, when supplied, runs against this merge - the actual config about to
    * be written, not the caller's pre-lock candidate - and can veto the write by throwing, so a
    * second concurrent patch that composes into an invalid config is refused instead of persisted.
+   *
+   * The transaction/lock this used to open for itself now comes from `update`'s enclosing
+   * `withAgentDraftMutation` call instead: that already holds a stronger, agent-scoped
+   * advisory lock serializing every draft-affecting writer for this agent, so the FOR
+   * UPDATE row lock below remains belt-and-suspenders rather than the sole guard.
    */
   private async updateWithConfigMerge(
+    trx: Transaction<DB>,
     workspaceId: string,
     agentId: string,
     id: string,
     input: AgentSkillUpdateRecord,
   ): Promise<AgentSkillSpine | null> {
-    return this.db.transaction().execute(async (trx) => {
-      const existing = await trx
-        .selectFrom("agent_skills")
-        .select("config")
-        .where("workspace_id", "=", workspaceId)
-        .where("agent_id", "=", agentId)
-        .where("id", "=", id)
-        .forUpdate()
-        .executeTakeFirst();
-      if (!existing) {
-        return null;
-      }
-      const mergedConfig = mergeSkillConfig((existing.config as Record<string, unknown> | null) ?? {}, input.config);
-      input.validateMergedConfig?.(mergedConfig);
-      return this.applyUpdate(trx, workspaceId, agentId, id, input, mergedConfig);
-    });
+    const existing = await trx
+      .selectFrom("agent_skills")
+      .select("config")
+      .where("workspace_id", "=", workspaceId)
+      .where("agent_id", "=", agentId)
+      .where("id", "=", id)
+      .forUpdate()
+      .executeTakeFirst();
+    if (!existing) {
+      return null;
+    }
+    const mergedConfig = mergeSkillConfig((existing.config as Record<string, unknown> | null) ?? {}, input.config);
+    input.validateMergedConfig?.(mergedConfig);
+    return this.applyUpdate(trx, workspaceId, agentId, id, input, mergedConfig);
   }
 
   private async applyUpdate(
@@ -259,13 +298,70 @@ export class AgentSkillRepository implements AgentSkillRepositoryPort {
     return row ? mapRow(row) : null;
   }
 
+  /**
+   * Also removes the skill from the draft revision snapshot in the same transaction
+   * (same "foreign agentId is a no-op" rationale as `update`).
+   */
   async remove(workspaceId: string, agentId: string, id: string): Promise<boolean> {
-    const result = await this.db
-      .deleteFrom("agent_skills")
+    return this.db.transaction().execute(async (trx) => {
+      await transactionAdvisoryLock(agentRevisionLockKey(workspaceId, agentId)).execute(trx);
+      const result = await trx
+        .deleteFrom("agent_skills")
+        .where("workspace_id", "=", workspaceId)
+        .where("agent_id", "=", agentId)
+        .where("id", "=", id)
+        .executeTakeFirst();
+      const deleted = (result?.numDeletedRows ?? 0n) > 0n;
+      if (!deleted) {
+        return false;
+      }
+      await this.syncDraftAgentSkill(trx, workspaceId, agentId, (agentSkills) =>
+        agentSkills?.filter((skill) => skill.id !== id));
+      return true;
+    });
+  }
+
+  /**
+   * Projects an already-applied agent_skills write into the draft revision snapshot,
+   * when (and only when) a draft row exists for this agent. `next` receives the
+   * currently-tracked list (`undefined` when this draft predates skill tracking) and
+   * either returns the updated list, or `undefined` to signal "not tracked yet" —
+   * which reads the live table (already reflecting the write this transaction just
+   * made) instead, so a draft that has never tracked skills is seeded with the full
+   * current set rather than silently starting from just this one change.
+   */
+  private async syncDraftAgentSkill(
+    trx: Transaction<DB>,
+    workspaceId: string,
+    agentId: string,
+    next: (agentSkills: AgentSkillSpine[] | undefined) => AgentSkillSpine[] | undefined,
+  ): Promise<void> {
+    const draft = await trx
+      .selectFrom("agent_drafts")
+      .select(["generation", "snapshot"])
       .where("workspace_id", "=", workspaceId)
       .where("agent_id", "=", agentId)
-      .where("id", "=", id)
       .executeTakeFirst();
-    return (result?.numDeletedRows ?? 0n) > 0n;
+    if (!draft) {
+      return;
+    }
+    const snapshot = parseAgentRevisionSnapshot(draft.snapshot);
+    // See agentRevision.ts: the snapshot's agentSkills entries are validated-shape-but-open
+    // strings for kind/invocationMode, not the narrower runtime enums, so this repository
+    // (which already validated them once via AgentSkillsService before they were ever
+    // written) casts back to AgentSkillSpine at this boundary.
+    const currentAgentSkills = snapshot.agentSkills as unknown as AgentSkillSpine[] | undefined;
+    const agentSkills = next(currentAgentSkills) ?? await new AgentSkillRepository(trx).listByAgent(workspaceId, agentId);
+    await trx
+      .updateTable("agent_drafts")
+      .set({
+        generation: draft.generation + 1,
+        snapshot: toSanitizedJsonb({ ...snapshot, agentSkills }),
+        updated_at: currentTimestamp(),
+      })
+      .where("workspace_id", "=", workspaceId)
+      .where("agent_id", "=", agentId)
+      .where("generation", "=", draft.generation)
+      .execute();
   }
 }

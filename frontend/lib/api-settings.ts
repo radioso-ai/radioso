@@ -349,29 +349,32 @@ export const agentsApi = {
     agentId: string,
     data: AssistantBehaviorSettings,
     saved: AssistantBehaviorSettings,
+    scope: 'draft' | 'live' | 'all' = 'all',
   ): Promise<AssistantBehaviorSettings> {
     const hasChanged = (next: unknown, previous: unknown) => JSON.stringify(next) !== JSON.stringify(previous)
     const update: AgentSettingsUpdate = {}
 
-    if (data.suggestedQuestionsEnabled !== saved.suggestedQuestionsEnabled) update.suggestedQuestionsEnabled = data.suggestedQuestionsEnabled
-    if (data.customInstruction !== saved.customInstruction) update.customInstruction = data.customInstruction
-    if (data.assistantLinkUtmEnabled !== saved.assistantLinkUtmEnabled) update.assistantLinkUtmEnabled = data.assistantLinkUtmEnabled
-    if (data.citationDisplayEnabled !== saved.citationDisplayEnabled) update.citationDisplayEnabled = data.citationDisplayEnabled
-    if (data.contactRequestsEnabled !== saved.contactRequestsEnabled) update.contactRequestsEnabled = data.contactRequestsEnabled
-    if (data.webhookExportsEnabled !== saved.webhookExportsEnabled) update.webhookExportsEnabled = data.webhookExportsEnabled
-    if (data.handoffOnRetrievalMiss !== saved.handoffOnRetrievalMiss) update.handoffOnRetrievalMiss = data.handoffOnRetrievalMiss
-    if (hasChanged(data.contactRequestDelivery, saved.contactRequestDelivery)) update.contactRequestDelivery = data.contactRequestDelivery
-    if (data.retrievalEnabled !== saved.retrievalEnabled) update.retrievalEnabled = data.retrievalEnabled
-    if (hasChanged(data.theme, saved.theme)) update.theme = data.theme
-    if (hasChanged(data.branding, saved.branding)) update.branding = data.branding
-    if (hasChanged(data.sourceScope, saved.sourceScope)) update.sourceScope = data.sourceScope
-    if (hasChanged(data.skillSettings, saved.skillSettings) || hasChanged(data.retrievalSkillSettings, saved.retrievalSkillSettings)) {
-      update.skillSettings = data.retrievalSkillSettings
-        ? writeRetrievalSkillSettingsOverride(data.skillSettings, data.retrievalSkillSettings)
-        : data.skillSettings
+    if (scope !== 'live' && data.customInstruction !== saved.customInstruction) update.customInstruction = data.customInstruction
+    if (scope !== 'draft') {
+      if (data.suggestedQuestionsEnabled !== saved.suggestedQuestionsEnabled) update.suggestedQuestionsEnabled = data.suggestedQuestionsEnabled
+      if (data.assistantLinkUtmEnabled !== saved.assistantLinkUtmEnabled) update.assistantLinkUtmEnabled = data.assistantLinkUtmEnabled
+      if (data.citationDisplayEnabled !== saved.citationDisplayEnabled) update.citationDisplayEnabled = data.citationDisplayEnabled
+      if (data.contactRequestsEnabled !== saved.contactRequestsEnabled) update.contactRequestsEnabled = data.contactRequestsEnabled
+      if (data.webhookExportsEnabled !== saved.webhookExportsEnabled) update.webhookExportsEnabled = data.webhookExportsEnabled
+      if (data.handoffOnRetrievalMiss !== saved.handoffOnRetrievalMiss) update.handoffOnRetrievalMiss = data.handoffOnRetrievalMiss
+      if (hasChanged(data.contactRequestDelivery, saved.contactRequestDelivery)) update.contactRequestDelivery = data.contactRequestDelivery
+      if (data.retrievalEnabled !== saved.retrievalEnabled) update.retrievalEnabled = data.retrievalEnabled
+      if (hasChanged(data.theme, saved.theme)) update.theme = data.theme
+      if (hasChanged(data.branding, saved.branding)) update.branding = data.branding
+      if (hasChanged(data.sourceScope, saved.sourceScope)) update.sourceScope = data.sourceScope
+      if (hasChanged(data.skillSettings, saved.skillSettings) || hasChanged(data.retrievalSkillSettings, saved.retrievalSkillSettings)) {
+        update.skillSettings = data.retrievalSkillSettings
+          ? writeRetrievalSkillSettingsOverride(data.skillSettings, data.retrievalSkillSettings)
+          : data.skillSettings
+      }
+      // null = clear back to workspace fallback; undefined = leave unchanged.
+      if (hasChanged(data.chatModelOverride, saved.chatModelOverride)) update.chatModelOverride = data.chatModelOverride
     }
-    // null = clear back to workspace fallback; undefined = leave unchanged.
-    if (data.chatModelOverride !== saved.chatModelOverride) update.chatModelOverride = data.chatModelOverride
 
     return agentToAssistantBehaviorSettings(await this.updateAgent(agentId, update))
   },

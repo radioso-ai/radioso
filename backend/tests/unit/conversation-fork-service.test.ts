@@ -15,6 +15,7 @@ const buildConversation = (overrides: Partial<ConversationRecord> = {}): Convers
   id: randomUUID(),
   workspaceId: randomUUID(),
   agentId: randomUUID(),
+  purpose: "production",
   agentName: null,
   agentInternalName: null,
   sourceChannel: "website_embed",

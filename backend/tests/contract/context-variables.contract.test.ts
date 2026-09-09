@@ -1,8 +1,9 @@
 import request from "supertest";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createTestApp, issueTestToken } from "../support/testApp.js";
 import { deriveVisitorIdentitySigningKey } from "../../src/modules/context-variables/public.js";
+import { conflict } from "../../src/shared/domain/errors.js";
 
 const createAgent = async (app: ReturnType<typeof createTestApp>["app"], authorization: string) =>
   request(app)
@@ -26,6 +27,24 @@ const createContextVariable = async (app: ReturnType<typeof createTestApp>["app"
     .expect(201);
 
 describe("context variable HTTP API", () => {
+  it("returns the existing typed conflict response when a pinned variable cannot be deleted", async () => {
+    const { app, dependencies } = createTestApp();
+    const { token } = await issueTestToken(app, "context-vars-delete-conflict@example.com");
+    vi.spyOn(dependencies.contextVariableService, "delete")
+      .mockRejectedValue(conflict("Cannot delete a context variable selected by an immutable agent revision"));
+
+    await request(app)
+      .delete("/api/v1/context-variables/11111111-1111-4111-8111-111111111111")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(409)
+      .expect({
+        error: {
+          code: "conflict",
+          message: "Cannot delete a context variable selected by an immutable agent revision",
+        },
+      });
+  });
+
   it("reveals the per-agent visitor identity signing key to workspace admins", async () => {
     const { app, dependencies } = createTestApp();
     const { cookie, token, workspaceId } = await issueTestToken(app, "context-vars-signing-key@example.com");

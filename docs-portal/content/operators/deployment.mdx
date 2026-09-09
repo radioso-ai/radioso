@@ -216,6 +216,39 @@ In practice, a blocked migration metadata check fails with an application log th
 
 The backend owns migrations during startup; there is no separate pre-deploy migration job.
 
+## Agent revision rollout
+
+Agent revision storage changes the order of an upgrade. Before applying migration 171, stop
+admission to replicas running the old application and stop old worker consumers. Wait for in-flight
+requests and claimed jobs to drain, then verify that no old replica remains. Apply the migration
+and inspect the published baseline pointers, draft state, and conversation bindings before
+starting revision-aware replicas. Do not run old and revision-aware writers or readers together:
+they do not share the same publication boundary.
+
+Existing agents receive a migrated published baseline. Saved routine drafts are preserved as
+private authoring work rather than becoming part of that baseline. New and imported agents remain
+private until an operator publishes them. A published revision is shared by every channel; a new
+conversation uses the current published revision, while an ongoing conversation continues with
+the revision it started on. There is no per-channel publication pointer.
+
+Active routine state that refers to an older exact definition is retained only when its closure
+can be identified safely. Missing, ambiguous, or invalid routine pins are surfaced for operator
+action and fail closed; they are not silently reassigned to the current routine. Validation of
+this legacy-state retention is part of the migration readiness check, so do not declare the
+rollout complete from the presence of baseline rows alone.
+
+Review the unbound conversations before starting revision-aware traffic:
+
+```sql
+SELECT conversation_id, workspace_id, agent_id, routine_id, classification, created_at
+FROM agent_revision_migration_classifications
+ORDER BY created_at, conversation_id;
+```
+
+Each row names the original routine pin and why Radioso could not bind that conversation. Keep
+those conversations out of service until the pin has been investigated and the operator has a
+safe recovery path for that exact routine state.
+
 ## Docs portal deployment
 
 The docs portal is its own Next.js app under `docs-portal/`. It syncs the backend OpenAPI document during build and should be deployed as a separate public service instead of being mounted into the product frontend.

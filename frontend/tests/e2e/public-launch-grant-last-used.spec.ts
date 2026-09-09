@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import {
   basePlatformSettings,
+  defaultAgentId,
   installDashboardApiMocks,
   seedDashboardStorage,
   workspaceKey,
@@ -18,7 +19,7 @@ test("operator can see public chat link last-used lifecycle", async ({ page }) =
     platformSettings,
   });
 
-  await page.goto(`/w/${workspaceKey}/agents?tab=channels&anchor=web-chat`);
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=channels&anchor=web-chat`);
   const publicChatSection = page.getByRole("main").locator("#public-chat-link");
 
   await expect(publicChatSection.getByRole("heading", { name: "Public link", exact: true })).toBeVisible();

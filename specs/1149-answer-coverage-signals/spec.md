@@ -1,8 +1,8 @@
 # Feature Specification: Answer Coverage Signals
 
-**Feature Branch**: `answer-gap-followup-routines`  
-**Created**: 2026-09-08  
-**Status**: Approved  
+**Feature Branch**: `answer-gap-followup-routines`
+**Created**: 2026-09-08
+**Status**: Approved
 **Input**: Formalize the agreed requirements for accurate answer coverage, generic directive and routine consumption, and Audience Pulse reporting.
 
 ## Problem and Goal

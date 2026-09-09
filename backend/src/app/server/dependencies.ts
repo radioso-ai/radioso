@@ -1,9 +1,11 @@
+import { randomUUID } from "node:crypto";
 import { getEnv, type Env } from "../config/env.js";
 import { apiPrincipalRouteInventory } from "../http/apiPrincipalRoutePolicy.js";
 import {
   createDefaultAgentSkillSettingsRegistry,
   createDefaultApplicationComposition,
   createDefaultFacetExtractionDrainDispatcher,
+  createLiveAgentConfigReader,
   createRealtimePublisherComposition,
   type ApplicationModule,
 } from "../composition/index.js";
@@ -11,8 +13,9 @@ import { parseRealtimeConfig } from "../../modules/realtime/infrastructure/confi
 import { createRealtimeRolloutPolicy } from "../../modules/realtime/domain/realtimeRolloutPolicy.js";
 import { resolveGcpRedisCredentialsProvider } from "../../runtime/gcpMetadataRedisCredentials.js";
 import type { RealtimePublisherComposition } from "../composition/realtimePublisherComposition.js";
-import { AgentService, AgentSurfaceExtensionRegistry, projectInternalAgentConfig, projectInternalAgentExternalSkills, serializeAuthoredDirectivesWithIds } from "../../modules/agents/public.js";
-import { InMemoryPublicConversationEventBus } from "../../modules/chat/composition.js";
+import { AgentRevisionService, AgentService, AgentSurfaceExtensionRegistry, projectInternalAgentConfig, projectInternalAgentExternalSkills, serializeAuthoredDirectivesWithIds } from "../../modules/agents/public.js";
+import { InMemoryPublicConversationEventBus, TrustedTestExecutionRunnerAdapter } from "../../modules/chat/composition.js";
+import { TestExecutionService } from "../../modules/test-execution/testExecution.js";
 import {
   createFacetExtractionWorker,
   FacetExtractionService,
@@ -71,6 +74,7 @@ import {
   RetrievalProbeService,
 } from "../../modules/operatorCopilot/public.js";
 import { AgenticCapabilityRunner, DefaultAgentRuntime } from "../../shared/agent-runtime/index.js";
+import { TtlRetentionWorker } from "../../shared/domain/ttlRetentionWorker.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 import { createCopilotDocumentAuthoringPort, createCopilotToolCatalog, createCopilotWorkspaceAccountResolver, createCopilotWorkspaceRouteKeyResolver, createCopilotWorkspaceSettingPort } from "../composition/copilotToolCatalog.js";
 import { ProbeConversationReader, ReplyDraftRunner } from "../../modules/chat/composition.js";
@@ -208,6 +212,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     access.accessGrantService,
     agentSkillRepository,
   );
+  const agentRevisionService = new AgentRevisionService(repositories.agentRevisionRepository, randomUUID);
   // Shared by routine publishing (write-time trigger embedding) and the chat
   // activation prefilter (lazy self-heal of unembedded/stale rows) so both
   // paths dedup concurrent embedding work through one instance.
@@ -344,6 +349,21 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     agentReader: { get: agentService.get.bind(agentService) },
     agentSkillsReader: { list: agentSkillsService.list.bind(agentSkillsService) },
   });
+  const testExecutionService = new TestExecutionService({
+    revisions: repositories.testExecutionRepository,
+    contextCatalog: contextVariableRepository,
+    repository: repositories.testExecutionRepository,
+    runner: new TrustedTestExecutionRunnerAdapter({
+      replay: chat.workbenchReplayRunner,
+      liveAgentConfig: createLiveAgentConfigReader({ agentRepository: repositories.agentRepository }),
+      revisions: repositories.testExecutionRepository,
+      bootstrap: chat.chatBootstrapService,
+    }),
+    usageLimitPolicy: infrastructure.usageLimitPolicy,
+    audit: infrastructure.auditService,
+    logger,
+    createId: randomUUID,
+  });
 
   // Lazy-loaded crawler utility provider for EE agent wizard, also reused by
   // the connector ingestion port for HTML-to-text normalisation.
@@ -390,11 +410,14 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     retrievalDefaultsProvider,
     skillSettingsResolver,
     workspaceInvalidationPublisher: realtimePublisherComposition.publisher,
+    revisionEvalRunRetentionDays: env.AGENT_REVISION_EVAL_RUN_RETENTION_DAYS,
   });
   const {
     evalCaseService,
     evalMessageCaseService,
     evalRunService,
+    revisionEvalRunService,
+    revisionEvalRunRetentionWorker,
     evalSnapshotService,
     evalSuiteService,
     operatorReplyService,
@@ -777,6 +800,13 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
     retentionDays: env.COPILOT_CONVERSATION_RETENTION_DAYS,
   });
+  const testExecutionRetentionWorker = new TtlRetentionWorker({
+    subject: "agent_test_execution",
+    sweep: { deleteBefore: (input) => repositories.testExecutionRepository.deleteExecutionsUpdatedBefore(input) },
+    audit: infrastructure.auditService,
+    logger,
+    retentionDays: env.AGENT_TEST_EXECUTION_RETENTION_DAYS,
+  });
   const operatorMcp = buildOperatorMcpServices({
     env,
     database: infrastructure.database,
@@ -887,6 +917,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     approvalDecisionService: chat.approvalDecisionService,
     operatorReplyService,
     workbenchReplayRunner: chat.workbenchReplayRunner,
+    testExecutionService,
     chatBootstrapService: chat.chatBootstrapService,
     chatHistoryService: chat.chatHistoryService,
     conversationForkService: chat.conversationForkService,
@@ -900,9 +931,11 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     evalMessageCaseService,
     evalCaseService,
     evalRunService,
+    revisionEvalRunService,
     evalSuiteService,
     platformSettingsService,
     agentService,
+    agentRevisionService,
     authoredDirectiveService,
     agentBundleExportService: agentBundleServices.exportService,
     agentBundleImportService: agentBundleServices.importService,
@@ -934,6 +967,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     chatInferencePipeline,
     operatorCopilotService,
     copilotRetentionWorker,
+    testExecutionRetentionWorker,
+    revisionEvalRunRetentionWorker,
     copilotToolCatalog,
     copilotCapabilityRunner,
     copilotPrompt,

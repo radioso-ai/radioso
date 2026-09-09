@@ -3,6 +3,7 @@ import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 
 import type { OpenApiSchemas, OpenApiSecurity } from "../openApiRegistry.js";
 import { evalAssertionSchema } from "../../../../modules/eval/domain/assertionSchema.js";
+import { startRevisionEvalRunSchema } from "../../routes/agentRevisionRequestSchemas.js";
 
 const AgentConfigOverrideSchema = z
   .object({
@@ -245,6 +246,17 @@ export const registerEvalPaths = (
   schemas: OpenApiSchemas,
   security: OpenApiSecurity,
 ) => {
+  const RevisionEvalRunParamsSchema = z.object({ runId: z.string().uuid() });
+  const StartRevisionEvalRunSchema = registry.register("StartRevisionEvalRun", startRevisionEvalRunSchema);
+  const RevisionEvalCaseOutcomeSchema = registry.register("RevisionEvalCaseOutcome", z.object({ caseId: z.string().uuid(), state: z.enum(["running", "failed", "completed"]), outcome: z.enum(["pass", "fail", "partial", "unavailable"]) }));
+  const RevisionEvalRunSchema = registry.register("RevisionEvalRun", z.object({ id: z.string().uuid(), state: z.enum(["running", "partial", "failed", "completed"]), sides: z.array(z.object({ revisionId: z.string().uuid(), revision: z.object({ id: z.string().uuid(), versionNumber: z.number().int().positive().nullable(), label: z.string() }), state: z.enum(["running", "partial", "failed", "completed"]), evidenceState: z.enum(["current", "configuration_changed", "environment_changed", "comparability_unknown"]), cases: z.array(RevisionEvalCaseOutcomeSchema) })) }));
+  // Revision eval routes use the same workspace-session middleware as agent
+  // authoring and private test execution, so personal/service bearer
+  // credentials are valid when they hold the declared agent permission.
+  const revisionEvalSecurity = [{ [security.bearerAuthScheme.name]: [] }];
+  registry.registerPath({ method: "post", path: "/api/v1/evals/revision-runs", tags: ["Evals"], summary: "Run frozen Eval cases against immutable agent candidates", operationId: "createRevisionEvalRun", security: revisionEvalSecurity, request: { body: { required: true, content: { "application/json": { schema: StartRevisionEvalRunSchema } } } }, responses: { 201: { description: "Revision Eval run created", content: { "application/json": { schema: RevisionEvalRunSchema } } }, 400: { description: "Invalid immutable run selection", content: { "application/json": { schema: schemas.ErrorResponseSchema } } }, 403: { description: "Agent-manage permission required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } } } });
+  registry.registerPath({ method: "get", path: "/api/v1/evals/revision-runs/{runId}", tags: ["Evals"], summary: "Get frozen revision Eval evidence", operationId: "getRevisionEvalRun", security: revisionEvalSecurity, request: { params: RevisionEvalRunParamsSchema }, responses: { 200: { description: "Revision Eval evidence", content: { "application/json": { schema: RevisionEvalRunSchema } } }, 404: { description: "Revision Eval run not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } }, 403: { description: "Agent-read permission required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } } } });
+  registry.registerPath({ method: "post", path: "/api/v1/evals/revision-runs/{runId}/sides/{revisionId}/cases/{caseId}/retry", tags: ["Evals"], summary: "Retry one failed frozen revision Eval case", operationId: "retryRevisionEvalCase", security: revisionEvalSecurity, request: { params: z.object({ runId: z.string().uuid(), revisionId: z.string().uuid(), caseId: z.string().uuid() }) }, responses: { 200: { description: "Revision Eval retry accepted", content: { "application/json": { schema: RevisionEvalRunSchema } } }, 404: { description: "Failed revision Eval case not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } }, 403: { description: "Agent-manage permission required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } } } });
   const RegisteredEvalAssertionSchema = registry.register("EvalAssertion", evalAssertionSchema);
   const RegisteredEvalMessageCaseLookupSchema = registry.register(
     "EvalMessageCaseLookup",

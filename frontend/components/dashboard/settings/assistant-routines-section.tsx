@@ -214,20 +214,24 @@ const mergeDocumentHeaderChange = (
 const routineStatusLabel = (status: RoutineDefinition['status']) => {
   switch (status) {
     case 'draft':
-      return 'draft'
+      return 'in preparation'
     case 'published':
-      return 'published'
+      return 'prepared'
     case 'superseded':
-      return 'superseded'
+      return 'earlier prepared version'
     case 'archived':
       return 'archived'
   }
 }
 
 const lineageStateLabel = (lineage: RoutineLineageGroup) => {
-  if (lineage.state === 'draft-only') return 'draft only'
-  if (lineage.state === 'draft-with-archived') return 'draft + archived'
-  return lineage.state
+  switch (lineage.state) {
+    case 'published': return 'prepared'
+    case 'draft-only': return 'in preparation'
+    case 'draft-with-archived': return 'in preparation'
+    case 'archived': return 'archived'
+    case 'superseded': return 'earlier prepared version'
+  }
 }
 
 const replaceBrowserUrl = (href: string) => {
@@ -428,7 +432,7 @@ function RoutineListScreen({
             <Badge variant="outline">{lineageStateLabel(lineage)}</Badge>
             <span className="text-xs text-muted-foreground">v{activeVersion}</span>
             {lineage.pendingDraft ? (
-              <Badge variant="secondary">draft revision</Badge>
+              <Badge variant="secondary">newer draft in preparation</Badge>
             ) : null}
           </div>
           <p className="mt-1 text-xs text-muted-foreground">{lineage.triggerDescription}</p>
@@ -474,7 +478,7 @@ function RoutineListScreen({
       id="assistant-routines-card"
       icon={<Route className="h-5 w-5 text-primary" />}
       title="Routines"
-      description="Multi-step procedures the agent runs to complete a task — collect details, call a skill, then finish or hand off. Reach for a routine when a single directive isn't enough."
+      description="Multi-step procedures the agent runs to complete a task — collect details, call a skill, then finish or hand off. Reach for a routine when a single directive isn't enough. Routine changes prepare the agent draft; customers get them only after Review & Publish."
       headerEnd={(
         <div className="flex items-center gap-2">
           <Button type="button" size="sm" onClick={() => router.push(buildRoutineHref('new'))}>
@@ -885,7 +889,7 @@ function RoutineEditorScreen({
   const runPublish = async () => {
     const routine = await saveDraft()
     if (!routine) return
-    // What the editor held once the pre-publish save settled. Anything that differs from
+    // What the editor held once the pre-release save settled. Anything that differs from
     // this when the publish returns was typed during the round trip.
     const signatureAtPublish = activeRoutineDraftSignatureRef.current
     beginSave()
@@ -912,7 +916,7 @@ function RoutineEditorScreen({
       setValidation(response.validation)
       markSaved()
       if (editedDuringPublish) {
-        setError('Publishing captured the routine as it was when you pressed Publish. Changes you made while it published were not included — revise the routine to apply them.')
+        setError('Preparing this routine captured the saved draft. Changes made while it ran were not included — save again before the agent release review.')
       }
       const persistedHref = buildPersistedHref(response.routine.id)
       if (!currentBrowserUrlMatches(persistedHref)) {
@@ -922,10 +926,10 @@ function RoutineEditorScreen({
       if (currentRoutineIdRef.current !== routine.id) return
       if (publishError instanceof RoutinePublishRejectedError) {
         setValidation(publishError.response.validation)
-        setError('Routine is not ready to publish.')
-        markError('Routine is not ready to publish.')
+        setError('Routine is not ready for agent release.')
+        markError('Routine is not ready for agent release.')
       } else {
-        const message = getApiErrorMessage(publishError, 'Failed to publish routine.')
+        const message = getApiErrorMessage(publishError, 'Failed to prepare routine for agent release.')
         setError(message)
         markError(message)
       }
@@ -1120,7 +1124,7 @@ function RoutineEditorScreen({
             size="sm"
             onClick={() => setTestDrawerOpen(true)}
             disabled={isSaving}
-            title="Open a live test chat where this draft can activate, run, and hand back — without publishing it"
+            title="Open an operator test for this saved routine. Customer release remains Review & Publish in the agent header."
           >
             <FlaskConical className="mr-2 h-4 w-4" />
             Test draft
@@ -1141,7 +1145,7 @@ function RoutineEditorScreen({
         {!isReadOnly && form ? (
           <Button type="button" size="sm" onClick={() => void actionHandlersRef.current.publishDraft()} disabled={isSaving || !canPublishDraft}>
             <Send className="mr-2 h-4 w-4" />
-            Publish
+            Prepare for agent release
           </Button>
         ) : null}
         {hasOverflow ? (
@@ -1330,7 +1334,7 @@ function RoutineEditorScreen({
           <AlertDialogHeader>
             <AlertDialogTitle>Delete draft?</AlertDialogTitle>
             <AlertDialogDescription>
-              This deletes the draft for {editingRoutine?.name ? `"${editingRoutine.name}"` : 'this routine'}. Published or archived versions in the lineage are kept.
+              This deletes the draft for {editingRoutine?.name ? `"${editingRoutine.name}"` : 'this routine'}. Prepared or archived versions in the lineage are kept.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

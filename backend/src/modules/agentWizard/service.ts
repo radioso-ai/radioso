@@ -5,7 +5,7 @@ import { normalizeLocaleTag } from "../../shared/domain/locale.js";
 import { renderPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 import { stringifyUnknown } from "../../shared/text/stringifyUnknown.js";
 
-export interface AgentWizardAgentServicePort {
+interface AgentWizardAgentServicePort {
   create(workspaceId: string, input: {
     name: string;
     customInstruction?: string;
@@ -15,7 +15,7 @@ export interface AgentWizardAgentServicePort {
   update(workspaceId: string, agentId: string, input: Record<string, unknown>): Promise<{ id: string }>;
 }
 
-export interface AgentWizardDocumentStoragePort {
+interface AgentWizardDocumentStoragePort {
   upload(input: {
     workspaceId: string;
     documentId: string;
@@ -25,7 +25,7 @@ export interface AgentWizardDocumentStoragePort {
   }): Promise<{ bucket: string; objectPath: string; generation?: string | null; sizeBytes: number }>;
 }
 
-export interface AgentWizardWebsiteCrawlerPort {
+interface AgentWizardWebsiteCrawlerPort {
   enqueue(input: {
     accountId?: string | null;
     workspaceId: string;
@@ -45,14 +45,14 @@ export interface AgentWizardTextGenerationPort {
   }): Promise<string>;
 }
 
-export type AgentWizardUrlPolicy = (url: string) => Promise<void>;
+type AgentWizardUrlPolicy = (url: string) => Promise<void>;
 
-export interface AgentWizardCrawlerLimits {
+interface AgentWizardCrawlerLimits {
   defaultLimit: number;
   maxLimit: number;
 }
 
-export interface WizardAnalysisResult {
+interface WizardAnalysisResult {
   suggestedName: string;
   suggestedCustomInstruction: string;
   suggestedGreetingMessage: string;
@@ -70,7 +70,7 @@ export interface WizardAnalysisResult {
   suggestedContactEmail: string | null;
 }
 
-export interface WizardCreateInput {
+interface WizardCreateInput {
   websiteUrl: string;
   name: string;
   customInstruction?: string;
@@ -88,12 +88,12 @@ export interface WizardCreateInput {
  * loses the id of an agent that now exists, which leaves the caller unable to link to it, finish it
  * by hand, or tell an operator not to create it a second time.
  */
-export interface WizardCreateIncomplete {
+interface WizardCreateIncomplete {
   step: "configuration" | "ingestion";
   reason: string;
 }
 
-export interface WizardCreateResult {
+interface WizardCreateResult {
   agentId: string;
   crawlJobId: string | null;
   incomplete?: WizardCreateIncomplete;
@@ -134,7 +134,7 @@ export interface CrawlerPort {
   isBrowserTransportAvailable(): Promise<boolean>;
 }
 
-export type AgentWizardErrorCode =
+type AgentWizardErrorCode =
   | "site_unreachable"
   | "authentication_required"
   | "analysis_timeout"
@@ -676,7 +676,6 @@ export class AgentWizardService {
       greetingInstruction: input.config.greetingInstruction,
       retrievalEnabled: true,
     });
-
     const updatePayload: Record<string, unknown> = {};
     if (input.config.faviconUrl || input.config.websiteUrl) {
       const logo = await this.uploadFaviconAsLogo(

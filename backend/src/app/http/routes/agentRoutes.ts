@@ -3,7 +3,12 @@ import { Router, type RequestHandler } from "express";
 import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
-import { requireWorkspaceSession, WORKSPACE_HEADER, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
+import {
+  createAgentRevisionRoutes,
+  type AgentRevisionRouteDependencies,
+} from "./agentRevisionRoutes.js";
+import { presentRevisionState } from "./agentRevisionPresenters.js";
+import { requireWorkspaceSession, WORKSPACE_HEADER } from "../middleware/requireWorkspaceSession.js";
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { requireSurfaceExtension } from "../shared/requireSurfaceExtension.js";
 import { validateBody } from "../middleware/validate.js";
@@ -88,7 +93,7 @@ export const agentBodySchema = z.object({
   surfaceSettings: agentInputFieldSchemas.surfaceSettings.omit({ extensions: true }).optional(),
 });
 
-type AgentRouteDependencies = WorkspaceSessionDependencies & Pick<AppDependencies, "accountAccessService" | "accessGrantService" | "agentRepository" | "agentService" | "assistantChatService" | "authoredDirectiveService" | "directiveAuthorService" | "skillAuthoringCatalog" | "routineDefinitionService" | "routineDraftAssistService" | "agentSurfaceExtensions" | "documentStorage" | "logger" | "metricsRegistry" | "abuseControlService" | "auditService">;
+type AgentRouteDependencies = AgentRevisionRouteDependencies & Pick<AppDependencies, "accessGrantService" | "agentRepository" | "agentService" | "assistantChatService" | "authoredDirectiveService" | "directiveAuthorService" | "skillAuthoringCatalog" | "routineDefinitionService" | "routineDraftAssistService" | "agentSurfaceExtensions" | "documentStorage" | "logger" | "metricsRegistry" | "abuseControlService" | "auditService">;
 
 const channelForAudience = (audience: "mcp" | "rest") =>
   audience === "mcp" ? "mcp-converse" as const : "agent-api" as const;
@@ -230,6 +235,7 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
   const runUploadSingle = createAssistantLogoUploadHandler();
   const rateLimitRestAgentChat = agentChannelChatRateLimiters(dependencies, "rest");
   const rateLimitRestAgentSource = createAgentChannelSourceRateLimiter(dependencies);
+  router.use(createAgentRevisionRoutes(dependencies));
 
   router.get("/", workspaceSession, agentRead, async (_req, res, next) => {
     try {
@@ -685,12 +691,24 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
       const parsed = agentParamsSchema.parse(req.params);
       const current = await dependencies.agentService.resolve(workspaceId, parsed.agentId);
       rejectMachineLaunchSurfaceInput(authPrincipal, req.body);
-      const agent = await dependencies.agentService.update(
-        workspaceId,
-        parsed.agentId,
-        dependencies.agentService.withRotatedTokens(current, req.body),
-      );
-      res.status(200).json(presentAgentForPrincipal(agent, authPrincipal));
+      const { customInstruction, ...liveChanges } = req.body;
+      let agent = await dependencies.agentService.get(workspaceId, parsed.agentId);
+      if (Object.keys(liveChanges).length > 0) {
+        agent = await dependencies.agentService.update(
+          workspaceId,
+          parsed.agentId,
+          dependencies.agentService.withRotatedTokens(current, liveChanges),
+        );
+      }
+      if (customInstruction !== undefined) {
+        agent = await dependencies.agentService.update(workspaceId, parsed.agentId, { customInstruction });
+      }
+      res.status(200).json({
+        ...presentAgentForPrincipal(agent, authPrincipal),
+        ...(customInstruction === undefined
+          ? {}
+          : { revisionState: presentRevisionState(await dependencies.agentRevisionService.state(workspaceId, parsed.agentId), true) }),
+      });
     } catch (error) {
       next(error);
     }

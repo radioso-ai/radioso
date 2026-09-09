@@ -239,6 +239,15 @@ settings. The proposal card names the target, summarizes the
 change, and shows the current and proposed values before anything is written.
 Expand **Show changes** to inspect the field-level diff.
 
+Applying a proposal for an agent's custom instructions, directives, routine
+definitions, or per-agent context selection writes the agent's private draft.
+Open **Test Chat** to exercise that saved candidate, compare it with the
+published revision, and run selected eval cases before publishing. Sample
+context values used in a test stay with the test input; publishing never sends
+them to a visitor. Proposals for shared context-variable definitions, skill
+configuration, documents, crawls, or workspace settings keep their existing
+live configuration flow and are reviewed separately from the agent draft.
+
 A routine proposal comes in three shapes: a new routine, an edit to one that
 already exists, and a lifecycle change — publish, archive, or restore. See
 [Change a routine](#change-a-routine).

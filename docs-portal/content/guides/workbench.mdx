@@ -1,31 +1,51 @@
 ---
-title: Test your agent in the workbench
-description: Chat with your agent as an operator, inspect a turn, and capture an answer as an eval case from the dashboard Chat workbench.
+title: "Test your agent in the workbench"
+description: "Chat with your agent as an operator, inspect a turn, and capture an answer as an eval case from the dashboard Chat workbench."
+last_updated: 2026-09-08
 ---
 
 # Test your agent in the workbench
 
-The workbench is where you talk to your agent the way a visitor would — but signed in, with the tools an operator needs. Use it to check that a change to documents, directives, or a routine actually lands before it reaches real conversations. You reach it from an agent's **Chat** tab.
+The workbench is where you talk to your agent the way a visitor would — but signed in, with the tools an operator needs. Use **Test Chat** to check a saved agent candidate before it reaches real conversations. You reach it from an agent's **Test Chat** tab.
 
-The workbench drives the assistant chat API — the same route you would call from your own code to talk to an agent — so what you see here is what a visitor gets.
+Test Chat runs the selected immutable agent configuration through the private safe-test execution path. Shared documents, models, skills, and channel settings remain live dependencies, so check those settings when comparing results.
 
-![A grounded answer in the Chat workbench about EU shipping timing, with a Sources line and three suggested follow-up questions, and the conversation id shown in the header.](/screenshots/dashboard-agents-workbench.png)
+![A private comparison in Test Chat, with two selected agent versions and a shared message composer.](/screenshots/dashboard-agents-workbench.png)
 
 ## Chat with your agent
 
-Type a question in the box at the bottom and send it. In the screenshot above, the demo agent is asked how long shipping to Germany takes and answers "3–5 business days after roast day" straight from its Shipping policy document — that cited, specific reply is what a healthy grounded turn looks like. When the agent uses retrieval, the answer carries a **Sources** line you can expand to see the cited documents. Click a citation to open the source document.
+Choose a version, type a question, and send it. For example, ask a support agent how long shipping to Germany takes, then check its answer against your shipping policy. Follow up in the same chat to check whether the agent carries context across turns.
 
-Below an answer, the agent may offer **suggested follow-up questions**. Click one to send it as the next message — a quick way to walk a visitor's likely path without typing.
+If your agent uses context variables, open the three-dot menu beside the title (labelled **Test chat actions** to assistive technology) and choose **Test context**. Supply sample values, such as a customer’s plan or locale, to check how they affect the answer. These values belong to the private test and stay with its history. This menu item appears only when the selected versions use context variables.
 
-A test conversation is a real conversation with its own id, shown in the header next to a copy button. Copy it when you want to look the conversation up elsewhere, such as pulling its transcript or filing an eval. The workbench keeps one running conversation until you clear it; open the options menu (the **···** button) for **Clear chat**, which starts a fresh conversation, and for **Show citations**, which toggles whether the Sources line appears.
+## Test Chat and History
 
-## Chat and History
+Open the three-dot menu and choose **History** to reopen a previous test. A comparison reopens both sides together,
+with the versions and sample values it originally used. Older test sessions
+without recorded version information keep an explicit label. Your tests stay
+separate from customer conversations in Activity.
 
-The header has a **Chat** / **History** toggle. **Chat** is the live conversation. **History** lists your past operator test chats for this agent, kept separate from the Inbox so your experiments never mix into real customer conversations.
+Use the revision selector to choose the saved draft candidate, the current
+published version, or an earlier published version. Releases are labelled **v1**,
+**v2**, and so on; the saved draft shows the published version it is based on.
+Saving or testing a draft does not allocate a release number. Choose **Compare
+versions** from the three-dot menu to open two private conversations. Each keeps
+its selected version, and every message goes to both panes.
 
-## Inspect a turn
+When proactive greeting is enabled, opening a fresh Test Chat starts the selected
+private test and shows the assistant's first greeting before you type. The
+configured fallback language applies when the request has no locale. With the
+setting off, send your first message to start the selected test. If you have
+unsaved private changes, **Save draft & send** saves them before sending; a failed
+save keeps your message unsent. **New chat** in the same menu clears the current
+conversation while keeping its history and starts one fresh greeting when the
+setting is enabled. Changing versions, comparison mode, or sample values prepares
+a fresh chat for the next message.
 
-Click any message to slide out **Turn diagnostics** on the right. It shows the same trace the conversation drawer shows — how the turn was routed, what retrieval ran, and which stages fired. Select a user turn and the panel resolves forward to the assistant turn it produced. When a turn has a full trace, a **Flow** button opens a larger view of the turn's path.
+Choose **Evals** from the three-dot menu to select existing eval cases and run
+them against the selected versions. Results keep the revision and sample context they tested, so
+changing the selector does not relabel older evidence. Detailed case authoring
+and run history remain in [Evals](/guides/evals).
 
 For a retrieved answer, diagnostics also separates **Answer coverage** from
 retrieval and citation facts. It shows whether the request was answered, partly
@@ -35,18 +55,18 @@ decision and links back to the originating message; an activated routine also
 links to its execution. **Not assessed** means no semantic verdict was recorded,
 so it is never treated as an answered request.
 
-## Capture a turn as an eval case
+## Inspect earlier workbench sessions
 
-When an answer is worth locking in — or worth catching if it regresses — hover the answer and click the **flask icon** in its action row. That opens **Save this turn as an eval**: name the case and confirm. Radioso snapshots the conversation and, when the answer is present, seeds the case with an LLM-judge expectation using that answer as the reference, then opens the eval editor. From there you can run it immediately or add more precise checks.
+History also keeps sessions recorded through the conversation workbench. Open one to inspect its transcript and available turn diagnostics. When that workbench offers **Save this turn as an eval**, you can capture an answer as a reference and continue in the eval editor.
 
-This is the bridge from "that looked right" to a repeatable test. The [Evaluate answer quality](/guides/evals) guide covers what a case checks and how a run works.
+Saved revision tests reopen in Test Chat with their recorded versions and messages. Use the existing cases in the **Evals** dialog to check the selected versions; detailed case authoring remains in [Evals](/guides/evals).
 
 ## Common failure modes
 
-- A weak answer right after uploading a document usually means the document has not finished processing yet, not that retrieval is broken. Check the document's status first.
-- No **Sources** line on an answer: either the agent answered without retrieval, or **Show citations** is off in the options menu.
-- The flask icon is missing: it appears on an assistant answer on hover, once the turn has a conversation id and a message to capture.
-- Your test chats do not appear in the Inbox by design — look under the **History** toggle in the workbench instead.
+- A weak answer after uploading a document can mean processing is still running. Check the document's status before comparing answers.
+- If a draft save fails, your message stays unsent. Resolve the save error and try again.
+- If one comparison side fails, retry that side to retain the successful answer from the other version.
+- Look for private tests in **History**; customer conversations remain in Activity.
 
 ## Read next
 

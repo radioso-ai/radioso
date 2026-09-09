@@ -17,6 +17,12 @@ Chat should not own retrieval ranking, document persistence, provider registry
 details, or hard-coded user-facing assistant responses. Runtime prompt templates
 belong under `backend/prompts/`.
 
+Revision-pinned private Test Chat is hosted by `modules/test-execution`. Chat
+provides the safe runtime ports and historical conversation behavior it needs;
+it must not resolve a mutable draft or silently fall back to current authoring
+rows. Start at `test-execution/README.md` and
+`services/trustedTestExecutionRunnerAdapter.ts` when changing that flow.
+
 ## Public Surfaces
 
 - `contracts/`: chat response types, stream events, gateway contracts, and

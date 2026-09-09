@@ -1,6 +1,6 @@
 'use client'
 
-import { type FormEvent, type KeyboardEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
+import { type FormEvent, type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 import { FileText, FlaskConical, MoreHorizontal, RotateCcw, Send, Workflow } from 'lucide-react'
@@ -68,7 +68,6 @@ export interface ChatWorkbenchProps {
   onOpenDocument?: (documentId: string) => void
   /** Drives the empty-state copy. Optional; defaults to a neutral "ready" state. */
   onboarding?: WorkspaceOnboardingState
-  navigation?: ReactNode
   /** A forked test conversation to adopt into the live session on open (from "Continue in test chat"). */
   adoptConversationId?: string
   /**

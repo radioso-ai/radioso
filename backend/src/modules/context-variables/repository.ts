@@ -108,6 +108,7 @@ export interface ContextVariableRepositoryPort {
 
 /** Turn-time resolver surface; its only write stores a resolved runtime cache value. */
 export interface ContextVariableResolverRepositoryPort {
+  get(workspaceId: string, id: string): Promise<ContextVariable | null>;
   resolveForAgent(workspaceId: string, agentId: string, scopes: ContextVariableScope[]): Promise<ResolvedVariableInput[]>;
   listByAgent(workspaceId: string, agentId: string): Promise<AgentContextVariableEnablement[]>;
   readValue(variableId: string, scope: ContextVariableScope): Promise<ContextVariableValue | null>;
@@ -117,6 +118,12 @@ export interface ContextVariableResolverRepositoryPort {
 /** Turn-time read surface exposed to chat; resolution owns its backing reads. */
 export interface ContextVariableResolutionReaderPort {
   resolveForAgent(workspaceId: string, agentId: string, scopes: ContextVariableScope[]): Promise<ResolvedVariableInput[]>;
+  resolveForEnablements(
+    workspaceId: string,
+    agentId: string,
+    enablements: readonly AgentContextVariableEnablement[],
+    scopes: ContextVariableScope[],
+  ): Promise<ResolvedVariableInput[]>;
 }
 
 /** Read surface required by routine authoring to inspect agent enablements. */

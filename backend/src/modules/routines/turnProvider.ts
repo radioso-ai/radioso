@@ -35,8 +35,8 @@ import { createRoutineActivationPrefilter } from "./routineActivationPrefilter.j
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 
 interface RoutineRegistrationSource {
-  load(input: { agentId: string }): Promise<RoutineRegistration[]>;
-  loadPinned(input: { agentId: string; routineIds: string[] }): Promise<RoutineRegistration[]>;
+  load(input: { agentId: string; workspaceId?: string; agentRevisionId?: string }): Promise<RoutineRegistration[]>;
+  loadPinned(input: { agentId: string; workspaceId?: string; agentRevisionId?: string; routineIds: string[] }): Promise<RoutineRegistration[]>;
   loadPreview(input: { agentId: string; routineIds: string[] }): Promise<RoutineRegistration[]>;
 }
 
@@ -76,6 +76,7 @@ interface RoutineTurnProvider {
   forTurn(input: {
     modelGateway: ConversationModelGateway;
     agentId: string;
+    agentRevisionId?: string;
     workspaceId?: string;
     accountId?: string;
     pinnedRoutineIds?: string[];
@@ -120,6 +121,7 @@ export const createRoutineTurnProvider = (
   async forTurn({
     modelGateway,
     agentId,
+    agentRevisionId,
     workspaceId,
     accountId,
     pinnedRoutineIds = [],
@@ -132,8 +134,9 @@ export const createRoutineTurnProvider = (
   }) {
     let publishedRegistrations: RoutineRegistration[];
     try {
-      publishedRegistrations = await dependencies.publishedRoutineSource.load({ agentId });
+      publishedRegistrations = await dependencies.publishedRoutineSource.load({ agentId, workspaceId, agentRevisionId });
     } catch (error) {
+      if (agentRevisionId) throw error;
       dependencies.logger.warn(
         { agentId, err: error instanceof Error ? error.message : String(error) },
         "Published routine definitions failed to load; continuing without DB-backed routines",
@@ -162,9 +165,12 @@ export const createRoutineTurnProvider = (
     try {
       pinnedRegistrations = await dependencies.publishedRoutineSource.loadPinned({
         agentId,
+        workspaceId,
+        agentRevisionId,
         routineIds: pinnedRoutineIds,
       });
     } catch (error) {
+      if (agentRevisionId) throw error;
       dependencies.logger.warn(
         { agentId, routineIds: pinnedRoutineIds, err: error instanceof Error ? error.message : String(error) },
         "Pinned routine definitions failed to load; continuing without resume-only DB-backed routines",

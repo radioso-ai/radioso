@@ -452,6 +452,87 @@ describe("CensusService.run (T020)", () => {
   });
 });
 
+describe("CensusService.run facet requeue (backfill convergence)", () => {
+  it("requeues every excluded message for facet extraction when a facetRequeue dependency is supplied", async () => {
+    const clusterableFacets = buildClusterableFacets();
+    const missingFacetId = randomUUID();
+    const staleFacetId = randomUUID();
+    const eligibleIds = [...clusterableFacets.map((facet) => facet.messageId), missingFacetId, staleFacetId];
+    const facets: FacetFixture[] = [
+      ...clusterableFacets,
+      {
+        messageId: staleFacetId,
+        facetText: "stale",
+        embedding: [1, 1, 1],
+        promptVersion: "facet-extraction/0",
+        embeddingProfileId: CURRENT_EMBEDDING_PROFILE_ID,
+      },
+      // missingFacetId has no row at all.
+    ];
+    const facetRequeue = { enqueue: vi.fn(async () => undefined) };
+    const service = new CensusService({ ...buildDependencies({ eligibleIds, facets }), facetRequeue });
+
+    const result = await service.run({ workspaceId, windowStart, windowEnd });
+
+    expect(facetRequeue.enqueue).toHaveBeenCalledTimes(2);
+    expect(facetRequeue.enqueue).toHaveBeenCalledWith({ messageId: missingFacetId, workspaceId, restartTerminal: true });
+    expect(facetRequeue.enqueue).toHaveBeenCalledWith({ messageId: staleFacetId, workspaceId, restartTerminal: true });
+    expect(result.requeuedForExtraction).toBe(2);
+  });
+
+  it("behaves exactly as before, with requeuedForExtraction at zero, when facetRequeue is omitted", async () => {
+    const clusterableFacets = buildClusterableFacets();
+    const missingFacetId = randomUUID();
+    const eligibleIds = [...clusterableFacets.map((facet) => facet.messageId), missingFacetId];
+    const service = new CensusService(buildDependencies({ eligibleIds, facets: clusterableFacets }));
+
+    const result = await service.run({ workspaceId, windowStart, windowEnd });
+
+    expect(result.requeuedForExtraction).toBe(0);
+  });
+
+  it("still resolves with a valid CensusRunResult when every requeue attempt rejects, counting only the ones that succeeded", async () => {
+    const clusterableFacets = buildClusterableFacets();
+    const missingFacetId = randomUUID();
+    const staleFacetId = randomUUID();
+    const eligibleIds = [...clusterableFacets.map((facet) => facet.messageId), missingFacetId, staleFacetId];
+    const facets: FacetFixture[] = [
+      ...clusterableFacets,
+      {
+        messageId: staleFacetId,
+        facetText: "stale",
+        embedding: [1, 1, 1],
+        promptVersion: "facet-extraction/0",
+        embeddingProfileId: CURRENT_EMBEDDING_PROFILE_ID,
+      },
+    ];
+    const facetRequeue = {
+      enqueue: vi.fn()
+        .mockRejectedValueOnce(new Error("requeue failed for missing"))
+        .mockResolvedValueOnce(undefined),
+    };
+    const service = new CensusService({ ...buildDependencies({ eligibleIds, facets }), facetRequeue });
+
+    const result = await service.run({ workspaceId, windowStart, windowEnd });
+
+    expect(facetRequeue.enqueue).toHaveBeenCalledTimes(2);
+    expect(result.requeuedForExtraction).toBe(1);
+    expect(result.populationSize).toBe(10);
+  });
+
+  it("never calls facetRequeue.enqueue and reports zero requeued when the run is fully facet-ready", async () => {
+    const clusterableFacets = buildClusterableFacets();
+    const eligibleIds = clusterableFacets.map((facet) => facet.messageId);
+    const facetRequeue = { enqueue: vi.fn(async () => undefined) };
+    const service = new CensusService({ ...buildDependencies({ eligibleIds, facets: clusterableFacets }), facetRequeue });
+
+    const result = await service.run({ workspaceId, windowStart, windowEnd });
+
+    expect(facetRequeue.enqueue).not.toHaveBeenCalled();
+    expect(result.requeuedForExtraction).toBe(0);
+  });
+});
+
 describe("CensusService.run facet readiness (spec 956 follow-up)", () => {
   it("reports zero facet-ready questions when none of the population has a current, embedded facet yet", async () => {
     const eligibleIds = [randomUUID(), randomUUID(), randomUUID()];

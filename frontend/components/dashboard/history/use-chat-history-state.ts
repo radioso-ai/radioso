@@ -375,9 +375,13 @@ const withAudiencePulseEvidenceWindow = (
 }
 
 /**
- * Audience Pulse evidence is loaded through one bounded, dashboard-authorized
- * server window. A normal history read supplies conversation metadata, while
- * the anchor endpoint supplies only the source and its immediate answer context.
+ * Audience Pulse evidence normally opens straight into the conversation's normal
+ * recent-messages window, same as any other message anchor -- the cited question is
+ * almost always recent enough to be in it. Only when the anchor isn't in that window
+ * (a long-running conversation whose cited question has scrolled out of the most
+ * recent `MESSAGE_WINDOW_SIZE`) does this fall back to the bounded, id-addressable
+ * evidence-anchor endpoint, so opening old evidence never means cursor-walking a
+ * conversation that can run into the thousands of messages.
  */
 const loadConversationDetail = async ({
   conversationId,
@@ -390,20 +394,15 @@ const loadConversationDetail = async ({
   isAudiencePulseEvidence: boolean
   isActive: () => boolean
 }): Promise<ChatConversationDetail | null> => {
-  const detailRequest = chatApi.getHistoryConversation(conversationId, {
+  const detail = await chatApi.getHistoryConversation(conversationId, {
     limit: MESSAGE_WINDOW_SIZE,
   })
-  if (!anchorMessageId || !isAudiencePulseEvidence) {
-    const detail = await detailRequest
-    return isActive() ? detail : null
-  }
-
-  const [detail, anchor] = await Promise.all([
-    detailRequest,
-    audiencePulseApi.getEvidenceAnchor({ conversationId, messageId: anchorMessageId }),
-  ])
   if (!isActive()) return null
-  return withAudiencePulseEvidenceWindow(detail, anchor)
+  if (!anchorMessageId || !isAudiencePulseEvidence) return detail
+  if (detail.messages.some((message) => message.id === anchorMessageId)) return detail
+
+  const anchor = await audiencePulseApi.getEvidenceAnchor({ conversationId, messageId: anchorMessageId })
+  return isActive() ? withAudiencePulseEvidenceWindow(detail, anchor) : null
 }
 
 export function useHistoryDetailState({

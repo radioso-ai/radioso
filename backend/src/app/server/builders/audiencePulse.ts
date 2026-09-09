@@ -29,6 +29,7 @@ type AudiencePulseBuilderInput = {
   abuseControlService: ConstructorParameters<typeof AudiencePulseRefreshRateLimiter>[0]["abuseControlService"];
   embeddingBindingResolver: ConstructorParameters<typeof ContextualCensusServiceFactory>[0]["embeddingBindingResolver"];
   facetDrain: AudiencePulseFacetDrainPort;
+  facetRequeue?: ConstructorParameters<typeof ContextualCensusServiceFactory>[0]["facetRequeue"];
 };
 
 /**
@@ -56,6 +57,7 @@ export const buildAudiencePulseService = (input: AudiencePulseBuilderInput): Aud
       facetSource: new MessageFacetRepository(input.kysely),
       topicRepository: new TopicRepository(input.kysely),
       embeddingBindingResolver: input.embeddingBindingResolver,
+      facetRequeue: input.facetRequeue,
       currentFacetPromptVersion: FACET_EXTRACTION_PROMPT_VERSION,
       namingInferenceFactory: new ContextualStructuredInferenceFactory({ resolver: input.llmCapabilityResolver }, input.usageEventRecorder),
       privacyAuditInferenceFactory: createRewriteTierStructuredInferenceFactory({ resolver: input.llmCapabilityResolver }, input.usageEventRecorder),

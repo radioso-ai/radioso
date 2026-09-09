@@ -81,6 +81,19 @@ export interface CensusEmbeddingSpaceResolver {
   resolveClusteringSpace(input: { workspaceId: string }): Promise<{ id: string }>;
 }
 
+/**
+ * Requeues a message for facet extraction when this run found no current facet for
+ * it -- missing entirely, or extracted under a stale prompt/embedding version.
+ * Declared locally, narrower than `FacetExtractionJobStore.enqueue`
+ * (`modules/facets/contracts.ts`) -- see `CensusFacetSource` above for why
+ * audiencePulse doesn't import facets' contract directly. Composition can satisfy
+ * this with the same `FacetExtractionJobRepository` instance `facets` already uses:
+ * its wider `enqueue` structurally satisfies this narrower shape.
+ */
+export interface CensusFacetRequeuePort {
+  enqueue(input: { messageId: string; workspaceId: string; restartTerminal?: boolean }): Promise<unknown>;
+}
+
 export interface CensusRunTopicResult {
   topicId: string;
   title: string;
@@ -113,6 +126,8 @@ export interface CensusRunResult {
   facetReadyQuestionCount: number;
   /** Whether every question in the run had a current embedded facet. */
   fullyFacetReady: boolean;
+  /** Excluded messages requeued for facet extraction this run (best-effort; 0 when no facetRequeue dependency is configured). */
+  requeuedForExtraction: number;
   topics: CensusRunTopicResult[];
   /** Topic identities retired by this fully facet-ready run. */
   dissolvedTopicIds: string[];
@@ -131,6 +146,8 @@ export interface CensusServiceDependencies {
   /** The facet extraction prompt version a stored facet must carry to count as current. */
   currentFacetPromptVersion: string;
   telemetryService?: Pick<TelemetryService, "emit">;
+  /** Optional: when supplied, a run requeues any excluded message for re-extraction so a later refresh can converge. Omitted in tests/contexts that don't need backfill. */
+  facetRequeue?: CensusFacetRequeuePort;
 }
 
 interface ClusterableFacet {
@@ -150,8 +167,9 @@ const partitionEligibleQuestions = (input: {
   facetsByMessageId: ReadonlyMap<string, CensusFacetRecord>;
   currentFacetPromptVersion: string;
   currentEmbeddingProfileId: string;
-}): { clusterable: ClusterableFacet[]; excludedCount: number } => {
+}): { clusterable: ClusterableFacet[]; excludedCount: number; excludedIds: string[] } => {
   const clusterable: ClusterableFacet[] = [];
+  const excludedIds: string[] = [];
   let excludedCount = 0;
   for (const messageId of input.eligibleIds) {
     const facet = input.facetsByMessageId.get(messageId);
@@ -161,11 +179,12 @@ const partitionEligibleQuestions = (input: {
       && facet.embeddingProfileId === input.currentEmbeddingProfileId;
     if (!isCurrent) {
       excludedCount += 1;
+      excludedIds.push(messageId);
       continue;
     }
     clusterable.push({ messageId, facetText: facet.facetText, vector: facet.embedding! });
   }
-  return { clusterable, excludedCount };
+  return { clusterable, excludedCount, excludedIds };
 };
 
 /**
@@ -288,12 +307,25 @@ export class CensusService {
       : await this.dependencies.facetSource.listForWindow({ workspaceId, messageIds: [...eligibleIds] });
     const facetsByMessageId = new Map(facetRecords.map((record) => [record.messageId, record]));
 
-    const { clusterable, excludedCount } = partitionEligibleQuestions({
+    const { clusterable, excludedCount, excludedIds } = partitionEligibleQuestions({
       eligibleIds,
       facetsByMessageId,
       currentFacetPromptVersion: this.dependencies.currentFacetPromptVersion,
       currentEmbeddingProfileId: currentEmbeddingSpace.id,
     });
+
+    // Best-effort: a requeue failure for one or all messages must never fail the
+    // whole census run, since the report below still computes normally from
+    // whatever facets are currently available. Convergence over a later refresh is
+    // preferred to an aborted run.
+    let requeuedForExtraction = 0;
+    if (excludedIds.length > 0 && this.dependencies.facetRequeue) {
+      const outcomes = await Promise.allSettled(
+        excludedIds.map((messageId) =>
+          this.dependencies.facetRequeue!.enqueue({ messageId, workspaceId, restartTerminal: true })),
+      );
+      requeuedForExtraction = outcomes.filter((outcome) => outcome.status === "fulfilled").length;
+    }
 
     const censusItems: CensusItem[] = clusterable.map((facet) => ({
       id: facet.messageId,
@@ -499,6 +531,7 @@ export class CensusService {
         populationSize,
         unclassifiedCount,
         facetReadyQuestionCount: clusterable.length,
+        requeuedForExtractionCount: requeuedForExtraction,
         topicCount: topics.length,
         clusteringDurationMs,
         namingDurationMs,
@@ -535,6 +568,7 @@ export class CensusService {
       unclassifiedCount,
       facetReadyQuestionCount: clusterable.length,
       fullyFacetReady,
+      requeuedForExtraction,
       topics: reportTopics,
       dissolvedTopicIds: fullyFacetReady ? [...dissolvedTopicIds] : [],
       dissolvedTopics,

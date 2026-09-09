@@ -584,6 +584,125 @@ test.describe("Audience Pulse dashboard", () => {
     expect(historyTailRequests).toHaveLength(1);
   });
 
+  test("opening evidence already in the recent window shows the full conversation, not just the cited exchange", async ({ page }) => {
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page, {
+      historyList: {
+        conversations: [{
+          id: conversationOne,
+          agentId: null,
+          agentName: null,
+          sourceChannel: "website_embed",
+          sourceOrigin: null,
+          anonymousSessionId: null,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+          messageCount: 4,
+          userMessageCount: 2,
+          assistantMessageCount: 2,
+          preview: "Open regular conversation",
+        }],
+        total: 1,
+        nextCursor: null,
+        hasMore: false,
+      },
+    });
+    await installAudiencePulseMocks(page, { read: "completed" });
+
+    const otherMessageId = "dddddddd-dddd-4ddd-8ddd-000000000001";
+    const conversationMessages = [
+      {
+        id: "eeeeeeee-eeee-4eee-8eee-000000000001",
+        role: "user",
+        source: "customer",
+        content: "Hi, quick question before I book.",
+        createdAt: nowIso,
+      },
+      {
+        id: otherMessageId,
+        role: "assistant",
+        source: "ai_agent",
+        content: "Sure, go ahead.",
+        createdAt: nowIso,
+        citations: [],
+        answerSegments: [{ text: "Sure, go ahead." }],
+      },
+      {
+        id: evidenceMessageOne,
+        role: "user",
+        source: "customer",
+        content: "How long until I get my refund after returning?",
+        createdAt: nowIso,
+      },
+      {
+        id: "eeeeeeee-eeee-4eee-8eee-000000000002",
+        role: "assistant",
+        source: "ai_agent",
+        content: "Refunds usually arrive after the return is accepted.",
+        createdAt: nowIso,
+        citations: [],
+        answerSegments: [{ text: "Refunds usually arrive after the return is accepted." }],
+      },
+    ];
+    const evidenceAnchorRequests: unknown[] = [];
+    await page.route(`**/backend/api/v1/history/chat/${conversationOne}**`, async (route) => {
+      const url = new URL(route.request().url());
+      if (url.pathname.endsWith("/tail")) {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ messages: [], cursor: null }),
+        });
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          conversationId: conversationOne,
+          workspaceId,
+          agentId: null,
+          sourceChannel: "website_embed",
+          sourceOrigin: null,
+          channelContext: null,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+          messageCount: conversationMessages.length,
+          userMessageCount: 2,
+          assistantMessageCount: 2,
+          messagesTotal: conversationMessages.length,
+          messageWindowOffset: 0,
+          messageWindowLimit: 50,
+          hasOlderMessages: false,
+          nextCursor: null,
+          tailCursor: null,
+          messages: conversationMessages,
+        }),
+      });
+    });
+    // The evidence-anchor fallback is only for a citation that scrolled out of the
+    // recent window (see the "deeply buried" test above); it must stay unused here.
+    await page.route("**/backend/api/v1/quality/audience-pulse/evidence-anchor", async (route) => {
+      evidenceAnchorRequests.push(route.request().postDataJSON());
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({}) });
+    });
+
+    await page.goto(`/w/${workspaceKey}/quality?view=audience-pulse`);
+    const topicRow = page.getByTestId("audience-pulse-topic-row").first();
+    await topicRow.getByRole("button", { name: /Show examples/ }).click();
+    await page.getByRole("button", { name: "How long until I get my refund after returning?" }).click();
+
+    await expect(page).toHaveURL(/\/activity\?tab=all$/);
+    await expect(page.getByLabel("Conversation details")).toBeVisible();
+    await expect(page.locator(`[data-message-id="${evidenceMessageOne}"]`)).toBeVisible();
+    await expect(page.locator(`[data-message-id="${evidenceMessageOne}"] .ring-1`)).toHaveCount(1);
+    // The fix under test: the whole conversation renders, not just the cited exchange.
+    await expect(page.locator(`[data-message-id="${otherMessageId}"]`)).toBeVisible();
+    await expect(page.locator("[data-message-id]")).toHaveCount(conversationMessages.length);
+    await page.waitForTimeout(150);
+    expect(evidenceAnchorRequests).toEqual([]);
+  });
+
   test("an explicit Activity selection clears a superseded evidence handoff", async ({ page }) => {
     await seedDashboardStorage(page);
     await installDashboardApiMocks(page);

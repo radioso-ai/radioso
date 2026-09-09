@@ -66,6 +66,7 @@ import {
 } from "@/lib/agent-test-execution-state";
 import { evalsApi, type EvalCaseListItem } from "@/lib/api-eval";
 import { contextVariablesApi } from "@/lib/api-context-variables";
+import { validateTestValueInputs } from "@/lib/agent-revision-test-values";
 import { isAgentDraftDirty, saveAgentDraft } from "@/lib/agent-draft-save-port";
 import {
   agentRevisionTestChatSessionKey,
@@ -200,7 +201,7 @@ export function AgentRevisionTestChat({
     cachedSession?.contextVariables ?? [],
   );
   const [valueInputs, setValueInputs] = useState<Record<string, string>>(cachedSession?.valueInputs ?? {});
-  const [valueError, setValueError] = useState<string | null>(cachedSession?.valueError ?? null);
+  const [revisionValueError, setRevisionValueError] = useState<string | null>(cachedSession?.valueError ?? null);
   const [isSending, setIsSending] = useState(cachedSession?.isSending ?? false);
   const [isStarting, setIsStarting] = useState(cachedSession?.isStarting ?? false);
   const [isRunningEvals, setIsRunningEvals] = useState(cachedSession?.isRunningEvals ?? false);
@@ -278,22 +279,12 @@ export function AgentRevisionTestChat({
       enabledFor,
     }));
   }, [contextVariables, mode, revisionDetails, revisions, selected]);
-  const testValues = useMemo(() => {
-    if (!selectedVariables) return [];
-    const values: Array<{ contextVariableId: string; value: unknown }> = [];
-    for (const { id, variable } of selectedVariables) {
-      const raw = valueInputs[id]?.trim();
-      if (!raw || !variable) continue;
-      if (variable.valueType === "json") {
-        try {
-          values.push({ contextVariableId: id, value: JSON.parse(raw) });
-        } catch {
-          /* inline validation explains malformed JSON */
-        }
-      } else values.push({ contextVariableId: id, value: raw });
-    }
-    return values;
-  }, [selectedVariables, valueInputs]);
+  const valueValidation = useMemo(() => validateTestValueInputs(
+    selectedVariables?.flatMap(({ id, variable }) => variable ? [{ id, name: variable.name, valueType: variable.valueType }] : []) ?? [],
+    valueInputs,
+  ), [selectedVariables, valueInputs]);
+  const testValues = valueValidation.values;
+  const valueError = revisionValueError ?? Object.values(valueValidation.errors)[0] ?? null;
   const agentCases = useMemo(
     () => cases.filter((evalCase) => evalCase.agent.agentId === agentId),
     [agentId, cases],
@@ -495,11 +486,11 @@ export function AgentRevisionTestChat({
             results.map(([id, result]) => [id, result.revision]),
           ),
         }));
-        setValueError(null);
+        setRevisionValueError(null);
       })
       .catch((cause) => {
         if (active)
-          setValueError(
+          setRevisionValueError(
             cause instanceof Error
               ? cause.message
               : "Selected revision values are unavailable.",
@@ -1515,14 +1506,6 @@ export function AgentRevisionTestChat({
                                     ...current,
                                     [id]: raw,
                                   }));
-                                  try {
-                                    if (raw.trim()) JSON.parse(raw);
-                                    setValueError(null);
-                                  } catch {
-                                    setValueError(
-                                      `${variable.name} must contain valid JSON.`,
-                                    );
-                                  }
                                   clearActiveTest(
                                     "Test values changed. Start a fresh private test.",
                                   );

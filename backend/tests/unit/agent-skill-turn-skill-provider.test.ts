@@ -316,7 +316,7 @@ describe("RepositoryAgentSkillTurnSkillProvider", () => {
     const pinnedSession: PreparedSession = {
       ...baseSession,
       agent: { ...baseSession.agent, authoredAgentSkills: [frozenSkill] },
-    } as PreparedSession;
+    };
 
     const runtime = await provider.forSession(pinnedSession);
 

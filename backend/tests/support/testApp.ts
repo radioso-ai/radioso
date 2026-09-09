@@ -174,6 +174,7 @@ import { ProductAnalyticsService } from "../../src/shared/analytics/productAnaly
 import { buildErrorSinks } from "../../src/shared/errors/buildErrorSinks.js";
 import { ErrorReportingService } from "../../src/shared/errors/errorReportingService.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
+import { TtlRetentionWorker } from "../../src/shared/domain/ttlRetentionWorker.js";
 import { loadPromptTemplate } from "../../src/shared/infra/prompts/promptLoader.js";
 import {
   AgentTurnProbeService,
@@ -362,6 +363,8 @@ export const createTestEnv = (): Env => ({
   EXPENSIVE_AUTHENTICATED_RATE_LIMIT_MAX_ATTEMPTS: 60,
   COPILOT_PROBE_BUDGET_PER_TURN: 3,
   COPILOT_CONVERSATION_RETENTION_DAYS: 90,
+  AGENT_TEST_EXECUTION_RETENTION_DAYS: 0,
+  AGENT_REVISION_EVAL_RUN_RETENTION_DAYS: 0,
   AGENT_BUNDLE_IMPORT_ORPHAN_AGE_MS: 15 * 60 * 1_000,
   PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS: 60_000,
   PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 10,
@@ -2358,6 +2361,20 @@ export const createTestDependencies = (overrides: {
       audit: auditService,
       logger,
       retentionDays: env.COPILOT_CONVERSATION_RETENTION_DAYS,
+    }),
+    testExecutionRetentionWorker: new TtlRetentionWorker({
+      subject: "agent_test_execution",
+      sweep: { deleteBefore: async () => 0 },
+      audit: auditService,
+      logger,
+      retentionDays: env.AGENT_TEST_EXECUTION_RETENTION_DAYS,
+    }),
+    revisionEvalRunRetentionWorker: new TtlRetentionWorker({
+      subject: "agent_revision_eval_run",
+      sweep: { deleteBefore: async () => 0 },
+      audit: auditService,
+      logger,
+      retentionDays: env.AGENT_REVISION_EVAL_RUN_RETENTION_DAYS,
     }),
     chatBootstrapService,
     chatHistoryService,

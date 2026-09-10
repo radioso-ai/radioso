@@ -17,6 +17,10 @@
   const STYLE_ELEMENT_ID = 'radioso-embed-style'
   const ATTENTION_PRESETS = new Set(['none', 'breathe', 'pulse', 'nudge', 'bounce-in'])
   const DEFAULT_TEASER_DELAY_MS = 4000
+  // Hysteresis band: collapse past 20% scroll progress, only expand again once
+  // progress drops back below 15%, so the button doesn't flicker at the boundary.
+  const LAUNCHER_COLLAPSE_SCROLL_PROGRESS = 0.2
+  const LAUNCHER_EXPAND_SCROLL_PROGRESS = 0.15
   const TEASER_AUTO_HIDE_MS = 25000
   const PANEL_HANDLE_WIDTH = 56
   const DESKTOP_PANEL_CONTENT_WIDTH = 560
@@ -32,6 +36,10 @@
   const LAUNCHER_TRAIL_MIN_INTERVAL_MS = 18
   const LAUNCHER_DRAG_VIEWPORT_MARGIN_PX = 8
   const LAUNCHER_RETURN_TRANSITION = 'transform 820ms cubic-bezier(0.22, 1.42, 0.36, 1)'
+  // Shared resting-state transition for the bubble launcher button: covers the
+  // collapse-on-scroll shape change (padding/border-radius/gap) alongside the
+  // existing hover/drag-return transitions, so the whole button animates as one.
+  const LAUNCHER_RESTING_TRANSITION = `box-shadow 200ms ease, opacity 140ms ease, padding 200ms ease, border-radius 200ms ease, gap 200ms ease, ${LAUNCHER_RETURN_TRANSITION}`
   const LAUNCHER_TRAIL_COLORS = ['#FFC720', '#FFE08A', '#F4B400']
   const LAUNCHER_RELEASE_COLORS = ['#FFC720', '#FFE08A', '#22C55E', '#38BDF8', '#A78BFA', '#FB7185', '#F97316']
   let signedIdentityToken = null
@@ -499,6 +507,14 @@
     return ATTENTION_PRESETS.has(normalized) ? normalized : 'none'
   }
 
+  // Default-on: collapsing on scroll only turns off with an explicit "off".
+  const normalizeCollapseOnScroll = (value) => {
+    if (typeof value !== 'string') {
+      return true
+    }
+    return value.trim().toLowerCase() !== 'off'
+  }
+
   const parsePositiveInt = (value, fallback) => {
     if (typeof value !== 'string') {
       return fallback
@@ -536,6 +552,10 @@
       '.radioso-launcher[data-radioso-attention="bounce-in"] { animation: radioso-bounce-in 700ms cubic-bezier(0.34, 1.56, 0.64, 1) 1 !important; }',
       '.radioso-launcher[data-radioso-attention="pulse"]::before { content: ""; position: absolute; inset: 0; border-radius: inherit; z-index: -1; animation: radioso-pulse-ring 2.2s ease-out infinite; pointer-events: none; }',
       '.radioso-launcher[data-radioso-typing="true"] .radioso-launcher-avatar { animation: radioso-typing-ring 1.4s ease-out infinite; }',
+      '.radioso-launcher-label { transition: max-width 200ms ease, opacity 160ms ease, margin 200ms ease; overflow: hidden; }',
+      '.radioso-launcher[data-radioso-collapsed="true"] .radioso-launcher-label { max-width: 0 !important; opacity: 0 !important; margin: 0 !important; }',
+      '.radioso-launcher[data-radioso-collapsed="true"] { padding: 0.5rem !important; border-radius: 24px !important; gap: 0 !important; }',
+      '.radioso-launcher[data-radioso-collapsed="true"] .radioso-launcher-avatar { width: 3rem !important; height: 3rem !important; border-radius: 0.85rem !important; }',
       '.radioso-launcher-dot { position: absolute; top: 9px; right: 12px; width: 10px; height: 10px; border-radius: 9999px; background: var(--radioso-dot-color, #ef4444); border: 2px solid var(--radioso-dot-border, #ffffff); opacity: 0; transform: scale(0.6); transition: opacity 180ms ease, transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1); pointer-events: none; }',
       '.radioso-launcher-dot[data-visible="true"] { opacity: 1; transform: scale(1); }',
       '.radioso-teaser { position: relative; max-width: 280px; padding: 12px 14px; border-radius: 16px; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 14px; line-height: 1.4; cursor: pointer; pointer-events: auto; opacity: 0; transform: translateY(8px) scale(0.96); transform-origin: bottom right; animation: radioso-teaser-in 280ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }',
@@ -550,6 +570,9 @@
       '  .radioso-launcher[data-radioso-attention] { animation: none !important; }',
       '  .radioso-launcher[data-radioso-attention="pulse"]::before { animation: none !important; opacity: 0 !important; }',
       '  .radioso-launcher[data-radioso-typing="true"] .radioso-launcher-avatar { animation: none !important; }',
+      '  .radioso-launcher-label { transition: none !important; }',
+      '  .radioso-launcher-avatar { transition: none !important; }',
+      '  .radioso-launcher[data-radioso-collapsed] { transition: none !important; }',
       '  .radioso-teaser { animation: none !important; opacity: 1; transform: none; }',
       '  .radioso-comet-square { display: none !important; animation: none !important; }',
       '}',
@@ -725,6 +748,7 @@
     mergeDatasetStringOverride(overrides, dataset, 'radiosoLauncherAttention', 'launcherAttention')
     mergeDatasetStringOverride(overrides, dataset, 'radiosoLauncherTeaserDelayMs', 'launcherTeaserDelayMs')
     mergeDatasetStringOverride(overrides, dataset, 'radiosoProactiveGreetingTeaser', 'proactiveGreetingTeaser')
+    mergeDatasetStringOverride(overrides, dataset, 'radiosoLauncherCollapseOnScroll', 'launcherCollapseOnScroll')
 
     return overrides
   }
@@ -853,6 +877,7 @@
     container.style.height = isLarge ? '3rem' : '2.5rem'
     container.style.overflow = 'hidden'
     container.style.borderRadius = isLarge ? '0.85rem' : '0.8rem'
+    container.style.transition = 'width 200ms ease, height 200ms ease, border-radius 200ms ease'
     container.style.flexShrink = '0'
     container.style.background = theme.mutedBackground
     container.style.color = theme.accent
@@ -1116,6 +1141,7 @@
     button.appendChild(iconContainer)
     if (hasVisibleLabel) {
       const labelNode = document.createElement('span')
+      labelNode.className = 'radioso-launcher-label'
       labelNode.textContent = label
       button.appendChild(labelNode)
     }
@@ -1142,7 +1168,7 @@
     button.style.fontWeight = '600'
     button.style.lineHeight = '1'
     button.style.boxShadow = `${theme.launcherShadow}, inset 0 1px 0 rgba(255, 255, 255, 0.18)`
-    button.style.transition = `box-shadow 200ms ease, opacity 140ms ease, ${LAUNCHER_RETURN_TRANSITION}`
+    button.style.transition = LAUNCHER_RESTING_TRANSITION
     button.style.userSelect = 'none'
     button.style.touchAction = 'none'
     button.style.pointerEvents = 'auto'
@@ -1381,6 +1407,9 @@
           : Boolean(config && config.proactiveGreetingEnabled)
     const attentionPreset = normalizeAttention(expertOverrides.launcherAttention)
     const teaserDelayMs = parsePositiveInt(expertOverrides.launcherTeaserDelayMs, DEFAULT_TEASER_DELAY_MS)
+    // Only a bubble launcher with a visible label has anything to collapse.
+    const collapseOnScrollEnabled =
+      displayMode === 'bubble' && Boolean(label) && normalizeCollapseOnScroll(expertOverrides.launcherCollapseOnScroll)
     const teaserText = (copyOverrides.proactiveGreetingTeaser || defaultCopy.proactiveGreetingTeaser).trim()
     // The teaser is the first thing a visitor hears from the agent and it renders
     // outside the iframe, so it names the assistant and marks it as software here
@@ -1928,11 +1957,11 @@
           clearTimeout(returnTimer)
           returnTimer = null
         }
-        button.style.transition = `box-shadow 200ms ease, opacity 140ms ease, ${LAUNCHER_RETURN_TRANSITION}`
+        button.style.transition = LAUNCHER_RESTING_TRANSITION
         button.style.transform = 'translate3d(0px, 0px, 0) rotate(0deg)'
         returnTimer = setTimeout(() => {
           button.style.transform = ''
-          button.style.transition = `box-shadow 200ms ease, opacity 140ms ease, ${LAUNCHER_RETURN_TRANSITION}`
+          button.style.transition = LAUNCHER_RESTING_TRANSITION
           button.style.willChange = ''
           returnTimer = null
         }, 840)
@@ -2095,7 +2124,7 @@
           startReturnSparkleTrail(releasePoint, releaseOffset, releaseVelocity)
           resetLauncherTransform()
         } else {
-          button.style.transition = `box-shadow 200ms ease, opacity 140ms ease, ${LAUNCHER_RETURN_TRANSITION}`
+          button.style.transition = LAUNCHER_RESTING_TRANSITION
           button.style.willChange = ''
         }
       }
@@ -2204,6 +2233,19 @@
     window.addEventListener('resize', updatePanelVisibility)
     window.visualViewport?.addEventListener('resize', updatePanelVisibility)
     window.visualViewport?.addEventListener('scroll', updatePanelVisibility)
+    if (collapseOnScrollEnabled) {
+      const collapseOnScrollHandler = () => {
+        const scrollableHeight = document.documentElement.scrollHeight - window.innerHeight
+        const progress = scrollableHeight > 0 ? window.scrollY / scrollableHeight : 0
+        if (progress >= LAUNCHER_COLLAPSE_SCROLL_PROGRESS) {
+          button.dataset.radiosoCollapsed = 'true'
+        } else if (progress < LAUNCHER_EXPAND_SCROLL_PROGRESS) {
+          delete button.dataset.radiosoCollapsed
+        }
+      }
+      window.addEventListener('scroll', collapseOnScrollHandler, { passive: true })
+      collapseOnScrollHandler()
+    }
     updatePanelVisibility()
     document.body.appendChild(host)
 

@@ -663,6 +663,25 @@ function WebsiteEmbedSettingsPanel({
                 </p>
               </div>
             ) : null}
+            {displayMode === 'bubble' ? (
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <Label htmlFor="websiteEmbedExpert-launcherCollapseOnScroll" className="text-foreground">
+                    Collapse on scroll
+                  </Label>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Shrinks the chat button to icon-only once a visitor scrolls past about 20% of the page, and expands it again when they scroll back up.
+                  </p>
+                </div>
+                <Switch
+                  id="websiteEmbedExpert-launcherCollapseOnScroll"
+                  checked={(anonSettings.websiteEmbedExpertOverrides?.launcherCollapseOnScroll ?? '') !== 'off'}
+                  onCheckedChange={(checked) =>
+                    handleWebsiteEmbedExpertOverrideChange('launcherCollapseOnScroll', checked ? '' : 'off')
+                  }
+                />
+              </div>
+            ) : null}
             <div className="space-y-2">
               <Label htmlFor="websiteEmbedExpert-proactiveGreetingTeaser" className="text-foreground">Greeting message</Label>
               <Input

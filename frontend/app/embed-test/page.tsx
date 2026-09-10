@@ -25,6 +25,7 @@ type EmbedTestConfig = {
   launcherTeaserDelayMs: string
   proactiveGreetingTeaser: string
   proactiveGreeting: string
+  launcherCollapseOnScroll: string
 }
 
 const STORAGE_KEY = 'radioso.embedTest.config'
@@ -46,6 +47,7 @@ const DEFAULT_CONFIG: EmbedTestConfig = {
   launcherTeaserDelayMs: '',
   proactiveGreetingTeaser: '',
   proactiveGreeting: '',
+  launcherCollapseOnScroll: '',
 }
 
 const firstSearchValue = (params: URLSearchParams, key: keyof EmbedTestConfig) =>
@@ -92,6 +94,8 @@ const resolveInitialConfig = () => {
     launcherTeaserDelayMs: firstSearchValue(params, 'launcherTeaserDelayMs') ?? stored.launcherTeaserDelayMs ?? '',
     proactiveGreetingTeaser: firstSearchValue(params, 'proactiveGreetingTeaser') ?? stored.proactiveGreetingTeaser ?? '',
     proactiveGreeting: firstSearchValue(params, 'proactiveGreeting') ?? stored.proactiveGreeting ?? '',
+    launcherCollapseOnScroll:
+      firstSearchValue(params, 'launcherCollapseOnScroll') ?? stored.launcherCollapseOnScroll ?? '',
   }
 }
 
@@ -100,6 +104,7 @@ const buildExpertOverridesJson = (config: EmbedTestConfig): string => {
   if (config.launcherAttention.trim()) overrides.launcherAttention = config.launcherAttention.trim()
   if (config.launcherTeaserDelayMs.trim()) overrides.launcherTeaserDelayMs = config.launcherTeaserDelayMs.trim()
   if (config.proactiveGreetingTeaser.trim()) overrides.proactiveGreetingTeaser = config.proactiveGreetingTeaser.trim()
+  if (config.launcherCollapseOnScroll.trim()) overrides.launcherCollapseOnScroll = config.launcherCollapseOnScroll.trim()
   return Object.keys(overrides).length > 0 ? JSON.stringify(overrides) : ''
 }
 
@@ -244,6 +249,7 @@ export default function EmbedTestPage() {
     if (config.launcherTeaserDelayMs) params.set('launcherTeaserDelayMs', config.launcherTeaserDelayMs)
     if (config.proactiveGreetingTeaser) params.set('proactiveGreetingTeaser', config.proactiveGreetingTeaser)
     if (config.proactiveGreeting) params.set('proactiveGreeting', config.proactiveGreeting)
+    if (config.launcherCollapseOnScroll) params.set('launcherCollapseOnScroll', config.launcherCollapseOnScroll)
     window.location.search = params.toString()
   }
 
@@ -366,6 +372,18 @@ export default function EmbedTestPage() {
                     <option value="pulse">pulse</option>
                     <option value="nudge">nudge</option>
                     <option value="bounce-in">bounce-in</option>
+                  </select>
+                </label>
+                <label className="space-y-2">
+                  <Label htmlFor="launcher-collapse-on-scroll">Collapse on scroll</Label>
+                  <select
+                    id="launcher-collapse-on-scroll"
+                    value={config.launcherCollapseOnScroll}
+                    onChange={(event) => updateConfig('launcherCollapseOnScroll', event.target.value)}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  >
+                    <option value="">on (default)</option>
+                    <option value="off">off</option>
                   </select>
                 </label>
                 <label className="space-y-2">

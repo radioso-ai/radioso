@@ -1051,4 +1051,129 @@ describe('radioso embed launcher', () => {
     }
   })
 
+  describe('collapse-on-scroll for the bubble launcher label', () => {
+    const mountBubbleLauncher = async ({
+      launcherLabel = 'Chat with us',
+      displayModeOverride,
+      collapseOnScrollOverride,
+    }: {
+      launcherLabel?: string
+      displayModeOverride?: string
+      collapseOnScrollOverride?: string
+    } = {}) => {
+      const launcherSource = await readFile(join(process.cwd(), 'lib/radioso-embed-launcher.js'), 'utf8')
+      const script = new FakeElement('script')
+      script.src = 'https://app.example.com/radioso-embed.js'
+      script.dataset.radiosoToken = 'embed-token'
+      if (displayModeOverride) {
+        script.dataset.radiosoDisplayMode = displayModeOverride
+      }
+      if (collapseOnScrollOverride) {
+        script.dataset.radiosoLauncherCollapseOnScroll = collapseOnScrollOverride
+      }
+
+      const head = new FakeElement('head')
+      const body = new FakeElement('body')
+      const document = {
+        readyState: 'complete',
+        currentScript: script,
+        scripts: [script],
+        head,
+        body,
+        // scrollHeight - innerHeight = 1000, so scrollY reads as a 0-1 progress fraction * 1000.
+        documentElement: { clientWidth: 1024, clientHeight: 768, lang: 'en', scrollHeight: 1768 },
+        title: 'Host page',
+        createElement: (tagName: string) => new FakeElement(tagName),
+        getElementById: () => null,
+        addEventListener: vi.fn(),
+      }
+      const sessionStorage = { getItem: vi.fn(() => null), setItem: vi.fn() }
+      const fetch = vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          launcherLabel,
+          launcherPosition: 'bottom-right',
+          theme: { brand: '#0f172a', brandText: '#f8fafc', surface: '#ffffff', text: '#0f172a' },
+          copy: {},
+          expertOverrides: {},
+          proactiveGreetingEnabled: false,
+        }),
+      }))
+      const window = {
+        location: { href: 'https://host.example.com/page', origin: 'https://host.example.com' },
+        navigator: { languages: ['en-US'], language: 'en-US' },
+        sessionStorage,
+        matchMedia: vi.fn(() => ({ matches: false })),
+        innerWidth: 1024,
+        innerHeight: 768,
+        scrollY: 0,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        requestAnimationFrame: (callback: FrameRequestCallback) => {
+          callback(0)
+          return 1
+        },
+        setTimeout: vi.fn(),
+        clearTimeout: vi.fn(),
+        visualViewport: null,
+      }
+
+      vm.runInNewContext(launcherSource, {
+        document,
+        window,
+        fetch,
+        URL,
+        setTimeout: vi.fn(),
+        clearTimeout: vi.fn(),
+        requestAnimationFrame: window.requestAnimationFrame,
+      })
+      for (let index = 0; index < 10; index += 1) {
+        await Promise.resolve()
+      }
+
+      const button = collectElements(body, (element) => element.tagName === 'BUTTON')[0]
+      const scrollHandler = window.addEventListener.mock.calls.find(
+        ([eventName]) => eventName === 'scroll',
+      )?.[1] as ((event: unknown) => void) | undefined
+
+      return { button, window, scrollHandler }
+    }
+
+    it('collapses to icon-only past 20% scroll progress and expands back below 15% by default', async () => {
+      const { button, window, scrollHandler } = await mountBubbleLauncher()
+      expect(scrollHandler).toBeDefined()
+
+      window.scrollY = 250 // progress 0.25 of the 1000px scrollable range
+      scrollHandler?.({})
+      expect(button.dataset.radiosoCollapsed).toBe('true')
+
+      window.scrollY = 100 // progress 0.1, below the 0.15 expand threshold
+      scrollHandler?.({})
+      expect(button.dataset.radiosoCollapsed).toBeUndefined()
+    })
+
+    it('does not collapse when the operator opts out via launcherCollapseOnScroll="off"', async () => {
+      const { button, window, scrollHandler } = await mountBubbleLauncher({ collapseOnScrollOverride: 'off' })
+      expect(scrollHandler).toBeUndefined()
+      window.scrollY = 900 // deep scroll, in case a handler exists anyway
+      scrollHandler?.({})
+      expect(button.dataset.radiosoCollapsed).toBeUndefined()
+    })
+
+    it('does not collapse in panel display mode', async () => {
+      const { button, window, scrollHandler } = await mountBubbleLauncher({ displayModeOverride: 'panel' })
+      expect(scrollHandler).toBeUndefined()
+      window.scrollY = 900
+      scrollHandler?.({})
+      expect(button.dataset.radiosoCollapsed).toBeUndefined()
+    })
+
+    it('does not collapse when there is no visible launcher label', async () => {
+      const { button, window, scrollHandler } = await mountBubbleLauncher({ launcherLabel: '' })
+      expect(scrollHandler).toBeUndefined()
+      window.scrollY = 900
+      scrollHandler?.({})
+      expect(button.dataset.radiosoCollapsed).toBeUndefined()
+    })
+  })
 })

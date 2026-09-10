@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import type { OperatorMcpClientSnapshot } from "./contracts.js";
-import { validateRedirectUri } from "./domain.js";
+import { NATIVE_LOOPBACK_HOSTNAMES, validateRedirectUri } from "./domain.js";
 import { assertPublicHttpUrl } from "../../shared/infra/http/publicUrlFetch.js";
 import { fetchPublicUrl } from "../../shared/infra/http/publicUrlFetch.js";
 
@@ -12,7 +12,7 @@ const DEFAULT_TIMEOUT_MS = 5_000;
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f-\u009f]/u;
 
 const metadataSchema = z.object({
-  application_type: z.enum(["web", "native"]),
+  application_type: z.enum(["web", "native"]).optional(),
   client_id: z.string().min(1).max(2_048),
   client_name: z.string().min(1).max(256),
   client_uri: z.string().url().max(2_048).optional(),
@@ -85,33 +85,39 @@ const assertRedirect = (uri: string, applicationType: "web" | "native"): string 
   if (applicationType === "web" && url.protocol !== "https:") {
     throw new OperatorMcpClientMetadataError("invalid_client_metadata", "Invalid web redirect URI");
   }
-  if (applicationType === "native" && (url.protocol !== "http:" || !["127.0.0.1", "[::1]"].includes(url.hostname))) {
+  if (applicationType === "native" && (url.protocol !== "http:" || !NATIVE_LOOPBACK_HOSTNAMES.includes(url.hostname))) {
     throw new OperatorMcpClientMetadataError("invalid_client_metadata", "Invalid native redirect URI");
   }
   return uri;
 };
 
-const isUnsupportedNativeLocalhostRedirect = (uri: string, applicationType: "web" | "native"): boolean => {
-  if (applicationType !== "native" || CONTROL_CHARACTERS.test(uri)) return false;
+const isPortFlexibleLoopbackRedirect = (uri: string): boolean => {
   try {
     const url = new URL(uri);
-    return url.protocol === "http:"
-      && url.hostname === "localhost"
-      && !url.username
-      && !url.password
-      && !url.hash;
+    return url.protocol === "http:" && NATIVE_LOOPBACK_HOSTNAMES.includes(url.hostname);
   } catch {
     return false;
   }
 };
 
-const isLiteralLoopbackRedirect = (uri: string): boolean => {
-  try {
-    const url = new URL(uri);
-    return url.protocol === "http:" && (url.hostname === "127.0.0.1" || url.hostname === "[::1]");
-  } catch {
-    return false;
+// The client-id metadata document draft has no application_type field; infer it from the
+// redirect URI shape, the same signal OAuth 2.0 for Native Apps (RFC 8252) uses to distinguish
+// loopback-bound native clients from https-only web clients.
+const inferApplicationType = (redirectUris: readonly string[]): "web" | "native" | null => {
+  let sawNativeLoopback = false;
+  let sawNonLoopback = false;
+  for (const uri of redirectUris) {
+    try {
+      const url = new URL(uri);
+      if (url.protocol === "http:" && NATIVE_LOOPBACK_HOSTNAMES.includes(url.hostname)) sawNativeLoopback = true;
+      else sawNonLoopback = true;
+    } catch {
+      sawNonLoopback = true;
+    }
   }
+  if (sawNativeLoopback && !sawNonLoopback) return "native";
+  if (!sawNativeLoopback && sawNonLoopback) return "web";
+  return null;
 };
 
 const assertRequestedRedirect = (input: {
@@ -119,7 +125,7 @@ const assertRequestedRedirect = (input: {
   requested: string;
   registered: readonly string[];
 }): void => {
-  if (input.applicationType === "native" && isLiteralLoopbackRedirect(input.requested)) {
+  if (input.applicationType === "native" && isPortFlexibleLoopbackRedirect(input.requested)) {
     try {
       validateRedirectUri(input);
       return;
@@ -240,22 +246,21 @@ export const createOperatorMcpClientMetadataService = (options: OperatorMcpClien
         if (uri.protocol !== "https:" || uri.hash || uri.search || uri.username || uri.password) throw new OperatorMcpClientMetadataError("invalid_client_metadata", "Invalid client URI");
         await assertPublicUrl(metadata.client_uri);
       }
-      // Some native clients publish both the RFC 8252 literal-loopback callback they use and a
-      // localhost fallback. Keep the interoperable literal callback without admitting localhost
-      // as an authorization target: unsupported entries are absent from the immutable snapshot.
-      const redirectUris = metadata.redirect_uris
-        .filter((uri) => !isUnsupportedNativeLocalhostRedirect(uri, metadata.application_type))
-        .map((uri) => assertRedirect(uri, metadata.application_type));
+      const applicationType = metadata.application_type ?? inferApplicationType(metadata.redirect_uris);
+      if (!applicationType) {
+        throw new OperatorMcpClientMetadataError("invalid_client_metadata", "Client metadata application_type is missing and cannot be inferred");
+      }
+      const redirectUris = metadata.redirect_uris.map((uri) => assertRedirect(uri, applicationType));
       if (redirectUris.length === 0) {
         throw new OperatorMcpClientMetadataError("invalid_client_metadata", "Client metadata has no supported redirect URI");
       }
       if (input.redirectUri) assertRequestedRedirect({
-        applicationType: metadata.application_type,
+        applicationType,
         requested: input.redirectUri,
         registered: redirectUris,
       });
       const normalized = Object.freeze({
-        applicationType: metadata.application_type,
+        applicationType,
         clientId: metadata.client_id,
         clientUri: metadata.client_uri,
         displayName: metadata.client_name,

@@ -108,13 +108,13 @@ describe("operator MCP client metadata", () => {
     await expect(createOperatorMcpClientMetadataService({ fetchImpl: stalled, timeoutMs: 1 }).resolve({ clientId, redirectUri: metadata.redirect_uris[0] })).rejects.toMatchObject({ code: "metadata_unavailable" });
   });
 
-  it("allows only literal native loopback redirects and supports immutable preregistration", async () => {
+  it("allows native loopback IP and localhost redirects, and supports immutable preregistration", async () => {
     const native = { ...metadata, application_type: "native", redirect_uris: ["http://127.0.0.1:43123/oauth/callback"] };
     const fetchImpl = vi.fn<typeof fetch>().mockImplementation(async () => response(native));
     await expect(createOperatorMcpClientMetadataService({ fetchImpl }).resolve({ clientId, redirectUri: native.redirect_uris[0] })).resolves.toMatchObject({ applicationType: "native" });
     await expect(createOperatorMcpClientMetadataService({ fetchImpl }).resolve({ clientId, redirectUri: "http://127.0.0.1:54131/oauth/callback" })).resolves.toMatchObject({ applicationType: "native" });
     fetchImpl.mockResolvedValue(response({ ...native, redirect_uris: ["http://localhost:43123/oauth/callback"] }));
-    await expect(createOperatorMcpClientMetadataService({ fetchImpl }).resolve({ clientId, redirectUri: "http://localhost:43123/oauth/callback" })).rejects.toThrow(/redirect|native/i);
+    await expect(createOperatorMcpClientMetadataService({ fetchImpl }).resolve({ clientId, redirectUri: "http://localhost:43123/oauth/callback" })).resolves.toMatchObject({ applicationType: "native" });
 
     const preregistered = Object.freeze({
       applicationType: "native" as const, clientId: "com.example.app", clientMetadataSnapshotId: "snapshot-1", clientVersion: "1",
@@ -128,7 +128,7 @@ describe("operator MCP client metadata", () => {
     await expect(registered.resolve({ clientId: preregistered.clientId, redirectUri: "com.example.other:/callback" })).rejects.toThrow(/redirect/i);
   });
 
-  it("accepts a literal loopback callback when native metadata also advertises an unusable localhost fallback", async () => {
+  it("accepts either a loopback IP or a localhost callback when native metadata advertises both", async () => {
     const callbackPath = "/callback/codex-session";
     const native = {
       ...metadata,
@@ -147,12 +147,45 @@ describe("operator MCP client metadata", () => {
       redirectUri: `http://127.0.0.1:53192${callbackPath}`,
     })).resolves.toMatchObject({
       applicationType: "native",
-      redirectUris: [`http://127.0.0.1${callbackPath}`],
+      redirectUris: [`http://127.0.0.1${callbackPath}`, `http://localhost${callbackPath}`],
     });
     await expect(service.resolve({
       clientId,
       redirectUri: `http://localhost:53192${callbackPath}`,
-    })).rejects.toThrow(/redirect/i);
+    })).resolves.toMatchObject({
+      applicationType: "native",
+    });
+  });
+
+  it("infers application_type from redirect URI shape when the client metadata document omits it, as Claude Code's does", async () => {
+    const { application_type: _omitted, ...withoutApplicationType } = metadata;
+    const nativeWithoutApplicationType = {
+      ...withoutApplicationType,
+      redirect_uris: ["http://localhost/callback", "http://127.0.0.1/callback"],
+    };
+    const service = createOperatorMcpClientMetadataService({
+      fetchImpl: vi.fn<typeof fetch>().mockImplementation(async () => response(nativeWithoutApplicationType)),
+    });
+    await expect(service.resolve({
+      clientId,
+      redirectUri: "http://localhost:63624/callback",
+    })).resolves.toMatchObject({ applicationType: "native" });
+
+    const webWithoutApplicationType = { ...withoutApplicationType, redirect_uris: ["https://client.example/oauth/callback"] };
+    const webService = createOperatorMcpClientMetadataService({
+      fetchImpl: vi.fn<typeof fetch>().mockImplementation(async () => response(webWithoutApplicationType)),
+    });
+    await expect(webService.resolve({
+      clientId,
+      redirectUri: "https://client.example/oauth/callback",
+    })).resolves.toMatchObject({ applicationType: "web" });
+
+    const ambiguous = { ...withoutApplicationType, redirect_uris: ["https://client.example/oauth/callback", "http://127.0.0.1/callback"] };
+    const ambiguousService = createOperatorMcpClientMetadataService({
+      fetchImpl: vi.fn<typeof fetch>().mockImplementation(async () => response(ambiguous)),
+    });
+    await expect(ambiguousService.resolve({ clientId, redirectUri: "https://client.example/oauth/callback" }))
+      .rejects.toThrow(/application.type/i);
   });
 
   it("keeps a validated snapshot stable when a later resolution returns mutated metadata", async () => {

@@ -9,6 +9,19 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [0.4.0] - 2026-09-11
+
+### Added
+
+- collapse website embed launcher label on scroll ([#1241](https://github.com/radioso-ai/radioso/pull/1241))
+
+### Fixed
+
+- stop rejecting operator-MCP clients over unrelated grant/response types ([#1242](https://github.com/radioso-ai/radioso/pull/1242))
+- accept Claude Code's operator-MCP client metadata document ([#1240](https://github.com/radioso-ai/radioso/pull/1240))
+
+[0.4.0]: https://github.com/radioso-ai/radioso/compare/v0.3.0...v0.4.0
+
 ## [0.3.0] - 2026-09-09
 
 ### Added

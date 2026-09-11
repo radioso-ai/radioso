@@ -232,11 +232,14 @@ export const createOperatorMcpClientMetadataService = (options: OperatorMcpClien
       if (metadata.client_id !== input.clientId) throw new OperatorMcpClientMetadataError("invalid_client_metadata", "Client metadata identity mismatch");
       safeText(metadata.client_name, "client name", 256);
       if (metadata.client_version) safeText(metadata.client_version, "client version", 64);
-      const supportedGrantTypes = new Set(["authorization_code", "refresh_token"]);
+      // A CIMD document is a client's self-hosted identity, shared across every server it talks
+      // to, not a registration scoped to us: require the values this flow needs, don't reject the
+      // document for advertising other capabilities (e.g. claude.ai's document also lists a
+      // jwt-bearer grant type it uses elsewhere). The actual flow gates on the live request's own
+      // response_type/grant_type regardless of what's declared here.
       if (
-        metadata.response_types.some((type) => type !== "code")
+        !metadata.response_types.includes("code")
         || !metadata.grant_types.includes("authorization_code")
-        || metadata.grant_types.some((type) => !supportedGrantTypes.has(type))
         || metadata.token_endpoint_auth_method !== "none"
       ) {
         throw new OperatorMcpClientMetadataError("invalid_client_metadata", "Client metadata response or grant type is incompatible");

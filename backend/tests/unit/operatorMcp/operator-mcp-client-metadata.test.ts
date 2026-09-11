@@ -49,6 +49,33 @@ describe("operator MCP client metadata", () => {
     });
   });
 
+  it("accepts claude.ai's operator-MCP connector client metadata, which advertises a jwt-bearer grant type it uses with other servers, not this one", async () => {
+    const claudeAiConnector = {
+      ...metadata,
+      client_name: "Claude",
+      grant_types: ["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:jwt-bearer"],
+    };
+    const service = createOperatorMcpClientMetadataService({
+      fetchImpl: vi.fn<typeof fetch>().mockResolvedValue(response(claudeAiConnector)),
+    });
+
+    await expect(service.resolve({ clientId, redirectUri: metadata.redirect_uris[0] })).resolves.toMatchObject({
+      normalizedMetadata: expect.objectContaining({
+        grantTypes: expect.arrayContaining(["authorization_code", "urn:ietf:params:oauth:grant-type:jwt-bearer"]),
+      }),
+    });
+  });
+
+  it("accepts a client that also advertises the implicit response type for other servers, as long as code is offered", async () => {
+    const service = createOperatorMcpClientMetadataService({
+      fetchImpl: vi.fn<typeof fetch>().mockResolvedValue(response({ ...metadata, response_types: ["code", "token"] })),
+    });
+
+    await expect(service.resolve({ clientId, redirectUri: metadata.redirect_uris[0] })).resolves.toMatchObject({
+      normalizedMetadata: expect.objectContaining({ responseTypes: expect.arrayContaining(["code", "token"]) }),
+    });
+  });
+
   it("rejects self-mutation, unsafe redirects, unsupported clients, and oversized metadata", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(response({ ...metadata, client_id: "https://other.example/client" }));
     const service = createOperatorMcpClientMetadataService({ fetchImpl });
@@ -58,9 +85,6 @@ describe("operator MCP client metadata", () => {
     await expect(service.resolve({ clientId, redirectUri: "http://localhost/callback" })).rejects.toThrow(/redirect|loopback|localhost/i);
 
     fetchImpl.mockResolvedValue(response({ ...metadata, response_types: ["token"] }));
-    await expect(service.resolve({ clientId, redirectUri: metadata.redirect_uris[0] })).rejects.toThrow(/response|grant/i);
-
-    fetchImpl.mockResolvedValue(response({ ...metadata, grant_types: ["authorization_code", "client_credentials"] }));
     await expect(service.resolve({ clientId, redirectUri: metadata.redirect_uris[0] })).rejects.toThrow(/response|grant/i);
 
     fetchImpl.mockResolvedValue(response({ ...metadata, grant_types: ["refresh_token"] }));

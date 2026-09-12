@@ -17,9 +17,8 @@ import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 // Real-Postgres characterization of AgentRepository. This is the only coverage that
 // exercises the actual SQL (now Kysely) end to end: the agent projection (correlated
 // source_ids / authored_directives aggregation), the create/update transactions with
-// replaceSourceScope, presence-based update (untouched jsonb survives), directive CRUD,
-// and the repointRoutineScopeTags shared-transaction path. Behaviour here is the spec the
-// Kysely migration must preserve.
+// replaceSourceScope, presence-based update (untouched jsonb survives), and directive
+// CRUD. Behaviour here is the spec the Kysely migration must preserve.
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
@@ -357,77 +356,6 @@ describeIntegration("AgentRepository (Postgres)", () => {
     const agent = await repository.create(workspaceId, { name: "Deletable" });
     expect(await repository.deleteByIdAndWorkspaceId(agent.id, workspaceId)).toBe(true);
     expect(await repository.deleteByIdAndWorkspaceId(agent.id, workspaceId)).toBe(false);
-  });
-
-  it("repointRoutineScopeTags repoints surviving tags and reports orphans (no transaction)", async () => {
-    const agent = await repository.create(workspaceId, { name: "Routine Host" });
-    const fromDefinition = randomUUID();
-    const toDefinition = randomUUID();
-    const survivingStep = "step-keep";
-    const orphanStep = "step-gone";
-
-    const directive = await repository.createDirective(agent.id, workspaceId, {
-      name: "routine-bound",
-      condition: { kind: "always" },
-      action: "Follow the routine.",
-      tags: [
-        `routine:${fromDefinition}`,
-        `step:${fromDefinition}:${survivingStep}`,
-        `step:${fromDefinition}:${orphanStep}`,
-        "unrelated",
-      ],
-    });
-
-    const result = await repository.repointRoutineScopeTags({
-      agentId: agent.id,
-      fromDefinitionId: fromDefinition,
-      toDefinitionId: toDefinition,
-      survivingStepIds: new Set([survivingStep]),
-    });
-
-    expect(result.repointed).toBe(2);
-    expect(result.orphans).toEqual([
-      { directiveId: directive.id, scopeTag: `step:${fromDefinition}:${orphanStep}`, reason: "missing_step" },
-    ]);
-
-    const reread = (await repository.listDirectives(agent.id, workspaceId)).find((d) => d.id === directive.id);
-    expect(new Set(reread?.tags)).toEqual(
-      new Set([
-        `routine:${toDefinition}`,
-        `step:${toDefinition}:${survivingStep}`,
-        `step:${fromDefinition}:${orphanStep}`,
-        "unrelated",
-      ]),
-    );
-  });
-
-  it("repointRoutineScopeTags honours a threaded Kysely transaction", async () => {
-    const agent = await repository.create(workspaceId, { name: "Routine Tx Host" });
-    const fromDefinition = randomUUID();
-    const toDefinition = randomUUID();
-
-    const directive = await repository.createDirective(agent.id, workspaceId, {
-      name: "routine-tx-bound",
-      condition: { kind: "always" },
-      action: "Follow the routine.",
-      tags: [`routine:${fromDefinition}`],
-    });
-
-    const result = await database.kysely.transaction().execute((trx) =>
-      repository.repointRoutineScopeTags({
-        agentId: agent.id,
-        fromDefinitionId: fromDefinition,
-        toDefinitionId: toDefinition,
-        survivingStepIds: new Set(),
-        transaction: trx,
-      }),
-    );
-
-    expect(result.repointed).toBe(1);
-    expect(result.orphans).toEqual([]);
-
-    const reread = (await repository.listDirectives(agent.id, workspaceId)).find((d) => d.id === directive.id);
-    expect(reread?.tags).toEqual([`routine:${toDefinition}`]);
   });
 
   // ---------------------------------------------------------------------------

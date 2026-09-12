@@ -43,21 +43,9 @@ export const routineDraftAssistActionCatalogEntrySchema = z.object({
   outcomeStatuses: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
 }).strict();
 
-export const routineDraftAssistResponseSchema = z.object({
-  draft: routineDefinitionDraftInputSchema,
-  validation: z.object({
-    ok: z.boolean(),
-    diagnostics: z.array(z.object({
-      code: z.string(),
-      location: z.string(),
-      message: z.string(),
-    })),
-  }),
-}).strict();
-
-export type RoutineDraftAssistRequest = z.infer<typeof routineDraftAssistRequestSchema>;
+type RoutineDraftAssistRequest = z.infer<typeof routineDraftAssistRequestSchema>;
 export type RoutineDraftAssistActionCatalogEntry = z.infer<typeof routineDraftAssistActionCatalogEntrySchema>;
-export type RoutineDraftAssistResponse = {
+type RoutineDraftAssistResponse = {
   draft: RoutineDefinitionDraftInput;
   validation: RoutineValidationResult;
 };
@@ -69,7 +57,7 @@ type RoutineDraftAssistAgentContext = {
   greetingInstruction?: string | null;
 };
 
-export interface RoutineDraftAssistServiceOptions {
+interface RoutineDraftAssistServiceOptions {
   repository: Pick<AgentRepositoryPort, "findByIdAndWorkspaceId">;
   textGenerationClient: RoutineDraftAssistTextGenerationPort;
   actionCatalog: RoutineDraftAssistActionCatalogEntry[];
@@ -236,7 +224,6 @@ const draftDefinitionFromInput = (
   agentId,
   lineageId: randomUUID(),
   version: 1,
-  status: "draft",
   ...input,
   createdAt: new Date(),
   updatedAt: new Date(),

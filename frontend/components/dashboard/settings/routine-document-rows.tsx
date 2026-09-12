@@ -1,7 +1,7 @@
 'use client'
 
 import { useContext, type ReactNode } from 'react'
-import { AlertTriangle, ArrowRight, CheckCircle2, CircleDashed, CornerUpRight, GitBranch, ListChecks, Wrench } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, CheckCircle2, CircleDashed, CornerUpRight, GitBranch, ListChecks, Wrench } from 'lucide-react'
 
 import { findRoutineSkillDescriptor, RoutineSkillCatalogContext } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { Badge } from '@/components/ui/badge'
@@ -106,7 +106,7 @@ function RoutineBranchRow({ branch, slotNames, index, editable = false, editing 
   return <li className="py-1.5 text-sm"><button type="button" aria-label={branchDecisionLabel(branch.guard.kind)} onClick={onEdit} disabled={!editable} className="group flex w-full flex-wrap items-center gap-2 text-left disabled:cursor-default">{isDefault ? <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" /> : <><Badge variant="outline" className="border-border bg-transparent font-normal text-muted-foreground">{branchDecisionLabel(branch.guard.kind)}</Badge><span><InlineSlotText text={guardToSentence(branch.guard, slotNames)} /></span><GitBranch className="h-3.5 w-3.5 text-muted-foreground" /></>}<BranchTarget branch={branch} index={index} /><EditHint editable={editable} /></button></li>
 }
 
-export function RoutineStepRow({ step, stepIndex, slotNames, index, nextStepId = null, notes, editable = false, editing, onEditInstruction, onEditBinding, onEditApproval, onEditBranch, onEditStep, instructionEditor, bindingEditor, approvalEditor, branchEditor, stepEditor }: {
+export function RoutineStepRow({ step, stepIndex, slotNames, index, nextStepId = null, notes, editable = false, editing, onEditInstruction, onEditBinding, onEditApproval, onEditBranch, onEditStep, onMoveStepUp, onMoveStepDown, canMoveStepUp = false, canMoveStepDown = false, instructionEditor, bindingEditor, approvalEditor, branchEditor, stepEditor, insertStepAfter }: {
   step: RoutineBlockStep
   stepIndex: number
   slotNames: Map<string, string>
@@ -120,11 +120,20 @@ export function RoutineStepRow({ step, stepIndex, slotNames, index, nextStepId =
   onEditApproval?: () => void
   onEditBranch?: (index: number) => void
   onEditStep?: () => void
+  onMoveStepUp?: () => void
+  onMoveStepDown?: () => void
+  canMoveStepUp?: boolean
+  canMoveStepDown?: boolean
   instructionEditor?: ReactNode
   bindingEditor?: ReactNode
   approvalEditor?: ReactNode
   branchEditor?: (index: number, branch: RoutineBlockBranch) => ReactNode
   stepEditor?: ReactNode
+  // Rendered as a hover/focus-revealed overlay pinned to this row's bottom edge, so an author
+  // can insert a step between two rows without first appending one at the end and moving it
+  // up. Built by the container, which owns `apply` and the step-kind choices — this row only
+  // places it.
+  insertStepAfter?: ReactNode
 }) {
   const catalog = useContext(RoutineSkillCatalogContext)
   const ref = step.kind === 'tool' ? step.toolRef : step.kind === 'action' ? step.actionType : null
@@ -134,6 +143,15 @@ export function RoutineStepRow({ step, stepIndex, slotNames, index, nextStepId =
   // themselves; a chat step is just its number and its sentence.
   const isChat = step.kind === 'chat'
   const number = <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">{stepIndex + 1}</span>
+  // Reorder lives on the collapsed row itself, next to the number, so it never requires
+  // opening a step's editor panel first — the gap this closes for every step kind.
+  const moveControls = editable && (onMoveStepUp || onMoveStepDown) ? <div className="flex shrink-0 flex-col">
+    <button type="button" aria-label={`Move step ${stepIndex + 1} up`} onClick={onMoveStepUp} disabled={!canMoveStepUp} className="flex h-4 w-4 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-30"><ArrowUp className="h-3 w-3" /></button>
+    <button type="button" aria-label={`Move step ${stepIndex + 1} down`} onClick={onMoveStepDown} disabled={!canMoveStepDown} className="flex h-4 w-4 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-30"><ArrowDown className="h-3 w-3" /></button>
+  </div> : null
+  // Pinned to the row's bottom edge and revealed on hover/focus (or always, on touch), so an
+  // author can insert a step between this row and the next without appending then reordering.
+  const insertAfterOverlay = insertStepAfter ? <div className="pointer-events-none absolute inset-x-0 -bottom-2.5 z-10 flex justify-center opacity-0 transition-opacity group-hover/insertafter:opacity-100 group-focus-within/insertafter:opacity-100 [@media(hover:none)]:opacity-100"><div className="pointer-events-auto">{insertStepAfter}</div></div> : null
   const instruction = editing === 'instruction'
     ? <div className="rounded-md border border-border bg-muted/30 p-3">{instructionEditor}</div>
     : <button type="button" aria-label="Instruction" onClick={onEditInstruction} disabled={!editable} className="group block w-full text-left disabled:cursor-default"><InstructionSentence segments={step.instruction} editable={editable} /><EditHint editable={editable} /></button>
@@ -152,9 +170,9 @@ export function RoutineStepRow({ step, stepIndex, slotNames, index, nextStepId =
     {editing ? null : <DiagnosticNotes notes={notes} />}
   </>
   if (isChat) {
-    return <li className="py-3 first:pt-0 last:pb-0"><div className="flex items-start gap-3"><button type="button" aria-label={label} onClick={onEditStep} disabled={!editable} className="group mt-0.5 disabled:cursor-default">{number}</button><div className="min-w-0 flex-1">{editing === 'step' ? <div className="rounded-md border border-border bg-muted/30 p-3">{stepEditor}</div> : instruction}{details}</div></div></li>
+    return <li className="group/insertafter relative py-3 first:pt-0 last:pb-0"><div className="flex items-start gap-3">{moveControls}<button type="button" aria-label={label} onClick={onEditStep} disabled={!editable} className="group mt-0.5 disabled:cursor-default">{number}</button><div className="min-w-0 flex-1">{editing === 'step' ? <div className="rounded-md border border-border bg-muted/30 p-3">{stepEditor}</div> : instruction}{details}</div></div>{insertAfterOverlay}</li>
   }
-  return <li className="py-3 first:pt-0 last:pb-0"><div className="flex items-start gap-3">{number}<div className="min-w-0 flex-1"><div className="flex items-center gap-2 text-sm font-medium text-foreground">{step.kind === 'approval' ? <ListChecks className="h-4 w-4" /> : <Wrench className="h-4 w-4" />}<button type="button" aria-label={label} onClick={onEditStep} disabled={!editable} className="group text-left disabled:cursor-default"><span>{label}</span><EditHint editable={editable} /></button></div>{editing === 'step' ? <div className="mt-2 rounded-md border border-border bg-muted/30 p-3">{stepEditor}</div> : <div className="mt-1">{instruction}</div>}{details}</div></div></li>
+  return <li className="group/insertafter relative py-3 first:pt-0 last:pb-0"><div className="flex items-start gap-3">{moveControls}{number}<div className="min-w-0 flex-1"><div className="flex items-center gap-2 text-sm font-medium text-foreground">{step.kind === 'approval' ? <ListChecks className="h-4 w-4" /> : <Wrench className="h-4 w-4" />}<button type="button" aria-label={label} onClick={onEditStep} disabled={!editable} className="group text-left disabled:cursor-default"><span>{label}</span><EditHint editable={editable} /></button></div>{editing === 'step' ? <div className="mt-2 rounded-md border border-border bg-muted/30 p-3">{stepEditor}</div> : <div className="mt-1">{instruction}</div>}{details}</div></div>{insertAfterOverlay}</li>
 }
 
 export function RoutineEndingsSection({ endings, editable = false, editingEndingId, onEdit, onAdd, renderEditor, notesFor }: {

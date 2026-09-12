@@ -147,4 +147,19 @@ describe("RoutineTriggerEmbeddingService", () => {
     expect(clear).toHaveBeenCalledWith({ agentId: "agent-1", routineId: routine.id });
     expect(warn).toHaveBeenCalledWith(expect.objectContaining({ routineId: routine.id }), expect.any(String));
   });
+
+  it("never rejects even when the logger itself throws while reporting a failure", async () => {
+    // Two callers depend on persistPublished never rejecting: turnProvider.ts fires it with
+    // `void` on the live turn path, and service.ts's savedRoutine awards save-success to the
+    // caller on the strength of that contract. A logger.warn that itself throws (bad bindings, a
+    // serialization error, a mocked logger in some future test) must not escape the catch block.
+    const service = new RoutineTriggerEmbeddingService({
+      embeddings: { embedTexts: vi.fn().mockRejectedValue(new Error("embedding unavailable")) },
+      settings: { getForWorkspace: vi.fn().mockResolvedValue({ embeddingModel: "text-embedding-3-small" }) },
+      store: { get: vi.fn().mockResolvedValue({ hash: null, model: null }), save: vi.fn(), clear: vi.fn().mockResolvedValue(undefined) },
+      logger: { warn: vi.fn().mockImplementation(() => { throw new Error("logger explosion"); }) },
+    });
+
+    await expect(service.persistPublished({ workspaceId: "workspace-1", agentId: "agent-1", routine })).resolves.toBeUndefined();
+  });
 });

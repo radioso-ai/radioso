@@ -1495,74 +1495,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/agents/{agentId}/routines/{routineId}/publish": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Publish a draft routine definition for an agent */
-        post: operations["publishAgentRoutine"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/agents/{agentId}/routines/{routineId}/revise": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Create or return a draft revision for a published routine definition */
-        post: operations["reviseAgentRoutine"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/agents/{agentId}/routines/{routineId}/archive": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Archive a published routine definition */
-        post: operations["archiveAgentRoutine"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/agents/{agentId}/routines/{routineId}/restore": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Restore an archived routine definition */
-        post: operations["restoreAgentRoutine"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/agents/{agentId}/assistant-logo": {
         parameters: {
             query?: never;
@@ -5090,6 +5022,8 @@ export interface components {
         };
         RoutineDefinitionCreateRequest: {
             name: string;
+            /** @default true */
+            enabled: boolean;
             activation: {
                 triggerDescription: string;
                 gateRef?: string | null;
@@ -5188,16 +5122,16 @@ export interface components {
             };
         };
         RoutineDefinitionUpdateRequest: {
+            enabled: boolean;
+        } | {
             name: string;
+            enabled?: boolean;
             activation: {
                 triggerDescription: string;
                 gateRef?: string | null;
                 priority: number;
-                /**
-                 * @default once_per_conversation
-                 * @enum {string}
-                 */
-                reentryMode: "once_per_conversation" | "always" | "semantic";
+                /** @enum {string} */
+                reentryMode?: "once_per_conversation" | "always" | "semantic";
                 coverageCriteria?: {
                     coverage: ("answered" | "partial" | "unanswered" | "unclear")[];
                     reasons?: ("sufficient_evidence" | "insufficient_evidence" | "conflicting_evidence" | "ambiguous_request" | "intentional_scope_boundary")[];
@@ -5278,12 +5212,9 @@ export interface components {
                 ordinal: number;
             }[];
             completionExport?: {
-                /** @default false */
-                enabled: boolean;
-                /** @default [] */
-                triggerKinds: ("complete" | "handoff")[];
-                /** @default  */
-                destinationRef: string;
+                enabled?: boolean;
+                triggerKinds?: ("complete" | "handoff")[];
+                destinationRef?: string;
             };
         };
         RoutineDraftAssistRequest: {
@@ -5300,6 +5231,8 @@ export interface components {
         };
         RoutineDefinition: {
             name: string;
+            /** @default true */
+            enabled: boolean;
             activation: {
                 triggerDescription: string;
                 gateRef?: string | null;
@@ -5403,8 +5336,6 @@ export interface components {
             /** Format: uuid */
             lineageId: string;
             version: number;
-            /** @enum {string} */
-            status: "draft" | "published" | "superseded" | "archived";
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -5420,26 +5351,14 @@ export interface components {
             routine: components["schemas"]["RoutineDefinition"];
             validation: components["schemas"]["RoutineValidationResult"];
         };
-        RoutineDirectiveScopeOrphan: {
-            directiveId: string;
-            scopeTag: string;
-            /** @enum {string} */
-            reason: "missing_step";
-        };
-        RoutineDefinitionPublishResponse: {
-            routine: components["schemas"]["RoutineDefinition"];
-            validation: components["schemas"]["RoutineValidationResult"];
-            directiveScopeOrphans: components["schemas"]["RoutineDirectiveScopeOrphan"][];
-        };
-        RoutineDefinitionLifecycleResponse: {
-            routine: components["schemas"]["RoutineDefinition"];
-        };
         RoutineDefinitionValidateResponse: {
             validation: components["schemas"]["RoutineValidationResult"];
         };
         RoutineDraftAssistResponse: {
             draft: {
                 name: string;
+                /** @default true */
+                enabled: boolean;
                 activation: {
                     triggerDescription: string;
                     gateRef?: string | null;
@@ -5537,11 +5456,6 @@ export interface components {
                     destinationRef: string;
                 };
             };
-            validation: components["schemas"]["RoutineValidationResult"];
-        };
-        RoutineDefinitionPublishRejectedResponse: {
-            /** @enum {string} */
-            error: "Routine definition is invalid";
             validation: components["schemas"]["RoutineValidationResult"];
         };
         SkillAuthoringInput: {
@@ -5804,6 +5718,8 @@ export interface components {
             version: number;
             definition: {
                 name: string;
+                /** @default true */
+                enabled: boolean;
                 activation: {
                     triggerDescription: string;
                     gateRef?: string | null;
@@ -5939,7 +5855,7 @@ export interface components {
          *     - resolver_skill_missing: the enablement's resolver skill did not survive import, so it stays unbound.
          *     - skill_target_unbound: the skill's connection target is a credential-bearing workspace row.
          *     - skill_capability_unknown: no capability with this id is registered in this deployment.
-         *     - routine_invalid: the routine imported as a draft because publish validation rejected it.
+         *     - routine_invalid: the routine imported out of service (disabled) because it does not pass validation.
          *     - document_source_unresolved: selected document sources cannot be matched; scope imports empty, not "all".
          *     - surface_credential_unbound: a surface whose token cannot travel; imported disabled so it cannot serve.
          *     - mcp_connection_unbound: an external MCP connection reference; the skill imports without its server.
@@ -12921,7 +12837,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Destination is referenced by published routines */
+            /** @description Destination is referenced by enabled routines */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -15053,224 +14969,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    publishAgentRoutine: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                agentId: string;
-                routineId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Routine definition published */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RoutineDefinitionPublishResponse"];
-                };
-            };
-            /** @description Routine definition cannot be published */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Authentication required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Agent or routine definition not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Routine definition is invalid */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RoutineDefinitionPublishRejectedResponse"];
-                };
-            };
-        };
-    };
-    reviseAgentRoutine: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                agentId: string;
-                routineId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Routine revision draft returned */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RoutineDefinitionLifecycleResponse"];
-                };
-            };
-            /** @description Routine definition cannot be revised */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Authentication required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Agent or routine definition not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    archiveAgentRoutine: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                agentId: string;
-                routineId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Routine definition archived */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RoutineDefinitionLifecycleResponse"];
-                };
-            };
-            /** @description Routine definition cannot be archived */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Authentication required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Agent or routine definition not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    restoreAgentRoutine: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                agentId: string;
-                routineId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Routine definition restored */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RoutineDefinitionLifecycleResponse"];
-                };
-            };
-            /** @description Routine definition cannot be restored */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Authentication required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Agent or routine definition not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Routine definition is invalid */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RoutineDefinitionPublishRejectedResponse"];
                 };
             };
         };

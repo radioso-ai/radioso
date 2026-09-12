@@ -2,7 +2,10 @@ import { createHash } from "node:crypto";
 
 import type { ModelCallUsageContext } from "../../shared/domain/modelCallUsageContext.js";
 
-export interface RoutineTriggerEmbeddingStore {
+// Not re-exported from routines/public.js: only the class below is public API. dependencies.ts
+// constructs it with an inline object literal, which TypeScript checks structurally without
+// needing to import these type names.
+interface RoutineTriggerEmbeddingStore {
   get(input: { agentId: string; routineId: string }): Promise<{ hash: string | null; model: string | null } | null>;
   save(input: {
     agentId: string;
@@ -14,7 +17,7 @@ export interface RoutineTriggerEmbeddingStore {
   clear(input: { agentId: string; routineId: string }): Promise<void>;
 }
 
-export interface RoutineTriggerEmbeddingServiceOptions {
+interface RoutineTriggerEmbeddingServiceOptions {
   embeddings: {
     embedTexts(texts: string[], options?: { model?: string; usageContext?: ModelCallUsageContext }): Promise<number[][]>;
   };
@@ -88,7 +91,14 @@ export class RoutineTriggerEmbeddingService {
       } catch {
         // A failed cleanup cannot make an already-published routine fail.
       }
-      this.options.logger.warn({ routineId: input.routine.id }, "Routine trigger embedding persistence failed");
+      try {
+        this.options.logger.warn({ routineId: input.routine.id }, "Routine trigger embedding persistence failed");
+      } catch {
+        // Two callers depend on this method never rejecting: turnProvider.ts fires it off with
+        // `void` on the live turn path, and service.ts's savedRoutine awards save-success to the
+        // caller on the strength of that contract. A logger that itself throws (bad bindings, a
+        // serialization error, a mocked logger in a test) must not escape and break either.
+      }
     } finally {
       this.inFlight.delete(inFlightKey);
     }

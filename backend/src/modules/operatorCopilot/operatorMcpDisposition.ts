@@ -55,7 +55,6 @@ export const operatorMcpDispositions: Readonly<Record<string, CopilotMcpDisposit
   propose_directive_removal: eligibleProposal,
   propose_routine: eligibleProposal,
   propose_routine_edit: eligibleProposal,
-  propose_routine_lifecycle: eligibleProposal,
   propose_skill_config: eligibleProposal,
   quality_signals: eligibleRead,
   replay_eval_case: contextDependent,

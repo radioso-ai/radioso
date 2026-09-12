@@ -54,12 +54,12 @@ const baseAgent = (): ConversationAgent => ({
   authoredDirectives: [],
 });
 
-const publishedRoutine = (over: Partial<RoutineDefinition> = {}): RoutineDefinition => ({
+const exportableRoutine = (over: Partial<RoutineDefinition> = {}): RoutineDefinition => ({
   id: "routine-1",
   agentId: "agent-1",
   lineageId: "lineage-1",
   version: 2,
-  status: "published",
+  enabled: true,
   createdAt: new Date(0),
   updatedAt: new Date(0),
   name: "book-a-demo",
@@ -158,20 +158,19 @@ describe("AgentBundleExportService", () => {
     expect(bundle.agent.name).toBe("Support Bot");
   });
 
-  it("exports only published routines, stripped of workspace-scoped identity", async () => {
+  it("exports every routine, out-of-service ones parked, stripped of workspace-scoped identity", async () => {
     const bundle = await service({
       routines: [
-        publishedRoutine(),
-        publishedRoutine({ id: "routine-2", status: "draft", name: "draft-only" }),
-        publishedRoutine({ id: "routine-3", status: "archived", name: "retired" }),
-        publishedRoutine({ id: "routine-4", status: "superseded", name: "book-a-demo", version: 1 }),
+        exportableRoutine(),
+        exportableRoutine({ id: "routine-2", name: "retired", enabled: false }),
       ],
     }).export("workspace-1", "agent-1");
 
-    expect(bundle.routines).toHaveLength(1);
-    const [routine] = bundle.routines;
-    expect(routine.name).toBe("book-a-demo");
+    expect(bundle.routines.map((entry) => entry.name)).toEqual(["book-a-demo", "retired"]);
+    const [routine, retired] = bundle.routines;
     expect(routine.version).toBe(2);
+    // A routine parked out of service imports parked, rather than silently going live.
+    expect(retired.definition.enabled).toBe(false);
     expect(routine.definition).not.toHaveProperty("id");
     expect(routine.definition).not.toHaveProperty("agentId");
     expect(routine.definition).not.toHaveProperty("lineageId");

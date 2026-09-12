@@ -38,14 +38,14 @@ describe("authoring resources", () => {
     expect((init.headers as Headers).get("authorization")).toBe("Bearer token-123");
   });
 
-  it("publishes a routine via POST to the lifecycle route", async () => {
-    const { client, fetchMock } = makeClient(async () => jsonResponse({ routine: { id: "r1" } }));
+  it("updates a routine in place via PATCH", async () => {
+    const { client, fetchMock } = makeClient(async () => jsonResponse({ routine: { id: "r1" }, validation: { ok: true, diagnostics: [] } }));
 
-    await client.agents.routines.publish("agent-1", "r1");
+    await client.agents.routines.update("agent-1", "r1", { enabled: false });
 
     const { url, init } = lastRequest(fetchMock);
-    expect(url).toBe("https://api.example.com/api/v1/agents/agent-1/routines/r1/publish");
-    expect(init.method).toBe("POST");
+    expect(url).toBe("https://api.example.com/api/v1/agents/agent-1/routines/r1");
+    expect(init.method).toBe("PATCH");
   });
 
   it("creates a directive under the agent directives route", async () => {

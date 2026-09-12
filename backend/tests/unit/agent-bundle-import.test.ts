@@ -63,7 +63,10 @@ const harness = (over: {
   capabilities?: string[];
   variableIds?: Record<string, string>;
   skillIds?: Record<string, string>;
-  publishRejects?: boolean;
+  /** Diagnostics returned for every routine in the batch, unless overridden per id below. */
+  routineDiagnostics?: string[];
+  /** Diagnostics returned for one specific created routine id (e.g. "routine-2"). */
+  routineDiagnosticsByRoutineId?: Record<string, string[]>;
   createDirectiveThrows?: boolean;
 } = {}) => {
   const created: Array<{ agentId: string; skill: unknown }> = [];
@@ -72,8 +75,16 @@ const harness = (over: {
   const writeOrder: string[] = [];
   const enabled: unknown[] = [];
   const drafts: Array<{ definition: unknown }> = [];
+  const parkedRoutines: Array<{ routineId: string; enabled: boolean }> = [];
   const deleted: string[] = [];
   const capabilities = new Set(over.capabilities ?? ["webhook.call", "retrieve"]);
+  // A single spy standing in for the batched serving-validation call the routine-definition
+  // service composition now makes once per import, instead of once per routine.
+  const validateManySpy = vi.fn(async (_workspaceId: string, _agentId: string, routineIds: readonly string[]) =>
+    new Map(routineIds.map((routineId) => [
+      routineId,
+      over.routineDiagnosticsByRoutineId?.[routineId] ?? over.routineDiagnostics ?? [],
+    ])));
 
   const service = new AgentBundleImportService({
     agents: {
@@ -115,13 +126,14 @@ const harness = (over: {
         drafts.push({ definition });
         return { routineId: `routine-${drafts.length}` };
       },
-      publish: async () => (over.publishRejects
-        ? { published: false as const, reason: "unknown skill: tool step references \"crm.create_lead\"" }
-        : { published: true as const }),
+      validateMany: validateManySpy,
+      setEnabled: async (_workspaceId, _agentId, routineId, isEnabled) => {
+        parkedRoutines.push({ routineId, enabled: isEnabled });
+      },
     },
   });
 
-  return { service, created, enabled, drafts, deleted, directivesWritten, writeOrder };
+  return { service, created, enabled, drafts, parkedRoutines, deleted, directivesWritten, writeOrder, validateManySpy };
 };
 
 describe("AgentBundleImportService", () => {
@@ -198,7 +210,8 @@ describe("AgentBundleImportService", () => {
       },
       routines: {
         createDraft: async () => ({ routineId: "r1" }),
-        publish: async () => ({ published: true as const }),
+        validateMany: async () => new Map(),
+        setEnabled: async () => undefined,
       },
     });
 
@@ -235,7 +248,8 @@ describe("AgentBundleImportService", () => {
       },
       routines: {
         createDraft: async () => ({ routineId: "r1" }),
-        publish: async () => ({ published: true as const }),
+        validateMany: async () => new Map(),
+        setEnabled: async () => undefined,
       },
     });
 
@@ -298,7 +312,8 @@ describe("AgentBundleImportService", () => {
       },
       routines: {
         createDraft: async () => ({ routineId: "r1" }),
-        publish: async () => ({ published: true as const }),
+        validateMany: async () => new Map(),
+        setEnabled: async () => undefined,
       },
     });
 
@@ -338,7 +353,8 @@ describe("AgentBundleImportService", () => {
       },
       routines: {
         createDraft: async () => ({ routineId: "r1" }),
-        publish: async () => ({ published: true as const }),
+        validateMany: async () => new Map(),
+        setEnabled: async () => undefined,
       },
     });
 
@@ -443,8 +459,10 @@ describe("AgentBundleImportService", () => {
     }));
   });
 
-  it("keeps a routine that fails publish validation as a draft and reports it", async () => {
-    const { service, drafts } = harness({ publishRejects: true });
+  it("imports a routine that fails serving validation out of service and reports it", async () => {
+    const { service, drafts, parkedRoutines } = harness({
+      routineDiagnostics: ['unknown skill: tool step references "crm.create_lead"'],
+    });
 
     const result = await importBundle(service, "workspace-1", bundle({
       routines: [{
@@ -454,11 +472,98 @@ describe("AgentBundleImportService", () => {
       }],
     }));
 
+    // The routine is imported rather than dropped: the operator can see it, read the
+    // diagnostics, and fix the binding in place.
     expect(drafts).toHaveLength(1);
+    expect(parkedRoutines).toEqual([{ routineId: "routine-1", enabled: false }]);
     expect(result.unresolved).toContainEqual(expect.objectContaining({
       kind: "routine_invalid",
       element: "routine:book-a-demo",
+      detail: expect.stringContaining("crm.create_lead"),
     }));
+  });
+
+  it("validates a multi-routine import's serving diagnostics with one batched call, not one per routine", async () => {
+    // Item 8: each created routine used to be validated with its own call, re-resolving the
+    // agent's workspace-scoped skill/context-variable state every time. All three routines here
+    // belong to the one agent the import creates, so that state is the same for all of them.
+    const { service, drafts, parkedRoutines, validateManySpy } = harness({
+      routineDiagnosticsByRoutineId: {
+        "routine-2": ['unknown skill: tool step references "crm.create_lead"'],
+      },
+    });
+
+    const result = await importBundle(service, "workspace-1", bundle({
+      routines: [
+        { name: "book-a-demo", version: 1, definition: { name: "book-a-demo" } as never },
+        { name: "issue-refund", version: 1, definition: { name: "issue-refund" } as never },
+        { name: "escalate", version: 1, definition: { name: "escalate" } as never },
+      ],
+    }));
+
+    expect(drafts).toHaveLength(3);
+    expect(validateManySpy).toHaveBeenCalledTimes(1);
+    expect(validateManySpy).toHaveBeenCalledWith(
+      "workspace-1", "new-agent", ["routine-1", "routine-2", "routine-3"],
+    );
+    // Only the routine with reported diagnostics is taken out of service.
+    expect(parkedRoutines).toEqual([{ routineId: "routine-2", enabled: false }]);
+    expect(result.unresolved).toEqual([
+      expect.objectContaining({ kind: "routine_invalid", element: "routine:issue-refund", detail: expect.stringContaining("crm.create_lead") }),
+    ]);
+  });
+
+  it("reports a create failure and a validation failure in original routine order across a batch", async () => {
+    // The middle routine's createDraft fails outright; the first fails serving validation; the
+    // third is clean. Creates now all run before the single batched validate call, but the
+    // unresolved entries must still read back in the routines' original order.
+    const drafts: Array<{ definition: unknown }> = [];
+    const parkedRoutines: Array<{ routineId: string; enabled: boolean }> = [];
+    const validateManySpy = vi.fn(async (_workspaceId: string, _agentId: string, routineIds: readonly string[]) =>
+      new Map(routineIds.map((routineId) => [
+        routineId,
+        routineId === "routine-1" ? ['unknown skill: tool step references "crm.create_lead"'] : [],
+      ])));
+    const service = new AgentBundleImportService({
+      agents: { create: async () => ({ agentId: "new-agent" }), delete: async () => undefined },
+      directives: { create: async () => undefined },
+      skills: { hasCapability: () => true, create: async () => undefined },
+      contextVariables: {
+        findVariableIdByName: async () => null,
+        findSkillIdByName: async () => null,
+        enable: async () => undefined,
+      },
+      routines: {
+        createDraft: async (_workspaceId, _agentId, definition) => {
+          drafts.push({ definition });
+          if (drafts.length === 2) {
+            throw new Error("routine name already in use");
+          }
+          return { routineId: `routine-${drafts.length}` };
+        },
+        validateMany: validateManySpy,
+        setEnabled: async (_workspaceId, _agentId, routineId, isEnabled) => {
+          parkedRoutines.push({ routineId, enabled: isEnabled });
+        },
+      },
+    });
+
+    const result = await importBundle(service, "workspace-1", bundle({
+      routines: [
+        { name: "book-a-demo", version: 1, definition: { name: "book-a-demo" } as never },
+        { name: "duplicate-name", version: 1, definition: { name: "duplicate-name" } as never },
+        { name: "escalate", version: 1, definition: { name: "escalate" } as never },
+      ],
+    }));
+
+    expect(drafts).toHaveLength(3);
+    expect(validateManySpy).toHaveBeenCalledTimes(1);
+    expect(validateManySpy).toHaveBeenCalledWith("workspace-1", "new-agent", ["routine-1", "routine-3"]);
+    expect(parkedRoutines).toEqual([{ routineId: "routine-1", enabled: false }]);
+    expect(result.unresolved.filter((entry) => entry.kind === "routine_invalid")).toEqual([
+      expect.objectContaining({ element: "routine:book-a-demo", detail: expect.stringContaining("crm.create_lead") }),
+      expect.objectContaining({ element: "routine:duplicate-name", detail: expect.stringContaining("already in use") }),
+    ]);
   });
 
   it("creates skills before directives, because a directive binding names a skill", async () => {
@@ -547,7 +652,8 @@ describe("AgentBundleImportService", () => {
       },
       routines: {
         createDraft: async () => ({ routineId: "r1" }),
-        publish: async () => ({ published: true as const }),
+        validateMany: async () => new Map(),
+        setEnabled: async () => undefined,
       },
     });
 
@@ -592,7 +698,8 @@ describe("AgentBundleImportService", () => {
       },
       routines: {
         createDraft: async () => ({ routineId: "r1" }),
-        publish: async () => ({ published: true as const }),
+        validateMany: async () => new Map(),
+        setEnabled: async () => undefined,
       },
     });
 
@@ -672,7 +779,8 @@ describe("AgentBundleImportService", () => {
       },
       routines: {
         createDraft: async () => ({ routineId: "r1" }),
-        publish: async () => ({ published: true as const }),
+        validateMany: async () => new Map(),
+        setEnabled: async () => undefined,
       },
     });
 
@@ -734,7 +842,8 @@ describe("AgentBundleImportService", () => {
       },
       routines: {
         createDraft: async () => ({ routineId: "r1" }),
-        publish: async () => ({ published: true as const }),
+        validateMany: async () => new Map(),
+        setEnabled: async () => undefined,
       },
     });
 

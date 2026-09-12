@@ -36,6 +36,7 @@ import {
 } from "../../../modules/agents/public.js";
 import {
   routineDefinitionDraftInputSchema,
+  routineDefinitionDraftUpdateInputSchema,
   routineDraftAssistRequestSchema,
 } from "../../../modules/routines/public.js";
 import type { AgentSettingsResource } from "../../../modules/agents/public.js";
@@ -69,6 +70,19 @@ const authoredDirectivePatchBodySchema = authoredDirectiveBodySchema.partial().e
   coverageCriteria: z.union([answerCoverageCriteriaSchema, z.null()]).optional(),
 }).strict();
 const routineDefinitionBodySchema = routineDefinitionDraftInputSchema;
+// Taking a routine out of service is a one-field decision made from a list row, which does not
+// hold the authored graph. Requiring the full draft to flip the flag would force the caller to
+// resend steps it never read — and rewrite them on the way through.
+const routineEnabledPatchSchema = z.object({ enabled: z.boolean() }).strict();
+// The full-body PATCH variant must NOT default `enabled` (or `activation.reentryMode`, or any
+// `completionExport` field) the way the create schema does. `validateBody`
+// (../middleware/validate.js) replaces `req.body` with the parsed result, defaults included,
+// before the route handler or `RoutineDefinitionService.updateDraft`'s omission-preserving
+// merge ever sees it — so a create-oriented default here would silently re-enable a routine an
+// operator disabled, or reset a reentry mode/completion export field, on the very next content
+// edit that never mentions it. Issue: enabled-reset bug, HTTP layer (round 2), and one level
+// deeper into `activation`/`completionExport` (round 2, item 7).
+const routineDefinitionPatchBodySchema = z.union([routineEnabledPatchSchema, routineDefinitionDraftUpdateInputSchema]);
 
 export const agentBodySchema = z.object({
   name: agentInputFieldSchemas.name.optional(),
@@ -582,17 +596,25 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
     "/:agentId/routines/:routineId",
     workspaceSession,
     agentManage,
-    validateBody(routineDefinitionBodySchema),
+    validateBody(routineDefinitionPatchBodySchema),
     async (req, res, next) => {
       try {
         const { workspaceId } = res.locals as { workspaceId: string };
         const parsed = agentRoutineParamsSchema.parse(req.params);
-        const result = await dependencies.routineDefinitionService.updateDraft(
-          workspaceId,
-          parsed.agentId,
-          parsed.routineId,
-          req.body,
-        );
+        const enabledOnly = routineEnabledPatchSchema.safeParse(req.body);
+        const result = enabledOnly.success
+          ? await dependencies.routineDefinitionService.setEnabled(
+              workspaceId,
+              parsed.agentId,
+              parsed.routineId,
+              enabledOnly.data.enabled,
+            )
+          : await dependencies.routineDefinitionService.updateDraft(
+              workspaceId,
+              parsed.agentId,
+              parsed.routineId,
+              req.body,
+            );
         res.status(200).json(result);
       } catch (error) {
         next(error);
@@ -610,64 +632,6 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
         { id: parsed.routineId },
       );
       res.status(200).json({ validation });
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  router.post("/:agentId/routines/:routineId/publish", workspaceSession, agentManage, async (req, res, next) => {
-    try {
-      const { workspaceId } = res.locals as { workspaceId: string };
-      const parsed = agentRoutineParamsSchema.parse(req.params);
-      const result = await dependencies.routineDefinitionService.publish(workspaceId, parsed.agentId, parsed.routineId);
-      if ("rejected" in result) {
-        res.status(422).json({
-          error: "Routine definition is invalid",
-          validation: result.validation,
-        });
-        return;
-      }
-      res.status(200).json(result);
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  router.post("/:agentId/routines/:routineId/revise", workspaceSession, agentManage, async (req, res, next) => {
-    try {
-      const { workspaceId } = res.locals as { workspaceId: string };
-      const parsed = agentRoutineParamsSchema.parse(req.params);
-      const routine = await dependencies.routineDefinitionService.revise(workspaceId, parsed.agentId, parsed.routineId);
-      res.status(200).json({ routine });
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  router.post("/:agentId/routines/:routineId/archive", workspaceSession, agentManage, async (req, res, next) => {
-    try {
-      const { workspaceId } = res.locals as { workspaceId: string };
-      const parsed = agentRoutineParamsSchema.parse(req.params);
-      const routine = await dependencies.routineDefinitionService.archive(workspaceId, parsed.agentId, parsed.routineId);
-      res.status(200).json({ routine });
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  router.post("/:agentId/routines/:routineId/restore", workspaceSession, agentManage, async (req, res, next) => {
-    try {
-      const { workspaceId } = res.locals as { workspaceId: string };
-      const parsed = agentRoutineParamsSchema.parse(req.params);
-      const result = await dependencies.routineDefinitionService.restore(workspaceId, parsed.agentId, parsed.routineId);
-      if ("rejected" in result) {
-        res.status(422).json({
-          error: "Routine definition is invalid",
-          validation: result.validation,
-        });
-        return;
-      }
-      res.status(200).json({ routine: result.routine });
     } catch (error) {
       next(error);
     }

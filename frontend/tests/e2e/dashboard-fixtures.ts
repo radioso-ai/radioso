@@ -47,9 +47,9 @@ type RoutineDraftAssistFixture = {
   validation: ApiSchemas["RoutineValidationResult"];
 };
 export type RoutineMutationFixture = {
-  method: "POST" | "PATCH" | "DELETE" | "VALIDATE" | "PUBLISH" | "ASSIST" | "REVISE" | "ARCHIVE" | "RESTORE";
+  method: "POST" | "PATCH" | "DELETE" | "VALIDATE" | "ASSIST";
   routineId?: string;
-  body?: Partial<RoutineDraftFixture>;
+  body?: Partial<RoutineDraftFixture> & { enabled?: boolean };
 };
 type WebhookDestinationFixture = ApiSchemas["WebhookDestination"];
 type McpConnectionFixture = {
@@ -522,12 +522,12 @@ const validateRoutineFixture = (routine: RoutineDraftFixture | RoutineFixture): 
   return { ok: diagnostics.length === 0, diagnostics };
 };
 
-const buildRoutine = (input: RoutineDraftFixture & Partial<Pick<RoutineFixture, "id" | "lineageId" | "status" | "version">>): RoutineFixture => ({
+const buildRoutine = (input: RoutineDraftFixture & Partial<Pick<RoutineFixture, "id" | "lineageId" | "enabled" | "version">>): RoutineFixture => ({
   ...input,
   id: input.id ?? "55555555-5555-4555-8555-000000000001",
   lineageId: input.lineageId ?? input.id ?? "55555555-5555-4555-7555-000000000001",
   agentId: defaultAgentId,
-  status: input.status ?? "draft",
+  enabled: input.enabled ?? true,
   version: input.version ?? 1,
   createdAt: nowIso,
   updatedAt: nowIso,
@@ -2220,10 +2220,10 @@ export const installDashboardApiMocks = async (
       }
 
       if (request.method() === "PATCH" && !action) {
-        const body = request.postDataJSON() as RoutineDraftFixture;
+        const body = request.postDataJSON() as Partial<RoutineDraftFixture> & { enabled?: boolean };
         routineUpdates?.push({ method: "PATCH", routineId, body });
-        if (!existing || existing.status !== "draft") {
-          await json(route, { error: { code: "not_found", message: "Draft routine not found" } }, 404);
+        if (!existing) {
+          await json(route, { error: { code: "not_found", message: "Routine not found" } }, 404);
           return;
         }
         const routine: RoutineFixture = {
@@ -2253,97 +2253,6 @@ export const installDashboardApiMocks = async (
           return;
         }
         await json(route, { validation: validateRoutineFixture(existing) });
-        return;
-      }
-
-      if (request.method() === "POST" && action === "publish") {
-        routineUpdates?.push({ method: "PUBLISH", routineId });
-        if (!existing || existing.status !== "draft") {
-          await json(route, { error: { code: "not_found", message: "Draft routine not found" } }, 404);
-          return;
-        }
-        const validation = validateRoutineFixture(existing);
-        if (!validation.ok) {
-          await json(route, { error: "Routine definition is invalid", validation }, 422);
-          return;
-        }
-        const published: RoutineFixture = {
-          ...existing,
-          status: "published",
-          updatedAt: nowIso,
-        };
-        routines = routines
-          .map((routine) => routine.id === routineId
-            ? published
-            : routine.lineageId === existing.lineageId && routine.status === "published"
-            ? { ...routine, status: "superseded", updatedAt: nowIso }
-            : routine);
-        await json(route, { routine: published, validation, directiveScopeOrphans: [] });
-        return;
-      }
-
-      if (request.method() === "POST" && action === "revise") {
-        routineUpdates?.push({ method: "REVISE", routineId });
-        if (!existing || existing.status !== "published") {
-          await json(route, { error: { code: "not_found", message: "Published routine not found" } }, 404);
-          return;
-        }
-        const currentDraft = routines.find((routine) => routine.lineageId === existing.lineageId && routine.status === "draft");
-        if (currentDraft) {
-          await json(route, { routine: currentDraft });
-          return;
-        }
-        const draft: RoutineFixture = {
-          ...existing,
-          id: `55555555-5555-4555-8555-${String(nextRoutineIndex).padStart(12, "0")}`,
-          status: "draft",
-          version: Math.max(...routines.filter((routine) => routine.lineageId === existing.lineageId).map((routine) => routine.version), 0) + 1,
-          updatedAt: nowIso,
-        };
-        nextRoutineIndex += 1;
-        routines = [...routines, draft];
-        await json(route, { routine: draft });
-        return;
-      }
-
-      if (request.method() === "POST" && action === "archive") {
-        routineUpdates?.push({ method: "ARCHIVE", routineId });
-        if (!existing || existing.status !== "published") {
-          await json(route, { error: { code: "not_found", message: "Published routine not found" } }, 404);
-          return;
-        }
-        const archived: RoutineFixture = { ...existing, status: "archived", updatedAt: nowIso };
-        // Archiving retires the routine and discards any in-progress revision draft in the lineage.
-        routines = routines
-          .filter((routine) => !(routine.lineageId === existing.lineageId && routine.status === "draft"))
-          .map((routine) => routine.id === routineId ? archived : routine);
-        await json(route, { routine: archived });
-        return;
-      }
-
-      if (request.method() === "POST" && action === "restore") {
-        routineUpdates?.push({ method: "RESTORE", routineId });
-        if (!existing || existing.status !== "archived") {
-          await json(route, { error: { code: "not_found", message: "Archived routine not found" } }, 404);
-          return;
-        }
-        const hasPublishedInLineage = routines.some((routine) =>
-          routine.lineageId === existing.lineageId &&
-          routine.id !== existing.id &&
-          routine.status === "published"
-        );
-        if (hasPublishedInLineage) {
-          await json(route, {
-            error: {
-              code: "bad_request",
-              message: "Archived routine definition cannot be restored while another version is published",
-            },
-          }, 400);
-          return;
-        }
-        const restored: RoutineFixture = { ...existing, status: "published", updatedAt: nowIso };
-        routines = routines.map((routine) => routine.id === routineId ? restored : routine);
-        await json(route, { routine: restored });
         return;
       }
     }

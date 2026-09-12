@@ -1091,7 +1091,7 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
         if (!cancelled) {
           setReplayRoutineState({
             agentId,
-            routines: response.routines.filter((routine) => routine.status === 'published'),
+            routines: response.routines.filter((routine) => routine.enabled),
           })
         }
       })

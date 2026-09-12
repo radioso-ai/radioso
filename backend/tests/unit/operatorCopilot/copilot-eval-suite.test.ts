@@ -765,7 +765,7 @@ describe("copilot eval dataset", () => {
     // Same trap as the conversation requirement, one step further out: the routine a case names
     // lives in its *message*, so a workspace without one runs the case against a routine that does
     // not exist and records Ray's correct "there is no such routine" as a behaviour regression.
-    const routineTools = ["validate_routine", "propose_routine_edit", "propose_routine_lifecycle"];
+    const routineTools = ["validate_routine", "propose_routine_edit"];
     const undeclared = cases
       .filter((entry) => entry.plan.some((step) => routineTools.includes(step.tool)) || entry.message.includes(COPILOT_EVAL_ROUTINE_NAME))
       .filter((entry) => !(entry.requires ?? []).some((requirement) => requirement === "routine" || requirement === "publishable_routine"))

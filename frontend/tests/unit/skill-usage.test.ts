@@ -7,8 +7,8 @@ import {
   type SkillUsageRoutine,
 } from '@/components/dashboard/settings/skills/skill-usage'
 
-const routine = (input: Partial<SkillUsageRoutine> & Pick<SkillUsageRoutine, 'lineageId'>): SkillUsageRoutine => ({
-  status: 'published',
+const routine = (input: Partial<SkillUsageRoutine> = {}): SkillUsageRoutine => ({
+  enabled: true,
   steps: [],
   ...input,
 })
@@ -32,29 +32,16 @@ describe('countSkillUsage', () => {
 
   it('counts a routine once however many of its steps call the skill', () => {
     const usage = countSkillUsage([], [
-      routine({
-        lineageId: 'lineage-1',
-        steps: [{ toolRef: 'issue_refund' }, { toolRef: 'issue_refund' }, { toolRef: null }, {}],
-      }),
-    ])
-
-    expect(usage.get('issue_refund')).toEqual({ directives: 0, routines: 1 })
-  })
-
-  it('counts a lineage once when its draft and published versions both call the skill', () => {
-    const usage = countSkillUsage([], [
-      routine({ lineageId: 'lineage-1', status: 'published', steps: [{ toolRef: 'issue_refund' }] }),
-      routine({ lineageId: 'lineage-1', status: 'draft', steps: [{ toolRef: 'issue_refund' }] }),
-      routine({ lineageId: 'lineage-2', status: 'draft', steps: [{ toolRef: 'issue_refund' }] }),
+      routine({ steps: [{ toolRef: 'issue_refund' }, { toolRef: 'issue_refund' }, { toolRef: null }, {}] }),
+      routine({ steps: [{ toolRef: 'issue_refund' }] }),
     ])
 
     expect(usage.get('issue_refund')).toEqual({ directives: 0, routines: 2 })
   })
 
-  it('ignores routine versions that can no longer fire', () => {
+  it('ignores a disabled routine, which cannot fire', () => {
     const usage = countSkillUsage([], [
-      routine({ lineageId: 'lineage-1', status: 'archived', steps: [{ toolRef: 'issue_refund' }] }),
-      routine({ lineageId: 'lineage-2', status: 'superseded', steps: [{ toolRef: 'issue_refund' }] }),
+      routine({ enabled: false, steps: [{ toolRef: 'issue_refund' }] }),
     ])
 
     expect(usage.get('issue_refund')).toBeUndefined()
@@ -63,7 +50,7 @@ describe('countSkillUsage', () => {
   it('sums both surfaces for a skill used by each', () => {
     const usage = countSkillUsage(
       [{ binding: { skillName: 'issue_refund' } }],
-      [routine({ lineageId: 'lineage-1', steps: [{ toolRef: 'issue_refund' }] })],
+      [routine({ steps: [{ toolRef: 'issue_refund' }] })],
     )
 
     expect(usage.get('issue_refund')).toEqual({ directives: 1, routines: 1 })

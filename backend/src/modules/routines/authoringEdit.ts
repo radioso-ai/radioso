@@ -31,6 +31,10 @@ const addressedOnce = <TItem>(
 
 export const routineFieldPatchSchema = z.object({
   name: z.string().trim().min(1).max(ROUTINE_DEFINITION_LIMITS.name).optional(),
+  // Whether the routine may activate, mirroring the same field on the plain update endpoint.
+  // Absent means unchanged — applyRoutineFieldPatch overlays this onto the stored routine's own
+  // draft shape, so an edit that never mentions it cannot reset it (the enabled-reset bug class).
+  enabled: z.boolean().optional(),
   activation: z.object({
     triggerDescription: z.string().trim().min(1).max(ROUTINE_DEFINITION_LIMITS.triggerDescription).optional(),
     priority: z.number().int().optional(),
@@ -94,7 +98,7 @@ const requireExactlyOneAddress = <T>(
 
 /** Strips persistence identity so a stored routine re-enters the authoring schema. */
 export const draftInputFromRoutine = (routine: RoutineDefinition): RoutineDefinitionDraftAuthoringInput => {
-  const { id: _id, agentId: _agentId, lineageId: _lineageId, version: _version, status: _status, createdAt: _createdAt, updatedAt: _updatedAt, ...draft } = routine;
+  const { id: _id, agentId: _agentId, lineageId: _lineageId, version: _version, createdAt: _createdAt, updatedAt: _updatedAt, ...draft } = routine;
   return draft;
 };
 
@@ -114,6 +118,7 @@ export const applyRoutineFieldPatch = (
   return {
     ...draft,
     ...(patch.name ? { name: patch.name } : {}),
+    ...(patch.enabled === undefined ? {} : { enabled: patch.enabled }),
     activation: { ...draft.activation, ...patch.activation },
     slots: draft.slots?.map((slot) => {
       const edit = slotEdits.get(slot.key);
@@ -145,6 +150,7 @@ const describeCoverageCriteria = (criteria: NonNullable<NonNullable<RoutineField
 export const describeRoutineFieldPatch = (patch: RoutineFieldPatch): string => {
   const parts: string[] = [];
   if (patch.name) parts.push("name");
+  if (patch.enabled !== undefined) parts.push(patch.enabled ? "enabled" : "disabled");
   if (patch.activation?.triggerDescription) parts.push("trigger");
   if (patch.activation?.priority !== undefined) parts.push("priority");
   if (patch.activation?.reentryMode) parts.push("re-entry");
@@ -166,6 +172,9 @@ export const describeRoutineFieldPatch = (patch: RoutineFieldPatch): string => {
  */
 export const projectRoutineForReview = (routine: RoutineDefinitionDraftAuthoringInput): Record<string, unknown> => ({
   name: routine.name,
+  // Surfaced so a reviewer can see whether a Ray-proposed create or edit ships the routine armed
+  // or parked, the same way the dashboard's list-row switch and editor show it.
+  enabled: routine.enabled ?? true,
   activation: {
     triggerDescription: routine.activation.triggerDescription,
     gateRef: routine.activation.gateRef ?? null,

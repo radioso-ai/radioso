@@ -1,7 +1,7 @@
 export {
   routineDefinitionDraftInputSchema,
+  routineDefinitionDraftUpdateInputSchema,
   routineDefinitionSchema,
-  routineDefinitionStatuses,
   routineGuardProvenance,
   routineReentryModes,
   routineStepSchema,
@@ -17,7 +17,8 @@ export {
   type RoutineStepKind,
   type RoutineTerminalKind,
 } from "./domain.js";
-export { compileRoutineDefinition, legacyCompiledRoutineId } from "./compiler.js";
+export { compileRoutineDefinition, legacyCompiledRoutineId, routineCanActivate } from "./compiler.js";
+export { selectCanonicalRoutineDefinitions } from "./draftProjection.js";
 export {
   applyRoutineFieldPatch,
   describeRoutineFieldPatch,
@@ -37,16 +38,13 @@ export {
   routineValidationCodes,
   validateRoutineDefinition,
   type RoutineValidationDiagnostic,
+  type RoutineValidationResult,
 } from "./validator.js";
 export {
   RoutineDefinitionService,
-  RoutineDefinitionLifecycleCommittedError,
   type RoutineDefinitionDeleteDraftResult,
-  type RoutineDirectiveScopeOrphan,
   type RoutineDefinitionRepositoryPort,
-  type RoutineDefinitionPublishOptions,
   type RoutineDefinitionWriteGuard,
-  type RoutineDefinitionArchiveGuard,
 } from "./service.js";
 export { projectRoutineToPortableDocument } from "./portableDocument.js";
 export {

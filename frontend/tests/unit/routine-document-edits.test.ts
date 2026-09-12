@@ -8,6 +8,7 @@ import {
   changeBranchGuardKind,
   changeStepKind,
   createEndingForBranch,
+  insertStep,
   moveStep,
   nextApprovalOptionId,
   referenceEnding,
@@ -29,7 +30,7 @@ import {
   updateStep,
 } from '@/lib/routine-document-edits'
 import { routineToForm } from '@/lib/routine-form'
-import { draftFromBlockDoc, routineToBlockDoc, type RoutineBlockDoc } from '@/lib/routine-prose'
+import { draftFromBlockDoc, routineToBlockDoc, type RoutineBlockBranch, type RoutineBlockDoc } from '@/lib/routine-prose'
 import type { RoutineDefinition, RoutineDefinitionDraft } from '@/lib/api'
 
 const source = () => {
@@ -59,6 +60,78 @@ const pristineSeed = () => {
 }
 
 describe('routine document edits', () => {
+  describe('implicit sequential flow', () => {
+    const transitionTargets = (doc: RoutineBlockDoc) =>
+      draftFromBlockDoc(doc).transitions.map((transition) => `${transition.fromStep}->${transition.toRef}:${transition.guardKind}`)
+    const branchTarget = (branch: RoutineBlockBranch) =>
+      branch.target.kind === 'step' ? branch.target.stableStepId : branch.target.kind === 'ending' ? branch.target.terminalId : branch.target.toRef
+
+    it('materializes a complete path when the first document step replaces the blank seed', () => {
+      const edited = addStep(pristineSeed(), 'chat')
+
+      expect(transitionTargets(edited)).toEqual(['step_2->complete:default'])
+    })
+
+    it('replaces the real one-step seed while retaining its hidden completion edge', () => {
+      const result = routineToBlockDoc({
+        name: '',
+        activation: { triggerDescription: '', priority: 0 },
+        slots: [],
+        steps: [{ stableStepId: 'step_1', kind: 'chat', instruction: '', toolRef: null, actionType: null, ordinal: 0, metadata: {} }],
+        transitions: [{ fromStep: 'step_1', toRef: 'complete', guardKind: 'default', guardText: null, outcomeStatus: null, counterLimit: null, fieldRef: null, fieldOp: null, fieldValue: null, fieldValues: null, fieldUnit: null, ordinal: 0 }],
+        terminals: [{ stableStepId: 'complete', kind: 'complete', instruction: '', ordinal: 0 }],
+      })
+      if (!result.ok) throw new Error(result.diagnostics.map((item) => item.message).join(', '))
+
+      const edited = addStep(result.doc, 'chat')
+
+      expect(edited.steps.map((step) => step.stableStepId)).toEqual(['step_2'])
+      expect(transitionTargets(edited)).toEqual(['step_2->complete:default'])
+    })
+
+    it('rewires the hidden default chain when inserting and reordering a step', () => {
+      const first = addStep(pristineSeed(), 'chat')
+      const inserted = insertStep(first, 'step_2', 'chat')
+      const appended = addStep(inserted, 'chat')
+      const reordered = moveStep(appended, 'step_1', -1)
+
+      expect(transitionTargets(inserted)).toEqual([
+        'step_2->step_1:default',
+        'step_1->complete:default',
+      ])
+      expect(transitionTargets(appended)).toEqual([
+        'step_2->step_1:default',
+        'step_1->step_3:default',
+        'step_3->complete:default',
+      ])
+      expect(transitionTargets(reordered)).toEqual([
+        'step_1->step_2:default',
+        'step_2->step_3:default',
+        'step_3->complete:default',
+      ])
+    })
+
+    it('does not rewrite an explicit default jump or conditional branch while reordering', () => {
+      const first = addStep(pristineSeed(), 'chat')
+      const withSecond = addStep(first, 'chat')
+      const withExplicitJump = addBranch(withSecond, 'step_1', 'default')
+      const withConditional = targetBranchAtStep(addBranch(withExplicitJump, 'step_2', 'llm'), 'step_2', 1, 'step_1')
+
+      const reordered = moveStep(withConditional, 'step_2', -1)
+      const firstStep = reordered.steps.find((step) => step.stableStepId === 'step_1')!
+      const secondStep = reordered.steps.find((step) => step.stableStepId === 'step_2')!
+
+      expect(firstStep.branches.map((branch) => `${branch.guard.kind}:${branchTarget(branch)}`)).toEqual([
+        'default:complete',
+        'default:complete_1',
+      ])
+      expect(secondStep.branches.map((branch) => `${branch.guard.kind}:${branchTarget(branch)}`)).toEqual([
+        'default:step_1',
+        'llm:step_1',
+      ])
+    })
+  })
+
   describe('renaming the names the compiler uses', () => {
     it('renames a step and moves every branch that pointed at it', () => {
       const withBranch = targetBranchAtStep(addBranch(source(), 'ask_email', 'llm'), 'ask_email', 0, 'ask_email')
@@ -321,8 +394,9 @@ describe('routine document edits', () => {
     doc = updateBranchGuard(doc, 'step_3', 1, { guardText: 'The customer needs a nuanced eligibility explanation.' })
 
     const draft = draftFromBlockDoc(doc)
-    expect(draft.transitions).toHaveLength(2)
-    expect(draft.transitions.map((transition) => transition.guardKind)).toEqual(['field', 'llm'])
+    const branches = draft.transitions.filter((transition) => transition.guardKind !== 'default')
+    expect(branches).toHaveLength(2)
+    expect(branches.map((transition) => transition.guardKind)).toEqual(['field', 'llm'])
 
     const draftAsRoutine = (nextDraft: RoutineDefinitionDraft): RoutineDefinition => ({
       ...nextDraft,
@@ -330,12 +404,45 @@ describe('routine document edits', () => {
       lineageId: 'local-lineage',
       agentId: 'local-agent',
       version: 1,
-      status: 'draft',
+      enabled: true,
       createdAt: new Date(0).toISOString(),
       updatedAt: new Date(0).toISOString(),
     })
     const form = routineToForm(draftAsRoutine(draft))
-    expect(form.steps.find((step) => step.stableStepId === 'step_3')?.transitions.map((transition) => transition.guardKind)).toEqual(['field', 'llm'])
+    expect(form.steps.find((step) => step.stableStepId === 'step_3')?.transitions
+      .filter((transition) => transition.guardKind !== 'default')
+      .map((transition) => transition.guardKind)).toEqual(['field', 'llm'])
+  })
+
+  describe('inserting a step at a position', () => {
+    it('splices a new step immediately after the named step, ahead of what followed it', () => {
+      const withTwo = addStep(source(), 'chat')
+      expect(withTwo.steps.map((step) => step.stableStepId)).toEqual(['ask_email', 'step_1'])
+
+      const inserted = insertStep(withTwo, 'ask_email', 'tool')
+
+      expect(inserted.steps.map((step) => step.stableStepId)).toEqual(['ask_email', 'step_2', 'step_1'])
+      expect(inserted.steps[1]).toMatchObject({ kind: 'tool', toolRef: '' })
+    })
+
+    it('creates one decision edge per option when inserting an approval step', () => {
+      const inserted = insertStep(source(), 'ask_email', 'approval')
+      const approval = inserted.steps[1]
+
+      expect(approval.kind).toBe('approval')
+      expect(approval.branches).toHaveLength(2)
+    })
+
+    it('leaves the document alone when the anchor step does not exist', () => {
+      const doc = source()
+      expect(insertStep(doc, 'missing_step', 'chat')).toEqual(doc)
+    })
+
+    it('does not mutate the source document', () => {
+      const original = source()
+      insertStep(original, 'ask_email', 'chat')
+      expect(original.steps).toHaveLength(1)
+    })
   })
 
   it('allocates approval option ids without colliding after deletion', () => {

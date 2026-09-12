@@ -278,6 +278,96 @@ describe("coverage-gated routine turn provider", () => {
     expect(decide).toHaveBeenCalledOnce();
   });
 
+  it("uses the neutral coverage-specific ranked-activation prompt for a partial assessment and keeps the legacy prompt for ordinary activation", async () => {
+    const coverageModelGateway = gateway();
+    const partialCriteria: AnswerCoverageCriteria = { coverage: ["partial"], reasons: ["insufficient_evidence"] };
+    const coverageProvider = createRoutineTurnProvider(
+      dependencies(registration("Published routine action", partialCriteria)) as never,
+    );
+    const coveragePorts = await coverageProvider.forTurn({ modelGateway: coverageModelGateway, agentId: "agent-1" });
+    const partialTurn: TurnContext = {
+      ...turn,
+      metadata: {
+        answerCoverage: {
+          availability: "assessed",
+          coverage: "partial",
+          reason: "insufficient_evidence",
+          unresolvedRequest: "Eligibility",
+          schemaVersion: 1,
+        },
+      },
+    };
+    await expect(coveragePorts!.coverageActivator!.activate({ turn: partialTurn })).resolves.toMatchObject({
+      kind: "activate",
+      routineId: "coverage-routine",
+    });
+    const coverageCall = vi.mocked(coverageModelGateway.complete).mock.calls.find(
+      (call) => call[0].metadata?.routineActivation === true,
+    );
+    expect(coverageCall?.[0].systemPrompt).toContain("answer-coverage assessment has made");
+    expect(coverageCall?.[0].systemPrompt).not.toContain("could not find a grounded answer");
+    expect(coverageCall?.[0].systemPrompt).not.toContain("wants to start");
+
+    const legacyModelGateway = gateway();
+    const legacyProvider = createRoutineTurnProvider(dependencies(legacyRegistration("Published legacy action")) as never);
+    const legacyPorts = await legacyProvider.forTurn({ modelGateway: legacyModelGateway, agentId: "agent-1" });
+    await legacyPorts!.activator.activate({ turn: { ...turn, metadata: {} } });
+    const legacyCall = vi.mocked(legacyModelGateway.complete).mock.calls.find(
+      (call) => call[0].metadata?.routineActivation === true,
+    );
+    expect(legacyCall?.[0].systemPrompt).toContain("wants to start");
+    expect(legacyCall?.[0].systemPrompt).not.toContain("could not find a grounded answer");
+  });
+
+  it("omits the embedding prefilter for coverage-gated activation so a near-zero topic-similarity score still reaches ranking, while the legacy path stays gated by it", async () => {
+    // Same near-orthogonal vectors every real prefilter run would produce for a
+    // coverage-gated trigger (its description states a system condition, not a
+    // topic): the query embeds to [1,0,0], the trigger description embeds to
+    // [0,1,0] on the fly (routine ids here are not UUIDs, so the prefilter takes
+    // its fly-embed path rather than the persisted-vector search). Cosine
+    // similarity is 0, well under the prefilter's 0.2 floor.
+    const withLowSimilarityPrefilter = (published: RoutineRegistration) => ({
+      ...dependencies(published),
+      clusteringEmbeddings: {
+        embedForClustering: vi.fn()
+          .mockResolvedValueOnce({ vectors: [[1, 0, 0]] })
+          .mockResolvedValueOnce({ vectors: [[0, 1, 0]] }),
+      },
+      routineDefinitionRepository: {
+        // Routine ids in this fixture file are not UUIDs, so the prefilter's own
+        // UUID-pattern filter already routes them to the fly-embed path; leaving
+        // noVectorRoutineIds empty avoids double-counting the same id there.
+        searchActivationTriggerEmbeddings: vi.fn(async () => ({ matches: [], noVectorRoutineIds: [] })),
+      },
+    });
+
+    const coverageModelGateway = gateway();
+    const coverageProvider = createRoutineTurnProvider(
+      withLowSimilarityPrefilter(registration("Published routine action")) as never,
+    );
+    const coveragePorts = await coverageProvider.forTurn({
+      modelGateway: coverageModelGateway,
+      agentId: "agent-1",
+      workspaceId: "workspace-1",
+    });
+    await coveragePorts!.coverageActivator!.activate({ turn });
+    expect(coverageModelGateway.complete).toHaveBeenCalledWith(expect.objectContaining({
+      metadata: expect.objectContaining({ routineActivation: true }),
+    }));
+
+    const legacyModelGateway = gateway();
+    const legacyProvider = createRoutineTurnProvider(
+      withLowSimilarityPrefilter(legacyRegistration("Published legacy action")) as never,
+    );
+    const legacyPorts = await legacyProvider.forTurn({
+      modelGateway: legacyModelGateway,
+      agentId: "agent-1",
+      workspaceId: "workspace-1",
+    });
+    await legacyPorts!.activator.activate({ turn: { ...turn, metadata: {} } });
+    expect(legacyModelGateway.complete).not.toHaveBeenCalled();
+  });
+
   it("restores ordinary semantic activation when an author removes coverage criteria", async () => {
     const provider = createRoutineTurnProvider(
       dependencies(legacyRegistration("Published routine action")) as never,

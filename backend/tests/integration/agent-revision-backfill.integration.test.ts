@@ -139,7 +139,7 @@ describeDb("agent revision baseline migration", () => {
     expect(snapshot.customInstruction).toBe("Preserve me");
     expect(snapshot.directives).toHaveLength(1);
     expect(snapshot.routines).toHaveLength(1);
-    expect(snapshot.routines[0]).toMatchObject({ id: savedRoutineId, status: "draft", slots: [{ stableSlotId: "order_id", mutable: true }], steps: [{ stableStepId: "approve", kind: "approval", captureKey: "refund_decision", options: [{ id: "approve" }, { id: "reject" }] }] });
+    expect(snapshot.routines[0]).toMatchObject({ id: savedRoutineId, enabled: true, slots: [{ stableSlotId: "order_id", mutable: true }], steps: [{ stableStepId: "approve", kind: "approval", captureKey: "refund_decision", options: [{ id: "approve" }, { id: "reject" }] }] });
     expect(snapshot.directives[0]?.tags).toEqual([`routine:${savedRoutineId}`, `step:${savedRoutineId}:approve`]);
     expect(snapshot.contextVariableEnablements.map((enablement) => enablement.variableId)).toEqual([variableId]);
 
@@ -147,7 +147,7 @@ describeDb("agent revision baseline migration", () => {
     if (!baselineRevisionId) throw new Error("Expected migration baseline revision");
     const [baselineRow] = await database.query<{ snapshot: unknown }>("SELECT snapshot FROM agent_revisions WHERE workspace_id=$1 AND agent_id=$2 AND id=$3", [workspaceId, agentId, baselineRevisionId]);
     const baselineSnapshot = parseAgentRevisionSnapshot(baselineRow?.snapshot);
-    expect(baselineSnapshot.routines).toMatchObject([{ id: routineId, status: "published", slots: [{ stableSlotId: "order_id", mutable: true }], steps: [{ stableStepId: "approve", kind: "approval", captureKey: "refund_decision", options: [{ id: "approve" }, { id: "reject" }] }] }]);
+    expect(baselineSnapshot.routines).toMatchObject([{ id: routineId, enabled: true, slots: [{ stableSlotId: "order_id", mutable: true }], steps: [{ stableStepId: "approve", kind: "approval", captureKey: "refund_decision", options: [{ id: "approve" }, { id: "reject" }] }] }]);
     expect(baselineSnapshot.directives[0]?.tags).toEqual([`routine:${routineId}`, `step:${routineId}:approve`]);
     expect(await database.query("SELECT agent_revision_id FROM conversations WHERE id=$1", [legacyConversationId]))
       .toEqual([{ agent_revision_id: baselineRevisionId }]);
@@ -160,7 +160,7 @@ describeDb("agent revision baseline migration", () => {
     expect((await revisions.readState(workspaceId, agentId))?.status).toBe("draft_dirty");
 
     const newDraft = await revisions.readDraft(workspaceId, newDraftAgentId);
-    expect(newDraft?.snapshot.routines).toMatchObject([{ id: newRoutineId, status: "draft" }]);
+    expect(newDraft?.snapshot.routines).toMatchObject([{ id: newRoutineId, enabled: true }]);
     await expect(revisions.createCandidate(workspaceId, newDraftAgentId, { id: randomUUID(), expectedDraftGeneration: newDraft!.generation }))
       .resolves.not.toBe("conflict");
     const incompleteDraft = await revisions.readDraft(workspaceId, incompleteDraftAgentId);
@@ -180,8 +180,8 @@ describeDb("agent revision baseline migration", () => {
     const pinnedRevisionId = (await database.query<{ agent_revision_id: string | null }>("SELECT agent_revision_id FROM conversations WHERE id=$1", [pinnedConversationId]))[0]?.agent_revision_id;
     if (!pinnedRevisionId) throw new Error("Expected safe active routine conversation binding");
     const pinnedRevision = await revisions.findRevision(workspaceId, pinnedAgentId, pinnedRevisionId);
-    expect(pinnedRevision?.snapshot.routines).toMatchObject([{ id: pinnedPublishedRoutineId, status: "published" }]);
-    expect(pinnedRevision?.snapshot).toMatchObject({ retainedRoutineDefinitions: [{ id: pinnedRetainedRoutineId, status: "superseded", steps: [{ instruction: "retained v1" }] }] });
+    expect(pinnedRevision?.snapshot.routines).toMatchObject([{ id: pinnedPublishedRoutineId, enabled: true }]);
+    expect(pinnedRevision?.snapshot).toMatchObject({ retainedRoutineDefinitions: [{ id: pinnedRetainedRoutineId, enabled: true, steps: [{ instruction: "retained v1" }] }] });
     expect((await revisions.readState(workspaceId, pinnedAgentId))?.status).toBe("draft_clean");
     expect(await database.query("SELECT agent_revision_id FROM conversations WHERE id=$1", [legacyPinnedConversationId]))
       .toEqual([{ agent_revision_id: pinnedRevisionId }]);
@@ -204,8 +204,8 @@ describeDb("agent revision baseline migration", () => {
     expect(collisionRevision?.snapshot.retainedRoutineDefinitions).not.toMatchObject([{ id: collisionDraftRoutineId }]);
     await database.query("DELETE FROM routine_definition WHERE id=$1", [pinnedRetainedRoutineId]);
     const source = createPublishedRoutineRegistrationSource({
-      listPublishedByAgent: async () => { throw new Error("mutable routine lookup is forbidden"); },
-      listByAgent: async () => { throw new Error("mutable routine lookup is forbidden"); },
+      listActiveByAgent: async () => { throw new Error("mutable routine lookup is forbidden"); },
+      listVersionsByAgent: async () => { throw new Error("mutable routine lookup is forbidden"); },
       findPinnedById: async () => { throw new Error("mutable routine lookup is forbidden"); },
       findById: async () => { throw new Error("mutable routine lookup is forbidden"); },
     }, { revisionReader: { findRevision: async () => pinnedRevision } });

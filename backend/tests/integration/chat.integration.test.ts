@@ -65,6 +65,7 @@ const updateRetrievalSkillSettings = async (
 
 const supportIntakeRoutineDraft = (): RoutineDefinitionDraftInput => ({
   name: "db-support-intake",
+  enabled: true,
   activation: {
     triggerDescription: "When the user asks to start support intake.",
     gateRef: null,
@@ -311,7 +312,7 @@ describe("chat integration", () => {
     });
   });
 
-  it("activates and runs a published routine definition during a chat turn", async () => {
+  it("activates and runs a live routine definition during a chat turn", async () => {
     const calls: Array<{ systemPrompt?: string }> = [];
     const routineGateway: ChatGateway = {
       async answer(input) {
@@ -341,8 +342,7 @@ describe("chat integration", () => {
       agent.id,
       supportIntakeRoutineDraft(),
     );
-    const publish = await dependencies.routineDefinitionService.publish(workspaceId, agent.id, draft.routine.id);
-    expect("routine" in publish && publish.routine.status).toBe("published");
+    expect(draft.routine.enabled).toBe(true);
 
     const response = await request(app)
       .post("/api/v1/assistant/chat")

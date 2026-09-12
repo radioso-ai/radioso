@@ -6,39 +6,33 @@ import type { ActionCapabilityMap } from "../../shared/domain/actionCapabilities
 import type { AuditEventInput, AuditPort } from "../audit/contracts/index.js";
 import { resolveAvailableContextVariables, type AgentContextVariableEnablement } from "../context-variables/public.js";
 import type { SkillAuthoringCatalog } from "../skills/public.js";
+import { draftInputFromRoutine } from "./authoringEdit.js";
 import {
   routineDefinitionDraftInputSchema,
   type RoutineDefinition,
   type RoutineDefinitionDraftInput,
   type RoutineDefinitionDraftAuthoringInput,
 } from "./domain.js";
-import { compileRoutineDefinition } from "./compiler.js";
 import type { RoutineTriggerEmbeddingService } from "./routineTriggerEmbeddingService.js";
 import {
   validateRoutineDefinition,
+  type RoutineValidationContext,
   type RoutineValidationDiagnostic,
   type RoutineValidationResult,
 } from "./validator.js";
 
 export interface RoutineDefinitionRepositoryPort {
-  listPublishedByAgent(agentId: string): Promise<RoutineDefinition[]>;
   listByAgent(agentId: string): Promise<RoutineDefinition[]>;
   findById(agentId: string, id: string): Promise<RoutineDefinition | null>;
   createDraft(agentId: string, input: RoutineDefinitionDraftInput): Promise<RoutineDefinition>;
   updateDraft(agentId: string, id: string, input: RoutineDefinitionDraftInput, options?: RoutineDefinitionWriteGuard): Promise<RoutineDefinition>;
-  publish(agentId: string, id: string, options?: RoutineDefinitionPublishOptions): Promise<RoutineDefinition>;
-  createRevisionDraft(agentId: string, publishedId: string): Promise<RoutineDefinition | null>;
-  archive(agentId: string, id: string, options?: RoutineDefinitionArchiveGuard): Promise<boolean>;
-  restore(agentId: string, id: string): Promise<boolean>;
   deleteDraft(agentId: string, id: string, options?: RoutineDefinitionWriteGuard): Promise<RoutineDefinitionDeleteDraftResult>;
   createDraftWithAgentDraft(workspaceId: string, agentId: string, input: RoutineDefinitionDraftInput): Promise<RoutineDefinition>;
   updateDraftWithAgentDraft(workspaceId: string, agentId: string, id: string, input: RoutineDefinitionDraftInput, options?: RoutineDefinitionWriteGuard): Promise<RoutineDefinition>;
-  publishWithAgentDraft(workspaceId: string, agentId: string, id: string, options?: RoutineDefinitionPublishOptions): Promise<RoutineDefinition>;
-  createRevisionDraftWithAgentDraft(workspaceId: string, agentId: string, publishedId: string): Promise<RoutineDefinition | null>;
-  archiveWithAgentDraft(workspaceId: string, agentId: string, id: string, options?: RoutineDefinitionArchiveGuard): Promise<RoutineDefinition | null>;
-  restoreWithAgentDraft(workspaceId: string, agentId: string, id: string): Promise<RoutineDefinition | null>;
+  setEnabledWithAgentDraft(workspaceId: string, agentId: string, id: string, enabled: boolean): Promise<RoutineDefinition | null>;
   deleteDraftWithAgentDraft(workspaceId: string, agentId: string, id: string, options?: RoutineDefinitionWriteGuard): Promise<RoutineDefinitionDeleteDraftResult>;
-  listPublishedRoutineNamesReferencingDestination?(workspaceId: string, destinationId: string): Promise<string[]>;
+  listRoutineNamesReferencingDestination?(workspaceId: string, destinationId: string): Promise<string[]>;
+  findNameVersionOneOccupant?(agentId: string, name: string): Promise<{ id: string; updatedAt: Date } | null>;
 }
 
 /**
@@ -51,16 +45,6 @@ export interface RoutineDefinitionWriteGuard {
   expectedUpdatedAt?: Date;
 }
 
-/**
- * What archiving is allowed to delete along with the routine. Archiving discards the lineage's
- * draft revision, so a caller that told an operator what would be lost states it here: `null` for
- * "there was no draft", an id for the one that was disclosed. Absent means the caller made no
- * claim, which is how the dashboard's own archive keeps working.
- */
-export interface RoutineDefinitionArchiveGuard {
-  expectedDraftRevision?: { id: string; updatedAt: Date } | null;
-}
-
 interface RoutineDefinitionSaveResult {
   routine: RoutineDefinition;
   validation: RoutineValidationResult;
@@ -70,55 +54,6 @@ export type RoutineDefinitionDeleteDraftResult =
   | { outcome: "deleted" }
   | { outcome: "not_found" }
   | { outcome: "conflict" };
-
-export interface RoutineDirectiveScopeOrphan {
-  directiveId: string;
-  scopeTag: string;
-  reason: "missing_step";
-}
-
-export interface RoutineDefinitionPublishLifecycleInput {
-  previousPublishedId: string | null;
-  newDefinitionId: string;
-  transaction: unknown;
-}
-
-export interface RoutineDefinitionPublishOptions extends RoutineDefinitionWriteGuard {
-  onPublished?: (input: RoutineDefinitionPublishLifecycleInput) => Promise<void>;
-}
-
-interface RoutineDefinitionPublishRejection {
-  rejected: true;
-  validation: RoutineValidationResult;
-}
-
-type RoutineDefinitionPublishSuccess = RoutineDefinitionSaveResult & {
-  directiveScopeOrphans: RoutineDirectiveScopeOrphan[];
-};
-
-type RoutineDefinitionPublishResult = RoutineDefinitionPublishSuccess | RoutineDefinitionPublishRejection;
-
-type RoutineDefinitionRestoreResult = RoutineDefinitionSaveResult | RoutineDefinitionPublishRejection;
-
-type RoutineDefinitionCommittedLifecycleAction = "publish" | "archive" | "restore";
-
-/**
- * The lifecycle row transition committed, but follow-up work after that commit failed. Consumers
- * may safely credit this exact routine/action without guessing from a later status read.
- */
-export class RoutineDefinitionLifecycleCommittedError extends Error {
-  readonly cause: unknown;
-
-  constructor(
-    readonly action: RoutineDefinitionCommittedLifecycleAction,
-    readonly routineId: string,
-    cause: unknown,
-  ) {
-    super(cause instanceof Error ? cause.message : `Routine ${action} follow-up failed`);
-    this.name = "RoutineDefinitionLifecycleCommittedError";
-    this.cause = cause;
-  }
-}
 
 interface RoutineDefinitionServiceOptions {
   agentRepository: {
@@ -137,33 +72,73 @@ interface RoutineDefinitionServiceOptions {
   /**
    * Names of routine-dispatchable skills that the authoring catalog does not
    * enumerate but the runtime resolver still routes (customer-email, webhook).
-   * Folded into the publish/validate allow-list so existing routines that use
-   * them are not rejected as `unknown_skill`. Must mirror the runtime resolver's
-   * name derivation (enabled skills only).
+   * Folded into the serving allow-list so existing routines that use them are
+   * not rejected as `unknown_skill`. Must mirror the runtime resolver's name
+   * derivation (enabled skills only).
    */
   additionalRoutineSkillNames?: (input: {
     workspaceId: string;
     agentId: string;
   }) => Promise<readonly string[]>;
   auditService?: Pick<AuditPort, "record">;
-  directiveScopeTags?: {
-    repointRoutineScopeTags(input: {
-      agentId: string;
-      fromDefinitionId: string;
-      toDefinitionId: string;
-      survivingStepIds: ReadonlySet<string>;
-      transaction?: unknown;
-    }): Promise<{ repointed: number; orphans: RoutineDirectiveScopeOrphan[] }>;
-  };
   triggerEmbeddingService?: Pick<RoutineTriggerEmbeddingService, "persistPublished">;
+  /** Support/debug correlation for the best-effort side effects `savedRoutine` fires off. */
+  logger?: { warn(bindings: Record<string, unknown>, message: string): void };
 }
+
+/** Overlays only the keys `incoming` actually defines onto `base`, leaving the rest untouched. */
+const mergeDefinedFields = <T extends Record<string, unknown>>(base: T, incoming: Partial<T>): T => {
+  const definedIncoming = Object.fromEntries(
+    Object.entries(incoming).filter(([, fieldValue]) => fieldValue !== undefined),
+  );
+  return { ...base, ...definedIncoming };
+};
+
+/**
+ * A plain update payload (the form/document editor's full-body PATCH) is a full draft shape,
+ * so a field it never mentions reads the same as a field explicitly cleared — and a field with
+ * a zod default (`enabled`) would then default forward instead of carrying the stored value.
+ * Overlaying only the keys the caller's payload actually defines onto the stored routine's own
+ * draft shape fixes that at the source, the same base+overlay presence-check
+ * `applyRoutineFieldPatch` already uses for a field-level edit, applied here at the whole-payload
+ * granularity the plain update endpoint receives. Issue: enabled-reset bug (routine lifecycle
+ * collapse regression #1).
+ *
+ * The same reset can happen one level deeper: a caller-sent `activation` or `completionExport`
+ * object can itself omit one of its own optional-with-default subfields
+ * (`activation.reentryMode`; every `completionExport` field), which — same root cause —
+ * `RoutineDefinitionDraftUpdateInputSchema` keeps genuinely `undefined` rather than defaulted.
+ * Merge those two nested objects field-by-field too, not just replace them wholesale. `activation`
+ * is always present on a routine (required, never itself omitted); `completionExport` can be
+ * entirely absent from `input`, in which case the whole-payload merge above already carries the
+ * stored value forward untouched. Issue: enabled-reset bug, one level deeper (round 2, item 7).
+ */
+const mergeDraftInputWithExisting = (
+  existing: RoutineDefinition,
+  input: RoutineDefinitionDraftAuthoringInput,
+): RoutineDefinitionDraftAuthoringInput => {
+  const existingDraft = draftInputFromRoutine(existing);
+  const merged = mergeDefinedFields(
+    existingDraft as unknown as Record<string, unknown>,
+    input as unknown as Record<string, unknown>,
+  ) as RoutineDefinitionDraftAuthoringInput;
+  return {
+    ...merged,
+    activation: mergeDefinedFields(existingDraft.activation, input.activation),
+    ...(input.completionExport === undefined ? {} : {
+      completionExport: mergeDefinedFields(
+        (existingDraft.completionExport ?? {}),
+        input.completionExport,
+      ),
+    }),
+  };
+};
 
 const draftDefinitionFromInput = (agentId: string, input: RoutineDefinitionDraftInput): RoutineDefinition => ({
   id: randomUUID(),
   agentId,
   lineageId: randomUUID(),
   version: 1,
-  status: "draft",
   ...input,
   createdAt: new Date(),
   updatedAt: new Date(),
@@ -209,18 +184,6 @@ const isRoutineDefinitionNameVersionConstraintError = (error: unknown): boolean 
     );
 };
 
-const missingWebhookDestinationRefFromConstraintError = (error: unknown): string | null => {
-  if (!error || typeof error !== "object") {
-    return null;
-  }
-  const message = (error as { message?: unknown }).message;
-  if (typeof message !== "string") {
-    return null;
-  }
-  const match = /unknown webhook destination ([0-9a-f-]{36})/iu.exec(message);
-  return match?.[1] ?? null;
-};
-
 export class RoutineDefinitionService {
   private readonly capabilityPolicy: CapabilityPolicy;
 
@@ -245,6 +208,17 @@ export class RoutineDefinitionService {
   ): Promise<RoutineDefinitionSaveResult> {
     await this.requireAgent(workspaceId, agentId);
     const draft = this.validateInput(input);
+    // A retired, non-canonical row from a pre-cutover branched lineage can still occupy
+    // (agent_id, name, version 1) — the identity a fresh create always takes — while being
+    // invisible to list()'s canonical-row-only view, so a name that looks free to every caller of
+    // this method is not. Checking that before attempting the write, rather than only catching the
+    // database's own unique-violation after the fact, gives every caller (the plain dashboard/API
+    // path and the copilot's) the same precise pre-write guidance instead of the copilot's own
+    // findCreateConflict precheck being the only place this got caught early. The post-write catch
+    // below stays as a correctness safety net for the race window between this check and the write.
+    if (await this.options.repository.findNameVersionOneOccupant?.(agentId, draft.name)) {
+      throw conflict("A routine definition with this name and version already exists for this agent");
+    }
     let saved: RoutineDefinition;
     try {
       saved = await this.options.repository.createDraftWithAgentDraft(workspaceId, agentId, draft);
@@ -252,12 +226,26 @@ export class RoutineDefinitionService {
       if (isRoutineDefinitionNameVersionConstraintError(error)) {
         throw conflict("A routine definition with this name and version already exists for this agent");
       }
-      throw error;
+      throw this.completionExportDestinationError(error, draft) ?? error;
     }
-    return {
-      routine: saved,
-      validation: validateRoutineDefinition(saved),
-    };
+    return this.savedRoutine(workspaceId, agentId, "routine_definition.create", saved);
+  }
+
+  /**
+   * The row, if any, that would make a fresh `createDraft(workspaceId, agentId, { name, ... })`
+   * fail with a name conflict — checked without attempting the write, for a caller (the copilot's
+   * create-proposal version token) that needs to know a create is blocked before Apply runs it.
+   * Deliberately not backed by `list()`: that returns one canonical row per lineage, which can
+   * miss a real conflict from a retired, non-canonical row a pre-cutover lineage still carries at
+   * `(name, version 1)` under a name its canonical row has since been renamed away from.
+   */
+  async findCreateConflict(
+    workspaceId: string,
+    agentId: string,
+    name: string,
+  ): Promise<{ id: string; updatedAt: Date } | null> {
+    await this.requireAgent(workspaceId, agentId);
+    return (await this.options.repository.findNameVersionOneOccupant?.(agentId, name)) ?? null;
   }
 
   async updateDraft(
@@ -268,11 +256,12 @@ export class RoutineDefinitionService {
     options: RoutineDefinitionWriteGuard = {},
   ): Promise<RoutineDefinitionSaveResult> {
     await this.requireAgent(workspaceId, agentId);
-    const existing = await this.requireRoutine(agentId, id);
-    if (existing.status !== "draft") {
-      throw badRequest("Only draft routine definitions can be updated");
-    }
-    const draft = this.validateInput(input);
+    // A caller's payload may omit a field the stored routine already carries a real value for
+    // (see mergeDraftInputWithExisting); look the routine up first so an omission carries
+    // forward instead of falling back to a schema default. A missing id is not a hard failure
+    // here — the repository's own conflict guard below still reports it precisely.
+    const existing = await this.options.repository.findById(agentId, id);
+    const draft = this.validateInput(existing ? mergeDraftInputWithExisting(existing, input) : input);
     let saved: RoutineDefinition;
     try {
       saved = await this.options.repository.updateDraftWithAgentDraft(workspaceId, agentId, id, draft, options);
@@ -280,12 +269,32 @@ export class RoutineDefinitionService {
       if (error instanceof Error && error.message.startsWith("routine_definition_update_conflict:")) {
         throw conflict("Routine changed while it was being edited — reload it and try again");
       }
-      throw error;
+      // Every canonical routine is now permanently pinned at version 1 (the routine lifecycle
+      // collapse), so renaming one routine to collide with another's name is the common case a
+      // rename can hit, not the rare cross-lineage edge case it was under the old branching-
+      // version model. createDraft already reports this collision as a friendly 409; do the same
+      // here instead of letting the raw unique-violation escape as a 500.
+      if (isRoutineDefinitionNameVersionConstraintError(error)) {
+        throw conflict("A routine definition with this name and version already exists for this agent");
+      }
+      throw this.completionExportDestinationError(error, draft) ?? error;
     }
-    return {
-      routine: saved,
-      validation: validateRoutineDefinition(saved),
-    };
+    return this.savedRoutine(workspaceId, agentId, "routine_definition.update", saved);
+  }
+
+  /** Takes a routine in or out of service, leaving its authored graph untouched. */
+  async setEnabled(
+    workspaceId: string,
+    agentId: string,
+    id: string,
+    enabled: boolean,
+  ): Promise<RoutineDefinitionSaveResult> {
+    await this.requireAgent(workspaceId, agentId);
+    const saved = await this.options.repository.setEnabledWithAgentDraft(workspaceId, agentId, id, enabled);
+    if (!saved) {
+      throw notFound("Routine definition not found");
+    }
+    return this.savedRoutine(workspaceId, agentId, "routine_definition.update", saved);
   }
 
   async validate(
@@ -294,167 +303,13 @@ export class RoutineDefinitionService {
     target: { id: string } | { input: RoutineDefinitionDraftAuthoringInput },
   ): Promise<RoutineValidationResult> {
     await this.requireAgent(workspaceId, agentId);
-    // Validation answers "would this publish?", so it runs every gate publish runs. An action step
-    // whose type is unregistered or whose capability the workspace denies is rejected by publish
-    // alone; leaving it out here reported a routine as valid that could never go live.
+    // Validation answers "would this serve?", so it runs every gate the agent's own release runs.
+    // Leaving out an unregistered action type or a capability the workspace denies would report a
+    // routine as valid that could never go live.
     const routine = "id" in target
       ? await this.requireRoutine(agentId, target.id)
       : draftDefinitionFromInput(agentId, this.validateInput(target.input));
     return this.validateForServing(workspaceId, routine);
-  }
-
-  async publish(workspaceId: string, agentId: string, id: string, options: RoutineDefinitionWriteGuard = {}): Promise<RoutineDefinitionPublishResult> {
-    await this.requireAgent(workspaceId, agentId);
-    const routine = await this.requireRoutine(agentId, id);
-    if (routine.status !== "draft") {
-      throw badRequest("Only draft routine definitions can be published");
-    }
-    const validation = await this.validateForServing(workspaceId, routine);
-    if (!validation.ok) {
-      return { rejected: true, validation };
-    }
-    compileRoutineDefinition(routine);
-    let published: RoutineDefinition;
-    let directiveScopeOrphans: RoutineDirectiveScopeOrphan[] = [];
-    let supersededDefinitionId: string | null = null;
-    const survivingStepIds = new Set(routine.steps.map((step) => step.stableStepId));
-    try {
-      published = await this.options.repository.publishWithAgentDraft(workspaceId, agentId, id, {
-        ...options,
-        // Serving validation was performed against this exact draft. If another
-        // authoring command won the agent lock first, refuse rather than release
-        // its unvalidated replacement.
-        expectedUpdatedAt: options.expectedUpdatedAt ?? routine.updatedAt,
-        onPublished: async ({ previousPublishedId, newDefinitionId, transaction }) => {
-          supersededDefinitionId = previousPublishedId;
-          if (!previousPublishedId || !this.options.directiveScopeTags) {
-            return;
-          }
-          const repointResult = await this.options.directiveScopeTags.repointRoutineScopeTags({
-            agentId,
-            fromDefinitionId: previousPublishedId,
-            toDefinitionId: newDefinitionId,
-            survivingStepIds,
-            transaction,
-          });
-          directiveScopeOrphans = repointResult.orphans;
-        },
-      });
-    } catch (error) {
-      if (error instanceof Error && error.message.startsWith("routine_definition_publish_conflict:")) {
-        throw conflict("Routine changed while it was being published — reload it and try again");
-      }
-      if (isRoutineCompletionExportDestinationConstraintError(error) && routine.completionExport?.enabled) {
-        return {
-          rejected: true,
-          validation: {
-            ok: false,
-            diagnostics: [
-              ...validation.diagnostics,
-              unknownWebhookDestinationDiagnostic(routine.completionExport.destinationRef.trim()),
-            ],
-          },
-        };
-      }
-      throw error;
-    }
-    try {
-      await this.options.triggerEmbeddingService?.persistPublished({ workspaceId, agentId, routine: published });
-      await this.recordLifecycleAudit("routine_definition.publish", workspaceId, agentId, published, {
-        supersededDefinitionId,
-        directiveScopeOrphans: directiveScopeOrphans.length,
-      });
-      return {
-        routine: published,
-        validation: await this.validateWithAvailableSkills(workspaceId, published),
-        directiveScopeOrphans,
-      };
-    } catch (error) {
-      throw new RoutineDefinitionLifecycleCommittedError("publish", published.id, error);
-    }
-  }
-
-  async revise(workspaceId: string, agentId: string, id: string): Promise<RoutineDefinition> {
-    await this.requireAgent(workspaceId, agentId);
-    const routine = await this.requireRoutine(agentId, id);
-    if (routine.status !== "published") {
-      throw badRequest("Only published routine definitions can be revised");
-    }
-    const revision = await this.options.repository.createRevisionDraftWithAgentDraft(workspaceId, agentId, id);
-    if (!revision) {
-      throw notFound("Published routine definition not found");
-    }
-    await this.recordLifecycleAudit("routine_definition.revise", workspaceId, agentId, revision);
-    return revision;
-  }
-
-  async archive(workspaceId: string, agentId: string, id: string, options: RoutineDefinitionArchiveGuard = {}): Promise<RoutineDefinition> {
-    await this.requireAgent(workspaceId, agentId);
-    const routine = await this.requireRoutine(agentId, id);
-    if (routine.status !== "published") {
-      throw badRequest("Only published routine definitions can be archived");
-    }
-    let archived: boolean;
-    try {
-      archived = Boolean(await this.options.repository.archiveWithAgentDraft(workspaceId, agentId, id, options));
-    } catch (error) {
-      if (error instanceof Error && error.message.startsWith("routine_definition_archive_conflict:")) {
-        throw conflict("The draft revision this would discard changed while the routine was being archived — reload it and try again");
-      }
-      throw error;
-    }
-    if (!archived) {
-      throw notFound("Published routine definition not found");
-    }
-    try {
-      const updated = await this.requireRoutine(agentId, id);
-      await this.recordLifecycleAudit("routine_definition.archive", workspaceId, agentId, updated);
-      return updated;
-    } catch (error) {
-      throw new RoutineDefinitionLifecycleCommittedError("archive", id, error);
-    }
-  }
-
-  async restore(workspaceId: string, agentId: string, id: string): Promise<RoutineDefinitionRestoreResult> {
-    await this.requireAgent(workspaceId, agentId);
-    const routine = await this.requireRoutine(agentId, id);
-    if (routine.status !== "archived") {
-      throw badRequest("Only archived routine definitions can be restored");
-    }
-    const validation = await this.validateForServing(workspaceId, routine);
-    if (!validation.ok) {
-      return { rejected: true, validation };
-    }
-    compileRoutineDefinition(routine);
-    let restored: boolean;
-    try {
-      restored = Boolean(await this.options.repository.restoreWithAgentDraft(workspaceId, agentId, id));
-    } catch (error) {
-      if (isRoutineCompletionExportDestinationConstraintError(error)) {
-        const destinationRef = missingWebhookDestinationRefFromConstraintError(error) ?? routine.completionExport?.destinationRef ?? "configured destination";
-        return {
-          rejected: true,
-          validation: {
-            ok: false,
-            diagnostics: [
-              ...validation.diagnostics,
-              unknownWebhookDestinationDiagnostic(destinationRef),
-            ],
-          },
-        };
-      }
-      throw error;
-    }
-    if (!restored) {
-      throw badRequest("Archived routine definition cannot be restored while another version is published");
-    }
-    try {
-      const updated = await this.requireRoutine(agentId, id);
-      await this.recordLifecycleAudit("routine_definition.restore", workspaceId, agentId, updated);
-      return { routine: updated, validation };
-    } catch (error) {
-      throw new RoutineDefinitionLifecycleCommittedError("restore", id, error);
-    }
   }
 
   async deleteDraft(workspaceId: string, agentId: string, id: string, options: RoutineDefinitionWriteGuard = {}): Promise<void> {
@@ -466,6 +321,44 @@ export class RoutineDefinitionService {
     if (result.outcome === "not_found") {
       throw notFound("Draft routine definition not found");
     }
+  }
+
+  /**
+   * The shared tail of a routine write: keep the activation prefilter's trigger embedding in step
+   * with the wording that was just saved, record the authoring event, and report the routine with
+   * its structural diagnostics. Losing the embedding refresh here would silently stop an edited
+   * routine from matching — but the routine's own content already committed by the time this
+   * runs, so neither side effect is allowed to turn that already-successful save into a reported
+   * error: `persistPublished` is best-effort by its own contract (it never rejects), and
+   * `recordAuthoringAudit` catches and logs rather than propagating, for the same reason and for
+   * consistency with how `turnProvider.ts` treats this same embedding call as fire-and-forget on
+   * the live turn path.
+   */
+  private async savedRoutine(
+    workspaceId: string,
+    agentId: string,
+    eventType: AuditEventInput["eventType"],
+    routine: RoutineDefinition,
+  ): Promise<RoutineDefinitionSaveResult> {
+    // Neither depends on the other's result, so they run concurrently rather than serially.
+    await Promise.all([
+      this.options.triggerEmbeddingService?.persistPublished({ workspaceId, agentId, routine }),
+      this.recordAuthoringAudit(eventType, workspaceId, agentId, routine),
+    ]);
+    return { routine, validation: validateRoutineDefinition(routine) };
+  }
+
+  /**
+   * A routine serves as soon as the agent's draft is released, so the database refuses a completion
+   * export whose webhook destination does not exist. Report that as an author-facing diagnostic
+   * rather than letting a constraint violation surface as a server error.
+   */
+  private completionExportDestinationError(error: unknown, draft: RoutineDefinitionDraftInput): Error | null {
+    if (!isRoutineCompletionExportDestinationConstraintError(error) || !draft.completionExport?.enabled) {
+      return null;
+    }
+    const diagnostic = unknownWebhookDestinationDiagnostic(draft.completionExport.destinationRef.trim());
+    return badRequest(diagnostic.message, { ok: false, diagnostics: [diagnostic] });
   }
 
   private validateInput(input: RoutineDefinitionDraftAuthoringInput): RoutineDefinitionDraftInput {
@@ -491,61 +384,122 @@ export class RoutineDefinitionService {
     return routine;
   }
 
-  private async validateWithAvailableSkills(
-    workspaceId: string,
-    routine: RoutineDefinition,
-  ): Promise<RoutineValidationResult> {
+  /**
+   * The workspace+agent-scoped half of serving validation: the skill catalog, the
+   * runtime-resolvable skill names the catalog does not enumerate, and the agent's context
+   * variables. Identical for every routine belonging to the same agent, so a caller validating
+   * several of an agent's routines in one pass (`validateManyForServing`) resolves this once and
+   * reuses it, instead of each routine independently repeating the same three reads.
+   */
+  private async resolveServingContext(workspaceId: string, agentId: string): Promise<RoutineValidationContext> {
     if (!this.options.skillAuthoringCatalog) {
-      return validateRoutineDefinition(routine);
+      return {};
     }
     const [descriptors, additionalNames, contextVariables] = await Promise.all([
-      this.options.skillAuthoringCatalog.listForAgent({ workspaceId, agentId: routine.agentId }),
-      this.options.additionalRoutineSkillNames?.({ workspaceId, agentId: routine.agentId }) ?? Promise.resolve([]),
-      this.options.contextVariableReader?.listByAgent(workspaceId, routine.agentId) ?? Promise.resolve([]),
+      this.options.skillAuthoringCatalog.listForAgent({ workspaceId, agentId }),
+      this.options.additionalRoutineSkillNames?.({ workspaceId, agentId }) ?? Promise.resolve([]),
+      this.options.contextVariableReader?.listByAgent(workspaceId, agentId) ?? Promise.resolve([]),
     ]);
-    return validateRoutineDefinition(routine, {
+    return {
       // The catalog covers built-in + external skills (which also carry typed
       // descriptors); webhook/customer-email skills are runtime-resolvable but
       // not catalogued, so add their names to the allow-list to avoid false
-      // `unknown_skill` rejections at publish.
+      // `unknown_skill` rejections.
       availableSkillNames: new Set([
         ...descriptors.map((descriptor) => descriptor.skillName),
         ...additionalNames,
       ]),
       skillDescriptors: new Map(descriptors.map((descriptor) => [descriptor.skillName, descriptor])),
       availableContextVariables: resolveAvailableContextVariables(contextVariables),
-    });
+    };
   }
 
-  private async validateForServing(
+  private async validateWithAvailableSkills(
+    workspaceId: string,
+    routine: RoutineDefinition,
+  ): Promise<RoutineValidationResult> {
+    const context = await this.resolveServingContext(workspaceId, routine.agentId);
+    return validateRoutineDefinition(routine, context);
+  }
+
+  /**
+   * Every gate a routine must clear to actually run: structural validity, skill/context-variable
+   * availability, action-capability authorization, and a servable completion-export destination.
+   * Public because the agent-revision release gate (`assertCandidateSnapshotIsServable` in
+   * `modules/agents/agentRevision.ts`) is the one place left that decides whether a routine may
+   * go live, and it validates the routine objects frozen in a candidate snapshot directly rather
+   * than through a `{ id }` lookup.
+   */
+  async validateForServing(
     workspaceId: string,
     routine: RoutineDefinition,
   ): Promise<RoutineValidationResult> {
     const validation = await this.validateWithAvailableSkills(workspaceId, routine);
     const actionValidation = await this.validateActionAuthorization(workspaceId, routine, validation);
-    return this.validatePublishReferences(workspaceId, routine, actionValidation);
+    return this.validateServingReferences(workspaceId, routine, actionValidation);
   }
 
-  private async recordLifecycleAudit(
+  /**
+   * The batched form of `validateForServing` for routines that all belong to one agent — every
+   * `createCandidate`/`publish`/agent-bundle-import call validates a whole snapshot's worth of
+   * enabled routines at once, and they always share one agent. Resolving the workspace-scoped
+   * skill/context-variable state via `resolveServingContext` a single time, then applying it to
+   * each routine, turns what would be N redundant reads into one. Action-capability authorization
+   * and webhook-destination existence stay per-routine: the former depends on each routine's own
+   * action steps, the latter on each routine's own `completionExport.destinationRef`.
+   */
+  async validateManyForServing(
+    workspaceId: string,
+    routines: readonly RoutineDefinition[],
+  ): Promise<Map<string, RoutineValidationResult>> {
+    if (routines.length === 0) {
+      return new Map();
+    }
+    const agentId = routines[0].agentId;
+    if (routines.some((routine) => routine.agentId !== agentId)) {
+      throw new Error("validateManyForServing requires every routine to belong to the same agent");
+    }
+    const context = await this.resolveServingContext(workspaceId, agentId);
+    const entries = await Promise.all(routines.map(async (routine) => {
+      const structural = validateRoutineDefinition(routine, context);
+      const actionValidation = await this.validateActionAuthorization(workspaceId, routine, structural);
+      const result = await this.validateServingReferences(workspaceId, routine, actionValidation);
+      return [routine.id, result] as const;
+    }));
+    return new Map(entries);
+  }
+
+  /**
+   * Best-effort, matching `triggerEmbeddingService.persistPublished`'s own contract: the routine
+   * write already committed by the time this runs, so a transient audit-sink failure must not
+   * turn an already-saved edit into a reported error — that would tell an operator their save
+   * failed when their data is already correct, and the natural response (retry) risks a
+   * duplicate. Log the miss for support correlation instead of losing it silently.
+   */
+  private async recordAuthoringAudit(
     eventType: AuditEventInput["eventType"],
     workspaceId: string,
     agentId: string,
     routine: RoutineDefinition,
-    extraMetadata: Record<string, string | number | null> = {},
   ): Promise<void> {
-    await this.options.auditService?.record({
-      workspaceId,
-      eventType,
-      eventStatus: "success",
-      metadata: {
-        agentId,
-        routineId: routine.id,
-        lineageId: routine.lineageId,
-        version: routine.version,
-        status: routine.status,
-        ...extraMetadata,
-      },
-    });
+    try {
+      await this.options.auditService?.record({
+        workspaceId,
+        eventType,
+        eventStatus: "success",
+        metadata: {
+          agentId,
+          routineId: routine.id,
+          lineageId: routine.lineageId,
+          enabled: routine.enabled,
+        },
+      });
+    } catch (error) {
+      this.options.logger?.warn(
+        { workspaceId, agentId, routineId: routine.id, eventType, error },
+        "Routine authoring audit record failed",
+      );
+    }
   }
 
   private async validateActionAuthorization(
@@ -586,7 +540,7 @@ export class RoutineDefinitionService {
     return { ok: diagnostics.length === 0, diagnostics };
   }
 
-  private async validatePublishReferences(
+  private async validateServingReferences(
     workspaceId: string,
     routine: RoutineDefinition,
     validation: RoutineValidationResult,

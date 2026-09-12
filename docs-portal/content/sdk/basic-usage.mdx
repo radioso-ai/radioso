@@ -1,7 +1,7 @@
 ---
 title: "Basic usage"
 description: "Documents, chat, settings, and error handling with the TypeScript SDK."
-last_updated: 2026-09-01
+last_updated: 2026-09-10
 ---
 
 # Basic usage
@@ -258,10 +258,10 @@ Agents use the retrieval pipeline through their default-answer `retrieve` skill.
 
 Authoring surfaces are available with a role-eligible personal token or service-account credential. A script can build and configure an agent the same way the dashboard does. Authoring calls are namespaced under `client.agents.*` and take the agent id first; a public-facing REST or MCP chat channel uses its own role-free agent credential.
 
-Define a routine as a graph of steps, transitions, and terminals, then publish it. Validation runs on save and again on publish, so a routine that references an unknown skill or leaves a step unreachable is rejected before it can run.
+Define a routine as a graph of steps, transitions, and terminals. Every write lands in the agent's private draft, and Review & Publish on the agent is what puts the routine in front of visitors.
 
 ```ts
-const draft = await client.agents.routines.create(agentId, {
+const created = await client.agents.routines.create(agentId, {
   name: 'Book a demo',
   activation: { triggerDescription: 'the visitor asks for a demo', priority: 50 },
   slots: [
@@ -279,9 +279,9 @@ const draft = await client.agents.routines.create(agentId, {
     { stableStepId: 'done', kind: 'complete', instruction: 'Confirm the booking.', ordinal: 0 },
   ],
 })
-
-await client.agents.routines.publish(agentId, draft.routine.id)
 ```
+
+`client.agents.routines.validate(agentId, routineId)` reports what would stop the routine from running — a step nothing can reach, a missing ending, a step calling a skill the agent does not hold. Each routine also carries an `enabled` flag you set through the ordinary update call, so `update(agentId, routineId, { enabled: false })` takes it out of play while keeping everything it holds.
 
 Create a directive that steers behavior by condition:
 

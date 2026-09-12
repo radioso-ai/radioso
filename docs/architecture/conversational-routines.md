@@ -1,7 +1,7 @@
 ---
 title: "Conversational Routines"
 description: "The engine-level design of multi-turn flows with slots, steps, guards, terminals, activation ranking, and runtime slot extraction mechanics."
-last_updated: 2026-08-18
+last_updated: 2026-09-10
 ---
 
 # Conversational Routines
@@ -85,9 +85,9 @@ the same slot needs an explicit `llm`/structured edge on the other branch.
 
 - **Auto-gating (compiler).** When a collection step's outgoing edges are all
   `default`, the compiler promotes those edges to `llm` (a selector-running
-  transition with a slot-aware condition). The stored draft keeps the `default`
+  transition with a slot-aware condition). The stored routine keeps the `default`
   edge; only the compiled graph changes, and the change applies on the next load,
-  so existing published routines pick it up without a re-publish.
+  so every routine picks it up as soon as it is loaded again.
 - **Extraction-only pass (runner).** A collection step can branch on the slot it
   just asked for — for example, "ask for budget, then route by a `field` guard on
   `budget`." Such a step has no `llm` edge, so auto-gating leaves it alone. Before
@@ -164,7 +164,7 @@ terminals. The current stored enum values are:
 On each turn, before normal skill selection, the engine checks for a routine:
 
 1. If a routine is already active for the session, it resumes at its saved step.
-2. Otherwise it checks whether any of the agent's published routines should
+2. Otherwise it checks whether any of the agent's enabled routines should
    activate. Each routine registration carries trigger metadata:
    `{ description, priority }`.
 3. The active step is captured, its slots are filled from the user's message, and
@@ -235,29 +235,28 @@ only state waiting on the visitor's next message.
 A routine is created and edited in the agent's **Routines** settings, or through
 the authoring API under `/api/v1/agents/<agentId>/routines`. The flow is:
 
-1. Create or edit a **draft** — its slots, steps, transitions, and terminals.
+1. Create or edit the routine — its slots, steps, transitions, and terminals.
+   Every change saves straight into the agent's private draft as you make it.
 2. **Validate** it. The validator reports problems in plain terms: a step that
    cannot be reached, a missing terminal, an action the agent is not allowed to
    use, a transition that leads nowhere.
-3. **Publish** it. Publishing checks the routine is valid and stores an immutable
-   version. A published routine is what the chat runtime loads and runs.
+3. **Review & Publish** the agent. That snapshots the whole draft — directives,
+   skills, context variables, and routines together — into an agent revision, and
+   the revision is what serves real conversations.
 
-Each published version is immutable. Editing a published routine creates a draft
-revision in the same lineage. Publishing that draft updates the draft row in
-place to become the new published version, keeping its id and assigned version,
-and marks the previous published version as `superseded`. The dashboard groups
-these versions into one lineage row and shows older versions in history.
+A routine is one of the agent's scoped editable areas, alongside directives,
+skills, and context variables. All four share the same publication boundary: the
+agent revision. Editing a routine changes what the agent will serve after the
+next Review & Publish, and nothing before it.
 
-Routine statuses are `draft`, `published`, `superseded`, and `archived`. Only
-`published` versions activate for new conversations. A session that already
-started a routine keeps its pinned version, so it can finish on a version that
-has since been superseded or archived.
+Each routine carries an `enabled` flag, settable through the same update call as
+the rest of its content. Turn a routine off to take it out of play while keeping
+everything you built, which is what you want when you are comparing agent
+behavior with and without it, or parking a flow you are still working out.
 
-Operators can archive a published routine to stop new activation and restore an
-archived routine when no other version in that lineage is published. The
-authoring API exposes create/read/update/delete-draft, validate, publish, revise,
-archive, and restore operations under
-`/api/v1/agents/<agentId>/routines`.
+A conversation pins one agent revision for its whole life. A visitor who has
+already started a routine finishes on the version they started with, while an
+operator edits the next one.
 
 ## Where it lives
 
@@ -284,9 +283,8 @@ outgoing edges, so an unresolved skill never crashes or wedges the conversation.
 The default resolver is empty, so until an agent's authored skills are wired, a
 tool step resolves to `failed`.
 
-## Not built yet
+## Limits
 
-Export and import of routines across agents, and versioning of an agent's whole
-configuration, are deliberate next steps rather than gaps. Authoring a jump from
-one step to another in prose is also pending: prose steps are positional, so the
-prose editor offers handoff and end branch targets but not step-to-step jumps.
+Prose steps are positional, so the prose editor offers handoff and end branch
+targets but not step-to-step jumps. Authoring a jump from one step to another
+takes the structural editor.

@@ -1,19 +1,11 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useReducer, useState } from 'react'
-
 import {
-  chatApi,
-  directivesApi,
-  evalsApi,
-  routinesApi,
-  workbenchApi,
   type AgentSettings,
   type ChatConversationDetail,
   type ChatConversationTurn,
   type Directive,
 } from '@/lib/api'
-import { getApiErrorMessage } from '@/lib/api-error'
 import type {
   AgentConfigAuthoredDirectiveOverride,
   AgentConfigOverrideInput,
@@ -21,7 +13,6 @@ import type {
   EvalRunRoutineStartStateInput,
   WorkbenchReplayRunResponse,
 } from '@/lib/api-eval'
-import type { RoutineDefinition } from '@/lib/api-types'
 import {
   readRetrievalSkillSettingsOverride,
   RETRIEVAL_ANSWER_SKILL_NAME,
@@ -61,18 +52,13 @@ export type WorkbenchOverrideAction =
   | { type: 'clear-field'; field: WorkbenchOverrideField }
   | { type: 'reset'; baseline: WorkbenchOverrideValues }
 
-export interface WorkbenchSeed {
-  conversationId: string
-  sourceMessageId?: string
-}
-
 export interface WorkbenchSeedTurn {
   conversation: ChatConversationDetail
   userTurn: ChatConversationTurn
   assistantTurn: ChatConversationTurn | null
 }
 
-export interface WorkbenchRunCard {
+interface WorkbenchRunCard {
   id: string
   answer: string
   citations: WorkbenchReplayRunResponse['citations']
@@ -101,7 +87,6 @@ const cloneBaseline = (baseline: WorkbenchOverrideValues): WorkbenchOverrideValu
   authoredDirectives: baseline.authoredDirectives.map((directive) => ({ ...directive })),
   routineStartState: baseline.routineStartState,
 })
-
 export const isRoutineStartStateReady = (
   value: EvalRunRoutineStartStateInput | null | undefined,
 ): value is EvalRunRoutineStartStateInput =>
@@ -250,168 +235,3 @@ export const mapReplayResultToRunCard = (
   startedAt: result.run.startedAt,
   completedAt: result.run.completedAt,
 })
-
-export function useWorkbenchState({
-  selectedAgent,
-  seed,
-}: {
-  selectedAgent: AgentSettings
-  seed?: WorkbenchSeed
-}) {
-  const [directives, setDirectives] = useState<Directive[]>([])
-  const [routines, setRoutines] = useState<RoutineDefinition[]>([])
-  const baseline = useMemo(
-    () => buildWorkbenchBaseline(selectedAgent, directives),
-    [directives, selectedAgent],
-  )
-  const [overrideState, dispatchOverride] = useReducer(
-    workbenchOverrideReducer,
-    baseline,
-    createWorkbenchOverrideState,
-  )
-  const [seedTurn, setSeedTurn] = useState<WorkbenchSeedTurn | null>(null)
-  const [snapshotId, setSnapshotId] = useState<string | null>(null)
-  const [runs, setRuns] = useState<WorkbenchRunCard[]>([])
-  const [isSeedLoading, setIsSeedLoading] = useState(Boolean(seed?.conversationId))
-  const [isRunning, setIsRunning] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    dispatchOverride({ type: 'reset', baseline })
-  }, [baseline])
-
-  useEffect(() => {
-    let cancelled = false
-    void directivesApi.listDirectives(selectedAgent.id)
-      .then((response) => {
-        if (!cancelled) setDirectives(response.directives)
-      })
-      .catch(() => {
-        if (!cancelled) setDirectives([])
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [selectedAgent.id])
-
-  useEffect(() => {
-    let cancelled = false
-    void routinesApi.listRoutines(selectedAgent.id)
-      .then((response) => {
-        // Only published routines can be resumed in a replay.
-        if (!cancelled) setRoutines(response.routines.filter((routine) => routine.status === 'published'))
-      })
-      .catch(() => {
-        if (!cancelled) setRoutines([])
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [selectedAgent.id])
-
-  useEffect(() => {
-    if (!seed?.conversationId) {
-      const timeout = window.setTimeout(() => {
-        setSeedTurn(null)
-        setSnapshotId(null)
-        setIsSeedLoading(false)
-      }, 0)
-      return () => window.clearTimeout(timeout)
-    }
-
-    let cancelled = false
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- Syncs replay seed loading state from the current route seed.
-    setIsSeedLoading(true)
-    setError(null)
-    void chatApi.getHistoryConversation(seed.conversationId)
-      .then((conversation) => {
-        if (cancelled) return
-        const nextSeedTurn = findSeedTurn(conversation, seed.sourceMessageId)
-        setSeedTurn(nextSeedTurn)
-        if (!nextSeedTurn) {
-          setError('Could not find a replayable turn in that conversation.')
-        }
-      })
-      .catch((loadError) => {
-        if (!cancelled) {
-          setSeedTurn(null)
-          setError(getApiErrorMessage(loadError, 'Failed to load the seeded conversation.'))
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setIsSeedLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [seed?.conversationId, seed?.sourceMessageId])
-
-  const delta = useMemo(() => buildAgentConfigOverrideDelta(overrideState), [overrideState])
-  const isDeltaEmpty = useMemo(() => isWorkbenchOverrideDeltaEmpty(overrideState), [overrideState])
-  const routineStartState = useMemo(
-    () =>
-      overrideState.touched.routineStartState && isRoutineStartStateReady(overrideState.values.routineStartState)
-        ? overrideState.values.routineStartState
-        : undefined,
-    [overrideState],
-  )
-  const invalidRoutineStartState = Boolean(
-    overrideState.touched.routineStartState
-      && overrideState.values.routineStartState
-      && !isRoutineStartStateReady(overrideState.values.routineStartState),
-  )
-  // A run is allowed when any override is active — an agentConfig delta or a routine seed.
-  const canRun = !isDeltaEmpty || Boolean(routineStartState)
-
-  const runReplay = useCallback(async () => {
-    if (!seedTurn) {
-      setError('Load a past turn before running a replay.')
-      return
-    }
-    if (invalidRoutineStartState) {
-      setError('Select a routine step before running a replay.')
-      return
-    }
-    if (!canRun) {
-      setError('Enable at least one override before running a replay.')
-      return
-    }
-
-    setIsRunning(true)
-    setError(null)
-    try {
-      const activeSnapshotId = snapshotId
-        ?? (await evalsApi.captureSnapshot({
-          conversationId: seedTurn.conversation.conversationId,
-          messageId: seedTurn.assistantTurn?.id ?? seedTurn.userTurn.id,
-        })).id
-      setSnapshotId(activeSnapshotId)
-      const result = await workbenchApi.replay({
-        snapshotId: activeSnapshotId,
-        agentConfigOverride: delta,
-        ...(routineStartState ? { routineStartState } : {}),
-      })
-      setRuns((current) => [mapReplayResultToRunCard(result), ...current])
-    } catch (runError) {
-      setError(getApiErrorMessage(runError, 'Replay failed.'))
-    } finally {
-      setIsRunning(false)
-    }
-  }, [canRun, delta, invalidRoutineStartState, routineStartState, seedTurn, snapshotId])
-
-  return {
-    baseline,
-    delta,
-    directives,
-    dispatchOverride,
-    error,
-    isDeltaEmpty: !canRun,
-    isRunning,
-    isSeedLoading,
-    overrideState,
-    routines,
-    runReplay,
-    runs,
-    seedTurn,
-  }
-}

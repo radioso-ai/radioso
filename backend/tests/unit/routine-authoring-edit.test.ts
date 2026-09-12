@@ -15,7 +15,7 @@ const routine = (overrides: Partial<RoutineDefinition> = {}): RoutineDefinition 
   agentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   lineageId: "33333333-3333-4333-8333-333333333333",
   version: 2,
-  status: "published",
+  enabled: true,
   name: "support-intake",
   activation: { triggerDescription: "When the user needs support", gateRef: null, priority: 7, reentryMode: "always" },
   slots: [
@@ -96,6 +96,24 @@ describe("routine authoring edits", () => {
     expect(patched.terminals).toEqual([{ stableStepId: "done", kind: "complete", instruction: null, ordinal: 0 }]);
   });
 
+  it("takes a routine in or out of service through the same edit patch, leaving the graph untouched", () => {
+    const source = routine({ enabled: true });
+
+    const disabled = applyRoutineFieldPatch(source, routineFieldPatchSchema.parse({ enabled: false }));
+
+    expect(disabled.enabled).toBe(false);
+    expect(disabled.steps).toEqual(source.steps);
+    expect(disabled.name).toBe(source.name);
+  });
+
+  it("leaves enabled untouched when a patch does not mention it", () => {
+    const source = routine({ enabled: false });
+
+    const patched = applyRoutineFieldPatch(source, routineFieldPatchSchema.parse({ name: "renamed" }));
+
+    expect(patched.enabled).toBe(false);
+  });
+
   it("refuses an edit that names something the routine does not have, and says what it does have", () => {
     const patch = routineFieldPatchSchema.parse({ steps: [{ stableStepId: "step_7", instruction: "Apologize." }] });
 
@@ -157,6 +175,7 @@ describe("routine authoring edits", () => {
 
     expect(projected).toEqual({
       name: "support-intake",
+      enabled: true,
       activation: { triggerDescription: "When the user needs support", gateRef: null, priority: 7, reentryMode: "always" },
       slots: {
         order_number: { type: "text", required: true, description: "The order it concerns", mutable: null, ordinal: 0 },
@@ -232,6 +251,15 @@ describe("routine edit descriptions", () => {
       steps: [{ stableStepId: "confirm", instruction: "Read it back." }],
       slots: [{ key: "order_number", required: false }],
     }))).toBe("name, trigger, priority, step confirm, field order_number");
+  });
+
+  it("describes an enablement change alongside content changes", () => {
+    expect(describeRoutineFieldPatch(routineFieldPatchSchema.parse({ enabled: false }))).toBe("disabled");
+    expect(describeRoutineFieldPatch(routineFieldPatchSchema.parse({ enabled: true }))).toBe("enabled");
+    expect(describeRoutineFieldPatch(routineFieldPatchSchema.parse({
+      name: "support-intake-v2",
+      enabled: false,
+    }))).toBe("name, disabled");
   });
 
   it("describes a coverage-only condition and keeps mixed summaries free of empty segments", () => {

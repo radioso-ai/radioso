@@ -86,8 +86,6 @@ export type {
   RoutineDefinitionCreateRequest,
   RoutineDefinitionUpdateRequest,
   RoutineDefinitionSaveResponse,
-  RoutineDefinitionLifecycleResponse,
-  RoutineDefinitionPublishResponse,
   RoutineDefinitionValidateResponse,
   RoutineDraftAssistRequest,
   RoutineDraftAssistResponse,

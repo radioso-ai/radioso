@@ -80,7 +80,7 @@ test("author, validate, and read a routine through the Document tab", async ({ p
   await skillStep.getByLabel("AI condition").fill("The customer needs a nuanced eligibility explanation.");
   await skillStep.getByRole("button", { name: "Done", exact: true }).click();
 
-  await documentEditor.getByRole("button", { name: "Finish ending", exact: true }).click();
+  await documentEditor.getByRole("button", { name: "Finish ending", exact: true }).filter({ hasText: "Confirm completion." }).click();
   await documentEditor.getByLabel("complete message").fill("Eligibility check finished.");
   await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
 

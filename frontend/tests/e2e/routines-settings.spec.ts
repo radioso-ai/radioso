@@ -195,12 +195,6 @@ test("agent routines settings create, validate, and persist", async ({ page }) =
   await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
 
   await documentEditor.getByRole("button", { name: "Chat", exact: true }).click();
-  await documentEditor.getByRole("button", { name: "Condition", exact: true }).click();
-  await documentEditor.getByLabel("Rule kind").selectOption("default");
-  await documentEditor.getByLabel("Branch target").selectOption("ending:complete");
-  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
-
-  await documentEditor.getByRole("button", { name: "Chat", exact: true }).click();
   await documentEditor.getByLabel("Step 1 id").fill("ask_email");
   await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
 

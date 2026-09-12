@@ -32,6 +32,7 @@ COPY packages/document-parser/parsers ./packages/document-parser/parsers
 COPY packages/integration-test-support/package.json ./packages/integration-test-support/package.json
 COPY packages/mcp-source-proof/package.json ./packages/mcp-source-proof/package.json
 COPY packages/operator-mcp-contract/package.json ./packages/operator-mcp-contract/package.json
+COPY packages/product-docs/package.json ./packages/product-docs/package.json
 COPY packages/radioso-mcp-server/package.json ./packages/radioso-mcp-server/package.json
 COPY packages/routine-definition/package.json ./packages/routine-definition/package.json
 COPY packages/routine-document/package.json ./packages/routine-document/package.json
@@ -70,6 +71,7 @@ COPY packages/document-parser ./packages/document-parser
 COPY packages/integration-test-support ./packages/integration-test-support
 COPY packages/mcp-source-proof ./packages/mcp-source-proof
 COPY packages/operator-mcp-contract ./packages/operator-mcp-contract
+COPY packages/product-docs ./packages/product-docs
 COPY packages/radioso-mcp-server ./packages/radioso-mcp-server
 COPY packages/routine-definition ./packages/routine-definition
 COPY packages/routine-document ./packages/routine-document

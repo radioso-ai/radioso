@@ -75,15 +75,15 @@ function CopilotRoutineEntity({ routine }: { routine: RoutineDefinition }) {
   return null
 }
 
-// A blank routine for the Form tab: one empty step the author fills in, no transitions
-// yet, and a single complete terminal. The Document tab replaces the seed step when the
-// author adds their first real one.
+// A blank routine starts with its one visible step flowing to completion. The Document tab
+// hides this ordinary default edge, but the backend needs the real graph when an author saves
+// a single-step routine.
 const emptyRoutineDraft = (): RoutineDefinitionDraft => ({
   name: '',
   activation: { triggerDescription: '', gateRef: null, priority: 0 },
   slots: [],
   steps: [{ stableStepId: 'step_1', kind: 'chat', instruction: '', toolRef: null, actionType: null, ordinal: 0, metadata: {} }],
-  transitions: [],
+  transitions: [{ fromStep: 'step_1', toRef: 'complete', guardKind: 'default', guardText: null, outcomeStatus: null, counterLimit: null, fieldRef: null, fieldOp: null, fieldValue: null, fieldValues: null, fieldUnit: null, ordinal: 0 }],
   terminals: [{ stableStepId: 'complete', kind: 'complete', instruction: 'Confirm completion.', ordinal: 0 }],
 })
 
@@ -206,15 +206,8 @@ const mergeDocumentHeaderChange = (
   })
 }
 
-const replaceBrowserUrl = (href: string) => {
-  if (typeof window === 'undefined') return
-  window.history.replaceState(window.history.state, '', href)
-}
-
-const currentBrowserUrlMatches = (href: string) => {
-  if (typeof window === 'undefined') return false
-  return `${window.location.pathname}${window.location.search}` === href
-}
+const currentBrowserUrlMatches = (href: string) =>
+  typeof window !== 'undefined' && `${window.location.pathname}${window.location.search}` === href
 
 type NewRoutineRecovery = {
   draft: RoutineDefinitionDraft
@@ -736,9 +729,11 @@ function RoutineEditorScreen({
       markSaved()
       if (wasNew) {
         clearNewRoutineRecovery(agentId)
-        const newDraftHref = buildPersistedHref('new')
-        if (currentBrowserUrlMatches(newDraftHref)) {
-          replaceBrowserUrl(buildPersistedHref(response.routine.id))
+        // A raw history replacement leaves `routineRouteId === 'new'` mounted, so its
+        // recovery effect writes the just-created draft back into session storage. Route
+        // through Next instead: the persisted editor replaces the new-draft screen.
+        if (currentBrowserUrlMatches(buildPersistedHref('new'))) {
+          router.replace(buildPersistedHref(response.routine.id))
         }
       }
       return response.routine

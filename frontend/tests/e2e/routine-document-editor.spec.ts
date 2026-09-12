@@ -116,6 +116,13 @@ test("author, validate, and read a routine through the Document tab", async ({ p
   const reloadedText = await reloadedEditor.innerText();
   for (const line of documentLines) expect(reloadedText).toContain(line);
   await expect(reloadedEditor.getByRole("button", { name: "Step", exact: true })).toBeVisible();
+
+  // Creating a routine replaces the /new route. Going back and starting another one must not
+  // restore the just-created document from new-draft recovery storage.
+  await page.getByRole("button", { name: "Back to routines" }).click();
+  await page.getByRole("button", { name: "New routine" }).click();
+  await expect(page.getByLabel("Name", { exact: true })).toHaveValue("");
+  await expect(page.getByRole("article", { name: "Routine document editor" })).not.toContainText("Check order eligibility");
 });
 
 test("a step instruction keeps the lines its author wrote", async ({ page }) => {

@@ -9,7 +9,7 @@ import {
   workspaceKey,
 } from "./dashboard-fixtures";
 
-test("author an approval gate in the Document editor, save, and publish", async ({ page }) => {
+test("author an approval gate in the Document editor, save, and read it back", async ({ page }) => {
   const routineUpdates: RoutineMutationFixture[] = [];
 
   await seedDashboardStorage(page);
@@ -60,13 +60,9 @@ test("author an approval gate in the Document editor, save, and publish", async 
     expect.objectContaining({ fieldRef: "decision.id", fieldOp: "equals", fieldValue: "decline" }),
   ]));
 
-  await page.getByRole("button", { name: "Prepare for agent release", exact: true }).click();
-  await expect(page.getByText("prepared v1 (read-only)", { exact: true })).toBeVisible();
-
-  // The locked reader shows the question, the choices, and where each decision routes.
-  const reader = page.getByRole("article", { name: "Routine document" });
-  await expect(reader).toContainText("Summarize the refund and get a manager decision.");
-  await expect(reader).toContainText("A person chooses:");
-  await expect(reader).toContainText("decision.id is approve");
-  await expect(reader).toContainText("A manager will take over.");
+  // The document at rest reads back the question, the choices, and where each decision routes.
+  await expect(documentEditor).toContainText("Summarize the refund and get a manager decision.");
+  await expect(documentEditor).toContainText("A person chooses:");
+  await expect(documentEditor).toContainText("decision.id is approve");
+  await expect(documentEditor).toContainText("A manager will take over.");
 });

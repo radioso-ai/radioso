@@ -154,12 +154,12 @@ export const createAgentTurnProbeCopilotTools = (
     "workspace.history.read",
     "workspace.agents.manage",
   ],
-  description: "Run one bounded, non-streaming, one-off safe probe against an agent, optionally previewing unpublished routine drafts. This does not publish changes or produce version-bound evidence for a draft.",
+  description: "Run one bounded, non-streaming, one-off safe probe against an agent, optionally previewing the agent's current draft (directives, skills, and routines) rather than its published revision. This does not publish changes or produce version-bound evidence for a draft.",
   inputSchema: agentTurnProbeInputSchema,
   outputSchema: agentTurnProbeOutputSchema,
   createTool: (context) => ({
     name: "test_agent_turn",
-    description: "Run one bounded, non-streaming, one-off safe probe against an agent, optionally previewing unpublished routine drafts. This does not publish changes or produce version-bound evidence for a draft.",
+    description: "Run one bounded, non-streaming, one-off safe probe against an agent, optionally previewing the agent's current draft (directives, skills, and routines) rather than its published revision. This does not publish changes or produce version-bound evidence for a draft.",
     inputSchema: agentTurnProbeInputSchema,
     outputSchema: agentTurnProbeOutputSchema,
     invoke: async (input) => {

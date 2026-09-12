@@ -69,6 +69,7 @@ export type RoutineTerminalForm = {
 
 export type RoutineFormState = {
   name: string
+  enabled: boolean
   activation: {
     triggerDescription: string
     priority: string
@@ -88,7 +89,7 @@ export type RoutineFormState = {
   }
 }
 
-export type RoutineDraftHeader = Pick<RoutineFormState, 'name' | 'activation'>
+export type RoutineDraftHeader = Pick<RoutineFormState, 'name' | 'enabled' | 'activation'>
 
 // The artifact a validation diagnostic is rendered against. Terminals share the step id
 // namespace in the producer grammar, so they are addressed with the `step` scope; there is
@@ -166,6 +167,7 @@ const normalizeGuardKind = (kind: LegacyRoutineGuardKind): RoutineGuardKind => (
 
 export const createEmptyRoutineForm = (): RoutineFormState => ({
   name: '',
+  enabled: true,
   activation: {
     triggerDescription: '',
     priority: '0',
@@ -231,6 +233,7 @@ export const routineToForm = (routine: RoutineDefinition): RoutineFormState => {
 
   return {
     name: routine.name,
+    enabled: routine.enabled,
     activation: {
       triggerDescription: routine.activation.triggerDescription,
       priority: String(routine.activation.priority),
@@ -310,6 +313,7 @@ export const formToRoutineDraft = (
 
   return {
     name: header.name.trim(),
+    enabled: header.enabled,
     activation: {
       triggerDescription: header.activation.triggerDescription.trim(),
       priority: Number.parseInt(header.activation.priority, 10) || 0,
@@ -391,6 +395,23 @@ export const formToRoutineDraft = (
     })),
     ...(completionExport ? { completionExport } : {}),
   }
+}
+
+/**
+ * The payload the editor's autosave sends for an *existing* routine's content edit. It never
+ * carries `enabled` — the dedicated enable/disable toggle (`toggleRoutineEnabled`, a one-field
+ * PATCH) is the only writer for that field. Two independent in-flight PATCH requests (an
+ * enable/disable toggle and a content autosave debounce) can resolve in either order; if the
+ * content autosave also carried a copy of `enabled` — even a freshly-read one — the request that
+ * happens to land second wins regardless of which the operator triggered second. Omitting the
+ * field lets the backend's omission-preserving merge (`RoutineDefinitionService.updateDraft`)
+ * make the toggle race-proof: whichever write lands last, the stored `enabled` value only ever
+ * moves because the toggle itself said so.
+ */
+export const routineContentUpdatePayload = (draft: RoutineDefinitionDraft): Omit<RoutineDefinitionDraft, 'enabled'> => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructured only to omit `enabled` from the rest
+  const { enabled: _enabled, ...content } = draft
+  return content
 }
 
 export const buildCompletionExportPayloadPreview = (form: RoutineFormState): Record<string, unknown> => ({

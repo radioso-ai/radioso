@@ -3373,6 +3373,9 @@ components:
           type: string
           minLength: 1
           maxLength: 200
+        enabled:
+          type: boolean
+          default: true
         activation:
           type: object
           properties:
@@ -3768,358 +3771,364 @@ components:
         - terminals
       additionalProperties: false
     RoutineDefinitionUpdateRequest:
-      type: object
-      properties:
-        name:
-          type: string
-          minLength: 1
-          maxLength: 200
-        activation:
-          type: object
-          properties:
-            triggerDescription:
-              type: string
-              minLength: 1
-              maxLength: 2000
-            gateRef:
-              type:
-                - string
-                - "null"
-              minLength: 1
-              maxLength: 300
-            priority:
-              type: integer
-            reentryMode:
-              type: string
-              enum: *a16
-              default: once_per_conversation
-            coverageCriteria:
-              type: object
-              properties:
-                coverage:
-                  type: array
-                  items:
-                    type: string
-                    enum: *a17
-                  minItems: 1
-                reasons:
-                  type: array
-                  items:
-                    type: string
-                    enum: *a18
-                  minItems: 1
-              required:
-                - coverage
-              additionalProperties: false
-          required:
-            - triggerDescription
-            - priority
-          additionalProperties: false
-        slots:
-          type: array
-          items:
-            type: object
-            properties:
-              stableSlotId:
-                type: string
-                minLength: 1
-                maxLength: 120
-                pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
-              key:
-                type: string
-                minLength: 1
-                maxLength: 120
-                pattern: ^[A-Za-z_][A-Za-z0-9_]*$
-              type:
-                type: string
-                enum: *a19
-              required:
-                type: boolean
-              description:
-                type:
-                  - string
-                  - "null"
-                minLength: 1
-                maxLength: 1000
-              ordinal:
-                type: integer
-                minimum: 0
-              mutable:
-                type: boolean
-            required:
-              - stableSlotId
-              - key
-              - type
-              - required
-              - ordinal
-            additionalProperties: false
-          default: *a20
-        steps:
-          type: array
-          items:
-            type: object
-            properties:
-              stableStepId:
-                type: string
-                minLength: 1
-                maxLength: 120
-                pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
-              kind:
-                type: string
-                enum: *a21
-              toolRef:
-                type:
-                  - string
-                  - "null"
-                minLength: 1
-                maxLength: 300
-              actionType:
-                type:
-                  - string
-                  - "null"
-                minLength: 1
-                maxLength: 300
-              captureKey:
-                type:
-                  - string
-                  - "null"
-                minLength: 1
-                maxLength: 120
-                pattern: ^[A-Za-z_][A-Za-z0-9_]*$
-              ordinal:
-                type: integer
-                minimum: 0
-              metadata:
-                type: object
-                properties:
-                  inputBindings:
-                    type: object
-                    additionalProperties:
-                      oneOf:
-                        - type: object
-                          properties:
-                            kind:
-                              type: string
-                              enum:
-                                - literal
-                            value:
-                              anyOf:
-                                - type: string
-                                - type: number
-                                - type: boolean
-                          required:
-                            - kind
-                            - value
-                          additionalProperties: false
-                        - type: object
-                          properties:
-                            kind:
-                              type: string
-                              enum:
-                                - variableRef
-                            ref:
-                              type: string
-                              minLength: 1
-                              maxLength: 120
-                              pattern: ^[A-Za-z_][A-Za-z0-9_]*$
-                          required:
-                            - kind
-                            - ref
-                          additionalProperties: false
-                        - type: object
-                          properties:
-                            kind:
-                              type: string
-                              enum:
-                                - contextVariableRef
-                            contextVariable:
-                              type: string
-                              minLength: 1
-                              maxLength: 120
-                              pattern: ^[A-Za-z_][A-Za-z0-9_]*$
-                          required:
-                            - kind
-                            - contextVariable
-                          additionalProperties: false
-                  outputAssignments:
-                    type: object
-                    additionalProperties:
-                      type: string
-                      minLength: 1
-                      maxLength: 120
-                      pattern: ^[A-Za-z_][A-Za-z0-9_]*$
-                  mode:
-                    type: string
-                    enum: *a22
-                default: *a23
-              instruction:
-                type: string
-                minLength: 1
-                maxLength: 4000
-              options:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    id:
-                      type: string
-                      minLength: 1
-                      maxLength: 120
-                      pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
-                    label:
-                      type: string
-                      minLength: 1
-                      maxLength: 120
-                    description:
-                      type:
-                        - string
-                        - "null"
-                      minLength: 1
-                      maxLength: 500
-                  required:
-                    - id
-                    - label
-                  additionalProperties: false
-                maxItems: 8
-            required:
-              - stableStepId
-              - kind
-              - ordinal
-              - instruction
-            additionalProperties: false
-          minItems: 1
-        transitions:
-          type: array
-          items:
-            type: object
-            properties:
-              fromStep:
-                type: string
-                minLength: 1
-                maxLength: 120
-                pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
-              toRef:
-                type: string
-                minLength: 1
-                maxLength: 120
-                pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
-              guardKind:
-                type: string
-                enum: *a24
-              guardText:
-                type:
-                  - string
-                  - "null"
-                minLength: 1
-                maxLength: 2000
-              outcomeStatus:
-                type:
-                  - string
-                  - "null"
-                minLength: 1
-                maxLength: 120
-              counterLimit:
-                type:
-                  - integer
-                  - "null"
-                exclusiveMinimum: 0
-              fieldRef:
-                type:
-                  - string
-                  - "null"
-                minLength: 1
-                maxLength: 200
-              fieldOp:
-                type:
-                  - string
-                  - "null"
-                enum: *a25
-              fieldValue:
-                anyOf:
-                  - type: string
-                    minLength: 1
-                    maxLength: 500
-                  - type: number
-                  - type: boolean
-                  - type: "null"
-              fieldValues:
-                type:
-                  - array
-                  - "null"
-                items:
-                  anyOf:
-                    - type: string
-                      minLength: 1
-                      maxLength: 500
-                    - type: number
-                    - type: boolean
-                minItems: 1
-              fieldUnit:
-                type:
-                  - string
-                  - "null"
-                enum: *a26
-              ordinal:
-                type: integer
-                minimum: 0
-            required:
-              - fromStep
-              - toRef
-              - guardKind
-              - ordinal
-            additionalProperties: false
-          default: *a27
-        terminals:
-          type: array
-          items:
-            type: object
-            properties:
-              stableStepId:
-                type: string
-                minLength: 1
-                maxLength: 120
-                pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
-              kind:
-                type: string
-                enum: *a15
-              instruction:
-                type:
-                  - string
-                  - "null"
-                minLength: 1
-                maxLength: 4000
-              ordinal:
-                type: integer
-                minimum: 0
-            required:
-              - stableStepId
-              - kind
-              - ordinal
-            additionalProperties: false
-          minItems: 1
-        completionExport:
-          type: object
+      anyOf:
+        - type: object
           properties:
             enabled:
               type: boolean
-              default: false
-            triggerKinds:
+          required:
+            - enabled
+          additionalProperties: false
+        - type: object
+          properties:
+            name:
+              type: string
+              minLength: 1
+              maxLength: 200
+            enabled:
+              type: boolean
+            activation:
+              type: object
+              properties:
+                triggerDescription:
+                  type: string
+                  minLength: 1
+                  maxLength: 2000
+                gateRef:
+                  type:
+                    - string
+                    - "null"
+                  minLength: 1
+                  maxLength: 300
+                priority:
+                  type: integer
+                reentryMode:
+                  type: string
+                  enum: *a16
+                coverageCriteria:
+                  type: object
+                  properties:
+                    coverage:
+                      type: array
+                      items:
+                        type: string
+                        enum: *a17
+                      minItems: 1
+                    reasons:
+                      type: array
+                      items:
+                        type: string
+                        enum: *a18
+                      minItems: 1
+                  required:
+                    - coverage
+                  additionalProperties: false
+              required:
+                - triggerDescription
+                - priority
+              additionalProperties: false
+            slots:
               type: array
               items:
-                type: string
-                enum: *a15
-              default: *a28
-            destinationRef:
-              type: string
-              maxLength: 300
-              default: ""
+                type: object
+                properties:
+                  stableSlotId:
+                    type: string
+                    minLength: 1
+                    maxLength: 120
+                    pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
+                  key:
+                    type: string
+                    minLength: 1
+                    maxLength: 120
+                    pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                  type:
+                    type: string
+                    enum: *a19
+                  required:
+                    type: boolean
+                  description:
+                    type:
+                      - string
+                      - "null"
+                    minLength: 1
+                    maxLength: 1000
+                  ordinal:
+                    type: integer
+                    minimum: 0
+                  mutable:
+                    type: boolean
+                required:
+                  - stableSlotId
+                  - key
+                  - type
+                  - required
+                  - ordinal
+                additionalProperties: false
+              default: *a20
+            steps:
+              type: array
+              items:
+                type: object
+                properties:
+                  stableStepId:
+                    type: string
+                    minLength: 1
+                    maxLength: 120
+                    pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
+                  kind:
+                    type: string
+                    enum: *a21
+                  toolRef:
+                    type:
+                      - string
+                      - "null"
+                    minLength: 1
+                    maxLength: 300
+                  actionType:
+                    type:
+                      - string
+                      - "null"
+                    minLength: 1
+                    maxLength: 300
+                  captureKey:
+                    type:
+                      - string
+                      - "null"
+                    minLength: 1
+                    maxLength: 120
+                    pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                  ordinal:
+                    type: integer
+                    minimum: 0
+                  metadata:
+                    type: object
+                    properties:
+                      inputBindings:
+                        type: object
+                        additionalProperties:
+                          oneOf:
+                            - type: object
+                              properties:
+                                kind:
+                                  type: string
+                                  enum:
+                                    - literal
+                                value:
+                                  anyOf:
+                                    - type: string
+                                    - type: number
+                                    - type: boolean
+                              required:
+                                - kind
+                                - value
+                              additionalProperties: false
+                            - type: object
+                              properties:
+                                kind:
+                                  type: string
+                                  enum:
+                                    - variableRef
+                                ref:
+                                  type: string
+                                  minLength: 1
+                                  maxLength: 120
+                                  pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                              required:
+                                - kind
+                                - ref
+                              additionalProperties: false
+                            - type: object
+                              properties:
+                                kind:
+                                  type: string
+                                  enum:
+                                    - contextVariableRef
+                                contextVariable:
+                                  type: string
+                                  minLength: 1
+                                  maxLength: 120
+                                  pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                              required:
+                                - kind
+                                - contextVariable
+                              additionalProperties: false
+                      outputAssignments:
+                        type: object
+                        additionalProperties:
+                          type: string
+                          minLength: 1
+                          maxLength: 120
+                          pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                      mode:
+                        type: string
+                        enum: *a22
+                    default: *a23
+                  instruction:
+                    type: string
+                    minLength: 1
+                    maxLength: 4000
+                  options:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          minLength: 1
+                          maxLength: 120
+                          pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
+                        label:
+                          type: string
+                          minLength: 1
+                          maxLength: 120
+                        description:
+                          type:
+                            - string
+                            - "null"
+                          minLength: 1
+                          maxLength: 500
+                      required:
+                        - id
+                        - label
+                      additionalProperties: false
+                    maxItems: 8
+                required:
+                  - stableStepId
+                  - kind
+                  - ordinal
+                  - instruction
+                additionalProperties: false
+              minItems: 1
+            transitions:
+              type: array
+              items:
+                type: object
+                properties:
+                  fromStep:
+                    type: string
+                    minLength: 1
+                    maxLength: 120
+                    pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
+                  toRef:
+                    type: string
+                    minLength: 1
+                    maxLength: 120
+                    pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
+                  guardKind:
+                    type: string
+                    enum: *a24
+                  guardText:
+                    type:
+                      - string
+                      - "null"
+                    minLength: 1
+                    maxLength: 2000
+                  outcomeStatus:
+                    type:
+                      - string
+                      - "null"
+                    minLength: 1
+                    maxLength: 120
+                  counterLimit:
+                    type:
+                      - integer
+                      - "null"
+                    exclusiveMinimum: 0
+                  fieldRef:
+                    type:
+                      - string
+                      - "null"
+                    minLength: 1
+                    maxLength: 200
+                  fieldOp:
+                    type:
+                      - string
+                      - "null"
+                    enum: *a25
+                  fieldValue:
+                    anyOf:
+                      - type: string
+                        minLength: 1
+                        maxLength: 500
+                      - type: number
+                      - type: boolean
+                      - type: "null"
+                  fieldValues:
+                    type:
+                      - array
+                      - "null"
+                    items:
+                      anyOf:
+                        - type: string
+                          minLength: 1
+                          maxLength: 500
+                        - type: number
+                        - type: boolean
+                    minItems: 1
+                  fieldUnit:
+                    type:
+                      - string
+                      - "null"
+                    enum: *a26
+                  ordinal:
+                    type: integer
+                    minimum: 0
+                required:
+                  - fromStep
+                  - toRef
+                  - guardKind
+                  - ordinal
+                additionalProperties: false
+              default: *a27
+            terminals:
+              type: array
+              items:
+                type: object
+                properties:
+                  stableStepId:
+                    type: string
+                    minLength: 1
+                    maxLength: 120
+                    pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
+                  kind:
+                    type: string
+                    enum: *a15
+                  instruction:
+                    type:
+                      - string
+                      - "null"
+                    minLength: 1
+                    maxLength: 4000
+                  ordinal:
+                    type: integer
+                    minimum: 0
+                required:
+                  - stableStepId
+                  - kind
+                  - ordinal
+                additionalProperties: false
+              minItems: 1
+            completionExport:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                triggerKinds:
+                  type: array
+                  items:
+                    type: string
+                    enum: *a15
+                destinationRef:
+                  type: string
+                  maxLength: 300
+              additionalProperties: false
+          required:
+            - name
+            - activation
+            - steps
+            - terminals
           additionalProperties: false
-      required:
-        - name
-        - activation
-        - steps
-        - terminals
-      additionalProperties: false
     RoutineDraftAssistRequest:
       type: object
       properties:
@@ -4191,6 +4200,9 @@ components:
           type: string
           minLength: 1
           maxLength: 200
+        enabled:
+          type: boolean
+          default: true
         activation:
           type: object
           properties:
@@ -4543,13 +4555,6 @@ components:
         version:
           type: integer
           minimum: 1
-        status:
-          type: string
-          enum:
-            - draft
-            - published
-            - superseded
-            - archived
         createdAt:
           type: string
           format: date-time
@@ -4565,7 +4570,6 @@ components:
         - agentId
         - lineageId
         - version
-        - status
         - createdAt
         - updatedAt
       additionalProperties: false
@@ -4595,43 +4599,6 @@ components:
       required:
         - routine
         - validation
-    RoutineDirectiveScopeOrphan:
-      type: object
-      properties:
-        directiveId:
-          type: string
-        scopeTag:
-          type: string
-        reason:
-          type: string
-          enum:
-            - missing_step
-      required:
-        - directiveId
-        - scopeTag
-        - reason
-    RoutineDefinitionPublishResponse:
-      type: object
-      properties:
-        routine:
-          $ref: "#/components/schemas/RoutineDefinition"
-        validation:
-          $ref: "#/components/schemas/RoutineValidationResult"
-        directiveScopeOrphans:
-          type: array
-          items:
-            $ref: "#/components/schemas/RoutineDirectiveScopeOrphan"
-      required:
-        - routine
-        - validation
-        - directiveScopeOrphans
-    RoutineDefinitionLifecycleResponse:
-      type: object
-      properties:
-        routine:
-          $ref: "#/components/schemas/RoutineDefinition"
-      required:
-        - routine
     RoutineDefinitionValidateResponse:
       type: object
       properties:
@@ -4649,6 +4616,9 @@ components:
               type: string
               minLength: 1
               maxLength: 200
+            enabled:
+              type: boolean
+              default: true
             activation:
               type: object
               properties:
@@ -4999,18 +4969,6 @@ components:
           $ref: "#/components/schemas/RoutineValidationResult"
       required:
         - draft
-        - validation
-    RoutineDefinitionPublishRejectedResponse:
-      type: object
-      properties:
-        error:
-          type: string
-          enum:
-            - Routine definition is invalid
-        validation:
-          $ref: "#/components/schemas/RoutineValidationResult"
-      required:
-        - error
         - validation
     SkillAuthoringInput:
       type: object
@@ -5756,6 +5714,9 @@ components:
               type: string
               minLength: 1
               maxLength: 200
+            enabled:
+              type: boolean
+              default: true
             activation:
               type: object
               properties:
@@ -6216,7 +6177,7 @@ components:
         - resolver_skill_missing: the enablement's resolver skill did not survive import, so it stays unbound.
         - skill_target_unbound: the skill's connection target is a credential-bearing workspace row.
         - skill_capability_unknown: no capability with this id is registered in this deployment.
-        - routine_invalid: the routine imported as a draft because publish validation rejected it.
+        - routine_invalid: the routine imported out of service (disabled) because it does not pass validation.
         - document_source_unresolved: selected document sources cannot be matched; scope imports empty, not "all".
         - surface_credential_unbound: a surface whose token cannot travel; imported disabled so it cannot serve.
         - mcp_connection_unbound: an external MCP connection reference; the skill imports without its server.
@@ -19431,7 +19392,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
-          description: Destination is referenced by published routines
+          description: Destination is referenced by enabled routines
           content:
             application/json:
               schema:
@@ -21238,202 +21199,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /api/v1/agents/{agentId}/routines/{routineId}/publish:
-    post:
-      tags:
-        - Agents
-      summary: Publish a draft routine definition for an agent
-      operationId: publishAgentRoutine
-      security:
-        - bearerAuth: []
-      parameters:
-        - schema:
-            type: string
-            format: uuid
-          required: true
-          name: agentId
-          in: path
-        - schema:
-            type: string
-            format: uuid
-          required: true
-          name: routineId
-          in: path
-      responses:
-        "200":
-          description: Routine definition published
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RoutineDefinitionPublishResponse"
-        "400":
-          description: Routine definition cannot be published
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "401":
-          description: Authentication required
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "404":
-          description: Agent or routine definition not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "422":
-          description: Routine definition is invalid
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RoutineDefinitionPublishRejectedResponse"
-  /api/v1/agents/{agentId}/routines/{routineId}/revise:
-    post:
-      tags:
-        - Agents
-      summary: Create or return a draft revision for a published routine definition
-      operationId: reviseAgentRoutine
-      security:
-        - bearerAuth: []
-      parameters:
-        - schema:
-            type: string
-            format: uuid
-          required: true
-          name: agentId
-          in: path
-        - schema:
-            type: string
-            format: uuid
-          required: true
-          name: routineId
-          in: path
-      responses:
-        "200":
-          description: Routine revision draft returned
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RoutineDefinitionLifecycleResponse"
-        "400":
-          description: Routine definition cannot be revised
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "401":
-          description: Authentication required
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "404":
-          description: Agent or routine definition not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-  /api/v1/agents/{agentId}/routines/{routineId}/archive:
-    post:
-      tags:
-        - Agents
-      summary: Archive a published routine definition
-      operationId: archiveAgentRoutine
-      security:
-        - bearerAuth: []
-      parameters:
-        - schema:
-            type: string
-            format: uuid
-          required: true
-          name: agentId
-          in: path
-        - schema:
-            type: string
-            format: uuid
-          required: true
-          name: routineId
-          in: path
-      responses:
-        "200":
-          description: Routine definition archived
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RoutineDefinitionLifecycleResponse"
-        "400":
-          description: Routine definition cannot be archived
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "401":
-          description: Authentication required
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "404":
-          description: Agent or routine definition not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-  /api/v1/agents/{agentId}/routines/{routineId}/restore:
-    post:
-      tags:
-        - Agents
-      summary: Restore an archived routine definition
-      operationId: restoreAgentRoutine
-      security:
-        - bearerAuth: []
-      parameters:
-        - schema:
-            type: string
-            format: uuid
-          required: true
-          name: agentId
-          in: path
-        - schema:
-            type: string
-            format: uuid
-          required: true
-          name: routineId
-          in: path
-      responses:
-        "200":
-          description: Routine definition restored
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RoutineDefinitionLifecycleResponse"
-        "400":
-          description: Routine definition cannot be restored
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "401":
-          description: Authentication required
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "404":
-          description: Agent or routine definition not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "422":
-          description: Routine definition is invalid
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RoutineDefinitionPublishRejectedResponse"
   /api/v1/agents/{agentId}/assistant-logo:
     get:
       tags:

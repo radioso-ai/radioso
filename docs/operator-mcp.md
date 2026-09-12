@@ -1,7 +1,7 @@
 ---
 title: "Operator MCP OAuth Access"
 description: "Connect an OAuth-capable MCP client to Ray's governed workspace tools and manage its access."
-last_updated: 2026-09-07
+last_updated: 2026-09-10
 ---
 
 # Operator MCP OAuth Access
@@ -26,7 +26,7 @@ The catalog is rebuilt from the caller's current permissions for every list or c
 
 - **Reads** (`operator:read`) — `workspace_settings`, `agent_configuration`, `agent_skills`, `context_variables`, `conversation_history_search`, `conversation_transcript`, `document_chunks`, `document_search`, `document_status`, `eval_results`, `quality_signals`, `routine_definition`, `turn_trace`, `validate_routine`, `workspace_triage`.
 - **Probes** (`operator:probe`) — `retrieval_probe`.
-- **Proposals** (`operator:propose`) — `propose_ingestion_settings`, `propose_agent_setting`, `propose_context_variable`, `propose_directive`, `propose_directive_enablement`, `propose_directive_removal`, `propose_routine`, `propose_routine_edit`, `propose_routine_lifecycle`, `propose_skill_config`. Each requires an operation id: a lost response is reconciled from the proposal it already created rather than duplicating it.
+- **Proposals** (`operator:propose`) — `propose_ingestion_settings`, `propose_agent_setting`, `propose_context_variable`, `propose_directive`, `propose_directive_enablement`, `propose_directive_removal`, `propose_routine`, `propose_routine_edit`, `propose_skill_config`. Each requires an operation id: a lost response is reconciled from the proposal it already created rather than duplicating it.
 - **Acts** (`operator:act`) — `set_triage_state`, admitted because it is fenced by an expected version rather than appended: a lost-response retry either lands the transition once or comes back a conflict against whatever won, never a duplicate effect.
 
 Queue-backed reprocessing, recrawling, eval-suite runs, customer replies, credential administration, and provider authorization stay outside this catalog — each either has no owner-approved retry contract yet or depends on dashboard/Ray-conversation context the stateless transport does not provide.

@@ -33,7 +33,7 @@ const directive = (id: string, action: string): AgentRevisionSnapshot["directive
 });
 
 const routine = (id: string, version: number): AgentRevisionSnapshot["routines"][number] => ({
-  id, agentId, lineageId: routineLineageId, version, status: "published", name: "Returns",
+  id, agentId, lineageId: routineLineageId, version, enabled: true, name: "Returns",
   activation: { triggerDescription: "When a customer asks to return an order.", gateRef: null, priority: 1, reentryMode: "always" },
   slots: [], steps: [{ stableStepId: "ask", kind: "chat", instruction: `Ask version ${version}.`, toolRef: null, actionType: null, ordinal: 0, metadata: {} }],
   transitions: [{ fromStep: "ask", toRef: "done", guardKind: "default", guardText: null, outcomeStatus: null, counterLimit: null, fieldRef: null, fieldOp: null, fieldValue: null, fieldValues: null, fieldUnit: null, ordinal: 0 }],

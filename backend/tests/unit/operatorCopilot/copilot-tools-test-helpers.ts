@@ -8,7 +8,7 @@ import { createDocumentSearchCopilotTools, createDocumentStatusCopilotTools } fr
 import { createRoutineDefinitionCopilotTools } from "../../../src/modules/operatorCopilot/tools/routines.js";
 import type { RoutineDefinition } from "../../../src/modules/routines/public.js";
 
-export const pageContext = (agentId: string | null) => ({
+const pageContext = (agentId: string | null) => ({
   view: "agent" as const,
   agentId,
   conversationId: null,
@@ -18,7 +18,7 @@ export const pageContext = (agentId: string | null) => ({
 
 /** Always-authorized stand-in for CopilotCurrentAuthorizationPort; tests exercising a denial
  * build their own context rather than override this shared fixture. */
-export const alwaysAuthorized = () => ({ hasAllPermissions: vi.fn(async () => true) });
+const alwaysAuthorized = () => ({ hasAllPermissions: vi.fn(async () => true) });
 
 export const context = (agentId: string | null) => ({
   workspaceId: "workspace-1",
@@ -34,7 +34,7 @@ export const routine = (overrides: Partial<RoutineDefinition> = {}): RoutineDefi
   agentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   lineageId: "33333333-3333-4333-8333-333333333333",
   version: 1,
-  status: "draft",
+  enabled: true,
   name: "support-intake",
   activation: {
     triggerDescription: "When the user needs support",
@@ -199,14 +199,14 @@ export const documentStatusPorts = () => {
 /** Broad enough shape that a test overriding `registryList.mockReturnValueOnce` can add a field
  * like `showValueToCopilot` without hitting the narrower literal type TS would otherwise infer
  * from the default fixture below. */
-export interface MockCapabilitySettingsField {
+interface MockCapabilitySettingsField {
   readonly key: string;
   readonly label: string;
   readonly type: string;
   readonly defaultValue?: string | number | boolean;
   readonly showValueToCopilot?: boolean;
 }
-export interface MockCapabilityDescriptor {
+interface MockCapabilityDescriptor {
   readonly id: string;
   readonly targetKind: string;
   readonly requiresTarget: boolean;

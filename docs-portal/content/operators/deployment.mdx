@@ -1,7 +1,7 @@
 ---
 title: "Deployment"
 description: "Production deployment expectations for Radioso and the standalone docs portal."
-last_updated: 2026-09-07
+last_updated: 2026-09-10
 ---
 
 import { Callout } from 'nextra/components'
@@ -225,8 +225,7 @@ and inspect the published baseline pointers, draft state, and conversation bindi
 starting revision-aware replicas. Do not run old and revision-aware writers or readers together:
 they do not share the same publication boundary.
 
-Existing agents receive a migrated published baseline. Saved routine drafts are preserved as
-private authoring work rather than becoming part of that baseline. New and imported agents remain
+Existing agents receive a migrated published baseline. New and imported agents remain
 private until an operator publishes them. A published revision is shared by every channel; a new
 conversation uses the current published revision, while an ongoing conversation continues with
 the revision it started on. There is no per-channel publication pointer.

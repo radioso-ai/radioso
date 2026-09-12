@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-09-06
+last_updated: 2026-09-10
 ---
 
 # Code Map
@@ -426,8 +426,8 @@ Public and tool surfaces:
 - `backend/src/modules/operatorCopilot/contracts.ts`, `catalog.ts`, `service.ts`, and `routes.ts`
 - `backend/src/modules/operatorCopilot/tools/index.ts` (catalog contributions)
 - `backend/src/modules/operatorCopilot/tools/agentTurnProbe.ts` (`test_agent_turn` contract and projection)
-- `backend/src/modules/operatorCopilot/tools/routines.ts` (`routine_definition`, `validate_routine`, `propose_routine`, `propose_routine_edit`, `propose_routine_lifecycle`)
-- `backend/src/app/composition/copilotProposalAdapters.ts` (proposal adapters: directive, agent setting, and the routine edit/lifecycle apply rules)
+- `backend/src/modules/operatorCopilot/tools/routines.ts` (`routine_definition`, `validate_routine`, `propose_routine`, `propose_routine_edit`)
+- `backend/src/app/composition/copilotProposalAdapters.ts` (proposal adapters: directive, agent setting, and the routine edit apply rules)
 - `backend/src/app/composition/copilotToolCatalog.ts` (default wiring and contributed-tool assembly)
 - `backend/src/modules/operatorCopilot/contribution.ts` (what a contributing module declares)
 - `ee/packages/backend-module/src/usageLimits/copilotTools.ts` (`workspace_usage_limits`, the Enterprise contribution)
@@ -484,7 +484,7 @@ Related docs, specs, and issues:
 ## Agent Bundle (portable agent export/import)
 
 Owns the portable form of a whole agent. Export composes the `AgentConfig`
-projection with the agent's published routines, context-variable enablements, and
+projection with the agent's routines, context-variable enablements, and
 skills, re-keying workspace-scoped references to natural keys and placeholding the
 ones that cannot travel. Import creates a new agent from that bundle through each
 owning module's own service, and returns every reference it could not resolve
@@ -912,7 +912,8 @@ Related docs and specs:
 Owns the authoring side of multi-step routines: the definition data model, the
 compiler that turns a definition into the conversation-engine routine graph, the
 validator (author-facing diagnostics), and the per-agent repository. A routine is
-authored as data and published; the chat runtime loads an agent's published
+authored as data into the agent's draft, and reaches customers through the agent
+revision the operator publishes; the chat runtime loads an agent's enabled
 routines per turn and runs them through the engine. The runtime itself —
 activation, resume, guards, fast-forward, projecting a step into a directive —
 lives in `packages/conversation-engine`, not here.
@@ -928,7 +929,7 @@ Public surfaces and contracts:
 - `packages/routine-definition` (shared definition schemas and types)
 - `packages/routine-document` (routine block-document projection and shared guard/condition labeling, including `branchDecisionLabel` — the one place a branch's decision is named for the Document editor and the map)
 - `packages/routine-definition` also owns the shared slot-collection rule (`collectedSlotsByStep`, `SLOT_REFERENCE_PATTERN`) so the compiler, the population analysis, and the authoring surfaces agree on which step captures a slot
-- `backend/src/app/http/routes/agentRoutes.ts` (`/api/v1/agents/:agentId/routines` CRUD/validate/publish/revise/archive/restore)
+- `backend/src/app/http/routes/agentRoutes.ts` (`/api/v1/agents/:agentId/routines` CRUD and validate)
 - `packages/conversation-contract/index.d.ts` (the `Routine` graph and guards the compiler targets)
 - `packages/conversation-defaults/src/routineRegistry.ts` (ranked one-call
   activation over registered `{ routine, trigger: { description, priority } }`
@@ -938,7 +939,7 @@ Primary internals:
 
 - `backend/src/modules/routines/compiler.ts`, `validator.ts`, `domain.ts`, `service.ts`
 - `backend/src/db/repositories/routineDefinitionRepository.ts`, migrations `084`–`090`
-- `backend/src/app/composition/routineDefinitionSource.ts` (loads + compiles published routines for activation and pinned non-published routines for resume)
+- `backend/src/app/composition/routineDefinitionSource.ts` (loads + compiles the agent's enabled routines for activation and pinned routines for resume)
 - `packages/conversation-engine/src/routineRunner.ts` (runtime: activation, resume, guards, fast-forward)
 - `backend/prompts/chat/routine-next-step.md`, `routine-step-reply.md`, `routine-ranked-activation.md`
 - `frontend/components/dashboard/settings/assistant-routines-section.tsx` (authoring UI)

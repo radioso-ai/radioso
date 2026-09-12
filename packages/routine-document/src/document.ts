@@ -1,58 +1,32 @@
-import type {
-  RoutineDefinitionDraft,
-  RoutineDefinitionDraftAuthored,
-  RoutineDraftSource,
-  RoutineDraftSourceStep,
-  RoutineDraftSourceTerminal,
-  RoutineDraftSourceTransition,
-  RoutineFieldGuardOp,
-  RoutineFieldGuardUnit,
-  RoutineInputBinding,
-  RoutineCompletionExport,
-  ProseTerminal,
-  ProseTerminalConfig,
-  RoutineSlotType,
-  RoutineTransition,
+import {
+  OUTCOME_GUARD_REF,
+  SLOT_FILLED_GUARD_REF,
+  type ApprovalDocOption,
+  type ChipDocVariable,
+  type ProseParagraph,
+  type ProseSegment,
+  type RoutineDraftSource,
+  type RoutineDraftSourceStep,
+  type RoutineDraftSourceTerminal,
+  type RoutineDraftSourceTransition,
+  type RoutineFieldGuardOp,
+  type RoutineFieldGuardUnit,
+  type RoutineFieldGuardValue,
+  type RoutineInputBinding,
+  type RoutineCompletionExport,
+  type ProseTerminal,
+  type RoutineSlotType,
+  type RoutineStepMode,
 } from './types.js'
-import type { RoutineReentryMode } from '@radioso/routine-definition'
 
 export const ROUTINE_SLOT_TYPES: RoutineSlotType[] = ['text', 'number', 'boolean', 'email', 'date']
 export const ROUTINE_FIELD_GUARD_UNITS: RoutineFieldGuardUnit[] = ['days', 'weeks', 'months', 'years']
 
-export type RoutineFieldGuardValue = string | number | boolean
-export type RoutineStepMode = 'typed' | 'untyped'
 export type RoutineSkillBindingState = {
   inputBindings?: Record<string, RoutineInputBinding>
   outputAssignments?: Record<string, string>
   mode?: RoutineStepMode
 } & Record<string, unknown>
-
-type ApprovalOptionBranch = { optionId: string; target: string }
-
-const approvalCaptureFieldRef = (captureKey: string): string => `${captureKey}.id`
-
-function approvalOptionTransitions(
-  fromStep: string,
-  captureKey: string,
-  branches: ApprovalOptionBranch[],
-  nextOrdinal: () => number,
-): RoutineTransition[] {
-  const fieldRef = approvalCaptureFieldRef(captureKey)
-  return branches.map((branch): RoutineTransition => ({
-    fromStep,
-    toRef: branch.target,
-    guardKind: 'field',
-    guardText: null,
-    outcomeStatus: null,
-    counterLimit: null,
-    fieldRef,
-    fieldOp: 'equals',
-    fieldValue: branch.optionId,
-    fieldValues: null,
-    fieldUnit: null,
-    ordinal: nextOrdinal(),
-  }))
-}
 
 const OP_LABELS: Record<RoutineFieldGuardOp, string> = {
   is_true: 'is true',
@@ -130,32 +104,10 @@ export function slugifyVariableKey(name: string): string {
 
 export const SLOT_REFERENCE = /\{\{\s*slot\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
 
-// A variable carried on the chip document. `required`/`mutable` are omitted in the common
-// case (required, non-mutable) so the bare `{ id, name, type }` shape round-trips unchanged;
-// they're only present when the author marks a slot optional or editable-after-completion.
-export type ChipDocVariable = {
-  id: string
-  name: string
-  type: RoutineSlotType
-  required?: boolean
-  mutable?: boolean
-}
-
 // One block of the chip document = one line/paragraph: its readable text plus the chips
 // it contains. A block carrying a target chip (handoff) is a branch; otherwise it's a
 // step. (Branch-vs-step is keyed on chip presence, never on the English words.) A branch
 // carrying a condition chip is decided in code; otherwise the prose is an AI-decided guard.
-// One option of an approval gate, as carried on an `approval` chip: its id/label/optional
-// description plus the step or terminal the routine branches to when a human picks it.
-export type ApprovalDocOption = {
-  id: string
-  label: string
-  description?: string | null
-  // Where the routine continues when a person picks this choice. Carried on the block-chip
-  // model; absent in the inline model, where the target lives on a separate branch line.
-  target?: string
-}
-
 export type RoutineDocChip = {
   kind: string
   refId: string
@@ -185,8 +137,6 @@ export type RoutineDocBlock = { text: string; chips: RoutineDocChip[]; headingLe
 // between these canonical refs and the configured ids.
 const DONE_TERMINAL_ID = 'done'
 const HANDOFF_TERMINAL_ID = 'handoff'
-// The default message a handoff terminal carries when the author hasn't set one.
-const DEFAULT_HANDOFF_INSTRUCTION = 'Bringing in a teammate.'
 
 // Step metadata keys the chip document preserves. The skill-binding state only round-trips on
 // a tool step (it rides on the skill chip); the outline label (a titled step's heading) can
@@ -200,8 +150,8 @@ function stepMetadataIsRepresentable(step: RoutineDraftSourceStep): boolean {
   const metadata = (step.metadata ?? {}) as Record<string, unknown>
   const allowed = step.kind === 'tool' ? PRESERVED_TOOL_METADATA_KEYS : OUTLINE_LABEL_ONLY
   if (Object.keys(metadata).some((key) => !allowed.has(key))) return false
-  // An outline label round-trips only as a heading whose text draftFromChipDoc slugifies back
-  // into the step id. So whenever the key is present it must be a non-empty string that
+  // An outline label round-trips only as a heading whose text slugifies back into the step
+  // id. So whenever the key is present it must be a non-empty string that
   // slugifies to the existing id; an empty or non-string label would be silently dropped (it
   // is authored metadata the compiler keeps), and a mismatching one would rename the step.
   if ('outlineLabel' in metadata) {
@@ -209,37 +159,6 @@ function stepMetadataIsRepresentable(step: RoutineDraftSourceStep): boolean {
     if (typeof label !== 'string' || !label.trim() || slugifyVariableKey(label.trim()) !== step.stableStepId) return false
   }
   return true
-}
-
-// A condition chip whose refId is this sentinel is an outcome guard, not a variable
-// comparison: it branches on the preceding tool step's result status (carried in the chip's
-// `value`), compiling to a `guardKind: 'outcome'` transition. The sentinel can't collide with
-// a real variable id — slugifyVariableKey strips leading/trailing underscores, so it never
-// produces `__outcome__`.
-export const OUTCOME_GUARD_REF = '__outcome__'
-
-// True when a condition chip is an outcome guard (refId sentinel + a status in `value`).
-function isOutcomeConditionChip(chip: { refId: string; value?: RoutineFieldGuardValue | null }): boolean {
-  return chip.refId === OUTCOME_GUARD_REF && typeof chip.value === 'string' && chip.value.trim().length > 0
-}
-
-// A condition chip whose refId is this sentinel is a slot-filled guard, not a variable
-// comparison: it continues only once the named slots are present, compiling to a
-// `guardKind: 'slot_filled'` transition. The slot keys ride in the chip's `values`. Like the
-// outcome sentinel it can't collide with a real variable id (slugifyVariableKey strips the
-// surrounding underscores, so it never produces `__filled__`).
-export const SLOT_FILLED_GUARD_REF = '__filled__'
-
-// The slot keys carried on a slot-filled sentinel chip (its `values`), as clean string keys.
-function slotFilledChipKeys(chip: { values?: RoutineFieldGuardValue[] | null }): string[] {
-  return (chip.values ?? [])
-    .map((value) => (typeof value === 'string' ? value.trim() : String(value)))
-    .filter((key) => key.length > 0)
-}
-
-// True when a condition chip is a slot-filled guard (refId sentinel + at least one slot key).
-function isSlotFilledConditionChip(chip: { refId: string; values?: RoutineFieldGuardValue[] | null }): boolean {
-  return chip.refId === SLOT_FILLED_GUARD_REF && slotFilledChipKeys(chip).length > 0
 }
 
 // The distinct `{{slot.<key>}}` references in a transition's guardText, in first-seen order.
@@ -252,11 +171,6 @@ function collectGuardSlotKeys(guardText: string | null | undefined): string[] {
     if (key) keys.add(key)
   }
   return [...keys]
-}
-
-// Encode a slot_filled guard's slot set as the `{{slot.x}}` tokens the compiler extracts.
-function slotFilledGuardText(keys: string[]): string {
-  return keys.map((key) => `{{slot.${key}}}`).join(' ')
 }
 
 // Readable "when <a> and <b> are provided" label for a slot-filled guard chip.
@@ -306,486 +220,7 @@ export function readProseCompletionExport(routine: RoutineDraftSource): RoutineC
   }
 }
 
-export const createEmptyRoutineProseDraft = (input: {
-  name?: string
-  triggerDescription?: string
-  priority?: number
-  reentryMode?: RoutineReentryMode
-} = {}): RoutineDefinitionDraft => ({
-  name: input.name ?? '',
-  activation: {
-    triggerDescription: input.triggerDescription ?? '',
-    gateRef: null,
-    priority: input.priority ?? 0,
-    reentryMode: input.reentryMode ?? 'once_per_conversation',
-  },
-  slots: [],
-  steps: [],
-  transitions: [],
-  terminals: [{
-    stableStepId: DONE_TERMINAL_ID,
-    kind: 'complete',
-    instruction: null,
-    ordinal: 0,
-  }],
-})
-
-// Serialize the chip document into a routine draft. An h1 heading block names a step
-// (its title pins a stable id + author label; following prose is the step's body); an
-// untitled block is a one-line step (the original behavior). A block with a target chip
-// is a conditional branch from the current step: a handoff/end chip targets a terminal,
-// a `step` chip jumps to a named step (forward, or backward as a counter-bounded loop).
-// A condition chip makes the guard decided-in-code (field); otherwise the prose is an
-// AI-decided (llm) guard.
-export function draftFromChipDoc(input: {
-  name: string
-  trigger: string
-  priority?: number
-  reentryMode?: RoutineReentryMode
-  blocks: RoutineDocBlock[]
-  variables: ChipDocVariable[]
-  // The terminal ids + messages to emit. The chip body only references the canonical
-  // `done`/`handoff`; these resolve those refs to the actual terminal the routine keeps.
-  terminals?: ProseTerminalConfig
-  // Completion export config carried alongside the body (not encoded in chips). Included on
-  // the draft only when enabled.
-  completionExport?: RoutineCompletionExport | null
-}): RoutineDefinitionDraftAuthored {
-  // Keep blocks with prose or chips (a branch can be pure chips: a condition + target).
-  const blocks = input.blocks.filter((block) => block.text.trim().length > 0 || block.chips.length > 0)
-
-  // Resolve the terminal config to concrete ids + messages. A canonical end/handoff ref in
-  // the body maps to these ids; a fresh draft defaults to `done` (null copy) and `handoff`
-  // (default copy).
-  const completeId = input.terminals?.complete?.id?.trim() || DONE_TERMINAL_ID
-  const completeInstruction = input.terminals?.complete?.instruction?.trim() || null
-  const handoffId = input.terminals?.handoff?.id?.trim() || HANDOFF_TERMINAL_ID
-  const handoffInstruction = input.terminals?.handoff?.instruction?.trim() || DEFAULT_HANDOFF_INSTRUCTION
-  const completionExport: RoutineCompletionExport | undefined = input.completionExport?.enabled
-    ? {
-        enabled: true,
-        triggerKinds: input.completionExport.triggerKinds.length > 0
-          ? input.completionExport.triggerKinds
-          : ['complete'],
-        destinationRef: input.completionExport.destinationRef.trim(),
-      }
-    : undefined
-  // Map a canonical terminal ref carried on a chip to the configured terminal id.
-  const resolveTerminalRef = (ref: string): string =>
-    ref === DONE_TERMINAL_ID ? completeId : ref === HANDOFF_TERMINAL_ID ? handoffId : ref
-
-  // A `decision` chip declares an approval's capture key + choices (labels), authored inline.
-  // Collected up front so a branch line that conditions on the decision (`@decision is deny`)
-  // is recognised as a decision guard — its field ref is `<captureKey>.id`, not a plain slot.
-  const decisionOptions = new Map<string, ApprovalDocOption[]>()
-  for (const block of blocks) {
-    for (const chip of block.chips) {
-      if (chip.kind === 'decision') {
-        decisionOptions.set(chip.captureKey ?? chip.refId, chip.options ?? [])
-      }
-    }
-  }
-
-  const slots = input.variables
-    .map((variable, index) => ({
-      stableSlotId: variable.id,
-      key: variable.id,
-      type: variable.type,
-      // A variable defaults to required; only an explicit `required: false` makes it optional.
-      required: variable.required ?? true,
-      description: variable.name,
-      // Only carry the mutable flag when set, so a non-mutable slot stays `mutable: undefined`.
-      ...(variable.mutable ? { mutable: true } : {}),
-      ordinal: index,
-    }))
-
-  const steps: RoutineDefinitionDraft['steps'] = []
-  const transitions: RoutineDefinitionDraft['transitions'] = []
-  let needHandoffTerminal = false
-  // Additional complete terminals beyond the primary one: a named `end` chip (a distinct id)
-  // is its own completion, whose message rides on the chip. Keyed by id → message (first
-  // non-null message wins if the same ending is reached from more than one branch).
-  const namedCompletes = new Map<string, string | null>()
-  let lastStepId: string | null = null
-  // True when the last step already defines all of its own outgoing edges (an approval
-  // gate routes only through its option branches), so the chain shouldn't add a default
-  // edge into or out of it.
-  let lastStepRoutes = false
-  // True when the last step is an approval/decision gate: its outgoing edges are the decision
-  // branches (authored as following branch lines), so the chain must never add a default edge
-  // out of it — but those branch lines DO attach to it (unlike `lastStepRoutes`).
-  let lastStepIsDecision = false
-  let ordinal = 0
-  // The titled step (started by an h1 heading) currently accreting body prose. Untitled
-  // authoring leaves this null and keeps the original one-line-one-step behavior.
-  let titledStep: { step: RoutineDefinitionDraft['steps'][number]; body: string[] } | null = null
-  const flushTitledBody = () => {
-    if (!titledStep) return
-    const body = titledStep.body.join('\n').trim()
-    // Body prose is the instruction; the title is the fallback so every step is non-empty.
-    if (body) titledStep.step.instruction = body
-  }
-
-  // Create the `approval` step behind a gate chip (a block `approval` chip or an inline
-  // `decision` chip), returning its stable id. A heading immediately before the gate names it:
-  // the pending titled step is converted into the gate in place, keeping its stable id + outline
-  // label (and the incoming default edge already added for it) so a jump can target it by name.
-  // Otherwise a fresh `step_N` is pushed with an incoming default edge from the previous step.
-  const pushGateStep = (block: RoutineDocBlock, captureKey: string, rawOptions: ApprovalDocOption[]): string => {
-    const options = rawOptions.map((option) => ({
-      id: option.id,
-      label: option.label,
-      ...(option.description ? { description: option.description } : {}),
-    }))
-    if (titledStep) {
-      flushTitledBody()
-      const step = titledStep.step
-      step.kind = 'approval'
-      // Prefer the gate's own prose; keep the heading (already the instruction) as the fallback.
-      step.instruction = block.text.trim() || step.instruction
-      step.toolRef = null
-      step.actionType = null
-      step.captureKey = captureKey || null
-      step.options = options
-      titledStep = null
-      return step.stableStepId
-    }
-    const id = `step_${steps.length + 1}`
-    steps.push({
-      stableStepId: id,
-      kind: 'approval',
-      // Every step needs a non-empty instruction (backend requirement); fall back to the
-      // capture key when the gate carries no prose.
-      instruction: block.text.trim() || captureKey || 'Make a decision',
-      toolRef: null,
-      actionType: null,
-      captureKey: captureKey || null,
-      options,
-      ordinal: steps.length,
-      metadata: {},
-    })
-    if (lastStepId && !lastStepRoutes && !lastStepIsDecision) {
-      transitions.push({ fromStep: lastStepId, toRef: id, guardKind: 'default', guardText: null, outcomeStatus: null, counterLimit: null, ordinal: ordinal++ })
-    }
-    return id
-  }
-
-  // Emit a guarded edge from the current step. A condition chip → field guard; a `step`
-  // chip carrying a counter limit → a bounded loop (counter guard); otherwise the prose
-  // is an AI-decided (llm) guard.
-  const branchFrom = (fromStep: string, toRef: string, block: RoutineDocBlock) => {
-    const condition = block.chips.find((chip) => chip.kind === 'condition')
-    const stepChip = block.chips.find((chip) => chip.kind === 'step')
-    if (condition && isOutcomeConditionChip(condition)) {
-      // An outcome guard branches on the preceding tool step's result status (held in the
-      // chip's `value`). The backend validates that fromStep is actually a tool step.
-      transitions.push({
-        fromStep,
-        toRef,
-        guardKind: 'outcome',
-        guardText: null,
-        outcomeStatus: String(condition.value).trim(),
-        counterLimit: null,
-        ordinal: ordinal++,
-      })
-    } else if (condition && isSlotFilledConditionChip(condition)) {
-      // A slot-filled guard continues once the named slots are present. The slot set rides in
-      // the chip's `values`; it compiles to `guardKind: 'slot_filled'`, with the slots encoded
-      // as the `{{slot.x}}` tokens the compiler extracts from guardText.
-      transitions.push({
-        fromStep,
-        toRef,
-        guardKind: 'slot_filled',
-        guardText: slotFilledGuardText(slotFilledChipKeys(condition)),
-        outcomeStatus: null,
-        counterLimit: null,
-        ordinal: ordinal++,
-      })
-    } else if (condition?.op) {
-      // A condition on a decision branches on the chosen option id: `<captureKey>.id`. A
-      // condition on an ordinary slot branches on the slot itself.
-      const fieldRef = decisionOptions.has(condition.refId) ? `${condition.refId}.id` : condition.refId
-      transitions.push({
-        fromStep,
-        toRef,
-        guardKind: 'field',
-        guardText: null,
-        outcomeStatus: null,
-        counterLimit: null,
-        fieldRef,
-        fieldOp: condition.op,
-        fieldValue: condition.value ?? null,
-        fieldValues: condition.values ?? null,
-        fieldUnit: condition.unit ?? null,
-        ordinal: ordinal++,
-      })
-    } else if (condition) {
-      // A decided-by-AI condition chip: no operator. The chip is a bare AI⇄code selector; the
-      // comparison phrase lives as fluid prose (block.text) so the author edits it as ordinary
-      // text, not a frozen chip. Older documents stored the phrase on the chip's `value`, so
-      // fall back to that. Compiles to an `llm` guard — the AI judges the phrase at runtime.
-      const phrase = block.text.trim() || (typeof condition.value === 'string' ? condition.value.trim() : '')
-      transitions.push({
-        fromStep,
-        toRef,
-        guardKind: 'llm',
-        guardText: phrase,
-        outcomeStatus: null,
-        counterLimit: null,
-        ordinal: ordinal++,
-      })
-    } else if (stepChip && stepChip.counterLimit != null) {
-      transitions.push({
-        fromStep,
-        toRef,
-        guardKind: 'counter',
-        guardText: null,
-        outcomeStatus: null,
-        counterLimit: stepChip.counterLimit,
-        ordinal: ordinal++,
-      })
-    } else {
-      transitions.push({
-        fromStep,
-        toRef,
-        guardKind: 'llm',
-        guardText: block.text.trim(),
-        outcomeStatus: null,
-        counterLimit: null,
-        ordinal: ordinal++,
-      })
-    }
-  }
-
-  for (const block of blocks) {
-    // An approval chip is a whole gate: an `approval` step plus one deterministic
-    // field-guard edge per option (routing lives on the chip, not in following branch
-    // paragraphs). It defines all its own outgoing edges, so the chain skips it.
-    const approvalChip = block.chips.find((chip) => chip.kind === 'approval')
-    if (approvalChip) {
-      const captureKey = approvalChip.captureKey ?? ''
-      const options = approvalChip.options ?? []
-      const id = pushGateStep(block, captureKey, options)
-      const branches = options
-        .filter((option): option is ApprovalDocOption & { target: string } => Boolean(option.target))
-        .map((option) => ({ optionId: option.id, target: option.target }))
-      for (const branch of branches) {
-        if (branch.target === HANDOFF_TERMINAL_ID) needHandoffTerminal = true
-      }
-      // Resolve canonical end/handoff refs on each option to the configured terminal ids.
-      transitions.push(...approvalOptionTransitions(
-        id,
-        captureKey,
-        branches.map((branch) => ({ ...branch, target: resolveTerminalRef(branch.target) })),
-        () => ordinal++,
-      ))
-      lastStepId = id
-      lastStepRoutes = true
-      lastStepIsDecision = false
-      continue
-    }
-    // A `decision` chip declares the same approval gate, but inline: the chip carries only the
-    // capture key + choices (labels), and the routing lives on ordinary branch lines that
-    // follow (`@decision is deny → handoff`). Same `approval` step + field guards as the block
-    // chip — just authored, and editable, as prose.
-    const decisionChip = block.chips.find((chip) => chip.kind === 'decision')
-    if (decisionChip) {
-      const captureKey = decisionChip.captureKey ?? decisionChip.refId ?? ''
-      const options = decisionChip.options ?? []
-      const id = pushGateStep(block, captureKey, options)
-      // The decision's edges are the branch lines that follow; they attach to this step
-      // (lastStepRoutes stays false) but no default edge may leave it (lastStepIsDecision).
-      lastStepId = id
-      lastStepRoutes = false
-      lastStepIsDecision = true
-      continue
-    }
-    const handoffChip = block.chips.find((chip) => chip.kind === 'handoff')
-    const endChip = block.chips.find((chip) => chip.kind === 'end')
-    const stepChip = block.chips.find((chip) => chip.kind === 'step')
-    if (handoffChip || endChip || stepChip) {
-      // A branch from the step we're currently in. A `step` chip jumps to a named step;
-      // otherwise the target is a terminal (handoff escalates, end completes).
-      if (lastStepId && !lastStepRoutes) {
-        if (stepChip) {
-          branchFrom(lastStepId, stepChip.refId, block)
-        } else if (handoffChip) {
-          needHandoffTerminal = true
-          branchFrom(lastStepId, handoffId, block)
-        } else if (endChip) {
-          // A default-ref end goes to the primary complete (its message is the header field). A
-          // named end (a distinct id) is an additional completion whose message rides on `value`.
-          const named = Boolean(endChip.refId) && endChip.refId !== DONE_TERMINAL_ID && endChip.refId !== completeId
-          const endTarget = named ? endChip.refId : completeId
-          if (named) {
-            const message = typeof endChip.value === 'string' && endChip.value.trim() ? endChip.value.trim() : null
-            namedCompletes.set(endTarget, namedCompletes.get(endTarget) ?? message)
-          }
-          branchFrom(lastStepId, endTarget, block)
-        }
-      }
-      continue
-    }
-    if (block.headingLevel === 1 && block.text.trim()) {
-      // An h1 heading names a step: the title is the stable id + author label; following
-      // body prose becomes the instruction (the title is the fallback when there's none).
-      flushTitledBody()
-      const title = block.text.trim()
-      const id = slugifyVariableKey(title)
-      const step = {
-        stableStepId: id,
-        kind: 'chat' as const,
-        instruction: title,
-        toolRef: null,
-        actionType: null,
-        ordinal: steps.length,
-        metadata: { outlineLabel: title },
-      }
-      steps.push(step)
-      if (lastStepId && !lastStepRoutes && !lastStepIsDecision) {
-        transitions.push({ fromStep: lastStepId, toRef: id, guardKind: 'default', guardText: null, outcomeStatus: null, counterLimit: null, ordinal: ordinal++ })
-      }
-      lastStepId = id
-      lastStepRoutes = false
-      lastStepIsDecision = false
-      titledStep = { step, body: [] }
-      continue
-    }
-    // A skill chip turns the step into a tool step the runner dispatches through the skill
-    // port; an action chip turns it into an action step that emits an outbox action (named by
-    // its action type). Both reference something defined elsewhere by name.
-    const skillChip = block.chips.find((chip) => chip.kind === 'skill')
-    const actionChip = block.chips.find((chip) => chip.kind === 'action')
-    const instruction = block.text.trim()
-    if (!instruction && !skillChip && !actionChip) {
-      // A non-branch block with no prose (e.g. an orphan condition chip) isn't a step.
-      continue
-    }
-    if (titledStep) {
-      // Body of the current titled step (a skill chip makes it a tool step; an action chip an
-      // action step).
-      if (instruction) titledStep.body.push(instruction)
-      if (skillChip) {
-        titledStep.step.kind = 'tool'
-        titledStep.step.toolRef = skillChip.refId
-        titledStep.step.metadata = {
-          ...(titledStep.step.metadata ?? {}),
-          inputBindings: skillChip.inputBindings ?? {},
-          outputAssignments: skillChip.outputAssignments ?? {},
-          mode: skillChip.mode ?? 'typed',
-        }
-      } else if (actionChip) {
-        titledStep.step.kind = 'action'
-        titledStep.step.actionType = actionChip.refId
-      }
-      flushTitledBody()
-      continue
-    }
-    const id = `step_${steps.length + 1}`
-    steps.push({
-      stableStepId: id,
-      kind: actionChip ? 'action' : skillChip ? 'tool' : 'chat',
-      // Every step needs a non-empty instruction (backend requirement). A skill or action chip
-      // alone on a line carries no prose, so fall back to the referenced name.
-      instruction: instruction || (actionChip?.refId ?? skillChip?.refId ?? ''),
-      toolRef: skillChip ? skillChip.refId : null,
-      actionType: actionChip ? actionChip.refId : null,
-      ordinal: steps.length,
-      metadata: skillChip
-        ? {
-            inputBindings: skillChip.inputBindings ?? {},
-            outputAssignments: skillChip.outputAssignments ?? {},
-            mode: skillChip.mode ?? 'typed',
-          }
-        : {},
-    })
-    if (lastStepId && !lastStepRoutes && !lastStepIsDecision) {
-      transitions.push({
-        fromStep: lastStepId,
-        toRef: id,
-        guardKind: 'default',
-        guardText: null,
-        outcomeStatus: null,
-        counterLimit: null,
-        ordinal: ordinal++,
-      })
-    }
-    lastStepId = id
-    lastStepRoutes = false
-    lastStepIsDecision = false
-  }
-
-  flushTitledBody()
-  if (lastStepId && !lastStepRoutes && !lastStepIsDecision) {
-    transitions.push({
-      fromStep: lastStepId,
-      toRef: completeId,
-      guardKind: 'default',
-      guardText: null,
-      outcomeStatus: null,
-      counterLimit: null,
-      ordinal: ordinal++,
-    })
-  }
-
-  const terminals: RoutineDefinitionDraft['terminals'] = [
-    { stableStepId: completeId, kind: 'complete', instruction: completeInstruction, ordinal: 0 },
-  ]
-  let terminalOrdinal = 1
-  if (needHandoffTerminal) {
-    terminals.push({ stableStepId: handoffId, kind: 'handoff', instruction: handoffInstruction, ordinal: terminalOrdinal++ })
-  }
-  // Additional named completions, each carrying the message authored on its end chip.
-  for (const [id, instruction] of namedCompletes) {
-    terminals.push({ stableStepId: id, kind: 'complete', instruction, ordinal: terminalOrdinal++ })
-  }
-
-  return {
-    name: input.name.trim() || 'Untitled routine',
-    activation: {
-      triggerDescription: input.trigger.trim() || 'When this routine applies.',
-      gateRef: null,
-      priority: input.priority ?? 0,
-      ...(input.reentryMode ? { reentryMode: input.reentryMode } : {}),
-    },
-    slots,
-    steps,
-    transitions,
-    terminals,
-    // Carry completion export through only when enabled, so a routine without it stays clean.
-    ...(completionExport ? { completionExport } : {}),
-  }
-}
-
-// One inline piece of a loaded prose paragraph: literal text or a chip. This is the
-// richer shape draftFromChipDoc's flat {text, chips} can't carry — it preserves where
-// each chip sits inline — so the editor can rebuild the Lexical document on load.
-export type ProseChipKind = 'variable' | 'skill' | 'action' | 'handoff' | 'step' | 'condition' | 'end' | 'approval' | 'decision'
-export type ProseSegment =
-  | { kind: 'text'; text: string }
-  | {
-      kind: 'chip'
-      chipKind: ProseChipKind
-      refId: string
-      label: string
-      op?: RoutineFieldGuardOp
-      value?: RoutineFieldGuardValue | null
-      values?: RoutineFieldGuardValue[] | null
-      unit?: RoutineFieldGuardUnit | null
-      // For a `step` (jump) chip that loops back: the max iterations (counter bound).
-      counterLimit?: number | null
-      inputBindings?: Record<string, RoutineInputBinding>
-      outputAssignments?: Record<string, string>
-      mode?: RoutineStepMode
-      // For an `approval` chip: the capture slot and the options (each with its target).
-      captureKey?: string | null
-      options?: ApprovalDocOption[]
-    }
-// A paragraph is a step title (headingLevel 1) or ordinary prose/branch content. The
-// title pins the step's stable id + label; the following non-heading paragraphs are its
-// body. Headings let an author name a step so a jump can target it.
-export type ProseParagraph = { headingLevel?: 1; segments: ProseSegment[] }
-export type ProseDoc = { variables: ChipDocVariable[]; paragraphs: ProseParagraph[] }
+type ProseDoc = { variables: ChipDocVariable[]; paragraphs: ProseParagraph[] }
 
 const HANDOFF_CHIP_LABEL = 'handoff'
 
@@ -864,18 +299,18 @@ function branchParagraph(edge: RoutineDraftSourceTransition, nameByRef: Map<stri
   return { segments: [...branchGuardSegments(edge, nameByRef), trailing] }
 }
 
-// Inverse of draftFromChipDoc: rebuild the chip document (variables + paragraphs with
-// inline chips) from a routine, so an existing routine can be edited in the prose editor.
-// Chat/tool/action steps and field/llm/counter/outcome/slot_filled guards round-trip; it returns
-// null for shapes the prose editor can't show — an outcome guard with no status, a slot_filled
-// guard that names no slots, an
-// action step with no action type, a jump to a step whose id is not a clean slug, multiple
-// complete/handoff terminals, or an activation gate — so the caller falls back to the form
-// editor rather than silently dropping that configuration. Routine-level config the body does
-// not encode — the complete/handoff terminal id + message and the completion export — is not
-// dropped: the host reads it with readProseTerminals / readProseCompletionExport and feeds it
-// back to draftFromChipDoc, so it round-trips even though the body only references the
-// canonical `done`/`handoff`.
+// Projects a routine into the chip document (variables + paragraphs with inline chips) used
+// by the read-only portable text the operator copilot reads — see
+// backend/src/modules/routines/portableDocument.ts. One direction only: nothing parses this
+// text back into a routine. Chat/tool/action steps and field/llm/counter/outcome/slot_filled
+// guards project cleanly; it returns null for shapes the chip format can't show — an outcome
+// guard with no status, a slot_filled guard that names no slots, an action step with no action
+// type, a jump to a step whose id is not a clean slug, multiple complete/handoff terminals, or
+// an activation gate — so the caller falls back to another representation rather than silently
+// dropping that configuration. Routine-level config the body does not encode — the
+// complete/handoff terminal id + message and the completion export — is not dropped: the host
+// reads it separately with readProseTerminals / readProseCompletionExport, since the body only
+// references the canonical `done`/`handoff`.
 export function routineToChipDoc(routine: RoutineDraftSource): ProseDoc | null {
   if (routine.activation.gateRef) return null
 
@@ -910,8 +345,7 @@ export function routineToChipDoc(routine: RoutineDraftSource): ProseDoc | null {
   const completeId = primaryComplete.stableStepId
   const handoffId = handoff?.stableStepId ?? null
   // A handoff terminal is rendered only as the target of a handoff branch. One that no
-  // transition targets would be silently dropped on a round-trip (draftFromChipDoc only emits
-  // the handoff terminal when a handoff chip is present), so fall back to Form.
+  // transition targets would be silently missing from the projected text, so fall back to Form.
   if (handoff && !transitions.some((transition) => transition.toRef === handoff.stableStepId)) return null
   // A named ending is rendered only as the target of an end branch. One that no transition
   // reaches (or that only a default fall-through reaches — that's the primary) would be dropped
@@ -929,8 +363,8 @@ export function routineToChipDoc(routine: RoutineDraftSource): ProseDoc | null {
       id: slot.key,
       name: (slot.description ?? '').trim() || slot.key,
       type: slot.type,
-      // Mirror draftFromChipDoc: emit the flags only when non-default so a plain required,
-      // non-mutable slot stays the bare `{ id, name, type }` shape.
+      // Emit the flags only when non-default so a plain required, non-mutable slot stays the
+      // bare `{ id, name, type }` shape.
       ...(slot.required === false ? { required: false } : {}),
       ...(slot.mutable ? { mutable: true } : {}),
     }))
@@ -1152,6 +586,3 @@ export function routineToChipDoc(routine: RoutineDraftSource): ProseDoc | null {
 
   return { variables, paragraphs }
 }
-
-export const docToDraftInput = draftFromChipDoc
-export const draftToDoc = routineToChipDoc

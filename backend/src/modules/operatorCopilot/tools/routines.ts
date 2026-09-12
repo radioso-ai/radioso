@@ -58,7 +58,7 @@ const validateRoutineInputSchema = z.object({
 const validateRoutineOutputSchema = z.object({
   routineId: z.string(),
   name: z.string(),
-  status: z.string(),
+  enabled: z.boolean(),
   ok: z.boolean(),
   diagnosticCount: z.number().int().nonnegative(),
   diagnosticsTruncated: z.boolean(),
@@ -125,7 +125,7 @@ export const createRoutineDefinitionCopilotTools = (deps: RoutineDefinitionCopil
       const parsed = input as z.infer<typeof routineDefinitionInputSchema>;
       const agentId = parsed.agentId ?? context?.pageContext.agentId;
       return parsed.agentName || parsed.routineTitle
-        ? describeNamedRoutine(parsed, context, deps, liveFirst)
+        ? describeNamedRoutine(parsed, context, deps)
         : parsed.routineId
           ? { type: "routine", id: parsed.routineId, ...(agentId ? { agentId } : {}) }
           : entity("agent", agentId);
@@ -151,7 +151,7 @@ export const createRoutineDefinitionCopilotTools = (deps: RoutineDefinitionCopil
         return {
           routineId: routine.id,
           name: routine.name,
-          status: routine.status,
+          enabled: routine.enabled,
           ok: validation.ok,
           diagnosticCount: validation.diagnostics.length,
           diagnosticsTruncated: validation.diagnostics.length > copilotRoutineDiagnosticLimit,
@@ -159,8 +159,7 @@ export const createRoutineDefinitionCopilotTools = (deps: RoutineDefinitionCopil
         };
       },
     }),
-    // Validation answers "is this ready to go live", which is a question about the draft.
-    describeEntity: (input, context) => describeRoutineTarget(input as z.infer<typeof validateRoutineInputSchema>, context, deps, draftFirst),
+    describeEntity: (input, context) => describeRoutineTarget(input as z.infer<typeof validateRoutineInputSchema>, context, deps),
   },
 
 ];
@@ -169,7 +168,6 @@ const describeRoutineTarget = (
   input: { agentId?: string; agentName?: string; routineId?: string; routineTitle?: string },
   context: { workspaceId: string; pageContext: { agentId: string | null } } | undefined,
   deps: { readonly agentLookup?: CopilotAgentLookupPort; readonly routineDefinitionService?: Pick<CopilotRoutineDefinitionPort, "list"> },
-  preference: RoutineVersionPreference = liveFirst,
 ): CopilotEntityDescription<typeof input> | null | Promise<CopilotEntityDescription<typeof input> | null> => {
   // A named agent still has to resolve when the routine is already addressed by id: the routine
   // lookup is scoped by agent, and leaving agentName unresolved would silently fall back to
@@ -179,14 +177,14 @@ const describeRoutineTarget = (
     return { type: "routine", id: input.routineId, ...(agentId ? { agentId } : {}) };
   }
   return deps.agentLookup && deps.routineDefinitionService
-    ? describeNamedRoutine(input, context, { agentLookup: deps.agentLookup, routineDefinitionService: deps.routineDefinitionService }, preference)
+    ? describeNamedRoutine(input, context, { agentLookup: deps.agentLookup, routineDefinitionService: deps.routineDefinitionService })
     : entity("agent", input.agentId ?? context?.pageContext.agentId);
 };
 
 const routineIdentity = (routine: RoutineDefinition) => ({
   id: routine.id,
   name: routine.name,
-  status: routine.status,
+  enabled: routine.enabled,
 });
 
 const projectRoutineSummary = (routine: RoutineDefinition): Record<string, unknown> => {
@@ -259,40 +257,10 @@ const projectRoutineDetail = (routine: RoutineDefinition): Record<string, unknow
 };
 
 
-/**
- * Which version of a named routine a tool means.
- *
- * A lineage keeps every version it has ever had: publishing leaves the previous one `superseded`,
- * revising adds a `draft` beside the published row, and all of them carry the same name. Which one
- * an operator means depends on what they asked for — "why did it do that" is about what is running,
- * "reword step 3" and "publish it" are about the draft — so each tool states its own order and a
- * name collapses to one routine per lineage. Names stay ambiguous across *different* lineages,
- * which is the ambiguity an operator can actually resolve.
- */
-type RoutineVersionPreference = ReadonlyArray<RoutineDefinition["status"]>;
-const liveFirst: RoutineVersionPreference = ["published", "draft", "archived"];
-const draftFirst: RoutineVersionPreference = ["draft", "published", "archived"];
-const archivedFirst: RoutineVersionPreference = ["archived", "published", "draft"];
-
-const currentRoutineVersions = (
-  routines: ReadonlyArray<RoutineDefinition>,
-  preference: RoutineVersionPreference,
-): RoutineDefinition[] => {
-  const byLineage = new Map<string, RoutineDefinition>();
-  for (const routine of routines) {
-    const rank = preference.indexOf(routine.status);
-    if (rank < 0) continue;
-    const held = byLineage.get(routine.lineageId);
-    if (!held || rank < preference.indexOf(held.status)) byLineage.set(routine.lineageId, routine);
-  }
-  return [...byLineage.values()];
-};
-
 const describeNamedRoutine = async (
   input: { agentId?: string; agentName?: string; routineId?: string; routineTitle?: string },
   context: { workspaceId: string; pageContext: { agentId: string | null } } | undefined,
   deps: { readonly agentLookup: CopilotAgentLookupPort; readonly routineDefinitionService: Pick<CopilotRoutineDefinitionPort, "list"> },
-  preference: RoutineVersionPreference = liveFirst,
 ): Promise<CopilotEntityDescription<typeof input> | null> => {
   const agentDescription = await describeNamedAgent(input, context, deps.agentLookup);
   if (agentDescription && "kind" in agentDescription && agentDescription.kind !== "resolved") {
@@ -319,8 +287,10 @@ const describeNamedRoutine = async (
   const agents = agentId
     ? [{ id: agentId }]
     : (await deps.agentLookup.listExisting(context.workspaceId)).map((agent) => ({ id: agent.id }));
+  // A routine list is already one row per routine, so a name only stays ambiguous across
+  // different routines — which is the ambiguity an operator can actually resolve.
   const routines = (await Promise.all(agents.map(async (agent) =>
-    currentRoutineVersions(await deps.routineDefinitionService.list(context.workspaceId, agent.id), preference).map((routine) => ({
+    (await deps.routineDefinitionService.list(context.workspaceId, agent.id)).map((routine) => ({
       agentId: agent.id,
       id: routine.id,
       label: routine.name,
@@ -353,7 +323,11 @@ const routineProposalIdentitySchema = {
   evidenceIds: citedEvidenceSchema,
 };
 const routineEditInputSchema = z.object({ ...routineProposalIdentitySchema, changes: routineFieldPatchSchema }).strict();
-const routineLifecycleInputSchema = z.object({ ...routineProposalIdentitySchema, action: z.enum(["publish", "archive", "restore"]) }).strict();
+
+// The tool transport renders a nested input object as the bare word "object", so the shape of
+// `changes` has to live in the description or the model invents one of its own. Shared by both
+// descriptor variants below so the two copies cannot drift out of step with the schema.
+const routineEditDescription = `Propose an edit to an existing routine's wording, name, trigger, or whether it is enabled. \`changes\` takes at least one of: \`name\` (string); \`enabled\` (boolean, takes the routine in or out of service without touching its wording); \`activation\` ({triggerDescription?, priority?, reentryMode?, coverageCriteria?: {coverage: [...], reasons?: [...]}}); \`steps\` ([{stableStepId, instruction}]); \`terminals\` ([{stableStepId, instruction}], an ending); \`slots\` ([{key, description?, required?}], an information field). Example: {"steps":[{"stableStepId":"ask_order_number","instruction":"Ask for the order number and say why we need it."}]}. Every id comes from the \`editable\` block \`routine_definition\` returns — read the routine first and never invent one. It edits elements that already exist: it cannot add or remove a step or rework branching, so send the operator to the routine editor for those. It drafts a proposal for operator review and changes nothing until the operator applies it. ${scopedAgentDraftPublicationNote}`;
 
 const routineValidationOutput = (draft: CopilotRoutineProposalDraft) => ({
   ok: draft.diagnostics.length === 0,
@@ -379,19 +353,9 @@ const routineEditProposalPayloadSchema = z.object({
   changes: routineFieldPatchSchema,
   rationale: z.string().optional(),
 }).strict();
-/** Mirrors the payload propose_routine_lifecycle persists (see .draftLifecycle in proposalAdapters.ts). */
-const routineLifecycleProposalPayloadSchema = z.object({
-  kind: z.literal("lifecycle"),
-  action: z.enum(["publish", "archive", "restore"]),
-  name: z.string(),
-  rationale: z.string().optional(),
-  discardsDraftRevisionId: z.string().uuid().optional(),
-  discardsDraftRevisionUpdatedAt: z.string().optional(),
-}).strict();
-
 /**
- * Reconstructs a recovered routine proposal's output from its persisted payload. Shared by all
- * three routine proposal tools since each writes `targetType: "routine"` and the reconstruction
+ * Reconstructs a recovered routine proposal's output from its persisted payload. Shared by both
+ * routine proposal tools since each writes `targetType: "routine"` and the reconstruction
  * (targetLabel/summary from name/rationale) is identical; only the payload schema differs.
  *
  * `validation` cannot be faithfully reconstructed: the diagnostics a draft call computes are
@@ -485,9 +449,7 @@ export const createRoutineProposalCopilotTools = (deps: RoutineProposalCopilotTo
     },
     {
       name: "propose_routine_edit", shape: "propose", verificationCost: () => 0, uiLabel: "Drafting a routine edit", contributingModule: "routines", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"],
-      // The tool transport renders a nested input object as the bare word "object", so the shape
-      // of `changes` has to live in the description or the model invents one of its own.
-      description: `Propose an edit to an existing routine's wording, name, or trigger. \`changes\` takes at least one of: \`name\` (string); \`activation\` ({triggerDescription?, priority?, reentryMode?, coverageCriteria?: {coverage: [...], reasons?: [...]}}); \`steps\` ([{stableStepId, instruction}]); \`terminals\` ([{stableStepId, instruction}], an ending); \`slots\` ([{key, description?, required?}], an information field). Example: {"steps":[{"stableStepId":"ask_order_number","instruction":"Ask for the order number and say why we need it."}]}. Every id comes from the \`editable\` block \`routine_definition\` returns — read the routine first and never invent one. It edits elements that already exist: it cannot add or remove a step or rework branching, so send the operator to the routine editor for those. Applying an edit to a published routine revises it into a draft; it does not change what is serving until Review & Publish. It drafts a proposal for operator review and changes nothing until the operator applies it. ${scopedAgentDraftPublicationNote}`,
+      description: routineEditDescription,
       inputSchema: routineEditInputSchema, outputSchema: routineProposalOutputSchema,
       reconcileMcpInvocation: async ({ invocation, context, staleBefore, now }) => {
         if (!invocation.operationId) return { status: "conflict" };
@@ -507,13 +469,13 @@ export const createRoutineProposalCopilotTools = (deps: RoutineProposalCopilotTo
       },
       createTool: (context) => ({
         name: "propose_routine_edit",
-      description: `Propose an edit to an existing routine's wording, name, or trigger. \`changes\` takes at least one of: \`name\` (string); \`activation\` ({triggerDescription?, priority?, reentryMode?, coverageCriteria?: {coverage: [...], reasons?: [...]}}); \`steps\` ([{stableStepId, instruction}]); \`terminals\` ([{stableStepId, instruction}], an ending); \`slots\` ([{key, description?, required?}], an information field). Example: {"steps":[{"stableStepId":"ask_order_number","instruction":"Ask for the order number and say why we need it."}]}. Every id comes from the \`editable\` block \`routine_definition\` returns — read the routine first and never invent one. It edits elements that already exist: it cannot add or remove a step or rework branching, so send the operator to the routine editor for those. Applying an edit to a published routine revises it into a draft; it does not change what is serving until Review & Publish. It drafts a proposal for operator review and changes nothing until the operator applies it. ${scopedAgentDraftPublicationNote}`,
+        description: routineEditDescription,
         inputSchema: routineEditInputSchema,
         outputSchema: routineProposalOutputSchema,
         invoke: async ({ agentId, routineId, changes, rationale, evidenceIds }) => {
           const targetRef = { agentId: agentId ?? requiredPageAgent(context.pageContext.agentId), routineId: requiredRoutine(routineId) };
           // The guard token is read before the draft: a token read afterwards could describe a
-          // routine revised in between, and the edit would then apply to content Ray never saw.
+          // routine edited in between, and the edit would then apply to content Ray never saw.
           await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
           const versionToken = await routineAdapter.readVersionToken(context.workspaceId, targetRef);
           await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
@@ -521,57 +483,10 @@ export const createRoutineProposalCopilotTools = (deps: RoutineProposalCopilotTo
           return proposeRoutineChange(deps, routineAdapter, context, targetRef, draft, versionToken, evidenceIds);
         },
       }),
-      // Edits go to the draft: a published routine is revised into one before it can be edited.
-      describeEntity: (input, context) => describeRoutineTarget(input as z.infer<typeof validateRoutineInputSchema>, context, deps, draftFirst),
-    },
-    {
-      name: "propose_routine_lifecycle", shape: "propose", verificationCost: () => 0, uiLabel: "Drafting a routine lifecycle change", contributingModule: "routines", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"],
-      description: "Propose taking a routine live, out of service, or back into service: publish a draft, archive a published routine, or restore an archived one. Applying it is the only thing that changes what an agent is actually running, which is why it is proposed separately from editing a routine's content. It drafts a proposal for operator review and changes nothing until the operator applies it.",
-      inputSchema: routineLifecycleInputSchema, outputSchema: routineProposalOutputSchema,
-      reconcileMcpInvocation: async ({ invocation, context, staleBefore, now }) => {
-        if (!invocation.operationId) return { status: "conflict" };
-        const recovery = await deps.proposalRecovery.recoverOperatorMcpProposal({
-          invocationId: invocation.id,
-          grantId: invocation.grantId,
-          workspaceId: context.workspaceId,
-          operatorUserId: context.operatorUserId,
-          operationId: invocation.operationId,
-          descriptorName: "propose_routine_lifecycle",
-          inputDigest: invocation.inputDigest,
-          staleBefore,
-          now,
-        });
-        if (recovery.status !== "recovered") return recovery;
-        return reconcileRoutineProposalPayload(recovery.proposal, routineLifecycleProposalPayloadSchema);
-      },
-      createTool: (context) => ({
-        name: "propose_routine_lifecycle",
-      description: "Propose taking a routine live, out of service, or back into service: publish a draft, archive a published routine, or restore an archived one. Applying it is the only thing that changes what an agent is actually running, which is why it is proposed separately from editing a routine's content. It drafts a proposal for operator review and changes nothing until the operator applies it.",
-        inputSchema: routineLifecycleInputSchema,
-        outputSchema: routineProposalOutputSchema,
-        invoke: async ({ agentId, routineId, action, rationale, evidenceIds }) => {
-          const targetRef = { agentId: agentId ?? requiredPageAgent(context.pageContext.agentId), routineId: requiredRoutine(routineId) };
-          await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
-          const versionToken = await routineAdapter.readVersionToken(context.workspaceId, targetRef);
-          await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
-          const draft = await routineAdapter.draftLifecycle(context.workspaceId, targetRef, action, rationale);
-          return proposeRoutineChange(deps, routineAdapter, context, targetRef, draft, versionToken, evidenceIds);
-        },
-      }),
-      // Each move names a different version: publish the draft, archive what is running, restore
-      // what was retired.
-      describeEntity: (input, context) => {
-        const parsed = input as z.infer<typeof routineLifecycleInputSchema>;
-        return describeRoutineTarget(parsed, context, deps, lifecyclePreference[parsed.action]);
-      },
+      describeEntity: (input, context) => describeRoutineTarget(input as z.infer<typeof validateRoutineInputSchema>, context, deps),
     },
 
   ];
-};
-const lifecyclePreference: Record<"publish" | "archive" | "restore", RoutineVersionPreference> = {
-  publish: draftFirst,
-  archive: liveFirst,
-  restore: archivedFirst,
 };
 
 /** The shared tail of every routine proposal: cite, persist, audit, and report the same shape. */

@@ -117,7 +117,7 @@ export type AgentBundleUnresolvedKind =
   | "skill_target_unbound"
   /** No capability with this id is registered in this deployment. */
   | "skill_capability_unknown"
-  /** The routine imported as a draft because publish validation rejected it. */
+  /** The routine imported out of service (disabled) because it does not pass validation. */
   | "routine_invalid"
   /** Selected document sources cannot be matched; scope imports empty, not "all". */
   | "document_source_unresolved"

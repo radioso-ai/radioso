@@ -935,7 +935,7 @@ test('leaves a routine detail when navigating to cockpit and channel sections', 
     lineageId: routineId,
     agentId: defaultAgentId,
     name: 'Collect pricing intake',
-    status: 'draft',
+    enabled: true,
     version: 1,
     activation: {
       triggerDescription: 'Visitor asks about pricing.',

@@ -17,6 +17,15 @@ const routineId = (definition: RoutineDefinition): string => definition.id;
 export const legacyCompiledRoutineId = (definition: RoutineDefinition): string =>
   `routine:${definition.agentId}:${definition.name}:v${definition.version}`;
 
+/**
+ * Whether a routine may activate for a new conversation, once canonical-row selection has
+ * already happened upstream — `canonicalLineageRow` for a live SQL read
+ * (`routineDefinitionRepository.ts`'s `listActiveByAgent`), or an agent revision snapshot's own
+ * projection for a frozen one. Both readers mean the same rule; this is the one name for it, so a
+ * future added condition only has to change here.
+ */
+export const routineCanActivate = (definition: Pick<RoutineDefinition, "enabled">): boolean => definition.enabled;
+
 const conditionFor = (guardKind: string, guardText: string | null): string =>
   guardKind === "llm" ? guardText ?? guardKind : guardKind;
 

@@ -1,6 +1,6 @@
 ---
 title: "Author a routine"
-description: "Build a multi-step flow your agent runs across turns in the dashboard routine editor, then test it and publish it."
+description: "Build a multi-step flow your agent runs across turns in the dashboard routine editor, then test it and ship it with the agent."
 ---
 
 # Author a routine
@@ -9,17 +9,17 @@ A directive steers one turn. A routine carries a flow across many turns: it can
 collect values, call a skill, take a branch, and finish or hand off to a person.
 Use a routine for an order-issue intake, lead capture, or refund check.
 
-In an agent's **Routines** settings, choose **New routine** to start a draft, or
+In an agent's **Routines** settings, choose **New routine** to start one, or
 select an existing routine to open the editor.
 
 ## The routine document
 
-The editor presents the draft as a document: the flow as readable instructions,
+The editor presents the routine as a document: the flow as readable instructions,
 with typed controls at each decision. The engine compiles it into the graph it
 runs, so you work with the routine instead of drawing the graph.
 
-A published or archived version opens as a read-only document — the form a
-colleague reads to learn what the agent does.
+Every change saves into the agent's private draft as you make it, so the document
+is always the form a colleague reads to learn what the agent does.
 
 ![The Damaged delivery intake routine open in the routine editor, showing the Name, Reentry, and Activation trigger fields, two required text slots named order_number and issue_description, and the first chat step.](/screenshots/dashboard-routine-editor.png)
 
@@ -105,38 +105,35 @@ different paths provide different completion messages.
 
 ## Validation and publishing
 
-The editor validates as you work. **Save draft** keeps the current work, and
-**Publish** creates the immutable version that the chat runtime runs after the
-draft validates cleanly.
+The editor validates as you work. A routine is one of the agent's scoped editable
+areas, alongside directives, skills, and context variables. All four
+share one publication boundary: **Review & Publish** on the agent snapshots them
+together into a revision, and that revision serves conversations. So an edit
+changes what the agent will run after the next Review & Publish, and nothing
+before it.
 
-Routine versions use four statuses: `draft`, `published`, `superseded`, and
-`archived`. Choose **Edit revision** to work on a published routine. A
-conversation already running a routine keeps its pinned version, while later
-conversations use the current published version.
+A conversation keeps the revision it started on. A visitor part-way through a
+routine finishes on the version they began with, while you work on the next one.
 
-The agent cockpit keeps the routine draft with the other behavior changes. A
-saved draft is private to the agent until you publish the candidate that you
-reviewed. Publishing does not rewrite the draft from another version, so later
-edits remain available as the next unpublished change.
+Each routine also carries an enabled flag. Turn a routine off to take it out of
+play while keeping everything you built — useful for comparing agent behavior
+with and without it, or parking a flow you are still working out.
 
-## Test a draft before publishing
+## Try a routine before it ships
 
-On a saved draft, choose **Test draft** to open a private test chat over the
-editor. The test pins the selected candidate, activates the draft, and runs it
-turn by turn in that conversation. It returns to normal answering when the
-routine finishes.
+Choose **Test draft** to open a private test chat over the editor. It pins the
+agent's draft, so the routine you are editing runs turn by turn in that
+conversation alongside the rest of the agent's unpublished work, then returns to
+normal answering when the routine finishes. The test conversation stays separate
+from your other test chats.
 
-- **Test draft** uses the latest saved draft; save after a change before testing.
-- The test conversation stays separate from your other test chats.
-- The selected draft joins the agent's published routines for that test chat.
-
-From **Test Chat**, you can select the same saved candidate, compare it with the
-published revision, and run selected eval cases. Changing the candidate starts a
-fresh test conversation so its routine state cannot be mixed with another
-version. Evals are optional evidence for the publish decision.
+From **Test Chat**, you can run the same draft, compare it with the published
+revision, and run selected eval cases. Switching which version you test starts a
+fresh test conversation, so routine state from one cannot mix into the other.
+Evals are optional evidence for the publish decision.
 
 Use the test to check the trigger, information collection, skill bindings,
-branches, endings, and handoffs before publishing.
+branches, endings, and handoffs before you publish the agent.
 
 ## Common failure modes
 
@@ -150,7 +147,7 @@ branches, endings, and handoffs before publishing.
   step refers to the stored information.
 - A backward jump fails validation: set **Max N** so the loop has a bounded
   number of passes.
-- **Test draft** shows earlier behavior: save the draft, then start the test.
+- A routine never starts at all: check that it is enabled.
 
 ## Read next
 

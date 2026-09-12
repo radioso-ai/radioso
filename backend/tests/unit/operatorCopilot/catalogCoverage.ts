@@ -475,12 +475,6 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   updateAgentRoutine: "propose_routine_edit",
   draftAgentRoutineFromProcedure: deferred("Deferred to Wave 2 behavior authoring: Ray drafts new routines through propose_routine, which reaches this drafting pass through the service rather than the route."),
   validateAgentRoutine: "validate_routine",
-  publishAgentRoutine: "propose_routine_lifecycle",
-  // Revision is how an edit to a published routine is applied: propose_routine_edit revises it
-  // into a draft rather than editing what is serving.
-  reviseAgentRoutine: "propose_routine_edit",
-  archiveAgentRoutine: "propose_routine_lifecycle",
-  restoreAgentRoutine: "propose_routine_lifecycle",
   // Bundle export/import moves a whole agent as a file between workspaces. Export is a
   // bulk dump of what Ray already reads field by field through get_agent, so a tool for
   // it would add reach without adding an operator outcome. Import is the stronger

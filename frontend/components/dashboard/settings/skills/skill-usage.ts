@@ -5,19 +5,13 @@ export type SkillUsage = { directives: number; routines: number }
 
 // The bindings and step references a usage count reads. Narrower than the full API types on
 // purpose: the count does not care what else a directive or a routine carries.
-export type SkillUsageDirective = { binding?: { skillName?: string | null } | null }
+type SkillUsageDirective = { binding?: { skillName?: string | null } | null }
 export type SkillUsageRoutine = {
-  lineageId: string
-  status: string
+  enabled: boolean
   steps: readonly { toolRef?: string | null }[]
 }
 
 export const NO_SKILL_USAGE: SkillUsage = { directives: 0, routines: 0 }
-
-// A routine lineage is one routine to an author: its draft and its published version are the same
-// procedure at two lifecycle points, and superseded or archived versions cannot fire at all.
-const isLiveRoutine = (routine: SkillUsageRoutine): boolean =>
-  routine.status === 'draft' || routine.status === 'published'
 
 export const countSkillUsage = (
   directives: readonly SkillUsageDirective[],
@@ -34,16 +28,15 @@ export const countSkillUsage = (
     if (skillName) bump(skillName, 'directives')
   }
 
-  const countedLineages = new Map<string, Set<string>>()
+  // A disabled routine cannot fire, so it is not usage. Within one routine the same skill can
+  // be called from several steps; that is still one routine using it.
   for (const routine of routines) {
-    if (!isLiveRoutine(routine)) continue
+    if (!routine.enabled) continue
+    const counted = new Set<string>()
     for (const step of routine.steps) {
       const skillName = step.toolRef
-      if (!skillName) continue
-      const lineages = countedLineages.get(skillName) ?? new Set<string>()
-      if (lineages.has(routine.lineageId)) continue
-      lineages.add(routine.lineageId)
-      countedLineages.set(skillName, lineages)
+      if (!skillName || counted.has(skillName)) continue
+      counted.add(skillName)
       bump(skillName, 'routines')
     }
   }

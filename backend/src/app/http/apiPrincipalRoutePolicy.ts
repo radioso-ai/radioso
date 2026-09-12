@@ -159,7 +159,7 @@ const declarations: readonly PolicyDeclaration[] = [
   ...["/:agentId/directives", "/:agentId/directives/draft", "/:agentId/routines", "/:agentId/routines/draft-assist"]
     .map((path) => allow("POST", `/api/v1/agents${path}`, "workspace.agents.manage")),
   allow("POST", "/api/v1/agents/:agentId/routines/:routineId/validate", "workspace.agents.read"),
-  ...["/:agentId/routines/:routineId/publish", "/:agentId/routines/:routineId/revise", "/:agentId/routines/:routineId/archive", "/:agentId/routines/:routineId/restore", "/:agentId/assistant-logo", "/:agentId/default"]
+  ...["/:agentId/assistant-logo", "/:agentId/default"]
     .map((path) => allow("POST", `/api/v1/agents${path}`, "workspace.agents.manage")),
   allow("PUT", "/api/v1/agents/:agentId", "workspace.agents.manage"),
   ...["/:agentId/directives/:directiveId", "/:agentId/routines/:routineId"]

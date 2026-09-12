@@ -94,7 +94,7 @@ describe('routinesApi', () => {
         lineageId: 'lineage-1',
         agentId: 'agent-1',
         version: 1,
-        status: 'draft' as const,
+        enabled: true,
         createdAt: '2026-06-12T00:00:00.000Z',
         updatedAt: '2026-06-12T00:00:00.000Z',
         ...routineDraft,
@@ -139,7 +139,7 @@ describe('routinesApi', () => {
     expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get('Authorization')).toBeNull()
   })
 
-  it('validates, publishes, and preserves publish rejection diagnostics', async () => {
+  it('validates a routine and returns its diagnostics', async () => {
     const validation = {
       ok: false,
       diagnostics: [{
@@ -148,49 +148,39 @@ describe('routinesApi', () => {
         message: 'missing terminal',
       }],
     }
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(jsonResponse({ validation }))
-      .mockResolvedValueOnce(jsonResponse({ error: 'Routine definition is invalid', validation }, 422))
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ validation }))
     vi.stubGlobal('fetch', fetchMock)
 
     await expect(routinesApi.validateRoutine('agent-1', 'routine-1')).resolves.toEqual({ validation })
-    await expect(routinesApi.publishRoutine('agent-1', 'routine-1')).rejects.toMatchObject({
-      response: { validation },
-    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/backend/api/v1/agents/agent-1/routines/routine-1/validate',
+      expect.objectContaining({ method: 'POST', credentials: 'include' }),
+    )
   })
 
-  it('requests revise, archive, and restore lifecycle transitions', async () => {
+  it('carries an enablement change on its own through the routine update path', async () => {
     const routine = {
-      id: 'routine-2',
+      id: 'routine-1',
       lineageId: 'lineage-1',
       agentId: 'agent-1',
-      version: 2,
-      status: 'draft' as const,
+      version: 1,
+      enabled: false,
       createdAt: '2026-06-12T00:00:00.000Z',
       updatedAt: '2026-06-12T00:00:00.000Z',
       ...routineDraft,
     }
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ routine }))
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ routine, validation: { ok: true, diagnostics: [] } }))
     vi.stubGlobal('fetch', fetchMock)
 
-    await routinesApi.reviseRoutine('agent-1', 'routine-1')
-    await routinesApi.archiveRoutine('agent-1', 'routine-1')
-    await routinesApi.restoreRoutine('agent-1', 'routine-1')
+    await expect(routinesApi.updateRoutine('agent-1', 'routine-1', { enabled: false }))
+      .resolves.toMatchObject({ routine: { enabled: false } })
 
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      1,
-      '/backend/api/v1/agents/agent-1/routines/routine-1/revise',
-      expect.objectContaining({ method: 'POST', credentials: 'include' }),
-    )
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      2,
-      '/backend/api/v1/agents/agent-1/routines/routine-1/archive',
-      expect.objectContaining({ method: 'POST', credentials: 'include' }),
-    )
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      3,
-      '/backend/api/v1/agents/agent-1/routines/routine-1/restore',
-      expect.objectContaining({ method: 'POST', credentials: 'include' }),
+    // Only the toggled field goes on the wire: the update body is not padded out with a
+    // draft the caller never read.
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/backend/api/v1/agents/agent-1/routines/routine-1',
+      expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ enabled: false }) }),
     )
   })
 

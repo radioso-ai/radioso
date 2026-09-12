@@ -1267,6 +1267,7 @@ export interface RoutineDefinition {
   activation_trigger_description: string;
   agent_id: string;
   created_at: Generated<Timestamp>;
+  enabled: Generated<boolean>;
   id: Generated<string>;
   lineage_id: string;
   name: string;

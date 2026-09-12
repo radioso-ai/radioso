@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { AppError, notFound } from "../../shared/domain/errors.js";
-import { routineDefinitionSchema, validateRoutineDefinition } from "../routines/public.js";
+import { routineDefinitionSchema, validateRoutineDefinition, type RoutineDefinition, type RoutineValidationResult } from "../routines/public.js";
 import { authoredDirectiveInputSchema } from "./authoredDirectives.js";
 
 const persistedDate = z.coerce.date();
@@ -9,7 +9,14 @@ const revisionConflict = (message: string): AppError => new AppError(409, "revis
 const authoredDirectiveSnapshotSchema = authoredDirectiveInputSchema.extend({
   id: z.string().uuid(), agentId: z.string().uuid(), createdAt: persistedDate, updatedAt: persistedDate,
 }).strict();
-const routineSnapshotSchema = routineDefinitionSchema.extend({ createdAt: persistedDate, updatedAt: persistedDate });
+// Stripping, not strict: every revision frozen before routines became plainly enabled or
+// disabled carries a retired `status` key, and a pinned conversation re-parses its snapshot
+// on every turn. Refusing the retired key would take out every in-flight conversation, while
+// `enabled`'s default reads those snapshots back as enabled. The authoring
+// `routineDefinitionSchema` stays strict.
+const routineSnapshotSchema = routineDefinitionSchema
+  .extend({ createdAt: persistedDate, updatedAt: persistedDate })
+  .strip();
 const contextVariableEnablementSnapshotSchema = z.object({
   id: z.string().uuid(), agentId: z.string().uuid(), variableId: z.string().uuid(),
   source: z.enum(["pushed", "browser", "resolver"]), resolverSkillId: z.string().uuid().nullable(),
@@ -84,8 +91,13 @@ export const equalScopedAuthoringSnapshots = (
 /** Candidate/release validation happens after draft saves: incomplete graphs can
  * be authored, but cannot become a runnable immutable revision. */
 export const assertCandidateSnapshotIsRunnable = (snapshot: AgentRevisionSnapshot): void => {
+  // A disabled routine cannot activate, so it cannot break a conversation: parking a
+  // half-finished flow must not block the agent's release. Directive scope closure below
+  // still spans every routine, because a tag naming a parked routine is still a real one.
   const diagnostics: Array<{ routineId: string | null; code: string; location: string; message: string }> = snapshot.routines.flatMap((routine) =>
-    validateRoutineDefinition(routine).diagnostics.map((diagnostic) => ({ routineId: routine.id, ...diagnostic }))
+    routine.enabled
+      ? validateRoutineDefinition(routine).diagnostics.map((diagnostic) => ({ routineId: routine.id, ...diagnostic }))
+      : []
   );
   const routines = new Map(snapshot.routines.map((routine) => [routine.id, routine]));
   for (const directive of snapshot.directives) {
@@ -105,6 +117,55 @@ export const assertCandidateSnapshotIsRunnable = (snapshot: AgentRevisionSnapsho
   }
   if (diagnostics.length > 0) {
     throw new AppError(422, "revision_invalid", "The draft contains a routine graph that cannot be released.", { diagnostics });
+  }
+};
+
+/**
+ * The skill/capability/webhook-aware half of "can this actually serve?" — what
+ * `RoutineDefinitionService.validateForServing` already knows how to check, but which
+ * `assertCandidateSnapshotIsRunnable` above cannot run itself: that check is pure and
+ * synchronous so the repository can call it inside its own transaction, with no workspace-scoped
+ * catalog, capability policy, or webhook-destination reader in scope there. This narrow port lets
+ * the revision service run the same servability check the old per-routine `publish`/`restore`
+ * ran, from a layer that does have those dependencies, before a routine goes live.
+ */
+export interface RoutineServingValidator {
+  validateForServing(workspaceId: string, routine: RoutineDefinition): Promise<RoutineValidationResult>;
+  /**
+   * Optional batched capability: every routine served to this method belongs to one agent, so the
+   * workspace-scoped skill/capability/context-variable state a servability check needs is the same
+   * for all of them and only has to be resolved once. Absent on a narrower test double (or a caller
+   * that never got the batched service wired up) — `assertCandidateSnapshotIsServable` falls back to
+   * one `validateForServing` call per routine when this is missing.
+   */
+  validateManyForServing?(
+    workspaceId: string,
+    routines: readonly RoutineDefinition[],
+  ): Promise<Map<string, RoutineValidationResult>>;
+}
+
+/**
+ * A disabled routine cannot activate, so a stale skill/capability/webhook reference on one
+ * cannot break a conversation — only an enabled routine's servability blocks a release, mirroring
+ * the structural check's own enabled-only scope above.
+ */
+const assertCandidateSnapshotIsServable = async (
+  workspaceId: string,
+  snapshot: AgentRevisionSnapshot,
+  validator: RoutineServingValidator,
+): Promise<void> => {
+  const enabledRoutines = snapshot.routines.filter((routine) => routine.enabled);
+  const results = validator.validateManyForServing
+    ? await validator.validateManyForServing(workspaceId, enabledRoutines)
+    : new Map(await Promise.all(
+        enabledRoutines.map(async (routine) => [routine.id, await validator.validateForServing(workspaceId, routine)] as const),
+      ));
+  const diagnostics = enabledRoutines.flatMap((routine) => {
+    const result = results.get(routine.id);
+    return result && !result.ok ? result.diagnostics.map((diagnostic) => ({ routineId: routine.id, ...diagnostic })) : [];
+  });
+  if (diagnostics.length > 0) {
+    throw new AppError(422, "revision_invalid", "The draft contains a routine that cannot be released.", { diagnostics });
   }
 };
 
@@ -141,7 +202,16 @@ export interface AgentRevisionRepositoryPort {
 }
 
 export class AgentRevisionService {
-  constructor(private readonly repository: AgentRevisionRepositoryPort, private readonly createId: () => string) {}
+  constructor(
+    private readonly repository: AgentRevisionRepositoryPort,
+    private readonly createId: () => string,
+    /**
+     * Optional: absent in a context with no workspace-scoped skill/capability/webhook services
+     * (e.g. a unit test exercising draft/publish plumbing alone), in which case only the
+     * repository's own structural + directive-scope check still runs.
+     */
+    private readonly routineServingValidator?: RoutineServingValidator,
+  ) {}
   initializeDraft(workspaceId: string, agentId: string, customInstruction: string): Promise<void> {
     return this.repository.initializeDraft(workspaceId, agentId, customInstruction);
   }
@@ -156,6 +226,14 @@ export class AgentRevisionService {
     return state;
   }
   async createCandidate(workspaceId: string, agentId: string, expectedDraftGeneration: number): Promise<AgentRevision> {
+    // Checked against the current draft before the repository freezes it: a stale reference
+    // (a deleted skill, a since-denied capability, a removed webhook destination) must not
+    // become a candidate a reviewer is invited to publish. A benign race with a concurrent
+    // draft edit is caught below anyway, by the repository's own generation guard.
+    if (this.routineServingValidator) {
+      const draft = await this.repository.readDraft(workspaceId, agentId);
+      if (draft) await assertCandidateSnapshotIsServable(workspaceId, draft.snapshot, this.routineServingValidator);
+    }
     const candidate = await this.repository.createCandidate(workspaceId, agentId, { id: this.createId(), expectedDraftGeneration });
     if (candidate === "conflict") throw revisionConflict("Agent draft changed before the candidate was created.");
     return candidate;
@@ -167,6 +245,21 @@ export class AgentRevisionService {
     return revision;
   }
   async publish(workspaceId: string, agentId: string, actorAccountId: string | null, input: { revisionId: string; expectedDraftGeneration: number; expectedPublishedRevisionId: string | null; idempotencyKey: string }): Promise<PublicationResult> {
+    // A candidate is checked for servability when it is created, but the workspace can still
+    // move under it before it is published (a skill deleted, a capability revoked, a webhook
+    // destination removed) — old `restore` re-checked at exactly this moment, so publish does
+    // too. Skipped for a revision that is already the published one: that publish call can only
+    // be an idempotent replay, which must keep returning its original result regardless of what
+    // has changed in the workspace since.
+    if (this.routineServingValidator) {
+      const revision = await this.repository.findRevision(workspaceId, agentId, input.revisionId);
+      // An older revision can be retried after another revision becomes current. It is still
+      // already published, and the repository will return its saved idempotency result (or an
+      // idempotency conflict), so current workspace dependencies must not revalidate it first.
+      if (revision && revision.publishedAt === null) {
+        await assertCandidateSnapshotIsServable(workspaceId, revision.snapshot, this.routineServingValidator);
+      }
+    }
     const result = await this.repository.publish({ workspaceId, agentId, actorAccountId, ...input });
     if (result === "idempotency_mismatch") throw revisionConflict("This idempotency key was already used for another publication command.");
     if (result === "conflict") throw revisionConflict("The agent draft or published revision changed before publication.");

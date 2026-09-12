@@ -1,7 +1,7 @@
 ---
 title: "Authoring Routines"
-description: "Create and edit dashboard routines in the Document view, read the Map, connect skills, test drafts, and manage their lifecycle."
-last_updated: 2026-09-08
+description: "Create and edit dashboard routines in the Document view, read the Map, connect skills, and try a change in a test chat before it ships."
+last_updated: 2026-09-10
 ---
 
 # Authoring Routines
@@ -11,13 +11,13 @@ information, call skills, take a branch, finish with a message, or hand the
 conversation to a person.
 
 Open an agent's **Routines** settings to manage its routines. The list has one
-row for each routine lineage. Choose **New routine** for a draft, or select a
-routine to open its editor.
+row for each routine. Choose **New routine** to start one, or select a routine to
+open its editor.
 
-The editor presents the draft as a **Document**: it reads as the flow the agent
+The editor presents the routine as a **Document**: it reads as the flow the agent
 follows, with the controls for each part alongside the words that describe it.
-The engine compiles the draft into the graph it runs; authors work with the
-routine rather than drawing that graph.
+The engine compiles it into the graph it runs; authors work with the routine
+rather than drawing that graph.
 
 For the runtime model behind routines, see
 [Conversational routines](./architecture/conversational-routines.md).
@@ -69,8 +69,9 @@ Edit the **Starts when** line directly. Add information, steps, branches, and
 endings where they belong in the flow. That proximity makes the decision behind
 each transition easy to review with the instructions it follows.
 
-A published or archived version opens here too, as a read-only document. That
-rest state is the version a colleague reads to learn what the agent does.
+Every change saves into the agent's private draft as you make it, so the document
+you are reading is always the one a colleague can open to learn what the agent
+does.
 
 Open a step by its number to change what it does — **Ask or tell**, **Call a
 skill**, **Dispatch an action**, or **Approval**. The instruction you wrote stays
@@ -111,7 +112,7 @@ For example, a refund step can use `@order_id`, set `channel` to `support`, and
 store the result as `@refund_id` for its final message.
 
 A skill name with no matching capability on the agent appears as **unknown
-skill**. Choose the intended skill, then validate the draft.
+skill**. Choose the intended skill, then validate the routine.
 
 ### Shape branches with condition rows
 
@@ -172,9 +173,6 @@ notes identify a missing branch target, a step that has no path to an ending, an
 unset required skill input, a value whose type conflicts with a comparison, or a
 missing webhook destination for completion export.
 
-Choose **Save draft** to keep work in progress. **Publish** creates the immutable
-version that the chat runtime runs after the draft validates cleanly.
-
 ## Map
 
 Choose **Map** to read the routine as a graph — the trigger, every step, every
@@ -201,18 +199,18 @@ The map also names any declared variable that no step captures. A variable in th
 state can never be filled, and seeing it here beats discovering it in a live
 conversation.
 
-## Test a draft before publishing
+## Try a routine before it ships
 
-On a saved draft, choose **Test draft** to open a live test chat over the editor.
-The draft can activate and run turn by turn in that conversation, then returns to
-normal answering when it finishes.
+Choose **Test draft** to open a live test chat over the editor. The routine can
+activate and run turn by turn in that conversation, then returns to normal
+answering when it finishes.
 
-- **Test draft** uses the latest saved draft; save after a change before testing.
+- The test chat runs the agent's draft, so it exercises the edit you just made
+  alongside the rest of the agent's unpublished work.
 - The test conversation stays separate from your other test chats.
-- The selected draft joins the agent's published routines for that test chat.
 
 Use the test to check the trigger, information collection, skill bindings,
-branches, endings, and handoffs before publishing.
+branches, endings, and handoffs before you publish the agent.
 
 ## Completion export
 
@@ -246,28 +244,32 @@ reply, requests human ownership of the conversation, and queues a
 `handoff.notify` action. The notice gives operators the conversation, workspace,
 agent, and routine context they need to open the conversation in the dashboard.
 
-## Lifecycle and versions
+## How a routine goes live
 
-Routine versions have four statuses:
+A routine is one of the agent's scoped editable areas, alongside directives,
+skills, and context variables. All four share one publication boundary: the agent
+revision. **Review & Publish** on the agent snapshots directives, skills, context
+variables, and routines together, and that snapshot serves conversations. Editing
+a routine changes what the agent will serve after the next Review & Publish, and
+nothing before it.
 
-- `draft` — editable work in progress.
-- `published` — the active version for new conversations.
-- `superseded` — a published version replaced by a later version.
-- `archived` — a version kept outside the active set.
+A conversation pins one agent revision for its whole life. A visitor part-way
+through a routine finishes on the version they started with, while you work on
+the next one.
 
-Published, superseded, and archived versions open as a read-only document. Choose
-**Edit revision** on a published routine to create or open its draft revision.
-Publishing that revision makes it the immutable active version while the prior
-version becomes `superseded`.
+Each routine carries an `enabled` flag, set through the same update call as the
+rest of its content:
 
-Use **Archive** to take an active routine out of the starting set. **Restore**
-returns an archived routine to the active set when its lineage has no published
-version. A conversation already running a routine keeps its pinned version;
-later conversations use the current published version.
+```http
+PATCH /api/v1/agents/{agentId}/routines/{routineId}
+```
 
-The authoring API exposes the same lifecycle:
+Turn a routine off to take it out of play while keeping everything you built.
+That is what you want when you are comparing agent behavior with and without it,
+or parking a flow you are still working out; turning it back on restores the
+routine exactly as you left it.
 
-- `POST /api/v1/agents/{agentId}/routines/{routineId}/revise`
-- `POST /api/v1/agents/{agentId}/routines/{routineId}/publish`
-- `POST /api/v1/agents/{agentId}/routines/{routineId}/archive`
-- `POST /api/v1/agents/{agentId}/routines/{routineId}/restore`
+The rest of the authoring API is create, read, update, and delete under
+`/api/v1/agents/{agentId}/routines`, plus
+`POST /api/v1/agents/{agentId}/routines/{routineId}/validate` for the full
+validation report.

@@ -58,7 +58,7 @@ const harness = (options: { existingConversation?: ConversationRecord | null } =
   const routineReader = {
     findPreviewRoutine: vi.fn<ProbeRoutineReadPort["findPreviewRoutine"]>(async () => {
       calls.push("routine");
-      return { status: "draft" as const };
+      return { id: ids.routine };
     }),
   };
   const abuseControl = {
@@ -164,9 +164,9 @@ describe("AgentTurnProbeService", () => {
     expect(turnRunner.run).not.toHaveBeenCalled();
   });
 
-  it("fails closed before effects when a preview routine is not eligible", async () => {
+  it("fails closed before effects when a preview routine is not found", async () => {
     const { service, routineReader, abuseControl, turnRunner } = harness();
-    routineReader.findPreviewRoutine.mockResolvedValue({ status: "archived" });
+    routineReader.findPreviewRoutine.mockResolvedValue(null);
 
     await expect(service.testTurn(input()))
       .rejects.toMatchObject({ statusCode: 404, message: "Preview routine not found" });

@@ -16,8 +16,8 @@ describe("copilot routine readers", () => {
       routinesTruncated: false,
       routine: null,
       routines: [
-        { id: "11111111-1111-4111-8111-111111111111", name: "support-intake", status: "draft", portable: { ok: true, grammarVersion: 1 } },
-        { id: "22222222-2222-4222-8222-222222222222", name: "book-a-demo", status: "draft", portable: { ok: true, grammarVersion: 1 } },
+        { id: "11111111-1111-4111-8111-111111111111", name: "support-intake", enabled: true, portable: { ok: true, grammarVersion: 1 } },
+        { id: "22222222-2222-4222-8222-222222222222", name: "book-a-demo", enabled: true, portable: { ok: true, grammarVersion: 1 } },
       ],
     });
     expect(JSON.stringify(result)).not.toContain("Ask how we can help");
@@ -33,7 +33,7 @@ describe("copilot routine readers", () => {
       routine: {
         id: "11111111-1111-4111-8111-111111111111",
         name: "support-intake",
-        status: "draft",
+        enabled: true,
         portable: { ok: true, grammarVersion: 1, omittedReason: null },
       },
       routines: [],
@@ -163,7 +163,7 @@ describe("copilot routine validation", () => {
     expect(result).toEqual({
       routineId: "11111111-1111-4111-8111-111111111111",
       name: "support-intake",
-      status: "draft",
+      enabled: true,
       ok: false,
       diagnosticCount: 1,
       diagnosticsTruncated: false,
@@ -206,14 +206,12 @@ describe("copilot routine validation", () => {
 describe("copilot routine name resolution", () => {
   const lineage = "33333333-3333-4333-8333-333333333333";
 
-  it("resolves a routine named across its own versions to the one that is running", async () => {
-    // A lineage keeps every version it has had: publishing leaves the previous one superseded and
-    // revising adds a draft beside the published row, all under one name. Reading that as an
-    // ambiguity told an operator their own routine was ambiguous with itself.
+  it("resolves a uniquely named routine to its one canonical row", async () => {
+    // The routine list is already one row per lineage — the repository resolves version
+    // preference before this tool ever sees a routine, so a unique name resolves cleanly with
+    // no version-preference machinery left in the copilot layer.
     const ports = dependencies([
-      routine({ id: "11111111-1111-4111-8111-111111111111", lineageId: lineage, version: 1, status: "superseded" }),
-      routine({ id: "22222222-2222-4222-8222-222222222222", lineageId: lineage, version: 2, status: "published" }),
-      routine({ id: "44444444-4444-4444-8444-444444444444", lineageId: lineage, version: 3, status: "draft" }),
+      routine({ id: "22222222-2222-4222-8222-222222222222", lineageId: lineage, version: 2, enabled: true }),
     ]);
     const tool = ports.descriptors.find((descriptor) => descriptor.name === "routine_definition")!;
 
@@ -221,19 +219,6 @@ describe("copilot routine name resolution", () => {
       kind: "resolved",
       entity: { type: "routine", id: "22222222-2222-4222-8222-222222222222" },
     });
-  });
-
-  it("resolves the version each tool acts on: the draft to validate, the live one to read", async () => {
-    const ports = dependencies([
-      routine({ id: "22222222-2222-4222-8222-222222222222", lineageId: lineage, version: 2, status: "published" }),
-      routine({ id: "44444444-4444-4444-8444-444444444444", lineageId: lineage, version: 3, status: "draft" }),
-    ]);
-    const byName = new Map(ports.descriptors.map((descriptor) => [descriptor.name, descriptor]));
-
-    expect(await byName.get("routine_definition")!.describeEntity!({ routineTitle: "support-intake" }, context("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")))
-      .toMatchObject({ entity: { id: "22222222-2222-4222-8222-222222222222" } });
-    expect(await byName.get("validate_routine")!.describeEntity!({ routineTitle: "support-intake" }, context("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")))
-      .toMatchObject({ entity: { id: "44444444-4444-4444-8444-444444444444" } });
   });
 
   it("resolves a named agent even when the routine is already addressed by id", async () => {
@@ -251,8 +236,8 @@ describe("copilot routine name resolution", () => {
 
   it("keeps two routines that genuinely share a name ambiguous", async () => {
     const ports = dependencies([
-      routine({ id: "11111111-1111-4111-8111-111111111111", lineageId: "aaaa1111-1111-4111-8111-111111111111", status: "published" }),
-      routine({ id: "22222222-2222-4222-8222-222222222222", lineageId: "bbbb2222-2222-4222-8222-222222222222", status: "published" }),
+      routine({ id: "11111111-1111-4111-8111-111111111111", lineageId: "aaaa1111-1111-4111-8111-111111111111" }),
+      routine({ id: "22222222-2222-4222-8222-222222222222", lineageId: "bbbb2222-2222-4222-8222-222222222222" }),
     ]);
     const tool = ports.descriptors.find((descriptor) => descriptor.name === "routine_definition")!;
 

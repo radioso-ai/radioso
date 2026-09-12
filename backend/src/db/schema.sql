@@ -158,12 +158,13 @@ BEGIN
   JOIN routine_definition d ON d.id = ce.definition_id
   JOIN agents a ON a.id = d.agent_id
   WHERE a.workspace_id = OLD.workspace_id
-    AND d.status = 'published'
+    AND d.enabled = TRUE
+    AND d.version = (SELECT MAX(v.version) FROM routine_definition v WHERE v.lineage_id = d.lineage_id)
     AND ce.enabled = TRUE
     AND lower(ce.destination_ref) = OLD.id::text;
 
   IF COALESCE(array_length(referencing_routine_names, 1), 0) > 0 THEN
-    RAISE EXCEPTION 'webhook destination % is referenced by published routines: %', OLD.id, array_to_string(referencing_routine_names, ', ')
+    RAISE EXCEPTION 'webhook destination % is referenced by enabled routines: %', OLD.id, array_to_string(referencing_routine_names, ', ')
       USING ERRCODE = '23503',
             CONSTRAINT = 'workspace_webhook_destinations_published_routine_reference';
   END IF;
@@ -351,20 +352,22 @@ CREATE FUNCTION public.enforce_published_routine_completion_export_destination()
     AS $$
 DECLARE
   definition_workspace_id UUID;
-  definition_status TEXT;
+  definition_enabled BOOLEAN;
+  definition_canonical BOOLEAN;
   destination_exists BOOLEAN;
 BEGIN
   IF NEW.enabled IS NOT TRUE THEN
     RETURN NEW;
   END IF;
 
-  SELECT a.workspace_id, d.status
-  INTO definition_workspace_id, definition_status
+  SELECT a.workspace_id, d.enabled,
+         d.version = (SELECT MAX(v.version) FROM routine_definition v WHERE v.lineage_id = d.lineage_id)
+  INTO definition_workspace_id, definition_enabled, definition_canonical
   FROM routine_definition d
   JOIN agents a ON a.id = d.agent_id
   WHERE d.id = NEW.definition_id;
 
-  IF definition_status IS DISTINCT FROM 'published' THEN
+  IF definition_enabled IS NOT TRUE OR definition_canonical IS NOT TRUE THEN
     RETURN NEW;
   END IF;
 
@@ -3046,6 +3049,7 @@ CREATE TABLE public.routine_definition (
     trigger_embedding_model text,
     trigger_embedding_hash text,
     activation_coverage_criteria jsonb,
+    enabled boolean DEFAULT true NOT NULL,
     CONSTRAINT routine_definition_activation_reentry_mode_check CHECK ((activation_reentry_mode = ANY (ARRAY['once_per_conversation'::text, 'always'::text, 'semantic'::text]))),
     CONSTRAINT routine_definition_activation_trigger_description_check CHECK ((NULLIF(btrim(activation_trigger_description), ''::text) IS NOT NULL)),
     CONSTRAINT routine_definition_name_check CHECK ((NULLIF(btrim(name), ''::text) IS NOT NULL)),

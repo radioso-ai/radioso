@@ -1,7 +1,7 @@
 ---
 title: "Assistant Turn Spine"
 description: "Core structure of the assistant conversation loop covering phases of gathering, selecting, dispatching skills, composing replies, and routing."
-last_updated: 2026-09-01
+last_updated: 2026-09-10
 ---
 
 # Assistant Turn Spine
@@ -242,7 +242,7 @@ still see what was asked.
 After pending clarification is resolved and before normal skill selection, the
 turn checks for a **routine** — a stateful flow that runs across several turns. If
 a routine is active for the session it resumes at its saved step; otherwise the
-turn checks whether any of the agent's published routines should activate.
+turn checks whether any of the agent's enabled routines should activate.
 
 A routine does not add a new steering channel. Its current step is projected into a
 directive, so it steers the reply through the same matched-directive set as any
@@ -253,15 +253,16 @@ the user's message, and one message that supplies several values can advance
 through several steps in a single turn.
 
 Routines are authored as data, not registered in code. The chat adapter loads the
-turn agent's published routines, compiles each into the engine's `Routine` graph,
+turn agent's enabled routines, compiles each into the engine's `Routine` graph,
 and runs them through the engine's routine runner. The authoring data model,
 compiler, and validator live in `backend/src/modules/routines/`; the runtime lives
 in `packages/conversation-engine/`. See
 [Conversational routines](./conversational-routines.md).
 
-Only `published` routine versions are activation candidates. If a session already
-has routine state, composition also loads that pinned version for resume, even
-when it has since become `superseded` or `archived`.
+Only enabled routines are activation candidates. If a session already has routine
+state, composition also loads the pinned version for resume out of the agent
+revision the conversation started on, so a visitor part-way through a routine
+finishes on the version they began with.
 
 ## Clarification appears on the spine
 

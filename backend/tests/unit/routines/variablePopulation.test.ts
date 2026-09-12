@@ -15,7 +15,7 @@ const definition = (
   lineageId: "lineage_1",
   name: "population",
   version: 1,
-  status: "published",
+  enabled: true,
   activation: {
     triggerDescription: "Run the population test.",
     gateRef: null,

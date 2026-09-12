@@ -7,7 +7,6 @@ import {
   routineReentryModes,
   type RoutineDefinition,
   type RoutineDefinitionDraftInput,
-  type RoutineDefinitionPublishOptions,
   type RoutineDefinitionDeleteDraftResult,
   type RoutineApprovalOption,
   type RoutineFieldGuardOp,
@@ -25,7 +24,7 @@ import { mapDirectiveRow, type AgentDirectiveRow } from "./agentRepository.js";
 import type { AgentRevisionSnapshot } from "../../modules/agents/public.js";
 import {
   projectDirectiveScopeTagsForSelectedRoutines,
-  selectDraftRoutineDefinitions,
+  selectCanonicalRoutineDefinitions,
 } from "../../modules/routines/draftProjection.js";
 import { answerCoverageCriteriaSchema } from "../../modules/answerCoverage/public.js";
 
@@ -35,7 +34,7 @@ interface RoutineDefinitionRow {
   lineage_id: string;
   name: string;
   version: number;
-  status: "draft" | "published" | "superseded" | "archived";
+  enabled: boolean;
   activation_trigger_description: string;
   activation_gate_ref: string | null;
   activation_priority: number;
@@ -61,25 +60,31 @@ interface RoutineTriggerEmbeddingSearchResult {
   noVectorRoutineIds: string[];
 }
 
+/**
+ * The canonical row of a lineage: its highest version.
+ *
+ * Nothing branches a lineage any more — a routine is one row, created at version 1 — so this only
+ * collapses history authored before that, and `idx_routine_definition_lineage_version` makes the
+ * choice total and stable. Reads address it, writes target it, and the older rows stay in the
+ * table for a pinned conversation to resume from.
+ */
+const canonicalLineageRow = sql<boolean>`d.version = (SELECT MAX(v.version) FROM routine_definition v WHERE v.lineage_id = d.lineage_id)`;
+
+/**
+ * Resolves `id` to its lineage's canonical (highest-version) row: shared by `findByIdOn`'s
+ * full-graph read and `resolveCanonicalId`'s scalar lookup so the two can never drift on what
+ * "the row this id addresses" means.
+ */
+const canonicalRowForId = (agentId: string, id: string) => sql`
+  d.agent_id = ${agentId}
+    AND d.lineage_id = (SELECT lineage_id FROM routine_definition WHERE agent_id = ${agentId} AND id = ${id})
+  ORDER BY d.version DESC
+  LIMIT 1
+`;
+
 // A row's timestamptz carries microseconds; the Date a caller read back from it carries
 // milliseconds, so an equality guard has to compare at the precision both sides can hold. Same
 // comparison the agent and directive writers use for their own expectedUpdatedAt guards.
-/**
- * Serializes the structural writes of one lineage: publish, revise, and archive. Publishing has
- * always taken it; archive and revision creation take it because archive deletes the lineage's
- * draft, and under READ COMMITTED a revision inserted concurrently could either be deleted without
- * the caller ever being told or survive as an orphan of a retired lineage.
- *
- * The key string still says "publish" so that a rolling deploy cannot leave two versions of this
- * code serializing on different names.
- */
-// Internal marker: the lineage was archived under us, so there is nothing to revise.
-const routineLineageRetiredMarker = "routine_definition_lineage_retired";
-
-const lockLineage = async (trx: Db, lineageId: string): Promise<void> => {
-  await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`routine_definition_publish:${lineageId}`}, 0))`.execute(trx);
-};
-
 const matchesExpectedUpdatedAt = (expectedUpdatedAt: Date) =>
   sql<boolean>`date_trunc('milliseconds', updated_at) = date_trunc('milliseconds', ${expectedUpdatedAt}::timestamptz)`;
 
@@ -159,9 +164,6 @@ const normalizeStepKind = (kind: string): RoutineStepKind =>
 const normalizeGuardKind = (kind: string): RoutineGuardKind =>
   kind === "always" || kind === "fallback" ? "default" : kind as RoutineGuardKind;
 
-const isUniqueViolation = (error: unknown): boolean =>
-  Boolean(error && typeof error === "object" && "code" in error && error.code === "23505");
-
 // The full definition projection: a routine plus its children rolled up via json_agg in
 // LATERAL subqueries. Expressed with the Kysely `sql` tag (the sanctioned escape hatch for
 // complex read SQL) rather than the builder — the LATERAL/json_build_object shape would be
@@ -175,7 +177,7 @@ const definitionSelect = sql`
     d.lineage_id::text,
     d.name,
     d.version,
-    d.status,
+    d.enabled,
     d.activation_trigger_description,
     d.activation_gate_ref,
     d.activation_priority,
@@ -262,7 +264,7 @@ const mapRow = (row: RoutineDefinitionRow): RoutineDefinition => ({
   lineageId: row.lineage_id,
   name: row.name,
   version: row.version,
-  status: row.status,
+  enabled: row.enabled,
   activation: {
     triggerDescription: row.activation_trigger_description,
     gateRef: row.activation_gate_ref,
@@ -339,17 +341,32 @@ const mapRow = (row: RoutineDefinitionRow): RoutineDefinition => ({
 export class RoutineDefinitionRepository {
   constructor(private readonly db: Db) {}
 
-  async listPublishedByAgent(agentId: string): Promise<RoutineDefinition[]> {
+  /**
+   * The routines that may activate for a new conversation: canonical and enabled. SQL's own
+   * expression of the same rule `routineCanActivate` (modules/routines/compiler.ts) applies to a
+   * frozen agent revision snapshot, which has no database to query against.
+   */
+  async listActiveByAgent(agentId: string): Promise<RoutineDefinition[]> {
     const result = await sql<RoutineDefinitionRow>`
       ${definitionSelect}
-      WHERE d.agent_id = ${agentId} AND d.status = 'published'
+      WHERE d.agent_id = ${agentId} AND d.enabled AND ${canonicalLineageRow}
       ORDER BY d.activation_priority DESC, d.created_at ASC, d.id ASC
     `.execute(this.db);
     return result.rows.map(mapRow);
   }
 
+  /** The authoring read surface: one row per routine. */
   async listByAgent(agentId: string): Promise<RoutineDefinition[]> {
     return this.listByAgentOn(this.db, agentId);
+  }
+
+  /**
+   * Every stored version, newest last. Only two readers need history: resolving a pre-cutover
+   * `routine:<agent>:<name>:v<n>` pin, and re-pointing a directive scope tag that names a row a
+   * lineage branched past before routines collapsed to one row.
+   */
+  async listVersionsByAgent(agentId: string): Promise<RoutineDefinition[]> {
+    return this.listVersionsByAgentOn(this.db, agentId);
   }
 
   async findById(agentId: string, id: string): Promise<RoutineDefinition | null> {
@@ -357,10 +374,9 @@ export class RoutineDefinitionRepository {
   }
 
   /**
-   * These lifecycle variants are the only authoring path used by the service.
-   * They keep the normalized routine graph and the agent draft projection in one
-   * transaction. The service may still use the legacy methods above in narrow
-   * repository tests, but application composition never gets a post-commit hook.
+   * These variants keep the normalized routine graph and the agent draft projection in one
+   * transaction, so a routine edit lands in the agent's private draft the same way a directive
+   * or skill edit does. Application composition never gets a post-commit hook.
    */
   async createDraftWithAgentDraft(
     workspaceId: string,
@@ -375,12 +391,17 @@ export class RoutineDefinitionRepository {
         agent_id: agentId,
         version: 1,
         name: draft.name,
-        status: "draft",
+        // The retired lifecycle column still carries a CHECK constraint and still gates the
+        // webhook-destination triggers. 'published' keeps both satisfied for a routine that is
+        // live the moment the agent's draft is released.
+        status: "published",
+        enabled: draft.enabled,
         activation_trigger_description: draft.activation.triggerDescription,
         activation_gate_ref: draft.activation.gateRef,
         activation_priority: draft.activation.priority,
         activation_reentry_mode: draft.activation.reentryMode,
-        lineage_id: randomUUID(),
+        activation_coverage_criteria: draft.activation.coverageCriteria ? toJsonb(draft.activation.coverageCriteria) : null,
+        lineage_id: id,
       }).execute();
       await this.replaceChildren(trx, id, draft);
       return this.requireDefinition(trx, agentId, id);
@@ -396,136 +417,51 @@ export class RoutineDefinitionRepository {
   ): Promise<RoutineDefinition> {
     const draft = routineDefinitionDraftInputSchema.parse(input);
     return this.mutateAgentDraft(workspaceId, agentId, async (trx) => {
+      // Writes target the canonical row whatever its stored status says, so a routine authored
+      // before the collapse stays editable through the id its lineage is addressed by.
       const current = await this.findByIdOn(trx, agentId, id);
-      if (!current || current.status !== "draft") {
-        throw new Error(`routine_definition_update_conflict:${id}`);
-      }
-      await lockLineage(trx, current.lineageId);
+      if (!current) throw new Error(`routine_definition_update_conflict:${id}`);
       const updated = await trx.updateTable("routine_definition")
         .set({
           name: draft.name,
+          enabled: draft.enabled,
           activation_trigger_description: draft.activation.triggerDescription,
           activation_gate_ref: draft.activation.gateRef,
           activation_priority: draft.activation.priority,
           activation_reentry_mode: draft.activation.reentryMode,
+          activation_coverage_criteria: draft.activation.coverageCriteria ? toJsonb(draft.activation.coverageCriteria) : null,
           updated_at: nextAuthoredUpdatedAt(),
         })
         .where("agent_id", "=", agentId)
-        .where("id", "=", id)
-        .where("status", "=", "draft")
+        .where("id", "=", current.id)
         .$if(options.expectedUpdatedAt !== undefined, (query) => query.where(matchesExpectedUpdatedAt(options.expectedUpdatedAt!)))
         .returning("id")
         .executeTakeFirst();
       if (!updated) throw new Error(`routine_definition_update_conflict:${id}`);
-      await this.replaceChildren(trx, id, draft);
-      return this.requireDefinition(trx, agentId, id);
+      await this.replaceChildren(trx, current.id, draft);
+      return this.requireDefinition(trx, agentId, current.id);
     });
   }
 
-  async publishWithAgentDraft(
-    workspaceId: string,
-    agentId: string,
-    draftId: string,
-    options: RoutineDefinitionPublishOptions = {},
-  ): Promise<RoutineDefinition> {
-    return this.mutateAgentDraft(workspaceId, agentId, async (trx) => {
-      const draft = await this.findByIdOn(trx, agentId, draftId);
-      if (!draft) throw new Error(`routine_definition_not_found:${draftId}`);
-      await lockLineage(trx, draft.lineageId);
-      const superseded = await trx.updateTable("routine_definition")
-        .set({ status: "superseded", updated_at: nextAuthoredUpdatedAt() })
-        .where("lineage_id", "=", draft.lineageId)
-        .where("status", "=", "published")
-        .returning("id")
-        .execute();
-      const published = await trx.updateTable("routine_definition")
-        .set({ status: "published", updated_at: nextAuthoredUpdatedAt() })
-        .where("agent_id", "=", agentId)
-        .where("id", "=", draftId)
-        .where("status", "=", "draft")
-        .$if(options.expectedUpdatedAt !== undefined, (query) => query.where(matchesExpectedUpdatedAt(options.expectedUpdatedAt!)))
-        .returning("id")
-        .executeTakeFirst();
-      if (!published) throw new Error(`routine_definition_publish_conflict:${draftId}`);
-      await this.touchCompletionExportDestinationRef(trx, draftId);
-      await options.onPublished?.({
-        previousPublishedId: superseded[0]?.id ?? null,
-        newDefinitionId: draftId,
-        transaction: trx,
-      });
-      return this.requireDefinition(trx, agentId, draftId);
-    });
-  }
-
-  async createRevisionDraftWithAgentDraft(
-    workspaceId: string,
-    agentId: string,
-    publishedId: string,
-  ): Promise<RoutineDefinition | null> {
-    return this.mutateAgentDraft(workspaceId, agentId, async (trx) => {
-      const published = await this.findByIdOn(trx, agentId, publishedId);
-      if (!published || published.status !== "published") return null;
-      await lockLineage(trx, published.lineageId);
-      const existing = await this.findDraftByLineageOn(trx, agentId, published.lineageId);
-      if (existing) return existing;
-      const id = randomUUID();
-      await trx.insertInto("routine_definition").values({
-        id,
-        agent_id: agentId,
-        version: sql<number>`(SELECT COALESCE(MAX(version), 0) + 1 FROM routine_definition WHERE lineage_id = ${published.lineageId})`,
-        name: published.name,
-        status: "draft",
-        activation_trigger_description: published.activation.triggerDescription,
-        activation_gate_ref: published.activation.gateRef,
-        activation_priority: published.activation.priority,
-        activation_reentry_mode: published.activation.reentryMode,
-        lineage_id: published.lineageId,
-      }).execute();
-      await this.replaceChildren(trx, id, published);
-      return this.requireDefinition(trx, agentId, id);
-    });
-  }
-
-  async archiveWithAgentDraft(
+  /**
+   * Takes a routine in or out of service without touching its authored graph, so a list-row
+   * toggle cannot rewrite steps the caller never read.
+   */
+  async setEnabledWithAgentDraft(
     workspaceId: string,
     agentId: string,
     id: string,
-    options: { expectedDraftRevision?: { id: string; updatedAt: Date } | null } = {},
+    enabled: boolean,
   ): Promise<RoutineDefinition | null> {
     return this.mutateAgentDraft(workspaceId, agentId, async (trx) => {
-      const routine = await this.findByIdOn(trx, agentId, id);
-      if (!routine || routine.status !== "published") return null;
-      await lockLineage(trx, routine.lineageId);
-      const archived = await trx.updateTable("routine_definition")
-        .set({ status: "archived", updated_at: nextAuthoredUpdatedAt() })
-        .where("agent_id", "=", agentId).where("id", "=", id).where("status", "=", "published")
-        .returning("id").executeTakeFirst();
-      if (!archived) return null;
-      const draft = await this.findDraftByLineageOn(trx, agentId, routine.lineageId);
-      const expected = options.expectedDraftRevision;
-      if (expected === null && draft) throw new Error(`routine_definition_archive_conflict:${id}`);
-      if (expected && (!draft || draft.id !== expected.id || draft.updatedAt.getTime() !== expected.updatedAt.getTime())) {
-        throw new Error(`routine_definition_archive_conflict:${id}`);
-      }
-      if (draft) await trx.deleteFrom("routine_definition").where("id", "=", draft.id).execute();
-      return this.requireDefinition(trx, agentId, id);
-    });
-  }
-
-  async restoreWithAgentDraft(workspaceId: string, agentId: string, id: string): Promise<RoutineDefinition | null> {
-    return this.mutateAgentDraft(workspaceId, agentId, async (trx) => {
-      const routine = await this.findByIdOn(trx, agentId, id);
-      if (!routine || routine.status !== "archived") return null;
-      await lockLineage(trx, routine.lineageId);
-      const restored = await trx.updateTable("routine_definition as target")
-        .set({ status: "published", updated_at: nextAuthoredUpdatedAt() })
-        .where("target.agent_id", "=", agentId).where("target.id", "=", id).where("target.status", "=", "archived")
-        .where((eb) => eb.not(eb.exists(eb.selectFrom("routine_definition as other").select(sql`1`.as("one"))
-          .whereRef("other.lineage_id", "=", "target.lineage_id").where("other.status", "=", "published").whereRef("other.id", "<>", "target.id"))))
-        .returning("target.id as id").executeTakeFirst();
-      if (!restored) return null;
-      await this.touchCompletionExportDestinationRef(trx, id);
-      return this.requireDefinition(trx, agentId, id);
+      const current = await this.findByIdOn(trx, agentId, id);
+      if (!current) return null;
+      await trx.updateTable("routine_definition")
+        .set({ enabled, updated_at: nextAuthoredUpdatedAt() })
+        .where("agent_id", "=", agentId)
+        .where("id", "=", current.id)
+        .execute();
+      return this.requireDefinition(trx, agentId, current.id);
     });
   }
 
@@ -537,33 +473,42 @@ export class RoutineDefinitionRepository {
   ): Promise<RoutineDefinitionDeleteDraftResult> {
     return this.mutateAgentDraft(workspaceId, agentId, async (trx) => {
       const current = await this.findByIdOn(trx, agentId, id);
-      if (!current || current.status !== "draft") return { outcome: "not_found" };
-      await lockLineage(trx, current.lineageId);
-      const locked = await this.findByIdOn(trx, agentId, id);
-      if (!locked || locked.status !== "draft") return { outcome: "not_found" };
-      if (options.expectedUpdatedAt && locked.updatedAt.getTime() !== options.expectedUpdatedAt.getTime()) {
+      if (!current) return { outcome: "not_found" };
+      if (options.expectedUpdatedAt && current.updatedAt.getTime() !== options.expectedUpdatedAt.getTime()) {
         return { outcome: "conflict" };
       }
-      const deleted = await trx.deleteFrom("routine_definition").where("agent_id", "=", agentId).where("id", "=", id).where("status", "=", "draft").returning("id").executeTakeFirst();
-      return deleted ? { outcome: "deleted" } : { outcome: "not_found" };
+      return this.deleteLineageOn(trx, agentId, current, options);
     });
   }
 
   private async findByIdOn(db: Db, agentId: string, id: string): Promise<RoutineDefinition | null> {
     const result = await sql<RoutineDefinitionRow>`
       ${definitionSelect}
-      WHERE d.agent_id = ${agentId} AND d.id = ${id}
+      WHERE ${canonicalRowForId(agentId, id)}
     `.execute(db);
     const row = result.rows[0];
     return row ? mapRow(row) : null;
   }
 
-  // Resume-only lookup for routine_states pins: a pinned id can reference any
-  // lifecycle status except draft (drafts never run).
+  /** The scalar half of `findByIdOn`, for a caller that only needs the canonical row's own id. */
+  private async resolveCanonicalId(db: Db, agentId: string, id: string): Promise<string | null> {
+    const result = await sql<{ id: string }>`
+      SELECT d.id::text
+      FROM routine_definition d
+      WHERE ${canonicalRowForId(agentId, id)}
+    `.execute(db);
+    return result.rows[0]?.id ?? null;
+  }
+
+  /**
+   * Resume-only lookup for a routine_states pin: the exact stored row, not its lineage's
+   * canonical one. A visitor mid-routine finishes the version they started, including one an
+   * operator has since replaced or disabled.
+   */
   async findPinnedById(agentId: string, id: string): Promise<RoutineDefinition | null> {
     const result = await sql<RoutineDefinitionRow>`
       ${definitionSelect}
-      WHERE d.agent_id = ${agentId} AND d.id = ${id} AND d.status <> 'draft'
+      WHERE d.agent_id = ${agentId} AND d.id = ${id}
     `.execute(this.db);
     const row = result.rows[0];
     return row ? mapRow(row) : null;
@@ -578,7 +523,6 @@ export class RoutineDefinitionRepository {
       .select(["trigger_embedding_hash", "trigger_embedding_model"])
       .where("agent_id", "=", agentId)
       .where("id", "=", routineId)
-      .where("status", "=", "published")
       .executeTakeFirst();
     return row ? { hash: row.trigger_embedding_hash, model: row.trigger_embedding_model } : null;
   }
@@ -602,7 +546,6 @@ export class RoutineDefinitionRepository {
       })
       .where("agent_id", "=", input.agentId)
       .where("id", "=", input.routineId)
-      .where("status", "=", "published")
       .execute();
   }
 
@@ -616,7 +559,6 @@ export class RoutineDefinitionRepository {
       })
       .where("agent_id", "=", input.agentId)
       .where("id", "=", input.routineId)
-      .where("status", "=", "published")
       .execute();
   }
 
@@ -677,13 +619,14 @@ export class RoutineDefinitionRepository {
           agent_id: agentId,
           version: 1,
           name: draft.name,
-          status: "draft",
+          status: "published",
+          enabled: draft.enabled,
           activation_trigger_description: draft.activation.triggerDescription,
           activation_gate_ref: draft.activation.gateRef,
           activation_priority: draft.activation.priority,
           activation_reentry_mode: draft.activation.reentryMode,
           activation_coverage_criteria: draft.activation.coverageCriteria ? toJsonb(draft.activation.coverageCriteria) : null,
-          lineage_id: randomUUID(),
+          lineage_id: id,
         })
         .execute();
       await this.replaceChildren(trx, id, draft);
@@ -702,11 +645,18 @@ export class RoutineDefinitionRepository {
     options: { expectedUpdatedAt?: Date } = {},
   ): Promise<RoutineDefinition> {
     const draft = routineDefinitionDraftInputSchema.parse(input);
+    // A scalar id lookup, not the full graph read `findById` would do: every field this method
+    // touches is either supplied by the caller's draft or is the row's own identity.
+    const canonicalId = await this.resolveCanonicalId(this.db, agentId, id);
+    if (!canonicalId) {
+      throw new Error(`routine_definition_update_conflict:${id}`);
+    }
     await this.db.transaction().execute(async (trx) => {
       const updated = await trx
         .updateTable("routine_definition")
         .set({
           name: draft.name,
+          enabled: draft.enabled,
           activation_trigger_description: draft.activation.triggerDescription,
           activation_gate_ref: draft.activation.gateRef,
           activation_priority: draft.activation.priority,
@@ -715,249 +665,22 @@ export class RoutineDefinitionRepository {
           updated_at: nextAuthoredUpdatedAt(),
         })
         .where("agent_id", "=", agentId)
-        .where("id", "=", id)
-        .where("status", "=", "draft")
+        .where("id", "=", canonicalId)
         .$if(options.expectedUpdatedAt !== undefined, (query) => query.where(matchesExpectedUpdatedAt(options.expectedUpdatedAt!)))
         .returning("id")
         .execute();
-      // A save racing publish (which flips the draft row to published in place)
-      // matches zero rows here; replacing children then would silently mutate
-      // the published version. Abort before touching children. A caller that
-      // supplied expectedUpdatedAt lands here for a racing edit too, which is the
-      // point: its decision was made against content this row no longer holds.
+      // A caller that supplied expectedUpdatedAt lands here for a racing edit: its decision was
+      // made against content this row no longer holds, so abort before touching children.
       if (updated.length === 0) {
         throw new Error(`routine_definition_update_conflict:${id}`);
       }
-      await this.replaceChildren(trx, id, draft);
+      await this.replaceChildren(trx, canonicalId, draft);
     });
-    const loaded = await this.findById(agentId, id);
+    const loaded = await this.findById(agentId, canonicalId);
     if (!loaded) {
-      throw new Error(`routine_definition_not_found:${id}`);
+      throw new Error(`routine_definition_not_found:${canonicalId}`);
     }
     return loaded;
-  }
-
-  async publish(agentId: string, draftId: string, options: RoutineDefinitionPublishOptions = {}): Promise<RoutineDefinition> {
-    const draft = await this.findById(agentId, draftId);
-    if (!draft) {
-      throw new Error(`routine_definition_not_found:${draftId}`);
-    }
-    await this.db.transaction().execute(async (trx) => {
-      // Serialize concurrent publishes of the same lineage before any supersede/flip,
-      // so the supersede→publish pair below is atomic per lineage. Order matters.
-      await lockLineage(trx, draft.lineageId);
-      const superseded = await trx
-        .updateTable("routine_definition")
-        .set({ status: "superseded", updated_at: nextAuthoredUpdatedAt() })
-        .where("lineage_id", "=", draft.lineageId)
-        .where("status", "=", "published")
-        .returning("id")
-        .execute();
-      const published = await trx
-        .updateTable("routine_definition")
-        .set({ status: "published", updated_at: nextAuthoredUpdatedAt() })
-        .where("agent_id", "=", agentId)
-        .where("id", "=", draftId)
-        .where("status", "=", "draft")
-        // Publishing puts this content in front of customers, so a caller that reviewed a
-        // specific version states it here rather than publishing whatever the draft became.
-        .$if(options.expectedUpdatedAt !== undefined, (query) => query.where(matchesExpectedUpdatedAt(options.expectedUpdatedAt!)))
-        .returning("id")
-        .execute();
-      if (published.length === 0) {
-        throw new Error(`routine_definition_publish_conflict:${draftId}`);
-      }
-      await this.touchCompletionExportDestinationRef(trx, draftId);
-      await options.onPublished?.({
-        previousPublishedId: superseded[0]?.id ?? null,
-        newDefinitionId: draftId,
-        transaction: trx,
-      });
-    });
-    const loaded = await this.findById(agentId, draftId);
-    if (!loaded) {
-      throw new Error(`routine_definition_not_found:${draftId}`);
-    }
-    return loaded;
-  }
-
-  async createRevisionDraft(agentId: string, publishedId: string): Promise<RoutineDefinition | null> {
-    const published = await this.findById(agentId, publishedId);
-    if (!published || published.status !== "published") {
-      return null;
-    }
-    const existingDraft = await this.findDraftByLineage(agentId, published.lineageId);
-    if (existingDraft) {
-      return existingDraft;
-    }
-
-    const id = randomUUID();
-    try {
-      await this.db.transaction().execute(async (trx) => {
-        await lockLineage(trx, published.lineageId);
-        // Re-read under the lock. An archive that committed since the read above retires the whole
-        // lineage, and a revision inserted for it would outlive the routine it revises.
-        const stillPublished = await trx
-          .selectFrom("routine_definition")
-          .select("id")
-          .where("agent_id", "=", agentId)
-          .where("id", "=", publishedId)
-          .where("status", "=", "published")
-          .executeTakeFirst();
-        if (!stillPublished) {
-          throw new Error(routineLineageRetiredMarker);
-        }
-        await trx
-          .insertInto("routine_definition")
-          .values({
-            id,
-            agent_id: agentId,
-            // Next version for this lineage, computed in-statement to stay correct under
-            // the unique (lineage_id, version) constraint that drives the retry below.
-            version: sql<number>`(
-              SELECT COALESCE(MAX(version), 0) + 1
-              FROM routine_definition
-              WHERE lineage_id = ${published.lineageId}
-            )`,
-            name: published.name,
-            status: "draft",
-            activation_trigger_description: published.activation.triggerDescription,
-            activation_gate_ref: published.activation.gateRef,
-            activation_priority: published.activation.priority,
-            activation_reentry_mode: published.activation.reentryMode,
-            activation_coverage_criteria: published.activation.coverageCriteria ? toJsonb(published.activation.coverageCriteria) : null,
-            lineage_id: published.lineageId,
-          })
-          .execute();
-        await this.replaceChildren(trx, id, published);
-      });
-    } catch (error) {
-      if (error instanceof Error && error.message === routineLineageRetiredMarker) {
-        return null;
-      }
-      if (!isUniqueViolation(error)) {
-        throw error;
-      }
-      const racedDraft = await this.findDraftByLineage(agentId, published.lineageId);
-      if (racedDraft) {
-        return racedDraft;
-      }
-      throw error;
-    }
-    const loaded = await this.findById(agentId, id);
-    if (!loaded) {
-      throw new Error(`routine_definition_not_found:${id}`);
-    }
-    return loaded;
-  }
-
-  async archive(
-    agentId: string,
-    id: string,
-    options: { expectedDraftRevision?: { id: string; updatedAt: Date } | null } = {},
-  ): Promise<boolean> {
-    return this.db.transaction().execute(async (trx) => {
-      const target = await trx
-        .selectFrom("routine_definition")
-        .select("lineage_id")
-        .where("agent_id", "=", agentId)
-        .where("id", "=", id)
-        .executeTakeFirst();
-      if (!target) {
-        return false;
-      }
-      // Held before the status flip so a revision cannot be created against this lineage while the
-      // draft precondition below is being checked and the draft deleted.
-      await lockLineage(trx, target.lineage_id);
-      const row = await trx
-        .updateTable("routine_definition")
-        .set({ status: "archived", updated_at: nextAuthoredUpdatedAt() })
-        .where("agent_id", "=", agentId)
-        .where("id", "=", id)
-        .where("status", "=", "published")
-        .returning(["id", "lineage_id"])
-        .executeTakeFirst();
-      if (!row) {
-        return false;
-      }
-      // Archiving retires the routine, so it discards any in-progress revision draft in the same
-      // lineage rather than leaving it orphaned once nothing is published. A caller that told an
-      // operator what would be lost states it, and the delete itself carries that claim.
-      const expected = options.expectedDraftRevision;
-      if (expected === undefined) {
-        await trx
-          .deleteFrom("routine_definition")
-          .where("agent_id", "=", agentId)
-          .where("lineage_id", "=", row.lineage_id)
-          .where("status", "=", "draft")
-          .execute();
-        return true;
-      }
-      if (expected === null) {
-        // No new draft can appear while this transaction holds the lineage lock, so a plain read
-        // settles "there was nothing to lose".
-        const draft = await trx
-          .selectFrom("routine_definition")
-          .select("id")
-          .where("agent_id", "=", agentId)
-          .where("lineage_id", "=", row.lineage_id)
-          .where("status", "=", "draft")
-          .executeTakeFirst();
-        if (draft) {
-          throw new Error(`routine_definition_archive_conflict:${id}`);
-        }
-        return true;
-      }
-      // Editing a draft does not take the lineage lock, so reading it and then deleting it would
-      // leave a window a save commits in. The predicate travels into the delete instead: it waits
-      // on that save's row lock and is re-evaluated against the row the save left behind, so a
-      // draft that moved on matches nothing and the archive is refused rather than taking it.
-      const discarded = await trx
-        .deleteFrom("routine_definition")
-        .where("agent_id", "=", agentId)
-        .where("lineage_id", "=", row.lineage_id)
-        .where("status", "=", "draft")
-        .where("id", "=", expected.id)
-        .where(matchesExpectedUpdatedAt(expected.updatedAt))
-        .returning("id")
-        .executeTakeFirst();
-      if (!discarded) {
-        throw new Error(`routine_definition_archive_conflict:${id}`);
-      }
-      return true;
-    });
-  }
-
-  async restore(agentId: string, id: string): Promise<boolean> {
-    return this.db.transaction().execute(async (trx) => {
-      // NOT EXISTS guards the lineage invariant of at most one published row: restore is a
-      // no-op if another version of this lineage is already published.
-      const row = await trx
-        .updateTable("routine_definition as target")
-        .set({ status: "published", updated_at: nextAuthoredUpdatedAt() })
-        .where("target.agent_id", "=", agentId)
-        .where("target.id", "=", id)
-        .where("target.status", "=", "archived")
-        .where((eb) =>
-          eb.not(
-            eb.exists(
-              eb
-                .selectFrom("routine_definition as other")
-                .select(sql`1`.as("one"))
-                .whereRef("other.lineage_id", "=", "target.lineage_id")
-                .where("other.status", "=", "published")
-                .whereRef("other.id", "<>", "target.id"),
-            ),
-          ),
-        )
-        .returning("target.id as id")
-        .execute();
-      if (row.length === 0) {
-        return false;
-      }
-      await this.touchCompletionExportDestinationRef(trx, id);
-      return true;
-    });
   }
 
   async deleteDraft(
@@ -965,46 +688,95 @@ export class RoutineDefinitionRepository {
     id: string,
     options: { expectedUpdatedAt?: Date } = {},
   ): Promise<RoutineDefinitionDeleteDraftResult> {
-    return this.db.transaction().execute(async (trx) => {
-      const current = await trx
-        .selectFrom("routine_definition")
-        .select(["status", "updated_at"])
-        .where("agent_id", "=", agentId)
-        .where("id", "=", id)
-        .forUpdate()
-        .executeTakeFirst();
-      if (!current || current.status !== "draft") {
-        return { outcome: "not_found" };
-      }
-      // The row lock makes this classification and the delete one decision: a draft that moved
-      // since the caller read it is a conflict, while absence or a lifecycle transition remains
-      // the existing not-found behavior.
-      if (
-        options.expectedUpdatedAt !== undefined &&
-        current.updated_at.getTime() !== options.expectedUpdatedAt.getTime()
-      ) {
-        return { outcome: "conflict" };
-      }
-      await trx
-        .deleteFrom("routine_definition")
-        .where("agent_id", "=", agentId)
-        .where("id", "=", id)
-        .where("status", "=", "draft")
-        .execute();
-      return { outcome: "deleted" };
-    });
+    const current = await this.findById(agentId, id);
+    if (!current) {
+      return { outcome: "not_found" };
+    }
+    if (options.expectedUpdatedAt !== undefined && current.updatedAt.getTime() !== options.expectedUpdatedAt.getTime()) {
+      return { outcome: "conflict" };
+    }
+    return this.db.transaction().execute((trx) => this.deleteLineageOn(trx, agentId, current, options));
   }
 
-  async listPublishedRoutineNamesReferencingDestination(workspaceId: string, destinationId: string): Promise<string[]> {
+  /**
+   * A "deleted" routine is disabled, not removed, unless nothing could possibly still depend on
+   * it. `findPinnedById` addresses the exact stored row an in-flight `routine_states` pin names,
+   * independent of `enabled` — an unpinned conversation mid-routine resolves through it too, on
+   * the reactivation path. Hard-deleting a row that ever served would turn that lookup into a
+   * null and break the conversation.
+   *
+   * A row is safe to remove outright only when nothing in its lineage could ever have been live:
+   * exactly one row (a branched, pre-collapse lineage only exists because an earlier version was
+   * published — see migration 090), and its containing agent has never published a revision
+   * created at or after the row's own creation. The agent revision system is the only publication
+   * boundary (see the routine lifecycle collapse), so that — not the row's own current `enabled`
+   * flag — is the true "could this ever have gone live" signal: a routine defaults to `enabled:
+   * true` the moment it is created, long before any operator gets a chance to turn it off, so an
+   * ordinary create-then-immediately-delete flow must not read as "may have served" just because
+   * nothing has toggled it yet. Everything else is disabled in place.
+   */
+  private async deleteLineageOn(
+    db: Db,
+    agentId: string,
+    canonical: RoutineDefinition,
+    options: { expectedUpdatedAt?: Date } = {},
+  ): Promise<RoutineDefinitionDeleteDraftResult> {
+    const [{ count }] = (await sql<{ count: string }>`
+      SELECT COUNT(*)::text AS count FROM routine_definition WHERE lineage_id = ${canonical.lineageId}
+    `.execute(db)).rows;
+    const [{ couldHaveServed }] = (await sql<{ couldHaveServed: boolean }>`
+      SELECT EXISTS (
+        SELECT 1 FROM agent_revisions
+        WHERE agent_id = ${agentId}
+          AND published_at IS NOT NULL
+          AND created_at >= ${canonical.createdAt}::timestamptz
+      ) AS "couldHaveServed"
+    `.execute(db)).rows;
+    const neverServed = Number(count) === 1 && !couldHaveServed;
+    // A caller that names an expectation already confirmed the row existed a moment ago (the
+    // callers above both re-read it first), so a guard mismatch here can only mean a concurrent
+    // write landed in between — the write races checked in application code, not "not found".
+    const guardMissOutcome = options.expectedUpdatedAt !== undefined ? "conflict" as const : "not_found" as const;
+
+    if (!neverServed) {
+      const disabled = await db
+        .updateTable("routine_definition")
+        .set({ enabled: false, updated_at: nextAuthoredUpdatedAt() })
+        .where("agent_id", "=", agentId)
+        .where("id", "=", canonical.id)
+        .$if(options.expectedUpdatedAt !== undefined, (query) => query.where(matchesExpectedUpdatedAt(options.expectedUpdatedAt!)))
+        .returning("id")
+        .execute();
+      return disabled.length > 0 ? { outcome: "deleted" } : { outcome: guardMissOutcome };
+    }
+
+    const deleted = await db
+      .deleteFrom("routine_definition")
+      .where("agent_id", "=", agentId)
+      .where("lineage_id", "=", canonical.lineageId)
+      .$if(options.expectedUpdatedAt !== undefined, (query) => query.where(matchesExpectedUpdatedAt(options.expectedUpdatedAt!)))
+      .returning("id")
+      .execute();
+    return deleted.length > 0 ? { outcome: "deleted" } : { outcome: guardMissOutcome };
+  }
+
+  /**
+   * Routines that reference a webhook destination, so deleting it cannot orphan one. Matches the
+   * `enabled`-gated delete-block trigger on `workspace_webhook_destinations` (migration 182):
+   * a disabled routine no longer holds the destination in service, so it must not appear here
+   * either, or the friendly pre-check would report a block the trigger itself would not enforce.
+   */
+  async listRoutineNamesReferencingDestination(workspaceId: string, destinationId: string): Promise<string[]> {
     const rows = await this.db
       .selectFrom("routine_completion_export as ce")
       .innerJoin("routine_definition as d", "d.id", "ce.definition_id")
       .innerJoin("agents as a", "a.id", "d.agent_id")
       .select("d.name")
       .where("a.workspace_id", "=", workspaceId)
+      .where("d.enabled", "=", true)
       .where("ce.enabled", "=", true)
       .where(sql<boolean>`lower(ce.destination_ref) = lower(${destinationId})`)
-      .where("d.status", "=", "published")
+      .where(canonicalLineageRow)
       .orderBy("d.name", "asc")
       .orderBy("d.version", "asc")
       .orderBy("d.id", "asc")
@@ -1012,24 +784,39 @@ export class RoutineDefinitionRepository {
     return rows.map((row) => row.name);
   }
 
-  private async findDraftByLineage(agentId: string, lineageId: string): Promise<RoutineDefinition | null> {
-    return this.findDraftByLineageOn(this.db, agentId, lineageId);
-  }
-
-  private async findDraftByLineageOn(db: Db, agentId: string, lineageId: string): Promise<RoutineDefinition | null> {
-    const result = await sql<RoutineDefinitionRow>`
-      ${definitionSelect}
-      WHERE d.agent_id = ${agentId} AND d.lineage_id = ${lineageId} AND d.status = 'draft'
-    `.execute(db);
+  /**
+   * The row (if any) already occupying `(agent_id, name, version=1)` — the exact identity a
+   * fresh `createDraft` would take, and the real unique-constraint key
+   * (`routine_definition_agent_id_name_version_key`). Deliberately not scoped to canonical rows:
+   * a retired, non-canonical row from a pre-cutover branched lineage can still hold this slot
+   * while its lineage's canonical row has since been renamed to something else, so a canonical-
+   * only read would miss a real conflict. Backs the copilot's create-proposal version token
+   * (`proposalAdapters.ts`), which needs to know whether a create would conflict without
+   * attempting one.
+   */
+  async findNameVersionOneOccupant(agentId: string, name: string): Promise<{ id: string; updatedAt: Date } | null> {
+    const result = await sql<{ id: string; updated_at: Date }>`
+      SELECT id, updated_at FROM routine_definition
+      WHERE agent_id = ${agentId} AND name = ${name} AND version = 1
+    `.execute(this.db);
     const row = result.rows[0];
-    return row ? mapRow(row) : null;
+    return row ? { id: row.id, updatedAt: new Date(row.updated_at) } : null;
   }
 
   private async listByAgentOn(db: Db, agentId: string): Promise<RoutineDefinition[]> {
     const result = await sql<RoutineDefinitionRow>`
       ${definitionSelect}
+      WHERE d.agent_id = ${agentId} AND ${canonicalLineageRow}
+      ORDER BY d.name ASC, d.created_at ASC, d.id ASC
+    `.execute(db);
+    return result.rows.map(mapRow);
+  }
+
+  private async listVersionsByAgentOn(db: Db, agentId: string): Promise<RoutineDefinition[]> {
+    const result = await sql<RoutineDefinitionRow>`
+      ${definitionSelect}
       WHERE d.agent_id = ${agentId}
-      ORDER BY d.status ASC, d.name ASC, d.version ASC, d.created_at ASC, d.id ASC
+      ORDER BY d.name ASC, d.version ASC, d.created_at ASC, d.id ASC
     `.execute(db);
     return result.rows.map(mapRow);
   }
@@ -1058,21 +845,24 @@ export class RoutineDefinitionRepository {
     });
   }
 
-  /** Reads the final normalized graph after a lifecycle mutation, never a stale input object. */
+  /** Reads the final normalized graph after a routine write, never a stale input object. */
   private async projectDraftSnapshot(
     trx: Transaction<DB>,
     agentId: string,
     snapshot: AgentRevisionSnapshot,
   ): Promise<AgentRevisionSnapshot> {
+    // Every stored version, because a directive scope tag authored before the collapse can still
+    // name a row its lineage branched past; the projection below is what moves that tag onto the
+    // row the snapshot actually carries.
     const [definitions, directives] = await Promise.all([
-      this.listByAgentOn(trx, agentId),
+      this.listVersionsByAgentOn(trx, agentId),
       sql<AgentDirectiveRow>`
         SELECT * FROM agent_directives
         WHERE agent_id = ${agentId}
         ORDER BY created_at ASC, id ASC
       `.execute(trx),
     ]);
-    const selectedRoutines = selectDraftRoutineDefinitions(definitions);
+    const selectedRoutines = selectCanonicalRoutineDefinitions(definitions);
     return {
       ...snapshot,
       routines: selectedRoutines,
@@ -1082,15 +872,6 @@ export class RoutineDefinitionRepository {
         selectedRoutines,
       ),
     };
-  }
-
-  private async touchCompletionExportDestinationRef(db: Db, definitionId: string): Promise<void> {
-    await db
-      .updateTable("routine_completion_export")
-      .set((eb) => ({ destination_ref: eb.ref("destination_ref") }))
-      .where("definition_id", "=", definitionId)
-      .where("enabled", "=", true)
-      .execute();
   }
 
   private async replaceChildren(db: Db, definitionId: string, input: RoutineDefinitionDraftInput): Promise<void> {

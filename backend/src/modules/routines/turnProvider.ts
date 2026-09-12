@@ -196,29 +196,44 @@ export const createRoutineTurnProvider = (
       }
     }
 
+    const activationPrefilter = workspaceId
+      ? createRoutineActivationPrefilter({
+          accountId,
+          clusteringEmbeddings: dependencies.clusteringEmbeddings,
+          embeddingModelForWorkspace: dependencies.embeddingModelForWorkspace,
+          logger: dependencies.logger,
+          routineDefinitionRepository: dependencies.routineDefinitionRepository,
+          selfHealTriggerEmbedding: ({ routineId, description, embedding, model }) => {
+            void dependencies.routineTriggerEmbeddingService.persistPublished({
+              workspaceId,
+              agentId,
+              routine: { id: routineId, activation: { triggerDescription: description } },
+              precomputed: { embedding, model },
+            });
+          },
+          workspaceId,
+        })
+      : undefined;
     const routineRegistryOptions = {
       policy: routineActivationPolicy,
       promptTemplate: loadPromptTemplate("chat/routine-ranked-activation.md"),
-      ...(workspaceId
-        ? {
-            activationPrefilter: createRoutineActivationPrefilter({
-              accountId,
-              clusteringEmbeddings: dependencies.clusteringEmbeddings,
-              embeddingModelForWorkspace: dependencies.embeddingModelForWorkspace,
-              logger: dependencies.logger,
-              routineDefinitionRepository: dependencies.routineDefinitionRepository,
-              selfHealTriggerEmbedding: ({ routineId, description, embedding, model }) => {
-                void dependencies.routineTriggerEmbeddingService.persistPublished({
-                  workspaceId,
-                  agentId,
-                  routine: { id: routineId, activation: { triggerDescription: description } },
-                  precomputed: { embedding, model },
-                });
-              },
-              workspaceId,
-            }),
-          }
-        : {}),
+      ...(activationPrefilter ? { activationPrefilter } : {}),
+    };
+    // Coverage-gated candidates are already narrowed to a structural, coverage-
+    // criteria match before this ranking step runs. The legacy ranked-activation
+    // prompt asks whether the user's message "wants to start" a routine, which a
+    // state-triggered fallback (its trigger describes a coverage gap, not a
+    // topic) can never satisfy in its own words, so this path uses a differently
+    // framed prompt. The embedding prefilter is deliberately omitted here too: it
+    // scores cosine similarity between the user's message and the routine's
+    // trigger description, which is a meaningful topic signal for legacy,
+    // intent-phrased triggers but not for a coverage-gated trigger, which
+    // describes a system state ("no answer found"), not a topic. No wording of
+    // that trigger can make it embed close to an arbitrary unanswered question,
+    // so running it through the same prefilter only produces false negatives.
+    const coverageRoutineRegistryOptions = {
+      policy: routineActivationPolicy,
+      promptTemplate: loadPromptTemplate("chat/routine-coverage-ranked-activation.md"),
     };
     // Pinned and preview definitions replace the same routine ID for every
     // runtime path. Partition only after this precedence is resolved, otherwise
@@ -356,7 +371,7 @@ export const createRoutineTurnProvider = (
                 if (matchedRegistrations.length === 0) {
                   return null;
                 }
-                return new RoutineRegistry(matchedRegistrations, routineRegistryOptions)
+                return new RoutineRegistry(matchedRegistrations, coverageRoutineRegistryOptions)
                   .activator(modelGateway)
                   .activate(activationInput);
               },

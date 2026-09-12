@@ -8,6 +8,7 @@ import {
   changeBranchGuardKind,
   changeStepKind,
   createEndingForBranch,
+  insertStep,
   moveStep,
   nextApprovalOptionId,
   referenceEnding,
@@ -330,12 +331,43 @@ describe('routine document edits', () => {
       lineageId: 'local-lineage',
       agentId: 'local-agent',
       version: 1,
-      status: 'draft',
+      enabled: true,
       createdAt: new Date(0).toISOString(),
       updatedAt: new Date(0).toISOString(),
     })
     const form = routineToForm(draftAsRoutine(draft))
     expect(form.steps.find((step) => step.stableStepId === 'step_3')?.transitions.map((transition) => transition.guardKind)).toEqual(['field', 'llm'])
+  })
+
+  describe('inserting a step at a position', () => {
+    it('splices a new step immediately after the named step, ahead of what followed it', () => {
+      const withTwo = addStep(source(), 'chat')
+      expect(withTwo.steps.map((step) => step.stableStepId)).toEqual(['ask_email', 'step_1'])
+
+      const inserted = insertStep(withTwo, 'ask_email', 'tool')
+
+      expect(inserted.steps.map((step) => step.stableStepId)).toEqual(['ask_email', 'step_2', 'step_1'])
+      expect(inserted.steps[1]).toMatchObject({ kind: 'tool', toolRef: '' })
+    })
+
+    it('creates one decision edge per option when inserting an approval step', () => {
+      const inserted = insertStep(source(), 'ask_email', 'approval')
+      const approval = inserted.steps[1]
+
+      expect(approval.kind).toBe('approval')
+      expect(approval.branches).toHaveLength(2)
+    })
+
+    it('leaves the document alone when the anchor step does not exist', () => {
+      const doc = source()
+      expect(insertStep(doc, 'missing_step', 'chat')).toEqual(doc)
+    })
+
+    it('does not mutate the source document', () => {
+      const original = source()
+      insertStep(original, 'ask_email', 'chat')
+      expect(original.steps).toHaveLength(1)
+    })
   })
 
   it('allocates approval option ids without colliding after deletion', () => {

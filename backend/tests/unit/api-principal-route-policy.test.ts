@@ -55,7 +55,7 @@ describe("API principal route policy", () => {
 
   it.each([
     ["POST", "/api/v1/retrieval/search"],
-    ["POST", "/api/v1/agents/agent-1/routines/routine-1/publish"],
+    ["PATCH", "/api/v1/agents/agent-1/routines/routine-1"],
     ["GET", "/api/v1/document/document-1/chunks"],
     ["PUT", "/api/v1/context-variables/variable-1/values"],
   ])("allows declared ordinary %s %s operations", (method, path) => {

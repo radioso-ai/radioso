@@ -212,7 +212,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     access.accessGrantService,
     agentSkillRepository,
   );
-  const agentRevisionService = new AgentRevisionService(repositories.agentRevisionRepository, randomUUID);
   // Shared by routine publishing (write-time trigger embedding) and the chat
   // activation prefilter (lazy self-heal of unembedded/stale rows) so both
   // paths dedup concurrent embedding work through one instance.
@@ -398,6 +397,17 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     routineDefinitionService,
     routineDraftAssistService,
   } = routineAuthoring;
+  // Constructed only once the routine authoring services exist: the agent-revision release
+  // gate needs RoutineDefinitionService's skill/capability/webhook-aware validation
+  // (validateForServing) to reject a candidate or publish whose enabled routine references a
+  // skill, capability, or webhook destination the workspace no longer has.
+  const agentRevisionService = new AgentRevisionService(repositories.agentRevisionRepository, randomUUID, {
+    validateForServing: routineDefinitionService.validateForServing.bind(routineDefinitionService),
+    // Batched form: a candidate/publish snapshot's enabled routines all belong to one agent, so
+    // this resolves the workspace-scoped skill/context-variable state once for the whole release
+    // check instead of once per routine (item 8 of the routine-lifecycle-collapse review).
+    validateManyForServing: routineDefinitionService.validateManyForServing.bind(routineDefinitionService),
+  });
   const evalServices = buildEvalServices({
     chat,
     infrastructure,

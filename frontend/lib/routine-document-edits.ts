@@ -16,7 +16,7 @@ const nextId = (prefix: string, ids: Iterable<string>) => {
 export const nextApprovalOptionId = (options: ApprovalDocOption[]): string =>
   nextId('option', options.map((option) => option.id))
 
-export const createDocumentStep = (kind: RoutineStepKind, existing: RoutineBlockStep[]): RoutineBlockStep => {
+const createDocumentStep = (kind: RoutineStepKind, existing: RoutineBlockStep[]): RoutineBlockStep => {
   const stableStepId = nextId('step', existing.map((step) => step.stableStepId))
   return {
     stableStepId,
@@ -52,6 +52,19 @@ export const addStep = (doc: RoutineBlockDoc, kind: RoutineStepKind): RoutineBlo
   const step = createDocumentStep(kind, next.steps)
   if (next.steps.length === 1 && isPristineSeedStep(next.steps[0])) next.steps = [step]
   else next.steps.push(step)
+  return kind === 'approval' ? syncApprovalBranches(next, step.stableStepId) : next
+}
+
+// Splices a new step right after `afterStepId` instead of appending, so an author can put
+// a step in the middle without adding it at the end and moving it up by hand. Ordinal and
+// every branch target are positional or id-based respectively, so a mid-array splice needs
+// no further repair.
+export const insertStep = (doc: RoutineBlockDoc, afterStepId: string, kind: RoutineStepKind): RoutineBlockDoc => {
+  const next = copy(doc)
+  const index = next.steps.findIndex((step) => step.stableStepId === afterStepId)
+  if (index === -1) return next
+  const step = createDocumentStep(kind, next.steps)
+  next.steps.splice(index + 1, 0, step)
   return kind === 'approval' ? syncApprovalBranches(next, step.stableStepId) : next
 }
 
@@ -335,7 +348,7 @@ const approvalOptionGuard = (captureKey: string, optionId: string): RoutineBlock
 const isApprovalOptionBranch = (branch: RoutineBlockBranch, fieldRefs: string[]) =>
   branch.guard.kind === 'field' && branch.guard.fieldOp === 'equals' && branch.guard.fieldRef !== null && branch.guard.fieldRef !== undefined && fieldRefs.includes(branch.guard.fieldRef)
 
-export const syncApprovalBranches = (doc: RoutineBlockDoc, stepId: string, previousCaptureKey?: string | null): RoutineBlockDoc => {
+const syncApprovalBranches = (doc: RoutineBlockDoc, stepId: string, previousCaptureKey?: string | null): RoutineBlockDoc => {
   const next = copy(doc)
   const step = next.steps.find((candidate) => candidate.stableStepId === stepId)
   if (!step || step.kind !== 'approval' || !step.captureKey) return next

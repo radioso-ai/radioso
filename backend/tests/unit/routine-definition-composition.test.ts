@@ -13,7 +13,7 @@ const definition: RoutineDefinition = {
   lineageId: "lineage_1",
   name: "handoff",
   version: 1,
-  status: "published",
+  enabled: true,
   activation: { triggerDescription: "The user asks for help.", gateRef: "retrieval.answer", priority: 7, reentryMode: "once_per_conversation" },
   slots: [],
   steps: [{ stableStepId: "ask", kind: "chat", instruction: "Ask what they need.", toolRef: null, ordinal: 0, metadata: {} }],
@@ -23,15 +23,15 @@ const definition: RoutineDefinition = {
   updatedAt: new Date("2026-06-09T00:00:00.000Z"),
 };
 
-type SourceRepository = Pick<RoutineDefinitionRepository, "listPublishedByAgent" | "listByAgent" | "findPinnedById" | "findById">;
+type SourceRepository = Pick<RoutineDefinitionRepository, "listActiveByAgent" | "listVersionsByAgent" | "findPinnedById" | "findById">;
 
 describe("DB-backed routine composition source", () => {
   it("loads the complete routine closure from a pinned agent revision instead of mutable routine rows", async () => {
     const mutableDefinition = { ...definition, name: "mutable latest" };
     const frozenDefinition = { ...definition, activation: { ...definition.activation, priority: 12 } };
     const repository = {
-      listPublishedByAgent: vi.fn(async () => [mutableDefinition]),
-      listByAgent: vi.fn(async () => [mutableDefinition]),
+      listActiveByAgent: vi.fn(async () => [mutableDefinition]),
+      listVersionsByAgent: vi.fn(async () => [mutableDefinition]),
       findPinnedById: vi.fn(async () => mutableDefinition),
       findById: vi.fn(async () => mutableDefinition),
     } as SourceRepository;
@@ -42,6 +42,7 @@ describe("DB-backed routine composition source", () => {
       sourceBasePublishedRevisionId: null,
       createdAt: new Date(),
       publishedAt: new Date(),
+      publishedVersion: 1,
     };
     const revisionReader = { findRevision: vi.fn(async () => frozenRevision) };
     const source = createPublishedRoutineRegistrationSource(repository, { revisionReader });
@@ -49,7 +50,7 @@ describe("DB-backed routine composition source", () => {
     const registrations = await source.load({ agentId: "agent_1", workspaceId: "ws_1", agentRevisionId: frozenRevision.id });
 
     expect(registrations.map((registration) => registration.trigger.priority)).toEqual([12]);
-    expect(repository.listPublishedByAgent).not.toHaveBeenCalled();
+    expect(repository.listActiveByAgent).not.toHaveBeenCalled();
     expect(revisionReader.findRevision).toHaveBeenCalledWith({
       agentId: "agent_1",
       workspaceId: "ws_1",
@@ -59,17 +60,17 @@ describe("DB-backed routine composition source", () => {
 
   it("carries persisted coverage criteria into the engine activation", async () => {
     const repository = {
-      listPublishedByAgent: vi.fn(async () => [{ ...definition, activation: { ...definition.activation, coverageCriteria: { coverage: ["partial"], reasons: ["insufficient_evidence"] } } }]),
-      listByAgent: vi.fn(async () => []), findPinnedById: vi.fn(async () => null), findById: vi.fn(async () => null),
+      listActiveByAgent: vi.fn(async () => [{ ...definition, activation: { ...definition.activation, coverageCriteria: { coverage: ["partial"], reasons: ["insufficient_evidence"] } } }]),
+      listVersionsByAgent: vi.fn(async () => []), findPinnedById: vi.fn(async () => null), findById: vi.fn(async () => null),
     } as SourceRepository;
     const registrations = await createPublishedRoutineRegistrationSource(repository).load({ agentId: "agent_1" });
     expect(registrations[0].routine.activation?.coverageCriteria).toEqual({ coverage: ["partial"], reasons: ["insufficient_evidence"] });
   });
 
-  it("compiles published definitions with the definition id as the routine id (scope-tag identity)", async () => {
+  it("compiles active definitions with the definition id as the routine id (scope-tag identity)", async () => {
     const repository = {
-      listPublishedByAgent: vi.fn(async () => [definition]),
-      listByAgent: vi.fn(async () => [definition]),
+      listActiveByAgent: vi.fn(async () => [definition]),
+      listVersionsByAgent: vi.fn(async () => [definition]),
       findPinnedById: vi.fn(async () => null),
       findById: vi.fn(async () => null),
     } as SourceRepository;
@@ -77,7 +78,7 @@ describe("DB-backed routine composition source", () => {
 
     const registrations = await source.load({ agentId: "agent_1" });
 
-    expect(repository.listPublishedByAgent).toHaveBeenCalledWith("agent_1");
+    expect(repository.listActiveByAgent).toHaveBeenCalledWith("agent_1");
     // Directive scope tags (`routine:<id>` / `step:<id>:<stepId>`) match against
     // the engine's activeRoutineId — the compiled id must BE the definition id.
     expect(registrations[0].routine.id).toBe(DEFINITION_ID);
@@ -96,10 +97,10 @@ describe("DB-backed routine composition source", () => {
     });
   });
 
-  it("returns no registrations when an agent has no published routine definitions", async () => {
+  it("returns no registrations when an agent has no active routine definitions", async () => {
     const repository = {
-      listPublishedByAgent: vi.fn(async () => []),
-      listByAgent: vi.fn(async () => []),
+      listActiveByAgent: vi.fn(async () => []),
+      listVersionsByAgent: vi.fn(async () => []),
       findPinnedById: vi.fn(async () => null),
       findById: vi.fn(async () => null),
     } as SourceRepository;
@@ -107,12 +108,14 @@ describe("DB-backed routine composition source", () => {
     await expect(createPublishedRoutineRegistrationSource(repository).load({ agentId: "agent_1" })).resolves.toEqual([]);
   });
 
-  it("resolves UUID pins directly without scanning all definitions", async () => {
-    const superseded = { ...definition, status: "superseded" as const };
+  it("resolves UUID pins directly without scanning all definitions, even a since-disabled one", async () => {
+    // Pinned resume never consults `enabled`: a visitor mid-routine finishes the version they
+    // started, including one an operator has since taken out of service.
+    const disabled = { ...definition, enabled: false };
     const repository = {
-      listPublishedByAgent: vi.fn(async () => []),
-      listByAgent: vi.fn(async () => [superseded]),
-      findPinnedById: vi.fn(async () => superseded),
+      listActiveByAgent: vi.fn(async () => []),
+      listVersionsByAgent: vi.fn(async () => [disabled]),
+      findPinnedById: vi.fn(async () => disabled),
       findById: vi.fn(async () => null),
     } as SourceRepository;
 
@@ -122,15 +125,15 @@ describe("DB-backed routine composition source", () => {
     });
 
     expect(repository.findPinnedById).toHaveBeenCalledWith("agent_1", DEFINITION_ID);
-    expect(repository.listByAgent).not.toHaveBeenCalled();
+    expect(repository.listVersionsByAgent).not.toHaveBeenCalled();
     expect(registrations.map((registration) => registration.routine.id)).toEqual([DEFINITION_ID]);
   });
 
-  it("reports a pinned UUID that resolves to no non-draft definition", async () => {
+  it("reports a pinned UUID that resolves to no definition", async () => {
     const onPinnedDefinitionError = vi.fn();
     const repository = {
-      listPublishedByAgent: vi.fn(async () => []),
-      listByAgent: vi.fn(async () => []),
+      listActiveByAgent: vi.fn(async () => []),
+      listVersionsByAgent: vi.fn(async () => []),
       findPinnedById: vi.fn(async () => null),
       findById: vi.fn(async () => null),
     } as SourceRepository;
@@ -144,16 +147,19 @@ describe("DB-backed routine composition source", () => {
     expect(onPinnedDefinitionError).toHaveBeenCalledWith(expect.objectContaining({ agentId: "agent_1", routineId: DEFINITION_ID }));
   });
 
-  it("resumes legacy pre-unification pins under the pinned id, excluding drafts", async () => {
-    const onPinnedDefinitionError = vi.fn();
-    const draft = { ...definition, id: "22222222-2222-4222-9222-222222222222", status: "draft" as const, version: 2 };
-    const archived = { ...definition, id: "33333333-3333-4333-9333-333333333333", status: "archived" as const, version: 1 };
+  it("resumes legacy pre-unification pins under the pinned id, regardless of enabled state", async () => {
+    // Legacy pin resolution never filters by `enabled` either — the same pinned-resume
+    // guarantee applies whether the definition was reached by a modern UUID pin or by one of
+    // these pre-cutover synthetic ids.
+    const disabledOld = { ...definition, id: "22222222-2222-4222-9222-222222222222", enabled: false, version: 1 };
+    const current = { ...definition, id: "33333333-3333-4333-9333-333333333333", version: 2 };
     const repository = {
-      listPublishedByAgent: vi.fn(async () => []),
-      listByAgent: vi.fn(async () => [draft, archived]),
+      listActiveByAgent: vi.fn(async () => []),
+      listVersionsByAgent: vi.fn(async () => [disabledOld, current]),
       findPinnedById: vi.fn(async () => null),
       findById: vi.fn(async () => null),
     } as SourceRepository;
+    const onPinnedDefinitionError = vi.fn();
 
     const registrations = await createPublishedRoutineRegistrationSource(repository, {
       onPinnedDefinitionError,
@@ -164,19 +170,19 @@ describe("DB-backed routine composition source", () => {
 
     // The runner resumes by `routine.id === state.routineId`, so the legacy pin id
     // must be preserved on the compiled routine.
-    expect(registrations.map((registration) => registration.routine.id)).toEqual(["routine:agent_1:handoff:v1"]);
-    expect(onPinnedDefinitionError).toHaveBeenCalledWith(expect.objectContaining({
-      agentId: "agent_1",
-      routineId: "routine:agent_1:handoff:v2",
-    }));
+    expect(registrations.map((registration) => registration.routine.id)).toEqual([
+      "routine:agent_1:handoff:v1",
+      "routine:agent_1:handoff:v2",
+    ]);
+    expect(onPinnedDefinitionError).not.toHaveBeenCalled();
   });
 
-  it("loadPreview compiles a DRAFT definition by id so it can be test-run in the workbench", async () => {
-    const draft = { ...definition, status: "draft" as const };
-    const findById = vi.fn(async () => draft);
+  it("loadPreview compiles a definition by id even when it is disabled, so it can be test-run in the workbench", async () => {
+    const disabled = { ...definition, enabled: false };
+    const findById = vi.fn(async () => disabled);
     const repository = {
-      listPublishedByAgent: vi.fn(async () => []),
-      listByAgent: vi.fn(async () => []),
+      listActiveByAgent: vi.fn(async () => []),
+      listVersionsByAgent: vi.fn(async () => []),
       findPinnedById: vi.fn(async () => null),
       findById,
     } as SourceRepository;
@@ -186,9 +192,9 @@ describe("DB-backed routine composition source", () => {
       routineIds: [DEFINITION_ID],
     });
 
-    // Preview bypasses the published-only gate: findById returns any status.
+    // Preview bypasses the enabled-only gate: findById returns the definition regardless.
     expect(findById).toHaveBeenCalledWith("agent_1", DEFINITION_ID);
-    expect(repository.listPublishedByAgent).not.toHaveBeenCalled();
+    expect(repository.listActiveByAgent).not.toHaveBeenCalled();
     expect(registrations).toHaveLength(1);
     expect(registrations[0].routine.id).toBe(DEFINITION_ID);
     expect(registrations[0].trigger.description).toBe("The user asks for help.");
@@ -197,8 +203,8 @@ describe("DB-backed routine composition source", () => {
   it("loadPreview reports a preview id that resolves to no definition and skips it", async () => {
     const onPreviewDefinitionError = vi.fn();
     const repository = {
-      listPublishedByAgent: vi.fn(async () => []),
-      listByAgent: vi.fn(async () => []),
+      listActiveByAgent: vi.fn(async () => []),
+      listVersionsByAgent: vi.fn(async () => []),
       findPinnedById: vi.fn(async () => null),
       findById: vi.fn(async () => null),
     } as SourceRepository;
@@ -213,13 +219,16 @@ describe("DB-backed routine composition source", () => {
     );
   });
 
-  it("resolves legacy pin collisions by status rank and then highest version", async () => {
-    const archived = { ...definition, id: "44444444-4444-4444-9444-444444444444", status: "archived" as const };
-    const superseded = { ...definition, id: "55555555-5555-4555-9555-555555555555", status: "superseded" as const };
-    const published = { ...definition, id: "66666666-6666-4666-9666-666666666666", status: "published" as const };
+  it("keeps the first-registered row when two legacy-pin definitions collide at the same version", async () => {
+    // (agent_id, name, version) is unique in the schema (routine_definition_agent_id_name_
+    // version_key), so two distinct rows can never legitimately collide on this key — legacyId
+    // is exactly that triple. This pins down the resolver's defensive first-registered-wins
+    // guard so it stays deterministic even if that invariant were ever violated.
+    const first = { ...definition, id: "44444444-4444-4444-9444-444444444444" };
+    const second = { ...definition, id: "55555555-5555-4555-9555-555555555555", activation: { ...definition.activation, priority: 99 } };
     const repository = {
-      listPublishedByAgent: vi.fn(async () => []),
-      listByAgent: vi.fn(async () => [archived, superseded, published]),
+      listActiveByAgent: vi.fn(async () => []),
+      listVersionsByAgent: vi.fn(async () => [first, second]),
       findPinnedById: vi.fn(async () => null),
       findById: vi.fn(async () => null),
     } as SourceRepository;
@@ -231,6 +240,6 @@ describe("DB-backed routine composition source", () => {
 
     expect(registrations).toHaveLength(1);
     expect(registrations[0].routine.id).toBe("routine:agent_1:handoff:v1");
-    expect(registrations[0].trigger.priority).toBe(published.activation.priority);
+    expect(registrations[0].trigger.priority).toBe(first.activation.priority);
   });
 });

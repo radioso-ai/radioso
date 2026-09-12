@@ -1,7 +1,7 @@
 ---
 title: "Ray"
-description: "Use Ray in the dashboard to triage what needs attention, investigate agent behavior, edit and publish routines, test routine drafts, and review linked activity and proposals."
-last_updated: 2026-09-08
+description: "Use Ray in the dashboard to triage what needs attention, investigate agent behavior, edit routines, test a routine change before it ships, and review linked activity and proposals."
+last_updated: 2026-09-10
 ---
 
 # Ray
@@ -248,9 +248,8 @@ them to a visitor. Proposals for shared context-variable definitions, skill
 configuration, documents, crawls, or workspace settings keep their existing
 live configuration flow and are reviewed separately from the agent draft.
 
-A routine proposal comes in three shapes: a new routine, an edit to one that
-already exists, and a lifecycle change — publish, archive, or restore. See
-[Change a routine](#change-a-routine).
+A routine proposal comes in two shapes: a new routine, and an edit to one that
+already exists. See [Change a routine](#change-a-routine).
 
 A directive removal proposal targets an existing directive by id and drafts
 nothing else. The card shows the directive as it stands on the current side
@@ -425,11 +424,9 @@ Changing the routine's shape — adding or removing a step, or rewiring which st
 leads where — happens in the routine editor. Ask Ray for one of those and it
 points you there.
 
-Applying an edit to a published routine revises it into a draft and edits the
-draft. What your agent is serving keeps running until you publish. If that
-routine already has a draft revision, Ray points you at the draft instead: an
-edit worked out against the published version would land on top of whatever is
-already unpublished in that draft and replace it.
+Applying an edit writes it into the agent's private draft, next to the
+directives, skills, and context variables you have changed there. What your agent
+is serving keeps running until you Review & Publish the agent.
 
 Ray checks an edit before it becomes a card. If the change would introduce a
 validation problem the routine doesn't already have — a step referring to an
@@ -437,26 +434,14 @@ information field that isn't defined, say — Ray tells you what would break
 rather than drafting it. You can ask for that check on its own too: "does the
 Order status routine validate?" reports each diagnostic and where it is.
 
-Publishing is its own proposal, because it's the moment a change starts
-reaching customers. Ask Ray to publish and it validates the routine first, then
-drafts a publish card for you to apply. Archiving a published routine and
-restoring an archived one work the same way, each as its own card. Restoring is
-validated too: a routine can lose a skill or an action capability while it sits
-archived, and restoring puts it straight back in front of customers.
+Once the edit is applied, a good order is: test it with a real message, replay
+the eval cases it touches, then Review & Publish the agent.
 
-Archiving a routine discards the draft revision in its lineage, so an archive
-proposal names that draft in its summary and on the card. If a draft appears
-after the card was drafted, applying it stops and asks Ray to draft the archive
-again — with the draft named this time.
-
-Once a draft exists, a good order is: test it with a real message, replay the
-eval cases it touches, then publish.
-
-## Test a routine draft
+## Test a routine change
 
 Ray can run a representative message through the selected agent before you
-publish a routine draft. For example, ask: “Test the Support agent with ‘I need
-to return a damaged item’ against the draft Returns routine. Did it trigger?”
+publish the change. For example, ask: “Test the Support agent with ‘I need
+to return a damaged item’ against the Returns routine. Did it trigger?”
 
 The test uses the same routing, retrieval, directive, and routine pipeline as a
 normal agent turn. Ray receives the agent's answer, citation references, the
@@ -566,7 +551,7 @@ cannot support a proposal to re-enable it.
 
 Routine proposals do not carry replay evidence. No replay override installs a
 routine, so a passing replay would say nothing about the routine being proposed
-— test a routine draft with a real turn instead.
+— test the routine with a real turn instead.
 
 A skill config proposal can carry replay evidence only for an agent's default
 retrieve skill — the one that answers without a routine naming it. A replay
@@ -685,9 +670,8 @@ the change should have moved, read the result, then ask for the next batch.
 - **Agent-turn testing is unavailable** — your session is missing one of
   `workspace.chat.use`, `workspace.history.read`, or
   `workspace.agents.manage` in addition to Ray's agent-read permission.
-- **A routine draft cannot be tested** — confirm that the routine belongs to
-  the selected agent and has Draft or Published status. Archived and superseded
-  definitions are not eligible for a test turn.
+- **A routine cannot be tested** — confirm that the routine belongs to the
+  selected agent.
 - **A suite run is refused as too large** — one request runs at most five
   cases. Ask for the cases the change should have moved, then run the rest in a
   second request.

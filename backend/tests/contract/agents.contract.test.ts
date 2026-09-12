@@ -28,6 +28,7 @@ const parseSseData = (body: string, eventName: string): unknown[] =>
     });
 
 const validRoutineDraft = (overrides: Partial<RoutineDefinitionDraftInput> = {}): RoutineDefinitionDraftInput => ({
+  enabled: true,
   name: "support-intake",
   activation: {
     triggerDescription: "When the user asks for support intake",
@@ -68,36 +69,6 @@ const validRoutineDraft = (overrides: Partial<RoutineDefinitionDraftInput> = {})
   }],
   ...overrides,
 });
-
-const invalidRoutineDraft = (): RoutineDefinitionDraftInput =>
-  validRoutineDraft({
-    name: "broken-intake",
-    slots: [{
-      stableSlotId: "slot_unused",
-      key: "unused",
-      type: "text",
-      required: true,
-      description: null,
-      ordinal: 0,
-    }],
-    steps: [{
-      stableStepId: "step_collect_topic",
-      kind: "chat",
-      instruction: "Ask for {{slot.topic}}.",
-      toolRef: null,
-      ordinal: 0,
-      metadata: {},
-    }],
-    transitions: [{
-      fromStep: "step_collect_topic",
-      toRef: "missing_step",
-      guardKind: "default",
-      guardText: null,
-      outcomeStatus: null,
-      counterLimit: null,
-      ordinal: 0,
-    }],
-  });
 
 describe("agents contract", () => {
   it("round-trips retrieval-miss handoff settings without resetting an omitted update", async () => {
@@ -1140,7 +1111,7 @@ describe("agents contract", () => {
       .expect(404);
   });
 
-  it("creates, lists, gets, updates, validates, and publishes routine definitions", async () => {
+  it("creates, lists, gets, updates, and validates routine definitions", async () => {
     const { app } = createTestApp();
     const { token } = await issueTestToken(app, "agents-routines-crud@example.com");
     const authorization = `Bearer ${token}`;
@@ -1164,7 +1135,7 @@ describe("agents contract", () => {
         lineageId: expect.any(String),
         name: "support-intake",
         version: 1,
-        status: "draft",
+        enabled: true,
       },
       validation: {
         ok: true,
@@ -1182,7 +1153,7 @@ describe("agents contract", () => {
       id: create.body.routine.id,
       lineageId: create.body.routine.lineageId,
       name: "support-intake",
-      status: "draft",
+      enabled: true,
     });
 
     const get = await request(app)
@@ -1207,7 +1178,7 @@ describe("agents contract", () => {
         id: create.body.routine.id,
         name: "support-intake-updated",
         lineageId: create.body.routine.lineageId,
-        status: "draft",
+        enabled: true,
       },
       validation: {
         ok: true,
@@ -1221,38 +1192,37 @@ describe("agents contract", () => {
 
     expect(validate.body.validation).toEqual({ ok: true, diagnostics: [] });
 
-    const publish = await request(app)
-      .post(`/api/v1/agents/${agent.body.id}/routines/${create.body.routine.id}/publish`)
+    const disable = await request(app)
+      .patch(`/api/v1/agents/${agent.body.id}/routines/${create.body.routine.id}`)
       .set("Authorization", authorization)
+      .send({ enabled: false })
       .expect(200);
 
-    expect(publish.body).toMatchObject({
-      routine: {
-        id: create.body.routine.id,
-        agentId: agent.body.id,
-        lineageId: create.body.routine.lineageId,
-        name: "support-intake-updated",
-        version: 1,
-        status: "published",
-      },
-      validation: {
-        ok: true,
-        diagnostics: [],
-      },
-      directiveScopeOrphans: [],
+    expect(disable.body.routine).toMatchObject({
+      id: create.body.routine.id,
+      name: "support-intake-updated",
+      enabled: false,
     });
-    expect(publish.body.routine.id).toEqual(create.body.routine.id);
   });
 
-  it("revises, archives, and restores routine definitions through lifecycle endpoints", async () => {
+  it("keeps a disabled routine disabled through a real full-draft PATCH that omits enabled", async () => {
+    // Exercises the real Express route through the real `validateBody` middleware, not the
+    // service layer directly. `validateBody` (backend/src/app/http/middleware/validate.ts)
+    // replaces `req.body` with Zod's parsed result — defaults included — before
+    // `RoutineDefinitionService.updateDraft`'s omission-preserving merge ever runs. A create-
+    // oriented `enabled: z.boolean().default(true)` on the PATCH body schema would therefore
+    // fill `enabled: true` back into the request body right there, defeating the merge no
+    // matter how correct it is. A hand-built plain object passed straight to `updateDraft`
+    // (see routine-definition-service.test.ts) cannot catch that — only a request that
+    // actually goes through the middleware chain can. Issue: enabled-reset bug (round 2).
     const { app } = createTestApp();
-    const { token } = await issueTestToken(app, "agents-routines-lifecycle@example.com");
+    const { token } = await issueTestToken(app, "agents-routines-enabled-omit@example.com");
     const authorization = `Bearer ${token}`;
 
     const agent = await request(app)
       .post("/api/v1/agents")
       .set("Authorization", authorization)
-      .send({ name: "Routine lifecycle" })
+      .send({ name: "Routine enabled omission" })
       .expect(201);
 
     const create = await request(app)
@@ -1261,116 +1231,117 @@ describe("agents contract", () => {
       .send(validRoutineDraft())
       .expect(201);
 
-    const publishV1 = await request(app)
-      .post(`/api/v1/agents/${agent.body.id}/routines/${create.body.routine.id}/publish`)
-      .set("Authorization", authorization)
-      .expect(200);
-
-    const revise = await request(app)
-      .post(`/api/v1/agents/${agent.body.id}/routines/${publishV1.body.routine.id}/revise`)
-      .set("Authorization", authorization)
-      .expect(200);
-
-    expect(revise.body.routine).toMatchObject({
-      status: "draft",
-      lineageId: publishV1.body.routine.lineageId,
-      name: publishV1.body.routine.name,
-    });
-
     await request(app)
-      .patch(`/api/v1/agents/${agent.body.id}/routines/${revise.body.routine.id}`)
+      .patch(`/api/v1/agents/${agent.body.id}/routines/${create.body.routine.id}`)
       .set("Authorization", authorization)
-      .send(validRoutineDraft({ name: "support-intake-renamed" }))
+      .send({ enabled: false })
       .expect(200);
 
-    const publishV2 = await request(app)
-      .post(`/api/v1/agents/${agent.body.id}/routines/${revise.body.routine.id}/publish`)
-      .set("Authorization", authorization)
-      .expect(200);
-
-    expect(publishV2.body).toMatchObject({
-      directiveScopeOrphans: [],
-      routine: {
-        status: "published",
-        lineageId: publishV1.body.routine.lineageId,
-        name: "support-intake-renamed",
-      },
+    const { enabled: _omittedEnabled, ...draftWithoutEnabled } = validRoutineDraft({
+      name: "support-intake-content-edit",
     });
 
-    const oldVersion = await request(app)
-      .get(`/api/v1/agents/${agent.body.id}/routines/${publishV1.body.routine.id}`)
+    const update = await request(app)
+      .patch(`/api/v1/agents/${agent.body.id}/routines/${create.body.routine.id}`)
       .set("Authorization", authorization)
+      .send(draftWithoutEnabled)
       .expect(200);
-    expect(oldVersion.body.routine.status).toBe("superseded");
 
-    const archive = await request(app)
-      .post(`/api/v1/agents/${agent.body.id}/routines/${publishV2.body.routine.id}/archive`)
-      .set("Authorization", authorization)
-      .expect(200);
-    expect(archive.body.routine.status).toBe("archived");
+    expect(update.body.routine).toMatchObject({
+      id: create.body.routine.id,
+      name: "support-intake-content-edit",
+      enabled: false,
+    });
 
-    const list = await request(app)
-      .get(`/api/v1/agents/${agent.body.id}/routines`)
+    const get = await request(app)
+      .get(`/api/v1/agents/${agent.body.id}/routines/${create.body.routine.id}`)
       .set("Authorization", authorization)
       .expect(200);
-    expect(list.body.routines.map((routine: { status: string }) => routine.status)).toEqual(
-      expect.arrayContaining(["superseded", "archived"]),
-    );
 
-    const restore = await request(app)
-      .post(`/api/v1/agents/${agent.body.id}/routines/${publishV2.body.routine.id}/restore`)
-      .set("Authorization", authorization)
-      .expect(200);
-    expect(restore.body.routine.status).toBe("published");
+    expect(get.body.routine).toMatchObject({ enabled: false });
   });
 
-  it("surfaces routine validation diagnostics and rejects invalid publishes", async () => {
+  it("keeps a non-default reentry mode and completion export through a PATCH that omits their subfields", async () => {
+    // Same bug class as the enabled-reset test above, one level deeper: `activation` and
+    // `completionExport` are objects with their OWN Zod-defaulted subfields
+    // (`activation.reentryMode`; every `completionExport` field). A caller that resends
+    // `activation`/`completionExport` wholesale but omits one of their subfields must not have
+    // that subfield silently reset to the create-schema default. Exercises the real
+    // `routineDefinitionDraftUpdateInputSchema` wired into `validateBody` on the PATCH route,
+    // not a hand-built object passed straight to the service. Issue: enabled-reset bug, one
+    // level deeper (round 2, item 7).
     const { app } = createTestApp();
-    const { token } = await issueTestToken(app, "agents-routines-validation@example.com");
+    const { token, cookie, workspaceId } = await issueTestToken(app, "agents-routines-nested-omit@example.com");
     const authorization = `Bearer ${token}`;
+
+    const destination = await request(app)
+      .post("/api/v1/settings/webhook-destinations")
+      .set(adminSessionHeaders({ cookie, workspaceId }))
+      .send({ name: "crm-leads", url: "https://hooks.example.com/leads" })
+      .expect(201);
+    const destinationId = destination.body.destination.id as string;
 
     const agent = await request(app)
       .post("/api/v1/agents")
       .set("Authorization", authorization)
-      .send({ name: "Routine validation" })
+      .send({ name: "Routine nested omission" })
       .expect(201);
 
     const create = await request(app)
       .post(`/api/v1/agents/${agent.body.id}/routines`)
       .set("Authorization", authorization)
-      .send(invalidRoutineDraft())
+      .send(validRoutineDraft({
+        activation: {
+          triggerDescription: "When the user asks for support intake",
+          gateRef: null,
+          priority: 10,
+          reentryMode: "always",
+        },
+        completionExport: {
+          enabled: true,
+          triggerKinds: ["complete"],
+          destinationRef: destinationId,
+        },
+      }))
       .expect(201);
 
-    expect(create.body.validation).toMatchObject({
-      ok: false,
-      diagnostics: expect.arrayContaining([
-        expect.objectContaining({ code: "referenced_undeclared_slot", location: "slot:topic" }),
-        expect.objectContaining({ code: "declared_unused_slot", location: "slot:unused" }),
-        expect.objectContaining({ code: "dangling_step_reference" }),
-      ]),
+    expect(create.body.routine).toMatchObject({
+      activation: expect.objectContaining({ reentryMode: "always" }),
+      completionExport: { enabled: true, triggerKinds: ["complete"], destinationRef: destinationId },
     });
 
-    const validate = await request(app)
-      .post(`/api/v1/agents/${agent.body.id}/routines/${create.body.routine.id}/validate`)
+    // A raw wire body, not `validRoutineDraft()`'s parsed-input-shaped overrides: resends
+    // `activation` wholesale (as any full-draft save does) but omits `reentryMode`, and
+    // resends `completionExport` but omits `triggerKinds` and `destinationRef` — a caller
+    // only touching `enabled` within the nested object.
+    const update = await request(app)
+      .patch(`/api/v1/agents/${agent.body.id}/routines/${create.body.routine.id}`)
+      .set("Authorization", authorization)
+      .send({
+        ...validRoutineDraft({ name: "support-intake-nested-edit" }),
+        activation: {
+          triggerDescription: "When the user asks for support intake",
+          gateRef: null,
+          priority: 10,
+        },
+        completionExport: { enabled: true },
+      })
+      .expect(200);
+
+    expect(update.body.routine).toMatchObject({
+      name: "support-intake-nested-edit",
+      activation: expect.objectContaining({ reentryMode: "always" }),
+      completionExport: { enabled: true, triggerKinds: ["complete"], destinationRef: destinationId },
+    });
+
+    const get = await request(app)
+      .get(`/api/v1/agents/${agent.body.id}/routines/${create.body.routine.id}`)
       .set("Authorization", authorization)
       .expect(200);
 
-    expect(validate.body.validation.ok).toBe(false);
-    expect(validate.body.validation.diagnostics.length).toBeGreaterThan(0);
-
-    const publish = await request(app)
-      .post(`/api/v1/agents/${agent.body.id}/routines/${create.body.routine.id}/publish`)
-      .set("Authorization", authorization)
-      .expect(422);
-
-    expect(publish.body).toMatchObject({
-      error: "Routine definition is invalid",
-      validation: {
-        ok: false,
-        diagnostics: expect.arrayContaining([
-          expect.objectContaining({ code: "referenced_undeclared_slot" }),
-        ]),
-      },
+    expect(get.body.routine).toMatchObject({
+      activation: expect.objectContaining({ reentryMode: "always" }),
+      completionExport: { enabled: true, triggerKinds: ["complete"], destinationRef: destinationId },
     });
   });
 

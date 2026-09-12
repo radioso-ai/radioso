@@ -55,7 +55,7 @@ const stepLabel = (step: RoutineDefinition['steps'][number]): string => {
 }
 
 /**
- * Authors a mid-routine starting position for a replay: pick a published routine, the
+ * Authors a mid-routine starting position for a replay: pick an enabled routine, the
  * step to resume at, and any slot values already collected. Emits the full
  * RoutineState (status "active", path = [step]) so the replay resumes there. Capturing
  * an exact routine position from a real conversation is the snapshot's job; this is for
@@ -107,7 +107,7 @@ function RoutineStartStateSection({
 
       {enabled ? (
         routines.length === 0 ? (
-          <p className="text-xs text-muted-foreground">This agent has no published routines to resume.</p>
+          <p className="text-xs text-muted-foreground">This agent has no enabled routines to resume.</p>
         ) : (
           <div className="space-y-3">
             <div className="space-y-1">

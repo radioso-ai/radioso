@@ -17,8 +17,8 @@ import {
 import type { AgentConfig } from "../../../../modules/agents/public.js";
 import {
   routineDefinitionDraftInputSchema,
+  routineDefinitionDraftUpdateInputSchema,
   routineDraftAssistRequestSchema,
-  routineDefinitionStatuses,
   routineValidationCodes,
 } from "../../../../modules/routines/public.js";
 import { skillDisplayMetadataSchema, skillOutcomeStatusSchema } from "../../../../modules/skills/public.js";
@@ -494,7 +494,14 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
 
   const RoutineDefinitionUpdateRequestSchema = registry.register(
     "RoutineDefinitionUpdateRequest",
-    routineDefinitionDraftInputSchema,
+    z.union([
+      z.object({ enabled: z.boolean() }).strict(),
+      // No defaults on `enabled`, `activation.reentryMode`, or any `completionExport` field
+      // here, unlike the create schema: an update payload that omits one must carry the
+      // stored value forward rather than silently resetting it. Mirrors
+      // `routineDefinitionPatchBodySchema` in `../routes/agentRoutes.ts`.
+      routineDefinitionDraftUpdateInputSchema,
+    ]),
   );
 
   const RoutineDraftAssistRequestSchema = registry.register(
@@ -521,7 +528,6 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       agentId: z.string().uuid(),
       lineageId: z.string().uuid(),
       version: z.number().int().min(1),
-      status: z.enum(routineDefinitionStatuses),
       createdAt: z.string().datetime(),
       updatedAt: z.string().datetime(),
     }),
@@ -549,31 +555,6 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     }),
   );
 
-  const RoutineDirectiveScopeOrphanSchema = registry.register(
-    "RoutineDirectiveScopeOrphan",
-    z.object({
-      directiveId: z.string(),
-      scopeTag: z.string(),
-      reason: z.literal("missing_step"),
-    }),
-  );
-
-  const RoutineDefinitionPublishResponseSchema = registry.register(
-    "RoutineDefinitionPublishResponse",
-    z.object({
-      routine: RoutineDefinitionResponseSchema,
-      validation: RoutineValidationResultSchema,
-      directiveScopeOrphans: z.array(RoutineDirectiveScopeOrphanSchema),
-    }),
-  );
-
-  const RoutineDefinitionLifecycleResponseSchema = registry.register(
-    "RoutineDefinitionLifecycleResponse",
-    z.object({
-      routine: RoutineDefinitionResponseSchema,
-    }),
-  );
-
   const RoutineDefinitionValidateResponseSchema = registry.register(
     "RoutineDefinitionValidateResponse",
     z.object({
@@ -585,14 +566,6 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     "RoutineDraftAssistResponse",
     z.object({
       draft: routineDefinitionDraftInputSchema,
-      validation: RoutineValidationResultSchema,
-    }),
-  );
-
-  const RoutineDefinitionPublishRejectedResponseSchema = registry.register(
-    "RoutineDefinitionPublishRejectedResponse",
-    z.object({
-      error: z.literal("Routine definition is invalid"),
       validation: RoutineValidationResultSchema,
     }),
   );
@@ -955,7 +928,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
         "- resolver_skill_missing: the enablement's resolver skill did not survive import, so it stays unbound.",
         "- skill_target_unbound: the skill's connection target is a credential-bearing workspace row.",
         "- skill_capability_unknown: no capability with this id is registered in this deployment.",
-        "- routine_invalid: the routine imported as a draft because publish validation rejected it.",
+        "- routine_invalid: the routine imported out of service (disabled) because it does not pass validation.",
         "- document_source_unresolved: selected document sources cannot be matched; scope imports empty, not \"all\".",
         "- surface_credential_unbound: a surface whose token cannot travel; imported disabled so it cannot serve.",
         "- mcp_connection_unbound: an external MCP connection reference; the skill imports without its server.",
@@ -1120,11 +1093,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     RoutineDefinitionGetResponseSchema,
     RoutineDefinitionListResponseSchema,
     RoutineDefinitionParamsSchema,
-    RoutineDefinitionLifecycleResponseSchema,
-    RoutineDefinitionPublishResponseSchema,
-    RoutineDefinitionPublishRejectedResponseSchema,
     RoutineSkillCatalogResponseSchema,
-    RoutineDirectiveScopeOrphanSchema,
     SkillAuthoringDescriptorSchema,
     RoutineDefinitionResponseSchema,
     RoutineDefinitionSaveResponseSchema,

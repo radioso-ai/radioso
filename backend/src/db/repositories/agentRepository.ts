@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 
 import { sql, type Transaction } from "kysely";
 
-import type { RoutineDirectiveScopeOrphan } from "../../modules/routines/public.js";
 import { conflict, notFound } from "../../shared/domain/errors.js";
 import {
   mergeAgentSurfaceSettings,
@@ -101,24 +100,6 @@ interface LoadedDirectiveJson {
   metadata?: unknown;
   createdAt?: unknown;
   updatedAt?: unknown;
-}
-
-interface DirectiveScopeTagRow {
-  id: string;
-  scope_tags: string[];
-}
-
-export interface RepointRoutineScopeTagsInput {
-  agentId: string;
-  fromDefinitionId: string;
-  toDefinitionId: string;
-  survivingStepIds: ReadonlySet<string>;
-  transaction?: unknown;
-}
-
-export interface RepointRoutineScopeTagsResult {
-  repointed: number;
-  orphans: RoutineDirectiveScopeOrphan[];
 }
 
 const agentDirectiveNameUniqueConstraint = "agent_directives_agent_id_name_key";
@@ -595,7 +576,6 @@ export interface AgentRepositoryPort {
   createDirective(agentId: string, workspaceId: string, input: AuthoredDirectiveInput, options?: AgentDirectiveUpdateOptions): Promise<AuthoredDirective>;
   updateDirective(agentId: string, workspaceId: string, directiveId: string, input: Partial<AuthoredDirectiveInput>, options?: AgentDirectiveUpdateOptions): Promise<AuthoredDirective>;
   deleteDirective(agentId: string, workspaceId: string, directiveId: string, options?: AgentDirectiveUpdateOptions): Promise<boolean>;
-  repointRoutineScopeTags?(input: RepointRoutineScopeTagsInput): Promise<RepointRoutineScopeTagsResult>;
   setDefault(workspaceId: string, agentId: string): Promise<void>;
   deleteByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<boolean>;
   countByWorkspaceId(workspaceId: string): Promise<number>;
@@ -1049,70 +1029,6 @@ export class AgentRepository implements AgentRepositoryPort {
           }
         : { result: false, unchanged: true };
     });
-  }
-
-  async repointRoutineScopeTags(input: RepointRoutineScopeTagsInput): Promise<RepointRoutineScopeTagsResult> {
-    // A threaded transaction (when present) is a Kysely `Transaction<DB>`, assignable to
-    // `Db`; otherwise run on the shared executor. This is the shared-transaction contract
-    // the routine-definition repository threads its `Transaction<DB>` through.
-    const db = (input.transaction as Db | undefined) ?? this.db;
-    const routineTag = `routine:${input.fromDefinitionId}`;
-    const stepTagPrefix = `step:${input.fromDefinitionId}:`;
-    const selected = await sql<DirectiveScopeTagRow>`
-      SELECT id::text, scope_tags
-      FROM agent_directives
-      WHERE agent_id = ${input.agentId}
-        AND (
-          ${routineTag} = ANY(scope_tags)
-          OR EXISTS (
-            SELECT 1
-            FROM unnest(scope_tags) AS scope_tag
-            WHERE scope_tag LIKE ${`${stepTagPrefix}%`}
-          )
-        )
-      ORDER BY created_at ASC, id ASC
-    `.execute(db);
-    const rows = selected.rows;
-
-    let repointed = 0;
-    const orphans: RoutineDirectiveScopeOrphan[] = [];
-    for (const row of rows) {
-      let changed = false;
-      const nextTags = row.scope_tags.map((tag) => {
-        if (tag === routineTag) {
-          changed = true;
-          repointed += 1;
-          return `routine:${input.toDefinitionId}`;
-        }
-        if (!tag.startsWith(stepTagPrefix)) {
-          return tag;
-        }
-        const stepId = tag.slice(stepTagPrefix.length);
-        if (!input.survivingStepIds.has(stepId)) {
-          orphans.push({
-            directiveId: row.id,
-            scopeTag: tag,
-            reason: "missing_step",
-          });
-          return tag;
-        }
-        changed = true;
-        repointed += 1;
-        return `step:${input.toDefinitionId}:${stepId}`;
-      });
-      if (!changed) {
-        continue;
-      }
-      await sql`
-        UPDATE agent_directives
-        SET scope_tags = ${sql.val(nextTags)}::text[],
-            updated_at = ${currentTimestamp()}
-        WHERE id = ${row.id}
-          AND agent_id = ${input.agentId}
-      `.execute(db);
-    }
-
-    return { repointed, orphans };
   }
 
   async setDefault(workspaceId: string, agentId: string): Promise<void> {

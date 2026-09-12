@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import {
   defaultAgentId,
@@ -108,16 +108,14 @@ test("author, validate, and read a routine through the Document tab", async ({ p
   ];
   for (const line of documentLines) expect(editableRestText).toContain(line);
 
-  await page.getByRole("button", { name: "Prepare for agent release", exact: true }).click();
-  await expect(page.getByText("prepared v1 (read-only)", { exact: true })).toBeVisible();
-
-  const documentReader = page.getByRole("article", { name: "Routine document" });
-  const readerText = await documentReader.innerText();
-  for (const line of documentLines) {
-    expect(editableRestText).toContain(line);
-    expect(readerText).toContain(line);
-  }
-  await expect(page.getByRole("button", { name: "Step", exact: true })).toHaveCount(0);
+  // Authoring saves as it goes, with no publish step in between, so what the server returns
+  // on a reload is the same document — still editable.
+  await page.reload();
+  const reloadedEditor = page.getByRole("article", { name: "Routine document editor" });
+  await expect(reloadedEditor).toBeVisible();
+  const reloadedText = await reloadedEditor.innerText();
+  for (const line of documentLines) expect(reloadedText).toContain(line);
+  await expect(reloadedEditor.getByRole("button", { name: "Step", exact: true })).toBeVisible();
 });
 
 test("a step instruction keeps the lines its author wrote", async ({ page }) => {
@@ -161,4 +159,102 @@ test("a step instruction keeps the lines its author wrote", async ({ page }) => 
 
   await row.click();
   await expect(documentEditor.getByLabel("Step 1 instruction")).toContainText("Then ask what they need.");
+});
+
+const addChatStep = async (page: Page, documentEditor: Locator, text: string) => {
+  await documentEditor.getByRole("button", { name: "Step", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Chat" }).click();
+  await documentEditor.getByRole("button", { name: "Chat", exact: true }).last().click();
+  const instruction = documentEditor.getByLabel(/Step \d+ instruction/).last();
+  await instruction.click();
+  await instruction.pressSequentially(text);
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+};
+
+test("reorders a step from its collapsed row, with no editor panel open", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await expect(page.getByRole("heading", { name: "Routines", level: 1 })).toBeVisible();
+  await page.getByRole("button", { name: "New routine" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Reorder from the collapsed row");
+
+  const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+  await documentEditor.getByRole("button", { name: "Starts when", exact: true }).click();
+  await documentEditor.getByLabel("Activation trigger", { exact: true }).fill("a visitor opens a conversation.");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await addChatStep(page, documentEditor, "First step text");
+  await addChatStep(page, documentEditor, "Second step text");
+
+  // Both rows are collapsed now — no step editor panel is open. The boundary controls are
+  // disabled from the start.
+  await expect(documentEditor.getByRole("button", { name: "Move step 1 up" })).toBeDisabled();
+  await expect(documentEditor.getByRole("button", { name: "Move step 2 down" })).toBeDisabled();
+
+  await documentEditor.getByRole("button", { name: "Move step 1 down" }).click();
+
+  const afterMove = await documentEditor.innerText();
+  expect(afterMove.indexOf("Second step text")).toBeLessThan(afterMove.indexOf("First step text"));
+  await expect(documentEditor.getByRole("button", { name: "Move step 1 up" })).toBeDisabled();
+  await expect(documentEditor.getByRole("button", { name: "Move step 2 down" })).toBeDisabled();
+
+  await expect.poll(
+    () => routineUpdates.find((update) => update.method === "POST")?.body,
+    { timeout: 15_000 },
+  ).toMatchObject({
+    steps: [{ instruction: "Second step text" }, { instruction: "First step text" }],
+  });
+});
+
+test("inserts a step between two existing rows", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await expect(page.getByRole("heading", { name: "Routines", level: 1 })).toBeVisible();
+  await page.getByRole("button", { name: "New routine" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Insert between two rows");
+
+  const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+  await documentEditor.getByRole("button", { name: "Starts when", exact: true }).click();
+  await documentEditor.getByLabel("Activation trigger", { exact: true }).fill("a visitor opens a conversation.");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await addChatStep(page, documentEditor, "First step text");
+  await addChatStep(page, documentEditor, "Second step text");
+
+  // The insert control between the two rows offers the same step-kind choices as the top
+  // "+ Step" control, but splices the new step in after step 1 instead of appending it.
+  await documentEditor.getByRole("button", { name: "Insert step after step 1" }).click();
+  await page.getByRole("menuitem", { name: "Ask or tell" }).click();
+
+  // The new step lands at position 2, between the two original rows: last position, and the
+  // original order of the two authored steps is undisturbed around it.
+  const newStepInstructionButton = documentEditor.getByRole("button", { name: "Instruction" }).filter({ hasText: "Write what this step should do…" });
+  await expect(newStepInstructionButton).toBeVisible();
+  await expect(documentEditor.getByRole("button", { name: "Move step 1 up" })).toBeDisabled();
+  await expect(documentEditor.getByRole("button", { name: "Move step 3 down" })).toBeDisabled();
+  const afterInsert = await documentEditor.innerText();
+  expect(afterInsert.indexOf("First step text")).toBeLessThan(afterInsert.indexOf("Second step text"));
+
+  // Give the inserted step an instruction so the routine is valid again, then confirm the
+  // save carries the full, correctly ordered three-step document.
+  await newStepInstructionButton.click();
+  const newStepEditor = documentEditor.getByLabel("Step 2 instruction");
+  await newStepEditor.click();
+  await newStepEditor.pressSequentially("Inserted step text");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await expect.poll(
+    () => routineUpdates.find((update) => update.method === "POST")?.body,
+    { timeout: 15_000 },
+  ).toMatchObject({
+    steps: [{ instruction: "First step text" }, { instruction: "Inserted step text" }, { instruction: "Second step text" }],
+  });
 });

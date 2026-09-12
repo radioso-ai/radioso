@@ -181,16 +181,22 @@ export const createAgentBundleServices = (deps: AgentBundleCompositionDependenci
         const saved = await deps.routineDefinitionService.createDraft(workspaceId, agentId, definition);
         return { routineId: saved.routine.id };
       },
-      publish: async (workspaceId, agentId, routineId) => {
-        const result = await deps.routineDefinitionService.publish(workspaceId, agentId, routineId);
-        if ("rejected" in result) {
-          return {
-            published: false,
-            reason: result.validation.diagnostics.map((diagnostic) => diagnostic.message).join("; ")
-              || "the routine did not pass validation for serving",
-          };
-        }
-        return { published: true };
+      // The routines an import creates all belong to one freshly created agent, so this resolves
+      // that agent's workspace-scoped skill/context-variable state once for the whole batch via
+      // `validateManyForServing`, instead of the per-routine `validate` this replaced doing it
+      // once per routine.
+      validateMany: async (workspaceId, agentId, routineIds) => {
+        const routines = await Promise.all(
+          routineIds.map((routineId) => deps.routineDefinitionService.get(workspaceId, agentId, routineId)),
+        );
+        const results = await deps.routineDefinitionService.validateManyForServing(workspaceId, routines);
+        return new Map(routineIds.map((routineId) => [
+          routineId,
+          (results.get(routineId)?.diagnostics ?? []).map((diagnostic) => diagnostic.message),
+        ]));
+      },
+      setEnabled: async (workspaceId, agentId, routineId, enabled) => {
+        await deps.routineDefinitionService.setEnabled(workspaceId, agentId, routineId, enabled);
       },
     },
   });

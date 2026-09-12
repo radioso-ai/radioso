@@ -120,26 +120,31 @@ export interface AgentBundleContextVariableWriterPort {
 }
 
 /**
- * `publish` returns its outcome rather than throwing: the routine service treats a
- * validation rejection as a result, not an error, and an adapter that converted
- * one into an exception would make a normal outcome indistinguishable from an
- * infrastructure failure.
+ * A routine is always editable now, so importing one is create-then-validate-then-enable
+ * rather than create-then-publish: `validateMany` reports serving diagnostics without throwing
+ * (the routine service treats a validation rejection as a result, not an error, and an adapter
+ * that converted one into an exception would make a normal outcome indistinguishable from an
+ * infrastructure failure), and `setEnabled` takes the imported routine live only when it
+ * validates clean.
  */
-export type AgentBundleRoutinePublishOutcome =
-  | { published: true }
-  | { published: false; reason: string };
-
 export interface AgentBundleRoutineWriterPort {
   createDraft(
     workspaceId: string,
     agentId: string,
     definition: RoutineDefinitionDraftInput,
   ): Promise<{ routineId: string }>;
-  publish(
+  /**
+   * Serving validation for a batch of routines created by one import, which always share one
+   * agent — the workspace-scoped skill/context-variable state that validation needs is the same
+   * for all of them, so resolving it once for the whole batch beats once per routine. Empty
+   * per-id diagnostics list when that routine can run in the target agent.
+   */
+  validateMany(
     workspaceId: string,
     agentId: string,
-    routineId: string,
-  ): Promise<AgentBundleRoutinePublishOutcome>;
+    routineIds: readonly string[],
+  ): Promise<Map<string, readonly string[]>>;
+  setEnabled(workspaceId: string, agentId: string, routineId: string, enabled: boolean): Promise<void>;
 }
 
 export interface AgentBundleImportRepositoryPort {

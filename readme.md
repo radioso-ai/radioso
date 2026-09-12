@@ -30,7 +30,7 @@ The whole thing ships in this repo:
 
 - **[Grounded answers](https://docs.radioso.ai/why-radioso/grounded-answers)** — replies built on your own documents, cited back to them, with retrieval you can tune per agent.
 - **[Directives](https://docs.radioso.ai/guides/authoring-directives)** — standing rules matched by meaning, in any language: *"when the customer sounds anxious, slow down and confirm before acting."* Write the rule once; it applies on every turn, on every surface.
-- **[Routines](https://docs.radioso.ai/guides/authoring-routines)** — multi-turn flows you author in plain language and publish without a redeploy; the engine runs and resumes them turn to turn until the task is done.
+- **[Routines](https://docs.radioso.ai/guides/authoring-routines)** — multi-turn flows you author in plain language and ship with the rest of the agent, no redeploy; the engine runs and resumes them turn to turn until the task is done.
 - **[Skills](https://docs.radioso.ai/api/agents-and-skills)** — what the agent can do: grounded retrieval, [your webhooks](./docs/webhook-skills.md), [Slack posts](./docs/slack-skills.md), [customer email](./docs/customer-email-skills.md), or [tools from your own MCP servers](./docs/external-skills.md).
 - **[Human takeover](https://docs.radioso.ai/operators/human-takeover)** — an operator claims the conversation and replies as a named person; the Inbox queues waiting handoffs and routine approvals.
 - **[Ray, the operator copilot](https://docs.radioso.ai/operators/copilot)** — ask why a conversation went the way it did; when the answer is a change, Ray drafts it as a proposal you review and apply.
@@ -96,7 +96,7 @@ The loop holds the mechanism; the behavior lives in small units you register.
 
 - A **skill** is something the agent *does* — grounded retrieval, a lookup, a webhook call. It is dispatched through one port and returns a result. Retrieval itself is the `retrieval.answer` skill, reached the same way as every other capability.
 - A **directive** is a standing rule that shapes *how* the agent behaves: a condition paired with an action, judged by the model by meaning — Radioso is multilingual, so a condition is never a keyword list — and added to the turn's instructions when it holds.
-- A **routine** is a stateful, multi-turn flow authored as data — in the dashboard or over the API — then validated and published with no redeploy. The platform compiles it into a graph the engine runs and resumes turn to turn.
+- A **routine** is a stateful, multi-turn flow authored as data — in the dashboard or over the API — validated as you write it and shipped with the agent's next revision, no redeploy. The platform compiles it into a graph the engine runs and resumes turn to turn.
 
 **Skills act, directives steer, routines carry a flow across turns.**
 
@@ -184,7 +184,7 @@ curl -sS \
 
 **See why.** Responses are lean by default. Add `includeDebug: true` and diagnostics arrive under a `debug` field — routing, retrieval summaries, activity traces, and full evidence — instead of mixing into the user-facing payload.
 
-**Everything else.** Agents and their per-skill settings live under `/api/v1/agents`; routines are authored per agent under `/api/v1/agents/<agentId>/routines` (draft, validate, publish). `GET /api/v1/skills` lists the skills the engine can select. History, settings, the document-type catalog, answer feedback, quality triage, and usage subtotals each have their own routes — start at the [API index](https://docs.radioso.ai/api) or the [OpenAPI reference](https://docs.radioso.ai/api-reference).
+**Everything else.** Agents and their per-skill settings live under `/api/v1/agents`; routines are authored per agent under `/api/v1/agents/<agentId>/routines` (create, update, validate). `GET /api/v1/skills` lists the skills the engine can select. History, settings, the document-type catalog, answer feedback, quality triage, and usage subtotals each have their own routes — start at the [API index](https://docs.radioso.ai/api) or the [OpenAPI reference](https://docs.radioso.ai/api-reference).
 
 ### TypeScript SDK
 

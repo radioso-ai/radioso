@@ -27,7 +27,7 @@ const baseDefinition = (): RoutineDefinition => ({
   lineageId: "lineage_1",
   name: "handoff",
   version: 1,
-  status: "published",
+  enabled: true,
   activation: {
     triggerDescription: "The user asks to send a handoff request.",
     gateRef: null,

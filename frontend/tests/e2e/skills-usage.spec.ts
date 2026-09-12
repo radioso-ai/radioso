@@ -29,7 +29,7 @@ const routineCalling = (
   id: string,
   lineageId: string,
   toolRef: string,
-  status: RoutineFixture["status"],
+  enabled: boolean,
 ): RoutineFixture => ({
   id,
   lineageId,
@@ -56,7 +56,7 @@ const routineCalling = (
     ordinal: 0,
   }],
   terminals: [{ stableStepId: "done", kind: "complete", instruction: null, ordinal: 0 }],
-  status,
+  enabled,
   version: 1,
   createdAt: nowIso,
   updatedAt: nowIso,
@@ -85,11 +85,9 @@ test("the skills registry reports which directives and routines use each skill",
       },
     ],
     routines: [
-      routineCalling("55555555-5555-4555-8555-000000000101", "55555555-5555-4555-7555-000000000101", "lookup_order", "published"),
-      // Same procedure, mid-revision: one routine to an author, so it must not count twice.
-      routineCalling("55555555-5555-4555-8555-000000000102", "55555555-5555-4555-7555-000000000101", "lookup_order", "draft"),
-      // Retired, so it can never fire and must not be counted at all.
-      routineCalling("55555555-5555-4555-8555-000000000103", "55555555-5555-4555-7555-000000000103", "unused_skill", "archived"),
+      routineCalling("55555555-5555-4555-8555-000000000101", "55555555-5555-4555-7555-000000000101", "lookup_order", true),
+      // Disabled, so it can never fire and must not be counted at all.
+      routineCalling("55555555-5555-4555-8555-000000000103", "55555555-5555-4555-7555-000000000103", "unused_skill", false),
     ],
   });
 

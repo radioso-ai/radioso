@@ -164,8 +164,8 @@ export const buildRoutineAuthoringServices = (input: {
         input.webhookDestinations.existsByIdAndWorkspace(workspaceId, destinationId),
     },
     auditService: input.infrastructure.auditService,
-    directiveScopeTags: input.repositories.agentRepository,
     triggerEmbeddingService: input.routineTriggerEmbeddingService,
+    logger: input.logger,
   });
   const routineDraftAssistService = new RoutineDraftAssistService({
     repository: input.repositories.agentRepository,

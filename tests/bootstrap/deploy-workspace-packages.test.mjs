@@ -68,3 +68,25 @@ test("backend images and staging deploy include the MCP source-proof workspace",
   );
   assert.match(deployStaging, /packages\/mcp-source-proof\/\*\*/);
 });
+
+test("backend images and staging deploy include the product-docs workspace", async () => {
+  const [backendDockerfile, backendDevDockerfile, deployStaging] = await Promise.all([
+    readRepoFile("infra/backend.Dockerfile"),
+    readRepoFile("infra/backend.dev.Dockerfile"),
+    readRepoFile(".github/workflows/deploy-staging.yml"),
+  ]);
+
+  // backend/package.json's build:workspace-deps chain runs `pnpm --dir
+  // ../packages/product-docs run build` on every backend dev/worker boot, so the
+  // package source has to exist inside the image whether or not its dist is
+  // pre-built there.
+  for (const dockerfile of [backendDockerfile, backendDevDockerfile]) {
+    assert.match(dockerfile, /COPY packages\/product-docs\/package\.json \.\/packages\/product-docs\/package\.json/);
+    assert.match(dockerfile, /COPY packages\/product-docs \.\/packages\/product-docs/);
+  }
+  assert.match(
+    backendDockerfile,
+    /COPY --chown=node:node --from=build \/app\/packages\/product-docs\/dist \.\/packages\/product-docs\/dist/,
+  );
+  assert.match(deployStaging, /packages\/product-docs\/\*\*/);
+});

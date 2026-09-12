@@ -10,7 +10,7 @@ import {
   workspaceKey,
 } from "./dashboard-fixtures";
 
-const baseRoutine: Omit<RoutineFixture, "id" | "status" | "version"> = {
+const baseRoutine: Omit<RoutineFixture, "id" | "enabled" | "version"> = {
   lineageId: "77777777-7777-4777-8777-000000000001",
   agentId: defaultAgentId,
   name: "Collect pricing intake",
@@ -58,6 +58,11 @@ const baseRoutine: Omit<RoutineFixture, "id" | "status" | "version"> = {
 
 const routinesListUrl = new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}\\?tab=behavior&anchor=assistant-routines$`);
 
+// A routine row is one button carrying the name and its trigger; the row's own controls are
+// labelled by verb, so anchoring on the leading name keeps this off the delete button.
+const routineRow = (page: Page, name: string) =>
+  page.getByRole("button", { name: new RegExp(`^${name}\\b`) });
+
 const clickBackToRoutines = async (page: Page) => {
   await Promise.all([
     page.waitForURL(routinesListUrl),
@@ -70,7 +75,7 @@ test("routine coverage criteria round-trip through the authored API payload", as
   const routine = {
     ...baseRoutine,
     id: "55555555-5555-4555-9555-000000000114",
-    status: "draft" as const,
+    enabled: true,
     version: 1,
     activation: {
       ...baseRoutine.activation,
@@ -148,7 +153,7 @@ test("routine coverage criteria round-trip through the authored API payload", as
   });
 });
 
-test("agent routines settings create, validate, publish, and persist", async ({ page }) => {
+test("agent routines settings create, validate, and persist", async ({ page }) => {
   const routineUpdates: RoutineMutationFixture[] = [];
 
   await seedDashboardStorage(page);
@@ -170,7 +175,6 @@ test("agent routines settings create, validate, publish, and persist", async ({ 
   await expect(page.getByRole("button", { name: "Validate" })).toHaveCount(0);
   await expect(page.getByRole("status", { name: "Routine has validation issues" })).toBeVisible();
   await expect(page.getByText("Name is required.", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Prepare for agent release", exact: true })).toBeDisabled();
   await expect(page.getByLabel("Name", { exact: true })).toBeVisible();
   await page.getByLabel("Name", { exact: true }).fill("Collect pricing intake");
 
@@ -191,12 +195,6 @@ test("agent routines settings create, validate, publish, and persist", async ({ 
   await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
 
   await documentEditor.getByRole("button", { name: "Chat", exact: true }).click();
-  await documentEditor.getByRole("button", { name: "Condition", exact: true }).click();
-  await documentEditor.getByLabel("Rule kind").selectOption("default");
-  await documentEditor.getByLabel("Branch target").selectOption("ending:complete");
-  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
-
-  await documentEditor.getByRole("button", { name: "Chat", exact: true }).click();
   await documentEditor.getByLabel("Step 1 id").fill("ask_email");
   await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
 
@@ -211,18 +209,13 @@ test("agent routines settings create, validate, publish, and persist", async ({ 
 
   await expect.poll(() => routineUpdates.some((update) => update.method === "POST"), { timeout: 15_000 }).toBe(true);
   await expect(page.getByRole("status", { name: "Routine valid" })).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByRole("button", { name: "Prepare for agent release", exact: true })).toBeEnabled();
   expect(routineUpdates.some((update) => update.method === "VALIDATE")).toBe(false);
-
-  await page.getByRole("button", { name: "Prepare for agent release", exact: true }).click();
+  // Creating a routine lands it on its own URL without any further step from the author.
   await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/55555555-5555-4555-8555-000000000001$`));
-  await expect(page.getByText("prepared v1 (read-only)", { exact: true })).toBeVisible();
-  await expect.poll(() => routineUpdates.some((update) => update.method === "PUBLISH")).toBe(true);
 
   // Authoring in the document saves as it goes, so the shape to pin is the last state
-  // written before publishing, not whichever partial draft the first autosave caught.
-  const publishIndex = routineUpdates.findIndex((update) => update.method === "PUBLISH");
-  const createUpdate = routineUpdates.slice(0, publishIndex).filter((update) => update.body).at(-1);
+  // written, not whichever partial draft the first autosave caught.
+  const createUpdate = routineUpdates.filter((update) => update.body).at(-1);
   expect(createUpdate).toMatchObject({
     body: {
       name: "Collect pricing intake",
@@ -292,7 +285,6 @@ test("new routine can be authored from an AI procedure draft", async ({ page }) 
   // Document mode owns the trigger; the document shows it under Starts when.
   await expect(page.getByRole("article", { name: "Routine document editor" })).toContainText("Visitor asks for a person to follow up.");
   await expect(page.getByRole("status", { name: "Routine valid" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Prepare for agent release", exact: true })).toBeEnabled();
 
   const assistedDocument = page.getByRole("article", { name: "Routine document editor" });
   await expect(assistedDocument).toContainText("Ask for");
@@ -310,11 +302,11 @@ test("an existing routine opens in the Document view", async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
     routineUpdates: [],
-    routines: [{ ...baseRoutine, id: "55555555-5555-4555-9555-000000000301", status: "draft", version: 1 }],
+    routines: [{ ...baseRoutine, id: "55555555-5555-4555-9555-000000000301", enabled: true, version: 1 }],
   });
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
-  await page.getByRole("button", { name: "Edit draft Collect pricing intake" }).click();
+  await routineRow(page, "Collect pricing intake").click();
 
   // The routine's chat step reads as a sentence with its variable as a chip.
   const editor = page.getByRole("article", { name: "Routine document editor" });
@@ -335,7 +327,7 @@ test("a routine with custom completion copy opens in Document with terminal copy
     routines: [{
       ...baseRoutine,
       id: "55555555-5555-4555-9555-000000000302",
-      status: "draft",
+      enabled: true,
       version: 1,
       // A custom completion message; the Document view shows it as the routine's ending.
       terminals: [{ stableStepId: "done", kind: "complete", instruction: "Thanks, we will be in touch.", ordinal: 0 }],
@@ -343,7 +335,7 @@ test("a routine with custom completion copy opens in Document with terminal copy
   });
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
-  await page.getByRole("button", { name: "Edit draft Collect pricing intake" }).click();
+  await routineRow(page, "Collect pricing intake").click();
 
   await expect(page.getByRole("article", { name: "Routine document editor" })).toContainText("Thanks, we will be in touch.");
 });
@@ -352,7 +344,7 @@ test("a step changes kind in place in the Document view", async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
     routineUpdates: [],
-    routines: [{ ...baseRoutine, id: "55555555-5555-4555-9555-000000000501", status: "draft", version: 1 }],
+    routines: [{ ...baseRoutine, id: "55555555-5555-4555-9555-000000000501", enabled: true, version: 1 }],
     routineSkillCatalog: [{
       skillName: "orders.lookup",
       displayName: "Look up order",
@@ -364,7 +356,7 @@ test("a step changes kind in place in the Document view", async ({ page }) => {
   });
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
-  await page.getByRole("button", { name: "Edit draft Collect pricing intake" }).click();
+  await routineRow(page, "Collect pricing intake").click();
 
   const documentEditor = page.getByRole("article", { name: "Routine document editor" });
   await documentEditor.getByRole("button", { name: "Chat", exact: true }).click();
@@ -381,187 +373,45 @@ test("a step changes kind in place in the Document view", async ({ page }) => {
   await expect(documentEditor.getByLabel("Step 1 kind")).toHaveValue("tool");
 });
 
-test("editing while a publish is in flight does not strand the editor on a stale draft", async ({ page }) => {
+test("a routine already shipped to customers is directly editable, and the edit autosaves", async ({ page }) => {
   const routineUpdates: RoutineMutationFixture[] = [];
 
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
     routineUpdates,
-    routines: [{ ...baseRoutine, id: "55555555-5555-4555-9555-000000000601", status: "draft", version: 1 }],
-  });
-
-  // Hold the publish open long enough for the 1.5s autosave timer to fire underneath it.
-  // That is the real race: the routine is prepared server-side while the editor still
-  // believes it is editing a draft.
-  await page.route(/\/routines\/[^/]+\/publish$/, async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, 2_500));
-    await route.fallback();
-  });
-
-  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
-  await page.getByRole("button", { name: "Edit draft Collect pricing intake" }).click();
-  await expect(page.getByRole("button", { name: "Prepare for agent release", exact: true })).toBeEnabled();
-
-  await page.getByRole("button", { name: "Prepare for agent release", exact: true }).click();
-  // Keep typing while it is in flight, which is what arms the autosave.
-  await page.getByLabel("Name", { exact: true }).fill("Collect pricing intake v2");
-
-  await expect(page.getByText("prepared v1 (read-only)", { exact: true })).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByText("Only draft routine definitions can be updated")).toHaveCount(0);
-
-  // No save may be attempted against the routine after it stopped being a draft.
-  const publishIndex = routineUpdates.findIndex((update) => update.method === "PUBLISH");
-  expect(publishIndex).toBeGreaterThanOrEqual(0);
-  expect(routineUpdates.slice(publishIndex + 1).filter((update) => update.method === "PATCH")).toEqual([]);
-
-  // The typed name was never saved and now never can be, so the prepared view must show the
-  // version that exists rather than presenting the unsaved edit as prepared.
-  await expect(page.getByLabel("Name", { exact: true })).toHaveValue("Collect pricing intake");
-  await expect(page.getByText(/Changes you made while it published were not included|Changes made while it ran were not included/)).toBeVisible();
-});
-
-test("a routine prepared in another tab leaves the editor synced, not stuck on a save error", async ({ page }) => {
-  await seedDashboardStorage(page);
-  await installDashboardApiMocks(page, {
-    routineUpdates: [],
-    routines: [{ ...baseRoutine, id: "55555555-5555-4555-9555-000000000701", status: "draft", version: 1 }],
-  });
-
-  // Someone else publishes it between the service's draft check and its database update. The
-  // backend reports that race as a conflict, and the re-read returns a routine that is no
-  // longer a draft.
-  let published = false;
-  await page.route(/\/routines\/55555555-5555-4555-9555-000000000701$/, async (route) => {
-    if (route.request().method() === "PATCH") {
-      published = true;
-      await route.fulfill({
-        status: 409,
-        contentType: "application/json",
-        body: JSON.stringify({ error: { code: "conflict", message: "Routine was published concurrently — revise it to continue editing" } }),
-      });
-      return;
-    }
-    if (route.request().method() === "GET" && published) {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          routine: { ...baseRoutine, id: "55555555-5555-4555-9555-000000000701", status: "published", version: 1 },
-        }),
-      });
-      return;
-    }
-    await route.fallback();
-  });
-
-  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
-  await page.getByRole("button", { name: "Edit draft Collect pricing intake" }).click();
-  await page.getByLabel("Name", { exact: true }).fill("Collect pricing intake edited");
-
-  // The editor ends up describing the routine that exists, and says what to do about the
-  // change that did not land — not the API's rejection, which the author cannot act on.
-  await expect(page.getByText("prepared v1 (read-only)", { exact: true })).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByText(/Revise it to keep editing/)).toBeVisible();
-  await expect(page.getByText("Routine was published concurrently — revise it to continue editing")).toHaveCount(0);
-});
-
-test("a prepared routine opens in the Document reader, not the structural form", async ({ page }) => {
-  await seedDashboardStorage(page);
-  await installDashboardApiMocks(page, {
-    routineUpdates: [],
-    routines: [{
-      ...baseRoutine,
-      id: "55555555-5555-4555-9555-000000000401",
-      status: "published",
-      version: 1,
-    }],
-  });
-
-  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
-  await page.getByRole("button", { name: /Collect pricing intake prepared v1/ }).click();
-
-  // Reading a prepared routine is what the document's rest state is for.
-  // It renders as the reader: the routine reads as prose, with no editing affordances.
-  const reader = page.getByRole("article", { name: "Routine document" });
-  await expect(reader).toBeVisible();
-  await expect(page.getByRole("article", { name: "Routine document editor" })).toHaveCount(0);
-  await expect(reader).toContainText("Ask for");
-  await expect(reader).toContainText("so the team can follow up");
-});
-
-test("agent routines revise and publish a new version without duplicating the lineage row", async ({ page }) => {
-  const routineUpdates: RoutineMutationFixture[] = [];
-
-  await seedDashboardStorage(page);
-  await installDashboardApiMocks(page, {
-    routineUpdates,
+    // A routine that has been through Review & Publish. There is no revision step in front
+    // of it: opening it lands straight in the editor.
     routines: [{
       ...baseRoutine,
       id: "55555555-5555-4555-9555-000000000101",
-      status: "published",
-      version: 1,
+      enabled: true,
+      version: 2,
     }],
   });
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
-  const routineRow = page.getByRole("button", { name: /Collect pricing intake prepared v1/ });
-  await expect(routineRow).toBeVisible();
+  await routineRow(page, "Collect pricing intake").click();
+  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/55555555-5555-4555-9555-000000000101$`));
 
-  await page.getByRole("button", { name: "Edit Collect pricing intake" }).click();
-  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/55555555-5555-4555-8555-000000000001$`));
-  await expect(page.getByRole("heading", { name: "Routine", level: 1 })).toBeVisible();
-  await expect(page.getByText("Collect pricing intake", { exact: true }).first()).toBeVisible();
-  await expect(page.getByText("in preparation v2", { exact: true })).toBeVisible();
-  await expect.poll(() => routineUpdates.some((update) => update.method === "REVISE")).toBe(true);
+  const editor = page.getByRole("article", { name: "Routine document editor" });
+  await expect(editor).toContainText("Visitor asks about pricing or wants a quote.");
+  await editor.getByRole("button", { name: "Starts when", exact: true }).click();
+  await editor.getByLabel("Activation trigger", { exact: true }).fill("Visitor asks about pricing, quotes, or plans.");
+  await editor.getByRole("button", { name: "Done", exact: true }).click();
 
-  await clickBackToRoutines(page);
-  await expect(page.getByText("Collect pricing intake")).toHaveCount(1);
-  await expect(page.getByText("newer draft in preparation")).toBeVisible();
-
-  await page.getByRole("button", { name: "Edit Collect pricing intake" }).click();
-  // Document mode owns the trigger; edit it through the Starts when row.
-  const revisionEditor = page.getByRole("article", { name: "Routine document editor" });
-  await expect(revisionEditor).toContainText("Visitor asks about pricing or wants a quote.");
-  await revisionEditor.getByRole("button", { name: "Starts when", exact: true }).click();
-  await revisionEditor.getByLabel("Activation trigger", { exact: true }).fill("Visitor asks about pricing, quotes, or plans.");
-  await revisionEditor.getByRole("button", { name: "Done", exact: true }).click();
-  await expect.poll(() => routineUpdates.some((update) => {
-    const body = update.body as { activation?: { triggerDescription?: string } } | undefined;
-    return update.method === "PATCH" && body?.activation?.triggerDescription === "Visitor asks about pricing, quotes, or plans.";
-  }), { timeout: 15_000 }).toBe(true);
-  await expect(page.getByRole("button", { name: "Prepare for agent release", exact: true })).toBeEnabled();
-  await page.getByRole("button", { name: "Prepare for agent release", exact: true }).click();
-
-  await expect(page.getByText("prepared v2 (read-only)", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "More routine actions" }).click();
-  await page.getByRole("menuitem", { name: "Version history" }).click();
-  const versionHistory = page.getByRole("dialog", { name: "Version history" });
-  await expect(versionHistory).toContainText("v1");
-  await expect(versionHistory).toContainText("superseded");
-  await expect(versionHistory).toContainText("v2");
-  await expect(versionHistory).toContainText("published");
-  await page.keyboard.press("Escape");
-  await expect(versionHistory).toBeHidden();
-  await expect.poll(() => routineUpdates.some((update) => update.method === "PUBLISH")).toBe(true);
-  const revisionSave = routineUpdates.find((update) => {
-    const body = update.body as { activation?: { triggerDescription?: string } } | undefined;
-    return update.method === "PATCH" && body?.activation?.triggerDescription === "Visitor asks about pricing, quotes, or plans.";
-  });
-  expect(revisionSave).toMatchObject({
-    body: {
-      activation: {
-        triggerDescription: "Visitor asks about pricing, quotes, or plans.",
-      },
-    },
-  });
+  // The edit lands on the routine that was already published, in place, with no new version.
+  await expect.poll(() => routineUpdates.filter((update) => update.method === "PATCH").at(-1), { timeout: 15_000 })
+    .toMatchObject({
+      routineId: "55555555-5555-4555-9555-000000000101",
+      body: { activation: { triggerDescription: "Visitor asks about pricing, quotes, or plans." } },
+    });
 
   await clickBackToRoutines(page);
   await expect(page.getByText("Collect pricing intake")).toHaveCount(1);
-  await expect(page.getByText("newer draft in preparation")).toHaveCount(0);
-  await expect(page.getByText("v2", { exact: true })).toBeVisible();
+  await expect(page.getByText("Visitor asks about pricing, quotes, or plans.")).toBeVisible();
 });
 
-test("agent routines archive and restore from the collapsed archived section", async ({ page }) => {
+test("the routine list toggles a routine off and on through the update endpoint", async ({ page }) => {
   const routineUpdates: RoutineMutationFixture[] = [];
 
   await seedDashboardStorage(page);
@@ -570,90 +420,123 @@ test("agent routines archive and restore from the collapsed archived section", a
     routines: [{
       ...baseRoutine,
       id: "55555555-5555-4555-9555-000000000201",
-      status: "published",
+      enabled: true,
       version: 2,
     }],
   });
 
-  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/55555555-5555-4555-9555-000000000201`);
-  await expect(page.getByText("prepared v2 (read-only)", { exact: true })).toBeVisible();
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  const toggle = page.getByRole("switch", { name: "Enable Collect pricing intake" });
+  await expect(toggle).toBeChecked();
 
-  await page.getByRole("button", { name: "More routine actions" }).click();
-  await page.getByRole("menuitem", { name: "Archive" }).click();
-  await expect(page.getByText("archived v2 (read-only)", { exact: true })).toBeVisible();
-  await expect.poll(() => routineUpdates.some((update) => update.method === "ARCHIVE")).toBe(true);
+  await toggle.click();
+  await expect(toggle).not.toBeChecked();
+  await expect.poll(() => routineUpdates.filter((update) => update.method === "PATCH").at(-1))
+    .toMatchObject({ routineId: "55555555-5555-4555-9555-000000000201", body: { enabled: false } });
 
-  await clickBackToRoutines(page);
-  await expect(page.getByText("Collect pricing intake")).toBeHidden();
-  await page.getByRole("button", { name: "Archived routines (1)" }).click();
-  await expect(page.getByText("Collect pricing intake")).toBeVisible();
+  // The row shows what the server stored, so it survives a reload rather than being a local flip.
+  await page.reload();
+  await expect(page.getByRole("switch", { name: "Enable Collect pricing intake" })).not.toBeChecked();
 
-  await page.getByRole("button", { name: "Restore Collect pricing intake" }).click();
-  await expect.poll(() => routineUpdates.some((update) => update.method === "RESTORE")).toBe(true);
-  await expect(page.getByText("Collect pricing intake")).toBeVisible();
-  await expect(page.getByText("prepared")).toBeVisible();
+  await page.getByRole("switch", { name: "Enable Collect pricing intake" }).click();
+  await expect.poll(() => routineUpdates.filter((update) => update.method === "PATCH").at(-1))
+    .toMatchObject({ body: { enabled: true } });
+  await expect(page.getByRole("switch", { name: "Enable Collect pricing intake" })).toBeChecked();
 });
 
-test("agent routines archive directly from the list without opening the editor", async ({ page }) => {
-  const routineUpdates: RoutineMutationFixture[] = [];
+test("the editor disables its enablement switch until a delayed update settles, then rolls back a failure", async ({ page }) => {
+  const routine = {
+    ...baseRoutine,
+    id: "55555555-5555-4555-9555-000000000211",
+    enabled: true,
+    version: 1,
+  };
+  let releaseSuccess!: () => void;
+  const delayedSuccess = new Promise<void>((resolve) => { releaseSuccess = resolve; });
 
   await seedDashboardStorage(page);
-  await installDashboardApiMocks(page, {
-    routineUpdates,
-    routines: [{
-      ...baseRoutine,
-      id: "55555555-5555-4555-9555-000000000401",
-      status: "published",
-      version: 1,
-    }],
+  await installDashboardApiMocks(page, { routines: [routine] });
+  await page.route(`**/backend/api/v1/agents/${defaultAgentId}/routines/${routine.id}`, async (route) => {
+    if (route.request().method() !== "PATCH") return route.fallback();
+    await delayedSuccess;
+    return route.fallback();
+  });
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/${routine.id}`);
+
+  const disable = page.getByRole("switch", { name: "Disable routine" });
+  await disable.click();
+  await expect(page.getByRole("switch", { name: "Enable routine" })).toBeDisabled();
+  releaseSuccess();
+  await expect(page.getByRole("switch", { name: "Enable routine" })).toBeEnabled();
+
+  let releaseFailure!: () => void;
+  const delayedFailure = new Promise<void>((resolve) => { releaseFailure = resolve; });
+  await page.unroute(`**/backend/api/v1/agents/${defaultAgentId}/routines/${routine.id}`);
+  await page.route(`**/backend/api/v1/agents/${defaultAgentId}/routines/${routine.id}`, async (route) => {
+    if (route.request().method() !== "PATCH") return route.fallback();
+    await delayedFailure;
+    return route.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({ error: { message: "toggle failed" } }),
+    });
   });
 
-  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
-  await expect(page.getByRole("button", { name: /Collect pricing intake prepared v1/ })).toBeVisible();
-
-  await page.getByRole("button", { name: "Archive Collect pricing intake" }).click();
-  await expect.poll(() => routineUpdates.some((update) => update.method === "ARCHIVE")).toBe(true);
-
-  await expect(page.getByRole("button", { name: /Collect pricing intake prepared/ })).toHaveCount(0);
-  await page.getByRole("button", { name: "Archived routines (1)" }).click();
-  await expect(page.getByText("Collect pricing intake")).toBeVisible();
+  await page.getByRole("switch", { name: "Enable routine" }).click();
+  await expect(page.getByRole("switch", { name: "Disable routine" })).toBeDisabled();
+  releaseFailure();
+  await expect(page.getByRole("switch", { name: "Enable routine" })).not.toBeChecked();
+  await expect(page.getByText("toggle failed", { exact: true })).toBeVisible();
 });
 
-test("agent routines archive from a revision draft without publishing first", async ({ page }) => {
-  const routineUpdates: RoutineMutationFixture[] = [];
+test("an older routine toggle cannot clear a newer toggle after navigating away and back", async ({ page }) => {
+  const first = {
+    ...baseRoutine,
+    id: "55555555-5555-4555-9555-000000000221",
+    enabled: true,
+    version: 1,
+  };
+  const second = {
+    ...baseRoutine,
+    id: "55555555-5555-4555-9555-000000000222",
+    name: "Second routine",
+    enabled: false,
+    version: 1,
+  };
+  let releaseOriginal!: () => void;
+  const originalToggle = new Promise<void>((resolve) => { releaseOriginal = resolve; });
+  let releaseCurrent!: () => void;
+  const currentToggle = new Promise<void>((resolve) => { releaseCurrent = resolve; });
+  let requestCount = 0;
 
   await seedDashboardStorage(page);
-  await installDashboardApiMocks(page, {
-    routineUpdates,
-    routines: [{
-      ...baseRoutine,
-      id: "55555555-5555-4555-9555-000000000501",
-      status: "published",
-      version: 1,
-    }],
+  await installDashboardApiMocks(page, { routines: [first, second] });
+  await page.route(`**/backend/api/v1/agents/${defaultAgentId}/routines/${first.id}`, async (route) => {
+    if (route.request().method() !== "PATCH") return route.fallback();
+    requestCount += 1;
+    await (requestCount === 1 ? originalToggle : currentToggle);
+    return route.fallback();
   });
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/${first.id}`);
+  await page.getByRole("switch", { name: "Disable routine" }).click();
+  await expect(page.getByRole("switch", { name: "Enable routine" })).toBeDisabled();
 
-  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
-  await page.getByRole("button", { name: "Edit Collect pricing intake" }).click();
-  await expect(page.getByText("in preparation v2", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Save draft" })).toHaveCount(0);
-  await page.getByRole("button", { name: "More routine actions" }).click();
-  await expect(page.getByRole("menuitem", { name: "Delete draft" })).toBeVisible();
-  await expect.poll(() => routineUpdates.some((update) => update.method === "REVISE")).toBe(true);
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/${second.id}`);
+  await expect(page.getByRole("switch", { name: "Enable routine" })).not.toBeChecked();
+  await expect(page.getByRole("switch", { name: "Enable routine" })).toBeEnabled();
 
-  await Promise.all([
-    page.waitForURL(routinesListUrl),
-    page.getByRole("menuitem", { name: "Archive" }).click(),
-  ]);
-  await expect.poll(() => routineUpdates.some((update) => update.method === "ARCHIVE")).toBe(true);
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/${first.id}`);
+  await page.getByRole("switch", { name: "Disable routine" }).click();
+  await expect(page.getByRole("switch", { name: "Enable routine" })).toBeDisabled();
 
-  await expect(page.getByText("newer draft in preparation")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /Collect pricing intake prepared/ })).toHaveCount(0);
-  await page.getByRole("button", { name: "Archived routines (1)" }).click();
-  await expect(page.getByText("Collect pricing intake")).toBeVisible();
+  releaseOriginal();
+  // The old A request has settled, but the newer A request still owns this editor.
+  await expect(page.getByRole("switch", { name: "Enable routine" })).toBeDisabled();
+  releaseCurrent();
+  await expect(page.getByRole("switch", { name: "Enable routine" })).toBeEnabled();
 });
 
-test("agent routine draft delete requires confirmation", async ({ page }) => {
+test("agent routine delete requires confirmation", async ({ page }) => {
   const routineUpdates: RoutineMutationFixture[] = [];
 
   await seedDashboardStorage(page);
@@ -662,22 +545,22 @@ test("agent routine draft delete requires confirmation", async ({ page }) => {
     routines: [{
       ...baseRoutine,
       id: "55555555-5555-4555-9555-000000000601",
-      status: "draft",
+      enabled: true,
       version: 1,
     }],
   });
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/55555555-5555-4555-9555-000000000601`);
-  await expect(page.getByText("in preparation v1", { exact: true })).toBeVisible();
+  await expect(page.getByRole("article", { name: "Routine document editor" })).toBeVisible();
 
   await page.getByRole("button", { name: "More routine actions" }).click();
-  await page.getByRole("menuitem", { name: "Delete draft" }).click();
-  await expect(page.getByRole("alertdialog", { name: "Delete draft?" })).toBeVisible();
+  await page.getByRole("menuitem", { name: "Delete routine" }).click();
+  await expect(page.getByRole("alertdialog", { name: "Delete routine?" })).toBeVisible();
   await expect.poll(() => routineUpdates.some((update) => update.method === "DELETE")).toBe(false);
 
   await Promise.all([
     page.waitForURL(routinesListUrl),
-    page.getByRole("alertdialog", { name: "Delete draft?" }).getByRole("button", { name: "Delete draft" }).click(),
+    page.getByRole("alertdialog", { name: "Delete routine?" }).getByRole("button", { name: "Delete routine" }).click(),
   ]);
   await expect.poll(() => routineUpdates.some((update) => update.method === "DELETE")).toBe(true);
   await expect(page.getByText("Collect pricing intake")).toHaveCount(0);

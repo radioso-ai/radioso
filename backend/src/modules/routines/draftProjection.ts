@@ -1,25 +1,19 @@
 import type { RoutineDefinition } from "./domain.js";
 
 /**
- * The routine view stored in an agent draft. A lineage has one operator-selected
- * definition: its editable revision when one exists, otherwise its currently
- * published definition. Superseded and archived definitions remain available to
- * pinned conversations but are never part of a new draft/candidate graph.
+ * The routine view stored in an agent draft: one definition per lineage, its highest
+ * version. Nothing branches a lineage any more, so this only collapses history authored
+ * before routines became a single editable area. Those older rows remain available to a
+ * pinned conversation but are never part of a new draft or candidate graph.
  */
-export const selectDraftRoutineDefinitions = (
+export const selectCanonicalRoutineDefinitions = (
   definitions: readonly RoutineDefinition[],
 ): RoutineDefinition[] => {
   const selected = new Map<string, RoutineDefinition>();
 
   for (const definition of definitions) {
-    if (definition.status !== "draft" && definition.status !== "published") {
-      continue;
-    }
     const current = selected.get(definition.lineageId);
-    if (!current ||
-      (definition.status === "draft" && current.status !== "draft") ||
-      (definition.status === current.status && definition.version > current.version)
-    ) {
+    if (!current || definition.version > current.version) {
       selected.set(definition.lineageId, definition);
     }
   }
@@ -32,10 +26,10 @@ export const selectDraftRoutineDefinitions = (
 };
 
 /**
- * Normalized directive tags remain attached to the currently published routine
- * while an operator edits its next definition. A candidate instead carries the
- * selected draft definition, so its immutable directive view must follow that
- * lineage without changing authoring storage before local routine publish.
+ * A directive scope tag authored before routines collapsed to one row can still name a
+ * definition its lineage branched past. The snapshot carries only the canonical definition,
+ * so the immutable directive view has to follow the lineage rather than the stored id. It is
+ * a no-op once the two agree, which is the steady state for anything authored since.
  */
 export const projectDirectiveScopeTagsForSelectedRoutines = <T extends { tags: readonly string[] }>(
   directives: readonly T[],

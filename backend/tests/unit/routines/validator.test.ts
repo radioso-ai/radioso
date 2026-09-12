@@ -10,7 +10,7 @@ const definitionWithTool = (toolRef: string | null): RoutineDefinition => ({
   lineageId: "lineage_1",
   name: "lookup",
   version: 1,
-  status: "published",
+  enabled: true,
   activation: {
     triggerDescription: "Look up an account.",
     gateRef: null,

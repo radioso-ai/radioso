@@ -98,8 +98,9 @@ describeIfDatabase("notify and completion-export skill migration", () => {
        VALUES ($1, $2, 'Completion Export', 'https://example.test/webhook', 'ciphertext', 'test-key')`,
       [destinationId, workspace.id],
     );
-    const completionExportDraft = await routineRepository.createDraft(agent.id, {
+    await routineRepository.createDraft(agent.id, {
       name: "Exporting routine",
+      enabled: true,
       activation: { triggerDescription: "Start export", gateRef: null, priority: 1, reentryMode: "always" },
       slots: [],
       steps: [{
@@ -120,8 +121,6 @@ describeIfDatabase("notify and completion-export skill migration", () => {
         destinationRef: destinationId,
       },
     });
-    await routineRepository.publish(agent.id, completionExportDraft.id);
-
     await database.pool.query(migration111Sql);
     await database.pool.query(migration111Sql);
 
@@ -190,6 +189,7 @@ describeIfDatabase("notify and completion-export skill migration", () => {
     );
     const draftInput = (name: string, destinationRef: string) => ({
       name,
+      enabled: true,
       activation: { triggerDescription: "Start export", gateRef: null, priority: 1, reentryMode: "always" as const },
       slots: [],
       steps: [{
@@ -206,17 +206,19 @@ describeIfDatabase("notify and completion-export skill migration", () => {
       terminals: [{ stableStepId: "done", kind: "complete" as const, instruction: "Done.", ordinal: 0 }],
       completionExport: { enabled: true, triggerKinds: ["complete"] as Array<"complete">, destinationRef },
     });
-    const publishedDraft = await routineRepository.createDraft(
+    await routineRepository.createDraft(
       agent.id,
       draftInput("Published completion export", publishedDestinationId),
     );
-    await routineRepository.publish(agent.id, publishedDraft.id);
     const newerDraft = await routineRepository.createDraft(
       agent.id,
       draftInput("Newer draft completion export", draftDestinationId),
     );
+    // Migration 111 only reads status = 'published' rows. A routine is created live in the
+    // current model, so recreate the legacy "edited but never published" shape directly —
+    // nothing in the application can produce a draft-status row any more.
     await database.execute(
-      "UPDATE routine_definition SET updated_at = NOW() + INTERVAL '1 minute' WHERE id = $1",
+      "UPDATE routine_definition SET status = 'draft', updated_at = NOW() + INTERVAL '1 minute' WHERE id = $1",
       [newerDraft.id],
     );
 

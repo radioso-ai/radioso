@@ -5014,6 +5014,10 @@
             "minLength": 1,
             "maxLength": 200
           },
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          },
           "activation": {
             "type": "object",
             "properties": {
@@ -5565,562 +5569,577 @@
         "additionalProperties": false
       },
       "RoutineDefinitionUpdateRequest": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 200
-          },
-          "activation": {
+        "anyOf": [
+          {
             "type": "object",
             "properties": {
-              "triggerDescription": {
+              "enabled": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "enabled"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
                 "type": "string",
                 "minLength": 1,
-                "maxLength": 2000
+                "maxLength": 200
               },
-              "gateRef": {
-                "type": [
-                  "string",
-                  "null"
-                ],
-                "minLength": 1,
-                "maxLength": 300
+              "enabled": {
+                "type": "boolean"
               },
-              "priority": {
-                "type": "integer"
-              },
-              "reentryMode": {
-                "type": "string",
-                "enum": [
-                  "once_per_conversation",
-                  "always",
-                  "semantic"
-                ],
-                "default": "once_per_conversation"
-              },
-              "coverageCriteria": {
+              "activation": {
                 "type": "object",
                 "properties": {
-                  "coverage": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "enum": [
-                        "answered",
-                        "partial",
-                        "unanswered",
-                        "unclear"
-                      ]
-                    },
-                    "minItems": 1
+                  "triggerDescription": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000
                   },
-                  "reasons": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "enum": [
-                        "sufficient_evidence",
-                        "insufficient_evidence",
-                        "conflicting_evidence",
-                        "ambiguous_request",
-                        "intentional_scope_boundary"
-                      ]
+                  "gateRef": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1,
+                    "maxLength": 300
+                  },
+                  "priority": {
+                    "type": "integer"
+                  },
+                  "reentryMode": {
+                    "type": "string",
+                    "enum": [
+                      "once_per_conversation",
+                      "always",
+                      "semantic"
+                    ]
+                  },
+                  "coverageCriteria": {
+                    "type": "object",
+                    "properties": {
+                      "coverage": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "answered",
+                            "partial",
+                            "unanswered",
+                            "unclear"
+                          ]
+                        },
+                        "minItems": 1
+                      },
+                      "reasons": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "sufficient_evidence",
+                            "insufficient_evidence",
+                            "conflicting_evidence",
+                            "ambiguous_request",
+                            "intentional_scope_boundary"
+                          ]
+                        },
+                        "minItems": 1
+                      }
                     },
-                    "minItems": 1
+                    "required": [
+                      "coverage"
+                    ],
+                    "additionalProperties": false
                   }
                 },
                 "required": [
-                  "coverage"
+                  "triggerDescription",
+                  "priority"
                 ],
+                "additionalProperties": false
+              },
+              "slots": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "stableSlotId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                    },
+                    "key": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "text",
+                        "number",
+                        "boolean",
+                        "email",
+                        "date"
+                      ]
+                    },
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "description": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 1000
+                    },
+                    "ordinal": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "mutable": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "stableSlotId",
+                    "key",
+                    "type",
+                    "required",
+                    "ordinal"
+                  ],
+                  "additionalProperties": false
+                },
+                "default": []
+              },
+              "steps": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "stableStepId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "chat",
+                        "tool",
+                        "action",
+                        "approval"
+                      ]
+                    },
+                    "toolRef": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 300
+                    },
+                    "actionType": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 300
+                    },
+                    "captureKey": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                    },
+                    "ordinal": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "metadata": {
+                      "type": "object",
+                      "properties": {
+                        "inputBindings": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "literal"
+                                    ]
+                                  },
+                                  "value": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "boolean"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "value"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "variableRef"
+                                    ]
+                                  },
+                                  "ref": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 120,
+                                    "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "ref"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "contextVariableRef"
+                                    ]
+                                  },
+                                  "contextVariable": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 120,
+                                    "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "contextVariable"
+                                ],
+                                "additionalProperties": false
+                              }
+                            ]
+                          }
+                        },
+                        "outputAssignments": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120,
+                            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                          }
+                        },
+                        "mode": {
+                          "type": "string",
+                          "enum": [
+                            "typed",
+                            "untyped"
+                          ]
+                        }
+                      },
+                      "default": {}
+                    },
+                    "instruction": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4000
+                    },
+                    "options": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120,
+                            "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                          },
+                          "label": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120
+                          },
+                          "description": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "minLength": 1,
+                            "maxLength": 500
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "label"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 8
+                    }
+                  },
+                  "required": [
+                    "stableStepId",
+                    "kind",
+                    "ordinal",
+                    "instruction"
+                  ],
+                  "additionalProperties": false
+                },
+                "minItems": 1
+              },
+              "transitions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "fromStep": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                    },
+                    "toRef": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                    },
+                    "guardKind": {
+                      "type": "string",
+                      "enum": [
+                        "llm",
+                        "default",
+                        "slot_filled",
+                        "outcome",
+                        "counter",
+                        "field"
+                      ]
+                    },
+                    "guardText": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 2000
+                    },
+                    "outcomeStatus": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 120
+                    },
+                    "counterLimit": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "exclusiveMinimum": 0
+                    },
+                    "fieldRef": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "fieldOp": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "is_true",
+                        "is_false",
+                        "equals",
+                        "not_equals",
+                        "in",
+                        "is_present",
+                        "is_absent",
+                        "gt",
+                        "gte",
+                        "lt",
+                        "lte",
+                        "older_than",
+                        "within"
+                      ]
+                    },
+                    "fieldValue": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        },
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "fieldValues": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 500
+                          },
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "boolean"
+                          }
+                        ]
+                      },
+                      "minItems": 1
+                    },
+                    "fieldUnit": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "days",
+                        "weeks",
+                        "months",
+                        "years"
+                      ]
+                    },
+                    "ordinal": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "fromStep",
+                    "toRef",
+                    "guardKind",
+                    "ordinal"
+                  ],
+                  "additionalProperties": false
+                },
+                "default": []
+              },
+              "terminals": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "stableStepId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "complete",
+                        "handoff"
+                      ]
+                    },
+                    "instruction": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 4000
+                    },
+                    "ordinal": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "stableStepId",
+                    "kind",
+                    "ordinal"
+                  ],
+                  "additionalProperties": false
+                },
+                "minItems": 1
+              },
+              "completionExport": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "triggerKinds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "complete",
+                        "handoff"
+                      ]
+                    }
+                  },
+                  "destinationRef": {
+                    "type": "string",
+                    "maxLength": 300
+                  }
+                },
                 "additionalProperties": false
               }
             },
             "required": [
-              "triggerDescription",
-              "priority"
+              "name",
+              "activation",
+              "steps",
+              "terminals"
             ],
             "additionalProperties": false
-          },
-          "slots": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "stableSlotId": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 120,
-                  "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
-                },
-                "key": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 120,
-                  "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
-                },
-                "type": {
-                  "type": "string",
-                  "enum": [
-                    "text",
-                    "number",
-                    "boolean",
-                    "email",
-                    "date"
-                  ]
-                },
-                "required": {
-                  "type": "boolean"
-                },
-                "description": {
-                  "type": [
-                    "string",
-                    "null"
-                  ],
-                  "minLength": 1,
-                  "maxLength": 1000
-                },
-                "ordinal": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "mutable": {
-                  "type": "boolean"
-                }
-              },
-              "required": [
-                "stableSlotId",
-                "key",
-                "type",
-                "required",
-                "ordinal"
-              ],
-              "additionalProperties": false
-            },
-            "default": []
-          },
-          "steps": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "stableStepId": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 120,
-                  "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
-                },
-                "kind": {
-                  "type": "string",
-                  "enum": [
-                    "chat",
-                    "tool",
-                    "action",
-                    "approval"
-                  ]
-                },
-                "toolRef": {
-                  "type": [
-                    "string",
-                    "null"
-                  ],
-                  "minLength": 1,
-                  "maxLength": 300
-                },
-                "actionType": {
-                  "type": [
-                    "string",
-                    "null"
-                  ],
-                  "minLength": 1,
-                  "maxLength": 300
-                },
-                "captureKey": {
-                  "type": [
-                    "string",
-                    "null"
-                  ],
-                  "minLength": 1,
-                  "maxLength": 120,
-                  "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
-                },
-                "ordinal": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "metadata": {
-                  "type": "object",
-                  "properties": {
-                    "inputBindings": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "oneOf": [
-                          {
-                            "type": "object",
-                            "properties": {
-                              "kind": {
-                                "type": "string",
-                                "enum": [
-                                  "literal"
-                                ]
-                              },
-                              "value": {
-                                "anyOf": [
-                                  {
-                                    "type": "string"
-                                  },
-                                  {
-                                    "type": "number"
-                                  },
-                                  {
-                                    "type": "boolean"
-                                  }
-                                ]
-                              }
-                            },
-                            "required": [
-                              "kind",
-                              "value"
-                            ],
-                            "additionalProperties": false
-                          },
-                          {
-                            "type": "object",
-                            "properties": {
-                              "kind": {
-                                "type": "string",
-                                "enum": [
-                                  "variableRef"
-                                ]
-                              },
-                              "ref": {
-                                "type": "string",
-                                "minLength": 1,
-                                "maxLength": 120,
-                                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
-                              }
-                            },
-                            "required": [
-                              "kind",
-                              "ref"
-                            ],
-                            "additionalProperties": false
-                          },
-                          {
-                            "type": "object",
-                            "properties": {
-                              "kind": {
-                                "type": "string",
-                                "enum": [
-                                  "contextVariableRef"
-                                ]
-                              },
-                              "contextVariable": {
-                                "type": "string",
-                                "minLength": 1,
-                                "maxLength": 120,
-                                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
-                              }
-                            },
-                            "required": [
-                              "kind",
-                              "contextVariable"
-                            ],
-                            "additionalProperties": false
-                          }
-                        ]
-                      }
-                    },
-                    "outputAssignments": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 120,
-                        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
-                      }
-                    },
-                    "mode": {
-                      "type": "string",
-                      "enum": [
-                        "typed",
-                        "untyped"
-                      ]
-                    }
-                  },
-                  "default": {}
-                },
-                "instruction": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 4000
-                },
-                "options": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "id": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 120,
-                        "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
-                      },
-                      "label": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 120
-                      },
-                      "description": {
-                        "type": [
-                          "string",
-                          "null"
-                        ],
-                        "minLength": 1,
-                        "maxLength": 500
-                      }
-                    },
-                    "required": [
-                      "id",
-                      "label"
-                    ],
-                    "additionalProperties": false
-                  },
-                  "maxItems": 8
-                }
-              },
-              "required": [
-                "stableStepId",
-                "kind",
-                "ordinal",
-                "instruction"
-              ],
-              "additionalProperties": false
-            },
-            "minItems": 1
-          },
-          "transitions": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "fromStep": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 120,
-                  "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
-                },
-                "toRef": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 120,
-                  "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
-                },
-                "guardKind": {
-                  "type": "string",
-                  "enum": [
-                    "llm",
-                    "default",
-                    "slot_filled",
-                    "outcome",
-                    "counter",
-                    "field"
-                  ]
-                },
-                "guardText": {
-                  "type": [
-                    "string",
-                    "null"
-                  ],
-                  "minLength": 1,
-                  "maxLength": 2000
-                },
-                "outcomeStatus": {
-                  "type": [
-                    "string",
-                    "null"
-                  ],
-                  "minLength": 1,
-                  "maxLength": 120
-                },
-                "counterLimit": {
-                  "type": [
-                    "integer",
-                    "null"
-                  ],
-                  "exclusiveMinimum": 0
-                },
-                "fieldRef": {
-                  "type": [
-                    "string",
-                    "null"
-                  ],
-                  "minLength": 1,
-                  "maxLength": 200
-                },
-                "fieldOp": {
-                  "type": [
-                    "string",
-                    "null"
-                  ],
-                  "enum": [
-                    "is_true",
-                    "is_false",
-                    "equals",
-                    "not_equals",
-                    "in",
-                    "is_present",
-                    "is_absent",
-                    "gt",
-                    "gte",
-                    "lt",
-                    "lte",
-                    "older_than",
-                    "within"
-                  ]
-                },
-                "fieldValue": {
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 500
-                    },
-                    {
-                      "type": "number"
-                    },
-                    {
-                      "type": "boolean"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "fieldValues": {
-                  "type": [
-                    "array",
-                    "null"
-                  ],
-                  "items": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 500
-                      },
-                      {
-                        "type": "number"
-                      },
-                      {
-                        "type": "boolean"
-                      }
-                    ]
-                  },
-                  "minItems": 1
-                },
-                "fieldUnit": {
-                  "type": [
-                    "string",
-                    "null"
-                  ],
-                  "enum": [
-                    "days",
-                    "weeks",
-                    "months",
-                    "years"
-                  ]
-                },
-                "ordinal": {
-                  "type": "integer",
-                  "minimum": 0
-                }
-              },
-              "required": [
-                "fromStep",
-                "toRef",
-                "guardKind",
-                "ordinal"
-              ],
-              "additionalProperties": false
-            },
-            "default": []
-          },
-          "terminals": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "stableStepId": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 120,
-                  "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
-                },
-                "kind": {
-                  "type": "string",
-                  "enum": [
-                    "complete",
-                    "handoff"
-                  ]
-                },
-                "instruction": {
-                  "type": [
-                    "string",
-                    "null"
-                  ],
-                  "minLength": 1,
-                  "maxLength": 4000
-                },
-                "ordinal": {
-                  "type": "integer",
-                  "minimum": 0
-                }
-              },
-              "required": [
-                "stableStepId",
-                "kind",
-                "ordinal"
-              ],
-              "additionalProperties": false
-            },
-            "minItems": 1
-          },
-          "completionExport": {
-            "type": "object",
-            "properties": {
-              "enabled": {
-                "type": "boolean",
-                "default": false
-              },
-              "triggerKinds": {
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "enum": [
-                    "complete",
-                    "handoff"
-                  ]
-                },
-                "default": []
-              },
-              "destinationRef": {
-                "type": "string",
-                "maxLength": 300,
-                "default": ""
-              }
-            },
-            "additionalProperties": false
           }
-        },
-        "required": [
-          "name",
-          "activation",
-          "steps",
-          "terminals"
-        ],
-        "additionalProperties": false
+        ]
       },
       "RoutineDraftAssistRequest": {
         "type": "object",
@@ -6209,6 +6228,10 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 200
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true
           },
           "activation": {
             "type": "object",
@@ -6767,15 +6790,6 @@
             "type": "integer",
             "minimum": 1
           },
-          "status": {
-            "type": "string",
-            "enum": [
-              "draft",
-              "published",
-              "superseded",
-              "archived"
-            ]
-          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -6794,7 +6808,6 @@
           "agentId",
           "lineageId",
           "version",
-          "status",
           "createdAt",
           "updatedAt"
         ],
@@ -6840,61 +6853,6 @@
           "validation"
         ]
       },
-      "RoutineDirectiveScopeOrphan": {
-        "type": "object",
-        "properties": {
-          "directiveId": {
-            "type": "string"
-          },
-          "scopeTag": {
-            "type": "string"
-          },
-          "reason": {
-            "type": "string",
-            "enum": [
-              "missing_step"
-            ]
-          }
-        },
-        "required": [
-          "directiveId",
-          "scopeTag",
-          "reason"
-        ]
-      },
-      "RoutineDefinitionPublishResponse": {
-        "type": "object",
-        "properties": {
-          "routine": {
-            "$ref": "#/components/schemas/RoutineDefinition"
-          },
-          "validation": {
-            "$ref": "#/components/schemas/RoutineValidationResult"
-          },
-          "directiveScopeOrphans": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/RoutineDirectiveScopeOrphan"
-            }
-          }
-        },
-        "required": [
-          "routine",
-          "validation",
-          "directiveScopeOrphans"
-        ]
-      },
-      "RoutineDefinitionLifecycleResponse": {
-        "type": "object",
-        "properties": {
-          "routine": {
-            "$ref": "#/components/schemas/RoutineDefinition"
-          }
-        },
-        "required": [
-          "routine"
-        ]
-      },
       "RoutineDefinitionValidateResponse": {
         "type": "object",
         "properties": {
@@ -6916,6 +6874,10 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 200
+              },
+              "enabled": {
+                "type": "boolean",
+                "default": true
               },
               "activation": {
                 "type": "object",
@@ -7473,24 +7435,6 @@
         },
         "required": [
           "draft",
-          "validation"
-        ]
-      },
-      "RoutineDefinitionPublishRejectedResponse": {
-        "type": "object",
-        "properties": {
-          "error": {
-            "type": "string",
-            "enum": [
-              "Routine definition is invalid"
-            ]
-          },
-          "validation": {
-            "$ref": "#/components/schemas/RoutineValidationResult"
-          }
-        },
-        "required": [
-          "error",
           "validation"
         ]
       },
@@ -8579,6 +8523,10 @@
                 "minLength": 1,
                 "maxLength": 200
               },
+              "enabled": {
+                "type": "boolean",
+                "default": true
+              },
               "activation": {
                 "type": "object",
                 "properties": {
@@ -9278,7 +9226,7 @@
           "directive_binding_unbound",
           "contact_delivery_unbound"
         ],
-        "description": "Why a bundle element could not be fully applied to the target workspace. Every element is reported\nrather than silently dropped: a bundle that imports quietly minus a skill binding is an agent that\nlooks configured and answers wrong.\n- context_variable_missing: the bundle names a context variable that does not exist in this workspace.\n- resolver_skill_missing: the enablement's resolver skill did not survive import, so it stays unbound.\n- skill_target_unbound: the skill's connection target is a credential-bearing workspace row.\n- skill_capability_unknown: no capability with this id is registered in this deployment.\n- routine_invalid: the routine imported as a draft because publish validation rejected it.\n- document_source_unresolved: selected document sources cannot be matched; scope imports empty, not \"all\".\n- surface_credential_unbound: a surface whose token cannot travel; imported disabled so it cannot serve.\n- mcp_connection_unbound: an external MCP connection reference; the skill imports without its server.\n- asset_not_portable: binary stored outside the database (the logo); not part of the bundle.\n- skill_config_not_portable: a skill setting whose value the capability keeps inside its own workspace.\n- directive_binding_unbound: a directive bound to a skill that did not survive import; kept, but disabled.\n- contact_delivery_unbound: contact requests are on but their destination stayed in the source workspace."
+        "description": "Why a bundle element could not be fully applied to the target workspace. Every element is reported\nrather than silently dropped: a bundle that imports quietly minus a skill binding is an agent that\nlooks configured and answers wrong.\n- context_variable_missing: the bundle names a context variable that does not exist in this workspace.\n- resolver_skill_missing: the enablement's resolver skill did not survive import, so it stays unbound.\n- skill_target_unbound: the skill's connection target is a credential-bearing workspace row.\n- skill_capability_unknown: no capability with this id is registered in this deployment.\n- routine_invalid: the routine imported out of service (disabled) because it does not pass validation.\n- document_source_unresolved: selected document sources cannot be matched; scope imports empty, not \"all\".\n- surface_credential_unbound: a surface whose token cannot travel; imported disabled so it cannot serve.\n- mcp_connection_unbound: an external MCP connection reference; the skill imports without its server.\n- asset_not_portable: binary stored outside the database (the logo); not part of the bundle.\n- skill_config_not_portable: a skill setting whose value the capability keeps inside its own workspace.\n- directive_binding_unbound: a directive bound to a skill that did not survive import; kept, but disabled.\n- contact_delivery_unbound: contact requests are on but their destination stayed in the source workspace."
       },
       "AgentBundleUnresolvedReference": {
         "type": "object",
@@ -29058,7 +29006,7 @@
             }
           },
           "409": {
-            "description": "Destination is referenced by published routines",
+            "description": "Destination is referenced by enabled routines",
             "content": {
               "application/json": {
                 "schema": {
@@ -32099,330 +32047,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/agents/{agentId}/routines/{routineId}/publish": {
-      "post": {
-        "tags": [
-          "Agents"
-        ],
-        "summary": "Publish a draft routine definition for an agent",
-        "operationId": "publishAgentRoutine",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "agentId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "routineId",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Routine definition published",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RoutineDefinitionPublishResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Routine definition cannot be published",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication required",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Agent or routine definition not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Routine definition is invalid",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RoutineDefinitionPublishRejectedResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/agents/{agentId}/routines/{routineId}/revise": {
-      "post": {
-        "tags": [
-          "Agents"
-        ],
-        "summary": "Create or return a draft revision for a published routine definition",
-        "operationId": "reviseAgentRoutine",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "agentId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "routineId",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Routine revision draft returned",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RoutineDefinitionLifecycleResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Routine definition cannot be revised",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication required",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Agent or routine definition not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/agents/{agentId}/routines/{routineId}/archive": {
-      "post": {
-        "tags": [
-          "Agents"
-        ],
-        "summary": "Archive a published routine definition",
-        "operationId": "archiveAgentRoutine",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "agentId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "routineId",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Routine definition archived",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RoutineDefinitionLifecycleResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Routine definition cannot be archived",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication required",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Agent or routine definition not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/agents/{agentId}/routines/{routineId}/restore": {
-      "post": {
-        "tags": [
-          "Agents"
-        ],
-        "summary": "Restore an archived routine definition",
-        "operationId": "restoreAgentRoutine",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "agentId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "routineId",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Routine definition restored",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RoutineDefinitionLifecycleResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Routine definition cannot be restored",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication required",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Agent or routine definition not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Routine definition is invalid",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RoutineDefinitionPublishRejectedResponse"
                 }
               }
             }

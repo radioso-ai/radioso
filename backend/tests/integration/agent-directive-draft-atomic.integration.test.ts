@@ -29,6 +29,7 @@ const directiveInput = (name: string, action = "Use a formal register.") => ({
 
 const routineInput = (label: string): RoutineDefinitionDraftInput => ({
   name: "atomic-routine",
+  enabled: true,
   activation: { triggerDescription: `Run ${label}`, gateRef: null, priority: 1, reentryMode: "once_per_conversation" },
   slots: [],
   steps: [{ stableStepId: "step_one", kind: "chat", instruction: label, toolRef: null, ordinal: 0, metadata: {} }],
@@ -356,88 +357,66 @@ describeDb("agent directive draft mutations", () => {
     await expect(revisions.readDraft(workspaceId, agentId)).resolves.toMatchObject({ generation: 4 });
   });
 
-  it("projects the selected routine per lineage and restores the published version when a revision draft is deleted", async () => {
+  it("keeps the draft snapshot in sync as a routine is created, edited in place, and taken out of service", async () => {
     const agentId = await createAgentWithDraft();
-    const service = new RoutineDefinitionService({ agentRepository: agents, repository: routines, directiveScopeTags: agents });
-    const firstDraft = await service.createDraft(workspaceId, agentId, routineInput("published v1"));
-    expect((await revisions.readDraft(workspaceId, agentId))?.snapshot.routines.map((routine) => routine.id)).toEqual([firstDraft.routine.id]);
-
-    const firstPublished = await service.publish(workspaceId, agentId, firstDraft.routine.id);
-    if ("rejected" in firstPublished) throw new Error("expected valid v1");
-    const candidate = await revisions.createCandidate(workspaceId, agentId, {
-      id: randomUUID(), expectedDraftGeneration: 3,
-    });
-    if (candidate === "conflict") throw new Error("candidate unexpectedly conflicted");
-
-    const revision = await service.revise(workspaceId, agentId, firstPublished.routine.id);
-    await service.updateDraft(workspaceId, agentId, revision.id, routineInput("editable v2"));
-    expect((await revisions.readDraft(workspaceId, agentId))?.snapshot.routines).toMatchObject([{ id: revision.id, status: "draft", steps: [{ instruction: "editable v2" }] }]);
-    expect(candidate.snapshot.routines).toMatchObject([{ id: firstPublished.routine.id, status: "published", steps: [{ instruction: "published v1" }] }]);
-
-    await service.deleteDraft(workspaceId, agentId, revision.id);
-    expect((await revisions.readDraft(workspaceId, agentId))?.snapshot.routines).toMatchObject([{ id: firstPublished.routine.id, status: "published" }]);
-
-    await service.archive(workspaceId, agentId, firstPublished.routine.id);
-    expect((await revisions.readDraft(workspaceId, agentId))?.snapshot.routines).toEqual([]);
-    const restored = await service.restore(workspaceId, agentId, firstPublished.routine.id);
-    if ("rejected" in restored) throw new Error("expected valid restoration");
-    expect((await revisions.readDraft(workspaceId, agentId))?.snapshot.routines).toMatchObject([{ id: firstPublished.routine.id, status: "published" }]);
-  });
-
-  it("repoints normalized directive scope tags and the snapshot in the same routine publish transaction", async () => {
-    const agentId = await createAgentWithDraft();
-    const service = new RoutineDefinitionService({ agentRepository: agents, repository: routines, directiveScopeTags: agents });
-    const first = await service.createDraft(workspaceId, agentId, routineInput("v1"));
-    const published = await service.publish(workspaceId, agentId, first.routine.id);
-    if ("rejected" in published) throw new Error("expected valid v1");
-    const directive = await agents.createDirective(agentId, workspaceId, {
-      ...directiveInput("scoped routine"),
-      tags: [`routine:${published.routine.id}`, `step:${published.routine.id}:step_one`],
-    });
-    const revision = await service.revise(workspaceId, agentId, published.routine.id);
-    const candidate = await revisions.createCandidate(workspaceId, agentId, {
-      id: randomUUID(), expectedDraftGeneration: 5,
-    });
-    if (candidate === "conflict") throw new Error("candidate unexpectedly conflicted");
-    expect(candidate.snapshot.directives).toMatchObject([
-      { id: directive.id, tags: [`routine:${revision.id}`, `step:${revision.id}:step_one`] },
+    const service = new RoutineDefinitionService({ agentRepository: agents, repository: routines });
+    const created = await service.createDraft(workspaceId, agentId, routineInput("v1"));
+    expect((await revisions.readDraft(workspaceId, agentId))?.snapshot.routines).toMatchObject([
+      { id: created.routine.id, enabled: true, steps: [{ instruction: "v1" }] },
     ]);
-    expect(candidate.snapshot.routines).toMatchObject([{ id: revision.id, status: "draft" }]);
-    const next = await service.publish(workspaceId, agentId, revision.id);
-    if ("rejected" in next) throw new Error("expected valid v2");
 
-    const [reloaded] = await agents.listDirectives(agentId, workspaceId);
-    const draft = await revisions.readDraft(workspaceId, agentId);
-    expect(reloaded).toMatchObject({ id: directive.id, tags: [`routine:${next.routine.id}`, `step:${next.routine.id}:step_one`] });
-    expect(draft?.snapshot.directives).toEqual([reloaded]);
-    expect(draft?.snapshot.routines).toMatchObject([{ id: next.routine.id, status: "published" }]);
+    const candidate = await revisions.createCandidate(workspaceId, agentId, {
+      id: randomUUID(), expectedDraftGeneration: 2,
+    });
+    if (candidate === "conflict") throw new Error("candidate unexpectedly conflicted");
+
+    // The agent revision system is the only publication boundary in the collapsed model, so
+    // "delete" disabling rather than removing (below) must be earned by an actual publish, not by
+    // having merely been touched since creation.
+    const published = await revisions.publish({
+      workspaceId, agentId, actorAccountId: null, revisionId: candidate.id,
+      expectedDraftGeneration: 2, expectedPublishedRevisionId: null, idempotencyKey: randomUUID(),
+    });
+    if (published === "conflict" || published === "idempotency_mismatch") throw new Error(`publish unexpectedly ${published}`);
+
+    // Editing rewrites the same row in place; the id never changes, so a directive scope
+    // tag naming this routine never needs to be repointed.
+    const updated = await service.updateDraft(workspaceId, agentId, created.routine.id, routineInput("v2"));
+    expect(updated.routine.id).toBe(created.routine.id);
+    expect((await revisions.readDraft(workspaceId, agentId))?.snapshot.routines).toMatchObject([
+      { id: created.routine.id, enabled: true, steps: [{ instruction: "v2" }] },
+    ]);
+    expect(candidate.snapshot.routines).toMatchObject([
+      { id: created.routine.id, steps: [{ instruction: "v1" }] },
+    ]);
+
+    await service.setEnabled(workspaceId, agentId, created.routine.id, false);
+    expect((await revisions.readDraft(workspaceId, agentId))?.snapshot.routines).toMatchObject([
+      { id: created.routine.id, enabled: false },
+    ]);
+
+    // The agent published a revision after this routine was created (above), so it could have
+    // gone live: "delete" disables it in place rather than removing it, keeping findPinnedById
+    // resolving for any in-flight conversation that reached it.
+    await service.deleteDraft(workspaceId, agentId, created.routine.id);
+    expect((await revisions.readDraft(workspaceId, agentId))?.snapshot.routines).toMatchObject([
+      { id: created.routine.id, enabled: false },
+    ]);
   });
 
-  it("rolls back a routine lifecycle write when scope-tag repointing fails after the authored update", async () => {
+  it("removes a routine outright from the draft snapshot when it was created disabled and never touched", async () => {
     const agentId = await createAgentWithDraft();
-    const normal = new RoutineDefinitionService({ agentRepository: agents, repository: routines, directiveScopeTags: agents });
-    const draft = await normal.createDraft(workspaceId, agentId, routineInput("rollback"));
-    const failing = new RoutineDefinitionService({
-      agentRepository: agents,
-      repository: routines,
-      directiveScopeTags: {
-        repointRoutineScopeTags: async () => { throw new Error("test repoint failure after routine update"); },
-      },
-    });
-    // A first published definition ensures the second publish reaches the injected callback.
-    const published = await normal.publish(workspaceId, agentId, draft.routine.id);
-    if ("rejected" in published) throw new Error("expected valid baseline");
-    const revision = await normal.revise(workspaceId, agentId, published.routine.id);
-    const before = await revisions.readDraft(workspaceId, agentId);
-    await expect(failing.publish(workspaceId, agentId, revision.id)).rejects.toThrow("test repoint failure after routine update");
-    expect(await routines.findById(agentId, revision.id)).toMatchObject({ status: "draft" });
-    expect(await routines.findById(agentId, published.routine.id)).toMatchObject({ status: "published" });
-    expect(await revisions.readDraft(workspaceId, agentId)).toEqual(before);
+    const service = new RoutineDefinitionService({ agentRepository: agents, repository: routines });
+    const created = await service.createDraft(workspaceId, agentId, { ...routineInput("never-served"), enabled: false });
+
+    await service.deleteDraft(workspaceId, agentId, created.routine.id);
+
+    expect((await revisions.readDraft(workspaceId, agentId))?.snapshot.routines).toEqual([]);
   });
 
   it("serializes a routine update with candidate materialization without exposing a partial graph", async () => {
     const agentId = await createAgentWithDraft();
-    const service = new RoutineDefinitionService({ agentRepository: agents, repository: routines, directiveScopeTags: agents });
+    const service = new RoutineDefinitionService({ agentRepository: agents, repository: routines });
     const created = await service.createDraft(workspaceId, agentId, routineInput("before"));
     const [saved, candidate] = await Promise.all([
       service.updateDraft(workspaceId, agentId, created.routine.id, routineInput("after")),
@@ -452,7 +431,7 @@ describeDb("agent directive draft mutations", () => {
 
   it("keeps an incomplete routine draft saveable but rejects it as an immutable candidate", async () => {
     const agentId = await createAgentWithDraft();
-    const service = new RoutineDefinitionService({ agentRepository: agents, repository: routines, directiveScopeTags: agents });
+    const service = new RoutineDefinitionService({ agentRepository: agents, repository: routines });
     const incomplete = routineInput("incomplete");
     incomplete.transitions = [{ ...incomplete.transitions[0], toRef: "missing_terminal" }];
     await service.createDraft(workspaceId, agentId, incomplete);

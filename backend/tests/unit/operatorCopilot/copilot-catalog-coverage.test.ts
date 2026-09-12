@@ -98,14 +98,10 @@ describe("operator copilot catalog coverage", () => {
     });
   });
 
-  it("maps routine authoring and lifecycle operations to the tools that reach them", () => {
+  it("maps routine authoring operations to the tools that reach them", () => {
     expect(catalogCoverage).toMatchObject({
       validateAgentRoutine: "validate_routine",
       updateAgentRoutine: "propose_routine_edit",
-      publishAgentRoutine: "propose_routine_lifecycle",
-      reviseAgentRoutine: "propose_routine_edit",
-      archiveAgentRoutine: "propose_routine_lifecycle",
-      restoreAgentRoutine: "propose_routine_lifecycle",
     });
     // Editing addresses elements by stable id, so nothing Ray proposes can remove a routine or
     // rework its graph. That is a scope boundary of the edit tool, not a Wave 2 backlog item.

@@ -30,7 +30,6 @@ function FeedbackHarness({ onDraftChange }: { onDraftChange: (draft: RoutineDefi
     <RoutineSkillCatalogContext.Provider value={{ agentId: '', skills: [], isLoading: false, error: null }}>
       <RoutineDocumentTab
         draft={draft}
-        isReadOnly={false}
         onDraftChange={(next) => {
           onDraftChange(next)
           const delay = echoOrder.current++ === 0 ? 10 : 0
@@ -54,7 +53,6 @@ function DocumentEditorSessionHarness({
         <RoutineDocumentTab
           key={`test-agent:${routineRouteId}`}
           draft={newRoutineDraft}
-          isReadOnly={false}
           onDraftChange={vi.fn()}
         />
       </div>
@@ -91,7 +89,7 @@ describe('RoutineDocumentTab', () => {
       act(() => {
         root.render(
           <RoutineSkillCatalogContext.Provider value={{ agentId: '', skills: [], isLoading: false, error: null }}>
-            <RoutineDocumentTab draft={newRoutineDraft} isReadOnly={false} onDraftChange={onDraftChange} />
+            <RoutineDocumentTab draft={newRoutineDraft} onDraftChange={onDraftChange} />
           </RoutineSkillCatalogContext.Provider>,
         )
       })
@@ -104,7 +102,7 @@ describe('RoutineDocumentTab', () => {
     act(() => {
       root.render(
         <RoutineSkillCatalogContext.Provider value={{ agentId: '', skills: [], isLoading: false, error: null }}>
-          <RoutineDocumentTab draft={newRoutineDraft} isReadOnly={false} onDraftChange={vi.fn()} />
+          <RoutineDocumentTab draft={newRoutineDraft} onDraftChange={vi.fn()} />
         </RoutineSkillCatalogContext.Provider>,
       )
     })
@@ -145,7 +143,7 @@ describe('RoutineDocumentTab', () => {
     act(() => {
       root.render(
         <RoutineSkillCatalogContext.Provider value={{ agentId: '', skills: [], isLoading: false, error: null }}>
-          <RoutineDocumentTab draft={branchRoutineDraft} isReadOnly={false} onDraftChange={vi.fn()} />
+          <RoutineDocumentTab draft={branchRoutineDraft} onDraftChange={vi.fn()} />
         </RoutineSkillCatalogContext.Provider>,
       )
     })
@@ -181,7 +179,6 @@ describe('RoutineDocumentTab', () => {
         <RoutineSkillCatalogContext.Provider value={{ agentId: '', skills: [], isLoading: false, error: null }}>
           <RoutineDocumentTab
             draft={draft}
-            isReadOnly={false}
             onDraftChange={vi.fn()}
             diagnostics={[{
               code: 'structured_guard_missing_parameter',

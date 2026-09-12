@@ -3,20 +3,13 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  Archive,
   AlertTriangle,
   ArrowLeft,
   CheckCircle2,
-  ChevronDown,
-  Eye,
   FlaskConical,
-  History,
   MoreHorizontal,
-  Pencil,
   Plus,
-  RotateCcw,
   Route,
-  Send,
   Trash2,
   WandSparkles,
 } from 'lucide-react'
@@ -28,10 +21,10 @@ import { RoutineCompletionExportPanel } from '@/components/dashboard/settings/ro
 import { RoutineMapButton } from '@/components/dashboard/settings/routine-canvas'
 import { RoutineDocumentTab } from '@/components/dashboard/settings/routine-document-tab'
 import { RoutineSkillCatalogProvider } from '@/components/dashboard/settings/routine-skill-catalog-popover'
-import { RoutineVersionHistoryDrawer } from '@/components/dashboard/settings/routine-version-history-drawer'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { useSettingsSaveStatus } from '@/components/dashboard/settings/use-settings-save-status'
 import { useRegisterRoutineHeader } from '@/components/dashboard/shared/routine-header-actions'
+import { useRoutineEnabledToggle } from '@/hooks/use-routine-enabled-toggle'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -42,7 +35,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -51,15 +43,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
+import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { getApiErrorMessage, getApiErrorStatus } from '@/lib/api-error'
+import { getApiErrorMessage } from '@/lib/api-error'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import {
-  RoutinePublishRejectedError,
   routinesApi,
   webhookDestinationsApi,
   type RoutineDefinition,
@@ -67,12 +58,12 @@ import {
   type RoutineValidationResult,
   type WebhookDestination,
 } from '@/lib/api'
-import { getRoutineLineageVersions, groupRoutineLineages, type RoutineLineageGroup } from '@/lib/routine-lineage'
 import {
   formToRoutineDraft,
   renderedDraftTargets,
   routineLevelDiagnostics,
   buildCompletionExportPayloadPreview,
+  routineContentUpdatePayload,
   routineToForm,
   type RoutineDraftHeader,
   type RoutineFormState,
@@ -84,15 +75,15 @@ function CopilotRoutineEntity({ routine }: { routine: RoutineDefinition }) {
   return null
 }
 
-// A blank routine for the Form tab: one empty step the author fills in, no transitions
-// yet, and a single complete terminal. The Document tab replaces the seed step when the
-// author adds their first real one.
+// A blank routine starts with its one visible step flowing to completion. The Document tab
+// hides this ordinary default edge, but the backend needs the real graph when an author saves
+// a single-step routine.
 const emptyRoutineDraft = (): RoutineDefinitionDraft => ({
   name: '',
   activation: { triggerDescription: '', gateRef: null, priority: 0 },
   slots: [],
   steps: [{ stableStepId: 'step_1', kind: 'chat', instruction: '', toolRef: null, actionType: null, ordinal: 0, metadata: {} }],
-  transitions: [],
+  transitions: [{ fromStep: 'step_1', toRef: 'complete', guardKind: 'default', guardText: null, outcomeStatus: null, counterLimit: null, fieldRef: null, fieldOp: null, fieldValue: null, fieldValues: null, fieldUnit: null, ordinal: 0 }],
   terminals: [{ stableStepId: 'complete', kind: 'complete', instruction: 'Confirm completion.', ordinal: 0 }],
 })
 
@@ -155,13 +146,14 @@ const draftAsRoutine = (draft: RoutineDefinitionDraft, routine?: RoutineDefiniti
   lineageId: routine?.lineageId ?? 'local-lineage',
   agentId: routine?.agentId ?? 'local-agent',
   version: routine?.version ?? 1,
-  status: routine?.status ?? 'draft',
+  enabled: draft.enabled ?? routine?.enabled ?? true,
   createdAt: routine?.createdAt ?? new Date(0).toISOString(),
   updatedAt: routine?.updatedAt ?? new Date(0).toISOString(),
 })
 
 const headerFromDraft = (draft: RoutineDefinitionDraft | RoutineDefinition | RoutineFormState): RoutineDraftHeader => ({
   name: draft.name,
+  enabled: draft.enabled ?? true,
   activation: {
     triggerDescription: draft.activation.triggerDescription,
     priority: String(draft.activation.priority),
@@ -173,6 +165,7 @@ const headerFromDraft = (draft: RoutineDefinitionDraft | RoutineDefinition | Rou
 const draftWithHeader = (draft: RoutineDefinitionDraft, header: RoutineDraftHeader): RoutineDefinitionDraft => ({
   ...draft,
   name: header.name.trim(),
+  enabled: header.enabled,
   activation: {
     ...draft.activation,
     triggerDescription: header.activation.triggerDescription.trim(),
@@ -194,8 +187,10 @@ const mergeDocumentHeaderChange = (
   const nextHeader = headerFromDraft(nextDraft)
   return draftWithHeader(nextDraft, {
     // The document has no name editor, so the header always owns the name; comparing the
-    // doc-emitted name would wipe a typed name with the seed's empty string.
+    // doc-emitted name would wipe a typed name with the seed's empty string. Enabled state is
+    // never part of the document's own content either, so it always carries forward untouched.
     name: currentHeader.name,
+    enabled: currentHeader.enabled,
     activation: {
       triggerDescription: nextHeader.activation.triggerDescription !== previousHeader.activation.triggerDescription
         ? nextHeader.activation.triggerDescription
@@ -211,38 +206,8 @@ const mergeDocumentHeaderChange = (
   })
 }
 
-const routineStatusLabel = (status: RoutineDefinition['status']) => {
-  switch (status) {
-    case 'draft':
-      return 'in preparation'
-    case 'published':
-      return 'prepared'
-    case 'superseded':
-      return 'earlier prepared version'
-    case 'archived':
-      return 'archived'
-  }
-}
-
-const lineageStateLabel = (lineage: RoutineLineageGroup) => {
-  switch (lineage.state) {
-    case 'published': return 'prepared'
-    case 'draft-only': return 'in preparation'
-    case 'draft-with-archived': return 'in preparation'
-    case 'archived': return 'archived'
-    case 'superseded': return 'earlier prepared version'
-  }
-}
-
-const replaceBrowserUrl = (href: string) => {
-  if (typeof window === 'undefined') return
-  window.history.replaceState(window.history.state, '', href)
-}
-
-const currentBrowserUrlMatches = (href: string) => {
-  if (typeof window === 'undefined') return false
-  return `${window.location.pathname}${window.location.search}` === href
-}
+const currentBrowserUrlMatches = (href: string) =>
+  typeof window !== 'undefined' && `${window.location.pathname}${window.location.search}` === href
 
 type NewRoutineRecovery = {
   draft: RoutineDefinitionDraft
@@ -272,6 +237,50 @@ const writeNewRoutineRecovery = (agentId: string, recovery: NewRoutineRecovery) 
 const clearNewRoutineRecovery = (agentId: string) => {
   if (typeof window === 'undefined') return
   window.sessionStorage.removeItem(newRoutineRecoveryKey(agentId))
+}
+
+// Shared by the routine list row and the editor screen — same confirmation, different local
+// state backing "which routine, if any, is pending delete". A routine that never went live is
+// removed outright; one that did is taken out of service instead, so an in-flight conversation
+// resuming it keeps working.
+function DeleteRoutineDialog({
+  open,
+  onOpenChange,
+  routineName,
+  busy,
+  onConfirm,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  routineName: string | undefined
+  busy: boolean
+  onConfirm: () => void
+}) {
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete routine?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Deletes {routineName ? `"${routineName}"` : 'this routine'} if it has never gone live, otherwise takes it out of service. Customers see the change after Review &amp; Publish.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            disabled={busy}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            onClick={(event) => {
+              event.preventDefault()
+              onConfirm()
+            }}
+          >
+            Delete routine
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
 }
 
 export function AssistantRoutinesSection({
@@ -318,10 +327,12 @@ function RoutineListScreen({
   const router = useRouter()
   const [routines, setRoutines] = useState<RoutineDefinition[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [busyAction, setBusyAction] = useState<string | null>(null)
+  const [deletingRoutine, setDeletingRoutine] = useState<RoutineDefinition | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const groupedRoutines = useMemo(
-    () => groupRoutineLineages(routines),
+  const sortedRoutines = useMemo(
+    () => [...routines].sort((left, right) => left.name.localeCompare(right.name)),
     [routines],
   )
 
@@ -359,119 +370,73 @@ function RoutineListScreen({
     }
   }, [agentId])
 
-  const deleteDraft = async (routine: RoutineDefinition) => {
-    if (routine.status !== 'draft') return
+  // A routine that has ever served can't be hard-deleted (an in-flight conversation may have
+  // pinned it), so the backend disables it in place instead and it stays listed. Refetching
+  // rather than filtering locally means the row reflects what the server actually did instead
+  // of a "deleted" state the next reload would silently contradict.
+  const deleteRoutine = async (routine: RoutineDefinition) => {
+    setBusyAction(`delete:${routine.id}`)
     setError(null)
     try {
       await routinesApi.deleteRoutine(agentId, routine.id)
-      setRoutines((current) => current.filter((item) => item.id !== routine.id))
+      const response = await routinesApi.listRoutines(agentId)
+      setRoutines(response.routines)
+      setDeletingRoutine(null)
     } catch (deleteError) {
-      setError(getApiErrorMessage(deleteError, 'Failed to delete routine draft.'))
+      setError(getApiErrorMessage(deleteError, 'Failed to delete routine.'))
+    } finally {
+      setBusyAction(null)
     }
   }
 
-  const mergeRoutine = (routine: RoutineDefinition) => {
-    setRoutines((current) => {
-      const withoutCurrent = current.filter((item) => item.id !== routine.id)
-      return [...withoutCurrent, routine]
-    })
-  }
-
-  const reviseRoutine = async (routine: RoutineDefinition) => {
+  // Whether a routine may activate is one field on the routine, so it goes through the same
+  // update path as its content. The row is replaced from the response rather than flipped
+  // optimistically, so what the list shows is what the server stored.
+  const applyRoutineEnabledToggle = useRoutineEnabledToggle({
+    agentId,
+    onSuccess: (routine) => setRoutines((current) => current.map((item) => item.id === routine.id ? routine : item)),
+    onError: setError,
+  })
+  const toggleRoutine = async (routine: RoutineDefinition, enabled: boolean) => {
+    setBusyAction(`toggle:${routine.id}`)
     setError(null)
     try {
-      const response = await routinesApi.reviseRoutine(agentId, routine.id)
-      mergeRoutine(response.routine)
-      router.push(buildRoutineHref(response.routine.id))
-    } catch (reviseError) {
-      setError(getApiErrorMessage(reviseError, 'Failed to create routine revision.'))
+      await applyRoutineEnabledToggle(routine.id, enabled)
+    } finally {
+      setBusyAction(null)
     }
   }
 
-  const restoreRoutine = async (routine: RoutineDefinition) => {
-    setError(null)
-    try {
-      const response = await routinesApi.restoreRoutine(agentId, routine.id)
-      mergeRoutine(response.routine)
-    } catch (restoreError) {
-      setError(getApiErrorMessage(restoreError, 'Failed to restore routine.'))
-    }
-  }
-
-  const archiveRoutine = async (lineage: RoutineLineageGroup) => {
-    const published = lineage.activeRoutine
-    if (!published || published.status !== 'published') return
-    setError(null)
-    try {
-      const response = await routinesApi.archiveRoutine(agentId, published.id)
-      // Archiving retires the routine and discards any pending revision draft server-side;
-      // drop that draft from the list too so the lineage collapses to its archived version.
-      const pendingDraftId = lineage.pendingDraft?.id
-      setRoutines((current) => [
-        ...current.filter((item) => item.id !== response.routine.id && item.id !== pendingDraftId),
-        response.routine,
-      ])
-    } catch (archiveError) {
-      setError(getApiErrorMessage(archiveError, 'Failed to archive routine.'))
-    }
-  }
-
-  const renderLineageRow = (lineage: RoutineLineageGroup) => {
-    const routine = lineage.displayRoutine
-    const activeVersion = lineage.activeRoutine?.version ?? routine.version
-    return (
-      <div key={lineage.lineageId} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-4">
-        <CopilotRoutineEntity routine={routine} />
-        <button
+  const renderRoutineRow = (routine: RoutineDefinition) => (
+    <div key={routine.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-4">
+      <CopilotRoutineEntity routine={routine} />
+      <button
+        type="button"
+        className="min-w-0 flex-1 text-left"
+        onClick={() => router.push(buildRoutineHref(routine.id))}
+      >
+        <p className="text-sm font-medium text-foreground">{routine.name}</p>
+        <p className="mt-1 text-xs text-muted-foreground">{routine.activation.triggerDescription}</p>
+      </button>
+      <div className="flex shrink-0 items-center gap-2">
+        <Switch
+          checked={routine.enabled}
+          onCheckedChange={(enabled) => void toggleRoutine(routine, enabled)}
+          disabled={busyAction === `toggle:${routine.id}`}
+          aria-label={`Enable ${routine.name}`}
+        />
+        <Button
           type="button"
-          className="min-w-0 flex-1 text-left"
-          onClick={() => router.push(buildRoutineHref(routine.id))}
+          variant="ghost"
+          size="icon"
+          onClick={() => setDeletingRoutine(routine)}
+          aria-label={`Delete ${routine.name}`}
         >
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="text-sm font-medium text-foreground">{lineage.name}</p>
-            <Badge variant="outline">{lineageStateLabel(lineage)}</Badge>
-            <span className="text-xs text-muted-foreground">v{activeVersion}</span>
-            {lineage.pendingDraft ? (
-              <Badge variant="secondary">newer draft in preparation</Badge>
-            ) : null}
-          </div>
-          <p className="mt-1 text-xs text-muted-foreground">{lineage.triggerDescription}</p>
-        </button>
-        <div className="flex shrink-0 items-center gap-1">
-          {routine.status === 'draft' ? (
-            <>
-              <Button type="button" variant="ghost" size="sm" onClick={() => router.push(buildRoutineHref(routine.id))} aria-label={`Edit draft ${routine.name}`}>
-                <Pencil className="h-4 w-4" />
-              </Button>
-              <Button type="button" variant="ghost" size="sm" onClick={() => void deleteDraft(routine)} aria-label={`Delete draft ${routine.name}`}>
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </>
-          ) : null}
-          {routine.status === 'published' ? (
-            <>
-              <Button type="button" variant="ghost" size="sm" onClick={() => void reviseRoutine(routine)} aria-label={`Edit ${routine.name}`}>
-                <Pencil className="h-4 w-4" />
-              </Button>
-              <Button type="button" variant="ghost" size="sm" onClick={() => void archiveRoutine(lineage)} aria-label={`Archive ${routine.name}`}>
-                <Archive className="h-4 w-4" />
-              </Button>
-            </>
-          ) : null}
-          {routine.status === 'archived' ? (
-            <Button type="button" variant="ghost" size="sm" onClick={() => void restoreRoutine(routine)} aria-label={`Restore ${routine.name}`}>
-              <RotateCcw className="h-4 w-4" />
-            </Button>
-          ) : null}
-          {routine.status === 'superseded' ? (
-            <Button type="button" variant="ghost" size="sm" onClick={() => router.push(buildRoutineHref(routine.id))} aria-label={`View ${routine.name}`}>
-              <Eye className="h-4 w-4" />
-            </Button>
-          ) : null}
-        </div>
+          <Trash2 className="h-4 w-4" />
+        </Button>
       </div>
-    )
-  }
+    </div>
+  )
 
   return (
     <SettingsCard
@@ -495,29 +460,25 @@ function RoutineListScreen({
             <Spinner className="h-4 w-4" />
             Loading routines...
           </div>
-        ) : groupedRoutines.active.length === 0 && groupedRoutines.archived.length === 0 ? (
+        ) : sortedRoutines.length === 0 ? (
           <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
             No routines yet.
           </p>
         ) : (
           <div className="space-y-3">
-            {groupedRoutines.active.map(renderLineageRow)}
-            {groupedRoutines.archived.length > 0 ? (
-              <Collapsible>
-                <CollapsibleTrigger asChild>
-                  <Button type="button" variant="ghost" className="h-8 px-2 text-xs text-muted-foreground">
-                    <ChevronDown className="mr-1 h-4 w-4" />
-                    Archived routines ({groupedRoutines.archived.length})
-                  </Button>
-                </CollapsibleTrigger>
-                <CollapsibleContent className="space-y-3 pt-2">
-                  {groupedRoutines.archived.map(renderLineageRow)}
-                </CollapsibleContent>
-              </Collapsible>
-            ) : null}
+            {sortedRoutines.map(renderRoutineRow)}
           </div>
         )}
       </div>
+      <DeleteRoutineDialog
+        open={Boolean(deletingRoutine)}
+        onOpenChange={(open) => { if (!open) setDeletingRoutine(null) }}
+        routineName={deletingRoutine?.name}
+        // Scoped to the routine this dialog is actually confirming, not `busyAction` at large —
+        // otherwise an unrelated row's in-flight toggle would disable this dialog's buttons too.
+        busy={busyAction === `delete:${deletingRoutine?.id}`}
+        onConfirm={() => { if (deletingRoutine) void deleteRoutine(deletingRoutine) }}
+      />
     </SettingsCard>
   )
 }
@@ -539,11 +500,10 @@ function RoutineEditorScreen({
   const isNewRoutine = routineRouteId === 'new'
   const [editingRoutineId, setEditingRoutineId] = useState<string | null>(isNewRoutine ? null : routineRouteId)
   const [editingRoutine, setEditingRoutine] = useState<RoutineDefinition | null>(null)
-  const [allRoutines, setAllRoutines] = useState<RoutineDefinition[]>([])
   const [form, setForm] = useState<RoutineFormState | null>(null)
   // The Document tab owns a block document locally, then projects each edit back through
-  // draftFromBlockDoc. Keeping that projection here makes save/validate/publish use the
-  // same shared draft path as the Form tab.
+  // draftFromBlockDoc. Keeping that projection here makes save and validate use the same
+  // shared draft path as the Form tab.
   const [documentDraft, setDocumentDraft] = useState<RoutineDefinitionDraft | null>(null)
   const [draftHeader, setDraftHeader] = useState<RoutineDraftHeader>(() => headerFromDraft(emptyRoutineDraft()))
   // The Document editor owns its state while mounted; flows that replace the whole draft
@@ -553,10 +513,7 @@ function RoutineEditorScreen({
   const [validatedDraftSignature, setValidatedDraftSignature] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(!isNewRoutine)
   const [isSaving, setIsSaving] = useState(false)
-  // Publish, revise, archive, and restore each move the routine to a status the editor
-  // cannot save into. They take a round trip, and `editingRoutine` only catches up when it
-  // returns, so autosave has to be told to hold rather than inferring it from status.
-  const [isLifecycleBusy, setIsLifecycleBusy] = useState(false)
+  const [isTogglingEnabled, setIsTogglingEnabled] = useState(false)
   const [isDraftingRoutine, setIsDraftingRoutine] = useState(false)
   const [draftAssistDialogOpen, setDraftAssistDialogOpen] = useState(false)
   const [draftAssistProse, setDraftAssistProse] = useState('')
@@ -564,13 +521,13 @@ function RoutineEditorScreen({
   const [isWebhookDestinationsLoading, setIsWebhookDestinationsLoading] = useState(true)
   const [webhookDestinationsError, setWebhookDestinationsError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [deleteDraftDialogOpen, setDeleteDraftDialogOpen] = useState(false)
+  const [deleteRoutineDialogOpen, setDeleteRoutineDialogOpen] = useState(false)
   const [testDrawerOpen, setTestDrawerOpen] = useState(false)
-  const [versionHistoryOpen, setVersionHistoryOpen] = useState(false)
   const currentRoutineIdRef = useRef<string | null>(null)
+  const isTogglingEnabledRef = useRef(false)
+  const pendingRoutineToggleRef = useRef<{ routineId: string; previousEnabled: boolean } | null>(null)
   const initializedRouteKeyRef = useRef<string | null>(null)
-  const routineEditorDirtyRef = useRef(false)
-  const { beginSave, isCurrentSave, markError, markSaved, resetSaveState } = useSettingsSaveStatus(onSaveStateChange)
+  const { beginSave, isCurrentSave, markError, markSaved } = useSettingsSaveStatus(onSaveStateChange)
   useCopilotEntity(
     'routine',
     isNewRoutine ? null : routineRouteId,
@@ -598,22 +555,6 @@ function RoutineEditorScreen({
       anchor: undefined,
     })
 
-  const mergeLoadedRoutine = (routine: RoutineDefinition) => {
-    setAllRoutines((current) => {
-      const withoutCurrent = current.filter((item) => item.id !== routine.id)
-      return [...withoutCurrent, routine]
-    })
-  }
-
-  const isReadOnly = editingRoutine ? editingRoutine.status !== 'draft' : false
-  const versionHistory = useMemo(
-    () => getRoutineLineageVersions(allRoutines, editingRoutine?.lineageId),
-    [allRoutines, editingRoutine?.lineageId],
-  )
-  const publishedSibling = useMemo(
-    () => versionHistory.find((version) => version.status === 'published') ?? null,
-    [versionHistory],
-  )
   const activeRoutineDraft = useMemo(() => {
     if (documentDraft) return draftWithHeader(documentDraft, draftHeader)
     return form ? formToRoutineDraft(form, { header: draftHeader }) : null
@@ -635,7 +576,6 @@ function RoutineEditorScreen({
     : isValidationCurrent && validation?.ok
       ? 'valid'
       : 'checking'
-  const canPublishDraft = !isReadOnly && Boolean(form && isValidationCurrent && validation?.ok)
   const validationDiagnostics = useMemo(
     () => isValidationCurrent ? validation?.diagnostics ?? [] : [],
     [isValidationCurrent, validation?.diagnostics],
@@ -643,8 +583,7 @@ function RoutineEditorScreen({
   // The Form editor anchors a diagnostic list against each artifact it renders; the Document
   // editor renders none of them. Whatever is left over — a genuinely routine-scoped
   // diagnostic, one naming an artifact this view does not show, or one in a location form
-  // the editor has no site for — surfaces here, so no diagnostic can block publish while
-  // being invisible (FR-030).
+  // the editor has no site for — surfaces here, so no diagnostic stays invisible (FR-030).
   const renderedFormTargets = useMemo(
     () => activeRoutineDraft ? renderedDraftTargets(activeRoutineDraft) : [],
     [activeRoutineDraft],
@@ -660,8 +599,14 @@ function RoutineEditorScreen({
 
   useEffect(() => {
     let active = true
+    // A response from the routine being left must not replace this editor's newly loaded
+    // routine or roll back its header. The pending request still completes server-side, but
+    // it no longer owns this route's local state.
+    pendingRoutineToggleRef.current = null
+    isTogglingEnabledRef.current = false
     queueMicrotask(() => {
       if (!active) return
+      setIsTogglingEnabled(false)
       setIsWebhookDestinationsLoading(true)
       setWebhookDestinationsError(null)
       void webhookDestinationsApi.listDestinations()
@@ -706,10 +651,8 @@ function RoutineEditorScreen({
         const nextHeader = recovered?.header ?? headerFromDraft(nextDraft)
         currentRoutineIdRef.current = null
         initializedRouteKeyRef.current = routeLoadKey
-        routineEditorDirtyRef.current = false
         setEditingRoutineId(null)
         setEditingRoutine(null)
-        setAllRoutines([])
         setDraftHeader(nextHeader)
         setForm(routineToForm(draftAsRoutine(nextDraft)))
         setDocumentDraft(null)
@@ -724,24 +667,16 @@ function RoutineEditorScreen({
       setForm(null)
       setDocumentDraft(null)
       setIsLoading(true)
-      void Promise.all([
-        routinesApi.getRoutine(agentId, routineRouteId),
-        routinesApi.listRoutines(agentId).catch(() => ({ routines: [] })),
-      ])
-        .then(([response, listResponse]) => {
+      void routinesApi.getRoutine(agentId, routineRouteId)
+        .then((response) => {
           if (!active) return
           currentRoutineIdRef.current = response.routine.id
           setEditingRoutine(response.routine)
           setEditingRoutineId(response.routine.id)
-          setAllRoutines(listResponse.routines)
           setDraftHeader(headerFromDraft(response.routine))
           setForm(routineToForm(response.routine))
           setDocumentDraft(null)
           setValidatedDraftSignature(null)
-          routineEditorDirtyRef.current = false
-          // Every representable routine opens in the Document view, editable or not: its rest
-          // state is the read surface a published version wants. Only a routine the projection
-          // cannot express falls back to the Form view, which shows the raw graph.
         })
         .catch((loadError) => {
           if (!active) return
@@ -772,14 +707,18 @@ function RoutineEditorScreen({
     setIsSaving(true)
     setError(null)
     try {
+      // The update branch never sends `enabled`: the enable/disable toggle
+      // (toggleRoutineEnabled) is this field's only writer, so a content autosave that also
+      // carried a copy of it could race that toggle's own PATCH and overwrite it with a stale
+      // value regardless of which request the operator triggered second. A brand-new routine
+      // has no stored value to preserve, so create still sends whatever the header holds.
       const response = editingRoutineId
-        ? await routinesApi.updateRoutine(agentId, editingRoutineId, draft)
+        ? await routinesApi.updateRoutine(agentId, editingRoutineId, routineContentUpdatePayload(draft))
         : await routinesApi.createRoutine(agentId, draft)
       if (!isCurrentSave(saveId)) return null
       currentRoutineIdRef.current = response.routine.id
       setEditingRoutine(response.routine)
       setEditingRoutineId(response.routine.id)
-      mergeLoadedRoutine(response.routine)
       if (refreshEditor) {
         setDraftHeader(headerFromDraft(response.routine))
         setForm(routineToForm(response.routine))
@@ -790,9 +729,11 @@ function RoutineEditorScreen({
       markSaved()
       if (wasNew) {
         clearNewRoutineRecovery(agentId)
-        const newDraftHref = buildPersistedHref('new')
-        if (currentBrowserUrlMatches(newDraftHref)) {
-          replaceBrowserUrl(buildPersistedHref(response.routine.id))
+        // A raw history replacement leaves `routineRouteId === 'new'` mounted, so its
+        // recovery effect writes the just-created draft back into session storage. Route
+        // through Next instead: the persisted editor replaces the new-draft screen.
+        if (currentBrowserUrlMatches(buildPersistedHref('new'))) {
+          router.replace(buildPersistedHref(response.routine.id))
         }
       }
       return response.routine
@@ -800,16 +741,6 @@ function RoutineEditorScreen({
       if (!isCurrentSave(saveId)) return null
       const message = getApiErrorMessage(saveError, 'Failed to save routine draft.')
       setValidatedDraftSignature(null)
-      // The routine left draft while this editor was open — published in another tab, or by
-      // someone else. Re-read it so the screen describes the version that exists, and say so
-      // in terms the author can act on rather than repeating the API's rejection.
-      if (
-        editingRoutineId
-        && (getApiErrorStatus(saveError) === 409 || /only draft routine definitions can be updated/i.test(message))
-      ) {
-        void reloadEditingRoutine(editingRoutineId, message)
-        return null
-      }
       setError(message)
       markError(message)
       return null
@@ -818,253 +749,88 @@ function RoutineEditorScreen({
     }
   }
 
-  // Point every editing surface at one routine. The header, the form, and the document each
-  // hold their own copy of the draft, so a routine that changed underneath the editor has to
-  // replace all three or the screen keeps rendering the version that is gone.
-  const seedEditorFrom = (routine: RoutineDefinition) => {
-    setEditingRoutine(routine)
-    setEditingRoutineId(routine.id)
-    currentRoutineIdRef.current = routine.id
-    mergeLoadedRoutine(routine)
-    setDraftHeader(headerFromDraft(routine))
-    setForm(routineToForm(routine))
-    setDocumentDraft(null)
-    routineEditorDirtyRef.current = false
-  }
-
-  // Re-read a routine the editor can no longer save into, so the header, the tab, and the
-  // available actions all describe the version that actually exists.
-  const reloadEditingRoutine = async (routineId: string, saveErrorMessage: string) => {
-    try {
-      const response = await routinesApi.getRoutine(agentId, routineId)
-      if (currentRoutineIdRef.current !== routineId) return
-      seedEditorFrom(response.routine)
-      // The reload succeeded, so the editor is in sync and there is no save left retrying.
-      // What remains is news: the change that did not land, and how to carry it forward.
-      resetSaveState()
-      setError(`This routine is now ${routineStatusLabel(response.routine.status)}, so your last change was not saved. Revise it to keep editing.`)
-    } catch {
-      if (currentRoutineIdRef.current !== routineId) return
-      setError(saveErrorMessage)
-      markError(saveErrorMessage)
-    }
-  }
-
-  // An in-flight lifecycle request closes over the render that started it, so comparing
-  // against the captured value would never see a later edit. The ref reads what the editor
-  // holds now.
-  const activeRoutineDraftSignatureRef = useRef(activeRoutineDraftSignature)
-  useEffect(() => {
-    activeRoutineDraftSignatureRef.current = activeRoutineDraftSignature
-  })
-
   const saveDraftRef = useRef(saveDraft)
   useEffect(() => {
     saveDraftRef.current = saveDraft
   })
 
   useEffect(() => {
-    if (isLoading || isReadOnly || isLifecycleBusy || activeRoutineDraftError || !activeRoutineDraftSignature || isValidationCurrent) return
+    if (isLoading || activeRoutineDraftError || !activeRoutineDraftSignature || isValidationCurrent) return
     const timeoutId = window.setTimeout(() => {
       void saveDraftRef.current({ refreshEditor: false })
     }, 1500)
     return () => window.clearTimeout(timeoutId)
-  }, [activeRoutineDraftError, activeRoutineDraftSignature, isLifecycleBusy, isLoading, isReadOnly, isValidationCurrent])
+  }, [activeRoutineDraftError, activeRoutineDraftSignature, isLoading, isValidationCurrent])
 
   useEffect(() => {
     if (!isNewRoutine || !activeRoutineDraft) return
     writeNewRoutineRecovery(agentId, { draft: activeRoutineDraft, header: draftHeader })
   }, [activeRoutineDraft, agentId, draftHeader, isNewRoutine])
 
-  const publishDraft = async () => {
-    if (!canPublishDraft) return
-    setIsLifecycleBusy(true)
-    try {
-      await runPublish()
-    } finally {
-      setIsLifecycleBusy(false)
-    }
-  }
-
-  const runPublish = async () => {
-    const routine = await saveDraft()
-    if (!routine) return
-    // What the editor held once the pre-release save settled. Anything that differs from
-    // this when the publish returns was typed during the round trip.
-    const signatureAtPublish = activeRoutineDraftSignatureRef.current
-    beginSave()
-    setIsSaving(true)
+  // Mirrors the list row's switch: takes effect immediately for a saved routine, rather than
+  // waiting on the autosave debounce that owns the rest of the form.
+  const applyRoutineEnabledToggle = useRoutineEnabledToggle({
+    agentId,
+    // The editor supplies request-scoped callbacks below. List rows use the default callbacks
+    // directly because their state lives in one collection rather than a routed editor.
+    onSuccess: () => {},
+    onError: () => {},
+  })
+  const toggleRoutineEnabled = async (enabled: boolean) => {
+    // The ref closes the small gap before React has rendered the disabled switch. Without it,
+    // two discrete events could still start overlapping PATCHes and let the older response win.
+    if (isTogglingEnabledRef.current) return
+    setDraftHeader((current) => ({ ...current, enabled }))
+    if (!editingRoutineId) return
     setError(null)
+    const pending = { routineId: editingRoutineId, previousEnabled: draftHeader.enabled }
+    pendingRoutineToggleRef.current = pending
+    isTogglingEnabledRef.current = true
+    setIsTogglingEnabled(true)
     try {
-      const response = await routinesApi.publishRoutine(agentId, routine.id)
-      // Publishing is a lifecycle transition, not a save competing with other saves: its
-      // result is the routine's real status, so a save that started meanwhile must not
-      // discard it. Only leaving this routine can.
-      if (currentRoutineIdRef.current !== routine.id) return
-      // Inputs stay live during the round trip, so anything typed after the pre-publish save
-      // is not in the published version and cannot be added to it. Re-seeding from the
-      // response keeps the read-only view honest instead of presenting those edits as
-      // published; the notice below is how the author learns they need carrying forward.
-      const editedDuringPublish = activeRoutineDraftSignatureRef.current !== signatureAtPublish
-      seedEditorFrom(response.routine)
-      setAllRoutines((current) => current
-        .filter((item) => item.id !== routine.id)
-        .map((item) => item.lineageId === response.routine.lineageId && item.status === 'published'
-          ? { ...item, status: 'superseded' as const, updatedAt: response.routine.updatedAt }
-          : item)
-        .concat(response.routine))
-      setValidation(response.validation)
-      markSaved()
-      if (editedDuringPublish) {
-        setError('Preparing this routine captured the saved draft. Changes made while it ran were not included — save again before the agent release review.')
-      }
-      const persistedHref = buildPersistedHref(response.routine.id)
-      if (!currentBrowserUrlMatches(persistedHref)) {
-        router.replace(persistedHref)
-      }
-    } catch (publishError) {
-      if (currentRoutineIdRef.current !== routine.id) return
-      if (publishError instanceof RoutinePublishRejectedError) {
-        setValidation(publishError.response.validation)
-        setError('Routine is not ready for agent release.')
-        markError('Routine is not ready for agent release.')
-      } else {
-        const message = getApiErrorMessage(publishError, 'Failed to prepare routine for agent release.')
-        setError(message)
-        markError(message)
-      }
+      await applyRoutineEnabledToggle(editingRoutineId, enabled, {
+        onSuccess: (routine) => {
+          if (pendingRoutineToggleRef.current !== pending || currentRoutineIdRef.current !== routine.id) return
+          setEditingRoutine(routine)
+        },
+        onError: (message) => {
+          if (pendingRoutineToggleRef.current !== pending || currentRoutineIdRef.current !== pending.routineId) return
+          setError(message)
+          setDraftHeader((current) => ({ ...current, enabled: pending.previousEnabled }))
+        },
+      })
     } finally {
-      if (currentRoutineIdRef.current === routine.id) setIsSaving(false)
+      if (pendingRoutineToggleRef.current === pending) {
+        pendingRoutineToggleRef.current = null
+        isTogglingEnabledRef.current = false
+        setIsTogglingEnabled(false)
+      }
     }
   }
 
-  const deleteDraft = async () => {
-    if (!editingRoutine || editingRoutine.status !== 'draft') return
+  const deleteRoutine = async () => {
+    if (!editingRoutine) return
     setIsSaving(true)
     setError(null)
     try {
       await routinesApi.deleteRoutine(agentId, editingRoutine.id)
       router.push(listHref)
     } catch (deleteError) {
-      setError(getApiErrorMessage(deleteError, 'Failed to delete routine draft.'))
+      setError(getApiErrorMessage(deleteError, 'Failed to delete routine.'))
     } finally {
       setIsSaving(false)
-    }
-  }
-
-  const revisePublished = async () => {
-    if (!editingRoutine || editingRoutine.status !== 'published') return
-    setIsLifecycleBusy(true)
-    const saveId = beginSave()
-    setIsSaving(true)
-    setError(null)
-    try {
-      const response = await routinesApi.reviseRoutine(agentId, editingRoutine.id)
-      if (!isCurrentSave(saveId)) return
-      currentRoutineIdRef.current = response.routine.id
-      setEditingRoutine(response.routine)
-      setEditingRoutineId(response.routine.id)
-      mergeLoadedRoutine(response.routine)
-      setDraftHeader(headerFromDraft(response.routine))
-      setForm(routineToForm(response.routine))
-      setDocumentDraft(null)
-      setValidation(null)
-      setValidatedDraftSignature(null)
-      markSaved()
-      const persistedHref = buildPersistedHref(response.routine.id)
-      if (!currentBrowserUrlMatches(persistedHref)) {
-        router.replace(persistedHref)
-      }
-    } catch (reviseError) {
-      if (!isCurrentSave(saveId)) return
-      const message = getApiErrorMessage(reviseError, 'Failed to create routine revision.')
-      setError(message)
-      markError(message)
-    } finally {
-      setIsLifecycleBusy(false)
-      if (isCurrentSave(saveId)) setIsSaving(false)
-    }
-  }
-
-  const archivePublished = async () => {
-    if (!editingRoutine || editingRoutine.status !== 'published') return
-    setIsLifecycleBusy(true)
-    setIsSaving(true)
-    setError(null)
-    try {
-      const response = await routinesApi.archiveRoutine(agentId, editingRoutine.id)
-      currentRoutineIdRef.current = response.routine.id
-      setEditingRoutine(response.routine)
-      setEditingRoutineId(response.routine.id)
-      setAllRoutines((current) => [
-        ...current.filter((item) =>
-          item.id !== response.routine.id &&
-          !(item.lineageId === response.routine.lineageId && item.status === 'draft')
-        ),
-        response.routine,
-      ])
-      setDraftHeader(headerFromDraft(response.routine))
-      setForm(routineToForm(response.routine))
-      setDocumentDraft(null)
-    } catch (archiveError) {
-      setError(getApiErrorMessage(archiveError, 'Failed to archive routine.'))
-    } finally {
-      setIsSaving(false)
-      setIsLifecycleBusy(false)
-    }
-  }
-
-  const archiveFromDraft = async () => {
-    if (!publishedSibling) return
-    setIsLifecycleBusy(true)
-    setIsSaving(true)
-    setError(null)
-    try {
-      // Retire the whole routine from a revision draft without forcing a publish first;
-      // the archive discards this pending draft server-side, so return to the list.
-      await routinesApi.archiveRoutine(agentId, publishedSibling.id)
-      router.push(listHref)
-    } catch (archiveError) {
-      setError(getApiErrorMessage(archiveError, 'Failed to archive routine.'))
-      setIsSaving(false)
-      // Only released on failure: a success navigates away from this editor, and releasing
-      // the hold on the way out would let a queued autosave fire at the archived routine.
-      setIsLifecycleBusy(false)
-    }
-  }
-
-  const restoreArchived = async () => {
-    if (!editingRoutine || editingRoutine.status !== 'archived') return
-    setIsLifecycleBusy(true)
-    setIsSaving(true)
-    setError(null)
-    try {
-      const response = await routinesApi.restoreRoutine(agentId, editingRoutine.id)
-      currentRoutineIdRef.current = response.routine.id
-      setEditingRoutine(response.routine)
-      setEditingRoutineId(response.routine.id)
-      mergeLoadedRoutine(response.routine)
-      setDraftHeader(headerFromDraft(response.routine))
-      setForm(routineToForm(response.routine))
-      setDocumentDraft(null)
-    } catch (restoreError) {
-      setError(getApiErrorMessage(restoreError, 'Failed to restore routine.'))
-    } finally {
-      setIsSaving(false)
-      setIsLifecycleBusy(false)
     }
   }
 
   const loadAssistedDraft = useCallback(async () => {
     const prose = draftAssistProse.trim()
-    if (!prose || isReadOnly) return
+    if (!prose) return
     setIsDraftingRoutine(true)
     setError(null)
     try {
       const response = await routinesApi.draftRoutineFromProcedure(agentId, { prose })
       const nextHeader = headerFromDraft(response.draft)
       const nextSignature = JSON.stringify(response.draft)
-      routineEditorDirtyRef.current = true
       setDraftHeader(nextHeader)
       setForm(routineToForm(draftAsRoutine(response.draft, editingRoutine)))
       setValidation(response.validation)
@@ -1077,47 +843,24 @@ function RoutineEditorScreen({
     } finally {
       setIsDraftingRoutine(false)
     }
-  }, [agentId, draftAssistProse, editingRoutine, isReadOnly])
+  }, [agentId, draftAssistProse, editingRoutine])
 
-  const openDeleteDraftDialog = useCallback(() => setDeleteDraftDialogOpen(true), [])
-  const actionHandlersRef = useRef({
-    archiveFromDraft,
-    archivePublished,
-    loadAssistedDraft,
-    openDeleteDraftDialog,
-    publishDraft,
-    restoreArchived,
-    revisePublished,
-  })
+  const openDeleteRoutineDialog = useCallback(() => setDeleteRoutineDialogOpen(true), [])
+  const actionHandlersRef = useRef({ loadAssistedDraft, openDeleteRoutineDialog })
   useEffect(() => {
-    actionHandlersRef.current = {
-      archiveFromDraft,
-      archivePublished,
-      loadAssistedDraft,
-      openDeleteDraftDialog,
-      publishDraft,
-      restoreArchived,
-      revisePublished,
-    }
+    actionHandlersRef.current = { loadAssistedDraft, openDeleteRoutineDialog }
   })
 
   const headerActions = useMemo(() => {
-    // One primary action per status; secondary is the draft's "Test draft". Everything
-    // else (AI drafting, archive, delete) lives in an overflow menu so the header keeps a
-    // single clear call to action instead of a row of competing buttons.
-    const isDraft = editingRoutine?.status === 'draft'
-    const showDraftWithAi = !isReadOnly && Boolean(form)
-    const showArchiveFromDraft = isDraft && Boolean(publishedSibling)
-    const showArchivePublished = editingRoutine?.status === 'published'
-    const showDeleteDraft = isDraft
-    const showVersionHistory = versionHistory.length > 1
-    const hasOverflow =
-      showVersionHistory || showDraftWithAi || showArchiveFromDraft || showArchivePublished || showDeleteDraft
+    // Editing is autosaved, so the header carries no save action. "Test draft" is the one
+    // affordance the routine itself offers; AI drafting and delete live in an overflow menu
+    // so the header stays a status line rather than a row of competing buttons.
+    const isPersisted = Boolean(editingRoutine)
 
     return (
       <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-        {!isReadOnly && form ? <RoutineValidationStatusIcon state={validationStatus} /> : null}
-        {isDraft ? (
+        {form ? <RoutineValidationStatusIcon state={validationStatus} /> : null}
+        {isPersisted ? (
           <Button
             type="button"
             variant="outline"
@@ -1130,25 +873,7 @@ function RoutineEditorScreen({
             Test draft
           </Button>
         ) : null}
-        {editingRoutine?.status === 'published' ? (
-          <Button type="button" size="sm" onClick={() => void actionHandlersRef.current.revisePublished()} disabled={isSaving}>
-            <Pencil className="mr-2 h-4 w-4" />
-            Edit revision
-          </Button>
-        ) : null}
-        {editingRoutine?.status === 'archived' ? (
-          <Button type="button" size="sm" onClick={() => void actionHandlersRef.current.restoreArchived()} disabled={isSaving}>
-            <RotateCcw className="mr-2 h-4 w-4" />
-            Restore
-          </Button>
-        ) : null}
-        {!isReadOnly && form ? (
-          <Button type="button" size="sm" onClick={() => void actionHandlersRef.current.publishDraft()} disabled={isSaving || !canPublishDraft}>
-            <Send className="mr-2 h-4 w-4" />
-            Prepare for agent release
-          </Button>
-        ) : null}
-        {hasOverflow ? (
+        {form ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button type="button" size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground" aria-label="More routine actions">
@@ -1156,40 +881,20 @@ function RoutineEditorScreen({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
-              {showVersionHistory ? (
-                <DropdownMenuItem onSelect={() => setVersionHistoryOpen(true)}>
-                  <History className="mr-2 h-4 w-4" />
-                  Version history
-                </DropdownMenuItem>
-              ) : null}
-              {showDraftWithAi ? (
-                <DropdownMenuItem disabled={isSaving || isDraftingRoutine} onSelect={() => setDraftAssistDialogOpen(true)}>
-                  <WandSparkles className="mr-2 h-4 w-4" />
-                  Draft with AI
-                </DropdownMenuItem>
-              ) : null}
-              {showArchiveFromDraft ? (
-                <DropdownMenuItem disabled={isSaving} onSelect={() => void actionHandlersRef.current.archiveFromDraft()}>
-                  <Archive className="mr-2 h-4 w-4" />
-                  Archive
-                </DropdownMenuItem>
-              ) : null}
-              {showArchivePublished ? (
-                <DropdownMenuItem disabled={isSaving} onSelect={() => void actionHandlersRef.current.archivePublished()}>
-                  <Archive className="mr-2 h-4 w-4" />
-                  Archive
-                </DropdownMenuItem>
-              ) : null}
-              {showDeleteDraft ? (
+              <DropdownMenuItem disabled={isSaving || isDraftingRoutine} onSelect={() => setDraftAssistDialogOpen(true)}>
+                <WandSparkles className="mr-2 h-4 w-4" />
+                Draft with AI
+              </DropdownMenuItem>
+              {isPersisted ? (
                 <>
-                  {showDraftWithAi || showArchiveFromDraft ? <DropdownMenuSeparator /> : null}
+                  <DropdownMenuSeparator />
                   <DropdownMenuItem
                     disabled={isSaving}
-                    onSelect={() => actionHandlersRef.current.openDeleteDraftDialog()}
+                    onSelect={() => actionHandlersRef.current.openDeleteRoutineDialog()}
                     className="text-destructive focus:text-destructive"
                   >
                     <Trash2 className="mr-2 h-4 w-4" />
-                    Delete draft
+                    Delete routine
                   </DropdownMenuItem>
                 </>
               ) : null}
@@ -1198,7 +903,7 @@ function RoutineEditorScreen({
         ) : null}
       </div>
     )
-  }, [canPublishDraft, editingRoutine, form, isDraftingRoutine, isReadOnly, isSaving, publishedSibling, validationStatus, versionHistory.length])
+  }, [editingRoutine, form, isDraftingRoutine, isSaving, validationStatus])
 
   const headerBackAction = useMemo(() => (
     <Button type="button" variant="ghost" className="-ml-3 h-8 px-3 text-muted-foreground" onClick={() => router.push(listHref)}>
@@ -1226,7 +931,7 @@ function RoutineEditorScreen({
         onProseChange={setDraftAssistProse}
         onLoadProposal={() => void actionHandlersRef.current.loadAssistedDraft()}
       />
-      {editingRoutine && editingRoutine.status === 'draft' ? (
+      {editingRoutine ? (
         <ChatWorkbenchDrawer
           open={testDrawerOpen}
           onOpenChange={setTestDrawerOpen}
@@ -1235,26 +940,8 @@ function RoutineEditorScreen({
           previewRoutineIds={[editingRoutine.id]}
         />
       ) : null}
-      <RoutineVersionHistoryDrawer
-        open={versionHistoryOpen}
-        onOpenChange={setVersionHistoryOpen}
-        versions={versionHistory}
-        currentId={editingRoutine?.id}
-        onOpenVersion={(routineId) => {
-          setVersionHistoryOpen(false)
-          router.push(buildPersistedHref(routineId))
-        }}
-      />
       <div className="overflow-visible rounded-lg border border-border bg-card/95 shadow-sm">
         <div className="space-y-5 p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            {editingRoutine ? (
-              <p className="text-xs text-muted-foreground">
-                {routineStatusLabel(editingRoutine.status)} v{editingRoutine.version}
-                {isReadOnly ? ' (read-only)' : ''}
-              </p>
-            ) : null}
-          </div>
           {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
           {isLoading || !form ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -1263,18 +950,27 @@ function RoutineEditorScreen({
             </div>
           ) : (
             <RoutineSkillCatalogProvider agentId={agentId}>
-            <div className="space-y-1">
-              <Label htmlFor="routineName">Name</Label>
-              <Input
-                id="routineName"
-                value={draftHeader.name}
-                onChange={(event) => {
-                  routineEditorDirtyRef.current = true
-                  setDraftHeader((current) => ({ ...current, name: event.target.value }))
-                }}
-                disabled={isReadOnly}
-              />
-              {nameLocalValidationError ? <p className="text-xs text-destructive" role="status">{nameLocalValidationError}</p> : null}
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0 flex-1 space-y-1">
+                <Label htmlFor="routineName">Name</Label>
+                <Input
+                  id="routineName"
+                  value={draftHeader.name}
+                  onChange={(event) => {
+                    setDraftHeader((current) => ({ ...current, name: event.target.value }))
+                  }}
+                />
+                {nameLocalValidationError ? <p className="text-xs text-destructive" role="status">{nameLocalValidationError}</p> : null}
+              </div>
+              <div className="flex shrink-0 items-center gap-2 pt-6">
+                <Switch
+                  checked={draftHeader.enabled}
+                  onCheckedChange={(enabled) => void toggleRoutineEnabled(enabled)}
+                  disabled={isTogglingEnabled}
+                  aria-label={draftHeader.enabled ? 'Disable routine' : 'Enable routine'}
+                />
+                <span className="text-sm text-muted-foreground">{draftHeader.enabled ? 'Enabled' : 'Disabled'}</span>
+              </div>
             </div>
             <RoutineDiagnosticList diagnostics={routineDiagnostics} />
 
@@ -1291,7 +987,6 @@ function RoutineEditorScreen({
               <RoutineDocumentTab
                 key={`${agentId}:${routineRouteId}:${documentSessionNonce}`}
                 draft={activeRoutineDraft}
-                isReadOnly={isReadOnly}
                 diagnostics={validationDiagnostics}
                 onDraftChange={(nextDraft) => {
                   // Completion export is edited in the panel below, not in the document, so
@@ -1300,7 +995,6 @@ function RoutineEditorScreen({
                     ...mergeDocumentHeaderChange(nextDraft, documentDraft, draftHeader),
                     ...(documentDraft?.completionExport !== undefined ? { completionExport: documentDraft.completionExport } : {}),
                   }
-                  routineEditorDirtyRef.current = true
                   setDocumentDraft(mergedDraft)
                   setForm(routineToForm(draftAsRoutine(mergedDraft, editingRoutine)))
                   setDraftHeader(headerFromDraft(mergedDraft))
@@ -1308,13 +1002,12 @@ function RoutineEditorScreen({
               />
             ) : null}
 
-            {activeRoutineDraft && !isReadOnly ? (
+            {activeRoutineDraft ? (
               <RoutineCompletionExportPanel
                 idPrefix="document-completion-export"
                 payloadPreview={form ? buildCompletionExportPayloadPreview(form) : undefined}
                 value={activeRoutineDraft.completionExport ?? { enabled: false, triggerKinds: [], destinationRef: '' }}
                 onChange={(next) => {
-                  routineEditorDirtyRef.current = true
                   const merged = { ...(documentDraft ?? activeRoutineDraft), completionExport: next }
                   setDocumentDraft(merged)
                   setForm(routineToForm(draftAsRoutine(merged, editingRoutine)))
@@ -1329,29 +1022,13 @@ function RoutineEditorScreen({
           )}
         </div>
       </div>
-      <AlertDialog open={deleteDraftDialogOpen} onOpenChange={setDeleteDraftDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete draft?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This deletes the draft for {editingRoutine?.name ? `"${editingRoutine.name}"` : 'this routine'}. Prepared or archived versions in the lineage are kept.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isSaving}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={isSaving}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={(event) => {
-                event.preventDefault()
-                void deleteDraft()
-              }}
-            >
-              Delete draft
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <DeleteRoutineDialog
+        open={deleteRoutineDialogOpen}
+        onOpenChange={setDeleteRoutineDialogOpen}
+        routineName={editingRoutine?.name}
+        busy={isSaving}
+        onConfirm={() => void deleteRoutine()}
+      />
     </>
   )
 }

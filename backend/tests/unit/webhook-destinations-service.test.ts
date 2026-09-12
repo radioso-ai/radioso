@@ -121,7 +121,7 @@ const createService = (overrides: {
     assertPublicUrl: overrides.assertPublicUrl ?? (async () => undefined),
     allowHttpLoopback: overrides.allowHttpLoopback,
     routineReferences: {
-      async listPublishedRoutineNamesReferencingDestination() {
+      async listRoutineNamesReferencingDestination() {
         return overrides.referencedRoutineNames ?? [];
       },
     },
@@ -238,7 +238,7 @@ describe("WebhookDestinationService", () => {
     ).resolves.toMatchObject({ destination: { url: "http://127.0.0.1:8787/hook" } });
   });
 
-  it("blocks deletion when published routines reference the destination", async () => {
+  it("blocks deletion when enabled routines reference the destination", async () => {
     const { service } = createService({ referencedRoutineNames: ["lead intake"] });
     const created = await service.create({
       workspaceId,
@@ -249,6 +249,23 @@ describe("WebhookDestinationService", () => {
 
     await expect(service.delete(workspaceId, created.destination.id, { accountId: "acc-1" }))
       .rejects.toThrow(/lead intake/);
+  });
+
+  it.each([
+    "webhook destination destination-id is referenced by published routines: lead intake",
+    "webhook destination destination-id is referenced by enabled routines: lead intake",
+  ])("translates a database routine-reference error into a friendly conflict: %s", async (message) => {
+    const { repository, service } = createService();
+    const created = await service.create({
+      workspaceId,
+      name: "crm",
+      url: "https://example.com",
+      actor: { accountId: "acc-1" },
+    });
+    vi.spyOn(repository, "delete").mockRejectedValue({ code: "23503", message });
+
+    await expect(service.delete(workspaceId, created.destination.id, { accountId: "acc-1" }))
+      .rejects.toThrow(/referenced/);
   });
 });
 

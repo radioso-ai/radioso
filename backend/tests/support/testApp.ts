@@ -52,7 +52,8 @@ import {
   type AgentRevisionRuntimeReaderPort,
 } from "../../src/modules/agents/public.js";
 import type { TestExecutionService } from "../../src/modules/test-execution/testExecution.js";
-import { ProbeRoutineReader, RoutineDefinitionService, RoutineDraftAssistService } from "../../src/modules/routines/public.js";
+import { ProbeRoutineReader, RoutineDefinitionService, RoutineDraftAssistService, selectCanonicalRoutineDefinitions } from "../../src/modules/routines/public.js";
+import { InMemoryAgentRevisionRepository } from "./agentRevisionFakes.js";
 import {
   type ComposedDecline,
   type FallbackReplyComposer,
@@ -426,6 +427,7 @@ interface TestRepositories {
   conversationOwnershipRepository: InMemoryConversationOwnershipRepository;
   messageRepository: InMemoryMessageRepository;
   agentRepository: InMemoryAgentRepository;
+  agentRevisionRepository: InMemoryAgentRevisionRepository;
   agentSkillRepository: InMemoryAgentSkillRepository;
   routineDefinitionRepository: InMemoryRoutineDefinitionRepository;
   machineAccessRepository: InMemoryMachineAccessRepository;
@@ -1458,7 +1460,11 @@ export const createTestDependencies = (overrides: {
   const connectorRegistry = new ConnectorRegistry();
   connectorRegistry.setEncryptionKey(env.CONNECTOR_ENCRYPTION_KEY!);
   const connectorDb = new InMemoryConnectorDatabase();
-  const agentRepository = new InMemoryAgentRepository(createDefaultAgentSkillSettingsRegistry());
+  const agentRevisionRepository = new InMemoryAgentRevisionRepository();
+  const agentRepository = new InMemoryAgentRepository(
+    createDefaultAgentSkillSettingsRegistry(),
+    (agent) => agentRevisionRepository.initializeDraft(agent.workspaceId, agent.id, agent.customInstruction),
+  );
   const contextVariableRepository = new InMemoryContextVariableRepository(agentSkillRepository);
   const identityNonces = new Map<string, Date>();
   const identityNonceRepository = {
@@ -1483,7 +1489,12 @@ export const createTestDependencies = (overrides: {
       return deleted;
     },
   };
-  const routineDefinitionRepository = new InMemoryRoutineDefinitionRepository();
+  const routineDefinitionRepository = new InMemoryRoutineDefinitionRepository(async (workspaceId, agentId) => {
+    const canonicalRoutines = selectCanonicalRoutineDefinitions(
+      [...routineDefinitionRepository.items.values()].filter((definition) => definition.agentId === agentId),
+    );
+    await agentRevisionRepository.mutateDraft(workspaceId, agentId, (snapshot) => ({ ...snapshot, routines: canonicalRoutines }));
+  });
   const webhookDestinationRepository = new InMemoryWebhookDestinationRepository();
   const webhookDestinations = new DefaultWebhookDestinationAdapter(new WebhookDestinationService({
     repository: webhookDestinationRepository,
@@ -1571,17 +1582,6 @@ export const createTestDependencies = (overrides: {
     accessGrantService,
   );
   const publishedAgentRevisions = new PublishedTestAgentRevisionReader(contextVariableRepository);
-  const agentRevisionService = new AgentRevisionService({
-    async initializeDraft() {},
-    async mutateDraft() { return null; },
-    async readDraft() { return null; },
-    async readState() { return null; },
-    async findRevision() { return null; },
-    async findRevisionByWorkspace() { return null; },
-    async listRevisions() { return []; },
-    async createCandidate() { return "conflict"; },
-    async publish() { return "conflict"; },
-  }, randomUUID);
   const testExecutionService = overrides.testExecutionService ?? {
     async start() { throw new Error("Test execution is not configured in this test app"); },
     async *streamMessage() { throw new Error("Test execution is not configured in this test app"); },
@@ -1627,7 +1627,12 @@ export const createTestDependencies = (overrides: {
         webhookDestinations.existsByIdAndWorkspace(inputWorkspaceId, destinationId),
     },
     auditService,
-    directiveScopeTags: agentRepository,
+  });
+  // Real routine-servability wiring (matches src/app/server/dependencies.ts): a candidate or
+  // publish call rejects an enabled routine whose skill/capability/webhook reference cannot
+  // serve, on top of the repository's own structural (directive-scope) gate.
+  const agentRevisionService = new AgentRevisionService(agentRevisionRepository, randomUUID, {
+    validateForServing: routineDefinitionService.validateForServing.bind(routineDefinitionService),
   });
   const chatInferencePipeline: AppDependencies["chatInferencePipeline"] = {
     metadata: { capability: "chat" as const, provider: "openai" as const, model: "test" },
@@ -2455,6 +2460,7 @@ export const createTestDependencies = (overrides: {
       conversationOwnershipRepository,
       messageRepository,
       agentRepository,
+      agentRevisionRepository,
       agentSkillRepository,
       routineDefinitionRepository,
       machineAccessRepository,

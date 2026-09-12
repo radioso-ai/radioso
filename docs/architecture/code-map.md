@@ -1338,6 +1338,7 @@ Primary paths:
 - `packages/app-contract/src/index.ts` — the public surface
 - `packages/app-contract/src/manifest.ts` — the `AppManifest` schema
 - `packages/app-contract/src/runtime.ts` — invocation and host capability envelopes
+- `packages/app-contract/src/storage.ts` — collection declarations and storage request/result shapes
 - `packages/app-contract/src/validate.ts` — admission rules and issue codes
 - `packages/app-contract/fixtures/reference/wordpress.manifest.json` — the conformance vector
 - `packages/app-contract/tests/`
@@ -1357,6 +1358,122 @@ Related docs and specs:
 - [App Manifest Reference](../apps/app-manifest.md)
 - [App Runtime Protocol](../apps/runtime-protocol.md)
 - `packages/app-contract/README.md`
+- `specs/1118-hosted-app-runtime/`
+
+## Managed App Storage
+
+Owns the records an installed App keeps: collection declarations resolved against
+a record, schema compatibility between releases, quotas, optimistic versions,
+declared indexes and the one equality query they answer, expiry, and the export,
+retention, and deletion an operator drives. The physical model is Radioso-owned
+and generic — generic record rows, generic index-entry rows, and a maintained
+per-collection counter — so installing or updating an App runs no App-specific
+DDL and an App never observes a table.
+
+Should not own App business meaning, transport, or the rules about which
+installations may execute. Isolation is carried by two things together: every
+statement supplies the workspace and installation predicate, and every operation
+runs in a transaction that holds the installation's state row and rechecks
+revocation and the deletion tombstone inside it. The primary key makes the scoped
+lookup unique and cheap; it does not by itself keep an unscoped query out.
+
+Locks are taken in one order everywhere — installation state row, then the
+collection's usage row, then record rows — so a put, a delete, an expiry sweep, a
+retention reclaim, an index rebuild, and an installation deletion queue behind
+each other rather than deadlocking; the deletion walks a collection's counters in
+key order for the same reason. Liveness and TTL deadlines come from
+`clock_timestamp()` read after those locks are held, never from `now()`, which is
+the transaction's start time and so is arbitrarily stale for anything that
+queued. Record versions come from the usage row's `next_version` counter, so they
+are monotonic per collection and never reused across delete, expiry, or
+recreation; the counter has a ceiling at the last safe JSON integer and refuses
+further writes rather than repeat a version.
+
+Foreground reclamation is bounded: a put clears its own key and a fixed number of
+batches, and when that stops with expired rows left it counts live records
+exactly — bounded by the collection's own `maxRecords` — so the quota decision is
+true rather than a reflection of a counter still charging for unreclaimed rows.
+The counter itself keeps meaning rows present, live or not yet reclaimed, because
+every reclaim's arithmetic subtracts against that meaning; `usage` reports
+`reclaimPending` when the two differ.
+
+The sweep owns the rest, and separates listing from claiming: the fairness listing
+(least recently swept first) takes no locks, and each claim takes one
+installation's fence and exactly one collection's counter row before writing a
+durable lease. Holding several counter rows in fairness order is what used to meet
+an installation deletion holding them in collection order.
+
+An export is admitted without opening anything; the returned snapshot opens its
+repeatable-read transaction on the first read, re-reads the state row inside it,
+and captures the expiry cutoff there. It is the one operation that does not lock
+the state row — holding one for an operator's read would stop the App writing for
+that long — and it closes on completion, on `close`, or on an idle timeout. A
+snapshot has one consumer: ownership is an `unopened → reading → closed`
+transition taken before the transaction is awaited, a second `stream()` is
+refused with `AppStorageExportBusyError`, and closing waits for whatever
+statement is in flight so nothing commits under a running query.
+
+A retention hold cannot be restored around: `setAccessRevoked` refuses to clear
+the revocation while `retain_until` is set, and `cancelRetention` is the explicit
+operation that lifts it.
+
+Index rebuilds carry a generation, capped at the last safe JSON integer, and
+finishing and cancelling are compare-and-set against it. `completeIndexRebuild`
+takes a caller-owned `Transaction<DB>` — the platform's own type, so the `apps`
+domain can flip a release's visibility in the same commit that clears the marker.
+Every unsuccessful exit cancels the generation it owns; running out of batches
+instead keeps the marker and answers `in_progress`, with no completion token to
+activate against. Each marker carries a lease that every batch renews and that
+convergence renews once more for the activation to come; `listAbandonedIndexRebuilds`
+and `cancelAbandonedIndexRebuilds` drop the ones that ran out, along with the
+entries built under them, and the next rebuild of an index collects them too. A
+put whose value is past a pending index's bound is refused `invalid_input` rather
+than stored with that entry missing, and `finishIndexRebuild` revalidates live
+records under the closing fence before it stamps convergence.
+
+Irreversible dispositions commit their audit intent to `app_storage_audit_outbox`
+in the same transaction as the change. The drain leases a batch, publishes outside
+any transaction, then acknowledges by token — publishing under the claim would
+need a second pooled connection for the audit store and would hold row locks
+across the publisher. Delivery is therefore at-least-once with a stable event id.
+The outbox is the one table here with no workspace foreign key, so undrained
+disposition evidence survives workspace deletion; everything else cascades, and
+there is no workspace-wide cleanup helper. A claim reports whether each entry's
+workspace still exists, and the composition sink publishes a surviving entry with
+`workspaceId: null` and the former identifier as `deletedWorkspaceId` metadata,
+which is the only shape `audit_events` can hold. A secondary audit failure on a
+refusal or failure path is logged through `AppStorageAuditLogPort` in identifiers
+and codes, and never replaces the primary answer.
+
+Primary paths:
+
+- `backend/src/modules/appStorage/public.ts` — the only import surface
+- `backend/src/modules/appStorage/domain/` — record validation, indexed-value bounds, quota, query bounds, expiry, retention policy, failure classification, compatibility
+- `backend/src/modules/appStorage/domain/compatibility.ts` — the two-direction reader matrix over a candidate and every surviving reader's declaration
+- `backend/src/modules/appStorage/ports/appStorageService.ts` — the capability, disposition, sweeper, and index-rebuild ports
+- `backend/src/modules/appStorage/ports/appStorageCompatibilityFacts.ts` — `storedSchemaVersions`, apart from the gateway-facing capability service
+- `backend/src/modules/appStorage/repositories/appStorageRepository.ts` — the generic Postgres model and the lock order
+- `backend/src/modules/appStorage/ports/appStorageRepository.ts` — the persistence port, the lock order it owns, and `AppStorageUnitOfWork`, the shared transaction activation runs in
+- `backend/src/modules/appStorage/services/appStorageDisposition.ts` — revoke, restore, export snapshots, retention and its cancellation, deletion, audit drain
+- `backend/src/modules/appStorage/services/appStorageSweeper.ts` — expiry claim/lease/reclaim, the retention deadline, and the abandoned-rebuild pass
+- `backend/src/modules/appStorage/services/appStorageIndexRebuilder.ts` — builds an added index over records already stored, under its own generation
+- `backend/src/app/composition/appStorage.ts` — repository, service, compatibility facts, disposition, rebuilder, sweeper, and the `app.data.*` audit sink
+- `backend/src/db/migrations/172_app_storage.sql`
+
+Useful searches:
+
+- `rg "appStorage|app_storage_" backend/src backend/tests`
+- `rg "app.data\." backend/src`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/appStorage`
+- `cd backend && pnpm exec vitest run tests/integration/appStorage --no-file-parallelism` — includes the forced-interleaving cases that hold a lock on a second connection
+
+Related docs and specs:
+
+- [Managed App Storage](../apps/storage.md)
+- [App Manifest Reference](../apps/app-manifest.md)
 - `specs/1118-hosted-app-runtime/`
 
 ## MCP Server Package

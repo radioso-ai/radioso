@@ -360,6 +360,73 @@ export interface ApiCredentials {
   workspace_id: string;
 }
 
+export interface AppStorageAuditOutbox {
+  attempt_count: Generated<number>;
+  claim_token: string | null;
+  claimed_until: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  event_status: string;
+  event_type: string;
+  id: Generated<string>;
+  installation_id: string | null;
+  metadata: Generated<Json>;
+  workspace_id: string;
+}
+
+export interface AppStorageCollectionUsage {
+  byte_size: Generated<Int8>;
+  collection_id: string;
+  installation_id: string;
+  last_swept_at: Generated<Timestamp>;
+  next_version: Generated<Int8>;
+  record_count: Generated<number>;
+  sweep_lease_token: string | null;
+  sweep_lease_until: Timestamp | null;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
+export interface AppStorageIndexEntries {
+  boolean_value: boolean | null;
+  collection_id: string;
+  index_id: string;
+  installation_id: string;
+  numeric_value: number | null;
+  record_key: string;
+  text_value: string | null;
+  timestamp_value: Timestamp | null;
+  workspace_id: string;
+}
+
+export interface AppStorageInstallationState {
+  access_revoked_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  deleted_at: Timestamp | null;
+  deleted_collection_count: number | null;
+  deleted_record_count: number | null;
+  installation_id: string;
+  pending_indexes: Generated<Json>;
+  rebuild_generation: Generated<Int8>;
+  rebuild_lease_until: Timestamp | null;
+  retain_until: Timestamp | null;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
+export interface AppStorageRecords {
+  byte_size: number;
+  collection_id: string;
+  created_at: Generated<Timestamp>;
+  expires_at: Timestamp | null;
+  installation_id: string;
+  record_key: string;
+  schema_version: number;
+  updated_at: Generated<Timestamp>;
+  value: Json;
+  version: Int8;
+  workspace_id: string;
+}
+
 export interface AssistantAnswerFeedback {
   account_id: string | null;
   actor_id: string;
@@ -1690,6 +1757,11 @@ export interface DB {
   answer_coverage_reaction_traces: AnswerCoverageReactionTraces;
   api_credential_expiry_warnings: ApiCredentialExpiryWarnings;
   api_credentials: ApiCredentials;
+  app_storage_audit_outbox: AppStorageAuditOutbox;
+  app_storage_collection_usage: AppStorageCollectionUsage;
+  app_storage_index_entries: AppStorageIndexEntries;
+  app_storage_installation_state: AppStorageInstallationState;
+  app_storage_records: AppStorageRecords;
   assistant_answer_feedback: AssistantAnswerFeedback;
   assistant_answer_triage: AssistantAnswerTriage;
   assistant_answer_triage_transitions: AssistantAnswerTriageTransitions;

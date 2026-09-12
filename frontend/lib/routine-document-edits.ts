@@ -36,11 +36,90 @@ const createDocumentStep = (kind: RoutineStepKind, existing: RoutineBlockStep[])
   }
 }
 
-const isPristineSeedStep = (step: RoutineBlockStep) =>
+const completeEnding = (doc: RoutineBlockDoc): RoutineBlockEnding | undefined =>
+  doc.unreferencedEndings.find((ending) => ending.kind === 'complete')
+  ?? doc.steps.flatMap((step) => step.branches)
+    .flatMap((branch) => branch.target.kind === 'ending' && branch.target.ending?.kind === 'complete' ? [branch.target.ending] : [])
+    .at(0)
+
+const defaultBranch = (target: RoutineBlockBranch['target']): RoutineBlockBranch => ({
+  guard: guardFor('default'),
+  target,
+})
+
+const sequentialTarget = (nextStep: RoutineBlockStep | undefined, ending: RoutineBlockEnding): RoutineBlockBranch['target'] =>
+  nextStep
+    ? { kind: 'step', stableStepId: nextStep.stableStepId }
+    : { kind: 'ending', terminalId: ending.stableStepId, ending: copy(ending) }
+
+const targetRef = (target: RoutineBlockBranch['target']): string =>
+  target.kind === 'step' ? target.stableStepId : target.kind === 'ending' ? target.terminalId : target.toRef
+
+// The document shows an ordinary sequence without rendering its default edges. When a blank
+// document is first edited, materialize that sequence so the backend receives a real graph.
+const connectUnwiredSequence = (doc: RoutineBlockDoc): RoutineBlockDoc => {
+  const ending = completeEnding(doc)
+  if (!ending) return doc
+  const steps = doc.steps.map((step, index) => ({
+    ...step,
+    branches: step.branches.length === 0
+      ? [defaultBranch(sequentialTarget(doc.steps[index + 1], ending))]
+      : step.branches,
+  }))
+  const referencedEndingIds = new Set(steps.flatMap((step) => step.branches.flatMap((branch) =>
+    branch.target.kind === 'ending' ? [branch.target.terminalId] : [],
+  )))
+  return {
+    ...doc,
+    steps,
+    unreferencedEndings: doc.unreferencedEndings.filter((item) => !referencedEndingIds.has(item.stableStepId)),
+  }
+}
+
+// Only default edges that previously followed the displayed row order are implicit. Moving or
+// inserting a row rewires those hidden edges, while conditional branches and explicit jumps keep
+// their authored destinations.
+const rewireImplicitSequence = (before: RoutineBlockDoc, after: RoutineBlockDoc): RoutineBlockDoc => {
+  const ending = completeEnding(before)
+  if (!ending) return after
+  const implicitTargetByStepId = new Map(before.steps.map((step, index) => [
+    step.stableStepId,
+    targetRef(sequentialTarget(before.steps[index + 1], ending)),
+  ]))
+  const afterEnding = completeEnding(after)
+  if (!afterEnding) return after
+  return {
+    ...after,
+    // Rewiring the old final default edge can temporarily leave its terminal unreferenced.
+    // Keep a copy until `connectUnwiredSequence` installs the new final edge.
+    unreferencedEndings: after.unreferencedEndings.some((item) => item.stableStepId === ending.stableStepId)
+      ? after.unreferencedEndings
+      : [...after.unreferencedEndings, copy(ending)],
+    steps: after.steps.map((step, index) => {
+      const previousTarget = implicitTargetByStepId.get(step.stableStepId)
+      if (!previousTarget) return step
+      return {
+        ...step,
+        branches: step.branches.map((branch) =>
+          branch.guard.kind === 'default' && targetRef(branch.target) === previousTarget
+            ? { ...branch, target: sequentialTarget(after.steps[index + 1], afterEnding) }
+            : branch,
+        ),
+      }
+    }),
+  }
+}
+
+const isPristineSeedStep = (doc: RoutineBlockDoc, step: RoutineBlockStep) =>
   step.stableStepId === 'step_1'
   && step.kind === 'chat'
   && step.instruction.every((segment) => segment.kind === 'text' && segment.text === '')
-  && step.branches.length === 0
+  && (step.branches.length === 0 || (step.branches.length === 1
+    && step.branches[0].guard.kind === 'default'
+    && step.branches[0].target.kind === 'ending'
+    && step.branches[0].target.terminalId === 'complete'
+  && step.branches[0].target.ending?.kind === 'complete'
+    && !doc.unreferencedEndings.some((ending) => ending.stableStepId === 'complete')))
   && step.captureKey == null
   && Object.keys(step.inputBindings ?? {}).length === 0
   && Object.keys(step.outputAssignments ?? {}).length === 0
@@ -50,9 +129,17 @@ const isPristineSeedStep = (step: RoutineBlockStep) =>
 export const addStep = (doc: RoutineBlockDoc, kind: RoutineStepKind): RoutineBlockDoc => {
   const next = copy(doc)
   const step = createDocumentStep(kind, next.steps)
-  if (next.steps.length === 1 && isPristineSeedStep(next.steps[0])) next.steps = [step]
-  else next.steps.push(step)
-  return kind === 'approval' ? syncApprovalBranches(next, step.stableStepId) : next
+  if (next.steps.length === 1 && isPristineSeedStep(next, next.steps[0])) {
+    const ending = completeEnding(next)
+    next.steps = [step]
+    // `routineToBlockDoc` stores a referenced terminal inside the branch. Retain the seed's
+    // completion when replacing that only branch, otherwise the new first step has no end.
+    if (ending && !next.unreferencedEndings.some((item) => item.stableStepId === ending.stableStepId)) {
+      next.unreferencedEndings.push(copy(ending))
+    }
+  } else next.steps.push(step)
+  const withApprovalBranches = kind === 'approval' ? syncApprovalBranches(next, step.stableStepId) : next
+  return connectUnwiredSequence(rewireImplicitSequence(doc, withApprovalBranches))
 }
 
 // Splices a new step right after `afterStepId` instead of appending, so an author can put
@@ -65,7 +152,8 @@ export const insertStep = (doc: RoutineBlockDoc, afterStepId: string, kind: Rout
   if (index === -1) return next
   const step = createDocumentStep(kind, next.steps)
   next.steps.splice(index + 1, 0, step)
-  return kind === 'approval' ? syncApprovalBranches(next, step.stableStepId) : next
+  const withApprovalBranches = kind === 'approval' ? syncApprovalBranches(next, step.stableStepId) : next
+  return connectUnwiredSequence(rewireImplicitSequence(doc, withApprovalBranches))
 }
 
 export const removeStep = (doc: RoutineBlockDoc, stableStepId: string): RoutineBlockDoc => {
@@ -97,7 +185,7 @@ export const moveStep = (doc: RoutineBlockDoc, stableStepId: string, direction: 
   const destination = index + direction
   if (index < 0 || destination < 0 || destination >= next.steps.length) return next
   ;[next.steps[index], next.steps[destination]] = [next.steps[destination], next.steps[index]]
-  return next
+  return connectUnwiredSequence(rewireImplicitSequence(doc, next))
 }
 
 export const replaceInstruction = (doc: RoutineBlockDoc, stableStepId: string, instruction: RoutineBlockInstructionSegment[]): RoutineBlockDoc => ({

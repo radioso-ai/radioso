@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { CopilotToolDescriptor } from "../contracts.js";
+import type { CopilotCurrentAuthorizationPort, CopilotToolDescriptor } from "../contracts.js";
 import { reviewedOperationDigestPattern } from "../reviewedOperation.js";
 
 const inputSchema = z.object({
@@ -27,6 +27,8 @@ export interface ReviewedProposalExecutionPort {
     readonly executionInvocationId: string;
     readonly grantId: string;
     readonly clientId: string;
+    /** Request-bound MCP credential/grant authorization, rechecked by the owner before mutation. */
+    readonly currentAuthorization: CopilotCurrentAuthorizationPort;
   }): Promise<ReviewedProposalExecutionResult>;
 }
 
@@ -63,6 +65,7 @@ export const createReviewedProposalExecutionTool = (
         executionInvocationId: context.operatorMcpInvocationId,
         grantId: context.operatorMcpGrantId,
         clientId: context.operatorMcpClientId,
+        currentAuthorization: context.currentAuthorization,
       });
       return { proposalId: input.proposalId, ...result };
     },

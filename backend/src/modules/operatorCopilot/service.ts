@@ -265,7 +265,7 @@ export class OperatorCopilotService {
    * proposal, so authorization, exact-claim settlement and audit cannot drift by transport.
    */
   async executeClaimedProposal(input: {
-    readonly input: { workspaceId: string; accountId: string; operatorUserId: string; surface: CopilotSurface; proposalId: string };
+    readonly input: { workspaceId: string; accountId: string; operatorUserId: string; surface: CopilotSurface; proposalId: string; currentAuthorization?: CopilotCurrentAuthorizationPort };
     readonly claim: CopilotProposalClaim;
     readonly executionInvocationId?: string;
   }): Promise<CopilotClaimedProposalExecution> {
@@ -365,8 +365,11 @@ export class OperatorCopilotService {
     readonly executionInvocationId: string;
     readonly grantId: string;
     readonly clientId: string;
+    /** The authenticated MCP request's credential/grant-aware authorization. */
+    readonly currentAuthorization: CopilotCurrentAuthorizationPort;
     readonly now?: Date;
   }): Promise<CopilotClaimedProposalExecution | { status: "refused"; reason: string }> {
+    if (!input.currentAuthorization) throw new CopilotAuthorizationError();
     const claimed = await this.deps.repository.claimMcpReviewedProposalApply({
       proposalId: input.proposalId,
       executionInvocationId: input.executionInvocationId,
@@ -381,7 +384,7 @@ export class OperatorCopilotService {
     if (claimed.status === "already_applied") return { status: "applied", appliedRef: claimed.appliedRef, ...(claimed.reason ? { reason: claimed.reason } : {}) };
     if (claimed.status !== "claimed") return { status: "refused", reason: claimed.status };
     return this.executeClaimedProposal({
-      input: { surface: "mcp", workspaceId: input.workspaceId, accountId: input.accountId, operatorUserId: input.operatorUserId, proposalId: input.proposalId },
+      input: { surface: "mcp", workspaceId: input.workspaceId, accountId: input.accountId, operatorUserId: input.operatorUserId, proposalId: input.proposalId, currentAuthorization: input.currentAuthorization },
       claim: claimed.claim,
       executionInvocationId: input.executionInvocationId,
     });
@@ -393,7 +396,8 @@ export class OperatorCopilotService {
     return { status: "dismissed" };
   }
 
-  async cancelMcpReviewedProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; grantId: string; clientId: string; proposalId: string }): Promise<{ status: "dismissed" }> {
+  async cancelMcpReviewedProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; grantId: string; clientId: string; proposalId: string; currentAuthorization: CopilotCurrentAuthorizationPort }): Promise<{ status: "dismissed" }> {
+    if (!input.currentAuthorization) throw new CopilotAuthorizationError();
     const proposal = await this.deps.repository.findMcpReviewedProposal({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId, grantId: input.grantId, clientId: input.clientId });
     if (!proposal) throw new CopilotNotFoundError();
     if (proposal.status !== "pending") throw new CopilotConflictError();
@@ -603,11 +607,12 @@ export class OperatorCopilotService {
     return adapter;
   }
 
-  private async canManageProposal(input: { workspaceId: string; accountId: string; operatorUserId: string }, targetType: CopilotProposalTargetType): Promise<boolean> {
-    return this.deps.currentAuthorization.hasAllPermissions({ ...input, requiredPermissions: [...copilotProposalPermissions[targetType]] });
+  private async canManageProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; currentAuthorization?: CopilotCurrentAuthorizationPort }, targetType: CopilotProposalTargetType): Promise<boolean> {
+    const { currentAuthorization, ...principal } = input;
+    return (currentAuthorization ?? this.deps.currentAuthorization).hasAllPermissions({ ...principal, requiredPermissions: [...copilotProposalPermissions[targetType]] });
   }
 
-  private async requireProposalAuthorization(input: { workspaceId: string; accountId: string; operatorUserId: string; surface: CopilotSurface; proposalId: string }, targetType: CopilotProposalTargetType): Promise<void> {
+  private async requireProposalAuthorization(input: { workspaceId: string; accountId: string; operatorUserId: string; surface: CopilotSurface; proposalId: string; currentAuthorization?: CopilotCurrentAuthorizationPort }, targetType: CopilotProposalTargetType): Promise<void> {
     if (await this.canManageProposal(input, targetType)) return;
     await this.audit(input, {
       accountId: input.accountId,

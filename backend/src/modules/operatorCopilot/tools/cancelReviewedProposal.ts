@@ -1,12 +1,12 @@
 import { z } from "zod";
 
-import type { CopilotToolDescriptor } from "../contracts.js";
+import type { CopilotCurrentAuthorizationPort, CopilotToolDescriptor } from "../contracts.js";
 
 const inputSchema = z.object({ proposalId: z.string().uuid() }).strict();
 const outputSchema = z.object({ proposalId: z.string().uuid(), status: z.literal("dismissed") }).strict();
 
 export interface CancelReviewedProposalPort {
-  cancelMcpReviewedProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; grantId: string; clientId: string; proposalId: string }): Promise<{ status: "dismissed" }>;
+  cancelMcpReviewedProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; grantId: string; clientId: string; proposalId: string; currentAuthorization: CopilotCurrentAuthorizationPort }): Promise<{ status: "dismissed" }>;
 }
 
 export const createCancelReviewedProposalTool = (canceller: CancelReviewedProposalPort): CopilotToolDescriptor => ({
@@ -17,7 +17,7 @@ export const createCancelReviewedProposalTool = (canceller: CancelReviewedPropos
     invoke: async (rawInput) => {
       const { proposalId } = inputSchema.parse(rawInput);
       if (context.surface !== "mcp" || !context.operatorMcpGrantId || !context.operatorMcpClientId) throw new Error("MCP reviewed-operation binding is required");
-      return { proposalId, ...(await canceller.cancelMcpReviewedProposal({ workspaceId: context.workspaceId, accountId: context.accountId, operatorUserId: context.operatorUserId, grantId: context.operatorMcpGrantId, clientId: context.operatorMcpClientId, proposalId })) };
+      return { proposalId, ...(await canceller.cancelMcpReviewedProposal({ workspaceId: context.workspaceId, accountId: context.accountId, operatorUserId: context.operatorUserId, grantId: context.operatorMcpGrantId, clientId: context.operatorMcpClientId, proposalId, currentAuthorization: context.currentAuthorization })) };
     },
   }),
 });

@@ -4,6 +4,8 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 import { CopilotRepository } from "../../../src/db/repositories/copilotRepository.js";
 import { RoutineDefinitionRepository } from "../../../src/db/repositories/routineDefinitionRepository.js";
 import { createRoutineMcpApplyPort } from "../../../src/app/composition/copilotRoutineAtomicApply.js";
+import { createAgentSkillMcpApplyPort } from "../../../src/app/composition/copilotAgentSkillAtomicApply.js";
+import { AgentSkillRepository } from "../../../src/modules/agentSkills/repository.js";
 import type { RoutineDefinitionDraftInput } from "../../../src/modules/routines/public.js";
 import { Database } from "../../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "../support/integrationDatabase.js";
@@ -15,6 +17,8 @@ describeIntegration("operator MCP proposal origin", () => {
   const proposals = new CopilotRepository(database.kysely);
   const routines = new RoutineDefinitionRepository(database.kysely);
   const structuralApply = createRoutineMcpApplyPort(database.kysely, { validateScopedReferences: async () => undefined });
+  const agentSkillApply = createAgentSkillMcpApplyPort(database.kysely);
+  const agentSkills = new AgentSkillRepository(database.kysely);
   const resource = `https://mcp.example/${randomUUID()}/operator/mcp`;
   const accountId = randomUUID(); const workspaceId = randomUUID(); const userId = randomUUID(); const membershipId = randomUUID();
   const clientId = randomUUID(); const snapshotId = randomUUID(); const grantId = randomUUID(); const credentialId = randomUUID(); const invocationId = randomUUID(); const reviewInvocationId = randomUUID(); const recoveryReviewInvocationId = randomUUID(); const executionInvocationId = randomUUID(); const recoveryExecutionInvocationId = randomUUID();
@@ -35,7 +39,7 @@ describeIntegration("operator MCP proposal origin", () => {
   };
   const createExecution = async () => {
     const id = randomUUID();
-    await database.query("INSERT INTO operator_mcp_invocations (id, credential_id, grant_id, grant_version, account_id, workspace_id, user_id, client_id, method, descriptor_name, shape, operation_id, input_digest, proof_nonce_digest, status, retained_until) VALUES ($1, $2, $3, 1, $4, $5, $6, $7, 'tools/call', 'apply_reviewed_proposal', 'act', $8, 'v1:input', $9, 'admitted', NOW() + INTERVAL '30 days')", [id, credentialId, grantId, accountId, workspaceId, userId, clientId, randomUUID(), `nonce-${id}`]);
+    await database.query("INSERT INTO operator_mcp_invocations (id, credential_id, grant_id, grant_version, account_id, workspace_id, user_id, client_id, method, descriptor_name, shape, operation_id, input_digest, proof_nonce_digest, status, retained_until) VALUES ($1, $2, $3, 1, $4, $5, $6, $7, 'tools/call', 'execute_reviewed_proposal', 'act', $8, 'v1:input', $9, 'admitted', NOW() + INTERVAL '30 days')", [id, credentialId, grantId, accountId, workspaceId, userId, clientId, randomUUID(), `nonce-${id}`]);
     return id;
   };
   const createReview = async () => {
@@ -57,8 +61,8 @@ describeIntegration("operator MCP proposal origin", () => {
     await database.query("INSERT INTO operator_mcp_invocations (id, credential_id, grant_id, grant_version, account_id, workspace_id, user_id, client_id, method, descriptor_name, shape, operation_id, input_digest, proof_nonce_digest, status, retained_until) VALUES ($1, $2, $3, 1, $4, $5, $6, $7, 'tools/call', 'propose_ingestion_settings', 'propose', $8, 'v1:input', $9, 'running', NOW() + INTERVAL '30 days')", [invocationId, credentialId, grantId, accountId, workspaceId, userId, clientId, randomUUID(), `nonce-${invocationId}`]);
     await database.query("INSERT INTO operator_mcp_invocations (id, credential_id, grant_id, grant_version, account_id, workspace_id, user_id, client_id, method, descriptor_name, shape, operation_id, input_digest, proof_nonce_digest, status, retained_until) VALUES ($1, $2, $3, 1, $4, $5, $6, $7, 'tools/call', 'review_ingestion_settings', 'propose', $8, 'v1:input', $9, 'running', NOW() + INTERVAL '30 days')", [reviewInvocationId, credentialId, grantId, accountId, workspaceId, userId, clientId, randomUUID(), `nonce-${reviewInvocationId}`]);
     await database.query("INSERT INTO operator_mcp_invocations (id, credential_id, grant_id, grant_version, account_id, workspace_id, user_id, client_id, method, descriptor_name, shape, operation_id, input_digest, proof_nonce_digest, status, retained_until) VALUES ($1, $2, $3, 1, $4, $5, $6, $7, 'tools/call', 'review_ingestion_settings', 'propose', $8, 'v1:input', $9, 'running', NOW() + INTERVAL '30 days')", [recoveryReviewInvocationId, credentialId, grantId, accountId, workspaceId, userId, clientId, randomUUID(), `nonce-${recoveryReviewInvocationId}`]);
-    await database.query("INSERT INTO operator_mcp_invocations (id, credential_id, grant_id, grant_version, account_id, workspace_id, user_id, client_id, method, descriptor_name, shape, operation_id, input_digest, proof_nonce_digest, status, retained_until) VALUES ($1, $2, $3, 1, $4, $5, $6, $7, 'tools/call', 'apply_reviewed_proposal', 'act', $8, 'v1:input', $9, 'admitted', NOW() + INTERVAL '30 days')", [executionInvocationId, credentialId, grantId, accountId, workspaceId, userId, clientId, randomUUID(), `nonce-${executionInvocationId}`]);
-    await database.query("INSERT INTO operator_mcp_invocations (id, credential_id, grant_id, grant_version, account_id, workspace_id, user_id, client_id, method, descriptor_name, shape, operation_id, input_digest, proof_nonce_digest, status, retained_until) VALUES ($1, $2, $3, 1, $4, $5, $6, $7, 'tools/call', 'apply_reviewed_proposal', 'act', $8, 'v1:input', $9, 'admitted', NOW() + INTERVAL '30 days')", [recoveryExecutionInvocationId, credentialId, grantId, accountId, workspaceId, userId, clientId, randomUUID(), `nonce-${recoveryExecutionInvocationId}`]);
+    await database.query("INSERT INTO operator_mcp_invocations (id, credential_id, grant_id, grant_version, account_id, workspace_id, user_id, client_id, method, descriptor_name, shape, operation_id, input_digest, proof_nonce_digest, status, retained_until) VALUES ($1, $2, $3, 1, $4, $5, $6, $7, 'tools/call', 'execute_reviewed_proposal', 'act', $8, 'v1:input', $9, 'admitted', NOW() + INTERVAL '30 days')", [executionInvocationId, credentialId, grantId, accountId, workspaceId, userId, clientId, randomUUID(), `nonce-${executionInvocationId}`]);
+    await database.query("INSERT INTO operator_mcp_invocations (id, credential_id, grant_id, grant_version, account_id, workspace_id, user_id, client_id, method, descriptor_name, shape, operation_id, input_digest, proof_nonce_digest, status, retained_until) VALUES ($1, $2, $3, 1, $4, $5, $6, $7, 'tools/call', 'execute_reviewed_proposal', 'act', $8, 'v1:input', $9, 'admitted', NOW() + INTERVAL '30 days')", [recoveryExecutionInvocationId, credentialId, grantId, accountId, workspaceId, userId, clientId, randomUUID(), `nonce-${recoveryExecutionInvocationId}`]);
   });
 
   it("binds a reviewed MCP proposal to one matching execution receipt", async () => {
@@ -156,6 +160,33 @@ describeIntegration("operator MCP proposal origin", () => {
     await expect(proposals.claimMcpReviewedProposalApply({ proposalId: proposal.id, executionInvocationId: executionId, reviewDigest: "9".repeat(64), workspaceId, operatorUserId: userId, grantId, clientId, now: new Date(), claimTtlSeconds: 300 })).resolves.toEqual({ status: "already_applied", appliedRef: settled.appliedRef });
   });
 
+  it("recovers a failed original receipt after its lease and settles one routine owner write", async () => {
+    const agentId = await createRoutineAgent();
+    const original = await routines.createDraftWithAgentDraft(workspaceId, agentId, routineDraft(true));
+    const executionId = await createExecution();
+    const reviewId = await createReview();
+    const proposal = await proposals.createProposal({
+      workspaceId, operatorUserId: userId, origin: { type: "operator_mcp_invocation", invocationId: reviewId },
+      targetType: "routine", targetRef: { agentId, routineId: original.id }, payload: { kind: "structural" },
+      versionToken: original.updatedAt.toISOString(), evidence: null, reviewDigest: "7".repeat(64), expiresAt: new Date(Date.now() + 60_000),
+    });
+    const input = { proposalId: proposal.id, executionInvocationId: executionId, reviewDigest: "7".repeat(64), workspaceId, operatorUserId: userId, grantId, clientId, now: new Date(), claimTtlSeconds: 5 };
+    const first = await proposals.claimMcpReviewedProposalApply(input);
+    if (first.status !== "claimed") throw new Error(`expected claim, got ${first.status}`);
+    // Models the transport recording failure after an interrupted owner response. Neither the
+    // proposal binding nor its owner mutation is altered; only the stale lease can recover it.
+    await database.query("UPDATE operator_mcp_invocations SET status = 'failed', safe_outcome_code = 'dependency_error' WHERE id = $1", [executionId]);
+    await database.query("UPDATE copilot_proposals SET apply_started_at = NOW() - INTERVAL '10 seconds' WHERE id = $1", [proposal.id]);
+    const recovered = await proposals.claimMcpReviewedProposalApply({ ...input, now: new Date() });
+    if (recovered.status !== "claimed") throw new Error(`expected recovered claim, got ${recovered.status}`);
+    await expect(database.query("SELECT status FROM operator_mcp_invocations WHERE id = $1", [executionId])).resolves.toEqual([{ status: "running" }]);
+
+    await structuralApply.apply({ workspaceId, agentId, operation: "update", routineId: original.id, draft: { ...routineDraft(false), name: original.name }, expectedUpdatedAt: original.updatedAt, removedNodeIds: [], removedSlotIds: [], proposalId: proposal.id, executionInvocationId: executionId, operatorUserId: userId, claimedAt: recovered.claim.claimedAt });
+    expect((await routines.findById(agentId, original.id))?.enabled).toBe(false);
+    await expect(database.query("SELECT status FROM operator_mcp_invocations WHERE id = $1", [executionId])).resolves.toEqual([{ status: "completed" }]);
+    await expect(proposals.findProposal({ id: proposal.id, workspaceId, operatorUserId: userId })).resolves.toMatchObject({ status: "applied" });
+  });
+
   it("rolls the routine write back when its receipt cannot be settled", async () => {
     const agentId = await createRoutineAgent();
     const original = await routines.createDraftWithAgentDraft(workspaceId, agentId, routineDraft(true));
@@ -170,6 +201,25 @@ describeIntegration("operator MCP proposal origin", () => {
     if (claim.status !== "claimed") throw new Error(`expected claim, got ${claim.status}`);
     await expect(structuralApply.apply({ workspaceId, agentId, operation: "update", routineId: original.id, draft: { ...routineDraft(false), name: original.name }, expectedUpdatedAt: original.updatedAt, removedNodeIds: [], removedSlotIds: [], proposalId: proposal.id, executionInvocationId: randomUUID(), operatorUserId: userId, claimedAt: claim.claim.claimedAt })).rejects.toThrow(/receipt_conflict/u);
     expect((await routines.findById(agentId, original.id))?.enabled).toBe(true);
+  });
+
+  it("rolls an agent-skill update back when its reviewed receipt cannot settle", async () => {
+    const agentId = await createRoutineAgent();
+    const skill = await agentSkills.create({
+      workspaceId, agentId, skillName: `retrieve-${randomUUID()}`, kind: "retrieve", targetType: "source_scope", targetId: "scope-before", config: { limit: 3 }, invocationMode: "routine_named", enabled: true,
+    });
+    const executionId = await createExecution();
+    const reviewId = await createReview();
+    const proposal = await proposals.createProposal({
+      workspaceId, operatorUserId: userId, origin: { type: "operator_mcp_invocation", invocationId: reviewId },
+      targetType: "agent_skill", targetRef: { agentId, skillId: skill.id }, payload: { kind: "retrieve" },
+      versionToken: skill.updatedAt.toISOString(), evidence: null, reviewDigest: "6".repeat(64), expiresAt: new Date(Date.now() + 60_000),
+    });
+    const claim = await proposals.claimMcpReviewedProposalApply({ proposalId: proposal.id, executionInvocationId: executionId, reviewDigest: "6".repeat(64), workspaceId, operatorUserId: userId, grantId, clientId, now: new Date(), claimTtlSeconds: 300 });
+    if (claim.status !== "claimed") throw new Error(`expected claim, got ${claim.status}`);
+
+    await expect(agentSkillApply.apply({ workspaceId, agentId, skillId: skill.id, expectedUpdatedAt: skill.updatedAt, target: { kind: "retrieve", id: "scope-after" }, config: { limit: 9 }, invocationMode: "routine_named", enabled: false, proposalId: proposal.id, executionInvocationId: randomUUID(), operatorUserId: userId, claimedAt: claim.claim.claimedAt })).rejects.toThrow(/receipt_conflict/u);
+    await expect(agentSkills.findById(workspaceId, agentId, skill.id)).resolves.toMatchObject({ targetId: "scope-before", config: { limit: 3 }, enabled: true });
   });
 
   it("refuses legacy, expired, canceled, and mismatched reviewed executions without claiming", async () => {

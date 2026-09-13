@@ -524,6 +524,8 @@ export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
   /** Reconstructs a proposal result after the proposal committed but its invocation outcome did not. */
   reconcileMcpInvocation?(input: {
     readonly invocation: OperatorMcpInvocationRecord;
+    /** The fresh request's schema-validated arguments. Their digest was matched to `invocation`. */
+    readonly arguments: TInput;
     readonly context: CopilotToolInvocationContext;
     readonly staleBefore: Date;
     readonly now: Date;

@@ -68,4 +68,13 @@ describe("operator MCP internal service contract", () => {
 
     expect(response.body).toEqual({ code: "result_too_large", message: "result_too_large" });
   });
+
+  it("returns an actionable configuration response instead of an unavailable runtime error", async () => {
+    const { app, service } = harness();
+    service.admit.mockRejectedValueOnce(new OperatorMcpApplicationError("missing_configuration"));
+
+    const response = await request(app).post(path).set(signedHeaders(body)).send(body).expect(409);
+
+    expect(response.body).toEqual({ code: "missing_configuration", message: "missing_configuration" });
+  });
 });

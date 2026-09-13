@@ -629,12 +629,16 @@ export interface CopilotProposals {
   conversation_id: string | null;
   created_at: Generated<Timestamp>;
   evidence: Json | null;
+  execution_invocation_id: string | null;
+  expires_at: Timestamp | null;
   failure_reason: string | null;
   id: string;
   message_id: string | null;
   operator_mcp_invocation_id: string | null;
   operator_user_id: string;
   payload: Json;
+  review_digest: string | null;
+  review_snapshot: Json | null;
   status: Generated<string>;
   target_ref: Json;
   target_type: string;

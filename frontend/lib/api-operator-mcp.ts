@@ -9,6 +9,7 @@ export type OperatorMcpToolScope =
   | 'operator:probe'
   | 'operator:act'
   | 'operator:propose'
+  | 'operator:write'
 
 export interface OperatorMcpClientSetupArtifact {
   id: string

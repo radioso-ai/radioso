@@ -14,7 +14,9 @@ type ProductionDescriptorName =
   | "replay_eval_case"
   | "recrawl_source" | "reprocess_document" | "retrieval_probe"
   | "routine_definition" | "run_eval_suite" | "set_triage_state" | "test_agent_turn" | "turn_trace" | "validate_routine"
-  | "workspace_settings" | "workspace_triage";
+  | "workspace_settings" | "workspace_triage" | "prepare_routine_structure" | "execute_reviewed_proposal" | "reviewed_proposal_outcome" | "cancel_reviewed_proposal"
+  | "agent_publication_state" | "prepare_agent_publication" | "agent_publication_candidate" | "agent_publication_candidate_change"
+  | "retrieval_settings" | "prepare_retrieval_settings";
 
 const rayOnly = (reason: string) => ({ rayOnly: { reason } }) as const;
 
@@ -26,6 +28,10 @@ const rayOnly = (reason: string) => ({ rayOnly: { reason } }) as const;
 export const copilotCapabilityProvenance: Readonly<Record<ProductionDescriptorName, CopilotCapabilityProvenance>> = {
   agent_configuration: { backingOperationIds: ["listAgents", "getAgent", "listAgentDirectives"], applicationPrimitiveIds: ["agents.configuration.read"] },
   agent_skills: { backingOperationIds: ["listAgentSkills", "listAgentSkillCapabilities"], applicationPrimitiveIds: ["agents.configuration.read"] },
+  agent_publication_state: { backingOperationIds: ["getAgentRevisionState"], applicationPrimitiveIds: ["agents.revision.publish"] },
+  prepare_agent_publication: { backingOperationIds: ["createAgentRevisionCandidate"], applicationPrimitiveIds: ["agents.revision.publish", "operatorCopilot.proposal.create"] },
+  agent_publication_candidate: { backingOperationIds: ["getAgentRevision"], applicationPrimitiveIds: ["agents.revision.publish"] },
+  agent_publication_candidate_change: { backingOperationIds: ["getAgentRevision"], applicationPrimitiveIds: ["agents.revision.publish"] },
   analyze_website: { backingOperationIds: ["analyzeWebsiteForAgentWizard", "streamAgentWizardWebsiteAnalysis"], applicationPrimitiveIds: ["agentWizard.analysis.probe"] },
   audience_topics: { backingOperationIds: ["getAudiencePulse", "getAudiencePulseRefreshStatus"] },
   context_variables: { backingOperationIds: ["listContextVariables", "listAgentContextVariables"], applicationPrimitiveIds: ["agents.configuration.read"] },
@@ -54,12 +60,18 @@ export const copilotCapabilityProvenance: Readonly<Record<ProductionDescriptorNa
   start_crawl: { backingOperationIds: ["crawlWebsiteDocuments"], applicationPrimitiveIds: ["websiteCrawler.crawl.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray presents a website crawl as a pending, operator-confirmed proposal, because starting one fetches an external site and spends crawl budget.") },
   propose_routine: { backingOperationIds: ["createAgentRoutine"], applicationPrimitiveIds: ["routines.proposal.prepare", "operatorCopilot.proposal.create"], ...rayOnly("Ray drafts routine evidence and review state; authority over what an agent serves remains with the agent revision service.") },
   propose_routine_edit: { backingOperationIds: ["updateAgentRoutine"], applicationPrimitiveIds: ["routines.proposal.prepare", "operatorCopilot.proposal.create"], ...rayOnly("Ray-specific stale-draft guards protect a proposal without expanding routine mutation authority.") },
+  prepare_routine_structure: { backingOperationIds: ["updateAgentRoutine"], applicationPrimitiveIds: ["routines.proposal.prepare", "routines.validation", "operatorCopilot.proposal.create"] },
+  execute_reviewed_proposal: { applicationPrimitiveIds: ["operatorCopilot.proposal.create"], ...rayOnly("The trusted MCP client invokes this digest-bound, one-time execution receipt after conversational confirmation; it is not a Ray turn capability.") },
+  reviewed_proposal_outcome: { applicationPrimitiveIds: ["operatorCopilot.proposal.create"], ...rayOnly("A grant-and-client-bound read reconciles one immutable reviewed operation without becoming authority to execute it.") },
+  cancel_reviewed_proposal: { applicationPrimitiveIds: ["operatorCopilot.proposal.create"], ...rayOnly("A still-authorized, grant-and-client-bound MCP caller can cancel its pending reviewed operation.") },
   propose_skill_config: { backingOperationIds: ["createAgentSkill", "updateAgentSkill"], applicationPrimitiveIds: ["agentSkills.config.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray persists an operator-reviewable draft before the agent skill service receives a configuration mutation.") },
   quality_signals: { backingOperationIds: ["listLowQualityTurns", "getQualityStats"] },
   replay_eval_case: { backingOperationIds: ["createEvalRun"], applicationPrimitiveIds: ["eval.case.replay"], ...rayOnly("Ray replays a selected case and carries bounded proposal evidence rather than exposing a general eval-run surface.") },
   recrawl_source: { backingOperationIds: ["recrawlDocumentSource"], applicationPrimitiveIds: ["documents.source-recrawl.act"] },
   reprocess_document: { backingOperationIds: ["reprocessDocument", "reprocessDocumentSource"], applicationPrimitiveIds: ["documents.reprocess.act", "documents.source-reprocess.act"] },
   retrieval_probe: { backingOperationIds: ["searchRetrievalEvidence"], applicationPrimitiveIds: ["retrieval.evidence.probe"] },
+  retrieval_settings: { backingOperationIds: ["getSettingsRetrievalDefaults", "listAgentSkills"], applicationPrimitiveIds: ["agents.configuration.read"] },
+  prepare_retrieval_settings: { backingOperationIds: ["updateAgentSkill"], applicationPrimitiveIds: ["agentSkills.config.propose", "operatorCopilot.proposal.create"] },
   routine_definition: { backingOperationIds: ["listAgentRoutines", "getAgentRoutine"], applicationPrimitiveIds: ["routines.definition.read"] },
   run_eval_suite: { backingOperationIds: ["runEvalCases"], applicationPrimitiveIds: ["eval.suite.run"] },
   set_triage_state: { backingOperationIds: ["setQualityTurnTriage"] },

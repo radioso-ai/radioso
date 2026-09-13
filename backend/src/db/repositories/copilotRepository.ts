@@ -479,6 +479,22 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
         .where((eb) => eb.or([eb("apply_started_at", "is", null), eb("apply_started_at", "<=", nowMinusSeconds(input.claimTtlSeconds))]))
         .returning(proposalColumns).executeTakeFirst();
       if (!claimed) return { status: "not_prepared" as const };
+      // A retry owns the original, digest-bound receipt, not the fresh transport invocation.
+      // Reopen only that receipt while its matching proposal is still pending and locked here.
+      // This makes the owner transaction's existing admitted/running settlement fence usable
+      // after a lost response recorded the receipt as failed or completed-uncertain.
+      const receipt = await trx.updateTable("operator_mcp_invocations")
+        .set({ status: "running", safe_outcome_code: null, result_reference: null, completed_at: null })
+        .where("id", "=", input.executionInvocationId)
+        .where("grant_id", "=", input.grantId)
+        .where("client_id", "=", input.clientId)
+        .where("workspace_id", "=", input.workspaceId)
+        .where("user_id", "=", input.operatorUserId)
+        .where("method", "=", "tools/call")
+        .where("descriptor_name", "=", "execute_reviewed_proposal")
+        .where("status", "in", ["admitted", "running", "failed", "completed"])
+        .returning("id").executeTakeFirst();
+      if (!receipt) throw new Error("reviewed_proposal_execution_receipt_conflict");
       return { status: "claimed" as const, claim: { proposal: mapProposal(claimed), claimedAt, previousAttemptStartedAt } };
     });
   }

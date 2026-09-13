@@ -46,6 +46,28 @@ export const createReviewedProposalExecutionTool = (
   requiredPermissions: ["workspace.agents.manage"],
   inputSchema,
   outputSchema,
+  reconcileMcpInvocation: async ({ invocation, arguments: rawInput, context }) => {
+    const input = inputSchema.parse(rawInput);
+    if (!context.operatorMcpGrantId || !context.operatorMcpClientId) return { status: "conflict" };
+    const result = await executor.executeMcpReviewedProposal({
+      workspaceId: context.workspaceId,
+      accountId: context.accountId,
+      operatorUserId: context.operatorUserId,
+      proposalId: input.proposalId,
+      reviewDigest: input.reviewDigest,
+      // The durable proposal is bound to the first receipt. A fresh request provides only
+      // current authority; it must never become a replacement execution receipt.
+      executionInvocationId: invocation.id,
+      grantId: context.operatorMcpGrantId,
+      clientId: context.operatorMcpClientId,
+      currentAuthorization: context.currentAuthorization,
+    });
+    // A matching receipt with a live lease belongs to the first runner. Settling its invocation
+    // from this retry would fence that runner's atomic owner+receipt transaction, so leave the
+    // original receipt untouched until its lease expires or it reaches a durable outcome.
+    if (result.status === "refused" && result.reason === "not_prepared") return { status: "in_progress" };
+    return { status: "recovered", output: { proposalId: input.proposalId, ...result } };
+  },
   createTool: (context) => ({
     name: "execute_reviewed_proposal",
     description: "Apply a previously prepared operation after the MCP client has shown and confirmed its exact review digest.",

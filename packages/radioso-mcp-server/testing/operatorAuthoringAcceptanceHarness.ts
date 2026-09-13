@@ -11,6 +11,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
+import { Pool } from "pg";
 
 const backendPort = 55101;
 const mcpPort = 55102;
@@ -48,6 +49,7 @@ const stop = async (process: ChildProcess): Promise<void> => {
 };
 
 const databaseUrl = required("MCP1150_ACCEPTANCE_DATABASE_URL");
+const database = new Pool({ connectionString: databaseUrl, max: 1 });
 const databaseTarget = new URL(databaseUrl);
 assert.equal(databaseTarget.hostname, "127.0.0.1", "acceptance harness requires the local disposable database");
 assert.equal(databaseTarget.port, "59842", "acceptance harness requires the integration database port");
@@ -232,6 +234,20 @@ try {
   assert.ok(candidate.result?.structuredContent);
   const published = await mcpCall("mcp1150-publication-execute", "execute_reviewed_proposal", { proposalId: publicationReview!.proposalId, reviewDigest: publicationReview!.reviewDigest });
   assert.equal(published.result?.structuredContent?.status, "applied");
+  const originalAppliedRef = published.result?.structuredContent?.appliedRef;
+  assert.ok(originalAppliedRef);
+  const publishedBeforeRecovery = await database.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM agent_revisions WHERE agent_id = $1 AND published_at IS NOT NULL", [agent.id]);
+  // Fault injection for the only state a lost owner response can leave behind: the owner
+  // committed publication, while the reviewed proposal still has its stale receipt lease.
+  // The retry below travels through the actual MCP edge, application service, descriptor, and
+  // publication adapter; it must reconcile the idempotency key rather than publish again.
+  await database.query("UPDATE copilot_proposals SET status = 'pending', applied_ref = NULL, apply_started_at = NOW() - INTERVAL '5 minutes' WHERE id = $1", [publicationReview!.proposalId]);
+  await database.query("UPDATE operator_mcp_invocations SET status = 'completed', safe_outcome_code = 'completed', completed_at = NOW() WHERE id = (SELECT execution_invocation_id FROM copilot_proposals WHERE id = $1)", [publicationReview!.proposalId]);
+  const recoveredPublication = await mcpCall("mcp1150-publication-execute-retry", "execute_reviewed_proposal", { proposalId: publicationReview!.proposalId, reviewDigest: publicationReview!.reviewDigest }, "mcp1150-publication-execute");
+  assert.equal(recoveredPublication.result?.structuredContent?.status, "applied");
+  assert.deepEqual(recoveredPublication.result?.structuredContent?.appliedRef, originalAppliedRef);
+  const publishedAfterRecovery = await database.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM agent_revisions WHERE agent_id = $1 AND published_at IS NOT NULL", [agent.id]);
+  assert.equal(publishedAfterRecovery.rows[0]?.count, publishedBeforeRecovery.rows[0]?.count, "publication recovery must not publish a second revision");
   const publicationOutcome = await mcpCall("mcp1150-publication-outcome", "reviewed_proposal_outcome", { proposalId: publicationReview!.proposalId });
   assert.equal(publicationOutcome.result?.structuredContent?.status, "applied");
   const cancellation = await mcpCall("mcp1150-cancel-prepare", "prepare_retrieval_settings", { agentId: agent.id, patch: { vectorTopK: 18 } });
@@ -245,5 +261,6 @@ try {
 } finally {
   if (mcp) await stop(mcp);
   await stop(backend);
+  await database.end().catch(() => undefined);
   await new Promise<void>((resolve) => client.close(() => resolve()));
 }

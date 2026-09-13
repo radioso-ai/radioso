@@ -35,7 +35,7 @@ type CredentialValidation = Pick<OperatorMcpCredentialValidationService, "valida
 export class OperatorMcpApplicationError extends Error {
   constructor(readonly code:
     | "invalid_admission" | "insufficient_scope" | "invalid_proof" | "proof_replay"
-    | "unknown_tool" | "invalid_arguments" | "operation_required" | "operation_conflict" | "budget_exhausted" | "result_too_large" | "invalid_result",
+    | "unknown_tool" | "invalid_arguments" | "missing_configuration" | "operation_required" | "operation_conflict" | "budget_exhausted" | "result_too_large" | "invalid_result",
   readonly requiredScope?: OperatorMcpScope) {
     super(code);
   }
@@ -88,6 +88,8 @@ const contextFor = (
   permissions: undefined,
   currentAuthorization,
   operatorMcpInvocationId: invocationId,
+  operatorMcpGrantId: principal.grantId,
+  operatorMcpClientId: principal.clientRecordId,
   pageContext: { view: null, agentId: null, conversationId: null, selection: null, entities: [] },
 });
 
@@ -461,14 +463,18 @@ export class OperatorMcpApplicationService {
       // above already reports as `invalid_arguments`. Without this, `mcpRoutes.ts`'s error handler
       // — which only recognizes `OperatorMcpApplicationError` — falls back to a generic 503
       // unavailability the caller cannot act on for what is actually a clean, correctable rejection.
-      const error = rawError instanceof AppError && rawError.statusCode === 400
-        ? new OperatorMcpApplicationError("invalid_arguments")
+      const error = rawError instanceof AppError
+        ? rawError.code === "retrieval_not_configured"
+          ? new OperatorMcpApplicationError("missing_configuration")
+          : rawError.statusCode === 400
+            ? new OperatorMcpApplicationError("invalid_arguments")
+            : rawError
         : rawError;
       const reason = error instanceof OperatorMcpApplicationError
         ? error.code
         : error instanceof OperatorMcpCatalogError ? error.code : "dependency_error";
       const refused = error instanceof OperatorMcpApplicationError
-        && ["unknown_tool", "invalid_arguments", "operation_required", "operation_conflict", "budget_exhausted"].includes(error.code);
+        && ["unknown_tool", "invalid_arguments", "missing_configuration", "operation_required", "operation_conflict", "budget_exhausted"].includes(error.code);
       await this.dependencies.invocations.recordOutcome({
         invocationId: input.proof.invocationId,
         status: refused ? "refused" : "failed",

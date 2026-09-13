@@ -11976,7 +11976,7 @@ export interface operations {
                             /** Format: uuid */
                             userId: string;
                             userName: string | null;
-                            scopes: ("operator:read" | "operator:probe" | "operator:act" | "operator:propose")[];
+                            scopes: ("operator:read" | "operator:probe" | "operator:act" | "operator:propose" | "operator:write")[];
                             offlineAccess: boolean;
                             /** @enum {string} */
                             status: "active" | "revoked" | "superseded" | "expired";
@@ -12063,7 +12063,7 @@ export interface operations {
                         /** Format: uuid */
                         userId: string;
                         userName: string | null;
-                        scopes: ("operator:read" | "operator:probe" | "operator:act" | "operator:propose")[];
+                        scopes: ("operator:read" | "operator:probe" | "operator:act" | "operator:propose" | "operator:write")[];
                         offlineAccess: boolean;
                         /** @enum {string} */
                         status: "active" | "revoked" | "superseded" | "expired";
@@ -12155,7 +12155,7 @@ export interface operations {
                         /** Format: uuid */
                         userId: string;
                         userName: string | null;
-                        scopes: ("operator:read" | "operator:probe" | "operator:act" | "operator:propose")[];
+                        scopes: ("operator:read" | "operator:probe" | "operator:act" | "operator:propose" | "operator:write")[];
                         offlineAccess: boolean;
                         /** @enum {string} */
                         status: "active" | "revoked" | "superseded" | "expired";
@@ -12239,7 +12239,7 @@ export interface operations {
                             /** @enum {string} */
                             applicationType: "web" | "native";
                         };
-                        requestedScopes: ("operator:read" | "operator:probe" | "operator:act" | "operator:propose")[];
+                        requestedScopes: ("operator:read" | "operator:probe" | "operator:act" | "operator:propose" | "operator:write")[];
                         requestedOfflineAccess: boolean;
                         redirectHost: string;
                         /** Format: uri */
@@ -12323,7 +12323,7 @@ export interface operations {
                     decision: "approve" | "deny";
                     /** Format: uuid */
                     workspaceId?: string;
-                    approvedToolScopes?: ("operator:read" | "operator:probe" | "operator:act" | "operator:propose")[];
+                    approvedToolScopes?: ("operator:read" | "operator:probe" | "operator:act" | "operator:propose" | "operator:write")[];
                     offlineAccess: boolean;
                 };
             };
@@ -23085,7 +23085,7 @@ export interface operations {
                         /** @enum {string} */
                         reason: "ok" | "no_llm_capability";
                         canManage: boolean;
-                        applyableProposalTargets: ("directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl" | "workspace_setting")[];
+                        applyableProposalTargets: ("directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication")[];
                     };
                 };
             };
@@ -23180,7 +23180,7 @@ export interface operations {
                                 /** Format: uuid */
                                 id: string;
                                 /** @enum {string} */
-                                targetType: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl" | "workspace_setting";
+                                targetType: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication";
                                 targetLabel: string;
                                 summary: string;
                                 /** @enum {string} */
@@ -23326,11 +23326,11 @@ export interface operations {
                         /** Format: uuid */
                         workspaceId: string;
                         /** @enum {string} */
-                        targetType: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl" | "workspace_setting";
+                        targetType: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication";
                         targetRef?: unknown;
                         target: {
                             /** @enum {string} */
-                            type: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl" | "workspace_setting";
+                            type: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication";
                             ref?: unknown;
                         };
                         targetLabel: string;

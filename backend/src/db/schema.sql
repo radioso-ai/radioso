@@ -2118,10 +2118,14 @@ CREATE TABLE public.copilot_proposals (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     evidence jsonb,
     operator_mcp_invocation_id uuid,
+    review_digest text,
+    review_snapshot jsonb,
+    expires_at timestamp with time zone,
+    execution_invocation_id uuid,
     CONSTRAINT copilot_proposals_exactly_one_origin_check CHECK (((conversation_id IS NOT NULL) <> (operator_mcp_invocation_id IS NOT NULL))),
     CONSTRAINT copilot_proposals_message_requires_conversation_check CHECK (((message_id IS NULL) OR (conversation_id IS NOT NULL))),
     CONSTRAINT copilot_proposals_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'applied'::text, 'dismissed'::text, 'failed'::text, 'stale'::text]))),
-    CONSTRAINT copilot_proposals_target_type_check CHECK ((target_type = ANY (ARRAY['directive'::text, 'agent'::text, 'agent_setting'::text, 'routine'::text, 'agent_skill'::text, 'context_variable'::text, 'document'::text, 'ingestion_settings'::text, 'website_crawl'::text, 'workspace_setting'::text])))
+    CONSTRAINT copilot_proposals_target_type_check CHECK ((target_type = ANY (ARRAY['directive'::text, 'agent'::text, 'agent_setting'::text, 'routine'::text, 'agent_skill'::text, 'context_variable'::text, 'document'::text, 'ingestion_settings'::text, 'website_crawl'::text, 'workspace_setting'::text, 'agent_publication'::text])))
 );
 
 
@@ -2621,8 +2625,8 @@ CREATE TABLE public.operator_mcp_access_credentials (
     CONSTRAINT operator_mcp_access_credentials_issued_client_version_check CHECK ((issued_client_version > 0)),
     CONSTRAINT operator_mcp_access_credentials_issued_credential_epoch_check CHECK ((issued_credential_epoch > (0)::numeric)),
     CONSTRAINT operator_mcp_access_credentials_issued_grant_version_check CHECK ((issued_grant_version > 0)),
-    CONSTRAINT operator_mcp_access_credentials_issued_tool_scopes_check CHECK (((cardinality(issued_tool_scopes) >= 1) AND (cardinality(issued_tool_scopes) <= 4))),
-    CONSTRAINT operator_mcp_access_credentials_issued_tool_scopes_check1 CHECK ((issued_tool_scopes <@ ARRAY['operator:read'::text, 'operator:probe'::text, 'operator:act'::text, 'operator:propose'::text]))
+    CONSTRAINT operator_mcp_access_credentials_issued_tool_scopes_count_check CHECK (((cardinality(issued_tool_scopes) >= 1) AND (cardinality(issued_tool_scopes) <= 5))),
+    CONSTRAINT operator_mcp_access_credentials_issued_tool_scopes_values_check CHECK ((issued_tool_scopes <@ ARRAY['operator:read'::text, 'operator:probe'::text, 'operator:act'::text, 'operator:propose'::text, 'operator:write'::text]))
 );
 
 
@@ -2654,9 +2658,9 @@ CREATE TABLE public.operator_mcp_authorization_transactions (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     decided_at timestamp with time zone,
     consumed_at timestamp with time zone,
-    CONSTRAINT operator_mcp_authorization_transac_requested_tool_scopes_check1 CHECK ((requested_tool_scopes <@ ARRAY['operator:read'::text, 'operator:probe'::text, 'operator:act'::text, 'operator:propose'::text])),
-    CONSTRAINT operator_mcp_authorization_transact_requested_tool_scopes_check CHECK (((cardinality(requested_tool_scopes) >= 1) AND (cardinality(requested_tool_scopes) <= 4))),
-    CONSTRAINT operator_mcp_authorization_transactions_check CHECK (((approved_tool_scopes IS NULL) OR (((cardinality(approved_tool_scopes) >= 1) AND (cardinality(approved_tool_scopes) <= 4)) AND (approved_tool_scopes <@ requested_tool_scopes)))),
+    CONSTRAINT operator_mcp_authorization_transactions_check CHECK (((approved_tool_scopes IS NULL) OR (((cardinality(approved_tool_scopes) >= 1) AND (cardinality(approved_tool_scopes) <= 5)) AND (approved_tool_scopes <@ requested_tool_scopes)))),
+    CONSTRAINT operator_mcp_authorization_transactions_requested_tool_scopes_c CHECK (((cardinality(requested_tool_scopes) >= 1) AND (cardinality(requested_tool_scopes) <= 5))),
+    CONSTRAINT operator_mcp_authorization_transactions_requested_tool_scopes_v CHECK ((requested_tool_scopes <@ ARRAY['operator:read'::text, 'operator:probe'::text, 'operator:act'::text, 'operator:propose'::text, 'operator:write'::text])),
     CONSTRAINT operator_mcp_authorization_transactions_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'approved'::text, 'denied'::text, 'consumed'::text, 'expired'::text])))
 );
 
@@ -2752,8 +2756,8 @@ CREATE TABLE public.operator_mcp_grants (
     CONSTRAINT operator_mcp_grants_client_version_check CHECK ((client_version > 0)),
     CONSTRAINT operator_mcp_grants_credential_epoch_check CHECK ((credential_epoch > (0)::numeric)),
     CONSTRAINT operator_mcp_grants_status_check CHECK ((status = ANY (ARRAY['active'::text, 'revoked'::text, 'superseded'::text, 'expired'::text]))),
-    CONSTRAINT operator_mcp_grants_tool_scopes_check CHECK (((cardinality(tool_scopes) >= 1) AND (cardinality(tool_scopes) <= 4))),
-    CONSTRAINT operator_mcp_grants_tool_scopes_check1 CHECK ((tool_scopes <@ ARRAY['operator:read'::text, 'operator:probe'::text, 'operator:act'::text, 'operator:propose'::text])),
+    CONSTRAINT operator_mcp_grants_tool_scopes_count_check CHECK (((cardinality(tool_scopes) >= 1) AND (cardinality(tool_scopes) <= 5))),
+    CONSTRAINT operator_mcp_grants_tool_scopes_values_check CHECK ((tool_scopes <@ ARRAY['operator:read'::text, 'operator:probe'::text, 'operator:act'::text, 'operator:propose'::text, 'operator:write'::text])),
     CONSTRAINT operator_mcp_grants_version_check CHECK ((version > 0))
 );
 
@@ -2806,8 +2810,8 @@ CREATE TABLE public.operator_mcp_refresh_generations (
     consumed_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT operator_mcp_refresh_generations_generation_check CHECK ((generation > 0)),
-    CONSTRAINT operator_mcp_refresh_generations_issued_tool_scopes_check CHECK (((cardinality(issued_tool_scopes) >= 1) AND (cardinality(issued_tool_scopes) <= 4))),
-    CONSTRAINT operator_mcp_refresh_generations_issued_tool_scopes_check1 CHECK ((issued_tool_scopes <@ ARRAY['operator:read'::text, 'operator:probe'::text, 'operator:act'::text, 'operator:propose'::text]))
+    CONSTRAINT operator_mcp_refresh_generations_issued_tool_scopes_count_check CHECK (((cardinality(issued_tool_scopes) >= 1) AND (cardinality(issued_tool_scopes) <= 5))),
+    CONSTRAINT operator_mcp_refresh_generations_issued_tool_scopes_values_chec CHECK ((issued_tool_scopes <@ ARRAY['operator:read'::text, 'operator:probe'::text, 'operator:act'::text, 'operator:propose'::text, 'operator:write'::text]))
 );
 
 
@@ -2833,8 +2837,8 @@ CREATE TABLE public.operator_mcp_refresh_lineages (
     CONSTRAINT operator_mcp_refresh_lineages_client_version_check CHECK ((client_version > 0)),
     CONSTRAINT operator_mcp_refresh_lineages_credential_epoch_check CHECK ((credential_epoch > (0)::numeric)),
     CONSTRAINT operator_mcp_refresh_lineages_current_generation_check CHECK ((current_generation > 0)),
-    CONSTRAINT operator_mcp_refresh_lineages_issued_tool_scopes_check CHECK (((cardinality(issued_tool_scopes) >= 1) AND (cardinality(issued_tool_scopes) <= 4))),
-    CONSTRAINT operator_mcp_refresh_lineages_issued_tool_scopes_check1 CHECK ((issued_tool_scopes <@ ARRAY['operator:read'::text, 'operator:probe'::text, 'operator:act'::text, 'operator:propose'::text])),
+    CONSTRAINT operator_mcp_refresh_lineages_issued_tool_scopes_count_check CHECK (((cardinality(issued_tool_scopes) >= 1) AND (cardinality(issued_tool_scopes) <= 5))),
+    CONSTRAINT operator_mcp_refresh_lineages_issued_tool_scopes_values_check CHECK ((issued_tool_scopes <@ ARRAY['operator:read'::text, 'operator:probe'::text, 'operator:act'::text, 'operator:propose'::text, 'operator:write'::text])),
     CONSTRAINT operator_mcp_refresh_lineages_status_check CHECK ((status = ANY (ARRAY['active'::text, 'revoked'::text, 'expired'::text])))
 );
 
@@ -6643,6 +6647,13 @@ CREATE INDEX copilot_proposals_conversation_message_idx ON public.copilot_propos
 
 
 --
+-- Name: copilot_proposals_execution_invocation_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX copilot_proposals_execution_invocation_idx ON public.copilot_proposals USING btree (execution_invocation_id) WHERE (execution_invocation_id IS NOT NULL);
+
+
+--
 -- Name: copilot_proposals_message_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6661,6 +6672,13 @@ CREATE INDEX copilot_proposals_operator_created_idx ON public.copilot_proposals 
 --
 
 CREATE UNIQUE INDEX copilot_proposals_operator_mcp_invocation_idx ON public.copilot_proposals USING btree (operator_mcp_invocation_id) WHERE (operator_mcp_invocation_id IS NOT NULL);
+
+
+--
+-- Name: copilot_proposals_reviewed_expiry_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX copilot_proposals_reviewed_expiry_idx ON public.copilot_proposals USING btree (expires_at, id) WHERE ((review_digest IS NOT NULL) AND (status = 'pending'::text));
 
 
 --
@@ -9780,6 +9798,14 @@ ALTER TABLE ONLY public.copilot_messages
 
 ALTER TABLE ONLY public.copilot_proposals
     ADD CONSTRAINT copilot_proposals_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.copilot_conversations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: copilot_proposals copilot_proposals_execution_invocation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.copilot_proposals
+    ADD CONSTRAINT copilot_proposals_execution_invocation_id_fkey FOREIGN KEY (execution_invocation_id) REFERENCES public.operator_mcp_invocations(id) ON DELETE RESTRICT;
 
 
 --

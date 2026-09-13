@@ -27470,7 +27470,8 @@
                                 "operator:read",
                                 "operator:probe",
                                 "operator:act",
-                                "operator:propose"
+                                "operator:propose",
+                                "operator:write"
                               ]
                             }
                           },
@@ -27678,7 +27679,8 @@
                           "operator:read",
                           "operator:probe",
                           "operator:act",
-                          "operator:propose"
+                          "operator:propose",
+                          "operator:write"
                         ]
                       }
                     },
@@ -27907,7 +27909,8 @@
                           "operator:read",
                           "operator:probe",
                           "operator:act",
-                          "operator:propose"
+                          "operator:propose",
+                          "operator:write"
                         ]
                       }
                     },
@@ -28106,7 +28109,8 @@
                           "operator:read",
                           "operator:probe",
                           "operator:act",
-                          "operator:propose"
+                          "operator:propose",
+                          "operator:write"
                         ]
                       }
                     },
@@ -28312,7 +28316,8 @@
                         "operator:read",
                         "operator:probe",
                         "operator:act",
-                        "operator:propose"
+                        "operator:propose",
+                        "operator:write"
                       ]
                     },
                     "minItems": 1,
@@ -46552,7 +46557,8 @@
                           "document",
                           "ingestion_settings",
                           "website_crawl",
-                          "workspace_setting"
+                          "workspace_setting",
+                          "agent_publication"
                         ]
                       }
                     }
@@ -46808,7 +46814,8 @@
                                         "document",
                                         "ingestion_settings",
                                         "website_crawl",
-                                        "workspace_setting"
+                                        "workspace_setting",
+                                        "agent_publication"
                                       ]
                                     },
                                     "targetLabel": {
@@ -47148,7 +47155,8 @@
                         "document",
                         "ingestion_settings",
                         "website_crawl",
-                        "workspace_setting"
+                        "workspace_setting",
+                        "agent_publication"
                       ]
                     },
                     "targetRef": {},
@@ -47167,7 +47175,8 @@
                             "document",
                             "ingestion_settings",
                             "website_crawl",
-                            "workspace_setting"
+                            "workspace_setting",
+                            "agent_publication"
                           ]
                         },
                         "ref": {}

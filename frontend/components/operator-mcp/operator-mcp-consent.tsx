@@ -16,6 +16,7 @@ const scopeLabels: Record<OperatorMcpToolScope, string> = {
   'operator:probe': 'Run document searches',
   'operator:act': 'Make workspace changes',
   'operator:propose': 'Draft changes for review',
+  'operator:write': 'Apply reviewed changes',
 }
 
 export const consentWarnings = (transaction: OperatorMcpTransactionResponse): string[] => {

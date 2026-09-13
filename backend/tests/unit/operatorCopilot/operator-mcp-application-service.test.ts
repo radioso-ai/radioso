@@ -8,7 +8,7 @@ import { enrichCopilotToolCatalog } from "../../../src/modules/operatorCopilot/c
 import { OperatorMcpAccessError } from "../../../src/modules/operatorMcpAuthorization/public.js";
 import type { CopilotToolDescriptor } from "../../../src/modules/operatorCopilot/public.js";
 import type { OperatorMcpInvocationRepositoryPort } from "../../../src/modules/operatorCopilot/mcpContracts.js";
-import { badRequest } from "../../../src/shared/domain/errors.js";
+import { AppError, badRequest } from "../../../src/shared/domain/errors.js";
 
 const uuid = (suffix: string) => `00000000-0000-4000-8000-${suffix.padStart(12, "0")}`;
 const now = new Date("2026-09-04T00:00:00Z");
@@ -269,6 +269,25 @@ describe("OperatorMcpApplicationService", () => {
     }));
   });
 
+  it("reports a missing retrieval configuration as an actionable refusal", async () => {
+    const rejectingDescriptor: CopilotToolDescriptor = {
+      ...descriptor,
+      createTool: () => ({
+        name: "workspace_settings", description: "Read settings",
+        inputSchema: z.object({ section: z.string() }), outputSchema: z.object({ section: z.string() }),
+        invoke: vi.fn(async () => { throw new AppError(409, "retrieval_not_configured", "Configure a default retrieve skill first."); }),
+      }),
+    };
+    const { service, invocations, audit } = build(rejectingDescriptor);
+    const argumentsValue = { section: "retrieval" };
+    const admitted = await service.admit({ accessToken: "operator-access", invocationId: uuid("13"), method: "tools/call", descriptorName: rejectingDescriptor.name, resource: principal.resource, timestamp: "1788480000", nonce: "missing-config", bodyDigest: callDigest(argumentsValue) });
+
+    await expect(service.invoke({ proof: admitted.proof, name: rejectingDescriptor.name, arguments: argumentsValue, bodyDigest: callDigest(argumentsValue) }))
+      .rejects.toMatchObject({ code: "missing_configuration" });
+    expect(invocations.recordOutcome).toHaveBeenCalledWith(expect.objectContaining({ status: "refused", safeOutcomeCode: "missing_configuration" }));
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ eventStatus: "failure", metadata: expect.objectContaining({ outcome: "refused", reason: "missing_configuration" }) }));
+  });
+
   it("closes a new receipt when a stable operation reconciles to an earlier result", async () => {
     const { service, invocations, invocation } = build();
     const operationId = "stable-operation";
@@ -432,5 +451,29 @@ describe("OperatorMcpApplicationService", () => {
     await expect(service.invoke({ proof: admitted.proof, name: descriptor.name, arguments: argumentsValue, bodyDigest }))
       .rejects.toMatchObject({ code: "operation_conflict" });
     expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("replays a completed reviewed execution by its persisted proposal reference after a fresh proof", async () => {
+    const proposalId = uuid("77");
+    const execution: CopilotToolDescriptor = {
+      ...descriptor,
+      name: "execute_reviewed_proposal",
+      shape: "act",
+      inputSchema: z.object({ proposalId: z.string().uuid() }).strict(),
+      outputSchema: z.object({ proposalId: z.string().uuid(), status: z.literal("applied") }).strict(),
+      mcpDisposition: { status: "eligible", inputStrategy: "explicit", scope: "operator:read", retry: { effect: "act", idempotent: true, requiresOperationId: true } },
+      createTool: () => ({ name: "execute_reviewed_proposal", description: "execute", inputSchema: z.object({ proposalId: z.string().uuid() }), outputSchema: z.unknown(), invoke: vi.fn(async () => ({ proposalId, status: "applied" as const })) }),
+    };
+    const { service, invocations, invocation } = build(execution);
+    const operationId = "publish-once";
+    const args = { proposalId };
+    const bodyDigest = digestOperatorMcpCall({ name: execution.name, arguments: args, operationId });
+    const first = await service.admit({ accessToken: "operator-access", invocationId: uuid("12"), method: "tools/call", descriptorName: execution.name, resource: principal.resource, timestamp: "1788480000", nonce: "first", bodyDigest });
+    await expect(service.invoke({ proof: first.proof, name: execution.name, arguments: args, operationId, bodyDigest })).resolves.toMatchObject({ resultReference: proposalId });
+
+    invocations.prepareInvocation.mockResolvedValueOnce({ status: "replay", invocation: { ...invocation, id: uuid("13"), status: "completed", descriptorName: execution.name, shape: "act", operationId, resultReference: proposalId, safeOutcomeCode: "completed" } });
+    invocations.consumeProof.mockResolvedValueOnce("consumed");
+    const retry = await service.admit({ accessToken: "operator-access", invocationId: uuid("13"), method: "tools/call", descriptorName: execution.name, resource: principal.resource, timestamp: "1788480000", nonce: "retry", bodyDigest });
+    await expect(service.invoke({ proof: retry.proof, name: execution.name, arguments: args, operationId, bodyDigest })).resolves.toMatchObject({ safeOutcomeCode: "completed", resultReference: proposalId });
   });
 });

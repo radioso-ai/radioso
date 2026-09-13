@@ -7,8 +7,12 @@ import { withAgentDraftMutation } from "../../src/db/repositories/agentDraftMuta
 import { AgentRevisionRepository } from "../../src/db/repositories/agentRevisionRepository.js";
 import { ContextVariableRepository } from "../../src/db/repositories/contextVariableRepository.js";
 import { RoutineDefinitionRepository } from "../../src/db/repositories/routineDefinitionRepository.js";
+import { agentRevisionLockKey } from "../../src/db/repositories/agentDraftMutation.js";
+import { createRoutineScopedReferenceGuard } from "../../src/modules/agents/public.js";
 import { RoutineDefinitionService, type RoutineDefinitionDraftInput } from "../../src/modules/routines/public.js";
 import { Database } from "../../src/shared/infra/database.js";
+import { transactionAdvisoryLock } from "../../src/shared/infra/kysely/sqlHelpers.js";
+import { scopeTag } from "@radioso/conversation-defaults";
 import { runAllTestMigrations } from "../support/databaseMigrations.js";
 
 const url = process.env.INTEGRATION_DATABASE_URL;
@@ -147,6 +151,48 @@ describeDb("agent directive draft mutations", () => {
     const draft = await revisions.readDraft(workspaceId, agentId);
     expect(draft?.generation).toBe(4);
     expect(draft?.snapshot.directives).toEqual([authored]);
+  });
+
+  it("blocks committed scoped references and serializes a directive writer outside a guarded routine removal", async () => {
+    const agentId = await createAgentWithDraft();
+    const routine = await routines.createDraftWithAgentDraft(workspaceId, agentId, routineInput("guarded"));
+    const tag = scopeTag.step(routine.id, "step_one");
+    const guard = (db = database.kysely) => createRoutineScopedReferenceGuard({
+      listDirectiveTags: async ({ workspaceId: readWorkspaceId, agentId: readAgentId }) => (await new AgentRepository(db).listDirectives(readAgentId, readWorkspaceId)).map((directive) => directive.tags),
+    });
+    await agents.createDirective(agentId, workspaceId, { ...directiveInput("pinned"), tags: [tag] });
+
+    await expect(database.kysely.transaction().execute(async (trx) => {
+      await transactionAdvisoryLock(agentRevisionLockKey(workspaceId, agentId)).execute(trx);
+      await guard(trx).assertNoScopedReferences({ workspaceId, agentId, routineId: routine.id, removedNodeIds: ["step_one"], removedSlotIds: [] });
+    })).rejects.toThrow(/scoped directive/);
+
+    const pinned = (await agents.listDirectives(agentId, workspaceId))[0];
+    await agents.deleteDirective(agentId, workspaceId, pinned.id);
+    let writerSettled = false;
+    let writer: Promise<void> | undefined;
+    const concurrentDatabase = new Database(url!);
+    try {
+      const concurrentAgents = new AgentRepository(concurrentDatabase.kysely);
+      await database.kysely.transaction().execute(async (trx) => {
+        await transactionAdvisoryLock(agentRevisionLockKey(workspaceId, agentId)).execute(trx);
+        writer = concurrentAgents.createDirective(agentId, workspaceId, { ...directiveInput("late"), tags: [tag] }).then(() => { writerSettled = true; });
+        let waiting = false;
+        for (let attempt = 0; attempt < 100 && !waiting; attempt += 1) {
+          const [lock] = await concurrentDatabase.query<{ waiting: boolean }>("SELECT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND NOT granted) AS waiting");
+          waiting = lock?.waiting ?? false;
+          if (!waiting) await new Promise<void>((resolve) => setImmediate(resolve));
+        }
+        expect(waiting).toBe(true);
+        expect(writerSettled).toBe(false);
+        await guard(trx).assertNoScopedReferences({ workspaceId, agentId, routineId: routine.id, removedNodeIds: ["step_one"], removedSlotIds: [] });
+        await new RoutineDefinitionRepository(trx).deleteDraftWithAgentDraft(workspaceId, agentId, routine.id, { expectedUpdatedAt: routine.updatedAt });
+      });
+      await writer;
+      expect(writerSettled).toBe(true);
+    } finally {
+      await concurrentDatabase.close();
+    }
   });
 
   it("bumps generation only for successful directive commands, including delete", async () => {

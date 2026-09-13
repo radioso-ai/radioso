@@ -42,6 +42,9 @@ export {
   type AuthoredDirectiveServiceOptions,
 } from "./services/authoredDirectiveService.js";
 export {
+  createRoutineScopedReferenceGuard,
+} from "./routineScopedReferenceGuard.js";
+export {
   DirectiveAuthorService,
   directiveAuthorDraftInputSchema,
 } from "./services/directiveAuthorService.js";

@@ -42,6 +42,53 @@ describe("copilot routine readers", () => {
     expect(ports.listRoutines).not.toHaveBeenCalled();
   });
 
+  it("returns the canonical editable draft only through bounded authoring-detail chunks", async () => {
+    const detailed = routine({
+      enabled: false,
+      activation: { triggerDescription: "Escalate a refund", gateRef: "refund_gate", priority: 9, reentryMode: "once_per_conversation" },
+      slots: [{ stableSlotId: "slot_order", key: "order_id", type: "text", required: true, description: "Order reference", mutable: true, ordinal: 0 }],
+      steps: [{ stableStepId: "collect_order", kind: "chat", instruction: "Ask for the order reference.", toolRef: null, actionType: null, captureKey: "order_id", options: { retries: 2 }, ordinal: 0, metadata: { label: "collect" } }],
+      transitions: [{ fromStep: "collect_order", toRef: "done", guardKind: "field", guardText: "When captured", outcomeStatus: null, counterLimit: null, fieldRef: "order_id", fieldOp: "is_present", fieldValue: null, fieldValues: null, fieldUnit: null, ordinal: 0 }],
+      terminals: [{ stableStepId: "done", kind: "complete", instruction: "Complete the refund intake.", ordinal: 1 }],
+    });
+    const ports = dependencies([detailed]);
+    const tool = ports.descriptors.find((descriptor) => descriptor.name === "routine_definition")!;
+    const runtime = tool.createTool(context("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"));
+
+    const defaultResult = await runtime.invoke({ routineId: detailed.id }, {} as never) as { authoringDetail: unknown };
+    expect(defaultResult.authoringDetail).toBeNull();
+    expect(JSON.stringify(defaultResult)).not.toContain("slot_order");
+
+    const chunks: string[] = [];
+    let offset = 0;
+    do {
+      const result = await runtime.invoke({ routineId: detailed.id, authoringDetail: { offset, limit: 80 } }, {} as never) as { authoringDetail: { text: string; nextOffset: number | null } };
+      chunks.push(result.authoringDetail.text);
+      offset = result.authoringDetail.nextOffset ?? -1;
+    } while (offset >= 0);
+    expect(JSON.parse(chunks.join(""))).toMatchObject({
+      enabled: false,
+      activation: { triggerDescription: "Escalate a refund", gateRef: "refund_gate", priority: 9 },
+      slots: [{ stableSlotId: "slot_order", key: "order_id", mutable: true }],
+      steps: [{ stableStepId: "collect_order", captureKey: "order_id", options: { retries: 2 } }],
+      transitions: [{ guardKind: "field", fieldRef: "order_id", fieldOp: "is_present" }],
+    });
+  });
+
+  it("keeps the default reader bounded and rejects invalid authoring-detail requests", async () => {
+    const oversizedMetadata = "x".repeat(30_000);
+    const ports = dependencies([routine({ steps: [{ stableStepId: "collect_topic", kind: "chat", instruction: "Ask how we can help.", toolRef: null, actionType: null, ordinal: 0, metadata: { oversizedMetadata } }] })]);
+    const tool = ports.descriptors.find((descriptor) => descriptor.name === "routine_definition")!;
+    const runtime = tool.createTool(context("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"));
+
+    const defaultResult = await runtime.invoke({ routineId: "11111111-1111-4111-8111-111111111111" }, {} as never);
+    expect(JSON.stringify(defaultResult).length).toBeLessThan(2_000);
+    await expect(runtime.invoke({ authoringDetail: { offset: 0, limit: 80 } }, {} as never)).rejects.toThrow(/requires routineId/);
+    expect(tool.inputSchema.safeParse({ routineId: "11111111-1111-4111-8111-111111111111", authoringDetail: { offset: -1, limit: 80 } }).success).toBe(false);
+    expect(tool.inputSchema.safeParse({ routineId: "11111111-1111-4111-8111-111111111111", authoringDetail: { offset: 0, limit: 0 } }).success).toBe(false);
+    expect(tool.inputSchema.safeParse({ routineId: "11111111-1111-4111-8111-111111111111", authoringDetail: { offset: 0, limit: 4_001 } }).success).toBe(false);
+  });
+
   it("names the stable ids an edit addresses, which the portable prose does not carry", async () => {
     // The portable document is what a routine says, not what to call its parts. A reader that
     // describes a step perfectly and cannot name it leaves guessing the id as the only move.

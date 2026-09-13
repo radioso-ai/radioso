@@ -45,6 +45,7 @@
         "tests/support/**/*.ts",
         "tests/fixtures/**/*.ts",
         "tests/contract/kysely-typecheck.ts"
+        ,"tests/acceptance/operatorAuthoringBackend.ts"
       ],
       "project": [
         "src/**/*.ts",

@@ -10,6 +10,10 @@ agent routes in `app/http/routes/testExecutionRoutes.ts`; the trusted runner
 adapter is `chat/services/trustedTestExecutionRunnerAdapter.ts`. Revision
 selection belongs to `modules/agents`; chat remains the runtime port.
 
+`public.ts` exposes the narrow private-test evidence shape Eval may consume to
+capture an immutable test-turn snapshot. It must not expose conversation ids,
+continuations, or turn traces.
+
 Test histories and sample values are never public channel inputs. A published
 revision does not make a private test conversation resumable by a visitor.
 

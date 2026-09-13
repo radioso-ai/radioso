@@ -2410,7 +2410,7 @@ CREATE TABLE public.eval_runs (
 CREATE TABLE public.eval_snapshots (
     id uuid NOT NULL,
     workspace_id uuid NOT NULL,
-    source_conversation_id uuid NOT NULL,
+    source_conversation_id uuid,
     source_message_id uuid,
     fidelity text NOT NULL,
     messages jsonb NOT NULL,
@@ -2422,6 +2422,7 @@ CREATE TABLE public.eval_snapshots (
     captured_at timestamp with time zone DEFAULT now() NOT NULL,
     captured_by uuid,
     original_agent_config jsonb,
+    test_execution_replay jsonb,
     source_agent_id uuid,
     original_routine_state jsonb,
     replay_target jsonb,

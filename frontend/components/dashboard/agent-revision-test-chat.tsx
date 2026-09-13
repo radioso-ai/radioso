@@ -11,7 +11,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { AlertCircle, Ellipsis, Loader2, Plus, Send, X } from "lucide-react";
+import { AlertCircle, Ellipsis, Loader2, Plus, Send, Workflow, X } from "lucide-react";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,9 @@ import {
 import { buildAssistantIdentity } from "@/components/chat/assistant-identity";
 import { TestExecutionHistoryView } from "@/components/dashboard/test-execution-history-view";
 import { TestSessionsView } from "@/components/dashboard/workbench/test-sessions-view";
+import { TurnFlowOverlay } from "@/components/dashboard/turn-flow-overlay";
+import { TurnDiagnosticsPanel } from "@/components/dashboard/turn-inspector/turn-diagnostics-panel";
+import { getPrimaryLeafTrace } from "@/lib/turn-trace";
 import {
   Dialog,
   DialogContent,
@@ -30,6 +33,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -80,7 +89,7 @@ import {
   writeAgentRevisionTestChatSession,
   type AgentRevisionTestChatSession,
 } from "@/lib/agent-revision-test-chat-session";
-import type { ContextVariable } from "@/lib/api-types";
+import type { ContextVariable, TurnTraceEnvelope } from "@/lib/api-types";
 
 type Mode = "single" | "compare";
 type View = "chat" | "history";
@@ -175,12 +184,14 @@ export function AgentRevisionTestChat({
   workspaceId,
   assistantName,
   evalsHref,
+  agentVersionsHref,
   actionsContainer,
 }: {
   agentId: string;
   workspaceId: string;
   assistantName?: string;
   evalsHref: string;
+  agentVersionsHref: string;
   actionsContainer: HTMLElement | null;
 }) {
   const sessionKey = agentRevisionTestChatSessionKey(workspaceId, agentId);
@@ -192,6 +203,16 @@ export function AgentRevisionTestChat({
   const [selected, setSelected] = useState<string[]>(cachedSession?.selected ?? []);
   const [contextOpen, setContextOpen] = useState(false);
   const [evalsOpen, setEvalsOpen] = useState(false);
+  const [selectedDebug, setSelectedDebug] = useState<{
+    messageId: string;
+    turnTrace: TurnTraceEnvelope;
+    messages: Array<{
+      id: string;
+      role: "user" | "assistant";
+      content: string;
+    }>;
+  } | null>(null);
+  const [debugFlowOpen, setDebugFlowOpen] = useState(false);
   const [message, setMessage] = useState(cachedSession?.message ?? "");
   const [execution, setExecution] = useState<TestExecutionState | null>(cachedSession?.execution ?? null);
   const [evalRun, setEvalRun] = useState<RevisionEvalRun | null>(cachedSession?.evalRun ?? null);
@@ -1240,7 +1261,10 @@ export function AgentRevisionTestChat({
           New chat
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => setView("history")}>
-          History
+          Conversation history
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href={agentVersionsHref}>Agent versions</Link>
         </DropdownMenuItem>
         {mode === "single" ? (
           <DropdownMenuItem onSelect={() => changeMode("compare")}>
@@ -1276,7 +1300,7 @@ export function AgentRevisionTestChat({
             className="min-h-0 flex-1 space-y-8 overflow-y-auto"
           >
             <div className="flex items-center justify-between">
-              <h2 className="font-medium">History</h2>
+              <h2 className="font-medium">Conversation history</h2>
               <Button
                 size="sm"
                 variant="outline"
@@ -1285,6 +1309,9 @@ export function AgentRevisionTestChat({
                 Back to chat
               </Button>
             </div>
+            <p className="text-sm text-muted-foreground">
+              Each saved test conversation keeps the exact version or versions it ran against.
+            </p>
             <section>
               <TestExecutionHistoryView
                 agentId={agentId}
@@ -1395,6 +1422,7 @@ export function AgentRevisionTestChat({
                         id: item.id,
                         role: item.role,
                         content: item.content,
+                        persistedAssistantMessageId: item.persistedAssistantMessageId,
                         status:
                           item.state === "streaming"
                             ? "streaming"
@@ -1421,6 +1449,45 @@ export function AgentRevisionTestChat({
                             onOpenDocument={async () => "unavailable"}
                             assistantAvatarLabel={assistantName}
                             assistantIdentity={assistantIdentity}
+                            conversationId={side?.conversationId}
+                            evalCaptureEnabled={Boolean(side?.conversationId)}
+                            shouldShowEvalCapture={(assistantMessageId) => {
+                              const assistantIndex = side?.messages.findIndex(
+                                (item) => item.persistedAssistantMessageId === assistantMessageId,
+                              ) ?? -1;
+                              return assistantIndex > 0 && side?.messages
+                                .slice(0, assistantIndex)
+                                .some((item) => item.role === "user") === true;
+                            }}
+                            captureEvalSnapshot={(assistantMessageId) => {
+                              if (!execution || !side) {
+                                return Promise.reject(new Error("This test response is still being saved."));
+                              }
+                              return agentRevisionsApi.captureTestExecutionSnapshot(
+                                agentId,
+                                execution.executionId,
+                                side.id,
+                                assistantMessageId,
+                              );
+                            }}
+                            onMessageSelect={(messageId) => {
+                              const selectedIndex = side?.messages.findIndex((item) => item.id === messageId) ?? -1;
+                              const diagnostic = selectedIndex < 0
+                                ? undefined
+                                : side?.messages.slice(selectedIndex).find((item) => item.role === "assistant");
+                              if (diagnostic?.turnTrace) {
+                                setDebugFlowOpen(false);
+                                setSelectedDebug({
+                                  messageId: diagnostic.persistedAssistantMessageId ?? diagnostic.id,
+                                  turnTrace: diagnostic.turnTrace,
+                                  messages: side?.messages.map((item) => ({
+                                    id: item.persistedAssistantMessageId ?? item.id,
+                                    role: item.role,
+                                    content: item.content,
+                                  })) ?? [],
+                                });
+                              }
+                            }}
                           /> : null}
                           {side?.errorCode ? (
                             <p className="mt-3 text-sm text-destructive">
@@ -1757,6 +1824,56 @@ export function AgentRevisionTestChat({
                 </section>
               </DialogContent>
             </Dialog>
+            <Sheet
+              open={selectedDebug !== null}
+              onOpenChange={(open) => {
+                if (!open) {
+                  setDebugFlowOpen(false);
+                  setSelectedDebug(null);
+                }
+              }}
+            >
+              <SheetContent side="right" className="w-[95vw] gap-0 p-0 sm:!max-w-[680px]">
+                <SheetHeader className="flex-row items-center justify-between gap-3 border-b border-border py-3 pr-12">
+                  <SheetTitle className="text-sm font-medium">Turn debug</SheetTitle>
+                  {selectedDebug ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5"
+                      onClick={() => setDebugFlowOpen(true)}
+                    >
+                      <Workflow className="h-3.5 w-3.5" />
+                      Flow
+                    </Button>
+                  ) : null}
+                </SheetHeader>
+                <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                  <div className="rounded-xl border border-border/70 bg-background/50 p-4">
+                    <TurnDiagnosticsPanel
+                      diagnostics={selectedDebug ? {
+                        messageId: selectedDebug.messageId,
+                        turnTrace: selectedDebug.turnTrace,
+                        activityTrace: getPrimaryLeafTrace(selectedDebug.turnTrace),
+                      } : null}
+                      onSelectLeafStage={() => undefined}
+                    />
+                  </div>
+                </div>
+              </SheetContent>
+            </Sheet>
+            {selectedDebug && debugFlowOpen ? (
+              <TurnFlowOverlay
+                key={`${selectedDebug.messageId}-${selectedDebug.turnTrace.spine.traceId}`}
+                open={debugFlowOpen}
+                envelope={selectedDebug.turnTrace}
+                leafTrace={getPrimaryLeafTrace(selectedDebug.turnTrace)}
+                messages={selectedDebug.messages}
+                assistantMessageId={selectedDebug.messageId}
+                onClose={() => setDebugFlowOpen(false)}
+              />
+            ) : null}
           </>
         )}
       </div>

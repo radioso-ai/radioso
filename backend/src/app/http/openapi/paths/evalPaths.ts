@@ -212,7 +212,7 @@ const EvalSnapshotMessageSchema = z.object({
 const EvalSnapshotSchema = z.object({
   id: z.string().uuid(),
   workspaceId: z.string().uuid(),
-  sourceConversationId: z.string().uuid(),
+  sourceConversationId: z.string().uuid().nullable(),
   sourceMessageId: z.string().uuid().nullable(),
   replayTarget: z.object({
     userMessageId: z.string().uuid(),
@@ -756,4 +756,5 @@ export const registerEvalPaths = (
       },
     },
   });
+  return { EvalSnapshotSchema: RegisteredEvalSnapshotSchema };
 };

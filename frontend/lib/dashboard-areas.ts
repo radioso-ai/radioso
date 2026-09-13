@@ -25,6 +25,7 @@ export function activeArea(routeState: Pick<DashboardRouteState, 'section'>): Da
 
 export type AgentSectionId =
   | 'chat'
+  | 'changes'
   | 'profile'
   | 'directives'
   | 'routines'
@@ -42,6 +43,7 @@ type AgentSectionRoute = { agentTab: AgentTab; anchor?: string }
 
 const AGENT_SECTION_ROUTES: Record<AgentSectionId, AgentSectionRoute> = {
   chat: { agentTab: 'chat' },
+  changes: { agentTab: 'behavior', anchor: 'assistant-changes' },
   profile: { agentTab: 'behavior', anchor: 'assistant-profile' },
   directives: { agentTab: 'behavior', anchor: 'assistant-directives' },
   routines: { agentTab: 'behavior', anchor: 'assistant-routines' },
@@ -57,6 +59,7 @@ const AGENT_SECTION_ROUTES: Record<AgentSectionId, AgentSectionRoute> = {
 }
 
 const ASSISTANT_ANCHORS: Record<string, AgentSectionId> = {
+  'assistant-changes': 'changes',
   'assistant-profile': 'profile',
   // The agent's name and its answering behavior are one page, so both anchors
   // resolve to the page that configures them together.

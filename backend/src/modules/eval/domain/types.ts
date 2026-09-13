@@ -1,5 +1,6 @@
 import type { RoutineState } from "@radioso/conversation-contract";
-import type { AgentSnapshot, InternalAgentConfig } from "../../agents/public.js";
+import type { AgentRevision, AgentSnapshot, InternalAgentConfig } from "../../agents/public.js";
+import type { FrozenTestValue } from "../../context-variables/public.js";
 import type {
   AnswerSegment,
   ChatCitation,
@@ -46,10 +47,22 @@ export interface EvalSnapshotReplayTarget {
   assistantMessageId: string | null;
 }
 
+/**
+ * Private Test Chat needs the exact revision-side runtime inputs that produced a
+ * captured response. They are separate from the baseline agent config because
+ * routines and context-variable enablements are revision-owned, not agent-config
+ * fields. Ordinary conversation snapshots deliberately leave this absent.
+ */
+export interface EvalSnapshotTestExecutionReplay {
+  revision: AgentRevision;
+  testValues: readonly FrozenTestValue[];
+}
+
 export interface EvalSnapshot {
   id: string;
   workspaceId: string;
-  sourceConversationId: string;
+  /** Null when evidence came from a private test execution rather than a live conversation. */
+  sourceConversationId: string | null;
   sourceMessageId: string | null;
   replayTarget: EvalSnapshotReplayTarget | null;
   fidelity: EvalSnapshotFidelity;
@@ -68,6 +81,8 @@ export interface EvalSnapshot {
   // Full non-redacted internal config captured for replay. Prefer this over
   // originalAgent when present; originalAgent remains readable for legacy rows.
   originalAgentConfig: InternalAgentConfig | null;
+  /** Frozen private Test Chat inputs, present only for Test Chat captured evidence. */
+  testExecutionReplay?: EvalSnapshotTestExecutionReplay;
   sourceAgentId: string | null;
   // The conversation's routine position at capture time (full RoutineState minus
   // sessionId), captured as reference data alongside the other original* fields. NULL

@@ -1124,6 +1124,58 @@ describe("EvalRunService.execute (retrieval_only) case recording", () => {
     expect(run.status).toBe("pass");
   });
 
+  it("replays Test Chat evidence with its captured revision routines and context values", async () => {
+    const agent = configuredAgent();
+    const revision: AgentRevision = {
+      id: "test-chat-revision",
+      sourceDraftGeneration: 2,
+      sourceBasePublishedRevisionId: null,
+      createdAt: new Date(0),
+      publishedAt: new Date(0),
+      publishedVersion: 1,
+      snapshot: {
+        customInstruction: "Frozen Test Chat instruction.",
+        directives: [],
+        routines: [{ id: "routine-1", name: "Returns", activation: { priority: 1 } }] as never,
+        contextVariableEnablements: [{ variableId: "context-1", enabled: true, surfacing: "always" }] as never,
+      },
+    };
+    const snapshot = makeSnapshot({
+      sourceAgentId: agent.id,
+      originalAgentConfig: projectInternalAgentConfig(agent),
+      testExecutionReplay: {
+        revision,
+        testValues: [{
+          contextVariableId: "context-1",
+          name: "Customer tier",
+          description: "Frozen Test Chat context",
+          value: "gold",
+          sensitive: false,
+          trust: "verified",
+        }],
+      },
+    });
+    const replay = new StubWorkbenchReplayRunner();
+    const service = new EvalRunService(
+      new InMemoryEvalRepository({ snapshots: [snapshot] }),
+      new StubRunner([]),
+      passJudge(),
+      replay,
+    );
+
+    await service.execute({ workspaceId: "ws-1", snapshotId: snapshot.id, mode: "full_assistant" });
+
+    expect(replay.calls[0]).toMatchObject({ candidateRevision: revision });
+    expect(replay.calls[0]?.preResolvedHostVariables).toEqual([{
+      name: "Customer tier",
+      description: "Frozen Test Chat context",
+      value: "gold",
+      surfacing: "always",
+      sensitive: false,
+      trust: "verified",
+    }]);
+  });
+
   it("threads the frozen conversation summary into retrieval_only and legacy full_assistant runs", async () => {
     const snapshot = makeSnapshot({
       conversationSummary: "The user is comparing the Pro and Team plans.",

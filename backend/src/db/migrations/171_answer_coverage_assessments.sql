@@ -3,8 +3,8 @@
 -- so PostgreSQL cannot build them CONCURRENTLY. Run this migration in a coordinated
 -- deploy window: CREATE UNIQUE INDEX takes a strong lock on the existing tables for
 -- the duration of each build.
-CREATE UNIQUE INDEX idx_conversations_workspace_id_unique ON conversations (workspace_id, id);
-CREATE UNIQUE INDEX idx_messages_workspace_conversation_id_unique ON messages (workspace_id, conversation_id, id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_conversations_workspace_id_unique ON conversations (workspace_id, id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_workspace_conversation_id_unique ON messages (workspace_id, conversation_id, id);
 
 -- A session can host many routine runs over time. This identifier distinguishes
 -- the concrete run that consumed a coverage signal from its routine definition.

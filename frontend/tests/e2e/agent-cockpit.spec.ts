@@ -11,6 +11,7 @@ import {
   workspaceKey,
 } from './dashboard-fixtures'
 import type { AgentRevisionState, TestExecution } from '@/lib/api-agent-revisions'
+import type { TurnTraceEnvelope } from '@/lib/api-types'
 
 const testUrl = `/w/${workspaceKey}/agents/${defaultAgentId}?tab=chat`
 const testChatComposerPlaceholder = 'Ask a question...'
@@ -43,6 +44,20 @@ const revisionState: AgentRevisionState = {
   proactiveGreetingEnabled: false,
 }
 
+const turnFlowTrace: TurnTraceEnvelope = {
+  version: 1,
+  spine: {
+    traceId: 'private-test-turn-trace',
+    startedAt: nowIso,
+    stages: [
+      { id: 'message', kind: 'message', status: 'applied', outputs: { kind: 'user.chat', eventId: 'user-message', contentLength: 12 } },
+      { id: 'gather', kind: 'gather', status: 'applied', outputs: { historyCount: 0 } },
+      { id: 'selection', kind: 'skill_selection', status: 'applied', outputs: { selectedSkills: ['retrieval.answer'] } },
+      { id: 'compose', kind: 'compose', status: 'applied', outputs: { outcome: 'answered' } },
+    ],
+  },
+}
+
 type CockpitMockOptions = {
   unavailable?: boolean
   delayMessage?: boolean
@@ -68,6 +83,7 @@ type CockpitMockOptions = {
   executionDetail?: unknown
   delayExecutionDetail?: boolean
   replyBySide?: string[]
+  turnTrace?: TurnTraceEnvelope
   revisionState?: typeof revisionState
   routines?: RoutineFixture[]
 }
@@ -186,12 +202,12 @@ async function installCockpitMocks(page: Page, options: CockpitMockOptions = {})
         if (activeSide) {
           activeSide.history = [...(activeSide.history ?? []),
             { turnId: body.turnId, role: 'user', content: route.request().postDataJSON().message, attemptId: body.attemptId, createdAt: nowIso },
-            { turnId: body.turnId, role: 'assistant', content: answer, messageId: `message-${index}`, attemptId: body.attemptId, createdAt: nowIso },
+            { turnId: body.turnId, role: 'assistant', content: answer, messageId: `message-${index}`, turnTrace: options.turnTrace, attemptId: body.attemptId, createdAt: nowIso },
           ]
           activeSide.state = 'completed'
         }
         const delta = { type: 'message_delta', executionId: `execution-${body.executionGeneration}`, generation: body.executionGeneration, sideId: currentSideId, delta: answer, turnId: body.turnId, attemptId: body.attemptId }
-        const done = { type: 'side_completed', executionId: `execution-${body.executionGeneration}`, generation: body.executionGeneration, sideId: currentSideId, messageId: `message-${index}`, turnId: body.turnId, attemptId: body.attemptId }
+        const done = { type: 'side_completed', executionId: `execution-${body.executionGeneration}`, generation: body.executionGeneration, sideId: currentSideId, messageId: `message-${index}`, turnId: body.turnId, attemptId: body.attemptId, ...(options.turnTrace ? { turnTrace: options.turnTrace } : {}) }
         return `data: ${JSON.stringify(delta)}\n\ndata: ${JSON.stringify(done)}\n\n`
       }).join('')
     await route.fulfill({ contentType: 'text/event-stream', body: responseEvents })
@@ -374,7 +390,7 @@ test('keeps the clean chat actions focused and restores normal composer behavior
   await page.goto(testUrl)
 
   await page.getByRole('button', { name: 'Test chat actions', exact: true }).click()
-  for (const label of ['New chat', 'History', 'Compare versions', 'Evals']) {
+  for (const label of ['New chat', 'Conversation history', 'Compare versions', 'Evals']) {
     await expect(testChatMenuItem(page, label)).toHaveCount(1)
   }
   await expect(testChatMenuItem(page, 'Test context')).toHaveCount(0)
@@ -540,10 +556,10 @@ test('reopens a durable comparison with its recorded versions, values, and trans
     },
   })
   await page.goto(testUrl)
-  await clickTestChatAction(page, 'History')
+  await clickTestChatAction(page, 'Conversation history')
   await expect(page.getByText('Comparison', { exact: true })).toBeVisible()
   await expect(page.getByRole('cell', { name: /v4.*Draft/ })).toBeVisible()
-  await page.getByRole('button', { name: 'Open' }).click()
+  await page.getByRole('button', { name: 'Open', exact: true }).click()
 
   await expect(page.getByText('Track my order', { exact: true })).toHaveCount(2)
   await expect(page.getByText('Ciao, bentornato!', { exact: true })).toHaveCount(2)
@@ -567,8 +583,8 @@ test('fences a delayed history open after the operator returns to a new chat', a
     },
   })
   await page.goto(testUrl)
-  await clickTestChatAction(page, 'History')
-  await page.getByRole('button', { name: 'Open' }).click()
+  await clickTestChatAction(page, 'Conversation history')
+  await page.getByRole('button', { name: 'Open', exact: true }).click()
   await mocks.executionDetailRequest
   await page.getByRole('button', { name: 'Back to chat', exact: true }).click()
   await clickTestChatAction(page, 'New chat')
@@ -624,8 +640,8 @@ test('reopens a later failed turn and retries that recorded turn only', async ({
     },
   })
   await page.goto(testUrl)
-  await clickTestChatAction(page, 'History')
-  await page.getByRole('button', { name: 'Open' }).click()
+  await clickTestChatAction(page, 'Conversation history')
+  await page.getByRole('button', { name: 'Open', exact: true }).click()
   await page.getByRole('button', { name: 'Retry this side' }).click()
 
   expect(requestBodies).toContainEqual(expect.objectContaining({ executionGeneration: 4, turnId: 'later-turn', attemptId: expect.stringMatching(/^[0-9a-f-]{36}$/) }))
@@ -977,6 +993,24 @@ test('leaves a routine detail when navigating to cockpit and channel sections', 
   await expect(page.getByRole('heading', { name: 'Channels', level: 1, exact: true })).toBeVisible()
 })
 
+test('opens published agent versions from the Test Chat overflow menu', async ({ page }) => {
+  await installCockpitMocks(page)
+  await page.goto(testUrl)
+  await page.getByRole('button', { name: 'Test chat actions', exact: true }).click()
+  await testChatMenuItem(page, 'Agent versions').click()
+
+  await expect(page.getByRole('heading', { name: 'Agent versions', level: 1, exact: true })).toBeVisible()
+  await expect(page.getByRole('cell', { name: 'v4', exact: true })).toBeVisible()
+  await expect(page.getByRole('navigation', { name: 'Agent cockpit' }).getByRole('tab', { name: 'Test Chat', exact: true })).toHaveAttribute('tabindex', '0')
+  await page.getByRole('button', { name: 'View changes', exact: true }).click()
+  await expect(page.getByRole('dialog')).toContainText('v4 changes')
+  await page.getByRole('button', { name: 'Close', exact: true }).click()
+
+  await page.getByRole('navigation', { name: 'Agent cockpit' }).getByRole('tab', { name: 'Test Chat', exact: true }).click()
+  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}$`))
+  await expect(page.getByRole('heading', { name: 'Agent versions', level: 1, exact: true })).toHaveCount(0)
+})
+
 test('keeps a deep-linked mobile tab visible and supports roving keyboard focus', async ({ page }) => {
   await installCockpitMocks(page)
   await page.setViewportSize({ width: 390, height: 844 })
@@ -1038,6 +1072,23 @@ test('does not announce a draft save for a live-only profile autosave', async ({
   await expect(page.locator('body')).toHaveAttribute('data-draft-save-events', '0')
 })
 
+test('opens a trace-backed Test Chat reply in debug before opening its flow', async ({ page }) => {
+  await installCockpitMocks(page, { turnTrace: turnFlowTrace })
+  await page.goto(testUrl)
+
+  await testChatComposer(page).fill('Show the test turn flow')
+  await page.getByRole('button', { name: 'Send', exact: true }).click()
+  await expect(page.getByText('A fenced answer.', { exact: true })).toBeVisible()
+
+  await page.getByText('A fenced answer.', { exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Turn debug', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Flow', exact: true })).toBeVisible()
+  await expect(page.getByText('Turn flow', { exact: true })).toHaveCount(0)
+  await expect(page.getByText('Direct reply', { exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Flow', exact: true }).click()
+  await expect(page.getByText('Turn flow', { exact: true })).toBeVisible()
+})
+
 test('captures the populated comparison cockpit at desktop and mobile widths', async ({ page }) => {
   const question = 'My order is late — can you check its status?'
   const replies = [
@@ -1058,7 +1109,7 @@ test('captures the populated comparison cockpit at desktop and mobile widths', a
   await expect(page.getByRole('button', { name: 'Review & publish' })).toBeVisible()
   await page.screenshot({ path: resolve(process.cwd(), '..', '.context', 'cockpit-followup-mobile.png'), fullPage: true })
   await page.getByRole('button', { name: 'Test chat actions', exact: true }).click()
-  await expect(testChatMenuItem(page, 'History')).toBeInViewport()
+  await expect(testChatMenuItem(page, 'Conversation history')).toBeInViewport()
   await page.waitForTimeout(250)
   await page.screenshot({ path: resolve(process.cwd(), '..', '.context', 'chat-simplification-mobile-actions.png'), fullPage: true })
   await page.keyboard.press('Escape')

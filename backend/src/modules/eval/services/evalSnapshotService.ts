@@ -5,7 +5,13 @@ import type { ExternalSkillDefinitionRepositoryPort } from "../../../db/reposito
 import type { McpConnectionRepositoryPort } from "../../../db/repositories/mcpConnectionRepository.js";
 import type { MessageRepositoryPort, MessageRecord } from "../../../db/repositories/messageRepository.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
-import { projectInternalAgentConfig, projectInternalAgentExternalSkills, type InternalAgentExternalSkillsConfig } from "../../agents/public.js";
+import {
+  applyAgentRevisionSnapshot,
+  projectInternalAgentConfig,
+  projectInternalAgentExternalSkills,
+  type InternalAgentExternalSkillsConfig,
+} from "../../agents/public.js";
+import type { TestExecution } from "../../test-execution/testExecution.js";
 import type { AnswerSegment, ChatCitation } from "../../chat/contracts/answerTypes.js";
 import {
   loadConversationSummaryText,
@@ -33,12 +39,6 @@ export interface EvalSnapshotCaptureInput {
 export interface EvalSnapshotExternalSkillsPort {
   connections: Pick<McpConnectionRepositoryPort, "listByAgent">;
   skillDefinitions: Pick<ExternalSkillDefinitionRepositoryPort, "listByAgent">;
-}
-
-/** Reads the active routine position for a conversation so it can be frozen into the
- * snapshot for faithful mid-routine replay. Keyed by sessionId (= conversation id). */
-export interface EvalSnapshotRoutineStateReader {
-  loadActive(input: { sessionId: string }): Promise<RoutineState | null>;
 }
 
 const truncateMessages = (
@@ -276,7 +276,12 @@ export class EvalSnapshotService {
     private readonly skillSettingsResolver: SkillSettingsResolver,
     private readonly repository: EvalRepositoryPort,
     private readonly externalSkills?: EvalSnapshotExternalSkillsPort,
-    private readonly routineStateReader?: EvalSnapshotRoutineStateReader,
+    // Reads the active routine position for a conversation so it can be frozen
+    // alongside a normal conversation snapshot. Test-execution snapshots carry
+    // their own continuation and intentionally do not use this live reader.
+    private readonly routineStateReader?: {
+      loadActive(input: { sessionId: string }): Promise<RoutineState | null>;
+    },
     // Freeze the rolling conversation summary (#866) at capture time so a replay/eval
     // run sees the same pre-window context a live turn would. Narrow read-only port.
     private readonly conversationSummaryStore?: Pick<ConversationSummaryStore, "load">,
@@ -292,6 +297,77 @@ export class EvalSnapshotService {
 
   async capture(input: EvalSnapshotCaptureInput): Promise<EvalSnapshot> {
     return this.repository.createSnapshot(await this.prepare(input));
+  }
+
+  /**
+   * A revision Test Chat turn is deliberately not a live `messages` row: its
+   * transcript and candidate configuration belong to the private execution
+   * aggregate. Build an ordinary immutable Eval snapshot from that evidence so
+   * the Eval workbench can replay it without making the test conversation live.
+   */
+  async captureTestExecutionTurn(input: {
+    workspaceId: string;
+    agentId: string;
+    execution: TestExecution;
+    sideId: string;
+    assistantMessageId: string;
+    capturedBy?: string | null;
+  }): Promise<EvalSnapshot> {
+    const side = input.execution.sides.find((candidate) => candidate.id === input.sideId);
+    if (!side) throw notFound("Test execution side is unavailable.");
+    const targetIndex = side.history.findIndex((entry) =>
+      entry.role === "assistant" && entry.messageId === input.assistantMessageId,
+    );
+    if (targetIndex < 0) throw notFound("Test execution message is unavailable.");
+    const userIndex = side.history
+      .slice(0, targetIndex)
+      .map((entry, index) => ({ entry, index }))
+      .reverse()
+      .find(({ entry }) => entry.role === "user")?.index;
+    if (userIndex === undefined) {
+      throw badRequest("Test assistant message has no preceding user message to replay.");
+    }
+    const liveAgent = await this.agents.findByIdAndWorkspaceId(input.agentId, input.workspaceId);
+    if (!liveAgent) throw notFound("Agent not found");
+    const candidate = applyAgentRevisionSnapshot(liveAgent, side.revision);
+    const defaults = this.retrievalDefaultsProvider.getDefaults(input.workspaceId);
+    const retrievalSettings = freezeRetrievalSettings(this.skillSettingsResolver.resolve(
+      "retrieval.answer",
+      defaults,
+      candidate.skillSettings["retrieval.answer"],
+    ));
+    const selectedHistory = side.history.slice(0, targetIndex + 1);
+    const snapshot = await this.repository.createSnapshot({
+      workspaceId: input.workspaceId,
+      sourceConversationId: null,
+      sourceMessageId: null,
+      replayTarget: {
+        userMessageId: selectedHistory[userIndex].messageId
+          ?? selectedHistory[userIndex].turnId,
+        assistantMessageId: input.assistantMessageId,
+      },
+      fidelity: "messages_only",
+      messages: selectedHistory.map((entry) => ({
+        id: entry.messageId ?? entry.turnId,
+        role: entry.role,
+        content: entry.content,
+        createdAt: entry.createdAt.toISOString(),
+      })),
+      originalInstructionBlock: null,
+      originalModelId: candidate.chatModelOverride?.model ?? null,
+      originalRetrievalSettings: retrievalSettings,
+      originalRetrievalResult: null,
+      originalAgent: null,
+      originalAgentConfig: projectInternalAgentConfig(candidate),
+      testExecutionReplay: {
+        revision: structuredClone(side.revision),
+        testValues: structuredClone(input.execution.testValues),
+      },
+      sourceAgentId: input.agentId,
+      originalRoutineState: null,
+      capturedBy: input.capturedBy ?? null,
+    });
+    return snapshot;
   }
 
   /**

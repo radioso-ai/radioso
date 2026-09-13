@@ -135,13 +135,14 @@ export function TurnDiagnosticsPanel({
   // of flattening everything that isn't retrieval to a "direct reply".
   const spine = diagnostics.turnTrace?.spine
   const routineSignal = routineTurnSignalFromSpine(spine)
+  const clarificationDecision = clarificationDecisionFromSpine(spine)
   const routineName = routineSignal ? routineNamesById?.get(routineSignal.routineId) : undefined
   const outcomePresentation = presentActivityOutcome({
     trace: resolvedActivityTrace,
     route: diagnostics.route,
     answerOutcome: diagnostics.answerOutcome,
     routine: routineSignal ? { name: routineName, completed: routineSignal.completed } : undefined,
-    clarificationAsked: clarificationDecisionFromSpine(spine) === 'asked',
+    clarificationAsked: clarificationDecision === 'asked',
   })
   const runParameters = presentRunParameters(resolvedActivityTrace)
   const rollup = turnTraceRollup(activeEnvelope)
@@ -156,6 +157,13 @@ export function TurnDiagnosticsPanel({
       && !diagnostics.turnTrace
       && !diagnostics.activityTrace,
   })
+  const hasOutcomeEvidence = Boolean(
+    resolvedActivityTrace
+    || diagnostics.route
+    || diagnostics.answerOutcome
+    || routineSignal
+    || clarificationDecision === 'asked',
+  )
 
   return (
     <div className="space-y-4">
@@ -167,7 +175,14 @@ export function TurnDiagnosticsPanel({
         </div>
       ) : null}
 
-      <DiagnosticPresentationSection label="Outcome summary" presentation={displayedOutcome} />
+      {hasOutcomeEvidence ? (
+        <DiagnosticPresentationSection label="Outcome summary" presentation={displayedOutcome} />
+      ) : activeEnvelope ? (
+        <section className="rounded-lg border border-border/70 bg-background/60 p-3">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Recorded turn</p>
+          <p className="mt-1 text-sm text-muted-foreground">The complete execution trace is available in Flow.</p>
+        </section>
+      ) : null}
 
       <AnswerCoverageSection assessment={answerCoverage} interaction={interactionTrace} isLegacy={!normalizedAnswerCoverage} onOpenTargetMessage={onOpenTargetMessage} />
 

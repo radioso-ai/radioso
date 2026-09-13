@@ -69,6 +69,17 @@ describe('eval workbench seed', () => {
     expect(seed?.assistantTurn).toBeNull()
   })
 
+  it('uses the snapshot ID as a stable local seed identity for private Test Chat evidence', () => {
+    const seed = buildEvalSeedTurn(snapshot({
+      id: 'snapshot-private',
+      sourceConversationId: null,
+      replayTarget: { userMessageId: 'u1', assistantMessageId: 'a1' },
+      messages: [message('u1', 'user'), message('a1', 'assistant')],
+    }))
+
+    expect(seed?.conversation.conversationId).toBe('snapshot-private')
+  })
+
   it('uses an assistant replay target when the snapshot captured an assistant answer', () => {
     const seed = buildEvalSeedTurn(snapshot({
       sourceMessageId: 'a1',

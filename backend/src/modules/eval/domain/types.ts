@@ -81,8 +81,6 @@ export interface EvalSnapshot {
   // Full non-redacted internal config captured for replay. Prefer this over
   // originalAgent when present; originalAgent remains readable for legacy rows.
   originalAgentConfig: InternalAgentConfig | null;
-  /** Frozen private Test Chat inputs, present only for Test Chat captured evidence. */
-  testExecutionReplay?: EvalSnapshotTestExecutionReplay;
   sourceAgentId: string | null;
   // The conversation's routine position at capture time (full RoutineState minus
   // sessionId), captured as reference data alongside the other original* fields. NULL
@@ -101,6 +99,14 @@ export interface EvalSnapshot {
   conversationSummary?: string;
   capturedAt: string;
   capturedBy: string | null;
+}
+
+/**
+ * Server-only extension for executing a frozen Test Chat snapshot. It must never
+ * be returned by a snapshot route: `testValues` can include private context data.
+ */
+export interface EvalSnapshotForReplay extends EvalSnapshot {
+  testExecutionReplay?: EvalSnapshotTestExecutionReplay;
 }
 
 // An assertion is one *check* a case makes about a run's observed output.

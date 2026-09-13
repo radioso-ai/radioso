@@ -11,6 +11,7 @@ import type {
   EvalCase,
   EvalCaseStatus,
   EvalSnapshot,
+  EvalSnapshotForReplay,
   EvalSnapshotFidelity,
   EvalSnapshotMessage,
   EvalSnapshotOriginalRetrievalChunk,
@@ -117,7 +118,7 @@ const snapshotColumns = [
 const asTestExecutionReplay = (value: unknown): EvalSnapshotTestExecutionReplay | undefined => {
   const record = asObject<Record<string, unknown> | null>(value, null);
   const revision = asObject<Record<string, unknown> | null>(record?.revision, null);
-  if (!revision || typeof revision.id !== "string" || typeof revision.sourceDraftGeneration !== "number") {
+  if (!record || !revision || typeof revision.id !== "string" || typeof revision.sourceDraftGeneration !== "number") {
     return undefined;
   }
   try {
@@ -187,9 +188,6 @@ const mapSnapshot = (row: SnapshotRow): EvalSnapshot => ({
     : null,
   originalAgent: asObject<AgentSnapshot | null>(row.original_agent, null),
   originalAgentConfig: asObject<InternalAgentConfig | null>(row.original_agent_config, null),
-  ...(asTestExecutionReplay(row.test_execution_replay)
-    ? { testExecutionReplay: asTestExecutionReplay(row.test_execution_replay) }
-    : {}),
   sourceAgentId: row.source_agent_id,
   originalRoutineState: asObject<EvalSnapshot["originalRoutineState"]>(
     row.original_routine_state,
@@ -202,6 +200,12 @@ const mapSnapshot = (row: SnapshotRow): EvalSnapshot => ({
   capturedAt: isoDate(row.captured_at),
   capturedBy: row.captured_by,
 });
+
+const mapSnapshotForReplay = (row: SnapshotRow): EvalSnapshotForReplay => {
+  const snapshot = mapSnapshot(row);
+  const testExecutionReplay = asTestExecutionReplay(row.test_execution_replay);
+  return testExecutionReplay ? { ...snapshot, testExecutionReplay } : snapshot;
+};
 
 export const mapCase = (row: CaseRow): EvalCase => ({
   id: row.id,
@@ -286,6 +290,22 @@ export const findSnapshot = async (
     .limit(1)
     .executeTakeFirst();
   return row ? mapSnapshot(row as SnapshotRow) : null;
+};
+
+/** Reads private Test Chat replay context for server-side execution only. */
+export const findSnapshotForReplay = async (
+  db: Db,
+  workspaceId: string,
+  snapshotId: string,
+): Promise<EvalSnapshotForReplay | null> => {
+  const row = await db
+    .selectFrom("eval_snapshots")
+    .select(snapshotColumns)
+    .where("workspace_id", "=", workspaceId)
+    .where("id", "=", snapshotId)
+    .limit(1)
+    .executeTakeFirst();
+  return row ? mapSnapshotForReplay(row as SnapshotRow) : null;
 };
 
 export const findCase = async (

@@ -38,7 +38,7 @@ export interface EvalSnapshotReplayTarget {
 export interface EvalSnapshot {
   id: string
   workspaceId: string
-  sourceConversationId: string
+  sourceConversationId: string | null
   sourceMessageId: string | null
   replayTarget: EvalSnapshotReplayTarget | null
   fidelity: EvalSnapshotFidelity

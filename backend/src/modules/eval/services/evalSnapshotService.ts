@@ -367,7 +367,10 @@ export class EvalSnapshotService {
       originalRoutineState: null,
       capturedBy: input.capturedBy ?? null,
     });
-    return snapshot;
+    const { testExecutionReplay: _testExecutionReplay, ...publicSnapshot } = snapshot as EvalSnapshot & {
+      testExecutionReplay?: unknown;
+    };
+    return publicSnapshot;
   }
 
   /**

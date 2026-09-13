@@ -17,6 +17,7 @@ import type {
   EvalRun,
   EvalRunRetrievedChunk,
   EvalSnapshot,
+  EvalSnapshotForReplay,
 } from "../../src/modules/eval/domain/types.js";
 import type { ActivityTrace } from "../../src/modules/retrieval/public.js";
 import type { AnswerSegment, ChatCitation } from "../../src/modules/chat/contracts/answerTypes.js";
@@ -55,7 +56,7 @@ const activityTrace = (): ActivityTrace => ({
   links: [],
 });
 
-const makeSnapshot = (overrides: Partial<EvalSnapshot> = {}): EvalSnapshot => ({
+const makeSnapshot = (overrides: Partial<EvalSnapshotForReplay> = {}): EvalSnapshotForReplay => ({
   id: "snap-1",
   workspaceId: "ws-1",
   sourceConversationId: "conv-1",

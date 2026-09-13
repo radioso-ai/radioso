@@ -18434,6 +18434,7 @@ paths:
                               - operator:probe
                               - operator:act
                               - operator:propose
+                              - operator:write
                         offlineAccess:
                           type: boolean
                         status:
@@ -30086,6 +30087,7 @@ paths:
                         - ingestion_settings
                         - website_crawl
                         - workspace_setting
+                        - agent_publication
                 required:
                   - available
                   - reason

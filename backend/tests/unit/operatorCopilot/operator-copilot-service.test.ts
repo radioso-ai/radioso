@@ -349,6 +349,29 @@ describe("OperatorCopilotService proposal apply-claim recovery", () => {
       evidence: null,
     });
 
+  it("keeps a reviewed MCP proposal out of the dashboard and generic claim path", async () => {
+    const repository = new MemoryCopilotRepository();
+    const proposal = await repository.createProposal({
+      workspaceId: "workspace",
+      operatorUserId: "operator",
+      origin: { type: "operator_mcp_invocation", invocationId: "review-invocation" },
+      targetType: "agent_setting",
+      targetRef: { agentId: "agent-1", settingKey: "retrievalEnabled" },
+      payload: { value: true },
+      versionToken: "v1",
+      evidence: null,
+      reviewDigest: "review-digest",
+      expiresAt: new Date("2026-08-11T00:15:00.000Z"),
+    });
+    const applyIfVersionMatches = vi.fn(async () => ({ outcome: "applied" as const, appliedRef: {} }));
+    const service = buildService(repository, applyIfVersionMatches);
+
+    await expect(service.applyProposal({ surface: "dashboard", workspaceId: "workspace", accountId: "account", operatorUserId: "operator", proposalId: proposal.id }))
+      .rejects.toBeInstanceOf(CopilotConflictError);
+    await expect(repository.claimProposalApply({ id: proposal.id, workspaceId: "workspace", operatorUserId: "operator", claimTtlSeconds: 300 })).resolves.toBeNull();
+    expect(applyIfVersionMatches).not.toHaveBeenCalled();
+  });
+
   it("refuses a second concurrent apply while the first claim is still fresh", async () => {
     const repository = new MemoryCopilotRepository();
     const proposal = await createProposal(repository);

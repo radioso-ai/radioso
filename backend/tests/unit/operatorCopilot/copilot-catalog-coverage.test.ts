@@ -58,7 +58,10 @@ describe("operator copilot catalog coverage", () => {
   //   104 -> 105 retaining one comparison side forks its private pinned
   //   transcript and continuation; Ray has no safe candidate-selection or
   //   private-conversation control for that transition.
-  const maxDeferredCatalogExclusions = 105;
+  //   105 -> 106 capturing an Eval snapshot from a private Test Chat response
+  //   carries frozen revision and context-value evidence. It remains dashboard
+  //   owned until Ray has a private-test evidence contract.
+  const maxDeferredCatalogExclusions = 106;
 
   it("states each permanent exclusion's own ground rather than one conflated reason", () => {
     // A permanent exclusion is the strongest claim this map makes, so a wrong one either blocks

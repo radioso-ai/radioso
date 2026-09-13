@@ -2414,7 +2414,7 @@ CREATE TABLE public.eval_runs (
 CREATE TABLE public.eval_snapshots (
     id uuid NOT NULL,
     workspace_id uuid NOT NULL,
-    source_conversation_id uuid NOT NULL,
+    source_conversation_id uuid,
     source_message_id uuid,
     fidelity text NOT NULL,
     messages jsonb NOT NULL,
@@ -2430,6 +2430,7 @@ CREATE TABLE public.eval_snapshots (
     original_routine_state jsonb,
     replay_target jsonb,
     original_conversation_summary jsonb,
+    test_execution_replay jsonb,
     CONSTRAINT eval_snapshots_fidelity_check CHECK ((fidelity = ANY (ARRAY['full'::text, 'messages_only'::text])))
 );
 

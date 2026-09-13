@@ -68,7 +68,13 @@ export const createApiRouteMounts = (_dependencies: AppDependencies): readonly A
   { path: "/api/v1", createRouter: createSlackConnectionRoutes },
   { path: "/api/v1", createRouter: createEmailSkillActivityRoutes },
   { path: "/api/v1/agents", createRouter: createAgentRoutes },
-  { path: "/api/v1/agents", createRouter: createTestExecutionRoutes },
+  {
+    path: "/api/v1/agents",
+    createRouter: (appDependencies) => createTestExecutionRoutes({
+      ...appDependencies,
+      evalSnapshotService: appDependencies.evalSnapshotService,
+    }),
+  },
   { path: "/api/v1", createRouter: createContextVariableRoutes },
   { path: "/api/v1/agents", createRouter: createDecisionRoutes },
   { path: "/api/v1/decisions", createRouter: createDecisionsQueryRoutes },

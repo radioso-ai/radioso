@@ -68,6 +68,20 @@ describe('agent test execution state', () => {
     expect(beginTestExecutionTurn(completed, 'Follow-up', 'turn-2', 'attempt-2').activeTurnId).toBe('turn-2')
   })
 
+  it('keeps the completed response identity and trace for eval capture and turn debug', () => {
+    const active = beginTestExecutionTurn(state(), 'First', 'turn-1', 'attempt-1')
+    const trace = { version: 1, spine: { stages: [] } } as never
+    const completed = reduceTestExecutionEvent(active, {
+      type: 'side_completed', executionId: 'execution-1', generation: 2, sideId: 'left',
+      messageId: 'assistant-message-1', turnId: 'turn-1', attemptId: 'attempt-1', turnTrace: trace,
+    })
+
+    expect(completed.sides.left.messages.at(-1)).toMatchObject({
+      persistedAssistantMessageId: 'assistant-message-1',
+      turnTrace: trace,
+    })
+  })
+
   it('replaces the failed assistant attempt when retrying while preserving the user and successful side', () => {
     const withTurn = beginTestExecutionTurn(state(), 'Hello', 'turn-1', 'attempt-1')
     const failed = failTestExecutionSide(withTurn, 'right', 'stream_transport_failed')

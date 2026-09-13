@@ -857,8 +857,9 @@ export interface EvalSnapshots {
   original_routine_state: Json | null;
   replay_target: Json | null;
   source_agent_id: string | null;
-  source_conversation_id: string;
+  source_conversation_id: string | null;
   source_message_id: string | null;
+  test_execution_replay: Json | null;
   workspace_id: string;
 }
 

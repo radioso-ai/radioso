@@ -1574,92 +1574,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/agents/{agentId}/test-executions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List private immutable revision tests */
-        get: operations["listAgentTestExecutions"];
-        put?: never;
-        /** Start an operator-private immutable revision test */
-        post: operations["startAgentTestExecution"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/agents/{agentId}/test-executions/{executionId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get private immutable revision test evidence */
-        get: operations["getAgentTestExecution"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/agents/{agentId}/test-executions/{executionId}/messages": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Run a fenced private test turn */
-        post: operations["sendAgentTestExecutionMessage"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/agents/{agentId}/test-executions/{executionId}/sides/{sideId}/retain": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Continue one settled comparison version as a private test */
-        post: operations["retainAgentTestExecutionSide"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/agents/{agentId}/test-executions/{executionId}/sides/{sideId}/retry": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Retry one failed private test side */
-        post: operations["retryAgentTestExecutionSide"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/agent-wizard/analyze-website": {
         parameters: {
             query?: never;
@@ -3613,6 +3527,109 @@ export interface paths {
         put?: never;
         /** Run a one-off eval snapshot replay */
         post: operations["createEvalRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/test-executions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List private immutable revision tests */
+        get: operations["listAgentTestExecutions"];
+        put?: never;
+        /** Start an operator-private immutable revision test */
+        post: operations["startAgentTestExecution"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/test-executions/{executionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get private immutable revision test evidence */
+        get: operations["getAgentTestExecution"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/test-executions/{executionId}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run a fenced private test turn */
+        post: operations["sendAgentTestExecutionMessage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/test-executions/{executionId}/sides/{sideId}/retain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Continue one settled comparison version as a private test */
+        post: operations["retainAgentTestExecutionSide"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/test-executions/{executionId}/sides/{sideId}/eval-snapshots/{messageId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Capture a private test response as immutable Eval evidence */
+        post: operations["captureAgentTestExecutionEvalSnapshot"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/test-executions/{executionId}/sides/{sideId}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry one failed private test side */
+        post: operations["retryAgentTestExecutionSide"];
         delete?: never;
         options?: never;
         head?: never;
@@ -8290,247 +8307,6 @@ export interface components {
          *     data: {"protocolVersion":1}
          */
         WorkspaceEventStream: string;
-        TestExecutionEvent: {
-            /** @enum {string} */
-            type: "side_started";
-            /** Format: uuid */
-            executionId: string;
-            generation: number;
-            /** Format: uuid */
-            turnId: string;
-            /** Format: uuid */
-            attemptId: string;
-            /** Format: uuid */
-            sideId: string;
-        } | {
-            /** @enum {string} */
-            type: "message_delta";
-            /** Format: uuid */
-            executionId: string;
-            generation: number;
-            /** Format: uuid */
-            turnId: string;
-            /** Format: uuid */
-            attemptId: string;
-            /** Format: uuid */
-            sideId: string;
-            delta: string;
-        } | {
-            /** @enum {string} */
-            type: "side_completed";
-            /** Format: uuid */
-            executionId: string;
-            generation: number;
-            /** Format: uuid */
-            turnId: string;
-            /** Format: uuid */
-            attemptId: string;
-            /** Format: uuid */
-            sideId: string;
-            /** Format: uuid */
-            messageId: string;
-        } | {
-            /** @enum {string} */
-            type: "side_failed";
-            /** Format: uuid */
-            executionId: string;
-            generation: number;
-            /** Format: uuid */
-            turnId: string;
-            /** Format: uuid */
-            attemptId: string;
-            /** Format: uuid */
-            sideId: string;
-            code: string;
-            retryable: boolean;
-        } | {
-            /** @enum {string} */
-            type: "execution_partial";
-            /** Format: uuid */
-            executionId: string;
-            generation: number;
-            /** Format: uuid */
-            turnId: string;
-            /** Format: uuid */
-            attemptId: string;
-        } | {
-            /** @enum {string} */
-            type: "execution_completed";
-            /** Format: uuid */
-            executionId: string;
-            generation: number;
-            /** Format: uuid */
-            turnId: string;
-            /** Format: uuid */
-            attemptId: string;
-        };
-        TestExecutionSide: {
-            /** Format: uuid */
-            id: string;
-            revision: {
-                /** Format: uuid */
-                id: string;
-                label: string;
-                /** @enum {string} */
-                kind: "candidate" | "published";
-                versionNumber: number | null;
-                /** Format: date-time */
-                createdAt: string;
-                /** Format: date-time */
-                publishedAt?: string;
-            };
-            /** Format: uuid */
-            conversationId: string;
-            /** @enum {string} */
-            state: "running" | "partial" | "failed" | "completed";
-            retryable: boolean;
-            history: {
-                /** Format: uuid */
-                turnId: string;
-                /** @enum {string} */
-                role: "user" | "assistant";
-                content: string;
-                /** Format: uuid */
-                messageId?: string;
-                /** Format: uuid */
-                attemptId: string;
-                /** Format: date-time */
-                createdAt: string;
-            }[];
-        };
-        StartTestExecutionRequest: {
-            /** @enum {string} */
-            mode: "single" | "compare";
-            revisionIds: string[];
-            testValues: {
-                /** Format: uuid */
-                contextVariableId: string;
-                value?: unknown;
-            }[];
-            expectedDraftGeneration?: number;
-            idempotencyKey: string;
-        };
-        TestExecution: {
-            /** Format: uuid */
-            id: string;
-            generation: number;
-            /** @enum {string} */
-            mode: "single" | "compare";
-            sides: components["schemas"]["TestExecutionSide"][];
-        };
-        TestExecutionMessageRequest: {
-            message: string;
-            executionGeneration: number;
-            /** Format: uuid */
-            turnId: string;
-            /** Format: uuid */
-            attemptId: string;
-        };
-        TestExecutionRetryRequest: {
-            executionGeneration: number;
-            /** Format: uuid */
-            turnId: string;
-            /** Format: uuid */
-            attemptId: string;
-        };
-        TestExecutionHistoryItem: {
-            /** Format: uuid */
-            id: string;
-            generation: number;
-            /** @enum {string} */
-            mode: "single" | "compare";
-            /** @enum {string} */
-            state: "running" | "partial" | "failed" | "completed";
-            /** Format: date-time */
-            createdAt: string;
-            sides: {
-                /** Format: uuid */
-                id: string;
-                revision: {
-                    /** Format: uuid */
-                    id: string;
-                    label: string;
-                    /** @enum {string} */
-                    kind: "candidate" | "published";
-                    versionNumber: number | null;
-                    /** Format: date-time */
-                    createdAt: string;
-                    /** Format: date-time */
-                    publishedAt?: string;
-                };
-                /** Format: uuid */
-                conversationId: string;
-                /** @enum {string} */
-                state: "ready" | "running" | "failed" | "completed";
-                retryable: boolean;
-            }[];
-        };
-        TestExecutionAttemptRecord: {
-            /** Format: uuid */
-            executionId: string;
-            /** Format: uuid */
-            sideId: string;
-            /** Format: uuid */
-            turnId: string;
-            /** Format: uuid */
-            attemptId: string;
-            fence: number;
-            /** @enum {string} */
-            state: "running" | "failed" | "completed";
-            failureCode: string | null;
-            /** Format: date-time */
-            leaseExpiresAt: string;
-            /** Format: date-time */
-            createdAt: string;
-            /** Format: date-time */
-            updatedAt: string;
-        };
-        TestExecutionHistoryDetail: components["schemas"]["TestExecutionHistoryItem"] & {
-            sides?: {
-                /** Format: uuid */
-                id: string;
-                revision: {
-                    /** Format: uuid */
-                    id: string;
-                    label: string;
-                    /** @enum {string} */
-                    kind: "candidate" | "published";
-                    versionNumber: number | null;
-                    /** Format: date-time */
-                    createdAt: string;
-                    /** Format: date-time */
-                    publishedAt?: string;
-                };
-                /** Format: uuid */
-                conversationId: string;
-                /** @enum {string} */
-                state: "ready" | "running" | "failed" | "completed";
-                retryable: boolean;
-                history: {
-                    /** Format: uuid */
-                    turnId: string;
-                    /** @enum {string} */
-                    role: "user" | "assistant";
-                    content: string;
-                    /** Format: uuid */
-                    messageId?: string;
-                    /** Format: uuid */
-                    attemptId: string;
-                    /** Format: date-time */
-                    createdAt: string;
-                }[];
-            }[];
-            testValues: unknown[];
-            attempts: components["schemas"]["TestExecutionAttemptRecord"][];
-        };
-        TestExecutionHistoryListResponse: {
-            executions: components["schemas"]["TestExecutionHistoryItem"][];
-            nextCursor: string | null;
-            hasMore: boolean;
-        };
-        TestExecutionHistoryDetailResponse: {
-            execution: components["schemas"]["TestExecutionHistoryDetail"];
-        };
         PendingApprovalDecisionOption: {
             id: string;
             label: string;
@@ -8738,7 +8514,7 @@ export interface components {
                 /** Format: uuid */
                 workspaceId: string;
                 /** Format: uuid */
-                sourceConversationId: string;
+                sourceConversationId: string | null;
                 /** Format: uuid */
                 sourceMessageId: string | null;
                 replayTarget: {
@@ -8819,7 +8595,7 @@ export interface components {
             /** Format: uuid */
             workspaceId: string;
             /** Format: uuid */
-            sourceConversationId: string;
+            sourceConversationId: string | null;
             /** Format: uuid */
             sourceMessageId: string | null;
             replayTarget: {
@@ -8874,6 +8650,250 @@ export interface components {
                 pending: number;
                 unscored: number;
             };
+        };
+        TestExecutionEvent: {
+            /** @enum {string} */
+            type: "side_started";
+            /** Format: uuid */
+            executionId: string;
+            generation: number;
+            /** Format: uuid */
+            turnId: string;
+            /** Format: uuid */
+            attemptId: string;
+            /** Format: uuid */
+            sideId: string;
+        } | {
+            /** @enum {string} */
+            type: "message_delta";
+            /** Format: uuid */
+            executionId: string;
+            generation: number;
+            /** Format: uuid */
+            turnId: string;
+            /** Format: uuid */
+            attemptId: string;
+            /** Format: uuid */
+            sideId: string;
+            delta: string;
+        } | {
+            /** @enum {string} */
+            type: "side_completed";
+            /** Format: uuid */
+            executionId: string;
+            generation: number;
+            /** Format: uuid */
+            turnId: string;
+            /** Format: uuid */
+            attemptId: string;
+            /** Format: uuid */
+            sideId: string;
+            /** Format: uuid */
+            messageId: string;
+            turnTrace?: unknown;
+        } | {
+            /** @enum {string} */
+            type: "side_failed";
+            /** Format: uuid */
+            executionId: string;
+            generation: number;
+            /** Format: uuid */
+            turnId: string;
+            /** Format: uuid */
+            attemptId: string;
+            /** Format: uuid */
+            sideId: string;
+            code: string;
+            retryable: boolean;
+        } | {
+            /** @enum {string} */
+            type: "execution_partial";
+            /** Format: uuid */
+            executionId: string;
+            generation: number;
+            /** Format: uuid */
+            turnId: string;
+            /** Format: uuid */
+            attemptId: string;
+        } | {
+            /** @enum {string} */
+            type: "execution_completed";
+            /** Format: uuid */
+            executionId: string;
+            generation: number;
+            /** Format: uuid */
+            turnId: string;
+            /** Format: uuid */
+            attemptId: string;
+        };
+        TestExecutionSide: {
+            /** Format: uuid */
+            id: string;
+            revision: {
+                /** Format: uuid */
+                id: string;
+                label: string;
+                /** @enum {string} */
+                kind: "candidate" | "published";
+                versionNumber: number | null;
+                /** Format: date-time */
+                createdAt: string;
+                /** Format: date-time */
+                publishedAt?: string;
+            };
+            /** Format: uuid */
+            conversationId: string;
+            /** @enum {string} */
+            state: "running" | "partial" | "failed" | "completed";
+            retryable: boolean;
+            history: {
+                /** Format: uuid */
+                turnId: string;
+                /** @enum {string} */
+                role: "user" | "assistant";
+                content: string;
+                /** Format: uuid */
+                messageId?: string;
+                turnTrace?: unknown;
+                /** Format: uuid */
+                attemptId: string;
+                /** Format: date-time */
+                createdAt: string;
+            }[];
+        };
+        StartTestExecutionRequest: {
+            /** @enum {string} */
+            mode: "single" | "compare";
+            revisionIds: string[];
+            testValues: {
+                /** Format: uuid */
+                contextVariableId: string;
+                value?: unknown;
+            }[];
+            expectedDraftGeneration?: number;
+            idempotencyKey: string;
+        };
+        TestExecution: {
+            /** Format: uuid */
+            id: string;
+            generation: number;
+            /** @enum {string} */
+            mode: "single" | "compare";
+            sides: components["schemas"]["TestExecutionSide"][];
+        };
+        TestExecutionMessageRequest: {
+            message: string;
+            executionGeneration: number;
+            /** Format: uuid */
+            turnId: string;
+            /** Format: uuid */
+            attemptId: string;
+        };
+        TestExecutionRetryRequest: {
+            executionGeneration: number;
+            /** Format: uuid */
+            turnId: string;
+            /** Format: uuid */
+            attemptId: string;
+        };
+        TestExecutionHistoryItem: {
+            /** Format: uuid */
+            id: string;
+            generation: number;
+            /** @enum {string} */
+            mode: "single" | "compare";
+            /** @enum {string} */
+            state: "running" | "partial" | "failed" | "completed";
+            /** Format: date-time */
+            createdAt: string;
+            sides: {
+                /** Format: uuid */
+                id: string;
+                revision: {
+                    /** Format: uuid */
+                    id: string;
+                    label: string;
+                    /** @enum {string} */
+                    kind: "candidate" | "published";
+                    versionNumber: number | null;
+                    /** Format: date-time */
+                    createdAt: string;
+                    /** Format: date-time */
+                    publishedAt?: string;
+                };
+                /** Format: uuid */
+                conversationId: string;
+                /** @enum {string} */
+                state: "ready" | "running" | "failed" | "completed";
+                retryable: boolean;
+            }[];
+        };
+        TestExecutionAttemptRecord: {
+            /** Format: uuid */
+            executionId: string;
+            /** Format: uuid */
+            sideId: string;
+            /** Format: uuid */
+            turnId: string;
+            /** Format: uuid */
+            attemptId: string;
+            fence: number;
+            /** @enum {string} */
+            state: "running" | "failed" | "completed";
+            failureCode: string | null;
+            /** Format: date-time */
+            leaseExpiresAt: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        TestExecutionHistoryDetail: components["schemas"]["TestExecutionHistoryItem"] & {
+            sides?: {
+                /** Format: uuid */
+                id: string;
+                revision: {
+                    /** Format: uuid */
+                    id: string;
+                    label: string;
+                    /** @enum {string} */
+                    kind: "candidate" | "published";
+                    versionNumber: number | null;
+                    /** Format: date-time */
+                    createdAt: string;
+                    /** Format: date-time */
+                    publishedAt?: string;
+                };
+                /** Format: uuid */
+                conversationId: string;
+                /** @enum {string} */
+                state: "ready" | "running" | "failed" | "completed";
+                retryable: boolean;
+                history: {
+                    /** Format: uuid */
+                    turnId: string;
+                    /** @enum {string} */
+                    role: "user" | "assistant";
+                    content: string;
+                    /** Format: uuid */
+                    messageId?: string;
+                    turnTrace?: unknown;
+                    /** Format: uuid */
+                    attemptId: string;
+                    /** Format: date-time */
+                    createdAt: string;
+                }[];
+            }[];
+            testValues: unknown[];
+            attempts: components["schemas"]["TestExecutionAttemptRecord"][];
+        };
+        TestExecutionHistoryListResponse: {
+            executions: components["schemas"]["TestExecutionHistoryItem"][];
+            nextCursor: string | null;
+            hasMore: boolean;
+        };
+        TestExecutionHistoryDetailResponse: {
+            execution: components["schemas"]["TestExecutionHistoryDetail"];
         };
         /**
          * @description A server-sent event stream. Status payloads use the named ChatStatusEvent schema. Successful order: status(interpreting), conversation (when available), status(searching) for retrieval, status(composing), one or more chunk events, done, then optional suggestions. A cancelled event is terminal and no event follows it.
@@ -15248,159 +15268,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    listAgentTestExecutions: {
-        parameters: {
-            query?: {
-                limit?: number;
-                cursor?: string;
-            };
-            header?: never;
-            path: {
-                agentId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Private test history returned */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TestExecutionHistoryListResponse"];
-                };
-            };
-        };
-    };
-    startAgentTestExecution: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                agentId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["StartTestExecutionRequest"];
-            };
-        };
-        responses: {
-            /** @description Private test execution created */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TestExecution"];
-                };
-            };
-        };
-    };
-    getAgentTestExecution: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                agentId: string;
-                executionId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Private test evidence returned */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TestExecutionHistoryDetailResponse"];
-                };
-            };
-        };
-    };
-    sendAgentTestExecutionMessage: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                agentId: string;
-                executionId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TestExecutionMessageRequest"];
-            };
-        };
-        responses: {
-            /** @description Fenced side events */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/event-stream": components["schemas"]["TestExecutionEvent"];
-                };
-            };
-        };
-    };
-    retainAgentTestExecutionSide: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                agentId: string;
-                executionId: string;
-                sideId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Single private test execution created */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TestExecution"];
-                };
-            };
-        };
-    };
-    retryAgentTestExecutionSide: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                agentId: string;
-                executionId: string;
-                sideId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TestExecutionRetryRequest"];
-            };
-        };
-        responses: {
-            /** @description Fenced side events */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/event-stream": components["schemas"]["TestExecutionEvent"];
                 };
             };
         };
@@ -24752,6 +24619,184 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAgentTestExecutions: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Private test history returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestExecutionHistoryListResponse"];
+                };
+            };
+        };
+    };
+    startAgentTestExecution: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartTestExecutionRequest"];
+            };
+        };
+        responses: {
+            /** @description Private test execution created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestExecution"];
+                };
+            };
+        };
+    };
+    getAgentTestExecution: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                executionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Private test evidence returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestExecutionHistoryDetailResponse"];
+                };
+            };
+        };
+    };
+    sendAgentTestExecutionMessage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                executionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestExecutionMessageRequest"];
+            };
+        };
+        responses: {
+            /** @description Fenced side events */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": components["schemas"]["TestExecutionEvent"];
+                };
+            };
+        };
+    };
+    retainAgentTestExecutionSide: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                executionId: string;
+                sideId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Single private test execution created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestExecution"];
+                };
+            };
+        };
+    };
+    captureAgentTestExecutionEvalSnapshot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                executionId: string;
+                sideId: string;
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Immutable Eval snapshot captured from the private test turn */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalSnapshot"];
+                };
+            };
+        };
+    };
+    retryAgentTestExecutionSide: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                executionId: string;
+                sideId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestExecutionRetryRequest"];
+            };
+        };
+        responses: {
+            /** @description Fenced side events */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": components["schemas"]["TestExecutionEvent"];
                 };
             };
         };

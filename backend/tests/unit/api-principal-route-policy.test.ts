@@ -73,6 +73,7 @@ describe("API principal route policy", () => {
       ["POST", "/api/v1/agents/:agentId/test-executions", "/api/v1/agents/agent/test-executions", "workspace.agents.manage"],
       ["POST", "/api/v1/agents/:agentId/test-executions/:executionId/messages", "/api/v1/agents/agent/test-executions/execution/messages", "workspace.agents.manage"],
       ["POST", "/api/v1/agents/:agentId/test-executions/:executionId/sides/:sideId/retain", "/api/v1/agents/agent/test-executions/execution/sides/side/retain", "workspace.agents.manage"],
+      ["POST", "/api/v1/agents/:agentId/test-executions/:executionId/sides/:sideId/eval-snapshots/:messageId", "/api/v1/agents/agent/test-executions/execution/sides/side/eval-snapshots/message", "workspace.agents.manage"],
       ["POST", "/api/v1/agents/:agentId/test-executions/:executionId/sides/:sideId/retry", "/api/v1/agents/agent/test-executions/execution/sides/side/retry", "workspace.agents.manage"],
       ["POST", "/api/v1/evals/revision-runs", "/api/v1/evals/revision-runs", "workspace.agents.manage"],
       ["GET", "/api/v1/evals/revision-runs/:runId", "/api/v1/evals/revision-runs/run", "workspace.agents.read"],

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { scopeTag } from "@radioso/conversation-defaults";
 import { getEnv, type Env } from "../config/env.js";
 import { apiPrincipalRouteInventory } from "../http/apiPrincipalRoutePolicy.js";
 import {
@@ -514,6 +515,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   });
   const scopedRoutineReferences = createRoutineScopedReferenceGuard({
     listDirectiveTags: async ({ workspaceId, agentId }) => (await authoredDirectiveService.list(workspaceId, agentId)).map((directive) => directive.tags),
+    buildStepScopeTag: scopeTag.step,
   });
   const copilotProposalAdapters = [
     createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService }),
@@ -529,6 +531,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       routineMcpApply: createRoutineMcpApplyPort(infrastructure.database.kysely, {
         validateScopedReferences: async (input, db) => createRoutineScopedReferenceGuard({
           listDirectiveTags: async ({ workspaceId, agentId }) => (await new AgentRepository(db).listDirectives(agentId, workspaceId)).map((directive) => directive.tags),
+          buildStepScopeTag: scopeTag.step,
         }).assertNoScopedReferences(input),
       }),
       scopedReferences: scopedRoutineReferences,

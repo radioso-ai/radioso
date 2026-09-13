@@ -159,6 +159,7 @@ describeDb("agent directive draft mutations", () => {
     const tag = scopeTag.step(routine.id, "step_one");
     const guard = (db = database.kysely) => createRoutineScopedReferenceGuard({
       listDirectiveTags: async ({ workspaceId: readWorkspaceId, agentId: readAgentId }) => (await new AgentRepository(db).listDirectives(readAgentId, readWorkspaceId)).map((directive) => directive.tags),
+      buildStepScopeTag: scopeTag.step,
     });
     await agents.createDirective(agentId, workspaceId, { ...directiveInput("pinned"), tags: [tag] });
 

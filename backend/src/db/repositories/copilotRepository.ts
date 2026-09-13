@@ -325,6 +325,9 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
       .set({ status: "dismissed", failure_reason: null, applied_ref: null, updated_at: new Date() })
       .where("id", "=", input.id).where("workspace_id", "=", input.workspaceId).where("operator_user_id", "=", input.operatorUserId)
       .where("status", "=", "pending").where("apply_started_at", "is", null)
+      // A released reviewed receipt can still retry and reconcile with its owner; only proposals
+      // that never reserved an execution receipt may be canceled.
+      .where("execution_invocation_id", "is", null)
       .returning(proposalColumns).executeTakeFirst();
     return row ? mapProposal(row) : null;
   }

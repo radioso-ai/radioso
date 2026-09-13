@@ -97,6 +97,23 @@ describeIntegration("operator MCP proposal origin", () => {
     await expect(proposals.claimMcpReviewedProposalApply({ ...claim, executionInvocationId, now: new Date() })).resolves.toMatchObject({ status: "expired" });
   });
 
+  it("does not cancel a reviewed receipt after its pre-effect claim is released", async () => {
+    const reviewId = await createReview();
+    const executionId = await createExecution();
+    const proposal = await proposals.createProposal({
+      workspaceId, operatorUserId: userId, origin: { type: "operator_mcp_invocation", invocationId: reviewId },
+      targetType: "ingestion_settings", targetRef: { workspaceId }, payload: { summary: "Retry reserved receipt" },
+      versionToken: "v1", evidence: null, reviewDigest: "l".repeat(64), expiresAt: new Date(Date.now() + 60_000),
+    });
+    const input = { proposalId: proposal.id, executionInvocationId: executionId, reviewDigest: "l".repeat(64), workspaceId, operatorUserId: userId, grantId, clientId, now: new Date(), claimTtlSeconds: 300 };
+    const firstClaim = await proposals.claimMcpReviewedProposalApply(input);
+    if (firstClaim.status !== "claimed") throw new Error(`expected claim, got ${firstClaim.status}`);
+
+    await expect(proposals.releaseProposalApplyClaim({ id: proposal.id, workspaceId, operatorUserId: userId, claimedAt: firstClaim.claim.claimedAt })).resolves.toBe(true);
+    await expect(proposals.cancelPendingProposal({ id: proposal.id, workspaceId, operatorUserId: userId })).resolves.toBeNull();
+    await expect(proposals.claimMcpReviewedProposalApply({ ...input, now: new Date() })).resolves.toMatchObject({ status: "claimed", claim: { previousAttemptStartedAt: null } });
+  });
+
   it("reads an expired applied review only through its originating grant and client without changing its stored snapshot", async () => {
     const reviewId = await createReview();
     const snapshot = { target: { routineId: "routine-1" }, before: { enabled: true }, after: { enabled: false } };

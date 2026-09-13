@@ -76,7 +76,9 @@ const snapshotMessageToTurn = (
 })
 
 export const buildSnapshotConversation = (snapshot: EvalSnapshot): ChatConversationDetail => ({
-  conversationId: snapshot.sourceConversationId,
+  // Private Test Chat evidence has no persisted conversation row. The snapshot
+  // ID is still a stable UUID for local seed identity; replay uses snapshotId.
+  conversationId: snapshot.sourceConversationId ?? snapshot.id,
   workspaceId: snapshot.workspaceId,
   agentId: snapshot.sourceAgentId,
   sourceChannel: null,

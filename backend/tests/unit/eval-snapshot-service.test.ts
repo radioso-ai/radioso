@@ -419,7 +419,7 @@ describe("EvalSnapshotService.captureTestExecutionTurn", () => {
       repository,
     );
 
-    await service.captureTestExecutionTurn({
+    const captured = await service.captureTestExecutionTurn({
       workspaceId: "ws-1",
       agentId: "agent-1",
       execution,
@@ -443,6 +443,7 @@ describe("EvalSnapshotService.captureTestExecutionTurn", () => {
         testValues: execution.testValues,
       },
     });
+    expect(captured).not.toHaveProperty("testExecutionReplay");
   });
 });
 

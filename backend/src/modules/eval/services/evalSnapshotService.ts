@@ -11,7 +11,7 @@ import {
   projectInternalAgentExternalSkills,
   type InternalAgentExternalSkillsConfig,
 } from "../../agents/public.js";
-import type { TestExecution } from "../../test-execution/testExecution.js";
+import type { TestExecutionEvalSnapshotSource } from "../../test-execution/public.js";
 import type { AnswerSegment, ChatCitation } from "../../chat/contracts/answerTypes.js";
 import {
   loadConversationSummaryText,
@@ -308,7 +308,7 @@ export class EvalSnapshotService {
   async captureTestExecutionTurn(input: {
     workspaceId: string;
     agentId: string;
-    execution: TestExecution;
+    execution: TestExecutionEvalSnapshotSource;
     sideId: string;
     assistantMessageId: string;
     capturedBy?: string | null;

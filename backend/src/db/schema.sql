@@ -2422,11 +2422,11 @@ CREATE TABLE public.eval_snapshots (
     captured_at timestamp with time zone DEFAULT now() NOT NULL,
     captured_by uuid,
     original_agent_config jsonb,
-    test_execution_replay jsonb,
     source_agent_id uuid,
     original_routine_state jsonb,
     replay_target jsonb,
     original_conversation_summary jsonb,
+    test_execution_replay jsonb,
     CONSTRAINT eval_snapshots_fidelity_check CHECK ((fidelity = ANY (ARRAY['full'::text, 'messages_only'::text])))
 );
 

@@ -119,7 +119,7 @@ export class InMemoryCopilotRepository implements CopilotRepositoryPort, Copilot
   async createProposal(input: CopilotProposalDraft): Promise<CopilotProposal> {
     const createdAt = new Date();
     const origin = input.origin ?? { type: "conversation", conversationId: input.conversationId } as const;
-    const proposal: CopilotProposal = { ...input, origin, conversationId: origin.type === "conversation" ? origin.conversationId : null, operatorMcpInvocationId: origin.type === "operator_mcp_invocation" ? origin.invocationId : null, id: randomUUID(), messageId: null, status: "pending", reason: null, appliedRef: null, createdAt, updatedAt: createdAt };
+    const proposal: CopilotProposal = { ...input, origin, conversationId: origin.type === "conversation" ? origin.conversationId : null, operatorMcpInvocationId: origin.type === "operator_mcp_invocation" ? origin.invocationId : null, id: randomUUID(), executionInvocationId: null, messageId: null, reviewDigest: input.reviewDigest ?? null, expiresAt: input.expiresAt ?? null, status: "pending", reason: null, appliedRef: null, createdAt, updatedAt: createdAt };
     this.proposals.push(proposal);
     return proposal;
   }
@@ -140,6 +140,7 @@ export class InMemoryCopilotRepository implements CopilotRepositoryPort, Copilot
     const proposal = await this.findProposal(input);
     if (!proposal || proposal.status !== "pending") return null;
     if (!this.satisfiesClaimGuard(proposal.id, input.applyClaimGuard)) return null;
+    if (input.status === "dismissed" && proposal.executionInvocationId !== null) return null;
     const updated = { ...proposal, status: input.status, reason: input.reason ?? null, appliedRef: input.appliedRef ?? null, updatedAt: new Date() };
     this.proposals[this.proposals.indexOf(proposal)] = updated;
     this.applyClaims.delete(proposal.id);
@@ -150,9 +151,18 @@ export class InMemoryCopilotRepository implements CopilotRepositoryPort, Copilot
     return updated;
   }
 
+  async cancelPendingProposal(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null> {
+    const proposal = await this.findProposal(input);
+    if (!proposal || proposal.status !== "pending" || proposal.executionInvocationId !== null || this.applyClaims.has(proposal.id)) return null;
+    const updated = { ...proposal, status: "dismissed" as const, reason: null, appliedRef: null, updatedAt: new Date() };
+    this.proposals[this.proposals.indexOf(proposal)] = updated;
+    return updated;
+  }
+
   async claimProposalApply(input: { id: string; workspaceId: string; operatorUserId: string; claimTtlSeconds: number }): Promise<CopilotProposalClaim | null> {
     const proposal = await this.findProposal(input);
     if (!proposal || proposal.status !== "pending") return null;
+    if (proposal.origin.type === "operator_mcp_invocation" && (proposal.reviewDigest !== null || proposal.executionInvocationId !== null)) return null;
     if (!this.isClaimFree(proposal.id, input.claimTtlSeconds)) return null;
     const claimedAt = new Date();
     const previousAttemptStartedAt = this.applyClaims.get(proposal.id) ?? null;

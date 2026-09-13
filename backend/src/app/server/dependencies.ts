@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { scopeTag } from "@radioso/conversation-defaults";
 import { getEnv, type Env } from "../config/env.js";
 import { apiPrincipalRouteInventory } from "../http/apiPrincipalRoutePolicy.js";
 import {
@@ -13,7 +14,8 @@ import { parseRealtimeConfig } from "../../modules/realtime/infrastructure/confi
 import { createRealtimeRolloutPolicy } from "../../modules/realtime/domain/realtimeRolloutPolicy.js";
 import { resolveGcpRedisCredentialsProvider } from "../../runtime/gcpMetadataRedisCredentials.js";
 import type { RealtimePublisherComposition } from "../composition/realtimePublisherComposition.js";
-import { AgentRevisionService, AgentService, AgentSurfaceExtensionRegistry, projectInternalAgentConfig, projectInternalAgentExternalSkills, serializeAuthoredDirectivesWithIds } from "../../modules/agents/public.js";
+import { AgentRevisionService, AgentService, AgentSurfaceExtensionRegistry, createRoutineScopedReferenceGuard, projectInternalAgentConfig, projectInternalAgentExternalSkills, serializeAuthoredDirectivesWithIds } from "../../modules/agents/public.js";
+import { AgentRetrievalAuthoringService } from "../../modules/agentSkills/public.js";
 import { InMemoryPublicConversationEventBus, TrustedTestExecutionRunnerAdapter } from "../../modules/chat/composition.js";
 import { TestExecutionService } from "../../modules/test-execution/testExecution.js";
 import {
@@ -79,7 +81,11 @@ import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 import { createCopilotDocumentAuthoringPort, createCopilotToolCatalog, createCopilotWorkspaceAccountResolver, createCopilotWorkspaceRouteKeyResolver, createCopilotWorkspaceSettingPort } from "../composition/copilotToolCatalog.js";
 import { ProbeConversationReader, ReplyDraftRunner } from "../../modules/chat/composition.js";
 import { ProbeRoutineReader } from "../../modules/routines/public.js";
+import { AgentRepository } from "../../db/repositories/agentRepository.js";
 import { createAgentSettingCopilotProposalAdapter, createAgentSkillCopilotProposalAdapter, createContextVariableCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../../modules/operatorCopilot/proposalAdapters.js";
+import { createAgentPublicationProposalAdapter } from "../../modules/operatorCopilot/agentPublicationProposalAdapter.js";
+import { createRoutineMcpApplyPort } from "../composition/copilotRoutineAtomicApply.js";
+import { createAgentSkillMcpApplyPort } from "../composition/copilotAgentSkillAtomicApply.js";
 import { createDocumentCopilotProposalAdapter } from "../../modules/operatorCopilot/documentProposalAdapter.js";
 import { createIngestionSettingsCopilotProposalAdapter } from "../../modules/operatorCopilot/ingestionSettingsProposalAdapter.js";
 import { createWorkspaceSettingCopilotProposalAdapter } from "../../modules/operatorCopilot/workspaceSettingProposalAdapter.js";
@@ -95,10 +101,12 @@ import { ConversationSummaryRepository } from "../../db/repositories/conversatio
 import { RoutineStateRepository } from "../../db/repositories/routineStateRepository.js";
 import { QUALITY_RESOLUTION_REASONS } from "../../modules/quality/domain/resolution.js";
 import { buildOperatorMcpServices } from "./builders/operatorMcp.js";
+import type { OperatorMcpClientMetadataSnapshot } from "../../modules/operatorMcpAuthorization/public.js";
 
 interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
   realtimePublisherComposition?: RealtimePublisherComposition;
+  operatorMcpPreregisteredClients?: ReadonlyMap<string, OperatorMcpClientMetadataSnapshot>;
 }
 
 export const buildDependencies = (env: Env = getEnv(), options: BuildDependenciesOptions = {}): AppDependencies => {
@@ -500,6 +508,15 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     auditService: infrastructure.auditService,
     fetchImpl: fetchPublicUrl,
   });
+  const retrievalAuthoring = new AgentRetrievalAuthoringService({
+    agentSkills: agentSkillsService,
+    defaults: retrievalDefaultsProvider,
+    documentSources: repositories.documentSourceRepository,
+  });
+  const scopedRoutineReferences = createRoutineScopedReferenceGuard({
+    listDirectiveTags: async ({ workspaceId, agentId }) => (await authoredDirectiveService.list(workspaceId, agentId)).map((directive) => directive.tags),
+    buildStepScopeTag: scopeTag.step,
+  });
   const copilotProposalAdapters = [
     createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService }),
     createAgentSettingCopilotProposalAdapter({ agentService }),
@@ -507,8 +524,27 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       agentCreation: { createFromWizard: (input) => agentWizardService.createAgentFromWizard(input) },
       workspaceAccount: createCopilotWorkspaceAccountResolver({ workspaceRepository: repositories.workspaceRepository }),
     }),
-    createRoutineCopilotProposalAdapter({ agentService, routineDraftAssistService, routineDefinitionService, logger }),
-    createAgentSkillCopilotProposalAdapter({ agentService, agentSkillsService, skillCapabilityRegistry }),
+    createRoutineCopilotProposalAdapter({
+      agentService,
+      routineDraftAssistService,
+      routineDefinitionService,
+      routineMcpApply: createRoutineMcpApplyPort(infrastructure.database.kysely, {
+        validateScopedReferences: async (input, db) => createRoutineScopedReferenceGuard({
+          listDirectiveTags: async ({ workspaceId, agentId }) => (await new AgentRepository(db).listDirectives(agentId, workspaceId)).map((directive) => directive.tags),
+          buildStepScopeTag: scopeTag.step,
+        }).assertNoScopedReferences(input),
+      }),
+      scopedReferences: scopedRoutineReferences,
+      logger,
+    }),
+    createAgentSkillCopilotProposalAdapter({
+      agentService,
+      agentSkillsService,
+      skillCapabilityRegistry,
+      atomicMcpApply: createAgentSkillMcpApplyPort(infrastructure.database.kysely),
+      retrievalAuthoring,
+    }),
+    createAgentPublicationProposalAdapter({ revisions: agentRevisionService }),
     createContextVariableCopilotProposalAdapter({ contextVariables: contextVariableService }),
     createDocumentCopilotProposalAdapter({
       documentAuthoring: createCopilotDocumentAuthoringPort(documents.documentIngestionService),
@@ -779,9 +815,35 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     proposalRecovery: repositories.copilotRepository,
     proposalAdapters: copilotProposalAdapters,
     auditService: infrastructure.auditService,
+    revisions: agentRevisionService,
+    routines: {
+      findCreateConflict: routineDefinitionService.findCreateConflict.bind(routineDefinitionService),
+      get: routineDefinitionService.get.bind(routineDefinitionService),
+      validate: routineDefinitionService.validate.bind(routineDefinitionService),
+    },
+    scopedReferences: scopedRoutineReferences,
+    reviewedProposalExecution: {
+      executeMcpReviewedProposal: async (input) => {
+        if (!operatorCopilotService) throw new Error("Operator Copilot execution service is not initialized");
+        return operatorCopilotService.executeMcpReviewedProposal(input);
+      },
+    },
+    reviewedProposalOutcome: {
+      getMcpReviewedProposal: async (input) => {
+        if (!operatorCopilotService) throw new Error("Operator Copilot execution service is not initialized");
+        return operatorCopilotService.getMcpReviewedProposal(input);
+      },
+    },
+    cancelReviewedProposal: {
+      cancelMcpReviewedProposal: async (input) => {
+        if (!operatorCopilotService) throw new Error("Operator Copilot execution service is not initialized");
+        return operatorCopilotService.cancelMcpReviewedProposal(input);
+      },
+    },
+    retrievalAuthoring,
     logger,
   });
-  const operatorCopilotService = new OperatorCopilotService({
+  const operatorCopilotService: OperatorCopilotService = new OperatorCopilotService({
     repository: repositories.copilotRepository,
     capabilityRunner: copilotCapabilityRunner,
     usageLimitPolicy: infrastructure.usageLimitPolicy,
@@ -825,6 +887,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
     metricsRegistry: infrastructure.metricsRegistry,
     copilotToolCatalog,
+    ...(options.operatorMcpPreregisteredClients ? { operatorMcpClientMetadataOptions: { preregisteredClients: options.operatorMcpPreregisteredClients } } : {}),
   });
 
   const agentBundleServices = createAgentBundleServices({

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { AppError, notFound } from "../../shared/domain/errors.js";
 import { routineDefinitionSchema, validateRoutineDefinition, type RoutineDefinition, type RoutineValidationResult } from "../routines/public.js";
 import { authoredDirectiveInputSchema } from "./authoredDirectives.js";
+import { describeCandidateReleaseDiff, type CandidateReleaseChange } from "./candidateReleaseReview.js";
 
 const persistedDate = z.coerce.date();
 const revisionConflict = (message: string): AppError => new AppError(409, "revision_conflict", message);
@@ -188,6 +189,7 @@ export interface AgentRevisionState {
   canPublish: boolean;
 }
 export interface PublicationResult { publicationId: string; publishedAt: Date; revisionId: string; idempotentReplay: boolean; }
+interface CandidateReleaseReview { candidateRevisionId: string; basePublishedRevisionId: string | null; validation: { status: "valid" }; changes: ReadonlyArray<CandidateReleaseChange>; truncated: boolean; nextOffset: number | null; }
 
 export interface AgentRevisionRepositoryPort {
   initializeDraft(workspaceId: string, agentId: string, customInstruction: string): Promise<void>;
@@ -243,6 +245,29 @@ export class AgentRevisionService {
     const revision = await this.repository.findRevision(workspaceId, agentId, revisionId);
     if (!revision) throw notFound("Agent revision not found");
     return revision;
+  }
+  async describeCandidateRelease(workspaceId: string, agentId: string, revisionId: string, page?: { offset?: number; limit?: number }): Promise<CandidateReleaseReview> {
+    const candidate = await this.detail(workspaceId, agentId, revisionId);
+    assertCandidateSnapshotIsRunnable(candidate.snapshot);
+    const base = candidate.sourceBasePublishedRevisionId ? await this.detail(workspaceId, agentId, candidate.sourceBasePublishedRevisionId) : null;
+    return { candidateRevisionId: candidate.id, basePublishedRevisionId: candidate.sourceBasePublishedRevisionId, validation: { status: "valid" }, ...describeCandidateReleaseDiff(base?.snapshot ?? null, candidate.snapshot, page) };
+  }
+  async readCandidateReleaseChange(workspaceId: string, agentId: string, revisionId: string, input: { field: "customInstruction" | "directives" | "routines" | "contextVariableEnablements" | "agentSkills"; id: string; side: "before" | "after"; offset: number; limit: number }): Promise<{ text: string | null; nextOffset: number | null; totalLength: number }> {
+    if (!Number.isInteger(input.offset) || input.offset < 0 || !Number.isInteger(input.limit) || input.limit < 1 || input.limit > 2000) throw new AppError(400, "invalid_release_review_chunk", "Invalid release review chunk range.");
+    const candidate = await this.detail(workspaceId, agentId, revisionId);
+    const base = candidate.sourceBasePublishedRevisionId ? await this.detail(workspaceId, agentId, candidate.sourceBasePublishedRevisionId) : null;
+    if (input.field === "customInstruction" && input.id !== "agent") throw new AppError(404, "release_review_change_not_found", "Release review change was not found.");
+    const beforeCollection = input.field === "customInstruction" ? [] : (base?.snapshot[input.field] as ReadonlyArray<{ id: string }> | undefined) ?? [];
+    const afterCollection = input.field === "customInstruction" ? [] : (candidate.snapshot[input.field] as ReadonlyArray<{ id: string }> | undefined) ?? [];
+    if (input.field !== "customInstruction" && !beforeCollection.some((entry) => entry.id === input.id) && !afterCollection.some((entry) => entry.id === input.id)) throw new AppError(404, "release_review_change_not_found", "Release review change was not found.");
+    const snapshot = input.side === "before" ? base?.snapshot : candidate.snapshot;
+    const value = input.field === "customInstruction" ? snapshot?.customInstruction ?? null : (input.side === "before" ? beforeCollection : afterCollection).find((entry) => entry.id === input.id) ?? null;
+    if (value === null) return { text: null, nextOffset: null, totalLength: 0 };
+    const safeValue = input.field === "agentSkills" && typeof value === "object"
+      ? (() => { const { config: _config, ...metadata } = value as Record<string, unknown>; return metadata; })()
+      : value;
+    const full = typeof safeValue === "string" ? safeValue : JSON.stringify(safeValue);
+    return { text: full.slice(input.offset, input.offset + input.limit), nextOffset: input.offset + input.limit < full.length ? input.offset + input.limit : null, totalLength: full.length };
   }
   async publish(workspaceId: string, agentId: string, actorAccountId: string | null, input: { revisionId: string; expectedDraftGeneration: number; expectedPublishedRevisionId: string | null; idempotencyKey: string }): Promise<PublicationResult> {
     // A candidate is checked for servability when it is created, but the workspace can still

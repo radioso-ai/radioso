@@ -30,7 +30,7 @@ class OperatorMcpClientMetadataError extends Error {
   }
 }
 
-interface OperatorMcpClientMetadataServiceOptions {
+export interface OperatorMcpClientMetadataServiceOptions {
   fetchImpl?: typeof fetch;
   assertPublicUrl?: (url: string) => void | Promise<void>;
   preregisteredClients?: ReadonlyMap<string, OperatorMcpClientMetadataSnapshot>;
@@ -47,7 +47,7 @@ interface OperatorMcpClientMetadataService {
   resolve(input: ResolveOperatorMcpClientMetadataInput): Promise<OperatorMcpClientMetadataSnapshot>;
 }
 
-type OperatorMcpClientMetadataSnapshot = OperatorMcpClientSnapshot & {
+export type OperatorMcpClientMetadataSnapshot = OperatorMcpClientSnapshot & {
   clientMetadataSnapshotId: string;
 };
 

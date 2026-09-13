@@ -5,6 +5,9 @@ export {
   routineGuardProvenance,
   routineReentryModes,
   routineStepSchema,
+  routineSlotSchema,
+  routineTerminalSchema,
+  routineTransitionSchema,
   type RoutineCompletionExport,
   type RoutineApprovalOption,
   type RoutineDefinition,
@@ -21,6 +24,7 @@ export { compileRoutineDefinition, legacyCompiledRoutineId, routineCanActivate }
 export { selectCanonicalRoutineDefinitions } from "./draftProjection.js";
 export {
   applyRoutineFieldPatch,
+  canonicalRoutineAuthoringDraft,
   describeRoutineFieldPatch,
   projectRoutineForReview,
   routineFieldPatchSchema,
@@ -47,6 +51,7 @@ export {
   type RoutineDefinitionWriteGuard,
 } from "./service.js";
 export { projectRoutineToPortableDocument } from "./portableDocument.js";
+export { applyOperatorMcpRoutineTransform, RoutineTransformError, type OperatorMcpRoutineTransformReferenceGuard } from "./operatorMcpRoutineTransform.js";
 export {
   RoutineDraftAssistService,
   routineDraftAssistRequestSchema,

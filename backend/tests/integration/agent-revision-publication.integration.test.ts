@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AgentRevisionRepository } from "../../src/db/repositories/agentRevisionRepository.js";
+import { createAgentPublicationProposalAdapter } from "../../src/modules/operatorCopilot/agentPublicationProposalAdapter.js";
+import { AgentRevisionService } from "../../src/modules/agents/agentRevision.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { runAllTestMigrations } from "../support/databaseMigrations.js";
 
@@ -88,5 +90,24 @@ describeDb("agent revision publication concurrency", () => {
     if (secondCandidate === "conflict") throw new Error("second candidate conflicted");
     await expect(repository.publish({ workspaceId, agentId: numberedAgentId, actorAccountId: null, revisionId: secondCandidate.id, expectedDraftGeneration: draft.generation, expectedPublishedRevisionId: firstCandidate.id, idempotencyKey: "v2" })).resolves.toMatchObject({ idempotentReplay: false });
     expect((await repository.findRevision(workspaceId, numberedAgentId, secondCandidate.id))?.publishedVersion).toBe(2);
+  });
+
+  it("recovers the original adapter publication receipt after a later revision supersedes it", async () => {
+    const recoveryAgentId = randomUUID();
+    const snapshot = JSON.stringify({ customInstruction: "first", directives: [], routines: [], contextVariableEnablements: [] });
+    await database.query("INSERT INTO agents (id,workspace_id,name) VALUES ($1,$2,$3)", [recoveryAgentId, workspaceId, "recovery"]);
+    await database.query("INSERT INTO agent_drafts (agent_id,workspace_id,generation,snapshot) VALUES ($1,$2,1,$3::jsonb)", [recoveryAgentId, workspaceId, snapshot]);
+    const service = new AgentRevisionService(repository, () => randomUUID());
+    const adapter = createAgentPublicationProposalAdapter({ revisions: service });
+    const candidate = await service.createCandidate(workspaceId, recoveryAgentId, 1);
+    const targetRef = { agentId: recoveryAgentId, candidateRevisionId: candidate.id };
+    const payload = { expectedDraftGeneration: 1, expectedPublishedRevisionId: null };
+    const versionToken = "1:none";
+    const first = await adapter.applyIfVersionMatches(workspaceId, targetRef, payload, versionToken, { surface: "mcp", accountId, executionInvocationId: "original-execution" });
+    if (first.outcome !== "applied") throw new Error("expected initial publication");
+    const draft = await service.mutateDraft(workspaceId, recoveryAgentId, (current) => ({ ...current, customInstruction: "later" }));
+    const later = await service.createCandidate(workspaceId, recoveryAgentId, draft.generation);
+    await service.publish(workspaceId, recoveryAgentId, accountId, { revisionId: later.id, expectedDraftGeneration: draft.generation, expectedPublishedRevisionId: targetRef.candidateRevisionId, idempotencyKey: "later-execution" });
+    await expect(adapter.applyIfVersionMatches(workspaceId, targetRef, payload, versionToken, { surface: "mcp", accountId, executionInvocationId: "original-execution" })).resolves.toMatchObject({ outcome: "applied", appliedRef: { publicationId: first.appliedRef.publicationId, revisionId: targetRef.candidateRevisionId } });
   });
 });

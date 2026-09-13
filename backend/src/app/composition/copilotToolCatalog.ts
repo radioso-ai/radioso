@@ -24,6 +24,11 @@ import {
   type CopilotProductDocsPort,
 } from "../../modules/operatorCopilot/tools/index.js";
 import type { CopilotWebsiteAnalysisProbePort } from "../../modules/operatorCopilot/contracts/agentAuthoring.js";
+import type { RoutineStructuralPreparationDependencies } from "../../modules/operatorCopilot/tools/routineStructuralPreparation.js";
+import type { ReviewedProposalExecutionPort } from "../../modules/operatorCopilot/tools/reviewedProposalExecution.js";
+import type { ReviewedProposalOutcomePort } from "../../modules/operatorCopilot/tools/reviewedProposalOutcome.js";
+import type { AgentPublicationCopilotToolDependencies } from "../../modules/operatorCopilot/tools/agentPublication.js";
+import type { RetrievalAuthoringCopilotToolDependencies } from "../../modules/operatorCopilot/tools/retrievalAuthoring.js";
 import type {
   CopilotEvalCaseCapturePort,
   CopilotEvalCaseReplayPort,
@@ -205,6 +210,13 @@ export const createCopilotToolCatalog = (deps: {
   readonly auditService: CopilotAuditPort;
   readonly workspaceRouteKeyResolver: CopilotWorkspaceRouteKeyResolver;
   readonly logger?: CopilotTriageLogPort;
+  readonly routines: RoutineStructuralPreparationDependencies["routines"];
+  readonly scopedReferences: RoutineStructuralPreparationDependencies["scopedReferences"];
+  readonly revisions: AgentPublicationCopilotToolDependencies["revisions"];
+  readonly reviewedProposalExecution: ReviewedProposalExecutionPort;
+  readonly reviewedProposalOutcome: ReviewedProposalOutcomePort;
+  readonly cancelReviewedProposal: import("../../modules/operatorCopilot/tools/cancelReviewedProposal.js").CancelReviewedProposalPort;
+  readonly retrievalAuthoring: RetrievalAuthoringCopilotToolDependencies["retrievalAuthoring"];
   /**
    * Tools contributed by application modules outside this repository's first-party catalog. They
    * are merged before governance and enrichment so permission filtering, authorization re-checks,

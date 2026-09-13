@@ -16,14 +16,18 @@ import {
   describeRoutineFieldPatch,
   projectRoutineForReview,
   routineDefinitionDraftInputSchema,
+  routineDefinitionDraftUpdateInputSchema,
   routineFieldPatchSchema,
   type RoutineDefinitionService,
   type RoutineDraftAssistService,
+  type RoutineDefinition,
+  type RoutineDefinitionDraftInput,
   type RoutineValidationDiagnostic,
 } from "../routines/public.js";
 import {
   AgentSkillsService,
   mergeSkillConfig,
+  type AgentRetrievalAuthoringPort,
   type AgentSkillInvocationMode,
   type AgentSkillView,
 } from "../agentSkills/public.js";
@@ -39,6 +43,24 @@ import type { ContextVariable, AgentContextVariableEnablement } from "../context
 import type { ContextVariableService } from "../context-variables/public.js";
 import { isStale, versionDate, versionToken } from "./proposalVersioning.js";
 import { badRequest, conflict, notFound } from "../../shared/domain/errors.js";
+
+/** Composition-only atomic boundary for an existing agent-skill update and its MCP receipt. */
+export interface AgentSkillMcpApplyPort {
+  apply(input: {
+    readonly workspaceId: string;
+    readonly agentId: string;
+    readonly skillId: string;
+    readonly expectedUpdatedAt: Date;
+    readonly target: { readonly kind: string; readonly id: string | null };
+    readonly config: Record<string, unknown>;
+    readonly invocationMode: AgentSkillInvocationMode;
+    readonly enabled: boolean;
+    readonly proposalId: string;
+    readonly executionInvocationId: string;
+    readonly operatorUserId: string;
+    readonly claimedAt: Date;
+  }): Promise<{ readonly appliedRef: { readonly agentId: string; readonly skillId: string } }>;
+}
 
 const directiveTargetRefSchema = z.object({ agentId: z.string().uuid(), directiveId: z.string().uuid().nullable() }).strict();
 const settingTargetRefSchema = z.object({ agentId: z.string().uuid(), settingKey: z.string().min(1).max(200) }).strict();
@@ -69,15 +91,45 @@ const routineEditPayloadSchema = z.object({
   changes: routineFieldPatchSchema,
   rationale: z.string().optional(),
 }).strict();
+const routineStructuralPayloadSchema = z.object({
+  kind: z.literal("structural"),
+  draft: routineDefinitionDraftUpdateInputSchema,
+  operations: z.array(z.unknown()).min(1),
+}).strict();
+const routineCreatePayloadSchema = z.object({
+  kind: z.literal("create"),
+  draft: routineDefinitionDraftInputSchema,
+}).strict();
+const routineDeletePayloadSchema = z.object({ kind: z.literal("delete") }).strict();
+
+/**
+ * Composition joins the routine owner's optimistic write to the generic reviewed receipt. The
+ * routine module receives no Copilot repository; this port is the only cross-aggregate seam.
+ */
+export interface RoutineMcpApplyPort {
+  apply(input: {
+    readonly workspaceId: string;
+    readonly agentId: string;
+    readonly proposalId: string;
+    readonly executionInvocationId: string;
+    readonly operatorUserId: string;
+    readonly claimedAt: Date;
+  } & (
+    | { readonly operation: "create"; readonly draft: RoutineDefinitionDraftInput }
+    | { readonly operation: "update"; readonly routineId: string; readonly draft: RoutineDefinitionDraftInput; readonly expectedUpdatedAt: Date; readonly removedNodeIds: readonly string[]; readonly removedSlotIds: readonly string[] }
+    | { readonly operation: "delete"; readonly routineId: string; readonly expectedUpdatedAt: Date; readonly removedNodeIds: readonly string[]; readonly removedSlotIds: readonly string[] }
+  )): Promise<{ readonly appliedRef: { readonly agentId: string; readonly routineId: string }; readonly routine?: RoutineDefinition }>;
+}
 // Payloads written before routine edits existed carry no `kind`; an absent one is a new-routine
 // draft. `"lifecycle"` is a retired payload shape (publish/revise/archive/restore, removed with
 // the routine lifecycle collapse): nothing writes it any more, but a proposal row saved before
 // this deployed still carries it, and neither create's nor edit's schema can parse it - recognize
 // it explicitly so preview/apply can degrade it gracefully instead of misreading it as "create"
 // and crashing on a schema mismatch.
-const routinePayloadKind = (payload: unknown): "edit" | "create" | "lifecycle" => {
+const routinePayloadKind = (payload: unknown): "edit" | "create" | "delete" | "lifecycle" | "structural" => {
   const kind = payload && typeof payload === "object" && !Array.isArray(payload) ? (payload as Record<string, unknown>).kind : undefined;
-  if (kind === "edit" || kind === "lifecycle") return kind;
+  if (kind === "edit" || kind === "delete" || kind === "lifecycle" || kind === "structural") return kind;
+  if (kind === "create") return kind;
   return "create";
 };
 const unsupportedLifecycleProposalMessage = "This proposal type is no longer supported. Dismiss it.";
@@ -305,6 +357,8 @@ export const createAgentSkillCopilotProposalAdapter = (deps: {
   readonly agentService: Pick<AgentService, "get">;
   readonly agentSkillsService: Pick<AgentSkillsService, "list" | "create" | "update" | "dryRunValidate">;
   readonly skillCapabilityRegistry: SkillCapabilityRegistry;
+  readonly atomicMcpApply?: AgentSkillMcpApplyPort;
+  readonly retrievalAuthoring?: Pick<AgentRetrievalAuthoringPort, "validatePrepared">;
 }): CopilotAgentSkillProposalAdapter => {
   const findExisting = async (workspaceId: string, agentId: string, skillId: string | null): Promise<AgentSkillView | null> => {
     if (!skillId) return null;
@@ -457,11 +511,31 @@ export const createAgentSkillCopilotProposalAdapter = (deps: {
       const existing = await findExisting(workspaceId, targetRef.agentId, targetRef.skillId);
       return { targetLabel: payload.name, current: existing ? projectSkillForPreview(existing) : null, proposed: projectSkillPayloadForPreview(payload) };
     },
-    async applyIfVersionMatches(workspaceId, rawTargetRef, rawPayload, token) {
+    async applyIfVersionMatches(workspaceId, rawTargetRef, rawPayload, token, context) {
       const targetRef = skillTargetRefSchema.parse(rawTargetRef);
       const payload = skillConfigStoredPayloadSchema.parse(rawPayload);
       try {
         if (targetRef.skillId) {
+          const config = payload.capability === "retrieve" && payload.invocationMode === "default_answer" && deps.retrievalAuthoring
+            ? await deps.retrievalAuthoring.validatePrepared({ workspaceId, agentId: targetRef.agentId, skillId: targetRef.skillId, config: payload.config, skill: { ...payload, capability: "retrieve", invocationMode: "default_answer" } })
+            : await deps.agentSkillsService.dryRunValidate(workspaceId, targetRef.agentId, { name: payload.name, capability: payload.capability as SkillCapabilityId, target: payload.target, config: payload.config, invocationMode: payload.invocationMode, enabled: payload.enabled }, targetRef.skillId);
+          if (context?.surface === "mcp" && context.proposalId && context.executionInvocationId && context.operatorUserId && context.applyClaimedAt && deps.atomicMcpApply) {
+            const settled = await deps.atomicMcpApply.apply({
+              workspaceId,
+              agentId: targetRef.agentId,
+              skillId: targetRef.skillId,
+              expectedUpdatedAt: versionDate(token),
+              target: payload.target,
+              config,
+              invocationMode: payload.invocationMode as AgentSkillInvocationMode,
+              enabled: payload.enabled,
+              proposalId: context.proposalId,
+              executionInvocationId: context.executionInvocationId,
+              operatorUserId: context.operatorUserId,
+              claimedAt: context.applyClaimedAt,
+            });
+            return { outcome: "applied" as const, appliedRef: settled.appliedRef };
+          }
           // The version check lives in the update call itself (expectedUpdatedAt reaches the
           // repository's UPDATE predicate), not in a read-then-compare here: a pre-read leaves a
           // window where a concurrent edit lands between the check and the write and is overwritten.
@@ -491,6 +565,9 @@ export const createAgentSkillCopilotProposalAdapter = (deps: {
         return { outcome: "applied" as const, appliedRef: { agentId: targetRef.agentId, skillId: created.id } };
       } catch (error) {
         if (isStale(error)) return { outcome: "stale" as const };
+        // The atomic retrieval write may have committed with its receipt immediately before a
+        // transport failure; preserve that uncertainty for the reviewed executor to reconcile.
+        if (context?.surface === "mcp" && context.executionInvocationId) throw error;
         return { outcome: "failed" as const, reason: error instanceof Error ? error.message : "Skill apply failed" };
       }
     },
@@ -498,6 +575,17 @@ export const createAgentSkillCopilotProposalAdapter = (deps: {
       const targetRef = skillTargetRefSchema.parse(rawTargetRef);
       const { normalized, versionToken: proposalVersionToken } = await resolveProposal(workspaceId, targetRef, rawPayload);
       return { targetRef, payload: normalized, versionToken: proposalVersionToken };
+    },
+    async reconcileMcpInterruptedApply(input) {
+      const targetRef = skillTargetRefSchema.parse(input.targetRef);
+      const payload = skillConfigStoredPayloadSchema.parse(input.payload);
+      // The retrieval MCP path uses `atomicMcpApply`, which writes the skill and settles this
+      // proposal receipt in one transaction. A reclaimed pending receipt proves that transaction
+      // did not commit, so the generic executor may safely retry the exact operation.
+      if (targetRef.skillId && payload.capability === "retrieve" && payload.invocationMode === "default_answer" && deps.atomicMcpApply) {
+        return { outcome: "not_applied" as const };
+      }
+      return { outcome: "unknown" as const, reason: "This skill operation cannot prove whether an interrupted apply reached the agent draft." };
     },
   };
 };
@@ -511,8 +599,12 @@ export const createAgentSkillCopilotProposalAdapter = (deps: {
 export const createRoutineCopilotProposalAdapter = (deps: {
   readonly agentService: Pick<AgentService, "get">;
   readonly routineDraftAssistService: Pick<RoutineDraftAssistService, "draft">;
-  readonly routineDefinitionService: Pick<RoutineDefinitionService, "createDraft" | "deleteDraft" | "findCreateConflict" | "get" | "list" | "updateDraft" | "validate">;
+  readonly routineDefinitionService: Pick<RoutineDefinitionService, "completeExternalDraftMutation" | "createDraft" | "deleteDraft" | "findCreateConflict" | "get" | "list" | "updateDraft" | "validate">;
   readonly logger?: { warn(fields: Record<string, unknown>, message: string): void };
+  readonly routineMcpApply?: RoutineMcpApplyPort;
+  readonly scopedReferences?: {
+    assertNoScopedReferences(input: { readonly workspaceId: string; readonly agentId: string; readonly routineId: string; readonly removedNodeIds: readonly string[]; readonly removedSlotIds: readonly string[] }): Promise<void>;
+  };
 }): CopilotRoutineProposalAdapter => {
   const routineFor = async (workspaceId: string, targetRef: { agentId: string; routineId: string | null }) =>
     deps.routineDefinitionService.get(workspaceId, targetRef.agentId, requiredRoutineId(targetRef));
@@ -535,6 +627,18 @@ export const createRoutineCopilotProposalAdapter = (deps: {
     const blocking = await deps.routineDefinitionService.findCreateConflict(workspaceId, agentId, name);
     return blocking ? `blocked:${blocking.id}:${versionToken(blocking.updatedAt)}` : "open";
   };
+  const revalidateScopedReferences = async (workspaceId: string, agentId: string, routine: RoutineDefinition, draft?: z.infer<typeof routineStructuralPayloadSchema>["draft"]): Promise<void> => {
+    if (!deps.scopedReferences) throw new Error("Routine scoped-reference validation is unavailable");
+    const survivingNodeIds = new Set(draft ? [...draft.steps, ...draft.terminals].map((node) => node.stableStepId) : []);
+    const survivingSlotIds = new Set(draft?.slots?.map((slot) => slot.stableSlotId) ?? []);
+    await deps.scopedReferences.assertNoScopedReferences({
+      workspaceId,
+      agentId,
+      routineId: routine.id,
+      removedNodeIds: [...routine.steps, ...routine.terminals].map((node) => node.stableStepId).filter((id) => !survivingNodeIds.has(id)),
+      removedSlotIds: (routine.slots ?? []).map((slot) => slot.stableSlotId).filter((id) => !survivingSlotIds.has(id)),
+    });
+  };
 
   return {
     targetType: "routine",
@@ -542,7 +646,10 @@ export const createRoutineCopilotProposalAdapter = (deps: {
       const targetRef = routineTargetRefSchema.parse(rawTargetRef);
       // See the comment on createRoutineVersionToken for why a new routine's token is not the
       // agent's updatedAt; an existing one still guards itself.
-      if (!targetRef.routineId) return createRoutineVersionToken(workspaceId, targetRef.agentId, routinePayload(rawPayload).name);
+      if (!targetRef.routineId) return createRoutineVersionToken(workspaceId, targetRef.agentId, routineCreateDraft(rawPayload).name);
+      if (routinePayloadKind(rawPayload) === "delete") {
+        return routineFor(workspaceId, targetRef).then((routine) => versionToken(routine.updatedAt)).catch(() => "deleted");
+      }
       const routine = await routineFor(workspaceId, targetRef);
       return versionToken(routine.updatedAt);
     },
@@ -558,10 +665,22 @@ export const createRoutineCopilotProposalAdapter = (deps: {
         };
       }
       if (kind === "create") {
-        const proposed = routinePayload(rawPayload);
+        const proposed = routineCreateDraft(rawPayload);
         return { targetLabel: proposed.name, current: null, proposed: projectRoutineForReview(proposed) };
       }
       const routine = await routineFor(workspaceId, targetRef).catch(() => null);
+      if (kind === "delete") {
+        routineDeletePayloadSchema.parse(rawPayload);
+        return routine
+          ? { targetLabel: routine.name, current: projectRoutineForReview(routine), proposed: { deleted: true } }
+          : { targetLabel: "This routine", current: null, proposed: { editNoLongerApplies: "This routine no longer exists." } };
+      }
+      if (kind === "structural") {
+        const payload = routineStructuralPayloadSchema.parse(rawPayload);
+        return routine
+          ? { targetLabel: routine.name, current: projectRoutineForReview(routine), proposed: payload.draft }
+          : { targetLabel: "This routine", current: null, proposed: { editNoLongerApplies: "This routine no longer exists." } };
+      }
       const payload = routineEditPayloadSchema.parse(rawPayload);
       if (!routine) return { targetLabel: payload.name, current: null, proposed: { editNoLongerApplies: "This routine no longer exists." } };
       try {
@@ -576,7 +695,7 @@ export const createRoutineCopilotProposalAdapter = (deps: {
         return { targetLabel: routine.name, current: null, proposed: { editNoLongerApplies: error instanceof Error ? error.message : "This edit no longer applies." } };
       }
     },
-    async applyIfVersionMatches(workspaceId, rawTargetRef, rawPayload, token) {
+    async applyIfVersionMatches(workspaceId, rawTargetRef, rawPayload, token, context) {
       const targetRef = routineTargetRefSchema.parse(rawTargetRef);
       const kind = routinePayloadKind(rawPayload);
       if (kind === "lifecycle") {
@@ -592,13 +711,63 @@ export const createRoutineCopilotProposalAdapter = (deps: {
           // RoutineDefinitionService.createDraft already turns into a real conflict - caught
           // below by isStale, the same way every other version check in this file is enforced by
           // the write itself rather than a read-then-compare.
-          const result = await deps.routineDefinitionService.createDraft(workspaceId, targetRef.agentId, routinePayload(rawPayload));
+          const draft = routineCreateDraft(rawPayload);
+          if (context?.surface === "mcp" && context.proposalId && context.executionInvocationId && context.operatorUserId && context.applyClaimedAt && deps.routineMcpApply) {
+            const validation = await deps.routineDefinitionService.validate(workspaceId, targetRef.agentId, { input: draft });
+            if (!validation.ok) return { outcome: "failed" as const, reason: diagnosticSummary(validation.diagnostics) || "Routine validation failed" };
+            const settled = await deps.routineMcpApply.apply({ workspaceId, agentId: targetRef.agentId, operation: "create", draft, proposalId: context.proposalId, executionInvocationId: context.executionInvocationId, operatorUserId: context.operatorUserId, claimedAt: context.applyClaimedAt });
+            if (settled.routine) await deps.routineDefinitionService.completeExternalDraftMutation(workspaceId, targetRef.agentId, settled.routine);
+            return { outcome: "applied" as const, appliedRef: settled.appliedRef };
+          }
+          const result = await deps.routineDefinitionService.createDraft(workspaceId, targetRef.agentId, draft);
           // The card deep-links from appliedRef alone when the proposal detail was
           // never loaded, so the agent id must travel with the routine id.
           return { outcome: "applied" as const, appliedRef: { agentId: targetRef.agentId, routineId: result.routine.id } };
         }
         const routine = await routineFor(workspaceId, targetRef);
         if (versionToken(routine.updatedAt) !== token) return { outcome: "stale" as const };
+        if (kind === "delete") {
+          routineDeletePayloadSchema.parse(rawPayload);
+          if (context?.surface === "mcp" && context.proposalId && context.executionInvocationId && context.operatorUserId && context.applyClaimedAt && deps.routineMcpApply) {
+            await revalidateScopedReferences(workspaceId, targetRef.agentId, routine);
+            const settled = await deps.routineMcpApply.apply({ workspaceId, agentId: targetRef.agentId, operation: "delete", routineId: routine.id, expectedUpdatedAt: routine.updatedAt, removedNodeIds: [...routine.steps, ...routine.terminals].map((node) => node.stableStepId), removedSlotIds: (routine.slots ?? []).map((slot) => slot.stableSlotId), proposalId: context.proposalId, executionInvocationId: context.executionInvocationId, operatorUserId: context.operatorUserId, claimedAt: context.applyClaimedAt });
+            return { outcome: "applied" as const, appliedRef: settled.appliedRef };
+          }
+          await deps.routineDefinitionService.deleteDraft(workspaceId, targetRef.agentId, routine.id, { expectedUpdatedAt: routine.updatedAt });
+          return { outcome: "applied" as const, appliedRef: { agentId: targetRef.agentId, routineId: routine.id } };
+        }
+        if (kind === "structural") {
+          const payload = routineStructuralPayloadSchema.parse(rawPayload);
+          if (context?.surface === "mcp" && context.proposalId && context.executionInvocationId && context.operatorUserId && context.applyClaimedAt && deps.routineMcpApply) {
+            // Preparation validates the authored transform, but skills, action capability policy,
+            // and context variables can move before confirmation. Re-run the owning validator
+            // immediately before its fenced write; the CAS then proves this is the same routine.
+            const validation = await deps.routineDefinitionService.validate(workspaceId, targetRef.agentId, { input: payload.draft });
+            if (!validation.ok) {
+              return { outcome: "failed" as const, reason: diagnosticSummary(validation.diagnostics) || "Routine validation failed" };
+            }
+            await revalidateScopedReferences(workspaceId, targetRef.agentId, routine, payload.draft);
+            const settled = await deps.routineMcpApply.apply({
+              workspaceId,
+              agentId: targetRef.agentId,
+              operation: "update",
+              routineId: routine.id,
+              draft: routineDefinitionDraftInputSchema.parse(payload.draft),
+              expectedUpdatedAt: routine.updatedAt,
+              removedNodeIds: [...routine.steps, ...routine.terminals].map((node) => node.stableStepId).filter((id) => !new Set([...payload.draft.steps, ...payload.draft.terminals].map((node) => node.stableStepId)).has(id)),
+              removedSlotIds: (routine.slots ?? []).map((slot) => slot.stableSlotId).filter((id) => !new Set(payload.draft.slots?.map((slot) => slot.stableSlotId) ?? []).has(id)),
+              proposalId: context.proposalId,
+              executionInvocationId: context.executionInvocationId,
+              operatorUserId: context.operatorUserId,
+              claimedAt: context.applyClaimedAt,
+            });
+            if (!settled.routine) return { outcome: "failed" as const, reason: "Routine update did not return its saved draft" };
+            await deps.routineDefinitionService.completeExternalDraftMutation(workspaceId, targetRef.agentId, settled.routine);
+            return { outcome: "applied" as const, appliedRef: settled.appliedRef };
+          }
+          await deps.routineDefinitionService.updateDraft(workspaceId, targetRef.agentId, routine.id, payload.draft, { expectedUpdatedAt: routine.updatedAt });
+          return { outcome: "applied" as const, appliedRef: { agentId: targetRef.agentId, routineId: routine.id } };
+        }
         const payload = routineEditPayloadSchema.parse(rawPayload);
         // The edit lands in the agent's private draft, the same as any other authoring write.
         // Nothing an operator applies here changes what customers see until Review & Publish.
@@ -612,8 +781,19 @@ export const createRoutineCopilotProposalAdapter = (deps: {
         return { outcome: "applied" as const, appliedRef: { agentId: targetRef.agentId, routineId: routine.id } };
       } catch (error) {
         if (isStale(error)) return { outcome: "stale" as const };
+        // A reviewed MCP owner may have committed just before its response was lost. Let the
+        // generic executor retain the receipt as uncertain instead of falsely certifying failure.
+        if (context?.surface === "mcp" && context.executionInvocationId) throw error;
         return { outcome: "failed" as const, reason: error instanceof Error ? error.message : "Routine change failed" };
       }
+    },
+    async reconcileMcpInterruptedApply(input) {
+      // Reviewed routine create/delete/structural writes and their receipt settlement share one
+      // database transaction. Reclaiming a still-pending proposal therefore proves an earlier
+      // claimed attempt committed neither side; it is safe to retry the exact operation.
+      const kind = routinePayloadKind(input.payload);
+      if (kind === "create" || kind === "delete" || kind === "structural") return { outcome: "not_applied" as const };
+      return { outcome: "unknown" as const, reason: "This legacy routine proposal cannot prove whether an interrupted apply reached the draft." };
     },
     async draft(workspaceId, rawTargetRef, intent) {
       const targetRef = routineTargetRefSchema.parse(rawTargetRef);
@@ -739,6 +919,10 @@ const routinePayload = (value: unknown) => {
     return routineDefinitionDraftInputSchema.parse(rest);
   }
   return routineDefinitionDraftInputSchema.parse(value);
+};
+const routineCreateDraft = (value: unknown) => {
+  const parsed = routineCreatePayloadSchema.safeParse(value);
+  return parsed.success ? parsed.data.draft : routinePayload(value);
 };
 
 const settingPatch = (settingKey: string, value: unknown): AgentInput => {

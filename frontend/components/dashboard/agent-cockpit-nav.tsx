@@ -51,13 +51,17 @@ export function AgentCockpitNav({
       <div role="tablist" className="flex snap-x snap-mandatory overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {TABS.map((tab) => {
           const active = tab.id === activeTab
+          // Versions is reached from the Test Chat overflow, so it intentionally has
+          // no matching cockpit tab. Keep the first visible tab in the page's roving
+          // tabindex in that state; otherwise a keyboard user cannot enter navigation.
+          const tabbable = active || (activeTab === null && tab.id === TABS[0].id)
           return (
             <Link
               key={tab.id}
               href={hrefForTab(tab.id)}
               role="tab"
               aria-selected={active}
-              tabIndex={active ? 0 : -1}
+              tabIndex={tabbable ? 0 : -1}
               ref={active ? activeTabRef : undefined}
               onKeyDown={moveFocus}
               className={cn(

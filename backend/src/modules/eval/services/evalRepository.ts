@@ -20,12 +20,14 @@ import type {
   EvalRunStatus,
   EvalRunSummary,
   EvalSnapshot,
+  EvalSnapshotForReplay,
 } from "../domain/types.js";
 import {
   asObject,
   caseColumns,
   findCase,
   findSnapshot,
+  findSnapshotForReplay,
   insertCase,
   insertSnapshot,
   isoDate,
@@ -92,6 +94,8 @@ export interface CreateRunInput {
 export interface EvalRepositoryPort {
   createSnapshot(input: CreateSnapshotInput): Promise<EvalSnapshot>;
   findSnapshot(workspaceId: string, id: string): Promise<EvalSnapshot | null>;
+  /** Server-only snapshot read that includes private Test Chat replay inputs. */
+  findSnapshotForReplay?(workspaceId: string, id: string): Promise<EvalSnapshotForReplay | null>;
   createCase(input: CreateCaseInput): Promise<EvalCase>;
   findCase(workspaceId: string, id: string): Promise<EvalCase | null>;
   listCases(workspaceId: string): Promise<EvalCase[]>;
@@ -158,6 +162,10 @@ export class EvalRepository implements EvalRepositoryPort {
 
   async findSnapshot(workspaceId: string, id: string): Promise<EvalSnapshot | null> {
     return findSnapshot(this.db, workspaceId, id);
+  }
+
+  async findSnapshotForReplay(workspaceId: string, id: string): Promise<EvalSnapshotForReplay | null> {
+    return findSnapshotForReplay(this.db, workspaceId, id);
   }
 
   async createCase(input: CreateCaseInput): Promise<EvalCase> {

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
-import type { AgentSnapshot, InternalAgentConfig } from "../../agents/public.js";
+import { parseAgentRevisionSnapshot, type AgentSnapshot, type InternalAgentConfig } from "../../agents/public.js";
+import type { FrozenTestValue } from "../../context-variables/public.js";
 import type { RetrievalSettingsSnapshot } from "../../settings/contracts/retrieval.js";
 import { toJsonb } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../../shared/infra/kysely/types.js";
@@ -10,16 +11,18 @@ import type {
   EvalCase,
   EvalCaseStatus,
   EvalSnapshot,
+  EvalSnapshotForReplay,
   EvalSnapshotFidelity,
   EvalSnapshotMessage,
   EvalSnapshotOriginalRetrievalChunk,
   EvalSnapshotReplayTarget,
+  EvalSnapshotTestExecutionReplay,
 } from "../domain/types.js";
 
-export type SnapshotRow = {
+type SnapshotRow = {
   id: string;
   workspace_id: string;
-  source_conversation_id: string;
+  source_conversation_id: string | null;
   source_message_id: string | null;
   replay_target: unknown;
   fidelity: EvalSnapshotFidelity;
@@ -30,6 +33,7 @@ export type SnapshotRow = {
   original_retrieval_result: unknown;
   original_agent: unknown;
   original_agent_config: unknown;
+  test_execution_replay: unknown;
   source_agent_id: string | null;
   original_routine_state: unknown;
   original_conversation_summary: unknown;
@@ -52,7 +56,7 @@ export type CaseRow = {
 
 export interface CreateSnapshotInput {
   workspaceId: string;
-  sourceConversationId: string;
+  sourceConversationId: string | null;
   sourceMessageId: string | null;
   replayTarget: EvalSnapshotReplayTarget | null;
   fidelity: EvalSnapshotFidelity;
@@ -63,6 +67,7 @@ export interface CreateSnapshotInput {
   originalRetrievalResult: EvalSnapshotOriginalRetrievalChunk[] | null;
   originalAgent: AgentSnapshot | null;
   originalAgentConfig: InternalAgentConfig | null;
+  testExecutionReplay?: EvalSnapshotTestExecutionReplay;
   sourceAgentId: string | null;
   originalRoutineState: EvalSnapshot["originalRoutineState"];
   /** Rolling conversation summary (#866) as of capture time; absent for short conversations. */
@@ -88,7 +93,7 @@ export const asObject = <T>(value: unknown, fallback: T): T => {
   return fallback;
 };
 
-export const snapshotColumns = [
+const snapshotColumns = [
   "id",
   "workspace_id",
   "source_conversation_id",
@@ -102,12 +107,49 @@ export const snapshotColumns = [
   "original_retrieval_result",
   "original_agent",
   "original_agent_config",
+  "test_execution_replay",
   "source_agent_id",
   "original_routine_state",
   "original_conversation_summary",
   "captured_at",
   "captured_by",
 ] as const;
+
+const asTestExecutionReplay = (value: unknown): EvalSnapshotTestExecutionReplay | undefined => {
+  const record = asObject<Record<string, unknown> | null>(value, null);
+  const revision = asObject<Record<string, unknown> | null>(record?.revision, null);
+  if (!record || !revision || typeof revision.id !== "string" || typeof revision.sourceDraftGeneration !== "number") {
+    return undefined;
+  }
+  try {
+    const date = (input: unknown): Date | null =>
+      typeof input === "string" || typeof input === "number" ? new Date(input) : null;
+    const createdAt = date(revision.createdAt);
+    const publishedAt = revision.publishedAt === null ? null : date(revision.publishedAt);
+    if (!createdAt) return undefined;
+    if (
+      Number.isNaN(createdAt.getTime())
+      || (revision.publishedAt !== null && !publishedAt)
+      || (publishedAt && Number.isNaN(publishedAt.getTime()))
+    ) return undefined;
+    return {
+      revision: {
+        id: revision.id,
+        snapshot: parseAgentRevisionSnapshot(revision.snapshot),
+        sourceDraftGeneration: revision.sourceDraftGeneration,
+        sourceBasePublishedRevisionId: typeof revision.sourceBasePublishedRevisionId === "string"
+          ? revision.sourceBasePublishedRevisionId
+          : null,
+        createdAt,
+        publishedAt,
+        publishedVersion: typeof revision.publishedVersion === "number" ? revision.publishedVersion : null,
+      },
+      testValues: Array.isArray(record.testValues) ? record.testValues as FrozenTestValue[] : [],
+    };
+  } catch {
+    return undefined;
+  }
+};
 
 export const caseColumns = [
   "id",
@@ -122,7 +164,7 @@ export const caseColumns = [
   "updated_at",
 ] as const;
 
-export const mapSnapshot = (row: SnapshotRow): EvalSnapshot => ({
+const mapSnapshot = (row: SnapshotRow): EvalSnapshot => ({
   id: row.id,
   workspaceId: row.workspace_id,
   sourceConversationId: row.source_conversation_id,
@@ -158,6 +200,12 @@ export const mapSnapshot = (row: SnapshotRow): EvalSnapshot => ({
   capturedAt: isoDate(row.captured_at),
   capturedBy: row.captured_by,
 });
+
+const mapSnapshotForReplay = (row: SnapshotRow): EvalSnapshotForReplay => {
+  const snapshot = mapSnapshot(row);
+  const testExecutionReplay = asTestExecutionReplay(row.test_execution_replay);
+  return testExecutionReplay ? { ...snapshot, testExecutionReplay } : snapshot;
+};
 
 export const mapCase = (row: CaseRow): EvalCase => ({
   id: row.id,
@@ -197,6 +245,7 @@ export const insertSnapshot = async (
         : null,
       original_agent: input.originalAgent ? toJsonb(input.originalAgent) : null,
       original_agent_config: input.originalAgentConfig ? toJsonb(input.originalAgentConfig) : null,
+      test_execution_replay: input.testExecutionReplay ? toJsonb(input.testExecutionReplay) : null,
       source_agent_id: input.sourceAgentId,
       original_routine_state: input.originalRoutineState
         ? toJsonb(input.originalRoutineState)
@@ -241,6 +290,22 @@ export const findSnapshot = async (
     .limit(1)
     .executeTakeFirst();
   return row ? mapSnapshot(row as SnapshotRow) : null;
+};
+
+/** Reads private Test Chat replay context for server-side execution only. */
+export const findSnapshotForReplay = async (
+  db: Db,
+  workspaceId: string,
+  snapshotId: string,
+): Promise<EvalSnapshotForReplay | null> => {
+  const row = await db
+    .selectFrom("eval_snapshots")
+    .select(snapshotColumns)
+    .where("workspace_id", "=", workspaceId)
+    .where("id", "=", snapshotId)
+    .limit(1)
+    .executeTakeFirst();
+  return row ? mapSnapshotForReplay(row as SnapshotRow) : null;
 };
 
 export const findCase = async (

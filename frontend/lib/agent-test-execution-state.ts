@@ -1,8 +1,10 @@
 import type { ExecutionState, TestExecution, TestExecutionEvent, TestExecutionHistoryDetail } from './api-agent-revisions'
+import type { TurnTraceEnvelope } from './api-types'
 
 export interface TestExecutionSideState {
   id: string
   revisionId: string
+  conversationId?: string
   state: ExecutionState | 'ready'
   errorCode?: string
   retryable: boolean
@@ -17,6 +19,8 @@ interface TestExecutionMessage {
   state: 'streaming' | 'completed' | 'failed'
   turnId: string
   attemptId: string
+  persistedAssistantMessageId?: string
+  turnTrace?: TurnTraceEnvelope
 }
 
 export interface TestExecutionState {
@@ -53,6 +57,7 @@ export const initializeTestExecutionState = (execution: TestExecution): TestExec
   sides: Object.fromEntries(execution.sides.map((side) => [side.id, {
     id: side.id,
     revisionId: side.revision.id,
+    conversationId: side.conversationId,
     state: side.state,
     retryable: side.retryable,
     messages: (side.history ?? []).map((entry) => ({
@@ -62,6 +67,8 @@ export const initializeTestExecutionState = (execution: TestExecution): TestExec
       state: 'completed' as const,
       turnId: entry.turnId,
       attemptId: entry.attemptId,
+      persistedAssistantMessageId: entry.role === 'assistant' ? entry.messageId : undefined,
+      turnTrace: entry.role === 'assistant' ? entry.turnTrace : undefined,
     })),
   }])),
 })
@@ -93,6 +100,8 @@ export const hydrateTestExecutionState = (execution: TestExecutionHistoryDetail)
         state: 'completed',
         turnId: entry.turnId,
         attemptId: entry.attemptId,
+        persistedAssistantMessageId: entry.role === 'assistant' ? entry.messageId : undefined,
+        turnTrace: entry.role === 'assistant' ? entry.turnTrace : undefined,
       }))
       const hasCurrentAssistant = currentAttempt !== undefined && messages.some((message) =>
         message.role === 'assistant' && message.turnId === currentAttempt.turnId && message.attemptId === currentAttempt.attemptId,
@@ -110,6 +119,7 @@ export const hydrateTestExecutionState = (execution: TestExecutionHistoryDetail)
       return [side.id, {
         id: side.id,
         revisionId: side.revision.id,
+        conversationId: side.conversationId,
         state: side.state,
         retryable: side.retryable,
         recoveryAvailable: currentAttempt?.state === 'running' && Boolean(currentAttempt.leaseExpiresAt && new Date(currentAttempt.leaseExpiresAt).getTime() <= Date.now()),
@@ -237,7 +247,16 @@ export const reduceTestExecutionEvent = (
         messages: updateLastAssistant({ content: `${lastAssistantMessage?.content ?? ''}${event.delta}`, state: 'streaming' }),
       }
       : event.type === 'side_completed'
-        ? { ...side, state: 'completed', retryable: false, messages: updateLastAssistant({ state: 'completed' }) }
+        ? {
+          ...side,
+          state: 'completed',
+          retryable: false,
+          messages: updateLastAssistant({
+            state: 'completed',
+            persistedAssistantMessageId: event.messageId,
+            turnTrace: event.turnTrace,
+          }),
+        }
       : event.type === 'side_failed'
           ? {
             ...side,

@@ -34,6 +34,8 @@ export interface TestExecutionHistoryEntry {
   role: "user" | "assistant";
   content: string;
   messageId?: string;
+  /** Private, operator-only execution trace for inspecting this assistant turn. */
+  turnTrace?: unknown;
   attemptId: string;
   createdAt: Date;
 }
@@ -116,7 +118,7 @@ export interface TestExecutionClaim {
 export type TestExecutionEvent =
   | { type: "side_started"; executionId: string; generation: number; turnId: string; attemptId: string; sideId: string }
   | { type: "message_delta"; executionId: string; generation: number; turnId: string; attemptId: string; sideId: string; delta: string }
-  | { type: "side_completed"; executionId: string; generation: number; turnId: string; attemptId: string; sideId: string; messageId: string }
+  | { type: "side_completed"; executionId: string; generation: number; turnId: string; attemptId: string; sideId: string; messageId: string; turnTrace?: unknown }
   | { type: "side_failed"; executionId: string; generation: number; turnId: string; attemptId: string; sideId: string; code: string; retryable: boolean }
   | { type: "execution_partial"; executionId: string; generation: number; turnId: string; attemptId: string }
   | { type: "execution_completed"; executionId: string; generation: number; turnId: string; attemptId: string };
@@ -156,6 +158,8 @@ export interface TrustedTestExecutionRunnerPort {
 export interface TestExecutionRunnerResult {
   answer: string;
   messageId: string;
+  /** The runner's presentation trace stays with the private execution evidence. */
+  turnTrace?: unknown;
   /** Opaque, versioned runtime continuation owned by the runner adapter. */
   continuation: unknown;
 }
@@ -393,7 +397,16 @@ export class TestExecutionService {
   private completedEvents(identity: TestExecutionMessageInput, sideId: string, result: TestExecutionRunnerResult): TestExecutionEvent[] {
     return [
       { type: "message_delta", executionId: identity.executionId, generation: identity.generation, turnId: identity.turnId, attemptId: identity.attemptId, sideId, delta: result.answer },
-      { type: "side_completed", executionId: identity.executionId, generation: identity.generation, turnId: identity.turnId, attemptId: identity.attemptId, sideId, messageId: result.messageId },
+      {
+        type: "side_completed",
+        executionId: identity.executionId,
+        generation: identity.generation,
+        turnId: identity.turnId,
+        attemptId: identity.attemptId,
+        sideId,
+        messageId: result.messageId,
+        ...(result.turnTrace ? { turnTrace: result.turnTrace } : {}),
+      },
     ];
   }
 

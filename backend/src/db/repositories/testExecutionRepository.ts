@@ -21,7 +21,15 @@ const parseHistory = (value: unknown): TestExecutionSide["history"] => Array.isA
 }) : [];
 const parseResult = (value: unknown): TestExecutionRunnerResult | undefined => value && typeof value === "object" ? value as TestExecutionRunnerResult : undefined;
 const appendUser = (history: TestExecutionSide["history"], input: ClaimInput) => history.some((entry) => entry.role === "user" && entry.turnId === input.turnId) ? history : [...history, { turnId: input.turnId, attemptId: input.attemptId, role: "user" as const, content: input.message, createdAt: input.now }];
-const appendAssistant = (history: TestExecutionSide["history"], input: CompleteInput) => [...history, { turnId: input.turnId, attemptId: input.attemptId, role: "assistant" as const, content: input.result.answer, messageId: input.result.messageId, createdAt: input.now }];
+const appendAssistant = (history: TestExecutionSide["history"], input: CompleteInput) => [...history, {
+  turnId: input.turnId,
+  attemptId: input.attemptId,
+  role: "assistant" as const,
+  content: input.result.answer,
+  messageId: input.result.messageId,
+  ...(input.result.turnTrace ? { turnTrace: input.result.turnTrace } : {}),
+  createdAt: input.now,
+}];
 const testExecutionStartLockKey = (workspaceId: string, agentId: string, idempotencyKey: string): string =>
   `test-execution-start:${workspaceId}:${agentId}:${idempotencyKey}`;
 

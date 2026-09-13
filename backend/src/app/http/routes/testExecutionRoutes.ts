@@ -2,6 +2,7 @@ import { Router, type Response } from "express";
 import { z } from "zod";
 
 import type { TestExecutionService, TestExecution, TestExecutionAttemptRecord, TestExecutionEvent, TestExecutionHistoryItem } from "../../../modules/test-execution/testExecution.js";
+import type { EvalSnapshotService } from "../../../modules/eval/services/evalSnapshotService.js";
 import type { WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
 import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.js";
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
@@ -13,10 +14,12 @@ const agentParams = z.object({ agentId: z.string().uuid() });
 const executionParams = agentParams.extend({ executionId: z.string().uuid() });
 const retryParams = executionParams.extend({ sideId: z.string().uuid() });
 const retainParams = executionParams.extend({ sideId: z.string().uuid() });
+const testExecutionEvalSnapshotParams = retainParams.extend({ messageId: z.string().min(1) });
 const historyPageQuerySchema = z.object({ limit: z.coerce.number().int().min(1).max(100).default(50), cursor: z.string().min(1).optional() });
 
 interface TestExecutionRouteDependencies extends WorkspaceSessionDependencies {
   testExecutionService: TestExecutionService;
+  evalSnapshotService: Pick<EvalSnapshotService, "captureTestExecutionTurn">;
 }
 
 const presentSides = (sides: readonly (TestExecution["sides"][number] | TestExecutionHistoryItem["sides"][number])[]) =>
@@ -102,6 +105,7 @@ export const createTestExecutionRoutes = (dependencies: TestExecutionRouteDepend
   const router = Router();
   const session = requireWorkspaceSession(dependencies);
   const manage = requireWorkspacePermission(dependencies, "workspace.agents.manage");
+  const query = requireWorkspacePermission(dependencies, "workspace.retrieval.query");
 
   router.get("/:agentId/test-executions", session, manage, async (req, res, next) => {
     try {
@@ -144,6 +148,23 @@ export const createTestExecutionRoutes = (dependencies: TestExecutionRouteDepend
       const { agentId, executionId, sideId } = retainParams.parse(req.params);
       const execution = await dependencies.testExecutionService.retainSide({ workspaceId, agentId, accountId: accountId ?? null, executionId, sideId });
       res.status(201).json(present(execution));
+    } catch (error) { next(error); }
+  });
+
+  router.post("/:agentId/test-executions/:executionId/sides/:sideId/eval-snapshots/:messageId", session, manage, query, async (req, res, next) => {
+    try {
+      const { workspaceId, userId } = res.locals as { workspaceId: string; userId?: string | null };
+      const { agentId, executionId, sideId, messageId } = testExecutionEvalSnapshotParams.parse(req.params);
+      const detail = await dependencies.testExecutionService.detail({ workspaceId, agentId, executionId });
+      const snapshot = await dependencies.evalSnapshotService.captureTestExecutionTurn({
+        workspaceId,
+        agentId,
+        execution: detail.execution,
+        sideId,
+        assistantMessageId: messageId,
+        capturedBy: userId ?? null,
+      });
+      res.status(201).json(snapshot);
     } catch (error) { next(error); }
   });
 

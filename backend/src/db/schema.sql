@@ -1071,7 +1071,8 @@ CREATE TABLE public.bootstrap_greeting_cache (
     greeting_text text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    agent_id uuid NOT NULL
+    agent_id uuid NOT NULL,
+    suggestions jsonb
 );
 
 

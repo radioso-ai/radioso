@@ -1525,6 +1525,7 @@ export class InMemoryBootstrapGreetingCacheRepository implements BootstrapGreeti
     fingerprint: string;
     localeUsed: string | null;
     greetingText: string;
+    suggestions?: Record<string, unknown>[] | null;
   }): Promise<BootstrapGreetingCacheRecord> {
     const key = `${input.workspaceId}:${input.agentId}:${input.fingerprint}`;
     const existing = this.items.get(key);
@@ -1535,6 +1536,7 @@ export class InMemoryBootstrapGreetingCacheRepository implements BootstrapGreeti
       fingerprint: input.fingerprint,
       localeUsed: input.localeUsed,
       greetingText: input.greetingText,
+      suggestions: input.suggestions ?? null,
       createdAt: existing?.createdAt ?? new Date(),
       updatedAt: new Date(),
     };

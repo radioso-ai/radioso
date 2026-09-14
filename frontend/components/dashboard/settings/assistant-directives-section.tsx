@@ -1396,6 +1396,7 @@ export function AssistantDirectivesSection({
           form. Both sit above the directive dialog and hand the created name back to the chip. */}
       <CapabilityPicker
         open={Boolean(pendingSkillCreation) && creationCapabilityId === null}
+        agentId={agentId}
         capabilities={directiveCapabilities}
         description={DIRECTIVE_CAPABILITY_PICKER_DESCRIPTION}
         onOpenChange={(open) => !open && cancelSkillCreation()}

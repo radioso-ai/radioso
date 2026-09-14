@@ -21,7 +21,7 @@ import {
   type CopilotProposalTargetType,
   type CopilotRepositoryPort,
 } from "../../../src/modules/operatorCopilot/public.js";
-import { createAgentSettingProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/agents.js";
+import { createAgentSettingProposalCopilotTools, createGreetingProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/agents.js";
 import { createAgentSkillConfigProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/agentSkills.js";
 import { createDirectiveProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/directives.js";
 import { createRoutineProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/routines.js";
@@ -1315,6 +1315,135 @@ describe("agent skill config proposal adapter", () => {
   });
 });
 
+const greetingExactContent = (overrides: Record<string, unknown> = {}) => ({
+  chips: [],
+  variants: [{ locale: "en", body: "Welcome! How can I help?", chipLabels: {} }],
+  ...overrides,
+});
+
+describe("propose_greeting tool", () => {
+  it("drafts a greeting proposal after validating exact content through the adapter", async () => {
+    const createProposal = vi.fn(async (input: Parameters<MemoryProposalRepository["createProposal"]>[0]) => ({
+      id: randomUUID(), ...input, ...proposalOriginFields(input), messageId: null, status: "pending" as const, appliedRef: null, createdAt: new Date(), updatedAt: new Date(),
+    }));
+    const validatePayload = vi.fn(async (_workspaceId: string, targetRef: unknown, payload: unknown) => ({ targetRef, payload, versionToken: "agent-version" }));
+    const descriptors = createGreetingProposalCopilotTools({
+      proposalRepository: { createProposal },
+      proposalRecovery: { recoverOperatorMcpProposal: vi.fn() },
+      proposalAdapters: [{ targetType: "agent_greeting", validatePayload, readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn() }],
+      auditService: auditService(),
+    });
+    const context = { workspaceId, accountId, operatorUserId, surface: "dashboard" as const, copilotConversationId: "conversation-1", currentAuthorization, pageContext: { view: "agent" as const, agentId, conversationId: null, selection: null, entities: [] } };
+
+    expect(descriptors.map(({ name, shape }) => ({ name, shape }))).toEqual([{ name: "propose_greeting", shape: "propose" }]);
+
+    const result = await descriptors[0].createTool(context).invoke({
+      exactWordsEnabled: true,
+      exactContent: greetingExactContent({ chips: ["a"], variants: [{ locale: "en", body: "Hi!", chipLabels: { a: "Talk to a human" } }] }),
+    }, {} as never);
+
+    expect(validatePayload).toHaveBeenCalledWith(workspaceId, { agentId }, expect.objectContaining({ exactWordsEnabled: true }));
+    expect(createProposal).toHaveBeenCalledTimes(1);
+    expect(createProposal.mock.calls[0]?.[0]).toMatchObject({
+      targetType: "agent_greeting",
+      targetRef: { agentId },
+      versionToken: "agent-version",
+      evidence: null,
+    });
+    expect(result).toMatchObject({ targetType: "agent_greeting", targetLabel: "Greeting", summary: expect.stringContaining("Exact words") });
+  });
+
+  it("surfaces the adapter's validation issues as a tool error instead of drafting a proposal", async () => {
+    const createProposal = vi.fn();
+    const { badRequest } = await import("../../../src/shared/domain/errors.js");
+    const validatePayload = vi.fn(async () => {
+      throw badRequest("Exact greeting content is invalid", { issues: [{ path: "variants[0].body", code: "blank_body", message: "Body must not be blank" }] });
+    });
+    const descriptors = createGreetingProposalCopilotTools({
+      proposalRepository: { createProposal },
+      proposalRecovery: { recoverOperatorMcpProposal: vi.fn() },
+      proposalAdapters: [{ targetType: "agent_greeting", validatePayload, readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn() }],
+      auditService: auditService(),
+    });
+    const context = { workspaceId, accountId, operatorUserId, surface: "dashboard" as const, copilotConversationId: "conversation-1", currentAuthorization, pageContext: { view: "agent" as const, agentId, conversationId: null, selection: null, entities: [] } };
+
+    await expect(descriptors[0].createTool(context).invoke({
+      exactWordsEnabled: true,
+      exactContent: greetingExactContent({ variants: [{ locale: "en", body: "   ", chipLabels: {} }] }),
+    }, {} as never)).rejects.toMatchObject({
+      statusCode: 400,
+      details: { issues: [expect.objectContaining({ code: "blank_body" })] },
+    });
+    expect(createProposal).not.toHaveBeenCalled();
+  });
+});
+
+describe("agent greeting proposal adapter", () => {
+  const buildAdapter = async (agentOverrides: Record<string, unknown> = {}) => {
+    const { createAgentGreetingCopilotProposalAdapter } = await import("../../../src/modules/operatorCopilot/proposalAdapters.js");
+    const updatedAt = new Date("2026-09-01T00:00:00.000Z");
+    const agentService = {
+      get: vi.fn(async () => ({ id: agentId, workspaceId, assistantDefaultLocale: "en", updatedAt, ...agentOverrides })),
+      updateDraftGreeting: vi.fn(async (_workspaceId: string, _agentId: string, input: unknown) => ({ greeting: input, validation: { ok: true } })),
+    };
+    const adapter = createAgentGreetingCopilotProposalAdapter({ agentService: agentService as never });
+    return { adapter, agentService, updatedAt };
+  };
+
+  it("validates valid content without throwing and returns the agent's updatedAt as the version token", async () => {
+    const { adapter, updatedAt } = await buildAdapter();
+    const result = await adapter.validatePayload(workspaceId, { agentId }, {
+      exactWordsEnabled: true,
+      exactContent: greetingExactContent(),
+    });
+    expect(result).toMatchObject({ versionToken: updatedAt.toISOString() });
+  });
+
+  it("rejects invalid content with the same issue codes AgentService.updateDraftGreeting reports, only when Exact words is enabled", async () => {
+    const { adapter } = await buildAdapter();
+    await expect(adapter.validatePayload(workspaceId, { agentId }, {
+      exactWordsEnabled: true,
+      exactContent: greetingExactContent({ variants: [{ locale: "en", body: "   ", chipLabels: {} }] }),
+    })).rejects.toMatchObject({
+      statusCode: 400,
+      details: { issues: [expect.objectContaining({ code: "blank_body" })] },
+    });
+  });
+
+  it("does not block validation on invalid content while Exact words stays off, mirroring the draft route", async () => {
+    const { adapter } = await buildAdapter();
+    await expect(adapter.validatePayload(workspaceId, { agentId }, {
+      exactWordsEnabled: false,
+      exactContent: greetingExactContent({ variants: [{ locale: "en", body: "   ", chipLabels: {} }] }),
+    })).resolves.toMatchObject({ payload: { exactWordsEnabled: false } });
+  });
+
+  it("applies through AgentService.updateDraftGreeting only, never the live agent row", async () => {
+    const { adapter, agentService, updatedAt } = await buildAdapter();
+    const result = await adapter.applyIfVersionMatches(workspaceId, { agentId }, {
+      exactWordsEnabled: true,
+      exactContent: greetingExactContent(),
+    }, updatedAt.toISOString());
+
+    expect(result).toEqual({ outcome: "applied", appliedRef: { agentId } });
+    expect(agentService.updateDraftGreeting).toHaveBeenCalledWith(workspaceId, agentId, {
+      exactWordsEnabled: true,
+      exactContent: greetingExactContent(),
+    });
+    expect((agentService as unknown as { update?: unknown }).update).toBeUndefined();
+  });
+
+  it("reports stale instead of applying when the agent moved since the proposal's version token", async () => {
+    const { adapter } = await buildAdapter();
+    const result = await adapter.applyIfVersionMatches(workspaceId, { agentId }, {
+      exactWordsEnabled: true,
+      exactContent: greetingExactContent(),
+    }, new Date("2020-01-01T00:00:00.000Z").toISOString());
+
+    expect(result).toEqual({ outcome: "stale" });
+  });
+});
+
 describe("context variable proposal adapter", () => {
   const contextVariableAgentId = "6b6b6b6b-1111-2222-3333-444444444444";
   const existingVariableId = "6b6b6b6b-1111-2222-3333-444444444445";
@@ -2290,6 +2419,30 @@ describe("operator MCP proposal reconciliation", () => {
       .resolves.toEqual({
         status: "recovered",
         output: { proposalId: "proposal-3", targetType: "agent_setting", targetLabel: "retrievalEnabled", summary: "Turn retrieval off for this agent." },
+      });
+  });
+
+  it("reconstructs propose_greeting's result from a recovered proposal", async () => {
+    const recoverOperatorMcpProposal = vi.fn(async () => ({
+      status: "recovered" as const,
+      proposal: recoveredProposal({
+        id: "proposal-5",
+        targetType: "agent_greeting",
+        targetRef: { agentId },
+        payload: { exactWordsEnabled: true, exactContent: greetingExactContent(), summary: "Turn on Exact words for the greeting." },
+      }),
+    }));
+    const [descriptor] = createGreetingProposalCopilotTools({
+      proposalRepository: { createProposal: vi.fn() },
+      proposalRecovery: { recoverOperatorMcpProposal },
+      proposalAdapters: [{ targetType: "agent_greeting", validatePayload: vi.fn(), readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn() }],
+      auditService: auditService(),
+    });
+
+    await expect(descriptor.reconcileMcpInvocation!({ invocation, context: mcpContext, now, staleBefore }))
+      .resolves.toEqual({
+        status: "recovered",
+        output: { proposalId: "proposal-5", targetType: "agent_greeting", targetLabel: "Greeting", summary: "Turn on Exact words for the greeting." },
       });
   });
 

@@ -79,7 +79,7 @@ import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 import { createCopilotDocumentAuthoringPort, createCopilotToolCatalog, createCopilotWorkspaceAccountResolver, createCopilotWorkspaceRouteKeyResolver, createCopilotWorkspaceSettingPort } from "../composition/copilotToolCatalog.js";
 import { ProbeConversationReader, ReplyDraftRunner } from "../../modules/chat/composition.js";
 import { ProbeRoutineReader } from "../../modules/routines/public.js";
-import { createAgentSettingCopilotProposalAdapter, createAgentSkillCopilotProposalAdapter, createContextVariableCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../../modules/operatorCopilot/proposalAdapters.js";
+import { createAgentGreetingCopilotProposalAdapter, createAgentSettingCopilotProposalAdapter, createAgentSkillCopilotProposalAdapter, createContextVariableCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../../modules/operatorCopilot/proposalAdapters.js";
 import { createDocumentCopilotProposalAdapter } from "../../modules/operatorCopilot/documentProposalAdapter.js";
 import { createIngestionSettingsCopilotProposalAdapter } from "../../modules/operatorCopilot/ingestionSettingsProposalAdapter.js";
 import { createWorkspaceSettingCopilotProposalAdapter } from "../../modules/operatorCopilot/workspaceSettingProposalAdapter.js";
@@ -503,6 +503,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const copilotProposalAdapters = [
     createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService }),
     createAgentSettingCopilotProposalAdapter({ agentService }),
+    createAgentGreetingCopilotProposalAdapter({ agentService }),
     createAgentCopilotProposalAdapter({
       agentCreation: { createFromWizard: (input) => agentWizardService.createAgentFromWizard(input) },
       workspaceAccount: createCopilotWorkspaceAccountResolver({ workspaceRepository: repositories.workspaceRepository }),

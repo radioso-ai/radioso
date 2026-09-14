@@ -1,5 +1,6 @@
 'use client'
 
+import NextLink from 'next/link'
 import {
   BellRing,
   Cable,
@@ -19,7 +20,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { useOptionalAuth } from '@/lib/auth-context'
 import type { AgentSkillCapabilityId, SkillCapabilityDescriptor } from '@/lib/api-skills'
+import { buildDashboardHref } from '@/lib/dashboard-routes'
 import { cn } from '@/lib/utils'
 import { formatCapabilityLabel } from './skill-form-model'
 
@@ -78,21 +81,40 @@ const capabilityDescription = (capability: SkillCapabilityDescriptor) => {
 const DEFAULT_DESCRIPTION =
   'Choose the capability type to configure. Connection-backed capabilities unlock when their setup exists.'
 
+// Where each connection-backed capability's setup lives, so the "Needs connection" affordance can
+// jump straight there instead of leaving the operator to hunt for it.
+const connectionHref = (accountId: string | null, agentId: string, capabilityId: AgentSkillCapabilityId): string | null => {
+  if (!accountId) return null
+  switch (capabilityId) {
+    case 'mcp_tool':
+      return buildDashboardHref(accountId, { section: 'agents', agentId, agentTab: 'channels', anchor: 'mcp-channel' })
+    case 'email':
+      return buildDashboardHref(accountId, { section: 'settings', settingsTab: 'workspace', anchor: 'customer-email' })
+    case 'webhook_call':
+      return buildDashboardHref(accountId, { section: 'settings', settingsTab: 'workspace', anchor: 'webhook-destinations' })
+    default:
+      return null
+  }
+}
+
 // The first step of authoring a skill: which capability it instantiates. Surfaces that can only
 // accept some capabilities pass a narrowed list and say why in `description`.
 export function CapabilityPicker({
   open,
+  agentId,
   capabilities,
   description = DEFAULT_DESCRIPTION,
   onOpenChange,
   onSelect,
 }: {
   open: boolean
+  agentId: string
   capabilities: SkillCapabilityDescriptor[]
   description?: string
   onOpenChange: (open: boolean) => void
   onSelect: (capabilityId: AgentSkillCapabilityId) => void
 }) {
+  const accountId = useOptionalAuth()?.user?.accountId ?? null
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-3xl">
@@ -105,19 +127,14 @@ export function CapabilityPicker({
             const enabled = capability.available
             const icon = capabilityIcons[capability.id] ?? defaultCapabilityIcon
             const CapabilityIcon = icon.icon
-            return (
-              <button
-                key={capability.id}
-                type="button"
-                disabled={!enabled}
-                onClick={() => onSelect(capability.id)}
-                className={cn(
-                  'flex aspect-square min-h-36 flex-col justify-between rounded-md border p-4 text-left transition-colors',
-                  enabled
-                    ? 'border-border bg-background hover:border-primary/60 hover:bg-muted/30'
-                    : 'cursor-not-allowed border-border/70 bg-muted/20 text-muted-foreground opacity-70',
-                )}
-              >
+            const cardClassName = cn(
+              'flex aspect-square min-h-36 flex-col justify-between rounded-md border p-4 text-left transition-colors',
+              enabled
+                ? 'border-border bg-background hover:border-primary/60 hover:bg-muted/30'
+                : 'cursor-not-allowed border-border/70 bg-muted/20 text-muted-foreground opacity-70',
+            )
+            const cardBody = (
+              <>
                 <span className="space-y-3">
                   <span className={cn(
                     'inline-flex h-9 w-9 items-center justify-center rounded-md border',
@@ -137,9 +154,41 @@ export function CapabilityPicker({
                     <Badge variant="outline" className="text-muted-foreground">{unavailableReasonLabel(capability)}</Badge>
                   )}
                   {!enabled && (capability.requiresTarget ?? true) ? (
-                    <span className="text-muted-foreground">Connections</span>
+                    (() => {
+                      const href = connectionHref(accountId, agentId, capability.id)
+                      return href ? (
+                        <NextLink
+                          href={href}
+                          onClick={(event) => event.stopPropagation()}
+                          className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                        >
+                          Connections
+                        </NextLink>
+                      ) : (
+                        <span className="text-muted-foreground">Connections</span>
+                      )
+                    })()
                   ) : null}
                 </span>
+              </>
+            )
+
+            if (!enabled) {
+              return (
+                <div key={capability.id} className={cardClassName}>
+                  {cardBody}
+                </div>
+              )
+            }
+
+            return (
+              <button
+                key={capability.id}
+                type="button"
+                onClick={() => onSelect(capability.id)}
+                className={cardClassName}
+              >
+                {cardBody}
               </button>
             )
           })}

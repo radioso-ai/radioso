@@ -6,13 +6,9 @@ import { isOperationAllowed, namesDeclaredCollection } from "../domain/operation
 import { resolveQuotaCeiling } from "../domain/quota.js";
 import { resolveStorageQuery } from "../domain/queryBounds.js";
 import { validateStorageRecord } from "../domain/recordValidation.js";
-import {
-  classifyStorageFailure,
-  storageFailure,
-  storageSuccess,
-  type AppStorageResult,
-} from "../domain/results.js";
+import { storageFailure, storageSuccess, type AppStorageResult } from "../domain/results.js";
 import type { AppStorageCompatibilityFactsPort } from "../ports/appStorageCompatibilityFacts.js";
+import type { AppStorageDiagnosticsPort } from "../ports/appStorageDiagnostics.js";
 import type {
   AppStorageAdmitted,
   AppStorageCollectionScope,
@@ -29,9 +25,17 @@ import type {
   StoragePutResult,
   StorageQueryResult,
 } from "../ports/appStorageService.js";
+import { reportStorageFailure } from "./appStorageDiagnosticsReporting.js";
 
 interface AppStorageServiceOptions {
   repository: AppStorageRepositoryPort;
+  /**
+   * Where an exception this service cannot attribute to the caller is
+   * recorded before it is discarded into a sanitized `internal` or
+   * `unavailable` result. Mandatory: a storage fault with no diagnostic is a
+   * fault an operator cannot act on.
+   */
+  diagnostics: AppStorageDiagnosticsPort;
 }
 
 /**
@@ -107,17 +111,20 @@ export const createAppStorageService = (options: AppStorageServiceOptions): AppS
   });
 
   /**
-   * Runs the persistence half and turns anything it raises into a typed result.
-   * A driver error carries the statement that failed, and the statement carries
-   * the record, so none of it is allowed into the message.
+   * Runs the persistence half and turns anything it raises into a typed
+   * result. A driver error carries the statement that failed, and the
+   * statement carries the record, so none of it is allowed into the message —
+   * only the scope and the exception's own safe facts reach `diagnostics`.
    */
   const attempt = async <TValue>(
-    operation: () => Promise<AppStorageResult<TValue>>,
+    operationName: string,
+    scope: AppStorageCollectionScope,
+    run: () => Promise<AppStorageResult<TValue>>,
   ): Promise<AppStorageResult<TValue>> => {
     try {
-      return await operation();
+      return await run();
     } catch (error) {
-      return classifyStorageFailure(error);
+      return reportStorageFailure(options.diagnostics, operationName, scope, error);
     }
   };
 
@@ -133,7 +140,7 @@ export const createAppStorageService = (options: AppStorageServiceOptions): AppS
       const notAllowed = requireOperation<StorageGetResult>(input, "get");
       if (notAllowed) return notAllowed;
 
-      return attempt(async () => {
+      return attempt("get", scopeOf(input), async () => {
         const found = await repository.findRecord(scopeOf(input), input.request.key);
         return mapAdmitted(found, (record) =>
           storageSuccess({ record: record ? toStorageRecord(record) : null }),
@@ -150,7 +157,7 @@ export const createAppStorageService = (options: AppStorageServiceOptions): AppS
       const validation = validateStorageRecord(input.collection, input.request.record);
       if (!validation.ok) return storageFailure(validation.code, validation.message);
 
-      return attempt(async () => {
+      return attempt("put", scopeOf(input), async () => {
         const written = await repository.putRecord({
           scope: scopeOf(input),
           key: input.request.key,
@@ -206,7 +213,7 @@ export const createAppStorageService = (options: AppStorageServiceOptions): AppS
       const notAllowed = requireOperation<StorageDeleteResult>(input, "delete");
       if (notAllowed) return notAllowed;
 
-      return attempt(async () => {
+      return attempt("delete", scopeOf(input), async () => {
         const removed = await repository.deleteRecord({
           scope: scopeOf(input),
           key: input.request.key,
@@ -237,7 +244,7 @@ export const createAppStorageService = (options: AppStorageServiceOptions): AppS
       const resolved = resolveStorageQuery(input.collection, input.request);
       if (!resolved.ok) return { ok: false, error: resolved.error };
 
-      return attempt(async () => {
+      return attempt("query", scopeOf(input), async () => {
         // One row past the page decides whether another page exists, so a caller
         // never pays for a second count over the same index to find out.
         const found = await repository.queryByIndex({
@@ -264,7 +271,7 @@ export const createAppStorageService = (options: AppStorageServiceOptions): AppS
     },
 
     async usage(input): Promise<AppStorageResult<AppStorageLiveUsage>> {
-      return attempt(async () => {
+      return attempt("usage", scopeOf(input), async () => {
         const read = await repository.readCollectionUsage(scopeOf(input));
         return mapAdmitted(read, (usage) => storageSuccess(usage));
       });
@@ -291,7 +298,7 @@ export const createAppStorageCompatibilityFacts = (
         ? storageSuccess(found.value)
         : storageFailure("denied", "Storage access for this installation is not available");
     } catch (error) {
-      return classifyStorageFailure(error);
+      return reportStorageFailure(options.diagnostics, "storedSchemaVersions", scope, error);
     }
   },
 });

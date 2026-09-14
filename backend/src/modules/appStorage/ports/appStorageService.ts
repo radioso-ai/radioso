@@ -186,10 +186,12 @@ export type AppStorageIndexRebuildResult =
   /**
    * The batch budget ran out with records still to visit. The budget bounds one
    * run, not the rebuild: the marker stays up under a renewed lease, so the
-   * entries built so far keep being maintained and another run may continue.
-   * There is no completion token, so nothing can be activated against this.
+   * entries built so far keep being maintained. `continuation` names exactly
+   * where this run stopped — presenting it to a later call resumes the same
+   * pass from that cursor instead of rescanning the collection from its first
+   * key. There is no completion token, so nothing can be activated against this.
    */
-  | { outcome: "in_progress"; indexId: string; rebuiltCount: number; batchCount: number };
+  | { outcome: "in_progress"; indexId: string; rebuiltCount: number; batchCount: number; continuation: string };
 
 /**
  * Builds a declared index over records written before it was declared. An index
@@ -199,6 +201,16 @@ export type AppStorageIndexRebuildResult =
  */
 export interface AppStorageIndexRebuilder {
   rebuildIndex(
-    input: AppStorageInstallationScope & { collection: StorageCollection; indexId: string },
+    input: AppStorageInstallationScope & {
+      collection: StorageCollection;
+      indexId: string;
+      /**
+       * The `continuation` an earlier `in_progress` answer returned. Present
+       * and still naming the marker's current generation, it resumes that
+       * run's own pass from its cursor; absent, unreadable, or naming a
+       * generation the marker has moved past, it starts a fresh rebuild.
+       */
+      continuation?: string;
+    },
   ): Promise<AppStorageResult<AppStorageIndexRebuildResult>>;
 }

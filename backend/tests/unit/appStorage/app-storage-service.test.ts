@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { buildStorageCollection } from "../../support/appStorageCollections.js";
-import { buildRepositoryStub, connectionFailure, statementFailure } from "./repositoryStub.js";
+import { buildDiagnosticsStub, buildRepositoryStub, connectionFailure, statementFailure } from "./repositoryStub.js";
 import {
   createAppStorageCompatibilityFacts,
   createAppStorageService,
@@ -14,6 +14,7 @@ import {
 const workspaceId = randomUUID();
 const installationId = randomUUID();
 const collection = buildStorageCollection();
+const diagnostics = buildDiagnosticsStub();
 
 describe("app storage service", () => {
   let repository: AppStorageRepositoryPort;
@@ -22,7 +23,7 @@ describe("app storage service", () => {
     repository = buildRepositoryStub();
   });
 
-  const service = () => createAppStorageService({ repository });
+  const service = () => createAppStorageService({ repository, diagnostics });
 
   const scope = { workspaceId, installationId, collection };
 
@@ -264,7 +265,7 @@ describe("app storage service failure classification", () => {
     });
 
     await expect(
-      createAppStorageService({ repository }).put({
+      createAppStorageService({ repository, diagnostics }).put({
         ...scope,
         request: { collection: "sync_state", key: "post-1", record: { external_id: "post-1" } },
       }),
@@ -277,7 +278,7 @@ describe("app storage service failure classification", () => {
       throw statementFailure();
     });
 
-    const result = await createAppStorageService({ repository }).get({
+    const result = await createAppStorageService({ repository, diagnostics }).get({
       ...scope,
       request: { collection: "sync_state", key: "post-1" },
     });
@@ -299,7 +300,7 @@ describe("app storage service failure classification", () => {
     repository.deleteRecord = vi.fn(raise);
     repository.queryByIndex = vi.fn(raise);
     repository.readCollectionUsage = vi.fn(raise);
-    const service = createAppStorageService({ repository });
+    const service = createAppStorageService({ repository, diagnostics });
 
     const results = await Promise.all([
       service.get({ ...scope, request: { collection: "sync_state", key: "post-1" } }),
@@ -335,7 +336,7 @@ describe("app storage compatibility facts", () => {
 
     const collectionScope = { workspaceId, installationId, collectionId: "sync_state" };
     await expect(
-      createAppStorageCompatibilityFacts({ repository }).storedSchemaVersions(collectionScope),
+      createAppStorageCompatibilityFacts({ repository, diagnostics }).storedSchemaVersions(collectionScope),
     ).resolves.toEqual({ ok: true, value: [1, 3] });
     expect(repository.listStoredSchemaVersions).toHaveBeenCalledWith(collectionScope);
   });
@@ -345,7 +346,7 @@ describe("app storage compatibility facts", () => {
     repository.listStoredSchemaVersions = vi.fn(async () => ({ admitted: false as const }));
 
     await expect(
-      createAppStorageCompatibilityFacts({ repository }).storedSchemaVersions({
+      createAppStorageCompatibilityFacts({ repository, diagnostics }).storedSchemaVersions({
         workspaceId,
         installationId,
         collectionId: "sync_state",
@@ -359,7 +360,7 @@ describe("app storage compatibility facts", () => {
       throw statementFailure();
     });
 
-    const result = await createAppStorageCompatibilityFacts({ repository }).storedSchemaVersions({
+    const result = await createAppStorageCompatibilityFacts({ repository, diagnostics }).storedSchemaVersions({
       workspaceId,
       installationId,
       collectionId: "sync_state",

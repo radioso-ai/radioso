@@ -12,12 +12,16 @@ import {
   createAppStorageService,
   createAppStorageSweeper,
   INDEXED_STRING_BYTE_BOUND,
+  type AppStorageDiagnosticsPort,
 } from "../../../src/modules/appStorage/public.js";
 import { AuditOutboxRepository } from "../../../src/modules/audit/composition.js";
 import { Database } from "../../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "../support/integrationDatabase.js";
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
+
+/** No forced test in this file is about diagnostics reporting itself. */
+const diagnostics: AppStorageDiagnosticsPort = { failure: () => undefined };
 
 // Managed App Storage against real Postgres. The unit suite proves the rules; what
 // only a database can show is that they hold where they are actually enforced — the
@@ -27,7 +31,7 @@ describeIntegration("Managed App Storage (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl);
   const auditOutbox = new AuditOutboxRepository(database.kysely);
   const repository = new AppStorageRepository(database.kysely, auditOutbox);
-  const service = createAppStorageService({ repository });
+  const service = createAppStorageService({ repository, diagnostics });
 
   const accountId = randomUUID();
   const workspaceId = randomUUID();
@@ -407,7 +411,7 @@ describeIntegration("Managed App Storage (Postgres)", () => {
     await expireNow(scope, "x");
     await expireNow(scope, "y");
 
-    const swept = await createAppStorageSweeper({ repository, batchSize: 100 }).runExpirySweep();
+    const swept = await createAppStorageSweeper({ repository, diagnostics, batchSize: 100 }).runExpirySweep();
 
     expect(swept.deletedCount).toBeGreaterThanOrEqual(2);
     expect(await service.usage(scope)).toMatchObject({ ok: true, value: { recordCount: 0 } });
@@ -438,7 +442,7 @@ describeIntegration("Managed App Storage (Postgres)", () => {
     });
     expect(beforeRebuild).toMatchObject({ ok: true, value: { records: [] } });
 
-    const rebuilt = await createAppStorageIndexRebuilder({ repository, batchSize: 2 }).rebuildIndex({
+    const rebuilt = await createAppStorageIndexRebuilder({ repository, diagnostics, batchSize: 2 }).rebuildIndex({
       workspaceId: scope.workspaceId,
       installationId: scope.installationId,
       collection: after,
@@ -454,8 +458,62 @@ describeIntegration("Managed App Storage (Postgres)", () => {
     expect(afterRebuild.value.records.map((record) => record.key)).toEqual(["r1", "r2", "r3"]);
   });
 
+  it("converges a bounded rebuild across repeated calls, each resuming the last one's continuation", async () => {
+    const before = buildStorageCollection({ id: "resumed_rebuild" });
+    const scope = { ...installation(), collection: before };
+    const keys = ["k1", "k2", "k3", "k4", "k5", "k6", "k7"];
+    for (const key of keys) await put(scope, key, { external_id: "shared", sequence: 42 });
+
+    const after = buildStorageCollection({
+      id: "resumed_rebuild",
+      indexes: [{ id: "by_sequence", field: "sequence" }],
+    });
+    const candidateScope = { ...scope, collection: after };
+
+    // One batch, of one record, per call: seven records cannot converge in a
+    // single invocation this bounded, so every call but the last has to hand
+    // the next one a continuation instead of a completion.
+    const rebuilder = createAppStorageIndexRebuilder({ repository, diagnostics, batchSize: 1, maxBatches: 1 });
+
+    let continuation: string | undefined;
+    let outcome: string | undefined;
+    let calls = 0;
+    do {
+      calls += 1;
+      // A run bounded this tightly still converges in a small, known number of
+      // calls; a ceiling here fails the test instead of hanging it if it does not.
+      expect(calls).toBeLessThan(30);
+
+      const result = await rebuilder.rebuildIndex({
+        workspaceId: candidateScope.workspaceId,
+        installationId: candidateScope.installationId,
+        collection: after,
+        indexId: "by_sequence",
+        ...(continuation === undefined ? {} : { continuation }),
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      outcome = result.value.outcome;
+      continuation = result.value.outcome === "in_progress" ? result.value.continuation : undefined;
+    } while (outcome === "in_progress");
+
+    // Every record was written before the index was declared, and this bounded
+    // a run touches at most one of them per call — so more than one call had to
+    // have run for the rebuild to converge at all.
+    expect(outcome).toBe("rebuilt");
+    expect(calls).toBeGreaterThan(1);
+
+    const afterRebuild = await service.query({
+      ...candidateScope,
+      request: { collection: "resumed_rebuild", index: "by_sequence", equals: 42, limit: 10 },
+    });
+    if (!afterRebuild.ok) return;
+    expect(afterRebuild.value.records.map((record) => record.key).sort()).toEqual([...keys].sort());
+  });
+
   describe("disposition", () => {
-    const disposition = createAppStorageDisposition({ repository });
+    const disposition = createAppStorageDisposition({ repository, diagnostics });
 
     /**
      * The intent a disposition committed, read back off the platform outbox it
@@ -517,7 +575,7 @@ describeIntegration("Managed App Storage (Postgres)", () => {
       await put({ ...scope, collection: ttl }, "stale", { external_id: "stale" });
       await expireNow(scope, "stale");
 
-      const batched = createAppStorageDisposition({ repository, exportBatchSize: 2 });
+      const batched = createAppStorageDisposition({ repository, diagnostics, exportBatchSize: 2 });
       const admission = await batched.export(scope);
       expect(admission.ok).toBe(true);
       if (!admission.ok) return;
@@ -542,7 +600,7 @@ describeIntegration("Managed App Storage (Postgres)", () => {
       await put(scope, "one", { external_id: "one" });
       await put(scope, "two", { external_id: "two" });
 
-      const batched = createAppStorageDisposition({ repository, exportBatchSize: 1 });
+      const batched = createAppStorageDisposition({ repository, diagnostics, exportBatchSize: 1 });
       const admission = await batched.export(scope);
       expect(admission.ok).toBe(true);
       if (!admission.ok) return;
@@ -603,7 +661,7 @@ describeIntegration("Managed App Storage (Postgres)", () => {
         [scope.workspaceId, scope.installationId],
       );
 
-      const swept = await createAppStorageSweeper({ repository }).runRetentionSweep();
+      const swept = await createAppStorageSweeper({ repository, diagnostics }).runRetentionSweep();
       expect(swept.installationCount).toBeGreaterThanOrEqual(1);
 
       const completed = await outboxEntry(scope, "app.data.deletion.completed");

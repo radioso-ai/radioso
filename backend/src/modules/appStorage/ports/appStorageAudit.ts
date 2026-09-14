@@ -27,18 +27,3 @@ export interface AppStorageAuditIntent {
   eventStatus: "success" | "failure";
   metadata: Record<string, string | number | boolean>;
 }
-
-/**
- * Somewhere to say that recording an event failed, without letting that failure
- * become the answer to what the operator asked.
- *
- * A refused export, a retention deadline outside policy, and a failed deletion
- * each have their own answer, and an unreachable outbox must not replace it. It
- * must not be silent either: an outage that only ever manifests as missing trail
- * entries is one nobody notices. So the classified secondary failure is written
- * out here, and the fields are identifiers and codes — never a record key, a
- * stored value, or a message the database composed around one.
- */
-export interface AppStorageAuditLogPort {
-  warn(fields: Record<string, string | number | null>, message: string): void;
-}

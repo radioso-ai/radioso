@@ -12,6 +12,7 @@ import {
   createAppStorageService,
   createAppStorageSweeper,
   INDEXED_STRING_BYTE_BOUND,
+  type AppStorageDiagnosticsPort,
   type AppStorageService,
   type ExportedAppStorageRecord,
 } from "../../../src/modules/appStorage/public.js";
@@ -20,6 +21,9 @@ import { Database } from "../../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "../support/integrationDatabase.js";
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
+
+/** No forced test in this file is about diagnostics reporting itself. */
+const diagnostics: AppStorageDiagnosticsPort = { failure: () => undefined };
 
 /**
  * The guarantees this domain claims are about what two callers observe when they
@@ -41,8 +45,8 @@ describeIntegration("Managed App Storage under concurrency (Postgres)", () => {
   // the barrier tests open.
   const auditOutbox = new AuditOutboxRepository(database.kysely);
   const repository = new AppStorageRepository(database.kysely, auditOutbox);
-  const service = createAppStorageService({ repository });
-  const disposition = createAppStorageDisposition({ repository, exportBatchSize: 1 });
+  const service = createAppStorageService({ repository, diagnostics });
+  const disposition = createAppStorageDisposition({ repository, diagnostics, exportBatchSize: 1 });
 
   /** Single-connection pools the PID-named barriers use, closed with the suite. */
   const pinnedDatabases: Database[] = [];
@@ -189,7 +193,7 @@ describeIntegration("Managed App Storage under concurrency (Postgres)", () => {
     const ownedRepository = new AppStorageRepository(owned.kysely, auditOutbox);
     return {
       repository: ownedRepository,
-      service: createAppStorageService({ repository: ownedRepository }),
+      service: createAppStorageService({ repository: ownedRepository, diagnostics }),
       database: owned,
       pid: row?.pid ?? -1,
     };
@@ -358,11 +362,12 @@ describeIntegration("Managed App Storage under concurrency (Postgres)", () => {
     const deleterConnection = await pinned();
     const sweeper = createAppStorageSweeper({
       repository: sweeperConnection.repository,
+      diagnostics,
       batchSize: 1,
       maxBatches: 5,
     });
-    const writer = createAppStorageService({ repository: writerConnection.repository });
-    const deleter = createAppStorageService({ repository: deleterConnection.repository });
+    const writer = createAppStorageService({ repository: writerConnection.repository, diagnostics });
+    const deleter = createAppStorageService({ repository: deleterConnection.repository, diagnostics });
 
     // All three are started while the counter row is held, so each has to queue;
     // they are released together and take the row in whatever order PostgreSQL
@@ -408,11 +413,13 @@ describeIntegration("Managed App Storage under concurrency (Postgres)", () => {
     const deleterConnection = await pinned();
     const sweeper = createAppStorageSweeper({
       repository: sweeperConnection.repository,
+      diagnostics,
       batchSize: 1,
       maxBatches: 5,
     });
     const deleter = createAppStorageDisposition({
       repository: deleterConnection.repository,
+      diagnostics,
     });
 
     const lock = await holdLock(scope, "state");
@@ -612,6 +619,7 @@ describeIntegration("Managed App Storage under concurrency (Postgres)", () => {
     const deleterConnection = await pinned();
     const deleter = createAppStorageDisposition({
       repository: deleterConnection.repository,
+      diagnostics,
     });
 
     const lock = await holdLock(base, "state");
@@ -888,6 +896,7 @@ describeIntegration("Managed App Storage under concurrency (Postgres)", () => {
 
     const impatient = createAppStorageDisposition({
       repository,
+      diagnostics,
       exportBatchSize: 1,
       exportIdleTimeoutMs: 120,
     });
@@ -1225,6 +1234,135 @@ describeIntegration("Managed App Storage under concurrency (Postgres)", () => {
     // its own iteration.
     await opened.value.close();
     expect(await idleInTransaction()).toBe(before);
+  });
+
+  it("rolls back a snapshot's transaction when it opens after close already asked", async () => {
+    // `open()` starts a transaction lazily, on the first read. A close arriving
+    // while that transaction is still being established has to own it once it
+    // exists rather than let it outlive the call that closed the snapshot — a
+    // pool-delayed open is exactly the case where the two can overlap.
+    const scope = installation();
+    await put(scope, "one", "one");
+
+    const before = await idleInTransaction();
+    const owned = new Database(integrationDatabaseUrl, { poolMax: 1 });
+    pinnedDatabases.push(owned);
+    const ownedRepository = new AppStorageRepository(owned.kysely, auditOutbox);
+
+    // Admission takes a connection transiently (reading the state row) and
+    // gives it back; only `read()` opens the transaction this test delays.
+    const opened = await ownedRepository.openInstallationExport({ scope, batchSize: 10 });
+    expect(opened.admitted).toBe(true);
+    if (!opened.admitted) return;
+
+    // The pool's one connection is taken out from under `read()`'s own
+    // `open()`, so its `startTransaction()` call queues on the pool instead of
+    // running immediately — a fact `pg`'s pool reports itself, not a timeout.
+    const blocker = await owned.pool.connect();
+    let blockerReleased = false;
+    const releaseBlocker = (): void => {
+      if (blockerReleased) return;
+      blockerReleased = true;
+      blocker.release();
+    };
+
+    try {
+      const iterator = opened.value.read()[Symbol.asyncIterator]();
+      const reading = iterator.next();
+      // Rejects once this test's own assertion on it runs, several awaits
+      // below; attaching a handler now is what keeps that gap from reporting
+      // as an unhandled rejection in the meantime.
+      reading.catch(() => undefined);
+
+      for (let attempt = 0; attempt < 600; attempt += 1) {
+        if (owned.pool.waitingCount >= 1) break;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(owned.pool.waitingCount).toBeGreaterThanOrEqual(1);
+
+      // Closing while `open()` is still queued: it must not resolve until it
+      // has claimed and ended whatever transaction that `open()` produces.
+      const closing = opened.value.close();
+
+      releaseBlocker();
+      await closing;
+
+      // `open()` needs a real round trip to Postgres to even begin a
+      // transaction, let alone end one — so if `close()` owned it, the
+      // connection it eventually acquired is already back in the pool by the
+      // time `close()` itself resolves, not still in flight on some other,
+      // unawaited path.
+      expect(owned.pool.idleCount).toBe(1);
+      expect(owned.pool.waitingCount).toBe(0);
+
+      await expect(reading).rejects.toMatchObject({ name: "AppStorageExportClosedError" });
+    } finally {
+      releaseBlocker();
+    }
+
+    expect(await idleInTransaction()).toBe(before);
+  });
+
+  it("yields nothing from a page that finishes after an idle timeout claimed the snapshot", async () => {
+    // A page fetch already in flight when the idle timer fires is not
+    // cancelled by it; `release` waits for that query to settle before ending
+    // the transaction. What must not happen is those already-fetched rows
+    // still reaching the consumer once the snapshot is closed.
+    const scope = installation();
+    for (const key of ["a", "b"]) await put(scope, key, key);
+
+    const before = await idleInTransaction();
+    const owned = new Database(integrationDatabaseUrl, { poolMax: 1 });
+    pinnedDatabases.push(owned);
+    const [pidRow] = await owned.query<{ pid: number }>(`SELECT pg_backend_pid()::int AS pid`);
+    const pid = pidRow?.pid ?? -1;
+    const ownedRepository = new AppStorageRepository(owned.kysely, auditOutbox);
+
+    // Taken before the snapshot's own transaction ever touches the table, on a
+    // different connection: an ACCESS SHARE a read takes is held for the whole
+    // transaction, not the one statement, so taking ACCESS EXCLUSIVE first is
+    // what makes the read wait rather than the other way around.
+    const lockClient = await database.pool.connect();
+    await lockClient.query("BEGIN");
+    await lockClient.query("LOCK TABLE app_storage_records IN ACCESS EXCLUSIVE MODE");
+
+    try {
+      // The idle timer is armed from admission, before any read, so it is
+      // already ticking once this resolves.
+      const opened = await ownedRepository.openInstallationExport({ scope, batchSize: 1, idleTimeoutMs: 500 });
+      expect(opened.admitted).toBe(true);
+      if (!opened.admitted) return;
+
+      const iterator = opened.value.read()[Symbol.asyncIterator]();
+      const reading = iterator.next();
+
+      // Confirmed blocked by Postgres itself, not by a guess about timing.
+      await awaitBlockedPids([pid]);
+
+      // Comfortably past the idle deadline while the read is still provably
+      // blocked on the lock — this is what makes `release` claim the
+      // transaction while that read is in flight rather than before it starts.
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      await lockClient.query("ROLLBACK");
+
+      await expect(reading).rejects.toMatchObject({ name: "AppStorageExportClosedError" });
+      expect((await iterator.next()).done).toBe(true);
+    } finally {
+      lockClient.release();
+    }
+
+    // `release` rolls the transaction back once the blocked page fetch it was
+    // waiting on settles — a step after the rejection above, not before it —
+    // so this polls the same way `awaitBlockedPids` does rather than assuming
+    // that step has already finished.
+    let observed = before + 1;
+    for (let attempt = 0; attempt < 600; attempt += 1) {
+      observed = await idleInTransaction();
+      if (observed === before) break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(observed).toBe(before);
   });
 
   it("refuses a reclaim whose lease deadline passed, even when it still holds the token", async () => {

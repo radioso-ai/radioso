@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { buildRepositoryStub, connectionFailure, statementFailure } from "./repositoryStub.js";
+import { buildDiagnosticsStub, buildRepositoryStub, connectionFailure, statementFailure } from "./repositoryStub.js";
 import {
   createAppStorageDisposition,
   MAX_RETENTION_DAYS,
@@ -16,6 +16,7 @@ const workspaceId = randomUUID();
 const installationId = randomUUID();
 const scope = { workspaceId, installationId };
 const now = new Date("2026-09-07T10:00:00.000Z");
+const diagnostics = buildDiagnosticsStub();
 
 const record = (collectionId: string, key: string): StoredAppStorageRecord & { collectionId: string } => ({
   collectionId,
@@ -54,7 +55,7 @@ describe("app storage disposition", () => {
     repository = buildRepository();
   });
 
-  const disposition = () => createAppStorageDisposition({ repository, now: () => now });
+  const disposition = () => createAppStorageDisposition({ repository, diagnostics, now: () => now });
 
   /**
    * What the disposition committed to the trail. An irreversible change writes
@@ -349,11 +350,11 @@ describe("app storage disposition", () => {
     });
   });
 
-  it("says an intent that was not committed out loud, in identifiers and codes", async () => {
+  it("reports the cause of an intent that was not committed, without replacing the refusal it rode with", async () => {
     // Not replacing the primary answer is half the rule; the other half is that
     // an outbox outage during a refusal must not be silent, or the only symptom
     // is trail entries nobody ever notices are missing.
-    const logger = { warn: vi.fn() };
+    const failureDiagnostics = buildDiagnosticsStub();
     repository.openInstallationExport = vi.fn(async () => ({ admitted: false as const }));
     repository.enqueueAuditEvent = vi.fn(async (input) => {
       if (input.intent.eventType === "app.data.export.cancelled") throw connectionFailure();
@@ -361,18 +362,21 @@ describe("app storage disposition", () => {
 
     const refused = await createAppStorageDisposition({
       repository,
-      logger,
+      diagnostics: failureDiagnostics,
       now: () => now,
     }).export(scope);
 
     expect(refused).toMatchObject({ ok: false, error: { code: "denied" } });
-    expect(logger.warn).toHaveBeenCalledWith(
+    expect(failureDiagnostics.failure).toHaveBeenCalledWith(
       {
+        operation: "enqueueAuditEvent",
         installationId,
         workspaceId,
-        eventType: "app.data.export.cancelled",
-        eventStatus: "failure",
-        failureCode: "unavailable",
+        classification: "unavailable",
+        exceptionClass: "Error",
+        sqlState: "ECONNREFUSED",
+        constraint: null,
+        stack: expect.any(String),
       },
       expect.any(String),
     );

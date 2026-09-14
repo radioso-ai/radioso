@@ -3,12 +3,17 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 
 import { buildStorageCollection } from "../../support/appStorageCollections.js";
-import { buildRepositoryStub, connectionFailure } from "./repositoryStub.js";
-import { createAppStorageIndexRebuilder } from "../../../src/modules/appStorage/public.js";
+import { buildDiagnosticsStub, buildRepositoryStub, connectionFailure } from "./repositoryStub.js";
+import {
+  createAppStorageIndexRebuilder,
+  decodeIndexRebuildContinuation,
+  encodeIndexRebuildContinuation,
+} from "../../../src/modules/appStorage/public.js";
 
 const workspaceId = randomUUID();
 const installationId = randomUUID();
 const collection = buildStorageCollection();
+const diagnostics = buildDiagnosticsStub();
 
 /** A batch that found nothing: the shape the closing pass of a settled rebuild returns. */
 const emptyBatch = {
@@ -38,7 +43,7 @@ describe("app storage index rebuild", () => {
       value: batches.shift() ?? emptyBatch,
     }));
 
-    const result = await createAppStorageIndexRebuilder({ repository, batchSize: 2 }).rebuildIndex(scope);
+    const result = await createAppStorageIndexRebuilder({ repository, diagnostics, batchSize: 2 }).rebuildIndex(scope);
 
     // Three records over two batches, then one more batch for the convergence
     // pass that finds nothing written since the marker went up.
@@ -90,7 +95,7 @@ describe("app storage index rebuild", () => {
       };
     });
 
-    await createAppStorageIndexRebuilder({ repository }).rebuildIndex(scope);
+    await createAppStorageIndexRebuilder({ repository, diagnostics }).rebuildIndex(scope);
 
     expect(order).toEqual(["begin", "batch", "batch", "finish"]);
     expect(repository.finishIndexRebuild).toHaveBeenCalledWith({
@@ -108,7 +113,7 @@ describe("app storage index rebuild", () => {
     }));
 
     await expect(
-      createAppStorageIndexRebuilder({ repository }).rebuildIndex(scope),
+      createAppStorageIndexRebuilder({ repository, diagnostics }).rebuildIndex(scope),
     ).resolves.toEqual({
       ok: true,
       value: { outcome: "superseded", indexId: "by_external_id" },
@@ -135,7 +140,7 @@ describe("app storage index rebuild", () => {
       value: batches.shift() ?? emptyBatch,
     }));
 
-    await createAppStorageIndexRebuilder({ repository, batchSize: 2 }).rebuildIndex(scope);
+    await createAppStorageIndexRebuilder({ repository, diagnostics, batchSize: 2 }).rebuildIndex(scope);
 
     const calls = (repository.rebuildIndexBatch as ReturnType<typeof vi.fn>).mock.calls.map(
       ([batch]) => batch.minVersion,
@@ -153,7 +158,7 @@ describe("app storage index rebuild", () => {
       value: batch({ rebuiltCount: 1, visitedKeys: ["huge"], incompatibleKeys: ["huge"] }),
     }));
 
-    const result = await createAppStorageIndexRebuilder({ repository }).rebuildIndex(scope);
+    const result = await createAppStorageIndexRebuilder({ repository, diagnostics }).rebuildIndex(scope);
 
     expect(result).toEqual({
       ok: true,
@@ -182,7 +187,7 @@ describe("app storage index rebuild", () => {
     }));
 
     await expect(
-      createAppStorageIndexRebuilder({ repository }).rebuildIndex(scope),
+      createAppStorageIndexRebuilder({ repository, diagnostics }).rebuildIndex(scope),
     ).resolves.toMatchObject({ ok: true, value: { outcome: "rebuilt" } });
   });
 
@@ -190,7 +195,7 @@ describe("app storage index rebuild", () => {
     const repository = buildRepositoryStub();
     const numeric = buildStorageCollection({ indexes: [{ id: "by_sequence", field: "sequence" }] });
 
-    await createAppStorageIndexRebuilder({ repository }).rebuildIndex({
+    await createAppStorageIndexRebuilder({ repository, diagnostics }).rebuildIndex({
       workspaceId,
       installationId,
       collection: numeric,
@@ -204,7 +209,7 @@ describe("app storage index rebuild", () => {
 
   it("refuses an index the collection does not declare", async () => {
     const repository = buildRepositoryStub();
-    const result = await createAppStorageIndexRebuilder({ repository }).rebuildIndex({
+    const result = await createAppStorageIndexRebuilder({ repository, diagnostics }).rebuildIndex({
       ...scope,
       indexId: "by_nothing",
     });
@@ -217,7 +222,7 @@ describe("app storage index rebuild", () => {
     const repository = buildRepositoryStub();
     const jsonIndexed = buildStorageCollection({ indexes: [{ id: "by_payload", field: "payload" }] });
 
-    const result = await createAppStorageIndexRebuilder({ repository }).rebuildIndex({
+    const result = await createAppStorageIndexRebuilder({ repository, diagnostics }).rebuildIndex({
       workspaceId,
       installationId,
       collection: jsonIndexed,
@@ -233,7 +238,7 @@ describe("app storage index rebuild", () => {
     repository.rebuildIndexBatch = vi.fn(async () => ({ admitted: false as const }));
 
     await expect(
-      createAppStorageIndexRebuilder({ repository }).rebuildIndex(scope),
+      createAppStorageIndexRebuilder({ repository, diagnostics }).rebuildIndex(scope),
     ).resolves.toMatchObject({ ok: false, error: { code: "denied" } });
     // The run owns a marker from the moment it begins. Leaving it up on the way
     // out would make every later write maintain an index nobody will query.
@@ -252,7 +257,7 @@ describe("app storage index rebuild", () => {
     }));
 
     await expect(
-      createAppStorageIndexRebuilder({ repository }).rebuildIndex(scope),
+      createAppStorageIndexRebuilder({ repository, diagnostics }).rebuildIndex(scope),
     ).resolves.toMatchObject({ ok: false, error: { code: "internal" } });
     // Nothing was begun, so there is nothing to cancel and nothing to build.
     expect(repository.rebuildIndexBatch).not.toHaveBeenCalled();
@@ -270,7 +275,7 @@ describe("app storage index rebuild", () => {
     }));
 
     await expect(
-      createAppStorageIndexRebuilder({ repository }).rebuildIndex(scope),
+      createAppStorageIndexRebuilder({ repository, diagnostics }).rebuildIndex(scope),
     ).resolves.toEqual({ ok: true, value: { outcome: "superseded", indexId: "by_external_id" } });
     expect(repository.cancelIndexRebuild).not.toHaveBeenCalled();
     expect(repository.finishIndexRebuild).not.toHaveBeenCalled();
@@ -286,7 +291,7 @@ describe("app storage index rebuild", () => {
     }));
 
     await expect(
-      createAppStorageIndexRebuilder({ repository }).rebuildIndex(scope),
+      createAppStorageIndexRebuilder({ repository, diagnostics }).rebuildIndex(scope),
     ).resolves.toEqual({
       ok: true,
       value: { outcome: "incompatible_records", indexId: "by_external_id", incompatibleCount: 3 },
@@ -296,7 +301,7 @@ describe("app storage index rebuild", () => {
     );
   });
 
-  it("stops at the batch ceiling instead of rebuilding without bound", async () => {
+  it("stops at the batch ceiling instead of rebuilding without bound, and hands back where it stopped", async () => {
     const repository = buildRepositoryStub();
     repository.rebuildIndexBatch = vi.fn(async () => ({
       admitted: true as const,
@@ -306,15 +311,146 @@ describe("app storage index rebuild", () => {
     // The budget bounds one run, not the rebuild. The marker stays up under its
     // renewed lease, the entries built so far keep being maintained, and nothing
     // can be activated because no completion token was handed out.
-    await expect(
-      createAppStorageIndexRebuilder({ repository, batchSize: 2, maxBatches: 3 }).rebuildIndex(scope),
-    ).resolves.toEqual({
+    const result = await createAppStorageIndexRebuilder({ repository, diagnostics, batchSize: 2, maxBatches: 3 }).rebuildIndex(
+      scope,
+    );
+
+    expect(result).toMatchObject({
       ok: true,
       value: { outcome: "in_progress", indexId: "by_external_id", rebuiltCount: 6, batchCount: 3 },
     });
     expect(repository.rebuildIndexBatch).toHaveBeenCalledTimes(3);
     expect(repository.cancelIndexRebuild).not.toHaveBeenCalled();
     expect(repository.finishIndexRebuild).not.toHaveBeenCalled();
+
+    // The continuation names the run the budget interrupted — its own
+    // generation and pass, and the cursor its last batch reached — so a later
+    // call can resume the same scan instead of starting over from nothing.
+    const outcome = result.ok ? result.value : null;
+    const token = outcome && outcome.outcome === "in_progress" ? outcome.continuation : undefined;
+    expect(typeof token).toBe("string");
+    expect(decodeIndexRebuildContinuation(token ?? "")).toEqual({
+      workspaceId,
+      installationId,
+      collectionId: "sync_state",
+      indexId: "by_external_id",
+      generation: 1,
+      pass: "first",
+      after: "post-2",
+      startVersion: 1,
+    });
+  });
+
+  it("resumes a first-pass rebuild from its continuation's cursor instead of rescanning", async () => {
+    const repository = buildRepositoryStub();
+    repository.rebuildIndexBatch = vi.fn(async () => ({ admitted: true as const, value: emptyBatch }));
+    const continuation = encodeIndexRebuildContinuation({
+      workspaceId,
+      installationId,
+      collectionId: "sync_state",
+      indexId: "by_external_id",
+      generation: 7,
+      pass: "first",
+      after: "post-4",
+      startVersion: 41,
+    });
+
+    await createAppStorageIndexRebuilder({ repository, diagnostics }).rebuildIndex({ ...scope, continuation });
+
+    // A resumed run owns an already-live marker; minting another would leave
+    // the first one's up under nobody's lease renewal.
+    expect(repository.beginIndexRebuild).not.toHaveBeenCalled();
+    expect(repository.rebuildIndexBatch).toHaveBeenNthCalledWith(1, {
+      scope: { workspaceId, installationId, collectionId: "sync_state" },
+      index: { id: "by_external_id", field: "external_id", fieldType: "string" },
+      generation: 7,
+      after: "post-4",
+      limit: 200,
+      minVersion: null,
+    });
+  });
+
+  it("resumes a convergence-pass rebuild directly, without a first pass over the whole collection", async () => {
+    const repository = buildRepositoryStub();
+    repository.rebuildIndexBatch = vi.fn(async () => ({ admitted: true as const, value: emptyBatch }));
+    const continuation = encodeIndexRebuildContinuation({
+      workspaceId,
+      installationId,
+      collectionId: "sync_state",
+      indexId: "by_external_id",
+      generation: 7,
+      pass: "convergence",
+      after: null,
+      startVersion: 41,
+    });
+
+    await createAppStorageIndexRebuilder({ repository, diagnostics }).rebuildIndex({ ...scope, continuation });
+
+    expect(repository.beginIndexRebuild).not.toHaveBeenCalled();
+    expect(repository.rebuildIndexBatch).toHaveBeenCalledTimes(1);
+    expect(repository.rebuildIndexBatch).toHaveBeenCalledWith(
+      expect.objectContaining({ generation: 7, after: null, minVersion: 41 }),
+    );
+  });
+
+  it("starts a fresh rebuild when the continuation names a generation the marker has moved past", async () => {
+    const repository = buildRepositoryStub();
+    let calls = 0;
+    repository.rebuildIndexBatch = vi.fn(async (call) => {
+      calls += 1;
+      // The first call validates the continuation's own generation; here it no
+      // longer owns the marker, so it builds nothing.
+      if (calls === 1) return { admitted: true as const, value: { ...emptyBatch, stale: true } };
+      expect(call.generation).toBe(8);
+      return { admitted: true as const, value: emptyBatch };
+    });
+    repository.beginIndexRebuild = vi.fn(async () => ({
+      admitted: true as const,
+      value: { outcome: "started" as const, startVersion: 99, generation: 8 },
+    }));
+    const continuation = encodeIndexRebuildContinuation({
+      workspaceId,
+      installationId,
+      collectionId: "sync_state",
+      indexId: "by_external_id",
+      generation: 7,
+      pass: "first",
+      after: "post-4",
+      startVersion: 41,
+    });
+
+    const result = await createAppStorageIndexRebuilder({ repository, diagnostics }).rebuildIndex({ ...scope, continuation });
+
+    // A stale continuation is a request to keep the same rebuild moving, not a
+    // second rebuild racing the first — so its answer is a fresh start under a
+    // new generation rather than "superseded".
+    expect(repository.beginIndexRebuild).toHaveBeenCalledTimes(1);
+    expect(repository.rebuildIndexBatch).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ generation: 8, after: null, minVersion: null }),
+    );
+    expect(result).toMatchObject({ ok: true, value: { outcome: "rebuilt" } });
+  });
+
+  it("starts fresh rather than resume a continuation minted for a different index", async () => {
+    const repository = buildRepositoryStub();
+    const continuation = encodeIndexRebuildContinuation({
+      workspaceId,
+      installationId,
+      collectionId: "sync_state",
+      indexId: "someone_elses_index",
+      generation: 7,
+      pass: "first",
+      after: "post-4",
+      startVersion: 41,
+    });
+
+    await createAppStorageIndexRebuilder({ repository, diagnostics }).rebuildIndex({ ...scope, continuation });
+
+    expect(repository.beginIndexRebuild).toHaveBeenCalledTimes(1);
+    expect(repository.rebuildIndexBatch).toHaveBeenCalledWith(
+      expect.objectContaining({ generation: 1, after: null }),
+    );
   });
 
   it("turns a database failure into a typed result rather than a rejected promise, and cancels", async () => {
@@ -324,7 +460,7 @@ describe("app storage index rebuild", () => {
     });
 
     await expect(
-      createAppStorageIndexRebuilder({ repository }).rebuildIndex(scope),
+      createAppStorageIndexRebuilder({ repository, diagnostics }).rebuildIndex(scope),
     ).resolves.toMatchObject({ ok: false, error: { code: "unavailable" } });
     expect(repository.cancelIndexRebuild).toHaveBeenCalledWith(
       expect.objectContaining({ indexId: "by_external_id", generation: 1 }),
@@ -343,7 +479,7 @@ describe("app storage index rebuild", () => {
     });
 
     await expect(
-      createAppStorageIndexRebuilder({ repository }).rebuildIndex(scope),
+      createAppStorageIndexRebuilder({ repository, diagnostics }).rebuildIndex(scope),
     ).resolves.toMatchObject({ ok: false, error: { code: "unavailable" } });
   });
 });

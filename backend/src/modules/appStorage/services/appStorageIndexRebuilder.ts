@@ -1,18 +1,26 @@
 import { indexColumnForFieldType } from "../domain/indexEntries.js";
 import {
-  classifyStorageFailure,
-  storageFailure,
-  storageSuccess,
-  type AppStorageResult,
-} from "../domain/results.js";
+  decodeIndexRebuildContinuation,
+  encodeIndexRebuildContinuation,
+} from "../domain/indexRebuildContinuation.js";
+import { storageFailure, storageSuccess, type AppStorageResult } from "../domain/results.js";
+import type { AppStorageDiagnosticsPort } from "../ports/appStorageDiagnostics.js";
 import type { AppStorageRepositoryPort } from "../ports/appStorageRepository.js";
 import type {
   AppStorageIndexRebuildResult,
   AppStorageIndexRebuilder,
 } from "../ports/appStorageService.js";
+import { reportStorageFailure } from "./appStorageDiagnosticsReporting.js";
 
 interface AppStorageIndexRebuilderOptions {
   repository: AppStorageRepositoryPort;
+  /**
+   * Where an exception this rebuilder cannot attribute to the caller is
+   * recorded before it is discarded into a sanitized `internal` or
+   * `unavailable` result. Mandatory: a rebuild that fails silently leaves an
+   * operator unable to tell a transient outage from a permanent one.
+   */
+  diagnostics: AppStorageDiagnosticsPort;
   /** Records one transaction rebuilds. A rebuild holds the collection's lock, so it takes it in pages. */
   batchSize?: number;
   /** Batches one rebuild runs before it refuses to continue, so a runaway loop cannot outlive the release it belongs to. */
@@ -67,11 +75,22 @@ const INCOMPATIBLE_CEILING = 1_000;
  * bounds a single run rather than the rebuild, and the entries built so far are
  * worth keeping maintained; the marker's lease, renewed by each batch, is what
  * collects it if no further run ever comes.
+ *
+ * That answer carries a continuation naming exactly where the run stopped — its
+ * generation, which of the rebuild's two passes it was in, and that pass' own
+ * cursor. Presenting it to a later call resumes that pass from its cursor
+ * instead of rescanning the collection from the first key. The continuation
+ * names a generation rather than trusting the caller's word for one: if the
+ * marker has moved on since — taken by a newer rebuild, or dropped by the sweep
+ * after this run's lease lapsed — resuming would build entries under a marker
+ * that is no longer this run's, so a stale continuation starts over under a
+ * fresh generation instead. That is a different answer from a batch going stale
+ * mid-run, which still means another rebuild is live and owns the convergence.
  */
 export const createAppStorageIndexRebuilder = (
   options: AppStorageIndexRebuilderOptions,
 ): AppStorageIndexRebuilder => {
-  const { repository } = options;
+  const { repository, diagnostics } = options;
   const batchSize = options.batchSize ?? DEFAULT_BATCH_SIZE;
   const maxBatches = options.maxBatches ?? DEFAULT_MAX_BATCHES;
 
@@ -105,22 +124,57 @@ export const createAppStorageIndexRebuilder = (
       // writing release declares, so an older release that rewrites a key the
       // first pass already visited does not drop the entry the rebuild put there.
       // `startVersion` is where the closing pass starts looking.
-      let started;
-      try {
-        started = await repository.beginIndexRebuild({ scope, index: descriptor });
-      } catch (error) {
-        return classifyStorageFailure(error);
-      }
+      // A continuation is honored only for the rebuild it names: a token
+      // minted for a different installation, collection, or index is not
+      // this run's to resume, and is treated exactly like no continuation at
+      // all — a fresh start.
+      const decoded = input.continuation ? decodeIndexRebuildContinuation(input.continuation) : null;
+      const resumeFrom =
+        decoded &&
+        decoded.workspaceId === input.workspaceId &&
+        decoded.installationId === input.installationId &&
+        decoded.collectionId === input.collection.id &&
+        decoded.indexId === index.id
+          ? decoded
+          : null;
 
-      if (!started.admitted) return unavailable();
-      if (started.value.outcome === "generation_exhausted") {
-        return storageFailure(
-          "internal",
-          `Storage cannot identify another rebuild on collection ${input.collection.id}`,
-        );
-      }
+      const beginFresh = async (): Promise<
+        | { ok: true; generation: number; startVersion: number }
+        | { ok: false; result: AppStorageResult<AppStorageIndexRebuildResult> }
+      > => {
+        let started;
+        try {
+          started = await repository.beginIndexRebuild({ scope, index: descriptor });
+        } catch (error) {
+          return { ok: false, result: reportStorageFailure(diagnostics, "beginIndexRebuild", scope, error) };
+        }
 
-      const { startVersion, generation } = started.value;
+        if (!started.admitted) return { ok: false, result: unavailable() };
+        if (started.value.outcome === "generation_exhausted") {
+          return {
+            ok: false,
+            result: storageFailure(
+              "internal",
+              `Storage cannot identify another rebuild on collection ${input.collection.id}`,
+            ),
+          };
+        }
+
+        return { ok: true, generation: started.value.generation, startVersion: started.value.startVersion };
+      };
+
+      let generation: number;
+      let startVersion: number;
+
+      if (resumeFrom) {
+        generation = resumeFrom.generation;
+        startVersion = resumeFrom.startVersion;
+      } else {
+        const begun = await beginFresh();
+        if (!begun.ok) return begun.result;
+        generation = begun.generation;
+        startVersion = begun.startVersion;
+      }
 
       /**
        * From here the run owns a marker, so every way out has to say what becomes
@@ -137,8 +191,12 @@ export const createAppStorageIndexRebuilder = (
       const cancelOwned = async (): Promise<void> => {
         try {
           await repository.cancelIndexRebuild({ scope, indexId: index.id, generation });
-        } catch {
-          // The marker's lease is what collects it if this did not.
+        } catch (error) {
+          // The marker's lease is what collects it if this did not — but a
+          // cleanup that fails is still worth a cause: it is the difference
+          // between a marker a lease will collect and one an operator has to
+          // notice went uncancelled some other way.
+          reportStorageFailure(diagnostics, "cancelIndexRebuild", scope, error);
         }
       };
 
@@ -170,12 +228,26 @@ export const createAppStorageIndexRebuilder = (
           /** Enough records are past the index bound that counting more proves nothing. */
           | { kind: "incompatible" }
           | { kind: "failed"; result: AppStorageResult<AppStorageIndexRebuildResult> }
-          /** The batch budget ran out with records still to visit. */
-          | { kind: "budget" };
+          /** The batch budget ran out with records still to visit, at this cursor. */
+          | { kind: "budget"; after: string | null }
+          /** A resumed pass' own first batch found the continuation's generation already gone. */
+          | { kind: "stale_resume" };
 
         /** One key-ordered sweep of the collection, optionally limited to what a version marks as new. */
-        const pass = async (minVersion: number | null): Promise<PassEnd> => {
-          let after: string | null = null;
+        const pass = async (
+          minVersion: number | null,
+          startAfter: string | null,
+          /**
+           * Whether a stale answer to this pass' own first batch means the
+           * continuation is out of date rather than that another rebuild is
+           * live. Only a resumed pass' first batch validates a generation this
+           * call did not itself just mint; every later staleness — in this
+           * pass or any other — means a different run owns the marker now.
+           */
+          onStaleFirstBatch: "restart" | "supersede",
+        ): Promise<PassEnd> => {
+          let after = startAfter;
+          let firstBatch = true;
 
           while (batchCount < maxBatches) {
             const progress = await repository.rebuildIndexBatch({
@@ -191,11 +263,15 @@ export const createAppStorageIndexRebuilder = (
             // but one against a tombstoned installation has nothing to build over.
             if (!progress.admitted) return { kind: "failed", result: unavailable() };
 
-            // The marker is no longer this run's. Another rebuild of the same
-            // index took it over, or its lease ran out and it was collected —
-            // either way this run owns nothing and must not cancel what it does
-            // not own.
-            if (progress.value.stale) return { kind: "superseded" };
+            if (progress.value.stale) {
+              if (firstBatch && onStaleFirstBatch === "restart") return { kind: "stale_resume" };
+              // The marker is no longer this run's. Another rebuild of the same
+              // index took it over, or its lease ran out and it was collected —
+              // either way this run owns nothing and must not cancel what it
+              // does not own.
+              return { kind: "superseded" };
+            }
+            firstBatch = false;
 
             batchCount += 1;
             rebuiltCount += progress.value.rebuiltCount;
@@ -207,15 +283,48 @@ export const createAppStorageIndexRebuilder = (
             after = progress.value.lastKey;
           }
 
-          return { kind: "budget" };
+          return { kind: "budget", after };
         };
 
-        const first = await pass(null);
-        // The convergence pass. The batches above ran one transaction at a time,
-        // so a write could land behind the cursor while they were running; every
-        // such write carries a version at or past the marker, which is exactly
-        // the set this pass revisits.
-        const ended = first === null ? await pass(startVersion) : first;
+        /**
+         * Runs the first pass and then the closing one, honoring a resumed
+         * cursor for whichever of the two it names. Resuming the closing pass
+         * skips the first outright: its own cursor already reached the end of
+         * the collection in the run that produced it.
+         */
+        const runPasses = async (
+          resuming: { pass: "first" | "convergence"; after: string | null } | null,
+        ): Promise<{ end: PassEnd; phase: "first" | "convergence" }> => {
+          if (resuming?.pass === "convergence") {
+            return { end: await pass(startVersion, resuming.after, "restart"), phase: "convergence" };
+          }
+
+          const first = await pass(null, resuming?.after ?? null, resuming ? "restart" : "supersede");
+          if (first !== null) return { end: first, phase: "first" };
+
+          // The convergence pass. The batches above ran one transaction at a
+          // time, so a write could land behind the cursor while they were
+          // running; every such write carries a version at or past the marker,
+          // which is exactly the set this pass revisits.
+          return { end: await pass(startVersion, null, "supersede"), phase: "convergence" };
+        };
+
+        let { end: ended, phase } = await runPasses(resumeFrom);
+
+        if (ended?.kind === "stale_resume") {
+          // The continuation asked to keep this rebuild moving, not to race a
+          // second one against it. Answering a generation the marker has
+          // already moved past with "superseded" would be the answer for the
+          // second case; this call gets a fresh start instead.
+          rebuiltCount = 0;
+          batchCount = 0;
+          incompatible.clear();
+          const begun = await beginFresh();
+          if (!begun.ok) return begun.result;
+          generation = begun.generation;
+          startVersion = begun.startVersion;
+          ({ end: ended, phase } = await runPasses(null));
+        }
 
         if (ended?.kind === "superseded") {
           // The marker belongs to the run that took it over. Clearing it here
@@ -231,13 +340,24 @@ export const createAppStorageIndexRebuilder = (
         if (ended?.kind === "budget") {
           // The batch budget is a limit on one run, not on the rebuild. The
           // marker stays up under its renewed lease, so the entries built so far
-          // keep being maintained and another run continues from a fresh
-          // generation; if none comes, the lease is what collects it.
+          // keep being maintained, and the continuation names exactly where this
+          // run stopped so another one can pick the same pass up from its
+          // cursor instead of rescanning; if none comes, the lease collects it.
           return storageSuccess({
             outcome: "in_progress",
             indexId: index.id,
             rebuiltCount,
             batchCount,
+            continuation: encodeIndexRebuildContinuation({
+              workspaceId: input.workspaceId,
+              installationId: input.installationId,
+              collectionId: input.collection.id,
+              indexId: index.id,
+              generation,
+              pass: phase,
+              after: ended.after,
+              startVersion,
+            }),
           });
         }
 
@@ -292,7 +412,7 @@ export const createAppStorageIndexRebuilder = (
         });
       } catch (error) {
         await cancelOwned();
-        return classifyStorageFailure(error);
+        return reportStorageFailure(diagnostics, "rebuildIndex", scope, error);
       }
     },
   };

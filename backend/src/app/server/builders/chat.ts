@@ -883,6 +883,10 @@ export const buildChatServices = (input: {
       retrievalDefaultsProvider: input.retrievalDefaultsProvider,
       ...(input.skillSettingsResolver ? { skillSettingsResolver: input.skillSettingsResolver } : {}),
     },
+    // Same post-evidence coverage assessment as live chat, minus the repository: a
+    // replayed turn (draft test chat, evals) must let coverage-gated directives and
+    // routines fire, but it writes no assessment or reaction rows.
+    coverageAssessorFactory: new ChatAnswerCoverageAssessorFactory(chatGateway),
     logger: input.logger,
   });
   const approvalDecisionService = new ApprovalDecisionService(

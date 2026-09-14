@@ -28,34 +28,6 @@ export interface AppStorageAuditIntent {
   metadata: Record<string, string | number | boolean>;
 }
 
-export interface AppStorageAuditEvent extends AppStorageAuditIntent {
-  /**
-   * The event's own identity, stable across delivery attempts. Delivery is
-   * at-least-once — a publish that succeeded and whose acknowledgement did not
-   * commit is published again — so a sink that must not record an event twice
-   * has something to recognise it by.
-   */
-  eventId: string;
-  /**
-   * Null once the workspace itself is gone. The outbox deliberately outlives a
-   * workspace deletion — the entries describing the last thing that happened to
-   * a workspace are the ones an operator most needs afterwards — so a preserved
-   * event has to be publishable without a workspace to attribute it to.
-   */
-  workspaceId: string | null;
-  /**
-   * The workspace the event belonged to, when that workspace no longer exists. It
-   * is an identifier and nothing else, which is what makes it publishable next to
-   * a null `workspaceId` rather than being dropped with it.
-   */
-  deletedWorkspaceId: string | null;
-  installationId: string | null;
-}
-
-export interface AppStorageAuditPort {
-  record(event: AppStorageAuditEvent): Promise<void>;
-}
-
 /**
  * Somewhere to say that recording an event failed, without letting that failure
  * become the answer to what the operator asked.

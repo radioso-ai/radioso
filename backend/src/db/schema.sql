@@ -954,26 +954,6 @@ CREATE TABLE public.api_credentials (
 
 
 --
--- Name: app_storage_audit_outbox; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.app_storage_audit_outbox (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    workspace_id uuid NOT NULL,
-    installation_id uuid,
-    event_type text NOT NULL,
-    event_status text NOT NULL,
-    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
-    claim_token uuid,
-    claimed_until timestamp with time zone,
-    attempt_count integer DEFAULT 0 NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT app_storage_audit_outbox_attempt_count_check CHECK ((attempt_count >= 0)),
-    CONSTRAINT app_storage_audit_outbox_claim CHECK (((claim_token IS NULL) = (claimed_until IS NULL)))
-);
-
-
---
 -- Name: app_storage_collection_usage; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1160,6 +1140,26 @@ CREATE TABLE public.audit_events (
     metadata_json jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     workspace_id uuid
+);
+
+
+--
+-- Name: audit_outbox; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.audit_outbox (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    account_id uuid,
+    workspace_id uuid,
+    event_type text NOT NULL,
+    event_status text NOT NULL,
+    metadata_json jsonb DEFAULT '{}'::jsonb NOT NULL,
+    claim_token uuid,
+    claimed_until timestamp with time zone,
+    attempt_count integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT audit_outbox_attempt_count_check CHECK ((attempt_count >= 0)),
+    CONSTRAINT audit_outbox_claim CHECK (((claim_token IS NULL) = (claimed_until IS NULL)))
 );
 
 
@@ -4308,14 +4308,6 @@ ALTER TABLE ONLY public.api_credentials
 
 
 --
--- Name: app_storage_audit_outbox app_storage_audit_outbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.app_storage_audit_outbox
-    ADD CONSTRAINT app_storage_audit_outbox_pkey PRIMARY KEY (id);
-
-
---
 -- Name: app_storage_collection_usage app_storage_collection_usage_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4393,6 +4385,14 @@ ALTER TABLE ONLY public.audience_pulse_snapshots
 
 ALTER TABLE ONLY public.audit_events
     ADD CONSTRAINT audit_events_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: audit_outbox audit_outbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audit_outbox
+    ADD CONSTRAINT audit_outbox_pkey PRIMARY KEY (id);
 
 
 --
@@ -7058,13 +7058,6 @@ CREATE INDEX idx_api_credentials_workspace_created ON public.api_credentials USI
 
 
 --
--- Name: idx_app_storage_audit_outbox_claimable; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_app_storage_audit_outbox_claimable ON public.app_storage_audit_outbox USING btree (claimed_until, created_at, id);
-
-
---
 -- Name: idx_app_storage_collection_usage_sweep; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7167,6 +7160,13 @@ CREATE INDEX idx_assistant_answer_triage_workspace_resolution ON public.assistan
 --
 
 CREATE INDEX idx_assistant_answer_triage_workspace_state ON public.assistant_answer_triage USING btree (workspace_id, state);
+
+
+--
+-- Name: idx_audit_outbox_claimable; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_audit_outbox_claimable ON public.audit_outbox USING btree (claimed_until, created_at, id);
 
 
 --

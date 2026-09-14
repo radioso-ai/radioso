@@ -12,8 +12,7 @@
 -- installation row lands beside this one; until it does, an installation's rows
 -- are removed explicitly by the disposition path, and workspace deletion
 -- cascades through workspace_id: every table holding data carries workspace_id
--- with an ON DELETE CASCADE reference, or hangs off one that does. The audit
--- outbox is the deliberate exception, for the reason stated above it.
+-- with an ON DELETE CASCADE reference, or hangs off one that does.
 --
 -- One lock order holds across every statement any of these tables sees:
 -- installation state row, then the collection's counter row, then record rows.
@@ -213,50 +212,10 @@ CREATE TABLE IF NOT EXISTS app_storage_collection_usage (
 CREATE INDEX IF NOT EXISTS idx_app_storage_collection_usage_sweep
   ON app_storage_collection_usage (last_swept_at);
 
--- An irreversible disposition and the audit event that describes it commit in one
--- transaction, which is what keeps the trail from disagreeing with the data: a
--- deletion that committed always has its event, and an event never describes a
--- deletion that rolled back. Publishing is the drain's job afterwards, so a
--- failure to publish costs a retry rather than the record of what happened.
---
--- This is storage's own outbox. The `apps` domain has one for its lifecycle
--- events, and the two may unify once both sides have settled.
---
--- Alone among these tables, workspace_id carries no foreign key. Every other row
--- here is the data itself and goes with the workspace; an undrained disposition
--- event is the evidence that the data was exported, retained, or deleted, and a
--- cascade would erase exactly the entries describing the last thing that happened
--- to a workspace being torn down. The drain publishes such an entry with a null
--- workspace: audit_events.workspace_id is nullable and its own foreign key sets
--- it to null when the workspace goes, so the entry reaches the trail with its
--- former workspace carried as an identifier in the metadata rather than failing
--- a foreign key on every retry forever.
-CREATE TABLE IF NOT EXISTS app_storage_audit_outbox (
-  -- The delivery identity. It reaches the sink on every attempt, so a publish
-  -- that succeeded and then failed to be acknowledged is recognisable as the
-  -- same event rather than as a second one.
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  workspace_id UUID NOT NULL,
-  installation_id UUID,
-  event_type TEXT NOT NULL,
-  event_status TEXT NOT NULL,
-  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-  -- The drain's lease. Rows are claimed in a short transaction that commits
-  -- before anything is published, so publication never happens while a database
-  -- transaction and its row locks are held. A lease whose deadline passed is
-  -- claimable again, which is what retries a publish that failed.
-  claim_token UUID,
-  claimed_until TIMESTAMPTZ,
-  attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  CONSTRAINT app_storage_audit_outbox_claim CHECK (
-    (claim_token IS NULL) = (claimed_until IS NULL)
-  )
-);
-
--- The drain claims unleased entries, oldest first. Delivery is at-least-once and
--- ordering is best-effort: created_at is the claiming transaction's own start
--- time, and two drainers using SKIP LOCKED interleave further, so a consumer
--- orders by the event it reads rather than by arrival.
-CREATE INDEX IF NOT EXISTS idx_app_storage_audit_outbox_claimable
-  ON app_storage_audit_outbox (claimed_until, created_at, id);
+-- An irreversible disposition commits its audit intent to the platform's audit
+-- outbox (`audit_outbox`, in `188_audit_outbox.sql`) in the same transaction as
+-- the change, using `installation_id` folded into the intent's metadata rather
+-- than a column of its own: the outbox is generic and carries no App Storage
+-- vocabulary. That table, not this one, is what keeps the trail from
+-- disagreeing with the data and what an undrained disposition event survives
+-- workspace deletion in.

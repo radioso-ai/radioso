@@ -24,12 +24,7 @@ export { validateStorageRecord } from "./domain/recordValidation.js";
 export { MAX_RETENTION_DAYS } from "./domain/retention.js";
 
 export type { StorageCollectionObservation } from "./domain/compatibility.js";
-export type {
-  AppStorageAuditEvent,
-  AppStorageAuditIntent,
-  AppStorageAuditLogPort,
-  AppStorageAuditPort,
-} from "./ports/appStorageAudit.js";
+export type { AppStorageAuditIntent, AppStorageAuditLogPort } from "./ports/appStorageAudit.js";
 export type { AppStorageCompatibilityFactsPort } from "./ports/appStorageCompatibilityFacts.js";
 export type {
   AppStorageCollectionScope,

@@ -16,6 +16,8 @@ export interface AuditEventRecord {
 
 export interface AuditEventRepositoryPort {
   create(input: {
+    /** Stable across delivery attempts; a repeat is inserted at most once. */
+    id?: string;
     accountId?: string | null;
     workspaceId?: string | null;
     eventType: string;
@@ -85,26 +87,41 @@ export class AuditEventRepository implements AuditEventRepositoryPort {
   constructor(private readonly db: Db) {}
 
   async create(input: {
+    id?: string;
     accountId?: string | null;
     workspaceId?: string | null;
     eventType: string;
     eventStatus: string;
     metadata?: Record<string, unknown>;
   }): Promise<AuditEventRecord> {
+    const id = input.id ?? randomUUID();
     const row = await this.db
       .insertInto("audit_events")
       .values({
-        id: randomUUID(),
+        id,
         account_id: input.accountId ?? null,
         workspace_id: input.workspaceId ?? null,
         event_type: input.eventType,
         event_status: input.eventStatus,
         metadata_json: toSanitizedJsonb(input.metadata ?? {}),
       })
+      // A caller that supplies its own id may call this twice for the same
+      // event — at-least-once delivery from the audit outbox dispatcher — and
+      // the second call must not insert a duplicate.
+      .onConflict((oc) => oc.column("id").doNothing())
       .returning(auditEventColumns)
-      .executeTakeFirstOrThrow();
+      .executeTakeFirst();
 
-    return mapAuditEvent(row as AuditEventRow);
+    if (row) return mapAuditEvent(row as AuditEventRow);
+
+    // The conflict branch: this id was already recorded, so the row to return
+    // is the one that insert did not touch.
+    const existing = await this.db
+      .selectFrom("audit_events")
+      .select(auditEventColumns)
+      .where("id", "=", id)
+      .executeTakeFirstOrThrow();
+    return mapAuditEvent(existing as AuditEventRow);
   }
 
   async listChatAnswerEventsByConversationId(workspaceId: string, conversationId: string): Promise<AuditEventRecord[]> {

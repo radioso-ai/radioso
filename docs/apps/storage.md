@@ -436,22 +436,23 @@ that failed. The events do not carry record keys or stored values, because the
 point of the trail is to show that a disposition happened, not to become a second
 copy of what was in it.
 
-Publishing onto the audit spine happens after the disposition commits, which is
-why a result never reports a failure for an effect that already landed. Each
-event is leased, published, and then acknowledged, so delivery is at-least-once:
-a publish that succeeded and whose acknowledgement did not land is published
-again. Every event carries a stable `eventId` for exactly that reason, and the
-order events reach the spine is the order they were published rather than a
-guarantee about the order they were committed.
+The event commits to the platform's audit outbox — shared infrastructure the
+audit module owns — in the same transaction as the change it describes.
+Publishing it onto the audit trail happens afterward, which is why a result
+never reports a failure for an effect that already landed: an outbox that is
+briefly unpublished costs a retry, not a wrong answer. Delivery is
+at-least-once, so a publish that succeeded and whose acknowledgement did not
+land is published again; every event carries a stable id for exactly that
+reason.
 
-Events still waiting to be published survive workspace deletion. An undrained
-event is the evidence of what happened to the data, and a cascade would erase
-exactly the entries describing the last thing done to a workspace being torn
-down. Such an event is published with no workspace on it and the former
-workspace's identifier carried in its metadata as `deletedWorkspaceId`, which is
-what lets the trail hold it at all — an audit event's workspace has to name a
-workspace that exists. It is published once and acknowledged like any other, so
-the entry ends rather than being retried forever.
+An entry still waiting to be published survives workspace deletion. It is the
+evidence of what happened to the data, and a cascade would erase exactly the
+entry describing the last thing done to a workspace being torn down. Such an
+entry is published with no workspace on it and the former workspace's
+identifier carried in its metadata as `deletedWorkspaceId`, which is what lets
+the trail hold it at all — an audit event's workspace has to name a workspace
+that exists. It is published once and acknowledged like any other, so the
+entry ends rather than being retried forever.
 
 ## Common failure modes
 

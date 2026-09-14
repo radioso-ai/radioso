@@ -191,6 +191,66 @@ Focused checks:
 
 - `cd backend && pnpm run db:schema:check` (drift gate; runs in CI + `ci:local`, needs Docker)
 
+## Audit
+
+Owns the audit trail (`audit_events`, read by chat history and document search
+review surfaces) and the platform's one durable transactional outbox
+(`audit_outbox`) that a domain enqueues an intent through when that intent has
+to commit in the same transaction as the change it describes. The outbox knows
+nothing about a caller's domain: an intent is an account id, a workspace id
+(null for a host or release-level event), an event type, a status, and free-form
+metadata that is the caller's own rule to keep to identifiers and counts.
+Managed App Storage (`app.data.*` events) is the first caller.
+
+`AuditOutboxRepository.claim` leases a bounded batch under `SELECT ... FOR
+UPDATE SKIP LOCKED`, oldest first, in its own short transaction that commits
+before anything is published — a claim's row locks must never overlap a
+publisher's latency, and publishing needs a second pooled connection the claim
+transaction cannot supply itself. `AuditOutboxDispatcher.drain` claims a batch,
+publishes each entry through the audit spine outside any transaction, then
+acknowledges the ones that published by claim token; an entry whose publish
+failed keeps its lease for the next pass to reclaim. Delivery is therefore
+at-least-once: `AuditEventInput.eventId` carries a stable id an entry
+republishes under, and `AuditEventRepository.create` inserts it with `ON
+CONFLICT (id) DO NOTHING`, so a republish lands at most once.
+
+`audit_outbox.workspace_id` carries no foreign key on purpose. An unpublished
+entry is the evidence of what happened, and a cascade would erase exactly the
+entry describing the last thing done to a workspace being torn down. A claim
+reports whether its entry's workspace still exists; the dispatcher publishes a
+surviving entry with `workspaceId: null` and the former identifier as
+`deletedWorkspaceId` metadata, the only shape `audit_events` can hold once its
+own foreign key has already nulled the column.
+
+The audit module's `composition.ts` is application wiring, not a module
+contract: only `backend/src/app/server/builders/` and a short allowlist in
+`backend/src/app/server/dependencies.ts` may import it (enforced by
+`no-audit-composition-outside-app-wiring` in `dependency-cruiser.config.cjs`).
+Every other consumer — including another module's composition, like
+`app/composition/appStorage.ts` — depends on `AuditOutboxPort` and the other
+narrow types from `backend/src/modules/audit/contracts/index.ts` instead, and
+receives an assembled instance rather than constructing one.
+
+Primary paths:
+
+- `backend/src/modules/audit/contracts/index.ts` — `AuditEventInput`, `AuditPort`, `AuditOutboxIntent`, `AuditOutboxPort`, `AuditOutboxDispatcher`
+- `backend/src/modules/audit/outbox/ports.ts` — the claim/acknowledge shapes internal to the dispatcher
+- `backend/src/modules/audit/outbox/auditOutboxRepository.ts` — the Postgres-backed outbox: enqueue, claim, acknowledge
+- `backend/src/modules/audit/outbox/auditOutboxDispatcher.ts` — claim, publish outside the claim, acknowledge
+- `backend/src/modules/audit/services/auditService.ts` — `AuditService`, the `AuditPort` implementation over `audit_events`
+- `backend/src/modules/audit/composition.ts` — application-wiring-only export surface
+- `backend/src/db/repositories/auditEventRepository.ts` — `audit_events` persistence, idempotent `create` by id
+- `backend/src/db/migrations/188_audit_outbox.sql` — the outbox table and its claimable index
+
+Useful searches:
+
+- `rg "AuditOutboxPort" backend/src`
+- `rg "modules/audit/composition" backend/src` (should resolve only inside the allowlist above)
+
+Focused checks:
+
+- `pnpm exec vitest run tests/unit/audit tests/integration/audit`
+
 ## Customer Email
 
 Owns workspace customer email connections backed by authorized OAuth
@@ -1431,19 +1491,14 @@ put whose value is past a pending index's bound is refused `invalid_input` rathe
 than stored with that entry missing, and `finishIndexRebuild` revalidates live
 records under the closing fence before it stamps convergence.
 
-Irreversible dispositions commit their audit intent to `app_storage_audit_outbox`
-in the same transaction as the change. The drain leases a batch, publishes outside
-any transaction, then acknowledges by token — publishing under the claim would
-need a second pooled connection for the audit store and would hold row locks
-across the publisher. Delivery is therefore at-least-once with a stable event id.
-The outbox is the one table here with no workspace foreign key, so undrained
-disposition evidence survives workspace deletion; everything else cascades, and
-there is no workspace-wide cleanup helper. A claim reports whether each entry's
-workspace still exists, and the composition sink publishes a surviving entry with
-`workspaceId: null` and the former identifier as `deletedWorkspaceId` metadata,
-which is the only shape `audit_events` can hold. A secondary audit failure on a
-refusal or failure path is logged through `AppStorageAuditLogPort` in identifiers
-and codes, and never replaces the primary answer.
+Irreversible dispositions commit their audit intent to the platform's audit
+outbox (owned by the [Audit](#audit) area) in the same transaction as the
+change, with `installationId` folded into the intent's metadata — the outbox
+itself carries no App Storage vocabulary. Publishing, leasing, and
+acknowledging that intent belongs to the audit module; this module knows only
+that an intent committed. A secondary audit-write failure on a
+refusal or failure path is logged through `AppStorageAuditLogPort` in
+identifiers and codes, and never replaces the primary answer.
 
 Primary paths:
 
@@ -1457,7 +1512,7 @@ Primary paths:
 - `backend/src/modules/appStorage/services/appStorageDisposition.ts` — revoke, restore, export snapshots, retention and its cancellation, deletion, audit drain
 - `backend/src/modules/appStorage/services/appStorageSweeper.ts` — expiry claim/lease/reclaim, the retention deadline, and the abandoned-rebuild pass
 - `backend/src/modules/appStorage/services/appStorageIndexRebuilder.ts` — builds an added index over records already stored, under its own generation
-- `backend/src/app/composition/appStorage.ts` — repository, service, compatibility facts, disposition, rebuilder, sweeper, and the `app.data.*` audit sink
+- `backend/src/app/composition/appStorage.ts` — repository, service, compatibility facts, disposition, rebuilder, and sweeper, wired to a caller-supplied `AuditOutboxPort`
 - `backend/src/db/migrations/172_app_storage.sql`
 
 Useful searches:

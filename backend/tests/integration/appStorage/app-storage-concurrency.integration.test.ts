@@ -15,12 +15,11 @@ import {
   type AppStorageService,
   type ExportedAppStorageRecord,
 } from "../../../src/modules/appStorage/public.js";
+import { AuditOutboxRepository } from "../../../src/modules/audit/composition.js";
 import { Database } from "../../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "../support/integrationDatabase.js";
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
-
-const silentAudit = { async record(): Promise<void> {} };
 
 /**
  * The guarantees this domain claims are about what two callers observe when they
@@ -35,9 +34,15 @@ const silentAudit = { async record(): Promise<void> {} };
  */
 describeIntegration("Managed App Storage under concurrency (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl, { poolMax: 12 });
-  const repository = new AppStorageRepository(database.kysely);
+  // `enqueue` writes through whatever executor a caller passes it rather than
+  // through the connection this instance was built against, so the one
+  // instance below is reused for every `AppStorageRepository` in this suite,
+  // including the ones built against the pinned, single-connection databases
+  // the barrier tests open.
+  const auditOutbox = new AuditOutboxRepository(database.kysely);
+  const repository = new AppStorageRepository(database.kysely, auditOutbox);
   const service = createAppStorageService({ repository });
-  const disposition = createAppStorageDisposition({ repository, audit: silentAudit, exportBatchSize: 1 });
+  const disposition = createAppStorageDisposition({ repository, exportBatchSize: 1 });
 
   /** Single-connection pools the PID-named barriers use, closed with the suite. */
   const pinnedDatabases: Database[] = [];
@@ -181,7 +186,7 @@ describeIntegration("Managed App Storage under concurrency (Postgres)", () => {
     const owned = new Database(integrationDatabaseUrl, { poolMax: 1 });
     const [row] = await owned.query<{ pid: number }>(`SELECT pg_backend_pid()::int AS pid`);
     pinnedDatabases.push(owned);
-    const ownedRepository = new AppStorageRepository(owned.kysely);
+    const ownedRepository = new AppStorageRepository(owned.kysely, auditOutbox);
     return {
       repository: ownedRepository,
       service: createAppStorageService({ repository: ownedRepository }),
@@ -408,7 +413,6 @@ describeIntegration("Managed App Storage under concurrency (Postgres)", () => {
     });
     const deleter = createAppStorageDisposition({
       repository: deleterConnection.repository,
-      audit: silentAudit,
     });
 
     const lock = await holdLock(scope, "state");
@@ -608,7 +612,6 @@ describeIntegration("Managed App Storage under concurrency (Postgres)", () => {
     const deleterConnection = await pinned();
     const deleter = createAppStorageDisposition({
       repository: deleterConnection.repository,
-      audit: silentAudit,
     });
 
     const lock = await holdLock(base, "state");
@@ -885,7 +888,6 @@ describeIntegration("Managed App Storage under concurrency (Postgres)", () => {
 
     const impatient = createAppStorageDisposition({
       repository,
-      audit: silentAudit,
       exportBatchSize: 1,
       exportIdleTimeoutMs: 120,
     });
@@ -930,48 +932,6 @@ describeIntegration("Managed App Storage under concurrency (Postgres)", () => {
     expect(events).toEqual([
       expect.objectContaining({ kind: "error", error: expect.objectContaining({ code: "denied" }) }),
     ]);
-  });
-
-  it("publishes the outbox outside its claim and retries an entry whose sink failed", async () => {
-    const scope = installation();
-    await put(scope, "one", "one");
-
-    let failNext = true;
-    const flaky = {
-      published: [] as string[],
-      async record(event: { eventId: string }): Promise<void> {
-        if (failNext) {
-          failNext = false;
-          throw new Error("sink down");
-        }
-        this.published.push(event.eventId);
-      },
-    };
-
-    // A one-connection pool is the sharpest form of the failure a drain that
-    // published inside its own transaction would hit: the sink needs a
-    // connection while the claim holds the only one.
-    const single = new Database(integrationDatabaseUrl, { poolMax: 1 });
-    pinnedDatabases.push(single);
-    const drainer = createAppStorageDisposition({
-      repository: new AppStorageRepository(single.kysely),
-      audit: flaky,
-      auditDrainLimit: 1,
-      auditLeaseSeconds: 1,
-    });
-
-    await drainer.deleteInstallationStorage(scope);
-
-    const first = await drainer.drainAuditOutbox();
-    expect(first).toMatchObject({ publishedCount: 0, failureCount: 1 });
-
-    // The entry keeps its lease, so a drain running immediately afterwards leaves
-    // it alone; once the lease expires it is claimed and published again.
-    await new Promise((resolve) => setTimeout(resolve, 1_200));
-
-    const retried = await drainer.drainAuditOutbox();
-    expect(retried).toMatchObject({ publishedCount: 1, failureCount: 0 });
-    expect(flaky.published).toHaveLength(1);
   });
 
   it("takes the App's access away as part of retaining, so retained data is unreachable", async () => {

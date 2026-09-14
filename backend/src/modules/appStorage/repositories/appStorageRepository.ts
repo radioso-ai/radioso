@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { BoundedJsonRecord, StorageFieldType } from "@radioso/app-contract";
 import { sql, type ControlledTransaction, type Kysely, type Transaction } from "kysely";
 
+import type { AuditOutboxPort } from "../../audit/contracts/index.js";
 import { clockTimestamp, currentTimestamp, toJsonb } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { DB } from "../../../shared/infra/kysely/schema.js";
 import { buildStorageIndexEntry, type AppStorageIndexEntry } from "../domain/indexEntries.js";
@@ -21,7 +22,6 @@ import type { AppStorageAuditIntent } from "../ports/appStorageAudit.js";
 import type {
   AppStorageAccessTransition,
   AppStorageAdmitted,
-  AppStorageAuditOutboxClaim,
   AppStorageCollectionScope,
   AppStorageDeleteCommand,
   AppStorageDeleteOutcome,
@@ -232,7 +232,10 @@ const EXPORT_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
  * `clock_timestamp()` taken once the operation actually holds what it needs.
  */
 export class AppStorageRepository implements AppStorageRepositoryPort {
-  constructor(private readonly db: Kysely<DB>) {}
+  constructor(
+    private readonly db: Kysely<DB>,
+    private readonly auditOutbox: AuditOutboxPort,
+  ) {}
 
   async findInstallationState(
     scope: AppStorageInstallationScope,
@@ -1467,116 +1470,6 @@ export class AppStorageRepository implements AppStorageRepositoryPort {
   }
 
   /**
-   * Leases a bounded batch of committed intents, and commits the lease before
-   * anything is published.
-   *
-   * Publishing inside this transaction is what a drain must never do. The audit
-   * store is the same database, so `record` needs a second pooled connection while
-   * this one is held: a one-connection pool deadlocks on the first event, and a
-   * larger one is exhausted by enough concurrent drainers. It would also hold row
-   * locks across whatever latency the publisher has. So the claim is short, the
-   * publish happens outside it, and the acknowledgement comes back by token.
-   *
-   * Whether the workspace still exists is decided here, with the row. These
-   * entries deliberately outlive workspace deletion — they are the evidence of
-   * what happened to the data, and a cascade would erase exactly the entries
-   * describing the last thing done to a workspace being torn down — so a claim
-   * has to say which of them can still be attributed to a workspace. One that
-   * cannot travels with a null `workspaceId` and its former workspace as an
-   * identifier, which is the only form in which the audit spine can hold it.
-   */
-  async claimAuditOutboxBatch(input: {
-    limit: number;
-    leaseSeconds: number;
-  }): Promise<AppStorageAuditOutboxClaim> {
-    const claimToken = randomUUID();
-    if (input.limit <= 0) return { claimToken, entries: [] };
-
-    const entries = await this.db.transaction().execute(async (trx) => {
-      const rows = await trx
-        .selectFrom("app_storage_audit_outbox")
-        .select((eb) => [
-          "id",
-          "workspace_id",
-          "installation_id",
-          "event_type",
-          "event_status",
-          "metadata",
-          "attempt_count",
-          eb
-            .exists(
-              eb
-                .selectFrom("workspaces")
-                .select("workspaces.id")
-                .whereRef("workspaces.id", "=", "app_storage_audit_outbox.workspace_id"),
-            )
-            .as("workspace_present"),
-        ])
-        .where((eb) =>
-          eb.or([eb("claimed_until", "is", null), eb("claimed_until", "<=", clockTimestamp())]),
-        )
-        .orderBy("created_at", "asc")
-        .orderBy("id", "asc")
-        .limit(input.limit)
-        .forUpdate()
-        .skipLocked()
-        .execute();
-
-      if (rows.length === 0) return [];
-
-      const claimedUntil = await trx
-        .selectNoFrom(clockTimestamp().as("at"))
-        .executeTakeFirstOrThrow();
-      await trx
-        .updateTable("app_storage_audit_outbox")
-        .set({
-          claim_token: claimToken,
-          claimed_until: new Date(new Date(claimedUntil.at).getTime() + input.leaseSeconds * 1000),
-          attempt_count: (eb) => eb("attempt_count", "+", 1),
-        })
-        .where(
-          "id",
-          "in",
-          rows.map((row) => row.id),
-        )
-        .execute();
-
-      return rows.map((row) => ({
-        eventId: row.id,
-        workspaceId: row.workspace_present ? row.workspace_id : null,
-        deletedWorkspaceId: row.workspace_present ? null : row.workspace_id,
-        installationId: row.installation_id,
-        eventType: row.event_type as AppStorageAuditOutboxClaim["entries"][number]["eventType"],
-        eventStatus: row.event_status as AppStorageAuditOutboxClaim["entries"][number]["eventStatus"],
-        metadata: (row.metadata ?? {}) as AppStorageAuditOutboxClaim["entries"][number]["metadata"],
-        attemptCount: row.attempt_count + 1,
-      }));
-    });
-
-    return { claimToken, entries };
-  }
-
-  /**
-   * Removes the entries this claim published. The token is part of the predicate,
-   * so a drain whose lease expired and was taken over by another worker cannot
-   * acknowledge work the other worker is now responsible for.
-   */
-  async acknowledgeAuditOutbox(input: {
-    claimToken: string;
-    eventIds: readonly string[];
-  }): Promise<number> {
-    if (input.eventIds.length === 0) return 0;
-
-    const removed = await this.db
-      .deleteFrom("app_storage_audit_outbox")
-      .where("claim_token", "=", input.claimToken)
-      .where("id", "in", [...input.eventIds])
-      .executeTakeFirst();
-
-    return Number(removed.numDeletedRows ?? 0);
-  }
-
-  /**
    * Takes the installation's state row and answers whether the operation still
    * has authority. The row is created on first touch so that there is always
    * something to lock; without it, a revocation that inserts the row would have
@@ -1902,21 +1795,27 @@ export class AppStorageRepository implements AppStorageRepositoryPort {
     return summary;
   }
 
+  /**
+   * Commits the intent to the platform's audit outbox, in the caller's own
+   * transaction — every call site here already has one open around the state
+   * change the intent describes. `installationId` travels inside metadata
+   * rather than as a column: the outbox is generic and carries no App Storage
+   * vocabulary of its own.
+   */
   private async writeAuditIntent(
     trx: Transaction<DB>,
     scope: AppStorageInstallationScope,
     intent: AppStorageAuditIntent,
   ): Promise<void> {
-    await trx
-      .insertInto("app_storage_audit_outbox")
-      .values({
-        workspace_id: scope.workspaceId,
-        installation_id: scope.installationId,
-        event_type: intent.eventType,
-        event_status: intent.eventStatus,
-        metadata: toJsonb(intent.metadata),
-      })
-      .execute();
+    await this.auditOutbox.enqueue(trx, [
+      {
+        accountId: null,
+        workspaceId: scope.workspaceId,
+        eventType: intent.eventType,
+        eventStatus: intent.eventStatus,
+        metadata: { ...intent.metadata, installationId: scope.installationId },
+      },
+    ]);
   }
 
   /**

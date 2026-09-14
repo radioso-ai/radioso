@@ -39,10 +39,10 @@ export interface WebhookDestinationRepositoryPort {
 }
 
 export interface WebhookDestinationRoutineReferencePort {
-  listPublishedRoutineNamesReferencingDestination(workspaceId: string, destinationId: string): Promise<string[]>;
+  listRoutineNamesReferencingDestination(workspaceId: string, destinationId: string): Promise<string[]>;
 }
 
-export interface WebhookDestinationSkillReferencePort {
+interface WebhookDestinationSkillReferencePort {
   listAgentSkillNamesReferencingDestination(workspaceId: string, destinationId: string): Promise<string[]>;
 }
 
@@ -50,7 +50,7 @@ export interface WebhookDestinationExistencePort {
   existsByIdAndWorkspace(workspaceId: string, destinationId: string): Promise<boolean>;
 }
 
-export interface WebhookDestinationsEncryptionConfig {
+interface WebhookDestinationsEncryptionConfig {
   key: string | undefined;
 }
 
@@ -68,7 +68,7 @@ export class EncryptionNotConfiguredError extends AppError {
   }
 }
 
-export class WebhookDestinationInUseError extends AppError {
+class WebhookDestinationInUseError extends AppError {
   constructor(destinationId: string, references: string[]) {
     const referenceSummary = references.length > 0
       ? `: ${references.join(", ")}`
@@ -82,7 +82,7 @@ export class WebhookDestinationInUseError extends AppError {
   }
 }
 
-export type WebhookDestinationUrlGuard = (url: string) => Promise<void>;
+type WebhookDestinationUrlGuard = (url: string) => Promise<void>;
 
 const isDuplicateNameError = (error: unknown): boolean => {
   if (!error || typeof error !== "object") {
@@ -105,7 +105,7 @@ const isPublishedRoutineReferenceError = (error: unknown): boolean => {
   return record.code === "23503" &&
     (
       record.constraint === "workspace_webhook_destinations_published_routine_reference" ||
-      (typeof record.message === "string" && record.message.includes("referenced by published routines"))
+      (typeof record.message === "string" && /referenced by (?:published|enabled) routines/.test(record.message))
     );
 };
 
@@ -254,7 +254,7 @@ export class WebhookDestinationService implements WebhookDestinationExistencePor
 
   async delete(workspaceId: string, id: string, actor: WebhookDestinationActor): Promise<void> {
     const routineReferences = await this.options.routineReferences
-      ?.listPublishedRoutineNamesReferencingDestination(workspaceId, id) ?? [];
+      ?.listRoutineNamesReferencingDestination(workspaceId, id) ?? [];
     const skillReferences = await this.options.skillReferences
       ?.listAgentSkillNamesReferencingDestination(workspaceId, id) ?? [];
     const references = [
@@ -271,7 +271,7 @@ export class WebhookDestinationService implements WebhookDestinationExistencePor
     } catch (error) {
       if (isPublishedRoutineReferenceError(error)) {
         const latestReferences = await this.options.routineReferences
-          ?.listPublishedRoutineNamesReferencingDestination(workspaceId, id) ?? [];
+          ?.listRoutineNamesReferencingDestination(workspaceId, id) ?? [];
         throw new WebhookDestinationInUseError(id, latestReferences);
       }
       throw error;

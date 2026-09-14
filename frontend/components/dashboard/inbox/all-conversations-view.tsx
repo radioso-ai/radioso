@@ -317,7 +317,7 @@ export function AllConversationsView({
   // opens the builder drawer directly (matching the pre-1116 behavior), not
   // the reading pane. The reading pane deliberately stays empty for this
   // selection so it doesn't duplicate-fetch the same conversation the drawer
-  // is already loading with its bounded evidence window.
+  // is already loading.
   const responseSelection: InboxResponseSelection | null = selectedItem?.kind === 'chat' && !isAudiencePulseEvidenceSelection
     ? { source: 'readonly', conversationId: selectedItem.id, conversation: selectedConversation ?? undefined }
     : null

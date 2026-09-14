@@ -44,4 +44,11 @@ export type {
   ContextVariableUpdateRecord,
 } from "./repository.js";
 export { ContextVariableService } from "./services/contextVariableService.js";
+export { freezeTestValues } from "./testValues.js";
+export type {
+  ContextVariableTestValueCatalogPort,
+  ContextVariableTestValueSelection,
+  FrozenTestValue,
+  TestValue,
+} from "./testValues.js";
 export * from "./copilotPrimitiveRegistry.js";

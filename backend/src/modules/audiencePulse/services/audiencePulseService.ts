@@ -10,6 +10,7 @@ import type {
   AudiencePulseEvidence,
   AudiencePulseModelOutput,
   AudiencePulseReportCoverage,
+  AudiencePulseStoredTheme,
   AudiencePulseStoredReport,
 } from "../domain/report.js";
 import {
@@ -186,6 +187,7 @@ const questionDisplayKey = (question: string): string => normalizeQuestionForDis
 const hydrateThemeEvidence = (
   evidenceIds: string[],
   resolve: (evidenceId: string) => AudiencePulseHydratedEvidence,
+  coverageByEvidenceId?: AudiencePulseStoredTheme["coverageByEvidenceId"],
 ): Pick<AudiencePulseThemeResponse, "distinctQuestionCount" | "evidence"> => {
   const occurrences = new Map<string, AudiencePulseEvidenceResponse>();
   for (const evidenceId of evidenceIds) {
@@ -203,6 +205,7 @@ const hydrateThemeEvidence = (
       messageId: source.messageId,
       question,
       occurrenceCount: 1,
+      ...(coverageByEvidenceId?.[source.evidenceId] ? { answerCoverage: coverageByEvidenceId[source.evidenceId] } : {}),
     });
   }
   return {
@@ -266,9 +269,10 @@ const hydrateReport = (
           membershipOverlap: theme.transition.membershipOverlap ?? null,
         } : null,
         share,
-        ...hydrateThemeEvidence(theme.evidenceIds, resolve),
+        ...hydrateThemeEvidence(theme.evidenceIds, resolve, theme.coverageByEvidenceId),
         weeklyPulse: theme.weeklyPulse,
         grounding: theme.grounding,
+        ...(theme.coverage ? { coverage: theme.coverage } : {}),
       };
     }),
     contentGaps: report.contentGaps,

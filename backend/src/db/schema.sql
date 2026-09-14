@@ -158,12 +158,13 @@ BEGIN
   JOIN routine_definition d ON d.id = ce.definition_id
   JOIN agents a ON a.id = d.agent_id
   WHERE a.workspace_id = OLD.workspace_id
-    AND d.status = 'published'
+    AND d.enabled = TRUE
+    AND d.version = (SELECT MAX(v.version) FROM routine_definition v WHERE v.lineage_id = d.lineage_id)
     AND ce.enabled = TRUE
     AND lower(ce.destination_ref) = OLD.id::text;
 
   IF COALESCE(array_length(referencing_routine_names, 1), 0) > 0 THEN
-    RAISE EXCEPTION 'webhook destination % is referenced by published routines: %', OLD.id, array_to_string(referencing_routine_names, ', ')
+    RAISE EXCEPTION 'webhook destination % is referenced by enabled routines: %', OLD.id, array_to_string(referencing_routine_names, ', ')
       USING ERRCODE = '23503',
             CONSTRAINT = 'workspace_webhook_destinations_published_routine_reference';
   END IF;
@@ -351,20 +352,22 @@ CREATE FUNCTION public.enforce_published_routine_completion_export_destination()
     AS $$
 DECLARE
   definition_workspace_id UUID;
-  definition_status TEXT;
+  definition_enabled BOOLEAN;
+  definition_canonical BOOLEAN;
   destination_exists BOOLEAN;
 BEGIN
   IF NEW.enabled IS NOT TRUE THEN
     RETURN NEW;
   END IF;
 
-  SELECT a.workspace_id, d.status
-  INTO definition_workspace_id, definition_status
+  SELECT a.workspace_id, d.enabled,
+         d.version = (SELECT MAX(v.version) FROM routine_definition v WHERE v.lineage_id = d.lineage_id)
+  INTO definition_workspace_id, definition_enabled, definition_canonical
   FROM routine_definition d
   JOIN agents a ON a.id = d.agent_id
   WHERE d.id = NEW.definition_id;
 
-  IF definition_status IS DISTINCT FROM 'published' THEN
+  IF definition_enabled IS NOT TRUE OR definition_canonical IS NOT TRUE THEN
     RETURN NEW;
   END IF;
 
@@ -627,6 +630,7 @@ CREATE TABLE public.agent_directives (
     lifecycle jsonb,
     surfaces text[] DEFAULT '{}'::text[] NOT NULL,
     enabled boolean DEFAULT true NOT NULL,
+    coverage_criteria jsonb,
     CONSTRAINT agent_directives_check CHECK ((((condition_kind = 'always'::text) AND (condition_description IS NULL)) OR ((condition_kind = 'contextual'::text) AND (NULLIF(btrim(condition_description), ''::text) IS NOT NULL)))),
     CONSTRAINT agent_directives_condition_kind_check CHECK ((condition_kind = ANY (ARRAY['always'::text, 'contextual'::text])))
 );
@@ -640,6 +644,77 @@ CREATE TABLE public.agent_document_sources (
     agent_id uuid NOT NULL,
     source_id uuid,
     created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: agent_drafts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_drafts (
+    agent_id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    generation integer DEFAULT 1 NOT NULL,
+    base_published_revision_id uuid,
+    snapshot jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT agent_drafts_generation_check CHECK ((generation > 0))
+);
+
+
+--
+-- Name: agent_publications; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_publications (
+    id uuid NOT NULL,
+    agent_id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    revision_id uuid NOT NULL,
+    previous_revision_id uuid,
+    idempotency_key text NOT NULL,
+    expected_draft_generation integer NOT NULL,
+    expected_published_revision_id uuid,
+    actor_account_id uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT agent_publications_expected_draft_generation_check CHECK ((expected_draft_generation > 0))
+);
+
+
+--
+-- Name: agent_revision_migration_classifications; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_revision_migration_classifications (
+    conversation_id uuid NOT NULL,
+    agent_id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    routine_id text NOT NULL,
+    classification text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT agent_revision_migration_classifications_classification_check CHECK ((classification = ANY (ARRAY['missing_routine_definition'::text, 'ambiguous_routine_definition'::text, 'invalid_routine_pin'::text])))
+);
+
+
+--
+-- Name: agent_revisions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_revisions (
+    id uuid NOT NULL,
+    agent_id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    snapshot_format_version integer DEFAULT 1 NOT NULL,
+    snapshot jsonb NOT NULL,
+    source_draft_generation integer NOT NULL,
+    source_base_published_revision_id uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    published_at timestamp with time zone,
+    published_version integer,
+    CONSTRAINT agent_revisions_published_version_check CHECK ((((published_at IS NULL) AND (published_version IS NULL)) OR ((published_at IS NOT NULL) AND (published_version IS NOT NULL) AND (published_version > 0)))),
+    CONSTRAINT agent_revisions_snapshot_format_version_check CHECK ((snapshot_format_version > 0)),
+    CONSTRAINT agent_revisions_source_draft_generation_check CHECK ((source_draft_generation > 0))
 );
 
 
@@ -667,6 +742,92 @@ CREATE TABLE public.agent_skills (
 
 
 --
+-- Name: agent_test_execution_attempts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_test_execution_attempts (
+    execution_id uuid NOT NULL,
+    side_id uuid NOT NULL,
+    turn_id uuid NOT NULL,
+    attempt_id uuid NOT NULL,
+    input_fingerprint text NOT NULL,
+    fence integer NOT NULL,
+    state text NOT NULL,
+    lease_expires_at timestamp with time zone NOT NULL,
+    result jsonb,
+    failure_code text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT agent_test_execution_attempts_fence_check CHECK ((fence > 0)),
+    CONSTRAINT agent_test_execution_attempts_state_check CHECK ((state = ANY (ARRAY['running'::text, 'failed'::text, 'completed'::text])))
+);
+
+
+--
+-- Name: agent_test_execution_sides; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_test_execution_sides (
+    id uuid NOT NULL,
+    execution_id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    agent_id uuid NOT NULL,
+    revision_id uuid NOT NULL,
+    conversation_id uuid NOT NULL,
+    state text NOT NULL,
+    retryable boolean DEFAULT false NOT NULL,
+    history jsonb DEFAULT '[]'::jsonb NOT NULL,
+    continuation jsonb,
+    active_turn_id uuid,
+    active_attempt_id uuid,
+    active_fence integer,
+    side_ordinal integer NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    retained_execution_id uuid,
+    CONSTRAINT agent_test_execution_sides_active_attempt_check CHECK ((((active_turn_id IS NULL) AND (active_attempt_id IS NULL) AND (active_fence IS NULL)) OR ((active_turn_id IS NOT NULL) AND (active_attempt_id IS NOT NULL) AND (active_fence > 0)))),
+    CONSTRAINT agent_test_execution_sides_state_check CHECK ((state = ANY (ARRAY['ready'::text, 'running'::text, 'failed'::text, 'completed'::text])))
+);
+
+
+--
+-- Name: agent_test_execution_turns; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_test_execution_turns (
+    execution_id uuid NOT NULL,
+    turn_id uuid NOT NULL,
+    message text NOT NULL,
+    input_fingerprint text NOT NULL,
+    state text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT agent_test_execution_turns_state_check CHECK ((state = ANY (ARRAY['running'::text, 'partial'::text, 'completed'::text])))
+);
+
+
+--
+-- Name: agent_test_executions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_test_executions (
+    id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    agent_id uuid NOT NULL,
+    mode text NOT NULL,
+    generation integer DEFAULT 1 NOT NULL,
+    state text NOT NULL,
+    test_values jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    idempotency_key text NOT NULL,
+    CONSTRAINT agent_test_executions_generation_check CHECK ((generation > 0)),
+    CONSTRAINT agent_test_executions_mode_check CHECK ((mode = ANY (ARRAY['single'::text, 'compare'::text]))),
+    CONSTRAINT agent_test_executions_state_check CHECK ((state = ANY (ARRAY['running'::text, 'partial'::text, 'failed'::text, 'completed'::text])))
+);
+
+
+--
 -- Name: agents; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -685,9 +846,63 @@ CREATE TABLE public.agents (
     chat_model text,
     skill_settings jsonb DEFAULT '{}'::jsonb NOT NULL,
     internal_name text DEFAULT ''::text NOT NULL,
+    published_revision_id uuid,
     CONSTRAINT agents_chat_override_pair CHECK ((((chat_provider IS NULL) AND (chat_model IS NULL)) OR ((chat_provider IS NOT NULL) AND (chat_model IS NOT NULL)))),
     CONSTRAINT agents_chat_provider_check CHECK (((chat_provider IS NULL) OR (chat_provider = ANY (ARRAY['openai'::text, 'openai-compatible'::text, 'gemini'::text, 'claude'::text])))),
     CONSTRAINT agents_source_scope_mode_check CHECK ((source_scope_mode = ANY (ARRAY['all'::text, 'selected'::text])))
+);
+
+
+--
+-- Name: answer_coverage_assessments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.answer_coverage_assessments (
+    id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    conversation_id uuid NOT NULL,
+    request_message_id uuid NOT NULL,
+    originating_turn_id uuid NOT NULL,
+    contextualized_request text NOT NULL,
+    availability text NOT NULL,
+    coverage text,
+    reason text,
+    unresolved_request text,
+    schema_version integer NOT NULL,
+    interaction_evaluation_state text,
+    assessed_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+    created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+    assistant_message_id uuid,
+    CONSTRAINT answer_coverage_assessments_availability_check CHECK ((availability = ANY (ARRAY['assessed'::text, 'not_recorded'::text, 'failed'::text, 'invalid'::text]))),
+    CONSTRAINT answer_coverage_assessments_check CHECK ((((availability = 'assessed'::text) AND (coverage IS NOT NULL) AND (reason IS NOT NULL)) OR ((availability <> 'assessed'::text) AND (coverage IS NULL) AND (reason IS NULL) AND (unresolved_request IS NULL)))),
+    CONSTRAINT answer_coverage_assessments_coverage_check CHECK ((coverage = ANY (ARRAY['answered'::text, 'partial'::text, 'unanswered'::text, 'unclear'::text]))),
+    CONSTRAINT answer_coverage_assessments_interaction_evaluation_state_check CHECK ((interaction_evaluation_state = 'evaluated'::text)),
+    CONSTRAINT answer_coverage_assessments_reason_check CHECK ((reason = ANY (ARRAY['sufficient_evidence'::text, 'insufficient_evidence'::text, 'conflicting_evidence'::text, 'ambiguous_request'::text, 'intentional_scope_boundary'::text])))
+);
+
+
+--
+-- Name: answer_coverage_reaction_traces; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.answer_coverage_reaction_traces (
+    id uuid NOT NULL,
+    assessment_id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    conversation_id uuid NOT NULL,
+    reaction_key text NOT NULL,
+    directive_id uuid,
+    routine_id text,
+    routine_execution_id uuid,
+    target_message_id uuid NOT NULL,
+    evaluation_state text NOT NULL,
+    evaluation_index integer NOT NULL,
+    decision text NOT NULL,
+    reason_code text NOT NULL,
+    created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+    CONSTRAINT answer_coverage_reaction_traces_decision_check CHECK ((decision = ANY (ARRAY['matched'::text, 'applied'::text, 'offered'::text, 'activated'::text, 'skipped'::text, 'suppressed'::text]))),
+    CONSTRAINT answer_coverage_reaction_traces_evaluation_index_check CHECK ((evaluation_index >= 0)),
+    CONSTRAINT answer_coverage_reaction_traces_evaluation_state_check CHECK ((evaluation_state = ANY (ARRAY['evaluated'::text, 'not_applicable'::text, 'suppressed'::text])))
 );
 
 
@@ -1945,7 +2160,10 @@ CREATE TABLE public.conversations (
     channel_context jsonb,
     verified_customer_id text,
     entry_page_url text,
-    title text
+    title text,
+    agent_revision_id uuid,
+    purpose text DEFAULT 'production'::text NOT NULL,
+    CONSTRAINT conversations_purpose_check CHECK ((purpose = ANY (ARRAY['production'::text, 'operator_test'::text])))
 );
 
 
@@ -2004,10 +2222,14 @@ CREATE TABLE public.copilot_proposals (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     evidence jsonb,
     operator_mcp_invocation_id uuid,
+    review_digest text,
+    review_snapshot jsonb,
+    expires_at timestamp with time zone,
+    execution_invocation_id uuid,
     CONSTRAINT copilot_proposals_exactly_one_origin_check CHECK (((conversation_id IS NOT NULL) <> (operator_mcp_invocation_id IS NOT NULL))),
     CONSTRAINT copilot_proposals_message_requires_conversation_check CHECK (((message_id IS NULL) OR (conversation_id IS NOT NULL))),
     CONSTRAINT copilot_proposals_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'applied'::text, 'dismissed'::text, 'failed'::text, 'stale'::text]))),
-    CONSTRAINT copilot_proposals_target_type_check CHECK ((target_type = ANY (ARRAY['directive'::text, 'agent'::text, 'agent_setting'::text, 'routine'::text, 'agent_skill'::text, 'context_variable'::text, 'document'::text, 'ingestion_settings'::text, 'website_crawl'::text, 'workspace_setting'::text])))
+    CONSTRAINT copilot_proposals_target_type_check CHECK ((target_type = ANY (ARRAY['directive'::text, 'agent'::text, 'agent_setting'::text, 'routine'::text, 'agent_skill'::text, 'context_variable'::text, 'document'::text, 'ingestion_settings'::text, 'website_crawl'::text, 'workspace_setting'::text, 'agent_publication'::text])))
 );
 
 
@@ -2296,7 +2518,7 @@ CREATE TABLE public.eval_runs (
 CREATE TABLE public.eval_snapshots (
     id uuid NOT NULL,
     workspace_id uuid NOT NULL,
-    source_conversation_id uuid NOT NULL,
+    source_conversation_id uuid,
     source_message_id uuid,
     fidelity text NOT NULL,
     messages jsonb NOT NULL,
@@ -2312,6 +2534,7 @@ CREATE TABLE public.eval_snapshots (
     original_routine_state jsonb,
     replay_target jsonb,
     original_conversation_summary jsonb,
+    test_execution_replay jsonb,
     CONSTRAINT eval_snapshots_fidelity_check CHECK ((fidelity = ANY (ARRAY['full'::text, 'messages_only'::text])))
 );
 
@@ -2507,8 +2730,8 @@ CREATE TABLE public.operator_mcp_access_credentials (
     CONSTRAINT operator_mcp_access_credentials_issued_client_version_check CHECK ((issued_client_version > 0)),
     CONSTRAINT operator_mcp_access_credentials_issued_credential_epoch_check CHECK ((issued_credential_epoch > (0)::numeric)),
     CONSTRAINT operator_mcp_access_credentials_issued_grant_version_check CHECK ((issued_grant_version > 0)),
-    CONSTRAINT operator_mcp_access_credentials_issued_tool_scopes_check CHECK (((cardinality(issued_tool_scopes) >= 1) AND (cardinality(issued_tool_scopes) <= 4))),
-    CONSTRAINT operator_mcp_access_credentials_issued_tool_scopes_check1 CHECK ((issued_tool_scopes <@ ARRAY['operator:read'::text, 'operator:probe'::text, 'operator:act'::text, 'operator:propose'::text]))
+    CONSTRAINT operator_mcp_access_credentials_issued_tool_scopes_count_check CHECK (((cardinality(issued_tool_scopes) >= 1) AND (cardinality(issued_tool_scopes) <= 5))),
+    CONSTRAINT operator_mcp_access_credentials_issued_tool_scopes_values_check CHECK ((issued_tool_scopes <@ ARRAY['operator:read'::text, 'operator:probe'::text, 'operator:act'::text, 'operator:propose'::text, 'operator:write'::text]))
 );
 
 
@@ -2540,9 +2763,9 @@ CREATE TABLE public.operator_mcp_authorization_transactions (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     decided_at timestamp with time zone,
     consumed_at timestamp with time zone,
-    CONSTRAINT operator_mcp_authorization_transac_requested_tool_scopes_check1 CHECK ((requested_tool_scopes <@ ARRAY['operator:read'::text, 'operator:probe'::text, 'operator:act'::text, 'operator:propose'::text])),
-    CONSTRAINT operator_mcp_authorization_transact_requested_tool_scopes_check CHECK (((cardinality(requested_tool_scopes) >= 1) AND (cardinality(requested_tool_scopes) <= 4))),
-    CONSTRAINT operator_mcp_authorization_transactions_check CHECK (((approved_tool_scopes IS NULL) OR (((cardinality(approved_tool_scopes) >= 1) AND (cardinality(approved_tool_scopes) <= 4)) AND (approved_tool_scopes <@ requested_tool_scopes)))),
+    CONSTRAINT operator_mcp_authorization_transactions_check CHECK (((approved_tool_scopes IS NULL) OR (((cardinality(approved_tool_scopes) >= 1) AND (cardinality(approved_tool_scopes) <= 5)) AND (approved_tool_scopes <@ requested_tool_scopes)))),
+    CONSTRAINT operator_mcp_authorization_transactions_requested_tool_scopes_c CHECK (((cardinality(requested_tool_scopes) >= 1) AND (cardinality(requested_tool_scopes) <= 5))),
+    CONSTRAINT operator_mcp_authorization_transactions_requested_tool_scopes_v CHECK ((requested_tool_scopes <@ ARRAY['operator:read'::text, 'operator:probe'::text, 'operator:act'::text, 'operator:propose'::text, 'operator:write'::text])),
     CONSTRAINT operator_mcp_authorization_transactions_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'approved'::text, 'denied'::text, 'consumed'::text, 'expired'::text])))
 );
 
@@ -2638,8 +2861,8 @@ CREATE TABLE public.operator_mcp_grants (
     CONSTRAINT operator_mcp_grants_client_version_check CHECK ((client_version > 0)),
     CONSTRAINT operator_mcp_grants_credential_epoch_check CHECK ((credential_epoch > (0)::numeric)),
     CONSTRAINT operator_mcp_grants_status_check CHECK ((status = ANY (ARRAY['active'::text, 'revoked'::text, 'superseded'::text, 'expired'::text]))),
-    CONSTRAINT operator_mcp_grants_tool_scopes_check CHECK (((cardinality(tool_scopes) >= 1) AND (cardinality(tool_scopes) <= 4))),
-    CONSTRAINT operator_mcp_grants_tool_scopes_check1 CHECK ((tool_scopes <@ ARRAY['operator:read'::text, 'operator:probe'::text, 'operator:act'::text, 'operator:propose'::text])),
+    CONSTRAINT operator_mcp_grants_tool_scopes_count_check CHECK (((cardinality(tool_scopes) >= 1) AND (cardinality(tool_scopes) <= 5))),
+    CONSTRAINT operator_mcp_grants_tool_scopes_values_check CHECK ((tool_scopes <@ ARRAY['operator:read'::text, 'operator:probe'::text, 'operator:act'::text, 'operator:propose'::text, 'operator:write'::text])),
     CONSTRAINT operator_mcp_grants_version_check CHECK ((version > 0))
 );
 
@@ -2692,8 +2915,8 @@ CREATE TABLE public.operator_mcp_refresh_generations (
     consumed_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT operator_mcp_refresh_generations_generation_check CHECK ((generation > 0)),
-    CONSTRAINT operator_mcp_refresh_generations_issued_tool_scopes_check CHECK (((cardinality(issued_tool_scopes) >= 1) AND (cardinality(issued_tool_scopes) <= 4))),
-    CONSTRAINT operator_mcp_refresh_generations_issued_tool_scopes_check1 CHECK ((issued_tool_scopes <@ ARRAY['operator:read'::text, 'operator:probe'::text, 'operator:act'::text, 'operator:propose'::text]))
+    CONSTRAINT operator_mcp_refresh_generations_issued_tool_scopes_count_check CHECK (((cardinality(issued_tool_scopes) >= 1) AND (cardinality(issued_tool_scopes) <= 5))),
+    CONSTRAINT operator_mcp_refresh_generations_issued_tool_scopes_values_chec CHECK ((issued_tool_scopes <@ ARRAY['operator:read'::text, 'operator:probe'::text, 'operator:act'::text, 'operator:propose'::text, 'operator:write'::text]))
 );
 
 
@@ -2719,8 +2942,8 @@ CREATE TABLE public.operator_mcp_refresh_lineages (
     CONSTRAINT operator_mcp_refresh_lineages_client_version_check CHECK ((client_version > 0)),
     CONSTRAINT operator_mcp_refresh_lineages_credential_epoch_check CHECK ((credential_epoch > (0)::numeric)),
     CONSTRAINT operator_mcp_refresh_lineages_current_generation_check CHECK ((current_generation > 0)),
-    CONSTRAINT operator_mcp_refresh_lineages_issued_tool_scopes_check CHECK (((cardinality(issued_tool_scopes) >= 1) AND (cardinality(issued_tool_scopes) <= 4))),
-    CONSTRAINT operator_mcp_refresh_lineages_issued_tool_scopes_check1 CHECK ((issued_tool_scopes <@ ARRAY['operator:read'::text, 'operator:probe'::text, 'operator:act'::text, 'operator:propose'::text])),
+    CONSTRAINT operator_mcp_refresh_lineages_issued_tool_scopes_count_check CHECK (((cardinality(issued_tool_scopes) >= 1) AND (cardinality(issued_tool_scopes) <= 5))),
+    CONSTRAINT operator_mcp_refresh_lineages_issued_tool_scopes_values_check CHECK ((issued_tool_scopes <@ ARRAY['operator:read'::text, 'operator:probe'::text, 'operator:act'::text, 'operator:propose'::text, 'operator:write'::text])),
     CONSTRAINT operator_mcp_refresh_lineages_status_check CHECK ((status = ANY (ARRAY['active'::text, 'revoked'::text, 'expired'::text])))
 );
 
@@ -2793,6 +3016,91 @@ CREATE TABLE public.retrieval_settings (
 
 
 --
+-- Name: revision_eval_run_attempts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.revision_eval_run_attempts (
+    id uuid NOT NULL,
+    run_case_id uuid NOT NULL,
+    fence integer NOT NULL,
+    state text NOT NULL,
+    lease_expires_at timestamp with time zone NOT NULL,
+    failure_code text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT revision_eval_run_attempts_fence_check CHECK ((fence > 0)),
+    CONSTRAINT revision_eval_run_attempts_state_check CHECK ((state = ANY (ARRAY['running'::text, 'failed'::text, 'completed'::text])))
+);
+
+
+--
+-- Name: revision_eval_run_cases; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.revision_eval_run_cases (
+    id uuid NOT NULL,
+    side_id uuid NOT NULL,
+    case_id uuid NOT NULL,
+    frozen_case jsonb NOT NULL,
+    frozen_snapshot jsonb NOT NULL,
+    state text NOT NULL,
+    outcome text NOT NULL,
+    assertion_verdicts jsonb,
+    observed_output jsonb,
+    resolved_config jsonb,
+    outcome_reason text,
+    active_attempt_id uuid,
+    active_fence integer,
+    lease_expires_at timestamp with time zone,
+    completed_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT revision_eval_run_cases_outcome_check CHECK ((outcome = ANY (ARRAY['pass'::text, 'fail'::text, 'partial'::text, 'unavailable'::text]))),
+    CONSTRAINT revision_eval_run_cases_state_check CHECK ((state = ANY (ARRAY['pending'::text, 'running'::text, 'failed'::text, 'completed'::text])))
+);
+
+
+--
+-- Name: revision_eval_run_sides; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.revision_eval_run_sides (
+    id uuid NOT NULL,
+    run_id uuid NOT NULL,
+    revision_id uuid NOT NULL,
+    side_ordinal integer NOT NULL,
+    frozen_revision jsonb NOT NULL,
+    state text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT revision_eval_run_sides_side_ordinal_check CHECK ((side_ordinal >= 0)),
+    CONSTRAINT revision_eval_run_sides_state_check CHECK ((state = ANY (ARRAY['pending'::text, 'running'::text, 'partial'::text, 'failed'::text, 'completed'::text])))
+);
+
+
+--
+-- Name: revision_eval_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.revision_eval_runs (
+    id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    agent_id uuid NOT NULL,
+    actor_account_id uuid,
+    mode text NOT NULL,
+    execution_policy text NOT NULL,
+    test_values jsonb NOT NULL,
+    state text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    idempotency_key text NOT NULL,
+    CONSTRAINT revision_eval_runs_execution_policy_check CHECK ((execution_policy = 'safe_test'::text)),
+    CONSTRAINT revision_eval_runs_mode_check CHECK ((mode = ANY (ARRAY['retrieval_only'::text, 'full_assistant'::text]))),
+    CONSTRAINT revision_eval_runs_state_check CHECK ((state = ANY (ARRAY['pending'::text, 'running'::text, 'partial'::text, 'failed'::text, 'completed'::text])))
+);
+
+
+--
 -- Name: routine_action_requests; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2849,6 +3157,8 @@ CREATE TABLE public.routine_definition (
     trigger_embedding public.vector,
     trigger_embedding_model text,
     trigger_embedding_hash text,
+    activation_coverage_criteria jsonb,
+    enabled boolean DEFAULT true NOT NULL,
     CONSTRAINT routine_definition_activation_reentry_mode_check CHECK ((activation_reentry_mode = ANY (ARRAY['once_per_conversation'::text, 'always'::text, 'semantic'::text]))),
     CONSTRAINT routine_definition_activation_trigger_description_check CHECK ((NULLIF(btrim(activation_trigger_description), ''::text) IS NOT NULL)),
     CONSTRAINT routine_definition_name_check CHECK ((NULLIF(btrim(name), ''::text) IS NOT NULL)),
@@ -2890,7 +3200,8 @@ CREATE TABLE public.routine_states (
     expires_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    attempts jsonb DEFAULT '{}'::jsonb NOT NULL
+    attempts jsonb DEFAULT '{}'::jsonb NOT NULL,
+    execution_id uuid
 );
 
 
@@ -3805,6 +4116,46 @@ ALTER TABLE ONLY public.agent_directives
 
 
 --
+-- Name: agent_drafts agent_drafts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_drafts
+    ADD CONSTRAINT agent_drafts_pkey PRIMARY KEY (agent_id);
+
+
+--
+-- Name: agent_publications agent_publications_agent_id_idempotency_key_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_publications
+    ADD CONSTRAINT agent_publications_agent_id_idempotency_key_key UNIQUE (agent_id, idempotency_key);
+
+
+--
+-- Name: agent_publications agent_publications_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_publications
+    ADD CONSTRAINT agent_publications_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: agent_revision_migration_classifications agent_revision_migration_classifications_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_revision_migration_classifications
+    ADD CONSTRAINT agent_revision_migration_classifications_pkey PRIMARY KEY (conversation_id);
+
+
+--
+-- Name: agent_revisions agent_revisions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_revisions
+    ADD CONSTRAINT agent_revisions_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: agent_skills agent_skills_agent_id_skill_name_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3821,11 +4172,115 @@ ALTER TABLE ONLY public.agent_skills
 
 
 --
+-- Name: agent_test_execution_attempts agent_test_execution_attempts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_test_execution_attempts
+    ADD CONSTRAINT agent_test_execution_attempts_pkey PRIMARY KEY (execution_id, side_id, turn_id, attempt_id);
+
+
+--
+-- Name: agent_test_execution_sides agent_test_execution_sides_conversation_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_test_execution_sides
+    ADD CONSTRAINT agent_test_execution_sides_conversation_id_key UNIQUE (conversation_id);
+
+
+--
+-- Name: agent_test_execution_sides agent_test_execution_sides_execution_id_revision_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_test_execution_sides
+    ADD CONSTRAINT agent_test_execution_sides_execution_id_revision_id_key UNIQUE (execution_id, revision_id);
+
+
+--
+-- Name: agent_test_execution_sides agent_test_execution_sides_execution_id_side_ordinal_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_test_execution_sides
+    ADD CONSTRAINT agent_test_execution_sides_execution_id_side_ordinal_key UNIQUE (execution_id, side_ordinal);
+
+
+--
+-- Name: agent_test_execution_sides agent_test_execution_sides_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_test_execution_sides
+    ADD CONSTRAINT agent_test_execution_sides_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: agent_test_execution_turns agent_test_execution_turns_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_test_execution_turns
+    ADD CONSTRAINT agent_test_execution_turns_pkey PRIMARY KEY (execution_id, turn_id);
+
+
+--
+-- Name: agent_test_executions agent_test_executions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_test_executions
+    ADD CONSTRAINT agent_test_executions_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: agents agents_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.agents
     ADD CONSTRAINT agents_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: answer_coverage_assessments answer_coverage_assessments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.answer_coverage_assessments
+    ADD CONSTRAINT answer_coverage_assessments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: answer_coverage_assessments answer_coverage_assessments_request_message_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.answer_coverage_assessments
+    ADD CONSTRAINT answer_coverage_assessments_request_message_id_key UNIQUE (request_message_id);
+
+
+--
+-- Name: answer_coverage_assessments answer_coverage_assessments_workspace_conversation_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.answer_coverage_assessments
+    ADD CONSTRAINT answer_coverage_assessments_workspace_conversation_id_key UNIQUE (workspace_id, conversation_id, id);
+
+
+--
+-- Name: answer_coverage_assessments answer_coverage_assessments_workspace_id_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.answer_coverage_assessments
+    ADD CONSTRAINT answer_coverage_assessments_workspace_id_id_key UNIQUE (workspace_id, id);
+
+
+--
+-- Name: answer_coverage_reaction_traces answer_coverage_reaction_traces_assessment_id_reaction_key_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.answer_coverage_reaction_traces
+    ADD CONSTRAINT answer_coverage_reaction_traces_assessment_id_reaction_key_key UNIQUE (assessment_id, reaction_key);
+
+
+--
+-- Name: answer_coverage_reaction_traces answer_coverage_reaction_traces_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.answer_coverage_reaction_traces
+    ADD CONSTRAINT answer_coverage_reaction_traces_pkey PRIMARY KEY (id);
 
 
 --
@@ -4893,6 +5348,70 @@ ALTER TABLE ONLY public.retrieval_settings
 
 
 --
+-- Name: revision_eval_run_attempts revision_eval_run_attempts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.revision_eval_run_attempts
+    ADD CONSTRAINT revision_eval_run_attempts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: revision_eval_run_attempts revision_eval_run_attempts_run_case_id_fence_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.revision_eval_run_attempts
+    ADD CONSTRAINT revision_eval_run_attempts_run_case_id_fence_key UNIQUE (run_case_id, fence);
+
+
+--
+-- Name: revision_eval_run_cases revision_eval_run_cases_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.revision_eval_run_cases
+    ADD CONSTRAINT revision_eval_run_cases_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: revision_eval_run_cases revision_eval_run_cases_side_id_case_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.revision_eval_run_cases
+    ADD CONSTRAINT revision_eval_run_cases_side_id_case_id_key UNIQUE (side_id, case_id);
+
+
+--
+-- Name: revision_eval_run_sides revision_eval_run_sides_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.revision_eval_run_sides
+    ADD CONSTRAINT revision_eval_run_sides_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: revision_eval_run_sides revision_eval_run_sides_run_id_revision_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.revision_eval_run_sides
+    ADD CONSTRAINT revision_eval_run_sides_run_id_revision_id_key UNIQUE (run_id, revision_id);
+
+
+--
+-- Name: revision_eval_run_sides revision_eval_run_sides_run_id_side_ordinal_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.revision_eval_run_sides
+    ADD CONSTRAINT revision_eval_run_sides_run_id_side_ordinal_key UNIQUE (run_id, side_ordinal);
+
+
+--
+-- Name: revision_eval_runs revision_eval_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.revision_eval_runs
+    ADD CONSTRAINT revision_eval_runs_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: routine_action_requests routine_action_requests_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5307,10 +5826,38 @@ CREATE UNIQUE INDEX agent_bundle_imports_workspace_idempotency_active_idx ON pub
 
 
 --
+-- Name: agent_revisions_agent_published_version_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX agent_revisions_agent_published_version_key ON public.agent_revisions USING btree (agent_id, published_version) WHERE (published_version IS NOT NULL);
+
+
+--
 -- Name: agent_skills_one_default_answer; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX agent_skills_one_default_answer ON public.agent_skills USING btree (agent_id) WHERE (invocation_mode = 'default_answer'::text);
+
+
+--
+-- Name: agent_test_executions_idempotency_key_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX agent_test_executions_idempotency_key_key ON public.agent_test_executions USING btree (workspace_id, agent_id, idempotency_key);
+
+
+--
+-- Name: answer_coverage_assessments_workspace_conversation_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX answer_coverage_assessments_workspace_conversation_idx ON public.answer_coverage_assessments USING btree (workspace_id, conversation_id, assessed_at);
+
+
+--
+-- Name: answer_coverage_reaction_traces_assessment_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX answer_coverage_reaction_traces_assessment_idx ON public.answer_coverage_reaction_traces USING btree (assessment_id, created_at);
 
 
 --
@@ -6245,6 +6792,13 @@ CREATE INDEX copilot_proposals_conversation_message_idx ON public.copilot_propos
 
 
 --
+-- Name: copilot_proposals_execution_invocation_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX copilot_proposals_execution_invocation_idx ON public.copilot_proposals USING btree (execution_invocation_id) WHERE (execution_invocation_id IS NOT NULL);
+
+
+--
 -- Name: copilot_proposals_message_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6263,6 +6817,13 @@ CREATE INDEX copilot_proposals_operator_created_idx ON public.copilot_proposals 
 --
 
 CREATE UNIQUE INDEX copilot_proposals_operator_mcp_invocation_idx ON public.copilot_proposals USING btree (operator_mcp_invocation_id) WHERE (operator_mcp_invocation_id IS NOT NULL);
+
+
+--
+-- Name: copilot_proposals_reviewed_expiry_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX copilot_proposals_reviewed_expiry_idx ON public.copilot_proposals USING btree (expires_at, id) WHERE ((review_digest IS NOT NULL) AND (status = 'pending'::text));
 
 
 --
@@ -6378,6 +6939,27 @@ CREATE INDEX idx_agent_document_sources_source ON public.agent_document_sources 
 
 
 --
+-- Name: idx_agent_publications_agent_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_publications_agent_created ON public.agent_publications USING btree (agent_id, created_at DESC);
+
+
+--
+-- Name: idx_agent_revision_migration_classifications_agent; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_revision_migration_classifications_agent ON public.agent_revision_migration_classifications USING btree (agent_id, created_at DESC);
+
+
+--
+-- Name: idx_agent_revisions_agent_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_revisions_agent_created ON public.agent_revisions USING btree (agent_id, created_at DESC);
+
+
+--
 -- Name: idx_agent_skills_agent; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6399,10 +6981,38 @@ CREATE INDEX idx_agent_skills_workspace ON public.agent_skills USING btree (work
 
 
 --
+-- Name: idx_agent_test_execution_attempts_recovery; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_test_execution_attempts_recovery ON public.agent_test_execution_attempts USING btree (execution_id, side_id, turn_id, state, lease_expires_at);
+
+
+--
+-- Name: idx_agent_test_execution_sides_execution; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_test_execution_sides_execution ON public.agent_test_execution_sides USING btree (execution_id);
+
+
+--
+-- Name: idx_agent_test_executions_scope; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_test_executions_scope ON public.agent_test_executions USING btree (workspace_id, agent_id, created_at DESC);
+
+
+--
 -- Name: idx_agents_anonymous_chat_token_unique; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX idx_agents_anonymous_chat_token_unique ON public.agents USING btree (((output_modes #>> '{anonymousChat,token}'::text[]))) WHERE ((output_modes #>> '{anonymousChat,token}'::text[]) IS NOT NULL);
+
+
+--
+-- Name: idx_agents_published_revision; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agents_published_revision ON public.agents USING btree (published_revision_id) WHERE (published_revision_id IS NOT NULL);
 
 
 --
@@ -6609,10 +7219,24 @@ CREATE INDEX idx_context_variable_values_workspace_variable_scope ON public.cont
 
 
 --
+-- Name: idx_conversations_agent_revision; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_conversations_agent_revision ON public.conversations USING btree (agent_revision_id) WHERE (agent_revision_id IS NOT NULL);
+
+
+--
 -- Name: idx_conversations_anonymous_session; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_conversations_anonymous_session ON public.conversations USING btree (workspace_id, anonymous_session_id) WHERE (anonymous_session_id IS NOT NULL);
+
+
+--
+-- Name: idx_conversations_operator_test_purpose; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_conversations_operator_test_purpose ON public.conversations USING btree (workspace_id, purpose) WHERE (purpose = 'operator_test'::text);
 
 
 --
@@ -6634,6 +7258,13 @@ CREATE INDEX idx_conversations_workspace_created_at ON public.conversations USIN
 --
 
 CREATE INDEX idx_conversations_workspace_id ON public.conversations USING btree (workspace_id);
+
+
+--
+-- Name: idx_conversations_workspace_id_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_conversations_workspace_id_unique ON public.conversations USING btree (workspace_id, id);
 
 
 --
@@ -6889,6 +7520,13 @@ CREATE INDEX idx_message_facets_workspace_prompt_version ON public.message_facet
 
 
 --
+-- Name: idx_messages_workspace_conversation_id_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_messages_workspace_conversation_id_unique ON public.messages USING btree (workspace_id, conversation_id, id);
+
+
+--
 -- Name: idx_messages_workspace_id_unique; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6907,6 +7545,20 @@ CREATE INDEX idx_password_reset_tokens_user_active ON public.password_reset_toke
 --
 
 CREATE INDEX idx_password_reset_tokens_user_created ON public.password_reset_tokens USING btree (user_id, created_at DESC);
+
+
+--
+-- Name: idx_revision_eval_run_cases_claim; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_revision_eval_run_cases_claim ON public.revision_eval_run_cases USING btree (state, lease_expires_at);
+
+
+--
+-- Name: idx_revision_eval_runs_scope; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_revision_eval_runs_scope ON public.revision_eval_runs USING btree (workspace_id, agent_id, created_at DESC);
 
 
 --
@@ -7355,6 +8007,13 @@ CREATE UNIQUE INDEX pending_decisions_one_open_gate_idx ON public.pending_decisi
 --
 
 CREATE INDEX pending_decisions_workspace_pending_idx ON public.pending_decisions USING btree (workspace_id, created_at) WHERE (status = 'pending'::text);
+
+
+--
+-- Name: revision_eval_runs_idempotency_key_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX revision_eval_runs_idempotency_key_key ON public.revision_eval_runs USING btree (workspace_id, agent_id, idempotency_key);
 
 
 --
@@ -8725,6 +9384,110 @@ ALTER TABLE ONLY public.agent_document_sources
 
 
 --
+-- Name: agent_drafts agent_drafts_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_drafts
+    ADD CONSTRAINT agent_drafts_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_drafts agent_drafts_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_drafts
+    ADD CONSTRAINT agent_drafts_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_publications agent_publications_actor_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_publications
+    ADD CONSTRAINT agent_publications_actor_account_id_fkey FOREIGN KEY (actor_account_id) REFERENCES public.accounts(id) ON DELETE SET NULL;
+
+
+--
+-- Name: agent_publications agent_publications_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_publications
+    ADD CONSTRAINT agent_publications_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_publications agent_publications_expected_published_revision_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_publications
+    ADD CONSTRAINT agent_publications_expected_published_revision_id_fkey FOREIGN KEY (expected_published_revision_id) REFERENCES public.agent_revisions(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: agent_publications agent_publications_previous_revision_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_publications
+    ADD CONSTRAINT agent_publications_previous_revision_id_fkey FOREIGN KEY (previous_revision_id) REFERENCES public.agent_revisions(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: agent_publications agent_publications_revision_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_publications
+    ADD CONSTRAINT agent_publications_revision_id_fkey FOREIGN KEY (revision_id) REFERENCES public.agent_revisions(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: agent_publications agent_publications_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_publications
+    ADD CONSTRAINT agent_publications_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_revision_migration_classifications agent_revision_migration_classifications_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_revision_migration_classifications
+    ADD CONSTRAINT agent_revision_migration_classifications_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_revision_migration_classifications agent_revision_migration_classifications_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_revision_migration_classifications
+    ADD CONSTRAINT agent_revision_migration_classifications_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_revision_migration_classifications agent_revision_migration_classifications_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_revision_migration_classifications
+    ADD CONSTRAINT agent_revision_migration_classifications_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_revisions agent_revisions_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_revisions
+    ADD CONSTRAINT agent_revisions_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_revisions agent_revisions_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_revisions
+    ADD CONSTRAINT agent_revisions_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: agent_skills agent_skills_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8741,11 +9504,179 @@ ALTER TABLE ONLY public.agent_skills
 
 
 --
+-- Name: agent_test_execution_attempts agent_test_execution_attempts_execution_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_test_execution_attempts
+    ADD CONSTRAINT agent_test_execution_attempts_execution_id_fkey FOREIGN KEY (execution_id) REFERENCES public.agent_test_executions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_test_execution_attempts agent_test_execution_attempts_execution_id_turn_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_test_execution_attempts
+    ADD CONSTRAINT agent_test_execution_attempts_execution_id_turn_id_fkey FOREIGN KEY (execution_id, turn_id) REFERENCES public.agent_test_execution_turns(execution_id, turn_id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_test_execution_attempts agent_test_execution_attempts_side_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_test_execution_attempts
+    ADD CONSTRAINT agent_test_execution_attempts_side_id_fkey FOREIGN KEY (side_id) REFERENCES public.agent_test_execution_sides(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_test_execution_sides agent_test_execution_sides_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_test_execution_sides
+    ADD CONSTRAINT agent_test_execution_sides_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_test_execution_sides agent_test_execution_sides_execution_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_test_execution_sides
+    ADD CONSTRAINT agent_test_execution_sides_execution_id_fkey FOREIGN KEY (execution_id) REFERENCES public.agent_test_executions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_test_execution_sides agent_test_execution_sides_retained_execution_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_test_execution_sides
+    ADD CONSTRAINT agent_test_execution_sides_retained_execution_id_fkey FOREIGN KEY (retained_execution_id) REFERENCES public.agent_test_executions(id) ON DELETE SET NULL;
+
+
+--
+-- Name: agent_test_execution_sides agent_test_execution_sides_revision_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_test_execution_sides
+    ADD CONSTRAINT agent_test_execution_sides_revision_id_fkey FOREIGN KEY (revision_id) REFERENCES public.agent_revisions(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: agent_test_execution_sides agent_test_execution_sides_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_test_execution_sides
+    ADD CONSTRAINT agent_test_execution_sides_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_test_execution_turns agent_test_execution_turns_execution_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_test_execution_turns
+    ADD CONSTRAINT agent_test_execution_turns_execution_id_fkey FOREIGN KEY (execution_id) REFERENCES public.agent_test_executions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_test_executions agent_test_executions_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_test_executions
+    ADD CONSTRAINT agent_test_executions_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_test_executions agent_test_executions_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_test_executions
+    ADD CONSTRAINT agent_test_executions_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agents agents_published_revision_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agents
+    ADD CONSTRAINT agents_published_revision_id_fkey FOREIGN KEY (published_revision_id) REFERENCES public.agent_revisions(id) ON DELETE RESTRICT;
+
+
+--
 -- Name: agents agents_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.agents
     ADD CONSTRAINT agents_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: answer_coverage_assessments answer_coverage_assessments_conversation_assistant_message_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.answer_coverage_assessments
+    ADD CONSTRAINT answer_coverage_assessments_conversation_assistant_message_fkey FOREIGN KEY (workspace_id, conversation_id, assistant_message_id) REFERENCES public.messages(workspace_id, conversation_id, id) ON DELETE SET NULL (assistant_message_id);
+
+
+--
+-- Name: answer_coverage_assessments answer_coverage_assessments_workspace_id_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.answer_coverage_assessments
+    ADD CONSTRAINT answer_coverage_assessments_workspace_id_conversation_id_fkey FOREIGN KEY (workspace_id, conversation_id) REFERENCES public.conversations(workspace_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: answer_coverage_assessments answer_coverage_assessments_workspace_id_conversation_id_o_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.answer_coverage_assessments
+    ADD CONSTRAINT answer_coverage_assessments_workspace_id_conversation_id_o_fkey FOREIGN KEY (workspace_id, conversation_id, originating_turn_id) REFERENCES public.messages(workspace_id, conversation_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: answer_coverage_assessments answer_coverage_assessments_workspace_id_conversation_id_r_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.answer_coverage_assessments
+    ADD CONSTRAINT answer_coverage_assessments_workspace_id_conversation_id_r_fkey FOREIGN KEY (workspace_id, conversation_id, request_message_id) REFERENCES public.messages(workspace_id, conversation_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: answer_coverage_assessments answer_coverage_assessments_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.answer_coverage_assessments
+    ADD CONSTRAINT answer_coverage_assessments_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: answer_coverage_reaction_traces answer_coverage_reaction_tra_workspace_id_conversation_id_fkey1; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.answer_coverage_reaction_traces
+    ADD CONSTRAINT answer_coverage_reaction_tra_workspace_id_conversation_id_fkey1 FOREIGN KEY (workspace_id, conversation_id, target_message_id) REFERENCES public.messages(workspace_id, conversation_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: answer_coverage_reaction_traces answer_coverage_reaction_trac_workspace_id_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.answer_coverage_reaction_traces
+    ADD CONSTRAINT answer_coverage_reaction_trac_workspace_id_conversation_id_fkey FOREIGN KEY (workspace_id, conversation_id) REFERENCES public.conversations(workspace_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: answer_coverage_reaction_traces answer_coverage_reaction_traces_workspace_conversation_assessme; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.answer_coverage_reaction_traces
+    ADD CONSTRAINT answer_coverage_reaction_traces_workspace_conversation_assessme FOREIGN KEY (workspace_id, conversation_id, assessment_id) REFERENCES public.answer_coverage_assessments(workspace_id, conversation_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: answer_coverage_reaction_traces answer_coverage_reaction_traces_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.answer_coverage_reaction_traces
+    ADD CONSTRAINT answer_coverage_reaction_traces_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --
@@ -9069,6 +10000,14 @@ ALTER TABLE ONLY public.conversations
 
 
 --
+-- Name: conversations conversations_agent_revision_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversations
+    ADD CONSTRAINT conversations_agent_revision_id_fkey FOREIGN KEY (agent_revision_id) REFERENCES public.agent_revisions(id) ON DELETE SET NULL;
+
+
+--
 -- Name: conversations conversations_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9106,6 +10045,14 @@ ALTER TABLE ONLY public.copilot_messages
 
 ALTER TABLE ONLY public.copilot_proposals
     ADD CONSTRAINT copilot_proposals_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.copilot_conversations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: copilot_proposals copilot_proposals_execution_invocation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.copilot_proposals
+    ADD CONSTRAINT copilot_proposals_execution_invocation_id_fkey FOREIGN KEY (execution_invocation_id) REFERENCES public.operator_mcp_invocations(id) ON DELETE RESTRICT;
 
 
 --
@@ -9754,6 +10701,70 @@ ALTER TABLE ONLY public.password_reset_tokens
 
 ALTER TABLE ONLY public.retrieval_settings
     ADD CONSTRAINT retrieval_settings_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: revision_eval_run_attempts revision_eval_run_attempts_run_case_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.revision_eval_run_attempts
+    ADD CONSTRAINT revision_eval_run_attempts_run_case_id_fkey FOREIGN KEY (run_case_id) REFERENCES public.revision_eval_run_cases(id) ON DELETE CASCADE;
+
+
+--
+-- Name: revision_eval_run_cases revision_eval_run_cases_case_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.revision_eval_run_cases
+    ADD CONSTRAINT revision_eval_run_cases_case_id_fkey FOREIGN KEY (case_id) REFERENCES public.eval_cases(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: revision_eval_run_cases revision_eval_run_cases_side_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.revision_eval_run_cases
+    ADD CONSTRAINT revision_eval_run_cases_side_id_fkey FOREIGN KEY (side_id) REFERENCES public.revision_eval_run_sides(id) ON DELETE CASCADE;
+
+
+--
+-- Name: revision_eval_run_sides revision_eval_run_sides_revision_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.revision_eval_run_sides
+    ADD CONSTRAINT revision_eval_run_sides_revision_id_fkey FOREIGN KEY (revision_id) REFERENCES public.agent_revisions(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: revision_eval_run_sides revision_eval_run_sides_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.revision_eval_run_sides
+    ADD CONSTRAINT revision_eval_run_sides_run_id_fkey FOREIGN KEY (run_id) REFERENCES public.revision_eval_runs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: revision_eval_runs revision_eval_runs_actor_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.revision_eval_runs
+    ADD CONSTRAINT revision_eval_runs_actor_account_id_fkey FOREIGN KEY (actor_account_id) REFERENCES public.accounts(id) ON DELETE SET NULL;
+
+
+--
+-- Name: revision_eval_runs revision_eval_runs_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.revision_eval_runs
+    ADD CONSTRAINT revision_eval_runs_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id) ON DELETE CASCADE;
+
+
+--
+-- Name: revision_eval_runs revision_eval_runs_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.revision_eval_runs
+    ADD CONSTRAINT revision_eval_runs_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

@@ -9,6 +9,7 @@ import {
   diagnosticsForTarget,
   formToRoutineDraft,
   renderedDiagnosticTargets,
+  routineContentUpdatePayload,
   routineLevelDiagnostics,
   routineToForm,
   type DiagnosticTarget,
@@ -21,7 +22,7 @@ const routine = {
   lineageId: 'lineage-1',
   agentId: 'agent-1',
   name: 'Collect intake',
-  status: 'draft',
+  enabled: true,
   version: 1,
   createdAt: '2026-04-26T12:00:00.000Z',
   updatedAt: '2026-04-26T12:00:00.000Z',
@@ -89,6 +90,7 @@ describe('routine form transforms', () => {
     }])
     expect(formToRoutineDraft(form)).toEqual({
       name: routine.name,
+      enabled: true,
       activation: {
         triggerDescription: routine.activation.triggerDescription,
         priority: 10,
@@ -99,6 +101,29 @@ describe('routine form transforms', () => {
       transitions: routine.transitions,
       terminals: routine.terminals,
     })
+  })
+
+  it('carries a disabled routine through the form round-trip instead of losing it to the schema default', () => {
+    // The enabled-reset bug: a plain content save must not carry the routine back to enabled
+    // just because the form never mentioned the field.
+    const form = routineToForm({ ...routine, enabled: false })
+
+    expect(form.enabled).toBe(false)
+    expect(formToRoutineDraft(form)).toMatchObject({ enabled: false })
+  })
+
+  it('strips enabled from the content-update payload so it cannot race the toggle', () => {
+    // The autosave debounce and the enable/disable toggle are two independent PATCH requests
+    // that can resolve in either order; a content update must never carry its own copy of
+    // `enabled`; only the toggle writes that field. See the module doc on
+    // `routineContentUpdatePayload`.
+    const form = routineToForm(routine)
+    const draft = formToRoutineDraft(form)
+
+    const payload = routineContentUpdatePayload(draft)
+
+    expect(payload).not.toHaveProperty('enabled')
+    expect(payload).toMatchObject({ name: draft.name, steps: draft.steps })
   })
 
   it('builds a valid structured draft from a new form', () => {
@@ -242,7 +267,7 @@ describe('routine form transforms', () => {
       id: 'routine-field-guard',
       lineageId: 'lineage-field-guard',
       agentId: 'agent-1',
-      status: 'draft',
+      enabled: true,
       version: 1,
       createdAt: '2026-04-26T12:00:00.000Z',
       updatedAt: '2026-04-26T12:00:00.000Z',
@@ -530,6 +555,7 @@ export const PRODUCIBLE_DIAGNOSTIC_LOCATIONS: {
 // (a spaced slot key, a spaced step id) so anchors are proven in draft space, not raw.
 const anchoredForm = (): RoutineFormState => ({
   name: 'Collect intake',
+  enabled: true,
   activation: { triggerDescription: 'Visitor asks for a quote', priority: '0', reentryMode: 'always' },
   slots: [
     { stableSlotId: 'slot_email', key: 'email', type: 'email', required: true, description: '', mutable: false },

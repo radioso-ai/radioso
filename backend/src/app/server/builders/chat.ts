@@ -12,15 +12,19 @@ import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalida
 import { AuditEventRepository } from "../../../db/repositories/auditEventRepository.js";
 import { BootstrapGreetingCacheRepository } from "../../../db/repositories/bootstrapGreetingCacheRepository.js";
 import { ConversationRepository } from "../../../db/repositories/conversationRepository.js";
+import { AgentRevisionRuntimeRepository } from "../../../db/repositories/agentRevisionRuntimeRepository.js";
 import { ConversationOwnershipRepository } from "../../../db/repositories/conversationOwnershipRepository.js";
 import { HistoryItemsRepository } from "../../../db/repositories/historyItemsRepository.js";
 import { MessageRepository } from "../../../db/repositories/messageRepository.js";
+import { AnswerCoverageRepository } from "../../../db/repositories/answerCoverageRepository.js";
+import { ChatAnswerCoverageAssessorFactory } from "../../../modules/chat/services/chatAnswerCoverageAssessor.js";
 import { WorkspaceRepository } from "../../../db/repositories/workspaceRepository.js";
 import { LlmResponseLanguageDetector } from "../../../shared/services/responseLanguageDetector.js";
 import { LlmHandoffWaitingMessageGenerator } from "../../../shared/services/handoffWaitingMessageGenerator.js";
 import { PostgresAssistantTurnPersistence } from "../../../modules/chat/infra/postgresAssistantTurnPersistence.js";
 import { AccountAccessService } from "../../../modules/account/public.js";
 import { AgentService } from "../../../modules/agents/public.js";
+import { AgentRevisionRuntimeResolver } from "../../../modules/agents/public.js";
 import { AuditService } from "../../../modules/audit/composition.js";
 import { ApprovalDecisionService } from "../../../modules/approvals/public.js";
 import {
@@ -516,6 +520,7 @@ export const buildChatServices = (input: {
   // per-turn catalog, applies capability gates, and assembles the runtime ports.
   const publishedRoutineSource = input.composition.publishedRoutineRegistrationSource ??
     createPublishedRoutineRegistrationSource(input.routineDefinitionRepository, {
+      revisionReader: new AgentRevisionRuntimeRepository(input.database.kysely),
       onDefinitionError: ({ agentId, definitionId, error }) => {
         input.logger.warn(
           {
@@ -718,6 +723,9 @@ export const buildChatServices = (input: {
     bootstrapGreetingCacheRepository: input.bootstrapGreetingCacheRepository,
     usageLimitPolicy: input.usageLimitPolicy,
     agentService: input.agentService,
+    agentRevisionRuntimeResolver: new AgentRevisionRuntimeResolver(
+      new AgentRevisionRuntimeRepository(input.database.kysely),
+    ),
     contextVariableRepository: contextVariableResolver,
     // 067: behavioral steering. The standing set is supplied by application
     // composition; default answer behavior is registered by a built-in module.
@@ -792,6 +800,10 @@ export const buildChatServices = (input: {
     agentSkillTurnSkillProvider,
     recordClarificationDecision: clarificationDecisionRecorder,
     workspaceInvalidationPublisher: input.workspaceInvalidationPublisher,
+    coverageAssessorFactory: new ChatAnswerCoverageAssessorFactory(
+      chatGateway,
+      new AnswerCoverageRepository(input.database.kysely),
+    ),
   });
   const chatBootstrapService = new ChatBootstrapService(
     input.workspaceRepository,
@@ -810,6 +822,7 @@ export const buildChatServices = (input: {
     contactHistoryProvider,
     answerFeedbackHistoryProvider,
     input.conversationOwnershipRepository,
+    new AnswerCoverageRepository(input.database.kysely),
   );
   const conversationForkService = new ConversationForkService(
     input.conversationRepository,

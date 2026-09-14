@@ -178,6 +178,59 @@ describe("mail service", () => {
     });
   });
 
+  it("tags a Resend message with its kind so delivery can be measured per email type", async () => {
+    const fetchMock = vi.fn(async (_url: unknown, _init?: RequestInit) =>
+      new Response("", { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const driver = new ResendEmailDriver("re_test");
+
+    await driver.send({
+      to: "ada@example.com",
+      from: { email: "noreply@example.com" },
+      subject: "Reset your password",
+      text: "Hello",
+      kind: "password_reset",
+    });
+
+    const body = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string) as { tags?: unknown };
+    expect(body.tags).toEqual([{ name: "kind", value: "password_reset" }]);
+  });
+
+  it("omits Resend tags when a message declares no kind", async () => {
+    const fetchMock = vi.fn(async (_url: unknown, _init?: RequestInit) =>
+      new Response("", { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const driver = new ResendEmailDriver("re_test");
+
+    await driver.send({
+      to: "ada@example.com",
+      from: { email: "noreply@example.com" },
+      subject: "Hi",
+      text: "Hello",
+    });
+
+    const body = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string) as { tags?: unknown };
+    expect(body.tags).toBeUndefined();
+  });
+
+  it("logs the message kind so local deliveries are identifiable", async () => {
+    const log = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const service = createMailService({ MAIL_DRIVER: "log" });
+
+    await service.send({
+      to: "ada@example.com",
+      subject: "Verify your email",
+      text: "Hello",
+      kind: "email_verification",
+    });
+
+    expect(log).toHaveBeenCalledWith("email.send", expect.objectContaining({
+      kind: "email_verification",
+    }));
+  });
+
   it("throws sanitized Resend delivery errors without provider response text", async () => {
     vi.stubGlobal("fetch", vi.fn(async () =>
       new Response(JSON.stringify({

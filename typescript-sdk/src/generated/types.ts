@@ -1132,6 +1132,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agents/{agentId}/revision-state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get agent draft publication state */
+        get: operations["getAgentRevisionState"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/revisions/candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create immutable draft candidate */
+        post: operations["createAgentRevisionCandidate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/revisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List agent revisions */
+        get: operations["listAgentRevisions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/revisions/{revisionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get agent revision detail */
+        get: operations["getAgentRevision"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/revisions/{revisionId}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Publish an immutable candidate */
+        post: operations["publishAgentRevision"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agents/bundle/imports/{importId}": {
         parameters: {
             query?: never;
@@ -1409,74 +1494,6 @@ export interface paths {
         put?: never;
         /** Validate a routine definition for an agent */
         post: operations["validateAgentRoutine"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/agents/{agentId}/routines/{routineId}/publish": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Publish a draft routine definition for an agent */
-        post: operations["publishAgentRoutine"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/agents/{agentId}/routines/{routineId}/revise": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Create or return a draft revision for a published routine definition */
-        post: operations["reviseAgentRoutine"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/agents/{agentId}/routines/{routineId}/archive": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Archive a published routine definition */
-        post: operations["archiveAgentRoutine"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/agents/{agentId}/routines/{routineId}/restore": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Restore an archived routine definition */
-        post: operations["restoreAgentRoutine"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3281,6 +3298,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/evals/revision-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run frozen Eval cases against immutable agent candidates */
+        post: operations["createRevisionEvalRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evals/revision-runs/{runId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get frozen revision Eval evidence */
+        get: operations["getRevisionEvalRun"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evals/revision-runs/{runId}/sides/{revisionId}/cases/{caseId}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry one failed frozen revision Eval case */
+        post: operations["retryRevisionEvalCase"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/evals/snapshots": {
         parameters: {
             query?: never;
@@ -3464,6 +3532,109 @@ export interface paths {
         put?: never;
         /** Run a one-off eval snapshot replay */
         post: operations["createEvalRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/test-executions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List private immutable revision tests */
+        get: operations["listAgentTestExecutions"];
+        put?: never;
+        /** Start an operator-private immutable revision test */
+        post: operations["startAgentTestExecution"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/test-executions/{executionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get private immutable revision test evidence */
+        get: operations["getAgentTestExecution"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/test-executions/{executionId}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run a fenced private test turn */
+        post: operations["sendAgentTestExecutionMessage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/test-executions/{executionId}/sides/{sideId}/retain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Continue one settled comparison version as a private test */
+        post: operations["retainAgentTestExecutionSide"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/test-executions/{executionId}/sides/{sideId}/eval-snapshots/{messageId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Capture a private test response as immutable Eval evidence */
+        post: operations["captureAgentTestExecutionEvalSnapshot"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/test-executions/{executionId}/sides/{sideId}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry one failed private test side */
+        post: operations["retryAgentTestExecutionSide"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4565,6 +4736,114 @@ export interface components {
                 };
             };
         };
+        AgentRevisionSummary: {
+            /** Format: uuid */
+            id: string;
+            label: string;
+            /** @enum {string} */
+            kind: "candidate" | "published";
+            versionNumber: number | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            publishedAt?: string;
+        };
+        AgentRevisionState: {
+            /** Format: uuid */
+            agentId: string;
+            /** @enum {string} */
+            status: "unpublished" | "draft_clean" | "draft_dirty" | "published_changed_since_draft";
+            draft: {
+                generation: number;
+                /** Format: uuid */
+                basePublishedRevisionId: string | null;
+                /** Format: date-time */
+                updatedAt: string;
+            };
+            publishedRevision: components["schemas"]["AgentRevisionSummary"] | null;
+            canPublish: boolean;
+            proactiveGreetingEnabled: boolean;
+        };
+        AgentRevisionCandidateRequest: {
+            expectedDraftGeneration: number;
+        };
+        AgentRevisionCandidateResponse: {
+            candidate: components["schemas"]["AgentRevisionSummary"];
+        };
+        AgentRevisionListResponse: {
+            revisions: components["schemas"]["AgentRevisionSummary"][];
+        };
+        AgentRevisionDetailResponse: {
+            revision: components["schemas"]["AgentRevisionSummary"] & {
+                /** @enum {number} */
+                snapshotFormatVersion: 1;
+                scope: {
+                    /** @enum {boolean} */
+                    customInstructions: true;
+                    /** @enum {boolean} */
+                    directives: true;
+                    /** @enum {boolean} */
+                    routines: true;
+                    /** @enum {boolean} */
+                    contextVariableEnablements: true;
+                };
+                dependencyWarnings: {
+                    code: string;
+                    message: string;
+                }[];
+                enabledContextVariableIds: string[];
+                scopedChanges: {
+                    customInstruction: {
+                        before: string | null;
+                        after: string | null;
+                        changed: boolean;
+                    };
+                    directives: {
+                        /** Format: uuid */
+                        id: string;
+                        /** @enum {string} */
+                        change: "added" | "removed" | "changed";
+                        before?: unknown;
+                        after?: unknown;
+                    }[];
+                    routines: {
+                        /** Format: uuid */
+                        definitionId: string;
+                        /** @enum {string} */
+                        change: "added" | "removed" | "changed";
+                        before?: unknown;
+                        after?: unknown;
+                    }[];
+                    contextVariableEnablements: {
+                        /** Format: uuid */
+                        contextVariableId: string;
+                        /** @enum {string} */
+                        change: "added" | "removed" | "changed";
+                        before?: unknown;
+                        after?: unknown;
+                    }[];
+                };
+            };
+        };
+        AgentRevisionPublishRequest: {
+            expectedDraftGeneration: number;
+            /** Format: uuid */
+            expectedPublishedRevisionId: string | null;
+            idempotencyKey: string;
+        };
+        AgentRevisionPublishResponse: {
+            publication: {
+                /** Format: uuid */
+                id: string;
+                /** Format: uuid */
+                revisionId: string;
+                /** Format: date-time */
+                publishedAt: string;
+                idempotentReplay: boolean;
+                revision: components["schemas"]["AgentRevisionSummary"];
+            };
+            state: components["schemas"]["AgentRevisionState"];
+        };
         AgentChannelLifecycle: {
             /** Format: date-time */
             lastUsedAt: string | null;
@@ -4640,6 +4919,10 @@ export interface components {
             kind: "cooldown";
             turns: number;
         };
+        AnswerCoverageCriteria: {
+            coverage: ("answered" | "partial" | "unanswered" | "unclear")[];
+            reasons?: ("sufficient_evidence" | "insufficient_evidence" | "conflicting_evidence" | "ambiguous_request" | "intentional_scope_boundary")[];
+        };
         /**
          * @description Generator a directive addresses. Omitted or empty means the answer body only.
          * @enum {string}
@@ -4658,6 +4941,7 @@ export interface components {
             description?: string | null;
             binding?: components["schemas"]["AuthoredDirectiveBinding"] | null;
             lifecycle?: components["schemas"]["AuthoredDirectiveLifecycle"] | null;
+            coverageCriteria?: components["schemas"]["AnswerCoverageCriteria"];
             /** @description Reversible off switch. A disabled directive keeps its authored text but never reaches the matcher. Defaults to true. */
             enabled?: boolean;
             metadata?: {
@@ -4677,6 +4961,7 @@ export interface components {
             description?: string | null;
             binding?: components["schemas"]["AuthoredDirectiveBinding"] | null;
             lifecycle?: components["schemas"]["AuthoredDirectiveLifecycle"] | null;
+            coverageCriteria?: components["schemas"]["AnswerCoverageCriteria"] | null;
             /** @description Reversible off switch. A disabled directive keeps its authored text but never reaches the matcher. Defaults to true. */
             enabled?: boolean;
             metadata?: {
@@ -4723,6 +5008,7 @@ export interface components {
             description: string | null;
             binding: components["schemas"]["AuthoredDirectiveBinding"] | null;
             lifecycle: components["schemas"]["AuthoredDirectiveLifecycle"] | null;
+            coverageCriteria?: components["schemas"]["AnswerCoverageCriteria"];
             enabled: boolean;
             metadata: {
                 [key: string]: unknown;
@@ -4758,6 +5044,8 @@ export interface components {
         };
         RoutineDefinitionCreateRequest: {
             name: string;
+            /** @default true */
+            enabled: boolean;
             activation: {
                 triggerDescription: string;
                 gateRef?: string | null;
@@ -4767,6 +5055,10 @@ export interface components {
                  * @enum {string}
                  */
                 reentryMode: "once_per_conversation" | "always" | "semantic";
+                coverageCriteria?: {
+                    coverage: ("answered" | "partial" | "unanswered" | "unclear")[];
+                    reasons?: ("sufficient_evidence" | "insufficient_evidence" | "conflicting_evidence" | "ambiguous_request" | "intentional_scope_boundary")[];
+                };
             };
             /** @default [] */
             slots: {
@@ -4852,16 +5144,20 @@ export interface components {
             };
         };
         RoutineDefinitionUpdateRequest: {
+            enabled: boolean;
+        } | {
             name: string;
+            enabled?: boolean;
             activation: {
                 triggerDescription: string;
                 gateRef?: string | null;
                 priority: number;
-                /**
-                 * @default once_per_conversation
-                 * @enum {string}
-                 */
-                reentryMode: "once_per_conversation" | "always" | "semantic";
+                /** @enum {string} */
+                reentryMode?: "once_per_conversation" | "always" | "semantic";
+                coverageCriteria?: {
+                    coverage: ("answered" | "partial" | "unanswered" | "unclear")[];
+                    reasons?: ("sufficient_evidence" | "insufficient_evidence" | "conflicting_evidence" | "ambiguous_request" | "intentional_scope_boundary")[];
+                };
             };
             /** @default [] */
             slots: {
@@ -4938,12 +5234,9 @@ export interface components {
                 ordinal: number;
             }[];
             completionExport?: {
-                /** @default false */
-                enabled: boolean;
-                /** @default [] */
-                triggerKinds: ("complete" | "handoff")[];
-                /** @default  */
-                destinationRef: string;
+                enabled?: boolean;
+                triggerKinds?: ("complete" | "handoff")[];
+                destinationRef?: string;
             };
         };
         RoutineDraftAssistRequest: {
@@ -4960,6 +5253,8 @@ export interface components {
         };
         RoutineDefinition: {
             name: string;
+            /** @default true */
+            enabled: boolean;
             activation: {
                 triggerDescription: string;
                 gateRef?: string | null;
@@ -4969,6 +5264,10 @@ export interface components {
                  * @enum {string}
                  */
                 reentryMode: "once_per_conversation" | "always" | "semantic";
+                coverageCriteria?: {
+                    coverage: ("answered" | "partial" | "unanswered" | "unclear")[];
+                    reasons?: ("sufficient_evidence" | "insufficient_evidence" | "conflicting_evidence" | "ambiguous_request" | "intentional_scope_boundary")[];
+                };
             };
             /** @default [] */
             slots: {
@@ -5059,8 +5358,6 @@ export interface components {
             /** Format: uuid */
             lineageId: string;
             version: number;
-            /** @enum {string} */
-            status: "draft" | "published" | "superseded" | "archived";
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -5076,26 +5373,14 @@ export interface components {
             routine: components["schemas"]["RoutineDefinition"];
             validation: components["schemas"]["RoutineValidationResult"];
         };
-        RoutineDirectiveScopeOrphan: {
-            directiveId: string;
-            scopeTag: string;
-            /** @enum {string} */
-            reason: "missing_step";
-        };
-        RoutineDefinitionPublishResponse: {
-            routine: components["schemas"]["RoutineDefinition"];
-            validation: components["schemas"]["RoutineValidationResult"];
-            directiveScopeOrphans: components["schemas"]["RoutineDirectiveScopeOrphan"][];
-        };
-        RoutineDefinitionLifecycleResponse: {
-            routine: components["schemas"]["RoutineDefinition"];
-        };
         RoutineDefinitionValidateResponse: {
             validation: components["schemas"]["RoutineValidationResult"];
         };
         RoutineDraftAssistResponse: {
             draft: {
                 name: string;
+                /** @default true */
+                enabled: boolean;
                 activation: {
                     triggerDescription: string;
                     gateRef?: string | null;
@@ -5105,6 +5390,10 @@ export interface components {
                      * @enum {string}
                      */
                     reentryMode: "once_per_conversation" | "always" | "semantic";
+                    coverageCriteria?: {
+                        coverage: ("answered" | "partial" | "unanswered" | "unclear")[];
+                        reasons?: ("sufficient_evidence" | "insufficient_evidence" | "conflicting_evidence" | "ambiguous_request" | "intentional_scope_boundary")[];
+                    };
                 };
                 /** @default [] */
                 slots: {
@@ -5189,11 +5478,6 @@ export interface components {
                     destinationRef: string;
                 };
             };
-            validation: components["schemas"]["RoutineValidationResult"];
-        };
-        RoutineDefinitionPublishRejectedResponse: {
-            /** @enum {string} */
-            error: "Routine definition is invalid";
             validation: components["schemas"]["RoutineValidationResult"];
         };
         SkillAuthoringInput: {
@@ -5325,6 +5609,7 @@ export interface components {
             description: string | null;
             binding: components["schemas"]["AuthoredDirectiveBinding"] | null;
             lifecycle: components["schemas"]["AuthoredDirectiveLifecycle"] | null;
+            coverageCriteria?: components["schemas"]["AnswerCoverageCriteria"];
             enabled: boolean;
             metadata: {
                 [key: string]: unknown;
@@ -5455,6 +5740,8 @@ export interface components {
             version: number;
             definition: {
                 name: string;
+                /** @default true */
+                enabled: boolean;
                 activation: {
                     triggerDescription: string;
                     gateRef?: string | null;
@@ -5464,6 +5751,10 @@ export interface components {
                      * @enum {string}
                      */
                     reentryMode: "once_per_conversation" | "always" | "semantic";
+                    coverageCriteria?: {
+                        coverage: ("answered" | "partial" | "unanswered" | "unclear")[];
+                        reasons?: ("sufficient_evidence" | "insufficient_evidence" | "conflicting_evidence" | "ambiguous_request" | "intentional_scope_boundary")[];
+                    };
                 };
                 /** @default [] */
                 slots: {
@@ -5586,7 +5877,7 @@ export interface components {
          *     - resolver_skill_missing: the enablement's resolver skill did not survive import, so it stays unbound.
          *     - skill_target_unbound: the skill's connection target is a credential-bearing workspace row.
          *     - skill_capability_unknown: no capability with this id is registered in this deployment.
-         *     - routine_invalid: the routine imported as a draft because publish validation rejected it.
+         *     - routine_invalid: the routine imported out of service (disabled) because it does not pass validation.
          *     - document_source_unresolved: selected document sources cannot be matched; scope imports empty, not "all".
          *     - surface_credential_unbound: a surface whose token cannot travel; imported disabled so it cannot serve.
          *     - mcp_connection_unbound: an external MCP connection reference; the skill imports without its server.
@@ -6660,6 +6951,43 @@ export interface components {
             activitySummary: components["schemas"]["ActivitySummary"];
             activityTrace: components["schemas"]["ActivityTrace"];
             turnTrace?: components["schemas"]["TurnTraceEnvelope"];
+            answerCoverage?: {
+                /** @enum {string} */
+                availability: "assessed" | "not_recorded" | "failed" | "invalid";
+                /** @enum {string} */
+                coverage?: "answered" | "partial" | "unanswered" | "unclear";
+                /** @enum {string} */
+                reason?: "sufficient_evidence" | "insufficient_evidence" | "conflicting_evidence" | "ambiguous_request" | "intentional_scope_boundary";
+                contextualizedRequest?: string;
+                unresolvedRequest?: string;
+                originatingTurnId: string;
+                originatingRequestId: string;
+                schemaVersion?: number;
+                /** Format: date-time */
+                assessedAt?: string;
+            };
+            interactionTrace?: {
+                /** @enum {string} */
+                state: "not_evaluated" | "evaluated";
+                consumedAssessment?: {
+                    /** @enum {string} */
+                    coverage: "answered" | "partial" | "unanswered" | "unclear";
+                    /** @enum {string} */
+                    reason: "sufficient_evidence" | "insufficient_evidence" | "conflicting_evidence" | "ambiguous_request" | "intentional_scope_boundary";
+                };
+                decisions: {
+                    assessmentRequestId: string;
+                    /** @enum {string} */
+                    target: "directive" | "routine";
+                    targetId?: string;
+                    /** @enum {string} */
+                    decision: "matched" | "applied" | "offered" | "activated" | "skipped" | "suppressed";
+                    reasonCode: string;
+                    routineExecutionId?: string;
+                    /** Format: uuid */
+                    targetMessageId: string;
+                }[];
+            };
         };
         ChatResponse: {
             /** Format: uuid */
@@ -6891,6 +7219,45 @@ export interface components {
             nextCursor: null;
             hasMore: boolean;
         };
+        /** @description Persisted semantic coverage for this assistant turn. It is independent from retrieval evidence, citation validation, and the response outcome. */
+        AnswerCoverageAssessment: {
+            /** @enum {string} */
+            availability: "assessed" | "not_recorded" | "failed" | "invalid";
+            /** @enum {string} */
+            coverage?: "answered" | "partial" | "unanswered" | "unclear";
+            /** @enum {string} */
+            reason?: "sufficient_evidence" | "insufficient_evidence" | "conflicting_evidence" | "ambiguous_request" | "intentional_scope_boundary";
+            contextualizedRequest?: string;
+            unresolvedRequest?: string;
+            originatingTurnId: string;
+            originatingRequestId: string;
+            schemaVersion?: number;
+            /** Format: date-time */
+            assessedAt?: string;
+        };
+        /** @description Recorded coverage-dependent directive and routine evaluation in execution order. `evaluated` with an empty decisions list means no rule matched; `not_evaluated` means no coverage rule ran. */
+        AnswerCoverageInteractionTrace: {
+            /** @enum {string} */
+            state: "not_evaluated" | "evaluated";
+            consumedAssessment?: {
+                /** @enum {string} */
+                coverage: "answered" | "partial" | "unanswered" | "unclear";
+                /** @enum {string} */
+                reason: "sufficient_evidence" | "insufficient_evidence" | "conflicting_evidence" | "ambiguous_request" | "intentional_scope_boundary";
+            };
+            decisions: {
+                assessmentRequestId: string;
+                /** @enum {string} */
+                target: "directive" | "routine";
+                targetId?: string;
+                /** @enum {string} */
+                decision: "matched" | "applied" | "offered" | "activated" | "skipped" | "suppressed";
+                reasonCode: string;
+                routineExecutionId?: string;
+                /** Format: uuid */
+                targetMessageId: string;
+            }[];
+        };
         ChatConversationMessageDebug: {
             /**
              * @description "cancelled" means a newer message superseded this turn after it had already produced an assistant message (a suspended/durable turn). It is not an error.
@@ -6902,7 +7269,7 @@ export interface components {
             stream: boolean;
             citationCount: number;
             /** @enum {string} */
-            answerOutcome?: "grounded_success" | "no_context_refusal" | "non_retrieval_response";
+            answerOutcome?: "grounded_success" | "no_context_refusal" | "non_retrieval_response" | "coverage_partial" | "coverage_unanswered" | "coverage_unclear" | "coverage_unavailable";
             skillName?: string;
             skillOutcome?: string;
             /** @enum {string} */
@@ -6911,6 +7278,8 @@ export interface components {
             activitySummary?: components["schemas"]["ActivitySummary"];
             activityTrace?: components["schemas"]["ActivityTrace"];
             turnTrace?: components["schemas"]["TurnTraceEnvelope"];
+            answerCoverage?: components["schemas"]["AnswerCoverageAssessment"];
+            interactionTrace?: components["schemas"]["AnswerCoverageInteractionTrace"];
             errorMessage?: string | null;
         };
         /** @description Dashboard-only debug for a user turn that never got a reply — a genuine failure or a turn a newer message superseded. Attached to the user's message because no assistant message exists for it. */
@@ -7753,6 +8122,26 @@ export interface components {
             visitorQuestionCount: number;
             conversationCount: number;
         };
+        /** @description Recorded semantic coverage. Unresolved request text is intentionally excluded from Pulse. */
+        AnswerCoverage: {
+            /** @enum {string} */
+            availability: "assessed" | "not_recorded" | "failed" | "invalid";
+            /** @enum {string} */
+            coverage?: "answered" | "partial" | "unanswered" | "unclear";
+            /** @enum {string} */
+            reason?: "sufficient_evidence" | "insufficient_evidence" | "conflicting_evidence" | "ambiguous_request" | "intentional_scope_boundary";
+        };
+        AudiencePulseSemanticCoverage: {
+            answered: number;
+            partial: number;
+            unanswered: number;
+            unclear: number;
+            unassessed: number;
+            legacy: number;
+            reasons: {
+                [key: string]: number;
+            };
+        };
         AudiencePulseEvidence: {
             reference: string;
             /** Format: uuid */
@@ -7761,6 +8150,7 @@ export interface components {
             messageId: string;
             question: string;
             occurrenceCount: number;
+            answerCoverage?: components["schemas"]["AnswerCoverage"];
         };
         AudiencePulseEvidenceAnchorRequest: {
             /** Format: uuid */
@@ -7812,6 +8202,7 @@ export interface components {
                 count: number;
             }[];
             grounding: components["schemas"]["AudiencePulseGrounding"];
+            coverage?: components["schemas"]["AudiencePulseSemanticCoverage"];
             evidence: components["schemas"]["AudiencePulseEvidence"][];
         };
         AudiencePulseContentGap: {
@@ -7943,6 +8334,49 @@ export interface components {
         };
         PendingApprovalDecisionListResponse: {
             decisions: components["schemas"]["PendingApprovalDecision"][];
+        };
+        StartRevisionEvalRun: {
+            revisionIds: string[];
+            caseIds: string[];
+            testValues: {
+                /** Format: uuid */
+                contextVariableId: string;
+                value?: unknown;
+            }[];
+            /** @enum {string} */
+            mode: "retrieval_only" | "full_assistant";
+            /** @enum {string} */
+            executionPolicy: "safe_test";
+            idempotencyKey: string;
+        };
+        RevisionEvalCaseOutcome: {
+            /** Format: uuid */
+            caseId: string;
+            /** @enum {string} */
+            state: "running" | "failed" | "completed";
+            /** @enum {string} */
+            outcome: "pass" | "fail" | "partial" | "unavailable";
+        };
+        RevisionEvalRun: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            state: "running" | "partial" | "failed" | "completed";
+            sides: {
+                /** Format: uuid */
+                revisionId: string;
+                revision: {
+                    /** Format: uuid */
+                    id: string;
+                    versionNumber: number | null;
+                    label: string;
+                };
+                /** @enum {string} */
+                state: "running" | "partial" | "failed" | "completed";
+                /** @enum {string} */
+                evidenceState: "current" | "configuration_changed" | "environment_changed" | "comparability_unknown";
+                cases: components["schemas"]["RevisionEvalCaseOutcome"][];
+            }[];
         };
         EvalAssertion: {
             /** @enum {string} */
@@ -8085,7 +8519,7 @@ export interface components {
                 /** Format: uuid */
                 workspaceId: string;
                 /** Format: uuid */
-                sourceConversationId: string;
+                sourceConversationId: string | null;
                 /** Format: uuid */
                 sourceMessageId: string | null;
                 replayTarget: {
@@ -8166,7 +8600,7 @@ export interface components {
             /** Format: uuid */
             workspaceId: string;
             /** Format: uuid */
-            sourceConversationId: string;
+            sourceConversationId: string | null;
             /** Format: uuid */
             sourceMessageId: string | null;
             replayTarget: {
@@ -8221,6 +8655,250 @@ export interface components {
                 pending: number;
                 unscored: number;
             };
+        };
+        TestExecutionEvent: {
+            /** @enum {string} */
+            type: "side_started";
+            /** Format: uuid */
+            executionId: string;
+            generation: number;
+            /** Format: uuid */
+            turnId: string;
+            /** Format: uuid */
+            attemptId: string;
+            /** Format: uuid */
+            sideId: string;
+        } | {
+            /** @enum {string} */
+            type: "message_delta";
+            /** Format: uuid */
+            executionId: string;
+            generation: number;
+            /** Format: uuid */
+            turnId: string;
+            /** Format: uuid */
+            attemptId: string;
+            /** Format: uuid */
+            sideId: string;
+            delta: string;
+        } | {
+            /** @enum {string} */
+            type: "side_completed";
+            /** Format: uuid */
+            executionId: string;
+            generation: number;
+            /** Format: uuid */
+            turnId: string;
+            /** Format: uuid */
+            attemptId: string;
+            /** Format: uuid */
+            sideId: string;
+            /** Format: uuid */
+            messageId: string;
+            turnTrace?: unknown;
+        } | {
+            /** @enum {string} */
+            type: "side_failed";
+            /** Format: uuid */
+            executionId: string;
+            generation: number;
+            /** Format: uuid */
+            turnId: string;
+            /** Format: uuid */
+            attemptId: string;
+            /** Format: uuid */
+            sideId: string;
+            code: string;
+            retryable: boolean;
+        } | {
+            /** @enum {string} */
+            type: "execution_partial";
+            /** Format: uuid */
+            executionId: string;
+            generation: number;
+            /** Format: uuid */
+            turnId: string;
+            /** Format: uuid */
+            attemptId: string;
+        } | {
+            /** @enum {string} */
+            type: "execution_completed";
+            /** Format: uuid */
+            executionId: string;
+            generation: number;
+            /** Format: uuid */
+            turnId: string;
+            /** Format: uuid */
+            attemptId: string;
+        };
+        TestExecutionSide: {
+            /** Format: uuid */
+            id: string;
+            revision: {
+                /** Format: uuid */
+                id: string;
+                label: string;
+                /** @enum {string} */
+                kind: "candidate" | "published";
+                versionNumber: number | null;
+                /** Format: date-time */
+                createdAt: string;
+                /** Format: date-time */
+                publishedAt?: string;
+            };
+            /** Format: uuid */
+            conversationId: string;
+            /** @enum {string} */
+            state: "running" | "partial" | "failed" | "completed";
+            retryable: boolean;
+            history: {
+                /** Format: uuid */
+                turnId: string;
+                /** @enum {string} */
+                role: "user" | "assistant";
+                content: string;
+                /** Format: uuid */
+                messageId?: string;
+                turnTrace?: unknown;
+                /** Format: uuid */
+                attemptId: string;
+                /** Format: date-time */
+                createdAt: string;
+            }[];
+        };
+        StartTestExecutionRequest: {
+            /** @enum {string} */
+            mode: "single" | "compare";
+            revisionIds: string[];
+            testValues: {
+                /** Format: uuid */
+                contextVariableId: string;
+                value?: unknown;
+            }[];
+            expectedDraftGeneration?: number;
+            idempotencyKey: string;
+        };
+        TestExecution: {
+            /** Format: uuid */
+            id: string;
+            generation: number;
+            /** @enum {string} */
+            mode: "single" | "compare";
+            sides: components["schemas"]["TestExecutionSide"][];
+        };
+        TestExecutionMessageRequest: {
+            message: string;
+            executionGeneration: number;
+            /** Format: uuid */
+            turnId: string;
+            /** Format: uuid */
+            attemptId: string;
+        };
+        TestExecutionRetryRequest: {
+            executionGeneration: number;
+            /** Format: uuid */
+            turnId: string;
+            /** Format: uuid */
+            attemptId: string;
+        };
+        TestExecutionHistoryItem: {
+            /** Format: uuid */
+            id: string;
+            generation: number;
+            /** @enum {string} */
+            mode: "single" | "compare";
+            /** @enum {string} */
+            state: "running" | "partial" | "failed" | "completed";
+            /** Format: date-time */
+            createdAt: string;
+            sides: {
+                /** Format: uuid */
+                id: string;
+                revision: {
+                    /** Format: uuid */
+                    id: string;
+                    label: string;
+                    /** @enum {string} */
+                    kind: "candidate" | "published";
+                    versionNumber: number | null;
+                    /** Format: date-time */
+                    createdAt: string;
+                    /** Format: date-time */
+                    publishedAt?: string;
+                };
+                /** Format: uuid */
+                conversationId: string;
+                /** @enum {string} */
+                state: "ready" | "running" | "failed" | "completed";
+                retryable: boolean;
+            }[];
+        };
+        TestExecutionAttemptRecord: {
+            /** Format: uuid */
+            executionId: string;
+            /** Format: uuid */
+            sideId: string;
+            /** Format: uuid */
+            turnId: string;
+            /** Format: uuid */
+            attemptId: string;
+            fence: number;
+            /** @enum {string} */
+            state: "running" | "failed" | "completed";
+            failureCode: string | null;
+            /** Format: date-time */
+            leaseExpiresAt: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        TestExecutionHistoryDetail: components["schemas"]["TestExecutionHistoryItem"] & {
+            sides?: {
+                /** Format: uuid */
+                id: string;
+                revision: {
+                    /** Format: uuid */
+                    id: string;
+                    label: string;
+                    /** @enum {string} */
+                    kind: "candidate" | "published";
+                    versionNumber: number | null;
+                    /** Format: date-time */
+                    createdAt: string;
+                    /** Format: date-time */
+                    publishedAt?: string;
+                };
+                /** Format: uuid */
+                conversationId: string;
+                /** @enum {string} */
+                state: "ready" | "running" | "failed" | "completed";
+                retryable: boolean;
+                history: {
+                    /** Format: uuid */
+                    turnId: string;
+                    /** @enum {string} */
+                    role: "user" | "assistant";
+                    content: string;
+                    /** Format: uuid */
+                    messageId?: string;
+                    turnTrace?: unknown;
+                    /** Format: uuid */
+                    attemptId: string;
+                    /** Format: date-time */
+                    createdAt: string;
+                }[];
+            }[];
+            testValues: unknown[];
+            attempts: components["schemas"]["TestExecutionAttemptRecord"][];
+        };
+        TestExecutionHistoryListResponse: {
+            executions: components["schemas"]["TestExecutionHistoryItem"][];
+            nextCursor: string | null;
+            hasMore: boolean;
+        };
+        TestExecutionHistoryDetailResponse: {
+            execution: components["schemas"]["TestExecutionHistoryDetail"];
         };
         /**
          * @description A server-sent event stream. Status payloads use the named ChatStatusEvent schema. Successful order: status(interpreting), conversation (when available), status(searching) for retrieval, status(composing), one or more chunk events, done, then optional suggestions. A cancelled event is terminal and no event follows it.
@@ -11323,7 +12001,7 @@ export interface operations {
                             /** Format: uuid */
                             userId: string;
                             userName: string | null;
-                            scopes: ("operator:read" | "operator:probe" | "operator:act" | "operator:propose")[];
+                            scopes: ("operator:read" | "operator:probe" | "operator:act" | "operator:propose" | "operator:write")[];
                             offlineAccess: boolean;
                             /** @enum {string} */
                             status: "active" | "revoked" | "superseded" | "expired";
@@ -11410,7 +12088,7 @@ export interface operations {
                         /** Format: uuid */
                         userId: string;
                         userName: string | null;
-                        scopes: ("operator:read" | "operator:probe" | "operator:act" | "operator:propose")[];
+                        scopes: ("operator:read" | "operator:probe" | "operator:act" | "operator:propose" | "operator:write")[];
                         offlineAccess: boolean;
                         /** @enum {string} */
                         status: "active" | "revoked" | "superseded" | "expired";
@@ -11502,7 +12180,7 @@ export interface operations {
                         /** Format: uuid */
                         userId: string;
                         userName: string | null;
-                        scopes: ("operator:read" | "operator:probe" | "operator:act" | "operator:propose")[];
+                        scopes: ("operator:read" | "operator:probe" | "operator:act" | "operator:propose" | "operator:write")[];
                         offlineAccess: boolean;
                         /** @enum {string} */
                         status: "active" | "revoked" | "superseded" | "expired";
@@ -11586,7 +12264,7 @@ export interface operations {
                             /** @enum {string} */
                             applicationType: "web" | "native";
                         };
-                        requestedScopes: ("operator:read" | "operator:probe" | "operator:act" | "operator:propose")[];
+                        requestedScopes: ("operator:read" | "operator:probe" | "operator:act" | "operator:propose" | "operator:write")[];
                         requestedOfflineAccess: boolean;
                         redirectHost: string;
                         /** Format: uri */
@@ -11670,7 +12348,7 @@ export interface operations {
                     decision: "approve" | "deny";
                     /** Format: uuid */
                     workspaceId?: string;
-                    approvedToolScopes?: ("operator:read" | "operator:probe" | "operator:act" | "operator:propose")[];
+                    approvedToolScopes?: ("operator:read" | "operator:probe" | "operator:act" | "operator:propose" | "operator:write")[];
                     offlineAccess: boolean;
                 };
             };
@@ -12184,7 +12862,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Destination is referenced by published routines */
+            /** @description Destination is referenced by enabled routines */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -12993,6 +13671,155 @@ export interface operations {
             };
             /** @description Authentication required */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAgentRevisionState: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revision state returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRevisionState"];
+                };
+            };
+        };
+    };
+    createAgentRevisionCandidate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentRevisionCandidateRequest"];
+            };
+        };
+        responses: {
+            /** @description Candidate created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRevisionCandidateResponse"];
+                };
+            };
+            /** @description revision_conflict when the saved draft generation changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAgentRevisions: {
+        parameters: {
+            query?: {
+                include?: "published";
+            };
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revisions returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRevisionListResponse"];
+                };
+            };
+        };
+    };
+    getAgentRevision: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                revisionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revision returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRevisionDetailResponse"];
+                };
+            };
+        };
+    };
+    publishAgentRevision: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                revisionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentRevisionPublishRequest"];
+            };
+        };
+        responses: {
+            /** @description Revision published */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRevisionPublishResponse"];
+                };
+            };
+            /** @description revision_conflict when the revision, draft generation, pointer, or idempotency command is stale */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description revision_invalid when the immutable candidate cannot run */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -14167,224 +14994,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    publishAgentRoutine: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                agentId: string;
-                routineId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Routine definition published */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RoutineDefinitionPublishResponse"];
-                };
-            };
-            /** @description Routine definition cannot be published */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Authentication required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Agent or routine definition not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Routine definition is invalid */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RoutineDefinitionPublishRejectedResponse"];
-                };
-            };
-        };
-    };
-    reviseAgentRoutine: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                agentId: string;
-                routineId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Routine revision draft returned */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RoutineDefinitionLifecycleResponse"];
-                };
-            };
-            /** @description Routine definition cannot be revised */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Authentication required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Agent or routine definition not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    archiveAgentRoutine: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                agentId: string;
-                routineId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Routine definition archived */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RoutineDefinitionLifecycleResponse"];
-                };
-            };
-            /** @description Routine definition cannot be archived */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Authentication required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Agent or routine definition not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    restoreAgentRoutine: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                agentId: string;
-                routineId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Routine definition restored */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RoutineDefinitionLifecycleResponse"];
-                };
-            };
-            /** @description Routine definition cannot be restored */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Authentication required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Agent or routine definition not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Routine definition is invalid */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RoutineDefinitionPublishRejectedResponse"];
                 };
             };
         };
@@ -22348,7 +22957,7 @@ export interface operations {
                         /** @enum {string} */
                         reason: "ok" | "no_llm_capability";
                         canManage: boolean;
-                        applyableProposalTargets: ("directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl" | "workspace_setting")[];
+                        applyableProposalTargets: ("directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication")[];
                     };
                 };
             };
@@ -22443,7 +23052,7 @@ export interface operations {
                                 /** Format: uuid */
                                 id: string;
                                 /** @enum {string} */
-                                targetType: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl" | "workspace_setting";
+                                targetType: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication";
                                 targetLabel: string;
                                 summary: string;
                                 /** @enum {string} */
@@ -22589,11 +23198,11 @@ export interface operations {
                         /** Format: uuid */
                         workspaceId: string;
                         /** @enum {string} */
-                        targetType: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl" | "workspace_setting";
+                        targetType: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication";
                         targetRef?: unknown;
                         target: {
                             /** @enum {string} */
-                            type: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl" | "workspace_setting";
+                            type: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication";
                             ref?: unknown;
                         };
                         targetLabel: string;
@@ -22715,6 +23324,130 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    createRevisionEvalRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartRevisionEvalRun"];
+            };
+        };
+        responses: {
+            /** @description Revision Eval run created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevisionEvalRun"];
+                };
+            };
+            /** @description Invalid immutable run selection */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent-manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getRevisionEvalRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revision Eval evidence */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevisionEvalRun"];
+                };
+            };
+            /** @description Agent-read permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Revision Eval run not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    retryRevisionEvalCase: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runId: string;
+                revisionId: string;
+                caseId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revision Eval retry accepted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevisionEvalRun"];
+                };
+            };
+            /** @description Agent-manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Failed revision Eval case not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
             };
         };
     };
@@ -23891,6 +24624,184 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAgentTestExecutions: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Private test history returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestExecutionHistoryListResponse"];
+                };
+            };
+        };
+    };
+    startAgentTestExecution: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartTestExecutionRequest"];
+            };
+        };
+        responses: {
+            /** @description Private test execution created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestExecution"];
+                };
+            };
+        };
+    };
+    getAgentTestExecution: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                executionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Private test evidence returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestExecutionHistoryDetailResponse"];
+                };
+            };
+        };
+    };
+    sendAgentTestExecutionMessage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                executionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestExecutionMessageRequest"];
+            };
+        };
+        responses: {
+            /** @description Fenced side events */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": components["schemas"]["TestExecutionEvent"];
+                };
+            };
+        };
+    };
+    retainAgentTestExecutionSide: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                executionId: string;
+                sideId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Single private test execution created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestExecution"];
+                };
+            };
+        };
+    };
+    captureAgentTestExecutionEvalSnapshot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                executionId: string;
+                sideId: string;
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Immutable Eval snapshot captured from the private test turn */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalSnapshot"];
+                };
+            };
+        };
+    };
+    retryAgentTestExecutionSide: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                executionId: string;
+                sideId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestExecutionRetryRequest"];
+            };
+        };
+        responses: {
+            /** @description Fenced side events */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": components["schemas"]["TestExecutionEvent"];
                 };
             };
         };

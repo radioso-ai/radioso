@@ -18,6 +18,7 @@ type CompleteAuthoringDraft = RoutineDefinitionDraftAuthoringInput & {
 
 const draft = (overrides: Record<string, unknown> = {}): CompleteAuthoringDraft => ({
   name: 'Escalate account',
+  enabled: true,
   activation: { triggerDescription: 'An account needs help', gateRef: 'support_gate', priority: 4, reentryMode: 'always' },
   slots: [{ stableSlotId: 'account_id', key: 'account_id', type: 'text', required: false, description: 'Customer account', mutable: true, ordinal: 9 }],
   steps: [{
@@ -65,6 +66,7 @@ describe('routine block document', () => {
       ok: true,
       doc: {
         name: 'New routine',
+        enabled: true,
         activation: { triggerDescription: 'Start here', gateRef: null, priority: 0, reentryMode: 'once_per_conversation' },
         information: [],
         steps: [],
@@ -106,6 +108,7 @@ describe('routine block document', () => {
   it('projects and round-trips the new-routine seed with empty authoring text', () => {
     const input = {
       name: 'New routine',
+      enabled: true,
       activation: { triggerDescription: '', gateRef: null, priority: 0, reentryMode: 'once_per_conversation' },
       slots: [],
       steps: [{ stableStepId: 'start', kind: 'chat' as const, instruction: '', toolRef: null, actionType: null, captureKey: null, options: [], ordinal: 0, metadata: {} }],

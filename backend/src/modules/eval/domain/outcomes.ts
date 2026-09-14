@@ -5,6 +5,7 @@ import type {
   EvalRunObservedOutput,
   EvalRunStatus,
 } from "./types.js";
+import { compileEvalRegex } from "./safeRegex.js";
 
 const summarizeMatch = (mode: AnswerMatchMode, pattern: string): string =>
   mode === "regex" ? `regex /${pattern}/` : `substring "${pattern}"`;
@@ -17,11 +18,10 @@ const answerMatches = (
 ): { matched: boolean; error?: string } => {
   if (mode === "regex") {
     try {
-      const flags = caseSensitive ? "" : "i";
-      const re = new RegExp(pattern, flags);
+      const re = compileEvalRegex(pattern, caseSensitive);
       return { matched: re.test(answer) };
-    } catch (err) {
-      return { matched: false, error: err instanceof Error ? err.message : "Invalid regex" };
+    } catch {
+      return { matched: false, error: "Unsafe or invalid regex pattern." };
     }
   }
   const haystack = caseSensitive ? answer : answer.toLowerCase();
@@ -245,7 +245,7 @@ export const evaluateAssertion = (
   }
 };
 
-export interface AggregatedRunVerdict {
+interface AggregatedRunVerdict {
   status: EvalRunStatus;
   reason: string | null;
   verdicts: AssertionVerdict[];

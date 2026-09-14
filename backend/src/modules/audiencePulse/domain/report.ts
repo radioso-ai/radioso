@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { AnswerCoverageAssessment } from "@radioso/conversation-contract";
 
 import type { TopicTransition } from "../contracts/topicCensus.js";
 import {
@@ -21,8 +22,14 @@ export interface AudiencePulseEvidence {
   weekStart: string;
   channel: string | null;
   grounding: AudiencePulseGroundingSignal;
+  /** Recorded semantic assessment. Absent records are legacy, never inferred. */
+  answerCoverage?: AnswerCoverageAssessment;
+  /** True when the coverage field was unavailable on a historical record. */
+  legacyCoverage?: boolean;
   contentGapEligible: boolean;
 }
+
+/** FR-016 eligibility is semantic for assessed records and grounding-legacy only otherwise. */
 
 export interface AudiencePulseWeeklyVolume {
   weekStart: string;
@@ -59,6 +66,53 @@ interface AudiencePulseGroundingSummary {
   contentGapEligible: number;
 }
 
+export interface AudiencePulseCoverageSummary {
+  answered: number;
+  partial: number;
+  unanswered: number;
+  unclear: number;
+  unassessed: number;
+  legacy: number;
+  reasons: Record<string, number>;
+}
+
+const coverageSummary = (items: AudiencePulseEvidence[]): AudiencePulseCoverageSummary => {
+  const summary: AudiencePulseCoverageSummary = {
+    answered: 0, partial: 0, unanswered: 0, unclear: 0, unassessed: 0, legacy: 0, reasons: {},
+  };
+  for (const item of items) {
+    const assessment = item.answerCoverage;
+    if (!assessment) {
+      // A present-but-unconfirmed assessment is intentionally omitted from the
+      // evidence payload. It is unassessed, not legacy: falling back to grounding
+      // would recreate the false association this lifecycle boundary prevents.
+      if (item.legacyCoverage === false) summary.unassessed += 1;
+      else summary.legacy += 1;
+      continue;
+    }
+    if (assessment.availability !== "assessed") { summary.unassessed += 1; continue; }
+    summary[assessment.coverage] += 1;
+    summary.reasons[assessment.reason] = (summary.reasons[assessment.reason] ?? 0) + 1;
+  }
+  return summary;
+};
+
+/** Pulse snapshots retain no visitor-authored unresolved text; Activity history owns it. */
+const snapshotCoverage = (assessment: AnswerCoverageAssessment): AnswerCoverageAssessment =>
+  assessment.availability === "assessed"
+    ? {
+        availability: "assessed",
+        coverage: assessment.coverage,
+        reason: assessment.reason,
+        schemaVersion: assessment.schemaVersion,
+      }
+    : { availability: assessment.availability };
+
+const coverageByEvidenceId = (items: AudiencePulseEvidence[]): Record<string, AudiencePulseEvidence["answerCoverage"]> =>
+  Object.fromEntries(items.flatMap((item) => item.answerCoverage
+    ? [[item.id, snapshotCoverage(item.answerCoverage)] as const]
+    : []));
+
 export interface AudiencePulseStoredTheme {
   id: string;
   title: string;
@@ -76,6 +130,9 @@ export interface AudiencePulseStoredTheme {
   share: number;
   weeklyPulse: Array<{ weekStart: string; count: number }>;
   grounding: AudiencePulseGroundingSummary;
+  /** Recorded semantic coverage only; counts are exclusive among assessed members. */
+  coverage?: AudiencePulseCoverageSummary;
+  coverageByEvidenceId?: Record<string, AudiencePulseEvidence["answerCoverage"]>;
 }
 
 /**
@@ -361,6 +418,11 @@ export const buildAudiencePulseCensusReport = (input: {
       share: populationSize === 0 ? 0 : memberCount / populationSize,
       weeklyPulse: createWeeklyPulse(items, input.weeklyVolume),
       grounding: groundingSummary(items),
+      coverage: coverageSummary(items),
+      // Keep the per-evidence snapshot bounded to the same operator-visible
+      // examples as evidenceIds. The aggregate counts above still cover all
+      // members of the topic.
+      coverageByEvidenceId: coverageByEvidenceId(items.slice(0, AUDIENCE_PULSE_THEME_DISPLAY_EVIDENCE_MAX)),
     };
   });
 

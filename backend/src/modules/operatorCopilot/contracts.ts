@@ -63,6 +63,9 @@ export interface CopilotToolInvocationContext {
   readonly copilotConversationId?: string;
   /** Durable origin for a direct Operator MCP invocation; mutually exclusive with a copilot thread. */
   readonly operatorMcpInvocationId?: string;
+  /** Receipt bindings carried only by the authenticated Operator MCP transport. */
+  readonly operatorMcpGrantId?: string;
+  readonly operatorMcpClientId?: string;
   readonly pageContext: CopilotPageContext;
 }
 
@@ -142,7 +145,7 @@ export const withCopilotActor = (
  * tool-output zod enums) must derive from this array rather than repeating its own OR-chain or
  * literal enum, so adding a target type cannot silently miss one of those sites again.
  */
-export const copilotProposalTargetTypes = ["directive", "agent", "agent_setting", "routine", "agent_skill", "context_variable", "document", "ingestion_settings", "website_crawl", "workspace_setting"] as const;
+export const copilotProposalTargetTypes = ["directive", "agent", "agent_setting", "routine", "agent_skill", "context_variable", "document", "ingestion_settings", "website_crawl", "workspace_setting", "agent_publication"] as const;
 export type CopilotProposalTargetType = (typeof copilotProposalTargetTypes)[number];
 /**
  * The permission an operator needs to apply a proposal, by what it changes. Applying is a write to
@@ -163,6 +166,7 @@ export const copilotProposalPermissions = {
   ingestion_settings: ["workspace.settings.manage"],
   website_crawl: ["workspace.documents.manage"],
   workspace_setting: ["workspace.settings.manage"],
+  agent_publication: ["workspace.agents.manage"],
 } as const satisfies Record<CopilotProposalTargetType, readonly [AccountPermission, ...AccountPermission[]]>;
 
 /**
@@ -193,6 +197,10 @@ export interface CopilotProposal {
   readonly versionToken: string;
   /** Replays measured before the draft, or null when the change was proposed unmeasured. */
   readonly evidence: CopilotProposalEvidence | null;
+  readonly reviewDigest: string | null;
+  readonly reviewSnapshot: unknown;
+  readonly expiresAt: Date | null;
+  readonly executionInvocationId: string | null;
   readonly status: CopilotProposalStatus;
   readonly reason?: string | null;
   readonly appliedRef: unknown;
@@ -202,10 +210,14 @@ export interface CopilotProposal {
 
 type CopilotProposalDraftFields = Omit<
   CopilotProposal,
-  "id" | "origin" | "conversationId" | "operatorMcpInvocationId" | "messageId" | "status" | "appliedRef" | "createdAt" | "updatedAt"
+  "id" | "origin" | "conversationId" | "operatorMcpInvocationId" | "executionInvocationId" | "messageId" | "reviewDigest" | "reviewSnapshot" | "expiresAt" | "status" | "appliedRef" | "createdAt" | "updatedAt"
 >;
 
-export type CopilotProposalDraft = CopilotProposalDraftFields & (
+export type CopilotProposalDraft = CopilotProposalDraftFields & {
+  readonly reviewDigest?: string;
+  readonly reviewSnapshot?: unknown;
+  readonly expiresAt?: Date;
+} & (
   | { readonly origin: CopilotProposalOrigin; readonly conversationId?: never }
   | { readonly origin?: never; readonly conversationId: string }
 );
@@ -251,7 +263,7 @@ export interface CopilotProposalAdapter {
    */
   readVersionToken(workspaceId: string, targetRef: unknown, payload?: unknown): Promise<string>;
   preview(workspaceId: string, targetRef: unknown, payload: unknown): Promise<{ targetLabel: string; current: unknown; proposed: unknown }>;
-  applyIfVersionMatches(workspaceId: string, targetRef: unknown, payload: unknown, versionToken: string): Promise<
+  applyIfVersionMatches(workspaceId: string, targetRef: unknown, payload: unknown, versionToken: string, context?: CopilotProposalApplyContext): Promise<
     /**
      * `reason` on an applied outcome states what an operator still has to finish. It exists because
      * an apply can succeed at the thing the proposal is named for and still not complete: creating
@@ -275,15 +287,51 @@ export interface CopilotProposalAdapter {
    * retryable, which is right for every adapter whose target always addresses an existing row.
    */
   canRetryAfterInterruptedApply?(targetRef: unknown, payload: unknown): boolean;
+  /** Required by the reviewed MCP executor before it can retry an expired apply claim. */
+  reconcileMcpInterruptedApply?(input: {
+    readonly workspaceId: string;
+    /** The authenticated actor from the new, still-authorized retry; never inferred from a receipt. */
+    readonly accountId: string;
+    readonly targetRef: unknown;
+    readonly payload: unknown;
+    readonly versionToken: string;
+    readonly executionInvocationId: string;
+    readonly previousAttemptStartedAt: Date;
+  }): Promise<CopilotMcpInterruptedApplyReconciliation>;
 }
+
+/**
+ * Transport facts an owner needs while applying a reviewed proposal. Dashboard applies have no
+ * invocation receipt; an MCP apply supplies its execution receipt so an owner can use it as the
+ * idempotency key for the mutation it owns. This stays at the adapter boundary: proposal storage
+ * never learns domain-specific idempotency rules.
+ */
+export interface CopilotProposalApplyContext {
+  readonly surface: CopilotSurface;
+  /** The acting account is part of the owner mutation audit trail, never inferred from a receipt. */
+  readonly accountId: string;
+  readonly executionInvocationId?: string;
+  /** Present only while the reviewed MCP executor settles this proposal. */
+  readonly proposalId?: string;
+  /** Exact claim fence; only the executor that acquired it may settle the receipt. */
+  readonly applyClaimedAt?: Date;
+  readonly operatorUserId?: string;
+}
+
+/**
+ * An owner answers an interrupted MCP apply from its own durable effect record. `unknown` is
+ * deliberately terminal: reapplying after a lost response is only safe when the owner can prove
+ * the first effect did not happen.
+ */
+export type CopilotMcpInterruptedApplyReconciliation =
+  | { readonly outcome: "applied"; readonly appliedRef: unknown; readonly reason?: string }
+  | { readonly outcome: "not_applied" }
+  | { readonly outcome: "unknown"; readonly reason: string };
 
 export interface CopilotDirectiveProposalAdapter extends CopilotProposalAdapter {
   readonly targetType: "directive";
   draft(workspaceId: string, targetRef: unknown, intent: string): Promise<{ payload: unknown; targetLabel: string; summary: string }>;
 }
-
-/** Whether a routine goes live, comes out of service, or comes back. */
-export type CopilotRoutineLifecycleAction = "publish" | "archive" | "restore";
 
 export interface CopilotRoutineProposalDraft {
   readonly payload: unknown;
@@ -298,11 +346,10 @@ export interface CopilotRoutineProposalAdapter extends CopilotProposalAdapter {
   draft(workspaceId: string, targetRef: unknown, intent: string): Promise<CopilotRoutineProposalDraft>;
   /**
    * Field edits addressed by stable id. Rejects an edit the routine cannot take — an id it does
-   * not have, a status it cannot be edited in, or a change that would introduce a validation
-   * diagnostic it does not already carry — so an unusable draft never reaches an operator.
+   * not have, or a change that would introduce a validation diagnostic it does not already carry
+   * — so an unusable draft never reaches an operator.
    */
   draftEdit(workspaceId: string, targetRef: unknown, changes: unknown, rationale?: string): Promise<CopilotRoutineProposalDraft>;
-  draftLifecycle(workspaceId: string, targetRef: unknown, action: CopilotRoutineLifecycleAction, rationale?: string): Promise<CopilotRoutineProposalDraft>;
 }
 
 export interface CopilotAgentSettingProposalAdapter extends CopilotProposalAdapter {
@@ -385,6 +432,12 @@ export interface CopilotWebsiteCrawlProposalAdapter extends CopilotProposalAdapt
   validatePayload(workspaceId: string, targetRef: unknown, payload: unknown): Promise<{ targetRef: unknown; payload: unknown; versionToken: string }>;
 }
 
+/** Publication is a reviewed candidate write with the same normalized-payload contract as other supplied proposals. */
+export interface CopilotAgentPublicationProposalAdapter extends CopilotProposalAdapter {
+  readonly targetType: "agent_publication";
+  validatePayload(workspaceId: string, targetRef: unknown, payload: unknown): Promise<{ targetRef: unknown; payload: unknown; versionToken: string }>;
+}
+
 /**
  * Every adapter a tool factory may be handed, discriminated by `targetType`. One declaration so a
  * new target type reaches every proposal tool at once instead of being added to each one by hand.
@@ -399,7 +452,8 @@ export type CopilotAnyProposalAdapter =
   | CopilotDocumentProposalAdapter
   | CopilotIngestionSettingsProposalAdapter
   | CopilotWebsiteCrawlProposalAdapter
-  | CopilotWorkspaceSettingProposalAdapter;
+  | CopilotWorkspaceSettingProposalAdapter
+  | CopilotAgentPublicationProposalAdapter;
 
 export type CopilotProposalAdapterRegistry = ReadonlyArray<CopilotAnyProposalAdapter>;
 
@@ -470,6 +524,8 @@ export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
   /** Reconstructs a proposal result after the proposal committed but its invocation outcome did not. */
   reconcileMcpInvocation?(input: {
     readonly invocation: OperatorMcpInvocationRecord;
+    /** The fresh request's schema-validated arguments. Their digest was matched to `invocation`. */
+    readonly arguments: TInput;
     readonly context: CopilotToolInvocationContext;
     readonly staleBefore: Date;
     readonly now: Date;

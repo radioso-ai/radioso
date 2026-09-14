@@ -4,6 +4,9 @@ import type {
   ConversationEvent,
   ConversationClarificationStore,
   ConversationClarifier,
+  ConversationCoverageAssessor,
+  ConversationCoverageRoutineActivator,
+  ConversationCoverageReactionRecorder,
   ConversationModelGateway,
   ConversationProgressPort,
   ConversationRoutineActivator,
@@ -49,7 +52,7 @@ const missingModelGateway: ConversationModelGateway = {
   },
 };
 
-export interface ChatProcessTurnInputOptions {
+interface ChatProcessTurnInputOptions {
   session: PreparedSession;
   accountId?: string;
   skills?: SkillDefinition[];
@@ -66,6 +69,7 @@ export interface ChatProcessTurnInputOptions {
   routineStore?: ConversationRoutineStore;
   routineRunner?: ConversationRoutineRunner;
   routineActivator?: ConversationRoutineActivator;
+  coverageRoutineActivator?: ConversationCoverageRoutineActivator;
   clarifier?: ConversationClarifier;
   clarificationStore?: ConversationClarificationStore;
   loopGuardCandidateIds?: string[];
@@ -73,9 +77,11 @@ export interface ChatProcessTurnInputOptions {
   turnInterpreter?: ConversationTurnInterpreter;
   retrievalWork?: ConversationRetrievalWorkPort;
   getSession?: () => PreparedSession;
+  coverageAssessor?: ConversationCoverageAssessor;
+  coverageReactionRecorder?: ConversationCoverageReactionRecorder;
 }
 
-export interface ChatProcessTurnStreamInputOptions extends Omit<ChatProcessTurnInputOptions, "composer"> {
+interface ChatProcessTurnStreamInputOptions extends Omit<ChatProcessTurnInputOptions, "composer"> {
   composer: ConversationTurnStreamComposer;
   progress?: ConversationProgressPort;
 }
@@ -256,6 +262,8 @@ export const createChatProcessTurnInput = (options: ChatProcessTurnInputOptions)
     inputEvent: effectiveInputEventForSession(readSession()),
     skills: options.skills ?? [],
     directives: directiveWiring.directives,
+    ...(options.coverageAssessor ? { coverageAssessor: options.coverageAssessor } : {}),
+    ...(options.coverageReactionRecorder ? { coverageReactionRecorder: options.coverageReactionRecorder } : {}),
     stores: {
       async loadHistory() {
         return toConversationMessages(readSession().history);
@@ -274,6 +282,7 @@ export const createChatProcessTurnInput = (options: ChatProcessTurnInputOptions)
     ...(options.routineStore ? { routineStore: options.routineStore } : {}),
     ...(options.routineRunner ? { routineRunner: options.routineRunner } : {}),
     ...(options.routineActivator ? { routineActivator: options.routineActivator } : {}),
+    ...(options.coverageRoutineActivator ? { coverageRoutineActivator: options.coverageRoutineActivator } : {}),
     ...(options.clarifier ? { clarifier: options.clarifier } : {}),
     ...(options.clarificationStore ? { clarificationStore: options.clarificationStore } : {}),
     ...(options.loopGuardCandidateIds ? { loopGuardCandidateIds: options.loopGuardCandidateIds } : {}),
@@ -289,7 +298,7 @@ export const createChatProcessTurnStreamInput = (
   ...(options.progress ? { progress: options.progress } : {}),
 });
 
-export interface AttemptRoutineInputOptions {
+interface AttemptRoutineInputOptions {
   session: PreparedSession;
   accountId?: string;
   directives?: Directive[];

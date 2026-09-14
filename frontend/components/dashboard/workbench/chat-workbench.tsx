@@ -1,6 +1,6 @@
 'use client'
 
-import { type FormEvent, type KeyboardEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
+import { type FormEvent, type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 import { FileText, FlaskConical, MoreHorizontal, RotateCcw, Send, Workflow } from 'lucide-react'
@@ -26,17 +26,17 @@ import {
   documentsApi,
   type AnswerFeedbackState,
   type AnswerFeedbackValue,
-  type ChatConversationTurn,
   type ChatSuggestion,
 } from '@/lib/api'
 import { type ChatMessage, useChatSession } from '@/lib/chat-context'
+import { buildLiveTurnDiagnostics, historyTurnToChatMessage } from '@/lib/chat-workbench-diagnostics'
 import { buildDashboardHref } from '@/lib/dashboard-routes'
 import { editionController } from '@/lib/edition-controller'
 import { DEFAULT_WEBSITE_EMBED_COPY } from '@/lib/embed-widget'
 import { type WorkspaceOnboardingState } from '@/lib/onboarding'
 import { useSkillCatalog } from '@/lib/skill-catalog'
 import { useRoutineCatalog } from '@/lib/routine-catalog'
-import { getPrimaryLeafTrace, routineTurnSignalFromSpine } from '@/lib/turn-trace'
+import { routineTurnSignalFromSpine } from '@/lib/turn-trace'
 import { useWorkspace } from '@/lib/workspace-context'
 import { ScrollToBottomButton } from '@/components/chat/scroll-to-bottom-button'
 import { useChatScroll } from '@/hooks/use-chat-scroll'
@@ -46,7 +46,6 @@ import { TestSessionsView } from '@/components/dashboard/workbench/test-sessions
 import {
   CompactIdField,
   TurnDiagnosticsPanel,
-  type TurnDiagnosticsInput,
 } from '@/components/dashboard/turn-inspector/turn-diagnostics-panel'
 
 const MODE_OPTIONS: readonly SegmentedControlOption<'chat' | 'history'>[] = [
@@ -69,7 +68,6 @@ export interface ChatWorkbenchProps {
   onOpenDocument?: (documentId: string) => void
   /** Drives the empty-state copy. Optional; defaults to a neutral "ready" state. */
   onboarding?: WorkspaceOnboardingState
-  navigation?: ReactNode
   /** A forked test conversation to adopt into the live session on open (from "Continue in test chat"). */
   adoptConversationId?: string
   /**
@@ -78,22 +76,6 @@ export interface ChatWorkbenchProps {
    * Absent for normal test chat.
    */
   previewRoutineIds?: string[]
-}
-
-/** Maps a persisted history turn into the live client message shape for adoption. */
-function historyTurnToChatMessage(turn: ChatConversationTurn): ChatMessage {
-  return {
-    id: turn.id,
-    role: turn.role === 'assistant' ? 'assistant' : 'user',
-    content: turn.content,
-    createdAt: turn.createdAt,
-    citations: turn.citations,
-    answerSegments: turn.answerSegments,
-    persistedAssistantMessageId: turn.role === 'assistant' ? turn.id : undefined,
-    turnTrace: turn.debug?.turnTrace,
-    activityTrace: turn.debug?.activityTrace,
-    status: 'complete',
-  }
 }
 
 /**
@@ -114,29 +96,6 @@ function resolveDiagnosticsAssistant(messages: ChatMessage[], selectedId: string
     return selected
   }
   return messages.slice(index + 1).find((message) => message.role === 'assistant') ?? null
-}
-
-/**
- * Maps a live client {@link ChatMessage} into the surface-neutral
- * {@link TurnDiagnosticsInput}. Live turns don't carry the history `debug`
- * wrapper (no route/answerOutcome/visitorContext); the turn-trace envelope and
- * its primary retrieval leaf drive the shared inspector, matching how the
- * history detail hook resolves the active trace.
- */
-function buildLiveTurnDiagnostics(
-  selected: ChatMessage | null,
-  assistant: ChatMessage | null,
-): TurnDiagnosticsInput | null {
-  if (!selected) {
-    return null
-  }
-  const envelope = assistant?.turnTrace
-  return {
-    messageId: selected.id,
-    activityTrace: getPrimaryLeafTrace(envelope) ?? assistant?.activityTrace,
-    turnTrace: envelope,
-    errorMessage: assistant?.status === 'error' ? assistant.content : undefined,
-  }
 }
 
 /**

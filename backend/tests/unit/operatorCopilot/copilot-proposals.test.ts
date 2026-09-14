@@ -25,6 +25,8 @@ import { createAgentSettingProposalCopilotTools } from "../../../src/modules/ope
 import { createAgentSkillConfigProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/agentSkills.js";
 import { createDirectiveProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/directives.js";
 import { createRoutineProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/routines.js";
+import { citedProposalEvidence } from "../../../src/modules/operatorCopilot/tools/shared.js";
+import { createAgentPublicationProposalAdapter } from "../../../src/modules/operatorCopilot/agentPublicationProposalAdapter.js";
 import { conflict } from "../../../src/shared/domain/errors.js";
 
 const workspaceId = randomUUID();
@@ -43,6 +45,28 @@ type ProposalToolDependencies = Parameters<typeof createDirectiveProposalCopilot
 const unmeasured = () => ({
   evidence: { record: vi.fn(), findMany: vi.fn(async () => []) },
   agentVersion: { get: vi.fn(async () => ({ updatedAt: new Date("2026-08-25T10:00:00.000Z") })) },
+});
+
+describe("citedProposalEvidence", () => {
+  it("rejects citing evidence over a transport with no Ray conversation, cleanly rather than opaquely", async () => {
+    await expect(citedProposalEvidence(
+      { proposalEvidence: unmeasured() },
+      { workspaceId, operatorUserId },
+      agentId,
+      [randomUUID()],
+      { targetType: "context_variable" },
+    )).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  it("proposes unmeasured without requiring a conversation when no evidence is cited", async () => {
+    await expect(citedProposalEvidence(
+      { proposalEvidence: unmeasured() },
+      { workspaceId, operatorUserId },
+      agentId,
+      undefined,
+      { targetType: "context_variable" },
+    )).resolves.toBeNull();
+  });
 });
 
 const proposalOriginFields = (input: CopilotProposalDraft) => {
@@ -188,6 +212,7 @@ describe("US3 copilot proposals", () => {
     const descriptors = createProposalTools({
       proposalRepository: { createProposal },
       proposalEvidence: unmeasured(),
+      proposalRecovery: { recoverOperatorMcpProposal: vi.fn() },
       proposalAdapters: [
         {
           targetType: "directive",
@@ -203,7 +228,7 @@ describe("US3 copilot proposals", () => {
           applyIfVersionMatches: vi.fn(),
           validatePayload: vi.fn(async (_workspaceId, targetRef, payload) => ({ targetRef, payload, versionToken: "agent-version" })),
         },
-        { targetType: "routine", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn(), draftEdit: vi.fn(), draftLifecycle: vi.fn() },
+        { targetType: "routine", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn(), draftEdit: vi.fn() },
       ],
       auditService: auditService(),
     });
@@ -215,7 +240,6 @@ describe("US3 copilot proposals", () => {
       { name: "propose_directive_enablement", shape: "propose" },
       { name: "propose_routine", shape: "propose" },
       { name: "propose_routine_edit", shape: "propose" },
-      { name: "propose_routine_lifecycle", shape: "propose" },
       { name: "propose_agent_setting", shape: "propose" },
     ]);
 
@@ -240,6 +264,7 @@ describe("US3 copilot proposals", () => {
     const descriptors = createDirectiveProposalCopilotTools({
       proposalRepository: { createProposal },
       proposalEvidence: unmeasured(),
+      proposalRecovery: { recoverOperatorMcpProposal: vi.fn() },
       proposalAdapters: [{ targetType: "directive", readVersionToken, preview, applyIfVersionMatches: vi.fn(), draft: vi.fn() }],
       auditService: auditService(),
     });
@@ -274,6 +299,7 @@ describe("US3 copilot proposals", () => {
     const descriptors = createDirectiveProposalCopilotTools({
       proposalRepository: { createProposal },
       proposalEvidence: unmeasured(),
+      proposalRecovery: { recoverOperatorMcpProposal: vi.fn() },
       proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(async () => "directive-version"), preview, applyIfVersionMatches: vi.fn(), draft: vi.fn() }],
       auditService: auditService(),
     });
@@ -295,6 +321,7 @@ describe("US3 copilot proposals", () => {
     const descriptors = createDirectiveProposalCopilotTools({
       proposalRepository: { createProposal },
       proposalEvidence: unmeasured(),
+      proposalRecovery: { recoverOperatorMcpProposal: vi.fn() },
       proposalAdapters: [
         {
           targetType: "directive",
@@ -318,7 +345,7 @@ describe("US3 copilot proposals", () => {
       payload: expect.objectContaining({ op: "remove" }),
     }));
     expect(result).toMatchObject({ targetType: "directive", targetLabel: "Avoid competitors" });
-    expect((result as { summary: string }).summary).toMatch(/permanently|cannot be undone/i);
+    expect((result as { summary: string }).summary).toMatch(/agent draft|Review & Publish/i);
     // Finding 1 (issue triage, next-ray-epic-issue): the operator-facing card must carry a
     // structural removal signal of its own, not just a summary sentence Ray happened to phrase
     // as irreversible - so the confirmation dialog can state plainly that Apply deletes the
@@ -331,6 +358,7 @@ describe("US3 copilot proposals", () => {
     const descriptors = createDirectiveProposalCopilotTools({
       proposalRepository: { createProposal },
       proposalEvidence: unmeasured(),
+      proposalRecovery: { recoverOperatorMcpProposal: vi.fn() },
       proposalAdapters: [
         {
           targetType: "directive",
@@ -358,10 +386,11 @@ describe("US3 copilot proposals", () => {
     const descriptors = createProposalTools({
       proposalRepository: { createProposal },
       proposalEvidence: unmeasured(),
+      proposalRecovery: { recoverOperatorMcpProposal: vi.fn() },
       proposalAdapters: [
         { targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn() },
         { targetType: "agent_setting", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(), validatePayload: vi.fn() },
-        { targetType: "routine", readVersionToken: vi.fn(async () => "agent-version"), preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: routineDraft, draftEdit: vi.fn(), draftLifecycle: vi.fn() },
+        { targetType: "routine", readVersionToken: vi.fn(async () => "agent-version"), preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: routineDraft, draftEdit: vi.fn() },
       ],
       auditService: auditService(),
     });
@@ -395,6 +424,7 @@ describe("US3 copilot proposals", () => {
     const [descriptor] = createDirectiveProposalCopilotTools({
       proposalRepository: { createProposal },
       proposalEvidence: unmeasured(),
+      proposalRecovery: { recoverOperatorMcpProposal: vi.fn() },
       proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(async () => "directive-version"), preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft }],
       auditService: auditService(),
     });
@@ -426,6 +456,7 @@ describe("US3 copilot proposals", () => {
     const [descriptor] = createAgentSettingProposalCopilotTools({
       proposalRepository: { createProposal },
       proposalEvidence: unmeasured(),
+      proposalRecovery: { recoverOperatorMcpProposal: vi.fn() },
       proposalAdapters: [{ targetType: "agent_setting", validatePayload, readVersionToken: vi.fn(async () => "agent-version"), preview: vi.fn(), applyIfVersionMatches: vi.fn() }],
       auditService: auditService(),
     });
@@ -460,7 +491,8 @@ describe("US3 copilot proposals", () => {
     const descriptors = createRoutineProposalCopilotTools({
       proposalRepository: { createProposal },
       proposalEvidence: unmeasured(),
-      proposalAdapters: [{ targetType: "routine", readVersionToken: vi.fn(async () => "routine-version"), draftEdit, draftLifecycle: vi.fn(), draft: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn() }],
+      proposalRecovery: { recoverOperatorMcpProposal: vi.fn() },
+      proposalAdapters: [{ targetType: "routine", readVersionToken: vi.fn(async () => "routine-version"), draftEdit, draft: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn() }],
       auditService: auditService(),
     });
     const authorization = vi.fn()
@@ -503,6 +535,13 @@ describe("US3 copilot proposals", () => {
 
     expect(await service.applyProposal({ surface: "dashboard", workspaceId, accountId, operatorUserId, proposalId: proposal.id })).toEqual({ status: "stale" });
     expect(applyIfVersionMatches).toHaveBeenCalledOnce();
+    expect(applyIfVersionMatches).toHaveBeenCalledWith(
+      workspaceId,
+      proposal.targetRef,
+      proposal.payload,
+      proposal.versionToken,
+      { surface: "dashboard", accountId },
+    );
     expect((await repository.findProposal({ id: proposal.id, workspaceId, operatorUserId }))?.status).toBe("stale");
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ eventType: "copilot.proposal.apply_failed", metadata: expect.objectContaining({ outcome: "stale" }) }));
   });
@@ -556,6 +595,152 @@ describe("US3 copilot proposals", () => {
     await expect(service.applyProposal({ surface: "dashboard", workspaceId, accountId, operatorUserId, proposalId: proposal.id }))
       .resolves.toEqual({ status: "applied", appliedRef: { directiveId } });
     expect(applyIfVersionMatches).toHaveBeenCalledOnce();
+  });
+
+  it("settles an interrupted MCP apply from the owner receipt without repeating the mutation", async () => {
+    const repository = new MemoryProposalRepository();
+    const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "current", evidence: null });
+    const initial = await repository.claimProposalApply({ id: proposal.id, workspaceId, operatorUserId, claimTtlSeconds: 300 });
+    expect(initial).not.toBeNull();
+    repository.expireApplyClaim(proposal.id);
+    const recoveredClaim = await repository.claimProposalApply({ id: proposal.id, workspaceId, operatorUserId, claimTtlSeconds: 300 });
+    expect(recoveredClaim?.previousAttemptStartedAt).not.toBeNull();
+    const applyIfVersionMatches = vi.fn(async () => ({ outcome: "applied" as const, appliedRef: { directiveId } }));
+    const reconcileMcpInterruptedApply = vi.fn(async () => ({ outcome: "applied" as const, appliedRef: { directiveId } }));
+    const service = new OperatorCopilotService({
+      repository,
+      capabilityRunner: { runStreaming: vi.fn() },
+      usageLimitPolicy: noLimitPolicy(),
+      auditService: auditService(),
+      prompt: "system",
+      workspaceRouteKeyResolver,
+      currentAuthorization,
+      tools: [],
+      proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches, reconcileMcpInterruptedApply }],
+    });
+
+    await expect(service.executeClaimedProposal({
+      input: { surface: "mcp", workspaceId, accountId, operatorUserId, proposalId: proposal.id },
+      claim: recoveredClaim!,
+      executionInvocationId: "execution-1",
+    })).resolves.toEqual({ status: "applied", appliedRef: { directiveId } });
+    expect(reconcileMcpInterruptedApply).toHaveBeenCalledOnce();
+    expect(applyIfVersionMatches).not.toHaveBeenCalled();
+  });
+
+  it("reconciles an interrupted publication through its owner receipt before the generic executor retries", async () => {
+    const repository = new MemoryProposalRepository();
+    const candidateRevisionId = randomUUID();
+    const proposal = await repository.createProposal({
+      workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "agent_publication",
+      targetRef: { agentId, candidateRevisionId },
+      payload: { expectedDraftGeneration: 1, expectedPublishedRevisionId: null }, versionToken: "1:none", evidence: null,
+    });
+    await repository.claimProposalApply({ id: proposal.id, workspaceId, operatorUserId, claimTtlSeconds: 300 });
+    repository.expireApplyClaim(proposal.id);
+    const recoveredClaim = (await repository.claimProposalApply({ id: proposal.id, workspaceId, operatorUserId, claimTtlSeconds: 300 }))!;
+    const publish = vi.fn(async () => ({ publicationId: randomUUID(), revisionId: candidateRevisionId, publishedAt: new Date(), idempotentReplay: true }));
+    const adapter = createAgentPublicationProposalAdapter({ revisions: { state: vi.fn(), detail: vi.fn(), publish } });
+    const service = new OperatorCopilotService({
+      repository, capabilityRunner: { runStreaming: vi.fn() }, usageLimitPolicy: noLimitPolicy(), auditService: auditService(), prompt: "system", workspaceRouteKeyResolver, currentAuthorization, tools: [], proposalAdapters: [adapter],
+    });
+
+    await expect(service.executeClaimedProposal({
+      input: { surface: "mcp", workspaceId, accountId, operatorUserId, proposalId: proposal.id }, claim: recoveredClaim, executionInvocationId: "publication-execution-1",
+    })).resolves.toMatchObject({ status: "applied", appliedRef: { revisionId: candidateRevisionId } });
+    expect(publish).toHaveBeenCalledOnce();
+  });
+
+  it("keeps an unknown interrupted MCP effect pending for the same receipt to reconcile later", async () => {
+    const repository = new MemoryProposalRepository();
+    const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "current", evidence: null });
+    await repository.claimProposalApply({ id: proposal.id, workspaceId, operatorUserId, claimTtlSeconds: 300 });
+    repository.expireApplyClaim(proposal.id);
+    const recoveredClaim = (await repository.claimProposalApply({ id: proposal.id, workspaceId, operatorUserId, claimTtlSeconds: 300 }))!;
+    const reconcileMcpInterruptedApply = vi.fn()
+      .mockResolvedValueOnce({ outcome: "unknown" as const, reason: "Publish receipt unavailable" })
+      .mockResolvedValueOnce({ outcome: "applied" as const, appliedRef: { directiveId } });
+    const service = new OperatorCopilotService({
+      repository, capabilityRunner: { runStreaming: vi.fn() }, usageLimitPolicy: noLimitPolicy(), auditService: auditService(), prompt: "system", workspaceRouteKeyResolver, currentAuthorization, tools: [],
+      proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(), reconcileMcpInterruptedApply }],
+    });
+    const execute = () => service.executeClaimedProposal({
+      input: { surface: "mcp", workspaceId, accountId, operatorUserId, proposalId: proposal.id }, claim: recoveredClaim, executionInvocationId: "execution-1",
+    });
+
+    await expect(execute()).resolves.toEqual({ status: "uncertain", reason: "Publish receipt unavailable" });
+    expect(repository.hasApplyClaim(proposal.id)).toBe(true);
+    expect((await repository.findProposal({ id: proposal.id, workspaceId, operatorUserId }))?.status).toBe("pending");
+    await expect(execute()).resolves.toEqual({ status: "applied", appliedRef: { directiveId } });
+    expect((await repository.findProposal({ id: proposal.id, workspaceId, operatorUserId }))?.status).toBe("applied");
+  });
+
+  it("claims an MCP review with its receipt binding before the shared executor mutates", async () => {
+    const repository = new MemoryProposalRepository();
+    const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "current", evidence: null });
+    const claimMcpReviewedProposalApply = vi.spyOn(repository, "claimMcpReviewedProposalApply");
+    const service = new OperatorCopilotService({
+      repository, capabilityRunner: { runStreaming: vi.fn() }, usageLimitPolicy: noLimitPolicy(), auditService: auditService(), prompt: "system", workspaceRouteKeyResolver, currentAuthorization, tools: [],
+      proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(async () => ({ outcome: "applied" as const, appliedRef: { directiveId } })) }],
+    });
+    await expect(service.executeMcpReviewedProposal({ workspaceId, accountId, operatorUserId, proposalId: proposal.id, reviewDigest: "a".repeat(43), executionInvocationId: "execution-1", grantId: "grant-1", clientId: "client-1", currentAuthorization })).resolves.toMatchObject({ status: "applied" });
+    expect(claimMcpReviewedProposalApply).toHaveBeenCalledWith(expect.objectContaining({ proposalId: proposal.id, executionInvocationId: "execution-1", grantId: "grant-1", clientId: "client-1" }));
+  });
+
+  it("releases a reviewed MCP claim without mutating when request authorization is revoked after the claim", async () => {
+    const repository = new MemoryProposalRepository();
+    const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "current", evidence: null });
+    const applyIfVersionMatches = vi.fn();
+    const service = new OperatorCopilotService({
+      repository, capabilityRunner: { runStreaming: vi.fn() }, usageLimitPolicy: noLimitPolicy(), auditService: auditService(), prompt: "system", workspaceRouteKeyResolver, currentAuthorization, tools: [],
+      proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches }],
+    });
+    const originalClaim = repository.claimMcpReviewedProposalApply.bind(repository);
+    let authorized = true;
+    vi.spyOn(repository, "claimMcpReviewedProposalApply").mockImplementation(async (input) => {
+      const claimed = await originalClaim(input);
+      authorized = false;
+      return claimed;
+    });
+
+    await expect(service.executeMcpReviewedProposal({
+      workspaceId, accountId, operatorUserId, proposalId: proposal.id, reviewDigest: "a".repeat(43), executionInvocationId: "execution-1", grantId: "grant-1", clientId: "client-1",
+      currentAuthorization: { hasAllPermissions: vi.fn(async () => authorized) },
+    })).rejects.toBeInstanceOf(CopilotAuthorizationError);
+
+    expect(applyIfVersionMatches).not.toHaveBeenCalled();
+    expect(repository.hasApplyClaim(proposal.id)).toBe(false);
+    expect((await repository.findProposal({ id: proposal.id, workspaceId, operatorUserId }))?.status).toBe("pending");
+  });
+
+  it("allows cancellation for a proposal that has not reserved an MCP receipt", async () => {
+    const repository = new MemoryProposalRepository();
+    const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "current", evidence: null });
+
+    await expect(repository.cancelPendingProposal({ id: proposal.id, workspaceId, operatorUserId })).resolves.toMatchObject({ status: "dismissed" });
+  });
+
+  it("does not cancel a reviewed MCP proposal when request authorization is revoked while its receipt is read", async () => {
+    const repository = new MemoryProposalRepository();
+    const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "current", evidence: null });
+    const originalFind = repository.findMcpReviewedProposal.bind(repository);
+    let authorized = true;
+    vi.spyOn(repository, "findMcpReviewedProposal").mockImplementation(async (input) => {
+      const found = await originalFind(input);
+      authorized = false;
+      return found;
+    });
+    const service = new OperatorCopilotService({
+      repository, capabilityRunner: { runStreaming: vi.fn() }, usageLimitPolicy: noLimitPolicy(), auditService: auditService(), prompt: "system", workspaceRouteKeyResolver, currentAuthorization, tools: [],
+      proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn() }],
+    });
+
+    await expect(service.cancelMcpReviewedProposal({
+      workspaceId, accountId, operatorUserId, grantId: "grant-1", clientId: "client-1", proposalId: proposal.id,
+      currentAuthorization: { hasAllPermissions: vi.fn(async () => authorized) },
+    })).rejects.toBeInstanceOf(CopilotAuthorizationError);
+
+    expect((await repository.findProposal({ id: proposal.id, workspaceId, operatorUserId }))?.status).toBe("pending");
   });
 
   it("finalizes an unexpected apply exception as failed so the proposal is not stranded", async () => {
@@ -656,8 +841,9 @@ class MemoryProposalRepository implements CopilotRepositoryPort {
   async listMessages(input: { conversationId: string }): Promise<ReadonlyArray<CopilotMessage>> { return this.messages.filter((item) => item.conversationId === input.conversationId).map((message) => ({ ...message, proposals: this.proposals.filter((proposal) => proposal.messageId === message.id).map(presentProposal) })); }
   async acquireTurn(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotConversation | "running" | null> { const conversation = await this.findConversation(input); if (!conversation || conversation.status === "running") return conversation ? "running" : null; const next = { ...conversation, status: "running" as const }; this.conversations[this.conversations.indexOf(conversation)] = next; return next; }
   async finishTurn(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<void> { const conversation = await this.findConversation(input); if (conversation) this.conversations[this.conversations.indexOf(conversation)] = { ...conversation, status: "idle" }; }
-  async createProposal(input: CopilotProposalDraft): Promise<CopilotProposal> { const createdAt = new Date(); const origin = input.origin ?? { type: "conversation" as const, conversationId: input.conversationId }; const proposal: CopilotProposal = { ...input, origin, conversationId: origin.type === "conversation" ? origin.conversationId : null, operatorMcpInvocationId: origin.type === "operator_mcp_invocation" ? origin.invocationId : null, id: randomUUID(), messageId: null, status: "pending", reason: null, appliedRef: null, createdAt, updatedAt: createdAt }; this.proposals.push(proposal); return proposal; }
+  async createProposal(input: CopilotProposalDraft): Promise<CopilotProposal> { const createdAt = new Date(); const origin = input.origin ?? { type: "conversation" as const, conversationId: input.conversationId }; const proposal: CopilotProposal = { ...input, origin, conversationId: origin.type === "conversation" ? origin.conversationId : null, operatorMcpInvocationId: origin.type === "operator_mcp_invocation" ? origin.invocationId : null, id: randomUUID(), messageId: null, reviewDigest: input.reviewDigest ?? null, reviewSnapshot: input.reviewSnapshot ?? null, expiresAt: input.expiresAt ?? null, executionInvocationId: null, status: "pending", reason: null, appliedRef: null, createdAt, updatedAt: createdAt }; this.proposals.push(proposal); return proposal; }
   async findProposal(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null> { return this.proposals.find((item) => item.id === input.id && item.workspaceId === input.workspaceId && item.operatorUserId === input.operatorUserId) ?? null; }
+  async findMcpReviewedProposal(input: { id: string; workspaceId: string; operatorUserId: string; grantId: string; clientId: string }): Promise<CopilotProposal | null> { return this.findProposal(input); }
   async findProposalWorkspace(input: { id: string; accountId: string; operatorUserId: string }): Promise<string | null> { return this.proposals.find((item) => item.id === input.id && item.operatorUserId === input.operatorUserId)?.workspaceId ?? null; }
   async attachProposalsToMessage(input: { proposalIds: ReadonlyArray<string>; messageId: string; conversationId: string }): Promise<void> { this.proposals = this.proposals.map((proposal) => input.proposalIds.includes(proposal.id) && proposal.conversationId === input.conversationId ? { ...proposal, messageId: input.messageId } : proposal); }
   async updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposal["status"]; appliedRef?: unknown; reason?: string | null; applyClaimGuard: CopilotProposalApplyClaimGuard }): Promise<CopilotProposal | null> {
@@ -678,6 +864,14 @@ class MemoryProposalRepository implements CopilotRepositoryPort {
     this.applyClaims.set(proposal.id, claimedAt);
     return { proposal, claimedAt, previousAttemptStartedAt };
   }
+  async claimMcpReviewedProposalApply(input: { proposalId: string; executionInvocationId: string; reviewDigest: string; workspaceId: string; operatorUserId: string; grantId: string; clientId: string; now: Date; claimTtlSeconds: number }) {
+    const claim = await this.claimProposalApply({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId, claimTtlSeconds: input.claimTtlSeconds });
+    if (claim) {
+      const proposal = await this.findProposal({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId });
+      if (proposal) this.proposals[this.proposals.indexOf(proposal)] = { ...proposal, executionInvocationId: input.executionInvocationId };
+    }
+    return claim ? { status: "claimed" as const, claim } : { status: "not_prepared" as const };
+  }
   async releaseProposalApplyClaim(input: { id: string; workspaceId: string; operatorUserId: string; claimedAt: Date }): Promise<boolean> {
     const proposal = await this.findProposal(input);
     if (!proposal || proposal.status !== "pending") return false;
@@ -686,7 +880,15 @@ class MemoryProposalRepository implements CopilotRepositoryPort {
     this.applyClaims.delete(proposal.id);
     return true;
   }
+  async cancelPendingProposal(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null> {
+    const proposal = await this.findProposal(input);
+    if (!proposal || proposal.status !== "pending" || proposal.executionInvocationId !== null || this.applyClaims.has(proposal.id)) return null;
+    const dismissed = { ...proposal, status: "dismissed" as const, updatedAt: new Date() };
+    this.proposals[this.proposals.indexOf(proposal)] = dismissed;
+    return dismissed;
+  }
   hasApplyClaim(id: string): boolean { return this.applyClaims.has(id); }
+  expireApplyClaim(id: string): void { this.applyClaims.set(id, new Date(Date.now() - 301_000)); }
   private isClaimFree(proposalId: string, claimTtlSeconds: number): boolean {
     const claimedAt = this.applyClaims.get(proposalId);
     return !claimedAt || Date.now() - claimedAt.getTime() >= claimTtlSeconds * 1000;
@@ -936,12 +1138,12 @@ describe("routine proposal adapter", () => {
     const { createRoutineCopilotProposalAdapter } = await import("../../../src/modules/operatorCopilot/proposalAdapters.js");
     const payload = routineDraftPayload();
     const agentService = { get: vi.fn(async () => ({ updatedAt: new Date(0) })) };
-    let existingRoutines: Array<{ id: string; name: string; version: number; status: string; updatedAt: Date }> = [];
-    const list = vi.fn(async () => existingRoutines);
+    let blocking: { id: string; updatedAt: Date } | null = null;
+    const findCreateConflict = vi.fn(async () => blocking);
     const adapter = createRoutineCopilotProposalAdapter({
       agentService: agentService as never,
       routineDraftAssistService: {} as never,
-      routineDefinitionService: { list } as never,
+      routineDefinitionService: { findCreateConflict } as never,
     });
     const targetRef = { agentId: "6a6a6a6a-1111-2222-3333-444444444444", routineId: null };
 
@@ -956,8 +1158,29 @@ describe("routine proposal adapter", () => {
 
     // Someone else creates a routine with the exact name (and starting version) this proposal
     // would take - the one thing that would actually make Apply's own createDraft reject it.
-    existingRoutines = [{ id: "routine-collider", name: payload.name, version: 1, status: "draft", updatedAt: new Date(1) }];
+    blocking = { id: "routine-collider", updatedAt: new Date(1) };
     expect(await adapter.readVersionToken("workspace-1", targetRef, payload)).not.toBe(token);
+  });
+
+  it("detects a create-name conflict from a retired, non-canonical row even when the canonical row of that lineage has since been renamed", async () => {
+    // list() returns one canonical row per lineage, so a name check built on it would miss a
+    // real conflict: a pre-cutover lineage can still occupy (name, version 1) via a retired row
+    // while its canonical (highest-version) row now carries a different name. findCreateConflict
+    // checks the real constraint's identity directly instead of scanning list().
+    const { createRoutineCopilotProposalAdapter } = await import("../../../src/modules/operatorCopilot/proposalAdapters.js");
+    const payload = routineDraftPayload();
+    const findCreateConflict = vi.fn(async () => ({ id: "routine-legacy-v1", updatedAt: new Date(5) }));
+    const adapter = createRoutineCopilotProposalAdapter({
+      agentService: { get: vi.fn(async () => ({ updatedAt: new Date(0) })) } as never,
+      routineDraftAssistService: {} as never,
+      routineDefinitionService: { findCreateConflict } as never,
+    });
+    const targetRef = { agentId: "6a6a6a6a-1111-2222-3333-444444444444", routineId: null };
+
+    const token = await adapter.readVersionToken("workspace-1", targetRef, payload);
+
+    expect(findCreateConflict).toHaveBeenCalledWith("workspace-1", targetRef.agentId, payload.name);
+    expect(token).toContain("routine-legacy-v1");
   });
 
   it("keeps duplicate identities visible when previewing a new invalid routine", async () => {
@@ -989,6 +1212,50 @@ describe("routine proposal adapter", () => {
     expect(Object.keys(preview.proposed.slots)).toEqual(["reason", "reason #1"]);
     expect(Object.keys(preview.proposed.steps)).toEqual(["step_collect_reason", "step_collect_reason #1"]);
     expect(Object.keys(preview.proposed.terminals)).toEqual(["terminal_complete", "terminal_complete #2"]);
+  });
+
+  it("degrades a stale legacy lifecycle proposal gracefully in preview instead of crashing on a schema mismatch", async () => {
+    // propose_routine_lifecycle and its kind:"lifecycle" payload shape were removed with the
+    // routine lifecycle collapse, but nothing migrates or deletes proposal rows already persisted
+    // with that shape - an operator can still open one after this deploys. Neither the create nor
+    // the edit payload schema can parse it, so routinePayloadKind must recognize it explicitly
+    // rather than default it to "create" and let the schema mismatch crash preview() uncaught.
+    const { createRoutineCopilotProposalAdapter } = await import("../../../src/modules/operatorCopilot/proposalAdapters.js");
+    const get = vi.fn(async () => ({ id: "6a6a6a6a-1111-2222-3333-444444444446", name: "Return intake", updatedAt: new Date(0) }));
+    const adapter = createRoutineCopilotProposalAdapter({
+      agentService: {} as never,
+      routineDraftAssistService: {} as never,
+      routineDefinitionService: { get } as never,
+    });
+    const targetRef = { agentId: "6a6a6a6a-1111-2222-3333-444444444444", routineId: "6a6a6a6a-1111-2222-3333-444444444446" };
+    const legacyPayload = { kind: "lifecycle", action: "publish", routineId: "6a6a6a6a-1111-2222-3333-444444444446" };
+
+    const preview = await adapter.preview("workspace-1", targetRef, legacyPayload) as {
+      targetLabel: string;
+      current: unknown;
+      proposed: { editNoLongerApplies: string };
+    };
+
+    expect(preview.targetLabel).toBe("Return intake");
+    expect(preview.current).toBeNull();
+    expect(preview.proposed.editNoLongerApplies).toBe("This proposal type is no longer supported. Dismiss it.");
+  });
+
+  it("degrades a stale legacy lifecycle proposal gracefully in applyIfVersionMatches instead of leaking a raw validation error", async () => {
+    const { createRoutineCopilotProposalAdapter } = await import("../../../src/modules/operatorCopilot/proposalAdapters.js");
+    const adapter = createRoutineCopilotProposalAdapter({
+      agentService: {} as never,
+      routineDraftAssistService: {} as never,
+      // No routine service methods stubbed: a graceful degrade must return before touching any of
+      // them, so a call here would itself be a test failure (via the `as never` cast rejecting a
+      // real invocation) if the fix instead tried to apply a "create" against this payload.
+      routineDefinitionService: {} as never,
+    });
+    const targetRef = { agentId: "6a6a6a6a-1111-2222-3333-444444444444", routineId: "6a6a6a6a-1111-2222-3333-444444444447" };
+    const legacyPayload = { kind: "lifecycle", action: "archive", routineId: "6a6a6a6a-1111-2222-3333-444444444447" };
+
+    await expect(adapter.applyIfVersionMatches("workspace-1", targetRef, legacyPayload, new Date(0).toISOString()))
+      .resolves.toEqual({ outcome: "failed", reason: "This proposal type is no longer supported. Dismiss it." });
   });
 });
 
@@ -1597,6 +1864,7 @@ describe("proposal card presentation", () => {
 
 const routineDraftPayload = () => ({
   name: "Return intake",
+  enabled: true,
   activation: { triggerDescription: "When a customer requests a return", gateRef: null, priority: 10, reentryMode: "once_per_conversation" },
   slots: [{ stableSlotId: "slot_reason", key: "reason", type: "text", required: true, description: null, ordinal: 0 }],
   steps: [{ stableStepId: "step_collect_reason", kind: "chat", instruction: "Ask for {{slot.reason}}.", toolRef: null, ordinal: 0, metadata: {} }],
@@ -1808,7 +2076,7 @@ const storedRoutine = (overrides: Record<string, unknown> = {}) => ({
   agentId,
   lineageId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
   version: 1,
-  status: "draft",
+  enabled: true,
   name: "support-intake",
   activation: { triggerDescription: "When the user needs support", gateRef: null, priority: 7, reentryMode: "always" },
   slots: [],
@@ -1826,30 +2094,13 @@ const storedRoutine = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-/** A draft revision of the same lineage; a real one carries a routine id, so the fixture does too. */
-const pendingRevisionId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
-
-const routineAdapterPorts = (routine = storedRoutine(), siblings: Array<ReturnType<typeof storedRoutine>> = []) => {
+const routineAdapterPorts = (routine = storedRoutine()) => {
   const current = { value: routine };
-  const lineage = { siblings };
   return {
     current,
-    lineage,
-    list: vi.fn(async () => [current.value, ...lineage.siblings]),
     get: vi.fn(async () => current.value),
-    createDraft: vi.fn(async () => ({ routine: { id: "routine-1", status: "draft" } })),
     deleteDraft: vi.fn(async () => {}),
     updateDraft: vi.fn(async (_workspaceId: string, _agentId: string, _routineId: string, _input: unknown) => ({ routine: current.value, validation: { ok: true, diagnostics: [] } })),
-    // The real repository returns the lineage's existing draft when there is one, rather than a
-    // fresh copy of the published routine.
-    revise: vi.fn(async () => lineage.siblings.find((sibling) => sibling.status === "draft")
-      ?? { ...current.value, id: "revision-1", status: "draft", version: 2 }),
-    publish: vi.fn(async () => ({ routine: { ...current.value, id: "published-1", status: "published" }, validation: { ok: true, diagnostics: [] }, directiveScopeOrphans: [] })),
-    archive: vi.fn(async () => ({ ...current.value, status: "archived" })),
-    restore: vi.fn(async () => ({
-      routine: { ...current.value, status: "published" },
-      validation: { ok: true, diagnostics: [] },
-    })),
     validate: vi.fn(async () => ({ ok: true, diagnostics: [] as Array<{ code: string; location: string; message: string }> })),
   };
 };
@@ -1894,7 +2145,7 @@ describe("routine edit and lifecycle proposal tools", () => {
       order.push("draft");
       return { payload: { kind: "edit", name: "support-intake", changes: {} }, targetLabel: "support-intake", summary: "Edit routine support-intake: step confirm.", diagnostics: [] };
     });
-    const { createProposal, descriptors } = proposalTools({ readVersionToken, draftEdit, preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn(), draftLifecycle: vi.fn() });
+    const { createProposal, descriptors } = proposalTools({ readVersionToken, draftEdit, preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn() });
 
     const result = await descriptors.find((descriptor) => descriptor.name === "propose_routine_edit")!
       .createTool(toolContext)
@@ -1917,28 +2168,13 @@ describe("routine edit and lifecycle proposal tools", () => {
 
   it("refuses to draft an edit for a routine nobody named", async () => {
     const draftEdit = vi.fn();
-    const { createProposal, descriptors } = proposalTools({ readVersionToken: vi.fn(), draftEdit, preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn(), draftLifecycle: vi.fn() });
+    const { createProposal, descriptors } = proposalTools({ readVersionToken: vi.fn(), draftEdit, preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn() });
 
     await expect(descriptors.find((descriptor) => descriptor.name === "propose_routine_edit")!
       .createTool(toolContext)
       .invoke({ changes: { name: "renamed" } }, {} as never)).rejects.toThrow(/routine/i);
     expect(draftEdit).not.toHaveBeenCalled();
     expect(createProposal).not.toHaveBeenCalled();
-  });
-
-  it("proposes going live as its own card rather than folding it into a content edit", async () => {
-    const draftLifecycle = vi.fn(async () => ({ payload: { kind: "lifecycle", action: "publish", name: "support-intake" }, targetLabel: "support-intake", summary: "Publish routine support-intake.", diagnostics: [] }));
-    const { createProposal, descriptors } = proposalTools({ readVersionToken: vi.fn(async () => "routine-version"), draftLifecycle, preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn(), draftEdit: vi.fn() });
-
-    const tool = descriptors.find((descriptor) => descriptor.name === "propose_routine_lifecycle")!;
-    await tool.createTool(toolContext).invoke({ routineId, action: "publish" }, {} as never);
-
-    expect(tool.shape).toBe("propose");
-    expect(draftLifecycle).toHaveBeenCalledWith(workspaceId, { agentId, routineId }, "publish", undefined);
-    expect(createProposal).toHaveBeenCalledWith(expect.objectContaining({
-      targetRef: { agentId, routineId },
-      payload: { kind: "lifecycle", action: "publish", name: "support-intake" },
-    }));
   });
 });
 
@@ -1969,20 +2205,24 @@ describe("routine proposal adapter edits", () => {
       expect.objectContaining({ stableStepId: "collect_topic", instruction: "Ask how we can help." }),
       expect.objectContaining({ stableStepId: "confirm", instruction: "Read the order number back." }),
     ]);
-    expect(ports.revise).not.toHaveBeenCalled();
   });
 
-  it("revises a published routine into a draft and edits that, leaving the live version serving", async () => {
-    const ports = routineAdapterPorts(storedRoutine({ status: "published" }));
+  it("takes a routine out of service through the same edit tool, leaving its authored content untouched", async () => {
+    // propose_routine_lifecycle was removed with the old draft/published state machine; this is
+    // the enable/disable capability Ray needs in its place, folded into the one routine-edit tool.
+    const ports = routineAdapterPorts();
     const adapter = await routineAdapter(ports);
-    const draft = await adapter.draftEdit(workspaceId, targetRef, { steps: [{ stableStepId: "confirm", instruction: "Read it back." }] });
+    const draft = await adapter.draftEdit(workspaceId, targetRef, { enabled: false });
 
+    expect(draft.summary).toBe("Edit routine support-intake: disabled.");
     expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
       outcome: "applied",
-      appliedRef: { agentId, routineId: "revision-1" },
+      appliedRef: { agentId, routineId: targetRef.routineId },
     });
-    expect(ports.revise).toHaveBeenCalledWith(workspaceId, agentId, targetRef.routineId);
-    expect(ports.updateDraft.mock.calls[0]?.[2]).toBe("revision-1");
+    const [, , updatedId, input] = ports.updateDraft.mock.calls[0] as unknown as [string, string, string, { enabled: boolean; steps: unknown[] }];
+    expect(updatedId).toBe(targetRef.routineId);
+    expect(input.enabled).toBe(false);
+    expect(input.steps).toEqual(storedRoutine().steps);
   });
 
   it("declines to write when the routine moved under the proposal", async () => {
@@ -2061,49 +2301,6 @@ describe("routine proposal adapter edits", () => {
     });
   });
 
-  it("sends the operator to the draft revision instead of editing the published version behind it", async () => {
-    // revise() hands back the lineage's existing draft rather than a fresh copy, so an edit
-    // computed against the published content would overwrite whatever that draft already changed.
-    const pending = storedRoutine({
-      id: pendingRevisionId, status: "draft", version: 2, name: "support-intake",
-      steps: [storedRoutine().steps[0], { ...storedRoutine().steps[1], instruction: "Half-finished wording." }],
-    });
-    const adapter = await routineAdapter(routineAdapterPorts(storedRoutine({ status: "published" }), [pending]));
-
-    await expect(adapter.draftEdit(workspaceId, targetRef, { steps: [{ stableStepId: "confirm", instruction: "Read it back." }] }))
-      .rejects.toThrow(/draft revision/i);
-  });
-
-  it("edits through a revision nobody has touched rather than treating it as work in progress", async () => {
-    // Revising copies the published routine verbatim. A revision created and abandoned — including
-    // one left behind by a failed apply — is that copy, so refusing on its existence alone would
-    // strand the routine for every later edit.
-    const untouched = storedRoutine({ id: pendingRevisionId, status: "draft", version: 2 });
-    const ports = routineAdapterPorts(storedRoutine({ status: "published" }), [untouched]);
-    const adapter = await routineAdapter(ports);
-
-    const proposalToken = await adapter.readVersionToken(workspaceId, targetRef);
-    const draft = await adapter.draftEdit(workspaceId, targetRef, { steps: [{ stableStepId: "confirm", instruction: "Read it back." }] });
-
-    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, proposalToken)).toEqual({
-      outcome: "applied",
-      appliedRef: { agentId, routineId: pendingRevisionId },
-    });
-  });
-
-  it("declines to write when a draft revision appeared after the card was drafted", async () => {
-    const ports = routineAdapterPorts(storedRoutine({ status: "published" }));
-    const adapter = await routineAdapter(ports);
-    const draft = await adapter.draftEdit(workspaceId, targetRef, { steps: [{ stableStepId: "confirm", instruction: "Read it back." }] });
-    ports.lineage.siblings = [storedRoutine({
-      id: pendingRevisionId, status: "draft", version: 2,
-      steps: [storedRoutine().steps[0], { ...storedRoutine().steps[1], instruction: "Someone else's wording." }],
-    })];
-
-    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({ outcome: "stale" });
-    expect(ports.updateDraft).not.toHaveBeenCalled();
-  });
-
   it("states the version it decided against when it writes", async () => {
     const ports = routineAdapterPorts();
     const adapter = await routineAdapter(ports);
@@ -2131,303 +2328,222 @@ describe("routine proposal adapter edits", () => {
     });
     expect(ports.deleteDraft).not.toHaveBeenCalled();
   });
-
-  it("refuses to edit an archived routine instead of quietly failing at apply time", async () => {
-    const adapter = await routineAdapter(routineAdapterPorts(storedRoutine({ status: "archived" })));
-
-    await expect(adapter.draftEdit(workspaceId, targetRef, { name: "support-intake-v2" })).rejects.toThrow(/archived/i);
-  });
 });
 
-describe("routine lifecycle proposal adapter", () => {
-  const targetRef = { agentId, routineId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc" };
-  const token = new Date("2026-08-02T10:00:00.000Z").toISOString();
+describe("operator MCP proposal reconciliation", () => {
+  const mcpContext = {
+    workspaceId, accountId, operatorUserId, surface: "mcp" as const, currentAuthorization,
+    pageContext: { view: "other" as const, agentId: null, conversationId: null, selection: null, entities: [] },
+    operatorMcpInvocationId: "33333333-3333-4333-8333-333333333333",
+  };
+  const invocationRaw = {
+    id: "11111111-1111-4111-8111-111111111111",
+    grantId: "22222222-2222-4222-8222-222222222222",
+    operationId: "stable-operation",
+    inputDigest: "keyed-input-digest",
+  };
+  const invocation = invocationRaw as never;
+  const now = new Date("2026-09-09T00:03:00.000Z");
+  const staleBefore = new Date("2026-09-09T00:01:00.000Z");
 
-  it("marks an archive proposal stale when the draft revision it disclosed changes, is replaced, or disappears", async () => {
-    const disclosed = storedRoutine({ id: pendingRevisionId, status: "draft", version: 3 });
-    const ports = routineAdapterPorts(storedRoutine({ status: "published" }), [disclosed]);
-    const adapter = await routineAdapter(ports);
-    const versionToken = await adapter.readVersionToken(workspaceId, targetRef);
-    const draft = await adapter.draftLifecycle(workspaceId, targetRef, "archive");
-    const repository = new MemoryProposalRepository();
-    const proposal = await repository.createProposal({
-      workspaceId,
-      operatorUserId,
-      conversationId: "conversation-1",
-      targetType: "routine",
-      targetRef,
-      payload: draft.payload,
-      versionToken,
-      evidence: null,
+  /** Fills in the `CopilotProposal` fields a reconciliation test does not care about. */
+  const recoveredProposal = (
+    overrides: Partial<CopilotProposal> & Pick<CopilotProposal, "id" | "targetType" | "payload">,
+  ): CopilotProposal => ({
+    workspaceId,
+    operatorUserId,
+    origin: { type: "operator_mcp_invocation", invocationId: mcpContext.operatorMcpInvocationId },
+    conversationId: null,
+    operatorMcpInvocationId: mcpContext.operatorMcpInvocationId,
+    messageId: null,
+    targetRef: null,
+    versionToken: "recovered-version",
+    evidence: null,
+    status: "pending",
+    reason: null,
+    appliedRef: null,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  });
+
+  it("reconstructs propose_directive's result from a recovered save proposal", async () => {
+    const recoverOperatorMcpProposal = vi.fn();
+    recoverOperatorMcpProposal.mockResolvedValueOnce({
+      status: "recovered" as const,
+      proposal: recoveredProposal({ id: "proposal-1", targetType: "directive", payload: { name: "Avoid competitors", rationale: "Draft directive" } }),
     });
-    const service = new OperatorCopilotService({
-      repository,
-      capabilityRunner: { runStreaming: vi.fn() },
-      usageLimitPolicy: noLimitPolicy(),
+    const [descriptor] = createDirectiveProposalCopilotTools({
+      proposalRepository: { createProposal: vi.fn() },
+      proposalRecovery: { recoverOperatorMcpProposal },
+      proposalEvidence: unmeasured(),
+      proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn() }],
       auditService: auditService(),
-      prompt: "system",
-      workspaceRouteKeyResolver,
-      currentAuthorization,
-      tools: [],
-      proposalAdapters: [adapter],
     });
 
-    ports.lineage.siblings = [{
-      ...disclosed,
-      updatedAt: new Date("2026-08-04T10:00:00.000Z"),
-    }];
-
-    expect((await service.getProposal({ workspaceId, operatorUserId, proposalId: proposal.id }))?.currentVersionMatches)
-      .toBe(false);
-
-    ports.lineage.siblings = [{ ...disclosed, id: randomUUID() }];
-    expect((await service.getProposal({ workspaceId, operatorUserId, proposalId: proposal.id }))?.currentVersionMatches)
-      .toBe(false);
-
-    ports.lineage.siblings = [];
-    expect((await service.getProposal({ workspaceId, operatorUserId, proposalId: proposal.id }))?.currentVersionMatches)
-      .toBe(false);
+    await expect(descriptor.reconcileMcpInvocation!({ invocation, context: mcpContext, now, staleBefore }))
+      .resolves.toEqual({
+        status: "recovered",
+        output: { proposalId: "proposal-1", targetType: "directive", targetLabel: "Avoid competitors", summary: "Draft directive" },
+      });
+    expect(recoverOperatorMcpProposal).toHaveBeenCalledWith(expect.objectContaining({
+      invocationId: "11111111-1111-4111-8111-111111111111",
+      descriptorName: "propose_directive",
+      operationId: "stable-operation",
+      inputDigest: "keyed-input-digest",
+    }));
   });
 
-  it("publishes the draft and points the card at the version that went live", async () => {
-    const ports = routineAdapterPorts();
-    const adapter = await routineAdapter(ports);
-    const draft = await adapter.draftLifecycle(workspaceId, targetRef, "publish");
-
-    expect(draft.summary).toContain("Publish");
-    expect(await adapter.preview(workspaceId, targetRef, draft.payload)).toEqual({
-      targetLabel: "support-intake",
-      current: { status: "draft" },
-      proposed: { status: "published" },
+  it("reports a conflict for propose_directive when the recovered proposal is not a directive save payload", async () => {
+    const recoverOperatorMcpProposal = vi.fn(async () => ({
+      status: "recovered" as const,
+      // A removal payload has no `condition`/`action`, so it must not be mistaken for a save.
+      proposal: recoveredProposal({ id: "proposal-1", targetType: "directive", payload: { op: "remove", name: "Avoid competitors", rationale: "Remove it" } }),
+    }));
+    const [descriptor] = createDirectiveProposalCopilotTools({
+      proposalRepository: { createProposal: vi.fn() },
+      proposalRecovery: { recoverOperatorMcpProposal },
+      proposalEvidence: unmeasured(),
+      proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn() }],
+      auditService: auditService(),
     });
-    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
-      outcome: "applied",
-      appliedRef: { agentId, routineId: "published-1" },
+
+    await expect(descriptor.reconcileMcpInvocation!({ invocation, context: mcpContext, now, staleBefore }))
+      .resolves.toEqual({ status: "conflict" });
+  });
+
+  it("reconstructs propose_directive_removal's result with the removal flag set", async () => {
+    const recoverOperatorMcpProposal = vi.fn(async () => ({
+      status: "recovered" as const,
+      proposal: recoveredProposal({ id: "proposal-2", targetType: "directive", payload: { op: "remove", name: "Avoid competitors", rationale: "Permanently remove the directive \"Avoid competitors\". This cannot be undone." } }),
+    }));
+    const descriptors = createDirectiveProposalCopilotTools({
+      proposalRepository: { createProposal: vi.fn() },
+      proposalRecovery: { recoverOperatorMcpProposal },
+      proposalEvidence: unmeasured(),
+      proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn() }],
+      auditService: auditService(),
     });
+    const descriptor = descriptors.find((candidate) => candidate.name === "propose_directive_removal")!;
+
+    await expect(descriptor.reconcileMcpInvocation!({ invocation, context: mcpContext, now, staleBefore }))
+      .resolves.toEqual({
+        status: "recovered",
+        output: {
+          proposalId: "proposal-2",
+          targetType: "directive",
+          targetLabel: "Avoid competitors",
+          summary: "Permanently remove the directive \"Avoid competitors\". This cannot be undone.",
+          removal: true,
+        },
+      });
   });
 
-  it("publishes only the version the operator reviewed", async () => {
-    const ports = routineAdapterPorts();
-    const adapter = await routineAdapter(ports);
-    const draft = await adapter.draftLifecycle(workspaceId, targetRef, "publish");
-
-    await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token);
-
-    expect(ports.publish).toHaveBeenCalledWith(workspaceId, agentId, targetRef.routineId, {
-      expectedUpdatedAt: ports.current.value.updatedAt,
+  it("reconstructs propose_agent_setting's result, reading the setting key back off the target ref", async () => {
+    const recoverOperatorMcpProposal = vi.fn(async () => ({
+      status: "recovered" as const,
+      proposal: recoveredProposal({
+        id: "proposal-3",
+        targetType: "agent_setting",
+        targetRef: { agentId, settingKey: "retrievalEnabled" },
+        payload: { value: false, rationale: "Turn retrieval off for this agent." },
+      }),
+    }));
+    const [descriptor] = createAgentSettingProposalCopilotTools({
+      proposalRepository: { createProposal: vi.fn() },
+      proposalRecovery: { recoverOperatorMcpProposal },
+      proposalEvidence: unmeasured(),
+      proposalAdapters: [{ targetType: "agent_setting", validatePayload: vi.fn(), readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn() }],
+      auditService: auditService(),
     });
+
+    await expect(descriptor.reconcileMcpInvocation!({ invocation, context: mcpContext, now, staleBefore }))
+      .resolves.toEqual({
+        status: "recovered",
+        output: { proposalId: "proposal-3", targetType: "agent_setting", targetLabel: "retrievalEnabled", summary: "Turn retrieval off for this agent." },
+      });
   });
 
-  it("says what archiving throws away, on the card and in the summary", async () => {
-    // Archiving deletes the lineage's in-progress draft. A card that previews only the status
-    // change would destroy unpublished work the operator never saw mentioned.
-    const pending = storedRoutine({ id: pendingRevisionId, status: "draft", version: 3 });
-    const ports = routineAdapterPorts(storedRoutine({ status: "published" }), [pending]);
-    const adapter = await routineAdapter(ports);
-
-    const draft = await adapter.draftLifecycle(workspaceId, targetRef, "archive");
-
-    expect(draft.summary).toContain("draft revision");
-    expect(await adapter.preview(workspaceId, targetRef, draft.payload)).toMatchObject({
-      proposed: { status: "archived", discardsDraftRevision: expect.stringContaining("3") },
+  it("reconstructs propose_routine_edit's result, reporting unmeasured validation since diagnostics are never persisted", async () => {
+    const recoverOperatorMcpProposal = vi.fn(async () => ({
+      status: "recovered" as const,
+      proposal: recoveredProposal({
+        id: "proposal-4",
+        targetType: "routine",
+        payload: { kind: "edit", name: "Return intake", changes: { name: "Returns intake" }, rationale: "Edit routine Return intake: rename to Returns intake." },
+      }),
+    }));
+    const descriptors = createRoutineProposalCopilotTools({
+      proposalRepository: { createProposal: vi.fn() },
+      proposalRecovery: { recoverOperatorMcpProposal },
+      proposalEvidence: unmeasured(),
+      proposalAdapters: [{ targetType: "routine", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn(), draftEdit: vi.fn() }],
+      auditService: auditService(),
     });
+    const descriptor = descriptors.find((candidate) => candidate.name === "propose_routine_edit")!;
+
+    await expect(descriptor.reconcileMcpInvocation!({ invocation, context: mcpContext, now, staleBefore }))
+      .resolves.toEqual({
+        status: "recovered",
+        output: {
+          proposalId: "proposal-4",
+          targetType: "routine",
+          targetLabel: "Return intake",
+          summary: "Edit routine Return intake: rename to Returns intake.",
+          // Known limitation documented on reconcileRoutineProposalPayload: the routine's real
+          // diagnostics are never persisted on the proposal row, so a recovered response cannot
+          // restate them.
+          validation: { ok: true, diagnostics: [] },
+        },
+      });
   });
 
-  it("marks the proposal stale when the disclosed draft has been worked on since", async () => {
-    // The id stays the same while an operator edits the draft, so an id-only guard would archive
-    // on the strength of a description that no longer matches what would be thrown away.
-    const disclosed = storedRoutine({ id: pendingRevisionId, status: "draft", version: 3 });
-    const ports = routineAdapterPorts(storedRoutine({ status: "published" }), [disclosed]);
-    const adapter = await routineAdapter(ports);
-    const proposalToken = await adapter.readVersionToken(workspaceId, targetRef);
-    const draft = await adapter.draftLifecycle(workspaceId, targetRef, "archive");
-    ports.lineage.siblings = [storedRoutine({ id: pendingRevisionId, status: "draft", version: 3, updatedAt: new Date("2026-08-04T10:00:00.000Z") })];
-
-    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, proposalToken)).toEqual({ outcome: "stale" });
-    expect(ports.archive).not.toHaveBeenCalled();
-  });
-
-  it("marks the proposal stale when a draft appeared that the card never disclosed", async () => {
-    const ports = routineAdapterPorts(storedRoutine({ status: "published" }));
-    const adapter = await routineAdapter(ports);
-    const proposalToken = await adapter.readVersionToken(workspaceId, targetRef);
-    const draft = await adapter.draftLifecycle(workspaceId, targetRef, "archive");
-    ports.lineage.siblings = [storedRoutine({ id: pendingRevisionId, status: "draft", version: 3 })];
-
-    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, proposalToken)).toEqual({ outcome: "stale" });
-    expect(ports.archive).not.toHaveBeenCalled();
-  });
-
-  it("will not draft a publish for a routine that would be rejected on publish", async () => {
-    const ports = routineAdapterPorts();
-    ports.validate.mockResolvedValueOnce({ ok: false, diagnostics: [{ code: "missing_terminal", location: "terminals", message: "No ending." }] });
-    const adapter = await routineAdapter(ports);
-
-    await expect(adapter.draftLifecycle(workspaceId, targetRef, "publish")).rejects.toThrow(/No ending/);
-  });
-
-  it("reports a publish the service rejects as a failure carrying its diagnostics", async () => {
-    const ports = routineAdapterPorts();
-    ports.publish.mockResolvedValueOnce({ rejected: true, validation: { ok: false, diagnostics: [{ code: "missing_terminal", location: "terminals", message: "No ending." }] } } as never);
-    const adapter = await routineAdapter(ports);
-    const draft = await adapter.draftLifecycle(workspaceId, targetRef, "publish");
-
-    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
-      outcome: "failed",
-      reason: expect.stringContaining("No ending"),
+  it("reports a conflict for a routine reconciliation whose recovered proposal is not shaped like this tool's payload", async () => {
+    const recoverOperatorMcpProposal = vi.fn(async () => ({
+      status: "recovered" as const,
+      // A lifecycle payload, recovered by the edit descriptor: `kind` mismatches.
+      proposal: recoveredProposal({ id: "proposal-5", targetType: "routine", payload: { kind: "lifecycle", action: "publish", name: "Return intake", rationale: "Publish routine Return intake." } }),
+    }));
+    const descriptors = createRoutineProposalCopilotTools({
+      proposalRepository: { createProposal: vi.fn() },
+      proposalRecovery: { recoverOperatorMcpProposal },
+      proposalEvidence: unmeasured(),
+      proposalAdapters: [{ targetType: "routine", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn(), draftEdit: vi.fn() }],
+      auditService: auditService(),
     });
+    const descriptor = descriptors.find((candidate) => candidate.name === "propose_routine_edit")!;
+
+    await expect(descriptor.reconcileMcpInvocation!({ invocation, context: mcpContext, now, staleBefore }))
+      .resolves.toEqual({ status: "conflict" });
   });
 
-  it("will not restore a routine that has gone invalid while it was archived", async () => {
-    // Restore puts a routine back in front of customers without publish's gates, so a skill removed
-    // or a capability revoked during the archive would otherwise go live unchecked.
-    const ports = routineAdapterPorts(storedRoutine({ status: "archived" }));
-    ports.validate.mockResolvedValueOnce({ ok: false, diagnostics: [{ code: "unknown_skill", location: "step:confirm", message: "billing.lookup is not available to this agent." }] });
-    const adapter = await routineAdapter(ports);
-
-    await expect(adapter.draftLifecycle(workspaceId, targetRef, "restore")).rejects.toThrow(/billing\.lookup/);
-  });
-
-  it("stops a restore that went invalid between the card and the click", async () => {
-    const ports = routineAdapterPorts(storedRoutine({ status: "archived" }));
-    const adapter = await routineAdapter(ports);
-    const draft = await adapter.draftLifecycle(workspaceId, targetRef, "restore");
-    ports.validate.mockResolvedValueOnce({ ok: false, diagnostics: [{ code: "unknown_skill", location: "step:confirm", message: "billing.lookup is not available to this agent." }] });
-
-    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
-      outcome: "failed",
-      reason: expect.stringContaining("billing.lookup"),
+  it("passes through a non-recovered status from the recovery port unchanged", async () => {
+    const recoverOperatorMcpProposal = vi.fn(async () => ({ status: "retry_prepare" as const }));
+    const [descriptor] = createDirectiveProposalCopilotTools({
+      proposalRepository: { createProposal: vi.fn() },
+      proposalRecovery: { recoverOperatorMcpProposal },
+      proposalEvidence: unmeasured(),
+      proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn() }],
+      auditService: auditService(),
     });
-    expect(ports.restore).not.toHaveBeenCalled();
+
+    await expect(descriptor.reconcileMcpInvocation!({ invocation, context: mcpContext, now, staleBefore }))
+      .resolves.toEqual({ status: "retry_prepare" });
   });
 
-  it("reports a lifecycle change that committed before its bookkeeping failed as applied", async () => {
-    // publish() commits the status change, then persists trigger embeddings, writes a lifecycle
-    // audit event, and re-validates. A throw from that tail would mark the card failed for a
-    // routine that is already live, and re-applying it fails the status precondition.
-    const ports = routineAdapterPorts();
-    const logger = { warn: vi.fn() };
-    const adapter = await routineAdapter(ports, logger);
-    const draft = await adapter.draftLifecycle(workspaceId, targetRef, "publish");
-    const { RoutineDefinitionLifecycleCommittedError } = await import("../../../src/modules/routines/public.js");
-    ports.publish.mockRejectedValueOnce(new RoutineDefinitionLifecycleCommittedError(
-      "publish",
-      targetRef.routineId,
-      new Error("trigger embedding provider is down"),
-    ));
-    // Publishing flips this row in place, so the row the card names is the one that went live.
-    ports.current.value = storedRoutine({ status: "published" });
-
-    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
-      outcome: "applied",
-      appliedRef: { agentId, routineId: targetRef.routineId },
+  it("reports a conflict without calling the recovery port when the invocation carries no operationId", async () => {
+    const recoverOperatorMcpProposal = vi.fn();
+    const [descriptor] = createDirectiveProposalCopilotTools({
+      proposalRepository: { createProposal: vi.fn() },
+      proposalRecovery: { recoverOperatorMcpProposal },
+      proposalEvidence: unmeasured(),
+      proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn() }],
+      auditService: auditService(),
     });
-    expect(logger.warn).toHaveBeenCalledWith(
-      {
-        err: expect.objectContaining({ message: "trigger embedding provider is down" }),
-        workspaceId,
-        agentId,
-        routineId: targetRef.routineId,
-        action: "publish",
-      },
-      "Routine lifecycle committed but follow-up work failed",
-    );
-  });
+    const invocationWithoutOperationId = { ...invocationRaw, operationId: undefined } as never;
 
-  it("reports a write that refused before it committed as stale, not as somebody else's publish", async () => {
-    // A conflict means nothing happened. Reconciling it against the routine would let a publish
-    // another writer performed in the same moment be reported as this proposal's.
-    const { conflict } = await import("../../../src/shared/domain/errors.js");
-    const ports = routineAdapterPorts();
-    const adapter = await routineAdapter(ports);
-    const draft = await adapter.draftLifecycle(workspaceId, targetRef, "publish");
-    ports.publish.mockRejectedValueOnce(conflict("Routine changed while it was being published"));
-    ports.current.value = storedRoutine({ status: "published" });
-
-    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({ outcome: "stale" });
-  });
-
-  it("does not credit another writer when publish loses the status-precondition race", async () => {
-    const { badRequest } = await import("../../../src/shared/domain/errors.js");
-    const ports = routineAdapterPorts();
-    const adapter = await routineAdapter(ports);
-    const draft = await adapter.draftLifecycle(workspaceId, targetRef, "publish");
-    ports.publish.mockRejectedValueOnce(badRequest("Only draft routine definitions can be published"));
-    ports.current.value = storedRoutine({ status: "published" });
-
-    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
-      outcome: "failed",
-      reason: "Only draft routine definitions can be published",
-    });
-  });
-
-  it("does not credit another writer when restore loses the status-precondition race", async () => {
-    const { badRequest } = await import("../../../src/shared/domain/errors.js");
-    const ports = routineAdapterPorts(storedRoutine({ status: "archived" }));
-    const adapter = await routineAdapter(ports);
-    const draft = await adapter.draftLifecycle(workspaceId, targetRef, "restore");
-    ports.restore.mockRejectedValueOnce(badRequest("Only archived routine definitions can be restored"));
-    ports.current.value = storedRoutine({ status: "published" });
-
-    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
-      outcome: "failed",
-      reason: "Only archived routine definitions can be restored",
-    });
-  });
-
-  it("does not read the version already live as this proposal having landed", async () => {
-    // Publishing a revision leaves the previous version published until the flip commits. Accepting
-    // any published member of the lineage would mark a failed publish applied and link the old one.
-    const ports = routineAdapterPorts();
-    const adapter = await routineAdapter(ports);
-    const draft = await adapter.draftLifecycle(workspaceId, targetRef, "publish");
-    ports.publish.mockRejectedValueOnce(new Error("routine changed while it was being published"));
-    ports.lineage.siblings = [storedRoutine({ id: "previous-version", status: "published", version: 1 })];
-
-    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
-      outcome: "failed",
-      reason: "routine changed while it was being published",
-    });
-  });
-
-  it("still fails when the lifecycle change never landed", async () => {
-    const ports = routineAdapterPorts();
-    const adapter = await routineAdapter(ports);
-    const draft = await adapter.draftLifecycle(workspaceId, targetRef, "publish");
-    ports.publish.mockRejectedValueOnce(new Error("connection reset"));
-
-    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
-      outcome: "failed",
-      reason: "connection reset",
-    });
-  });
-
-  it("refuses a lifecycle move the routine's status cannot take", async () => {
-    const adapter = await routineAdapter(routineAdapterPorts());
-
-    await expect(adapter.draftLifecycle(workspaceId, targetRef, "restore")).rejects.toThrow(/archived/i);
-    await expect(adapter.draftLifecycle(workspaceId, targetRef, "archive")).rejects.toThrow(/published/i);
-  });
-
-  it("archives and restores through the service, keeping the card on the same routine", async () => {
-    const archivedPorts = routineAdapterPorts(storedRoutine({ status: "published" }));
-    const archiveAdapter = await routineAdapter(archivedPorts);
-    const archiveDraft = await archiveAdapter.draftLifecycle(workspaceId, targetRef, "archive");
-
-    expect(await archiveAdapter.applyIfVersionMatches(workspaceId, targetRef, archiveDraft.payload, token)).toEqual({
-      outcome: "applied", appliedRef: { agentId, routineId: targetRef.routineId },
-    });
-    // The disclosed draft (none here) travels into the archive transaction, where a revision
-    // created since the card was drafted cannot slip past and be deleted unannounced.
-    expect(archivedPorts.archive).toHaveBeenCalledWith(workspaceId, agentId, targetRef.routineId, { expectedDraftRevision: null });
-
-    const restorePorts = routineAdapterPorts(storedRoutine({ status: "archived" }));
-    const restoreAdapter = await routineAdapter(restorePorts);
-    const restoreDraft = await restoreAdapter.draftLifecycle(workspaceId, targetRef, "restore");
-
-    expect(await restoreAdapter.applyIfVersionMatches(workspaceId, targetRef, restoreDraft.payload, token)).toEqual({
-      outcome: "applied", appliedRef: { agentId, routineId: targetRef.routineId },
-    });
-    expect(restorePorts.restore).toHaveBeenCalledWith(workspaceId, agentId, targetRef.routineId);
+    await expect(descriptor.reconcileMcpInvocation!({ invocation: invocationWithoutOperationId, context: mcpContext, now, staleBefore }))
+      .resolves.toEqual({ status: "conflict" });
+    expect(recoverOperatorMcpProposal).not.toHaveBeenCalled();
   });
 });

@@ -16,8 +16,8 @@ describe("copilot routine readers", () => {
       routinesTruncated: false,
       routine: null,
       routines: [
-        { id: "11111111-1111-4111-8111-111111111111", name: "support-intake", status: "draft", portable: { ok: true, grammarVersion: 1 } },
-        { id: "22222222-2222-4222-8222-222222222222", name: "book-a-demo", status: "draft", portable: { ok: true, grammarVersion: 1 } },
+        { id: "11111111-1111-4111-8111-111111111111", name: "support-intake", enabled: true, portable: { ok: true, grammarVersion: 1 } },
+        { id: "22222222-2222-4222-8222-222222222222", name: "book-a-demo", enabled: true, portable: { ok: true, grammarVersion: 1 } },
       ],
     });
     expect(JSON.stringify(result)).not.toContain("Ask how we can help");
@@ -33,13 +33,60 @@ describe("copilot routine readers", () => {
       routine: {
         id: "11111111-1111-4111-8111-111111111111",
         name: "support-intake",
-        status: "draft",
+        enabled: true,
         portable: { ok: true, grammarVersion: 1, omittedReason: null },
       },
       routines: [],
     });
     expect(JSON.stringify(result)).toContain("Ask how we can help");
     expect(ports.listRoutines).not.toHaveBeenCalled();
+  });
+
+  it("returns the canonical editable draft only through bounded authoring-detail chunks", async () => {
+    const detailed = routine({
+      enabled: false,
+      activation: { triggerDescription: "Escalate a refund", gateRef: "refund_gate", priority: 9, reentryMode: "once_per_conversation" },
+      slots: [{ stableSlotId: "slot_order", key: "order_id", type: "text", required: true, description: "Order reference", mutable: true, ordinal: 0 }],
+      steps: [{ stableStepId: "collect_order", kind: "chat", instruction: "Ask for the order reference.", toolRef: null, actionType: null, captureKey: "order_id", options: { retries: 2 }, ordinal: 0, metadata: { label: "collect" } }],
+      transitions: [{ fromStep: "collect_order", toRef: "done", guardKind: "field", guardText: "When captured", outcomeStatus: null, counterLimit: null, fieldRef: "order_id", fieldOp: "is_present", fieldValue: null, fieldValues: null, fieldUnit: null, ordinal: 0 }],
+      terminals: [{ stableStepId: "done", kind: "complete", instruction: "Complete the refund intake.", ordinal: 1 }],
+    });
+    const ports = dependencies([detailed]);
+    const tool = ports.descriptors.find((descriptor) => descriptor.name === "routine_definition")!;
+    const runtime = tool.createTool(context("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"));
+
+    const defaultResult = await runtime.invoke({ routineId: detailed.id }, {} as never) as { authoringDetail: unknown };
+    expect(defaultResult.authoringDetail).toBeNull();
+    expect(JSON.stringify(defaultResult)).not.toContain("slot_order");
+
+    const chunks: string[] = [];
+    let offset = 0;
+    do {
+      const result = await runtime.invoke({ routineId: detailed.id, authoringDetail: { offset, limit: 80 } }, {} as never) as { authoringDetail: { text: string; nextOffset: number | null } };
+      chunks.push(result.authoringDetail.text);
+      offset = result.authoringDetail.nextOffset ?? -1;
+    } while (offset >= 0);
+    expect(JSON.parse(chunks.join(""))).toMatchObject({
+      enabled: false,
+      activation: { triggerDescription: "Escalate a refund", gateRef: "refund_gate", priority: 9 },
+      slots: [{ stableSlotId: "slot_order", key: "order_id", mutable: true }],
+      steps: [{ stableStepId: "collect_order", captureKey: "order_id", options: { retries: 2 } }],
+      transitions: [{ guardKind: "field", fieldRef: "order_id", fieldOp: "is_present" }],
+    });
+  });
+
+  it("keeps the default reader bounded and rejects invalid authoring-detail requests", async () => {
+    const oversizedMetadata = "x".repeat(30_000);
+    const ports = dependencies([routine({ steps: [{ stableStepId: "collect_topic", kind: "chat", instruction: "Ask how we can help.", toolRef: null, actionType: null, ordinal: 0, metadata: { oversizedMetadata } }] })]);
+    const tool = ports.descriptors.find((descriptor) => descriptor.name === "routine_definition")!;
+    const runtime = tool.createTool(context("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"));
+
+    const defaultResult = await runtime.invoke({ routineId: "11111111-1111-4111-8111-111111111111" }, {} as never);
+    expect(JSON.stringify(defaultResult).length).toBeLessThan(2_000);
+    await expect(runtime.invoke({ authoringDetail: { offset: 0, limit: 80 } }, {} as never)).rejects.toThrow(/requires routineId/);
+    expect(tool.inputSchema.safeParse({ routineId: "11111111-1111-4111-8111-111111111111", authoringDetail: { offset: -1, limit: 80 } }).success).toBe(false);
+    expect(tool.inputSchema.safeParse({ routineId: "11111111-1111-4111-8111-111111111111", authoringDetail: { offset: 0, limit: 0 } }).success).toBe(false);
+    expect(tool.inputSchema.safeParse({ routineId: "11111111-1111-4111-8111-111111111111", authoringDetail: { offset: 0, limit: 4_001 } }).success).toBe(false);
   });
 
   it("names the stable ids an edit addresses, which the portable prose does not carry", async () => {
@@ -55,8 +102,11 @@ describe("copilot routine readers", () => {
 
     expect(result.routine.editable).toEqual({
       steps: [{ stableStepId: "collect_topic", kind: "chat", instruction: "Ask how we can help." }],
+      stepsTruncated: false,
       endings: [{ stableStepId: "done", kind: "complete", instruction: null }],
+      endingsTruncated: false,
       fields: [{ key: "order_number", type: "text", required: true, description: "The order" }],
+      fieldsTruncated: false,
     });
   });
 
@@ -70,6 +120,20 @@ describe("copilot routine readers", () => {
       .invoke({ routineId: "11111111-1111-4111-8111-111111111111" }, {} as never) as { routine: { editable: { steps: Array<{ instruction: string }> } } };
 
     expect(result.routine.editable.steps[0].instruction).toHaveLength(161);
+  });
+
+  it("caps the number of editable steps and reports the cut, matching portable.content's own omittedReason", async () => {
+    const manySteps = Array.from({ length: 50 }, (_, index) => ({
+      stableStepId: `step_${index}`, kind: "chat" as const, instruction: `Step ${index}`, toolRef: null, actionType: null, ordinal: index, metadata: {},
+    }));
+    const ports = dependencies([routine({ steps: manySteps })]);
+    const tool = ports.descriptors.find((descriptor) => descriptor.name === "routine_definition")!;
+
+    const result = await tool.createTool(context("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"))
+      .invoke({ routineId: "11111111-1111-4111-8111-111111111111" }, {} as never) as { routine: { editable: { steps: unknown[]; stepsTruncated: boolean } } };
+
+    expect(result.routine.editable.steps).toHaveLength(40);
+    expect(result.routine.editable.stepsTruncated).toBe(true);
   });
 
   it("reports nonportable routines without failing discovery or detail", async () => {
@@ -146,7 +210,7 @@ describe("copilot routine validation", () => {
     expect(result).toEqual({
       routineId: "11111111-1111-4111-8111-111111111111",
       name: "support-intake",
-      status: "draft",
+      enabled: true,
       ok: false,
       diagnosticCount: 1,
       diagnosticsTruncated: false,
@@ -189,14 +253,12 @@ describe("copilot routine validation", () => {
 describe("copilot routine name resolution", () => {
   const lineage = "33333333-3333-4333-8333-333333333333";
 
-  it("resolves a routine named across its own versions to the one that is running", async () => {
-    // A lineage keeps every version it has had: publishing leaves the previous one superseded and
-    // revising adds a draft beside the published row, all under one name. Reading that as an
-    // ambiguity told an operator their own routine was ambiguous with itself.
+  it("resolves a uniquely named routine to its one canonical row", async () => {
+    // The routine list is already one row per lineage — the repository resolves version
+    // preference before this tool ever sees a routine, so a unique name resolves cleanly with
+    // no version-preference machinery left in the copilot layer.
     const ports = dependencies([
-      routine({ id: "11111111-1111-4111-8111-111111111111", lineageId: lineage, version: 1, status: "superseded" }),
-      routine({ id: "22222222-2222-4222-8222-222222222222", lineageId: lineage, version: 2, status: "published" }),
-      routine({ id: "44444444-4444-4444-8444-444444444444", lineageId: lineage, version: 3, status: "draft" }),
+      routine({ id: "22222222-2222-4222-8222-222222222222", lineageId: lineage, version: 2, enabled: true }),
     ]);
     const tool = ports.descriptors.find((descriptor) => descriptor.name === "routine_definition")!;
 
@@ -204,19 +266,6 @@ describe("copilot routine name resolution", () => {
       kind: "resolved",
       entity: { type: "routine", id: "22222222-2222-4222-8222-222222222222" },
     });
-  });
-
-  it("resolves the version each tool acts on: the draft to validate, the live one to read", async () => {
-    const ports = dependencies([
-      routine({ id: "22222222-2222-4222-8222-222222222222", lineageId: lineage, version: 2, status: "published" }),
-      routine({ id: "44444444-4444-4444-8444-444444444444", lineageId: lineage, version: 3, status: "draft" }),
-    ]);
-    const byName = new Map(ports.descriptors.map((descriptor) => [descriptor.name, descriptor]));
-
-    expect(await byName.get("routine_definition")!.describeEntity!({ routineTitle: "support-intake" }, context("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")))
-      .toMatchObject({ entity: { id: "22222222-2222-4222-8222-222222222222" } });
-    expect(await byName.get("validate_routine")!.describeEntity!({ routineTitle: "support-intake" }, context("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")))
-      .toMatchObject({ entity: { id: "44444444-4444-4444-8444-444444444444" } });
   });
 
   it("resolves a named agent even when the routine is already addressed by id", async () => {
@@ -234,8 +283,8 @@ describe("copilot routine name resolution", () => {
 
   it("keeps two routines that genuinely share a name ambiguous", async () => {
     const ports = dependencies([
-      routine({ id: "11111111-1111-4111-8111-111111111111", lineageId: "aaaa1111-1111-4111-8111-111111111111", status: "published" }),
-      routine({ id: "22222222-2222-4222-8222-222222222222", lineageId: "bbbb2222-2222-4222-8222-222222222222", status: "published" }),
+      routine({ id: "11111111-1111-4111-8111-111111111111", lineageId: "aaaa1111-1111-4111-8111-111111111111" }),
+      routine({ id: "22222222-2222-4222-8222-222222222222", lineageId: "bbbb2222-2222-4222-8222-222222222222" }),
     ]);
     const tool = ports.descriptors.find((descriptor) => descriptor.name === "routine_definition")!;
 

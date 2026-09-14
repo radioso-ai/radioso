@@ -6,6 +6,8 @@ import type {
   ChatRoute,
   ChatStreamEvent,
   ChatSuggestion,
+  ChatAnswerCoverageAssessment,
+  ChatAnswerCoverageInteractionTrace,
 } from "../../../modules/chat/contracts/index.js";
 import type { ActivitySummary, ActivityTrace } from "../../../modules/retrieval/public.js";
 import type { TurnTraceEnvelope } from "../../../modules/chat/contracts/index.js";
@@ -18,6 +20,8 @@ interface ChatDiagnosticPayload {
   // Conversation spine as the root span with capability traces as typed leaves.
   // Optional during transition (turns answered before the envelope existed omit it).
   turnTrace?: TurnTraceEnvelope;
+  answerCoverage?: ChatAnswerCoverageAssessment;
+  interactionTrace?: ChatAnswerCoverageInteractionTrace;
 }
 
 type ChatPayload = {
@@ -34,9 +38,11 @@ type ChatPayload = {
   activitySummary: ActivitySummary;
   activityTrace: ActivityTrace;
   turnTrace?: TurnTraceEnvelope;
+  answerCoverage?: ChatAnswerCoverageAssessment;
+  interactionTrace?: ChatAnswerCoverageInteractionTrace;
 };
 
-export type PresentedChatPayload =
+type PresentedChatPayload =
   Omit<ChatPayload, "route" | "activitySummary" | "activityTrace" | "turnTrace"> & {
     debug?: ChatDiagnosticPayload;
   };
@@ -47,12 +53,16 @@ export const presentChatPayload = (payload: ChatPayload, options: { includeDebug
     activitySummary,
     activityTrace,
     turnTrace,
+    answerCoverage,
+    interactionTrace,
     ...publicPayload
   } = payload;
 
   return {
     ...publicPayload,
-    ...(options.includeDebug ? { debug: { route, activitySummary, activityTrace, turnTrace } } : {}),
+    ...(options.includeDebug
+      ? { debug: { route, activitySummary, activityTrace, turnTrace, answerCoverage, interactionTrace } }
+      : {}),
   };
 };
 
@@ -152,6 +162,8 @@ export const sendChatSse = (
       activitySummary: event.activitySummary,
       activityTrace: event.activityTrace,
       turnTrace: event.turnTrace,
+      answerCoverage: event.answerCoverage,
+      interactionTrace: event.interactionTrace,
     }, options);
     res.write("event: done\n");
     res.write(`data: ${JSON.stringify({

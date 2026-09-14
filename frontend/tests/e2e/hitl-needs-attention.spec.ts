@@ -404,7 +404,7 @@ test("operator resolves negative feedback through Done, surviving a version conf
     });
   });
 
-  await page.goto(`/w/${workspaceKey}/activity`);
+  await page.goto(`/w/${workspaceKey}/activity?tab=needs-attention`);
   const queue = page.getByLabel("Inbox queue");
   const feedbackRow = queue.getByRole("button", { name: /Can I return an opened item\?/ });
   await expect(feedbackRow).toBeVisible();

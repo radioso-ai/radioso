@@ -2,19 +2,21 @@ import { z } from "zod";
 
 import type { ChunkRepositoryPort } from "../../documents/contracts/index.js";
 import type { CopilotToolDescriptor } from "../contracts.js";
-import { boundPayload } from "../payloadCompaction.js";
+import { boundPayload, compactForBudget, MAX_STRING_CHARS, truncationRecordSchema, withTruncation } from "../payloadCompaction.js";
+import { copilotPayloadCharBudget } from "../turnBudget.js";
 import { notFound } from "../../../shared/domain/errors.js";
 
 const unknownRecord = z.record(z.unknown());
 const documentAttentionStatuses = ["failed", "queued", "processing"] as const;
 const documentAttentionLimit = 25;
 const documentSearchInputSchema = z.object({ query: z.string().min(1).max(1000) });
-const documentSearchOutputSchema = z.object({ results: z.array(unknownRecord) });
+const documentSearchOutputSchema = z.object({ results: z.array(unknownRecord), truncation: truncationRecordSchema });
 const documentStatusInputSchema = z.object({});
 const documentStatusOutputSchema = z.object({
   counts: z.object({ total: z.number(), ready: z.number(), pending: z.number(), failed: z.number() }),
   attention: z.array(unknownRecord),
   sources: z.array(unknownRecord),
+  truncation: truncationRecordSchema,
 });
 const documentChunkPageLimit = 10;
 const documentChunksInputSchema = z.object({
@@ -43,7 +45,22 @@ const documentChunksOutputSchema = z.object({
   chunks: z.array(documentChunkSchema).max(documentChunkPageLimit),
   unavailableChunkIds: z.array(z.string()),
   nextChunkIndex: z.number().int().min(0).nullable(),
+  truncation: truncationRecordSchema,
 });
+/**
+ * Chunk text is otherwise returned in full — this only guards the worst case: a full page of
+ * chunks at the workspace's configured chunking ceiling, in multi-byte content, can exceed what
+ * the MCP transport accepts as one result. Sized like `TURN_TRACE_PAYLOAD_CHAR_BUDGET`, the other
+ * reader whose point is usually the raw content itself, so a page well under the ceiling — the
+ * common case — survives the first, most generous rung untouched.
+ */
+const DOCUMENT_CHUNKS_PAYLOAD_CHAR_BUDGET = copilotPayloadCharBudget(1 / 2);
+const documentChunksCompactionLadder = [
+  { maxStringChars: 8_000, maxArrayItems: documentChunkPageLimit },
+  { maxStringChars: 4_000, maxArrayItems: documentChunkPageLimit },
+  { maxStringChars: 2_000, maxArrayItems: documentChunkPageLimit },
+  { maxStringChars: MAX_STRING_CHARS, maxArrayItems: documentChunkPageLimit },
+];
 const reprocessDocumentInputSchema = z.object({
   documentId: z.string().uuid().optional(),
   sourceId: z.string().uuid().optional(),
@@ -126,7 +143,7 @@ export const createDocumentSearchCopilotTools = (deps: DocumentSearchCopilotTool
     name: "document_search", shape: "read", verificationCost: () => 0, uiLabel: "Searching documents", contributingModule: "documents", dashboardSubject: { type: "document" }, requiredPermissions: ["workspace.documents.read"],
     description: "Search workspace documents and return matching document metadata and quoted evidence snippets — the only document text available to you.",
     inputSchema: documentSearchInputSchema, outputSchema: documentSearchOutputSchema,
-    createTool: (context) => ({ name: "document_search", description: "Search workspace documents and return matching document metadata and quoted evidence snippets — the only document text available to you.", inputSchema: documentSearchInputSchema, outputSchema: documentSearchOutputSchema, invoke: async ({ query }) => ({ results: boundPayload({ results: (await deps.documentSearchService.search({ workspaceId: context.workspaceId, query, executionSurface: "operator_copilot" })).results as Record<string, unknown>[] }).results }) }),
+    createTool: (context) => ({ name: "document_search", description: "Search workspace documents and return matching document metadata and quoted evidence snippets — the only document text available to you.", inputSchema: documentSearchInputSchema, outputSchema: documentSearchOutputSchema, invoke: async ({ query }) => boundPayload({ results: (await deps.documentSearchService.search({ workspaceId: context.workspaceId, query, executionSurface: "operator_copilot" })).results as Record<string, unknown>[] }) }),
   },
 ];
 
@@ -156,7 +173,7 @@ export const createDocumentStatusCopilotTools = (deps: DocumentStatusCopilotTool
   },
 ];
 
-const DOCUMENT_CHUNKS_DESCRIPTION = `Inspect how one workspace document was chunked. Returns complete, untruncated text, offsets, metadata, search text, and active-embedding presence for at most ${documentChunkPageLimit} chunks starting at a chunk index. Follow nextChunkIndex to continue; use a small range because chunk text is intentionally not compacted.`;
+const DOCUMENT_CHUNKS_DESCRIPTION = `Inspect how one workspace document was chunked. Returns text, offsets, metadata, search text, and active-embedding presence for at most ${documentChunkPageLimit} chunks starting at a chunk index. Follow nextChunkIndex to continue; use a small range, since chunk text is normally returned in full but is compacted, with \`truncation\` reporting it, if a page would otherwise exceed the result size limit.`;
 const REPROCESS_DOCUMENT_DESCRIPTION = "Requeue one existing document, or the existing documents belonging to one source, through the normal processing pipeline. This is an idempotent maintenance act: it does not create content, change settings, or reprocess a whole workspace.";
 const RECRAWL_SOURCE_DESCRIPTION = "Recrawl one existing configured website source using its stored URL, bounded page limit, and crawl policy. This cannot create a new source or accept a different URL.";
 
@@ -188,7 +205,7 @@ export const createDocumentKnowledgeCopilotTools = (
         });
         if (!page) throw notFound("Document not found");
 
-        return documentChunksOutputSchema.parse({
+        const raw = {
           documentId,
           startChunkIndex,
           limit,
@@ -211,7 +228,9 @@ export const createDocumentKnowledgeCopilotTools = (
           })),
           unavailableChunkIds: [],
           nextChunkIndex: page.nextChunkIndex,
-        });
+        };
+        const compacted = compactForBudget(raw, documentChunksCompactionLadder, DOCUMENT_CHUNKS_PAYLOAD_CHAR_BUDGET);
+        return documentChunksOutputSchema.parse(withTruncation(compacted.value, compacted.truncation));
       },
     }),
     describeEntity: ({ documentId }) => ({ type: "document", id: documentId }),

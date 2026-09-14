@@ -1,5 +1,15 @@
 import { ResendEmailDriver } from "./adapters/resendDriver.js";
 
+/**
+ * What a message is, as opposed to what it says. Carried to the provider as a delivery tag so
+ * bounce and complaint rates can be read per email type rather than for the account as a whole.
+ * Values are provider tag names: ASCII letters, numbers and underscores only.
+ */
+export type EmailKind =
+  | "email_verification"
+  | "password_reset"
+  | "account_invitation";
+
 export interface EmailMessage {
   to: string;
   from: {
@@ -10,6 +20,8 @@ export interface EmailMessage {
   subject: string;
   text: string;
   html?: string;
+  kind?: EmailKind;
+  /** Local-delivery debugging only. The log driver prints it; no provider ever receives it. */
   metadata?: Record<string, string>;
   idempotencyKey?: string | null;
 }
@@ -49,7 +61,7 @@ export class EmailService {
   }
 }
 
-export class NoopEmailDriver implements EmailDriver {
+class NoopEmailDriver implements EmailDriver {
   async send(_message: EmailMessage): Promise<EmailSendResult> {
     return { dispatched: false };
   }
@@ -71,12 +83,13 @@ const redactSensitiveEmailMetadata = (
   );
 };
 
-export class LogEmailDriver implements EmailDriver {
+class LogEmailDriver implements EmailDriver {
   async send(message: EmailMessage): Promise<EmailSendResult> {
     console.info("email.send", {
       to: message.to,
       replyTo: message.replyTo ?? null,
       subject: message.subject,
+      kind: message.kind ?? null,
       text: message.text,
       metadata: redactSensitiveEmailMetadata(message.metadata),
       idempotencyKey: message.idempotencyKey ?? null,
@@ -85,7 +98,7 @@ export class LogEmailDriver implements EmailDriver {
   }
 }
 
-export interface MailEnv {
+interface MailEnv {
   MAIL_DRIVER?: string;
   MAIL_FROM_EMAIL?: string;
   MAIL_FROM_NAME?: string;

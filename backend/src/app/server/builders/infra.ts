@@ -4,6 +4,7 @@ import { AccountRepository } from "../../../db/repositories/accountRepository.js
 import { AccessGrantRepository } from "../../../db/repositories/accessGrantRepository.js";
 import { AgentConverseSessionMappingRepository } from "../../../db/repositories/agentConverseSessionMappingRepository.js";
 import { AgentRepository } from "../../../db/repositories/agentRepository.js";
+import { AgentRevisionRepository } from "../../../db/repositories/agentRevisionRepository.js";
 import { AgentBundleImportRepository } from "../../../db/repositories/agentBundleImportRepository.js";
 import { IdentityNonceRepository } from "../../../db/repositories/identityNonceRepository.js";
 import { RoutineDefinitionRepository } from "../../../db/repositories/routineDefinitionRepository.js";
@@ -52,6 +53,7 @@ import { IntegrationConnectionRepository } from "../../../modules/integrationCon
 import { SlackChannelBindingRepository, SlackInstallationRepository } from "../../../modules/slack/public.js";
 import { SlackSkillDefinitionRepository } from "../../../modules/slackSkills/public.js";
 import { CopilotRepository } from "../../../db/repositories/copilotRepository.js";
+import { TestExecutionRepository } from "../../../db/repositories/testExecutionRepository.js";
 import { ProductAnalyticsService } from "../../../shared/analytics/productAnalyticsService.js";
 import { NoopUsageLimitPolicy } from "../../../shared/domain/usageLimitPolicy.js";
 import { DurableUsageEventRecorder } from "../../../shared/infra/usage/durableUsageEventRecorder.js";
@@ -166,6 +168,7 @@ export const buildRepositories = (
   accessGrantRepository: new AccessGrantRepository(database.kysely),
   agentConverseSessionMappingRepository: new AgentConverseSessionMappingRepository(database.kysely),
   agentRepository: new AgentRepository(database.kysely, options.agentSurfaceExtensions, options.agentSkillSettings),
+  agentRevisionRepository: new AgentRevisionRepository(database.kysely),
   agentBundleImportRepository: new AgentBundleImportRepository(database.kysely),
   bootstrapGreetingCacheRepository: new BootstrapGreetingCacheRepository(database.kysely),
   chunkRepository: new ChunkRepository(database),
@@ -213,6 +216,7 @@ export const buildRepositories = (
   webhookSkillDefinitionRepository: new WebhookSkillDefinitionRepository(database.kysely),
   slackSkillDefinitionRepository: new SlackSkillDefinitionRepository(database.kysely),
   copilotRepository: new CopilotRepository(database.kysely),
+  testExecutionRepository: new TestExecutionRepository(database.kysely),
 });
 
 export const buildLogger = (): AppLogger => createLogger();

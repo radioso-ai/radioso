@@ -2,12 +2,19 @@ import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import { z } from "zod";
 
 import type { OpenApiSchemas, OpenApiSecurity } from "../openApiRegistry.js";
+import { revisionListQuerySchema } from "../../routes/agentRevisionRequestSchemas.js";
 
 export const registerAgentsPaths = (
   registry: OpenAPIRegistry,
   schemas: OpenApiSchemas,
   security: OpenApiSecurity,
 ) => {
+  const revisionSecurity = [{ [security.bearerAuthScheme.name]: [] }];
+  registry.registerPath({ method: "get", path: "/api/v1/agents/{agentId}/revision-state", tags: ["Agents"], summary: "Get agent draft publication state", operationId: "getAgentRevisionState", security: revisionSecurity, request: { params: schemas.AgentParamsSchema }, responses: { 200: { description: "Revision state returned", content: { "application/json": { schema: schemas.AgentRevisionStateSchema } } } } });
+  registry.registerPath({ method: "post", path: "/api/v1/agents/{agentId}/revisions/candidates", tags: ["Agents"], summary: "Create immutable draft candidate", operationId: "createAgentRevisionCandidate", security: revisionSecurity, request: { params: schemas.AgentParamsSchema, body: { required: true, content: { "application/json": { schema: schemas.AgentRevisionCandidateRequestSchema } } } }, responses: { 201: { description: "Candidate created", content: { "application/json": { schema: schemas.AgentRevisionCandidateResponseSchema } } }, 409: { description: "revision_conflict when the saved draft generation changed", content: { "application/json": { schema: schemas.ErrorResponseSchema } } } } });
+  registry.registerPath({ method: "get", path: "/api/v1/agents/{agentId}/revisions", tags: ["Agents"], summary: "List agent revisions", operationId: "listAgentRevisions", security: revisionSecurity, request: { params: schemas.AgentParamsSchema, query: revisionListQuerySchema }, responses: { 200: { description: "Revisions returned", content: { "application/json": { schema: schemas.AgentRevisionListResponseSchema } } } } });
+  registry.registerPath({ method: "get", path: "/api/v1/agents/{agentId}/revisions/{revisionId}", tags: ["Agents"], summary: "Get agent revision detail", operationId: "getAgentRevision", security: revisionSecurity, request: { params: schemas.AgentRevisionParamsSchema }, responses: { 200: { description: "Revision returned", content: { "application/json": { schema: schemas.AgentRevisionDetailResponseSchema } } } } });
+  registry.registerPath({ method: "post", path: "/api/v1/agents/{agentId}/revisions/{revisionId}/publish", tags: ["Agents"], summary: "Publish an immutable candidate", operationId: "publishAgentRevision", security: revisionSecurity, request: { params: schemas.AgentRevisionParamsSchema, body: { required: true, content: { "application/json": { schema: schemas.AgentRevisionPublishRequestSchema } } } }, responses: { 200: { description: "Revision published", content: { "application/json": { schema: schemas.AgentRevisionPublishResponseSchema } } }, 409: { description: "revision_conflict when the revision, draft generation, pointer, or idempotency command is stale", content: { "application/json": { schema: schemas.ErrorResponseSchema } } }, 422: { description: "revision_invalid when the immutable candidate cannot run", content: { "application/json": { schema: schemas.ErrorResponseSchema } } } } });
   const csrfHeaders = z.object({
     "X-Radioso-CSRF": z.literal("1").openapi({
       description: "Required non-simple header for cookie-authenticated agent channel credential mutations.",
@@ -460,72 +467,6 @@ export const registerAgentsPaths = (
       200: { description: "Routine validation returned", content: { "application/json": { schema: schemas.RoutineDefinitionValidateResponseSchema } } },
       401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       404: { description: "Agent or routine definition not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
-    },
-  });
-
-  registry.registerPath({
-    method: "post",
-    path: "/api/v1/agents/{agentId}/routines/{routineId}/publish",
-    tags: ["Agents"],
-    summary: "Publish a draft routine definition for an agent",
-    operationId: "publishAgentRoutine",
-    security: [{ [security.bearerAuthScheme.name]: [] }],
-    request: { params: schemas.RoutineDefinitionParamsSchema },
-    responses: {
-      200: { description: "Routine definition published", content: { "application/json": { schema: schemas.RoutineDefinitionPublishResponseSchema } } },
-      400: { description: "Routine definition cannot be published", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
-      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
-      404: { description: "Agent or routine definition not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
-      422: { description: "Routine definition is invalid", content: { "application/json": { schema: schemas.RoutineDefinitionPublishRejectedResponseSchema } } },
-    },
-  });
-
-  registry.registerPath({
-    method: "post",
-    path: "/api/v1/agents/{agentId}/routines/{routineId}/revise",
-    tags: ["Agents"],
-    summary: "Create or return a draft revision for a published routine definition",
-    operationId: "reviseAgentRoutine",
-    security: [{ [security.bearerAuthScheme.name]: [] }],
-    request: { params: schemas.RoutineDefinitionParamsSchema },
-    responses: {
-      200: { description: "Routine revision draft returned", content: { "application/json": { schema: schemas.RoutineDefinitionLifecycleResponseSchema } } },
-      400: { description: "Routine definition cannot be revised", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
-      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
-      404: { description: "Agent or routine definition not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
-    },
-  });
-
-  registry.registerPath({
-    method: "post",
-    path: "/api/v1/agents/{agentId}/routines/{routineId}/archive",
-    tags: ["Agents"],
-    summary: "Archive a published routine definition",
-    operationId: "archiveAgentRoutine",
-    security: [{ [security.bearerAuthScheme.name]: [] }],
-    request: { params: schemas.RoutineDefinitionParamsSchema },
-    responses: {
-      200: { description: "Routine definition archived", content: { "application/json": { schema: schemas.RoutineDefinitionLifecycleResponseSchema } } },
-      400: { description: "Routine definition cannot be archived", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
-      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
-      404: { description: "Agent or routine definition not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
-    },
-  });
-
-  registry.registerPath({
-    method: "post",
-    path: "/api/v1/agents/{agentId}/routines/{routineId}/restore",
-    tags: ["Agents"],
-    summary: "Restore an archived routine definition",
-    operationId: "restoreAgentRoutine",
-    security: [{ [security.bearerAuthScheme.name]: [] }],
-    request: { params: schemas.RoutineDefinitionParamsSchema },
-    responses: {
-      200: { description: "Routine definition restored", content: { "application/json": { schema: schemas.RoutineDefinitionLifecycleResponseSchema } } },
-      400: { description: "Routine definition cannot be restored", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
-      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
-      404: { description: "Agent or routine definition not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
-      422: { description: "Routine definition is invalid", content: { "application/json": { schema: schemas.RoutineDefinitionPublishRejectedResponseSchema } } },
     },
   });
 

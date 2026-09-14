@@ -271,6 +271,32 @@ test("consent uses clear capability names and one explicit deny action", async (
   expect(decisions[0]).toEqual({ decision: "approve", workspaceId, approvedToolScopes: ["operator:read", "operator:propose"], offlineAccess: true });
 });
 
+test("consent grants the reviewed-application scope only when selected", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { platformSettings: basePlatformSettings() });
+  const decisions: unknown[] = [];
+  const requestedScopes = ["operator:read", "operator:probe", "operator:act", "operator:propose", "operator:write"];
+  await installConsentRoutes(page, consentTransaction({ requestedScopes }), decisions);
+
+  await page.goto(`/oauth/operator-mcp/consent?transaction=${transactionId}`);
+  await expect(page.getByLabel("Apply reviewed changes")).toBeChecked();
+  await page.getByRole("button", { name: "Approve access" }).click();
+  await expect.poll(() => decisions).toHaveLength(1);
+  expect(decisions[0]).toEqual({ decision: "approve", workspaceId, approvedToolScopes: requestedScopes, offlineAccess: true });
+  await page.waitForURL("about:blank");
+
+  await page.goto(`/oauth/operator-mcp/consent?transaction=${transactionId}`);
+  await page.getByLabel("Apply reviewed changes").uncheck();
+  await page.getByRole("button", { name: "Approve access" }).click();
+  await expect.poll(() => decisions).toHaveLength(2);
+  expect(decisions[1]).toEqual({
+    decision: "approve",
+    workspaceId,
+    approvedToolScopes: ["operator:read", "operator:probe", "operator:act", "operator:propose"],
+    offlineAccess: true,
+  });
+});
+
 test("consent supports a clear denial and safe no-access, expired, decided, and account-swap states", async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, { platformSettings: basePlatformSettings() });

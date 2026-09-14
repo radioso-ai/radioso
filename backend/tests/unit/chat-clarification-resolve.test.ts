@@ -115,7 +115,13 @@ describe("resolvePendingClarification", () => {
     });
 
     expect(store.clear).toHaveBeenCalledWith({ sessionId: "conv_1", outcome: "declined" });
-    expect(resolved).toEqual({ kind: "normal", resolvedPending: true, suppressNewClarification: true, outcome: "declined" });
+    expect(resolved).toEqual({
+      kind: "normal",
+      resolvedPending: true,
+      suppressNewClarification: true,
+      outcome: "declined",
+      loopGuardCandidateIds: ["demo", "support"],
+    });
   });
 
   it("clears unrelated pending clarification and proceeds normally", async () => {
@@ -130,7 +136,13 @@ describe("resolvePendingClarification", () => {
     });
 
     expect(store.clear).toHaveBeenCalledWith({ sessionId: "conv_1", outcome: "declined" });
-    expect(resolved).toEqual({ kind: "normal", resolvedPending: true, suppressNewClarification: true, outcome: "declined" });
+    expect(resolved).toEqual({
+      kind: "normal",
+      resolvedPending: true,
+      suppressNewClarification: true,
+      outcome: "declined",
+      loopGuardCandidateIds: ["demo", "support"],
+    });
   });
 
   it("expires stale pending clarification and proceeds normally", async () => {

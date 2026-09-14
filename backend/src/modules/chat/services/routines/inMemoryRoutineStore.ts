@@ -40,4 +40,17 @@ export class InMemoryRoutineStore implements ConversationRoutineStore {
   async clear({ sessionId }: { sessionId: string }): Promise<void> {
     this.states.delete(sessionId);
   }
+
+  snapshot(sessionId: string): RoutineState | null {
+    const state = this.states.get(sessionId);
+    return state
+      ? {
+          ...state,
+          path: [...state.path],
+          variables: { ...state.variables },
+          ...(state.attempts ? { attempts: { ...state.attempts } } : {}),
+          ...(state.metadata ? { metadata: { ...state.metadata } } : {}),
+        }
+      : null;
+  }
 }

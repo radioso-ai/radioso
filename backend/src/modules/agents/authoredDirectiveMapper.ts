@@ -1,9 +1,9 @@
 import type { Directive } from "../directives/public.js";
 import type { AuthoredDirective, NormalizedAuthoredDirectiveInput } from "./authoredDirectives.js";
 
-export const AUTHORED_DIRECTIVE_STEERING_DEFAULT_PRIORITY = 50;
+const AUTHORED_DIRECTIVE_STEERING_DEFAULT_PRIORITY = 50;
 
-export interface AuthoredDirectiveMappingOptions {
+interface AuthoredDirectiveMappingOptions {
   defaultPriority?: number;
 }
 
@@ -28,6 +28,7 @@ export const authoredDirectiveToDirective = (
     // Absent rather than empty: the renderer reads an absent scope as the answering
     // voice, and an empty array would say the same thing more noisily.
     ...(directive.surfaces && directive.surfaces.length > 0 ? { surfaces: directive.surfaces } : {}),
+    ...(directive.coverageCriteria ? { coverageCriteria: directive.coverageCriteria } : {}),
     tags: directive.tags,
     ...(directive.description === null ? {} : { description: directive.description }),
     metadata: directive.metadata,

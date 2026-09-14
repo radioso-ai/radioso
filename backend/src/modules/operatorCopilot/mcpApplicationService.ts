@@ -23,6 +23,7 @@ import type { AuditPort } from "../audit/contracts/index.js";
 import type { CopilotCurrentAuthorizationPort, CopilotToolInvocationContext } from "./contracts.js";
 import { OperatorMcpCatalogError, OperatorMcpCatalogService } from "./mcpCatalog.js";
 import type { OperatorMcpInvocationRecord, OperatorMcpInvocationRepositoryPort } from "./mcpContracts.js";
+import { AppError } from "../../shared/domain/errors.js";
 
 const MAX_RESULT_BYTES = 256 * 1024;
 const PROOF_TTL_MS = 15_000;
@@ -34,7 +35,7 @@ type CredentialValidation = Pick<OperatorMcpCredentialValidationService, "valida
 export class OperatorMcpApplicationError extends Error {
   constructor(readonly code:
     | "invalid_admission" | "insufficient_scope" | "invalid_proof" | "proof_replay"
-    | "unknown_tool" | "invalid_arguments" | "operation_required" | "operation_conflict" | "budget_exhausted" | "result_too_large" | "invalid_result",
+    | "unknown_tool" | "invalid_arguments" | "missing_configuration" | "operation_required" | "operation_conflict" | "budget_exhausted" | "result_too_large" | "invalid_result",
   readonly requiredScope?: OperatorMcpScope) {
     super(code);
   }
@@ -87,13 +88,18 @@ const contextFor = (
   permissions: undefined,
   currentAuthorization,
   operatorMcpInvocationId: invocationId,
+  operatorMcpGrantId: principal.grantId,
+  operatorMcpClientId: principal.clientRecordId,
   pageContext: { view: null, agentId: null, conversationId: null, selection: null, entities: [] },
 });
 
-const resultReference = (output: unknown): string | null => {
+const resultReference = (output: unknown, preferProposalId: boolean): string | null => {
   if (!output || typeof output !== "object" || Array.isArray(output)) return null;
   const record = output as Record<string, unknown>;
-  for (const key of ["dashboardUrl", "proposalId"] as const) {
+  // Proposal preparation historically hands the dashboard link back to its caller. A reviewed
+  // act instead needs the durable proposal id for a later receipt-bound reconciliation.
+  const keys = preferProposalId ? ["proposalId", "dashboardUrl"] : ["dashboardUrl", "proposalId"] as const;
+  for (const key of keys) {
     const value = record[key];
     if (typeof value === "string" && value.length > 0 && value.length <= 256) return value;
   }
@@ -344,13 +350,19 @@ export class OperatorMcpApplicationService {
         }
 
         const replayed = prepared.invocation;
-        const activeProposalAttempt = disposition.retry.effect === "proposal"
+        const recoverableAttempt = Boolean(descriptor.reconcileMcpInvocation)
+          && disposition.retry.idempotent
+          && (disposition.retry.effect === "proposal" || disposition.retry.effect === "act")
           && input.operationId
-          && (replayed.status === "admitted" || replayed.status === "running" || replayed.status === "failed");
-        if (activeProposalAttempt) {
+          // `completed` can be an acknowledged `uncertain` owner result. The descriptor reads
+          // its durable subject state before deciding whether it is terminal or recoverable.
+          && (replayed.status === "admitted" || replayed.status === "running" || replayed.status === "failed"
+            || (disposition.retry.effect === "act" && replayed.status === "completed"));
+        if (recoverableAttempt) {
           const recoveryNow = this.now();
           const reconciliation = await this.dependencies.catalog.reconcileInvocation({
             name: input.name,
+            arguments: parsed.data,
             invocation: replayed,
             context: contextFor(principal, input.proof.invocationId, this.currentAuthorizationFor(principal)),
             scopes: new Set(principal.currentToolScopes),
@@ -363,7 +375,7 @@ export class OperatorMcpApplicationService {
             if (!reconciliation.output || typeof reconciliation.output !== "object" || Array.isArray(reconciliation.output)) {
               throw new OperatorMcpApplicationError("invalid_result");
             }
-            const reference = resultReference(reconciliation.output);
+            const reference = resultReference(reconciliation.output, disposition.retry.effect === "act");
             await this.dependencies.invocations.recordOutcome({
               invocationId: replayed.id,
               status: "completed",
@@ -380,7 +392,7 @@ export class OperatorMcpApplicationService {
             });
             await this.audit({
               principal, invocationId: input.proof.invocationId, method: "tools/call", descriptorName: input.name,
-              capabilityShape, eventStatus: "success", outcome: "replayed", reason: "proposal_recovered",
+              capabilityShape, eventStatus: "success", outcome: "replayed", reason: "operation_recovered",
             });
             return {
               structuredContent: reconciliation.output as Record<string, unknown>,
@@ -438,7 +450,7 @@ export class OperatorMcpApplicationService {
       const serialized = JSON.stringify(output);
       if (Buffer.byteLength(serialized, "utf8") > MAX_RESULT_BYTES) throw new OperatorMcpApplicationError("result_too_large");
       if (!output || typeof output !== "object" || Array.isArray(output)) throw new OperatorMcpApplicationError("invalid_result");
-      const reference = resultReference(output);
+      const reference = resultReference(output, disposition.retry.effect === "act");
       await this.dependencies.invocations.recordOutcome({
         invocationId: input.proof.invocationId, status: "completed", safeOutcomeCode: "completed",
         ...(reference ? { resultReference: reference } : {}), now: this.now(),
@@ -454,12 +466,24 @@ export class OperatorMcpApplicationService {
         reason: "completed",
       });
       return { structuredContent: output as Record<string, unknown>, content: [], safeOutcomeCode: "completed", ...(reference ? { resultReference: reference } : {}) };
-    } catch (error) {
+    } catch (rawError) {
+      // A tool's own domain rejection of the caller's input (e.g. citing evidence over a transport
+      // with no Ray conversation to attribute it to) is the same class of mistake schema validation
+      // above already reports as `invalid_arguments`. Without this, `mcpRoutes.ts`'s error handler
+      // — which only recognizes `OperatorMcpApplicationError` — falls back to a generic 503
+      // unavailability the caller cannot act on for what is actually a clean, correctable rejection.
+      const error = rawError instanceof AppError
+        ? rawError.code === "retrieval_not_configured"
+          ? new OperatorMcpApplicationError("missing_configuration")
+          : rawError.statusCode === 400
+            ? new OperatorMcpApplicationError("invalid_arguments")
+            : rawError
+        : rawError;
       const reason = error instanceof OperatorMcpApplicationError
         ? error.code
         : error instanceof OperatorMcpCatalogError ? error.code : "dependency_error";
       const refused = error instanceof OperatorMcpApplicationError
-        && ["unknown_tool", "invalid_arguments", "operation_required", "operation_conflict", "budget_exhausted"].includes(error.code);
+        && ["unknown_tool", "invalid_arguments", "missing_configuration", "operation_required", "operation_conflict", "budget_exhausted"].includes(error.code);
       await this.dependencies.invocations.recordOutcome({
         invocationId: input.proof.invocationId,
         status: refused ? "refused" : "failed",

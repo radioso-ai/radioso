@@ -164,6 +164,61 @@ describe("grounded answer prompt contract", () => {
     expect(result.conversationContextPrompt).toContain("untrusted data");
   });
 
+  it("gives final answer composition the assessed coverage without treating it as source evidence", () => {
+    const result = composeGroundedAnswerSystemPrompt({
+      baseSystemPrompt: "BASE",
+      suggestedQuestionsEnabled: false,
+      suggestedQuestionsCount: 0,
+      hasRetrievedContexts: true,
+      conversationIntentSnapshot,
+      answerCoverage: {
+        availability: "assessed",
+        coverage: "unanswered",
+        reason: "insufficient_evidence",
+        unresolvedRequest: "Whether one-day attendance is allowed",
+        schemaVersion: 1,
+      },
+    });
+
+    expect(result.systemPrompt).toContain("Coverage-aware response");
+    expect(result.systemPrompt).toContain("Citation and grounding rules remain authoritative");
+    expect(result.conversationContextPrompt).toContain('"coverage":"unanswered"');
+    expect(result.conversationContextPrompt).toContain("untrusted diagnostic data");
+    expect(result.systemPrompt).not.toContain("Whether one-day attendance is allowed");
+  });
+
+  it.each(["failed", "invalid", "not_recorded"] as const)("does not steer answer composition for %s coverage diagnostics", (availability) => {
+    const result = composeGroundedAnswerSystemPrompt({
+      baseSystemPrompt: "BASE",
+      suggestedQuestionsEnabled: false,
+      suggestedQuestionsCount: 0,
+      hasRetrievedContexts: true,
+      conversationIntentSnapshot,
+      answerCoverage: { availability },
+    });
+
+    expect(result.systemPrompt).not.toContain("Coverage-aware response");
+    expect(result.conversationContextPrompt).not.toContain("untrusted diagnostic data");
+  });
+
+  it("requires a direct response when the assessment says the request is resolved", () => {
+    const result = composeGroundedAnswerSystemPrompt({
+      baseSystemPrompt: "BASE",
+      suggestedQuestionsEnabled: false,
+      suggestedQuestionsCount: 0,
+      hasRetrievedContexts: true,
+      conversationIntentSnapshot,
+      answerCoverage: {
+        availability: "assessed",
+        coverage: "answered",
+        reason: "sufficient_evidence",
+        schemaVersion: 1,
+      },
+    });
+
+    expect(result.systemPrompt).toContain("answer the resolved request directly");
+  });
+
   it("scopes decline rules by turn type: compact inline guard on grounded, full rules on focused miss", () => {
     const main = new PromptBuilder().build({
       query: "What?",

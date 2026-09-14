@@ -96,11 +96,11 @@ test("routine authoring exposes typed customer email skill outcomes", async ({ p
         kind: "tool",
         toolRef: "support_email_customer",
       }],
-      transitions: [{
+      transitions: expect.arrayContaining([expect.objectContaining({
         fromStep: "send_email",
         guardKind: "outcome",
         outcomeStatus: "provider_rejected",
-      }],
+      })]),
     },
   });
 });

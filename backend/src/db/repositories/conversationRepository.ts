@@ -21,6 +21,10 @@ export interface ConversationRecord {
   id: string;
   workspaceId: string;
   agentId: string | null;
+  /** Immutable release chosen when the conversation first entered production chat. */
+  agentRevisionId?: string | null;
+  /** Operator-test transcripts are private even if their revision is later published. */
+  purpose: "production" | "operator_test";
   agentName: string | null;
   agentInternalName: string | null;
   sourceChannel: string | null;
@@ -62,7 +66,7 @@ export interface ConversationRepositoryPort {
     sourceOrigin?: string | null,
     channelContext?: ConversationChannelContext | null,
     verifiedCustomerId?: string | null,
-    options?: { entryPageUrl?: string | null },
+    options?: { entryPageUrl?: string | null; agentRevisionId?: string | null; purpose?: ConversationRecord["purpose"] },
   ): Promise<ConversationRecord>;
   createWithInitialAssistantMessage(input: {
     workspaceId: string;
@@ -92,6 +96,13 @@ export interface ConversationRepositoryPort {
     input: { limit: number; offset?: number; cursor?: string; agentId?: string | null },
   ): Promise<{ conversations: ConversationRecord[]; total: number; nextCursor: string | null; hasMore: boolean }>;
   findByIdAndWorkspaceId(conversationId: string, workspaceId: string): Promise<ConversationRecord | null>;
+  /** First-write-wins legacy binding; returns the durable winner under concurrent turns. */
+  bindAgentRevision?(input: {
+    conversationId: string;
+    workspaceId: string;
+    agentId: string;
+    agentRevisionId: string;
+  }): Promise<ConversationRecord | null>;
   findByIdAndAnonymousSession(
     conversationId: string,
     workspaceId: string,
@@ -121,6 +132,8 @@ interface ConversationRow {
   id: string;
   workspace_id: string;
   agent_id: string | null;
+  agent_revision_id?: string | null;
+  purpose?: ConversationRecord["purpose"];
   agent_name?: string | null;
   agent_internal_name?: string | null;
   source_channel: string | null;
@@ -147,6 +160,8 @@ const conversationColumns = [
   "id",
   "workspace_id",
   "agent_id",
+  "agent_revision_id",
+  "purpose",
   "source_channel",
   "source_origin",
   "channel_context",
@@ -162,6 +177,8 @@ const conversationSelectColumns = [
   "c.id as id",
   "c.workspace_id as workspace_id",
   "c.agent_id as agent_id",
+  "c.agent_revision_id as agent_revision_id",
+  "c.purpose as purpose",
   "a.name as agent_name",
   "a.internal_name as agent_internal_name",
   "c.source_channel as source_channel",
@@ -194,6 +211,8 @@ const mapConversation = (row: ConversationRow): ConversationRecord => ({
   id: row.id,
   workspaceId: row.workspace_id,
   agentId: row.agent_id ?? null,
+  agentRevisionId: row.agent_revision_id ?? null,
+  purpose: row.purpose ?? "production",
   agentName: row.agent_name ?? null,
   agentInternalName: normalizeNullableText(row.agent_internal_name),
   sourceChannel: row.source_channel,
@@ -266,7 +285,7 @@ export class ConversationRepository implements ConversationRepositoryPort {
     sourceOrigin: string | null = null,
     channelContext: ConversationChannelContext | null = null,
     verifiedCustomerId: string | null = null,
-    options?: { entryPageUrl?: string | null },
+    options?: { entryPageUrl?: string | null; agentRevisionId?: string | null; purpose?: ConversationRecord["purpose"] },
   ): Promise<ConversationRecord> {
     const row = await this.db
       .insertInto("conversations")
@@ -274,6 +293,8 @@ export class ConversationRepository implements ConversationRepositoryPort {
         id: randomUUID(),
         workspace_id: workspaceId,
         agent_id: agentId,
+        agent_revision_id: options?.agentRevisionId ?? null,
+        purpose: options?.purpose ?? "production",
         source_channel: sourceChannel,
         source_origin: sourceOrigin,
         channel_context: channelContext ? toJsonb(channelContext) : null,
@@ -285,6 +306,27 @@ export class ConversationRepository implements ConversationRepositoryPort {
       .executeTakeFirstOrThrow();
 
     return mapConversation(row as ConversationRow);
+  }
+
+  async bindAgentRevision(input: {
+    conversationId: string;
+    workspaceId: string;
+    agentId: string;
+    agentRevisionId: string;
+  }): Promise<ConversationRecord | null> {
+    const bound = await this.db
+      .updateTable("conversations")
+      .set({ agent_revision_id: input.agentRevisionId })
+      .where("id", "=", input.conversationId)
+      .where("workspace_id", "=", input.workspaceId)
+      .where("agent_id", "=", input.agentId)
+      .where("agent_revision_id", "is", null)
+      .returning(conversationColumns)
+      .executeTakeFirst();
+    if (bound) {
+      return mapConversation(bound as ConversationRow);
+    }
+    return this.findByIdAndWorkspaceId(input.conversationId, input.workspaceId);
   }
 
   async createWithInitialAssistantMessage(input: {
@@ -480,6 +522,7 @@ export class ConversationRepository implements ConversationRepositoryPort {
           .select((eb) => eb.fn.countAll<string>().as("count"))
           .where("c.workspace_id", "=", workspaceId)
           .where("c.anonymous_session_id", "=", anonymousSessionId)
+          .where("c.purpose", "=", "production")
           .$if(Boolean(input.agentId), (qb) => qb.where("c.agent_id", "=", input.agentId!))
           .executeTakeFirst())?.count ?? "0");
     const query = this.db
@@ -490,6 +533,7 @@ export class ConversationRepository implements ConversationRepositoryPort {
       .select(conversationSelectColumns)
       .where("c.workspace_id", "=", workspaceId)
       .where("c.anonymous_session_id", "=", anonymousSessionId)
+      .where("c.purpose", "=", "production")
       .$if(Boolean(input.agentId), (qb) => qb.where("c.agent_id", "=", input.agentId!))
       .$if(Boolean(cursor), (qb) =>
         qb.where((eb) =>
@@ -549,6 +593,7 @@ export class ConversationRepository implements ConversationRepositoryPort {
       .where("c.id", "=", conversationId)
       .where("c.workspace_id", "=", workspaceId)
       .where("c.anonymous_session_id", "=", anonymousSessionId)
+      .where("c.purpose", "=", "production")
       .$if(Boolean(agentId), (qb) => qb.where("c.agent_id", "=", agentId!))
       .executeTakeFirst() as ConversationRow | undefined;
 

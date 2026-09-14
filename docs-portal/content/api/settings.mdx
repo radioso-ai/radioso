@@ -240,7 +240,7 @@ If `CONNECTOR_ENCRYPTION_KEY` is not configured on the backend, writes return `5
 
 Webhook destinations are named endpoints that routines can reference by stable id.
 They are workspace-scoped. A routine stores the destination id, not the URL or the
-name, so renaming a destination does not break published routines.
+name, so renaming a destination does not break the routines that point at it.
 
 Create a destination with a name and an HTTPS URL:
 
@@ -280,8 +280,8 @@ secret. Rotation also returns the new plaintext secret once.
 Destination URLs must use HTTPS and must pass the same public-host SSRF policy used
 by outbound contact webhooks. Local HTTP endpoints are not accepted by default.
 
-Deleting a destination is blocked while any published routine references it. The
-error names the published routine so you can remove or change the reference first.
+Deleting a destination is blocked while a routine's completion export references
+it. The error names the routine so you can remove or change the reference first.
 
 When a routine reaches a terminal included in its completion export trigger set,
 Radioso dispatches `webhook.send` and posts a JSON body to the destination URL

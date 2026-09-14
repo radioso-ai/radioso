@@ -10,6 +10,7 @@ describe("operator probe owner ports", () => {
       id: "conversation-1",
       workspaceId: "workspace-1",
       agentId: "agent-1",
+      purpose: "production" as const,
       agentName: null,
       agentInternalName: null,
       sourceChannel: "operator_copilot",

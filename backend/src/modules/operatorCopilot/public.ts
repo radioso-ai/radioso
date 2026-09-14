@@ -18,6 +18,7 @@ export * from "./mcpCatalog.js";
 export * from "./mcpApplicationService.js";
 export * from "./mcpRoutes.js";
 export * from "./mcpContracts.js";
+export * from "./reviewedOperation.js";
 export * from "./sse.js";
 export * from "./service.js";
 export { AgentTurnProbeService } from "./services/agentTurnProbeService.js";

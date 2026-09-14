@@ -39,7 +39,7 @@ const asString = (value: unknown): string | undefined => (typeof value === 'stri
 const asStringList = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0) : []
 
-export const humanizeDiagnosticValue = (value: string): string =>
+const humanizeDiagnosticValue = (value: string): string =>
   value
     .replace(/[._-]+/g, ' ')
     .replace(/\s+/g, ' ')
@@ -138,6 +138,30 @@ const describeDirectReply = (
           summary: 'The assistant did not have grounded information to answer and declined.',
         }
       }
+      if (answerOutcome === 'coverage_unanswered') {
+        return {
+          title: 'Request unanswered',
+          summary: 'The assistant found related information but could not resolve the visitor’s request.',
+        }
+      }
+      if (answerOutcome === 'coverage_partial') {
+        return {
+          title: 'Partly answered',
+          summary: 'The assistant answered part of the request and identified information still needed.',
+        }
+      }
+      if (answerOutcome === 'coverage_unclear') {
+        return {
+          title: 'Needs clarification',
+          summary: 'The visitor’s request needed clarification before it could be answered.',
+        }
+      }
+      if (answerOutcome === 'coverage_unavailable') {
+        return {
+          title: 'Coverage not assessed',
+          summary: 'The response completed, but its semantic coverage assessment was unavailable.',
+        }
+      }
       return {
         title: 'Direct reply',
         summary: 'The assistant answered directly without searching workspace documents.',
@@ -204,6 +228,42 @@ export function presentActivityOutcome(input: {
         summary: 'The assistant searched the workspace but didn’t find enough to answer, so it declined.',
         facts,
         tone: 'warning',
+      }
+    }
+
+    if (answerOutcome === 'coverage_unanswered') {
+      return {
+        title: 'Request unanswered',
+        summary: 'The assistant found related workspace information but could not resolve the visitor’s request.',
+        facts,
+        tone: 'warning',
+      }
+    }
+
+    if (answerOutcome === 'coverage_partial') {
+      return {
+        title: 'Partly answered from workspace documents',
+        summary: 'The assistant resolved part of the visitor’s request and identified information still needed.',
+        facts,
+        tone: 'warning',
+      }
+    }
+
+    if (answerOutcome === 'coverage_unclear') {
+      return {
+        title: 'Needs clarification',
+        summary: 'The assistant needed clarification before it could determine whether the request was answerable.',
+        facts,
+        tone: 'neutral',
+      }
+    }
+
+    if (answerOutcome === 'coverage_unavailable') {
+      return {
+        title: 'Coverage not assessed',
+        summary: 'The assistant completed the response, but semantic coverage could not be assessed.',
+        facts,
+        tone: 'neutral',
       }
     }
 

@@ -16,7 +16,7 @@ describe("renderAccountInvitationEmail", () => {
     expect(message.text).toContain("https://app.radioso.ai/invite/token-123");
     expect(message.text).toContain("owner@example.com");
     expect(message.html).toContain("https://app.radioso.ai/invite/token-123");
-    expect(message.metadata?.kind).toBe("account_invitation");
+    expect(message.kind).toBe("account_invitation");
   });
 
   it("omits the inviter when it cannot be resolved", () => {
@@ -51,6 +51,6 @@ describe("renderAccountInvitationEmail", () => {
       expiresAt: new Date("2026-09-09T10:00:00.000Z"),
     });
 
-    expect(JSON.stringify(message.metadata)).not.toContain("token-123");
+    expect(JSON.stringify(message.metadata ?? {})).not.toContain("token-123");
   });
 });

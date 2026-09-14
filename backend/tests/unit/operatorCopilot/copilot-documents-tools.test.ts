@@ -191,6 +191,54 @@ describe("copilot document readers", () => {
     expect(result.nextChunkIndex).toBe(10);
   });
 
+  it("compacts a page whose chunk text would exceed the transport's result size, and reports it", async () => {
+    // A full page at the workspace's configurable chunking ceiling, in multi-byte content, can
+    // exceed what the MCP transport accepts as one result. Every chunk must still come back — only
+    // the string fields shrink — with a `truncation` signal a caller with no dashboard to eyeball a
+    // short result can act on.
+    const wideChunkIds = Array.from({ length: 10 }, (_, index) => `wide-chunk-${index}`);
+    const wideChunks = wideChunkIds.map((id, chunkIndex) => ({
+      id,
+      documentId,
+      workspaceId: "workspace-1",
+      chunkIndex,
+      content: "词".repeat(4_000),
+      searchText: "词".repeat(4_000),
+      startOffset: chunkIndex * 4_000,
+      endOffset: (chunkIndex + 1) * 4_000,
+      metadata: {},
+      dateFrom: null,
+      dateTo: null,
+      createdAt: new Date("2026-08-30T10:00:00.000Z"),
+      embeddingDimensions: null,
+    }));
+    const listPageForDocument = vi.fn(async () => ({
+      chunks: wideChunks,
+      totalChunks: wideChunks.length,
+      nextChunkIndex: null,
+    }));
+    const maintenance = knowledgePorts();
+    const descriptor = createDocumentKnowledgeCopilotTools({
+      documentChunks: { listPageForDocument },
+      documentMaintenance: maintenance,
+    }).find((candidate) => candidate.name === "document_chunks")!;
+
+    const result = await descriptor.createTool(context).invoke({
+      documentId,
+      startChunkIndex: 0,
+      limit: 10,
+    }, {} as never) as {
+      chunks: Array<{ content: string; searchText: string }>;
+      truncation?: { truncated: boolean; entries: Array<{ path: string; reason: string }> };
+    };
+
+    expect(result.chunks).toHaveLength(10);
+    expect(result.chunks[0].content.length).toBeLessThan(4_000);
+    expect(result.truncation?.truncated).toBe(true);
+    expect(result.truncation?.entries.some((entry) => entry.reason === "string_length")).toBe(true);
+    expect(Buffer.byteLength(JSON.stringify(result), "utf8")).toBeLessThanOrEqual(256 * 1024);
+  });
+
   it("bounds chunk pages structurally and links the inspected document", () => {
     const descriptor = createDocumentKnowledgeCopilotTools({
       documentChunks: knowledgePorts(),

@@ -1,31 +1,34 @@
 import type { EmailMessage } from "../emailService.js";
-import { button } from "./layout.js";
+import { renderEmail, renderEmailText, type EmailContent } from "./layout.js";
 
-export interface EmailVerificationInput {
+interface EmailVerificationInput {
   to: string;
+  /** Public frontend origin; the layout serves the brand lockup from it. */
+  appBaseUrl?: string | null;
   verificationUrl: string;
 }
 
 export const renderEmailVerificationEmail = (
   input: EmailVerificationInput,
-): Omit<EmailMessage, "from"> => ({
-  to: input.to,
-  subject: "Verify your email",
-  text: [
-    "Welcome to Radioso.",
-    "",
-    `Verify your email address: ${input.verificationUrl}`,
-    "",
-    "If you did not create this account, you can ignore this email.",
-  ].join("\n"),
-  html: [
-    "<p>Welcome to Radioso.</p>",
-    "<p>Verify your email address.</p>",
-    button({ href: input.verificationUrl, label: "Verify email address" }),
-    "<p>If you did not create this account, you can ignore this email.</p>",
-  ].join(""),
-  metadata: {
+): Omit<EmailMessage, "from"> => {
+  const content: EmailContent = {
+    preheader: "Confirm this address so we know your account reaches you.",
+    heading: "Verify your email",
+    paragraphs: [
+      "Welcome to Radioso. Confirm this address to finish setting up your account.",
+    ],
+    cta: { href: input.verificationUrl, label: "Verify email address" },
+    footnote: "If you did not create this account, you can ignore this email.",
+  };
+
+  return {
+    to: input.to,
+    subject: "Verify your email",
+    text: renderEmailText(content),
+    html: renderEmail(content, { appBaseUrl: input.appBaseUrl }),
     kind: "email_verification",
-    verificationUrl: input.verificationUrl,
-  },
-});
+    metadata: {
+      verificationUrl: input.verificationUrl,
+    },
+  };
+};

@@ -18,7 +18,7 @@ import {
   type CitationOpenResult,
   linkifyText,
 } from './chat-citations'
-import { SendToEvalAction } from './send-to-eval-action'
+import { SendToEvalAction, type SendToEvalActionProps } from './send-to-eval-action'
 import { API_BASE } from '@/lib/api-client'
 import {
   BeaconFrontendProductAnalyticsSink,
@@ -119,7 +119,7 @@ export interface ChatThreadMessage {
   role: 'user' | 'assistant' | 'system'
   source?: MessageSource
   content: string
-  createdAt: string
+  createdAt?: string
   inputMetadata?: ChatUserInputMetadata
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
@@ -373,6 +373,8 @@ export function ChatMessageThread({
   documentInteractivity = 'open',
   conversationId,
   evalCaptureEnabled = false,
+  captureEvalSnapshot,
+  shouldShowEvalCapture,
   analyticsSurface = 'dashboard',
   analyticsEnabled = true,
   onEmbedAnalyticsEvent,
@@ -404,6 +406,8 @@ export function ChatMessageThread({
   // the control must stay explicitly opt-in.
   conversationId?: string
   evalCaptureEnabled?: boolean
+  captureEvalSnapshot?: (assistantMessageId: string) => ReturnType<NonNullable<SendToEvalActionProps['captureSnapshot']>>
+  shouldShowEvalCapture?: (assistantMessageId: string) => boolean
   analyticsSurface?: ChatLinkAnalyticsSurface
   analyticsEnabled?: boolean
   onEmbedAnalyticsEvent?: (event: WebsiteEmbedAnalyticsInput) => void
@@ -615,10 +619,10 @@ export function ChatMessageThread({
             : message.source === 'system'
               ? 'System'
               : null
-        const currentDay = dayFormatter.format(new Date(message.createdAt))
-        const previousDay =
-          index > 0 ? dayFormatter.format(new Date(messages[index - 1].createdAt)) : null
-        const showDayDivider = previousDay !== null && currentDay !== previousDay
+        const currentDay = message.createdAt ? dayFormatter.format(new Date(message.createdAt)) : null
+        const previousCreatedAt = index > 0 ? messages[index - 1].createdAt : undefined
+        const previousDay = previousCreatedAt ? dayFormatter.format(new Date(previousCreatedAt)) : null
+        const showDayDivider = currentDay !== null && previousDay !== null && currentDay !== previousDay
         const assistantMessageId = message.role === 'assistant'
           ? message.persistedAssistantMessageId ?? null
           : null
@@ -686,12 +690,12 @@ export function ChatMessageThread({
                     >
                       <p className="select-text whitespace-pre-wrap text-sm">{linkifyText(message.content)}</p>
                     </div>
-                    <p
+                    {message.createdAt ? <p
                       className="px-1 text-xs text-muted-foreground"
                       style={theme ? { color: theme.mutedForeground } : undefined}
                     >
                       {timeFormatter.format(new Date(message.createdAt))}
-                    </p>
+                    </p> : null}
                   </>
                 ) : (
                   <div className="flex w-full items-start">
@@ -828,14 +832,15 @@ export function ChatMessageThread({
                       })()}
                       {message.status === 'streaming' ? null : (
                       <div className="flex items-center gap-1.5 px-1 text-xs text-muted-foreground">
-                        <p style={theme ? { color: theme.mutedForeground } : undefined}>
+                        {message.createdAt ? <p style={theme ? { color: theme.mutedForeground } : undefined}>
                           {timeFormatter.format(new Date(message.createdAt))}
-                        </p>
+                        </p> : null}
                         <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/message:opacity-100 group-focus-within/message:opacity-100 [@media(hover:none)]:opacity-100">
                           {message.content ? (
                             <MessageCopyButton content={message.content} theme={theme} />
                           ) : null}
-                          {evalCaptureEnabled && conversationId && assistantMessageId ? (
+                          {evalCaptureEnabled && conversationId && assistantMessageId
+                            && (shouldShowEvalCapture?.(assistantMessageId) ?? true) ? (
                             <SendToEvalAction
                               conversationId={conversationId}
                               assistantMessageId={assistantMessageId}
@@ -848,6 +853,9 @@ export function ChatMessageThread({
                                 return undefined
                               })()}
                               originalAnswer={message.content}
+                              captureSnapshot={captureEvalSnapshot
+                                ? () => captureEvalSnapshot(assistantMessageId)
+                                : undefined}
                               className="inline-flex size-5 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
                             />
                           ) : null}

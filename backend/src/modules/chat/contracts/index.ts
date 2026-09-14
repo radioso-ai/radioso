@@ -44,6 +44,10 @@ export type {
   ChatRoute,
   ChatSuggestion,
 } from "../types/chatResponses.js";
+export type {
+  ChatAnswerCoverageAssessment,
+  ChatAnswerCoverageInteractionTrace,
+} from "./answerCoverage.js";
 export interface ChatAnswerPort {
   answer(input: {
     workspaceId: string;

@@ -394,7 +394,7 @@ describe("model-facing descriptions", () => {
     // Scoped to the tools that carry the assurance today rather than asserted over every propose
     // tool: six others have never carried it and their behaviour is unmeasured, so requiring it
     // would be a prompt change to tools nothing in this suite covers.
-    const carriesAssurance = ["propose_directive", "propose_directive_enablement", "propose_directive_removal", "propose_agent_setting", "propose_routine", "propose_routine_edit", "propose_routine_lifecycle"];
+    const carriesAssurance = ["propose_directive", "propose_directive_enablement", "propose_directive_removal", "propose_agent_setting", "propose_routine", "propose_routine_edit"];
     const silent = realCatalog()
       .filter((descriptor) => carriesAssurance.includes(descriptor.name))
       .filter((descriptor) => !/not change configuration|changes nothing until the operator applies it/.test(descriptor.description))

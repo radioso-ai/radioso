@@ -216,6 +216,7 @@ const seedFixtures = async (
     try {
       const draft = await deps.routineDefinitionService.createDraft(flags.workspaceId, flags.agentId, {
         name: routine.name,
+        enabled: routine.enabled,
         activation: routine.activation,
         slots: routine.slots,
         steps: routine.steps,
@@ -223,19 +224,16 @@ const seedFixtures = async (
         terminals: routine.terminals,
         completionExport: routine.completionExport,
       });
-      const published = await deps.routineDefinitionService.publish(flags.workspaceId, flags.agentId, draft.routine.id);
-      if ("rejected" in published && published.rejected) {
-        console.warn(`  seed: routine "${routine.name}" failed validation on publish.`);
-        continue;
-      }
+      // A routine goes live the moment it is created — there is no separate publish step any
+      // more, the agent's own Review & Publish is the one release gate.
       routineIds.set(routine.id, draft.routine.id);
     } catch (error) {
       // A repeat run against the same disposable agent collides on the
       // (agent_id, name, version) uniqueness. The routine already exists, so resolve its
-      // live published id by name and fill the map — otherwise routine assertions would
-      // keep the fixture id and spuriously regress.
+      // live id by name and fill the map — otherwise routine assertions would keep the
+      // fixture id and spuriously regress.
       const existing = (await deps.routineDefinitionService.list(flags.workspaceId, flags.agentId)).find(
-        (candidate) => candidate.name === routine.name && candidate.status === "published",
+        (candidate) => candidate.name === routine.name && candidate.enabled,
       );
       if (existing) {
         routineIds.set(routine.id, existing.id);

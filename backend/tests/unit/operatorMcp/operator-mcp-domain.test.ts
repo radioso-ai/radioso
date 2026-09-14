@@ -47,6 +47,11 @@ describe("operator MCP authorization domain", () => {
       requested: "http://localhost:53192/callback",
       registered: ["http://127.0.0.1/callback"],
     })).toThrow(/redirect/i);
+    expect(validateRedirectUri({
+      applicationType: "native",
+      requested: "http://localhost:53192/callback",
+      registered: ["http://localhost/callback"],
+    })).toBe("http://localhost:53192/callback");
   });
 
   it("uses bounded lifetimes and one-way digests", () => {

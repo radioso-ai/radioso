@@ -11,7 +11,6 @@ import { enforceCopilotExpensiveOperation, withCopilotSpendRefusals } from "./ex
 export { OPERATOR_COPILOT_PROBE_SOURCE_CHANNEL } from "../../../shared/domain/conversationSource.js";
 
 const MAX_PREVIEW_ROUTINES = 20;
-const PREVIEW_ELIGIBLE_STATUSES = new Set(["draft", "published"]);
 
 const probeSourceOrigin = (input: Pick<
   CopilotAgentTurnProbeInput,
@@ -87,7 +86,7 @@ export class AgentTurnProbeService implements CopilotAgentTurnProbePort {
 
     for (const routineId of previewRoutineIds) {
       const routine = await this.dependencies.routineReader.findPreviewRoutine(input.workspaceId, input.agentId, routineId);
-      if (!routine || !PREVIEW_ELIGIBLE_STATUSES.has(routine.status)) {
+      if (!routine) {
         throw notFound("Preview routine not found");
       }
     }

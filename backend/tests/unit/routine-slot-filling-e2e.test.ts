@@ -30,7 +30,7 @@ const authored: RoutineDefinition = {
   agentId: "agent_1",
   lineageId: "lineage_1",
   version: 1,
-  status: "published",
+  enabled: true,
   createdAt: now,
   updatedAt: now,
   name: "Contact us",

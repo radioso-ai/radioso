@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-09-06
+last_updated: 2026-09-10
 ---
 
 # Code Map
@@ -426,8 +426,8 @@ Public and tool surfaces:
 - `backend/src/modules/operatorCopilot/contracts.ts`, `catalog.ts`, `service.ts`, and `routes.ts`
 - `backend/src/modules/operatorCopilot/tools/index.ts` (catalog contributions)
 - `backend/src/modules/operatorCopilot/tools/agentTurnProbe.ts` (`test_agent_turn` contract and projection)
-- `backend/src/modules/operatorCopilot/tools/routines.ts` (`routine_definition`, `validate_routine`, `propose_routine`, `propose_routine_edit`, `propose_routine_lifecycle`)
-- `backend/src/app/composition/copilotProposalAdapters.ts` (proposal adapters: directive, agent setting, and the routine edit/lifecycle apply rules)
+- `backend/src/modules/operatorCopilot/tools/routines.ts` (`routine_definition`, `validate_routine`, `propose_routine`, `propose_routine_edit`)
+- `backend/src/app/composition/copilotProposalAdapters.ts` (proposal adapters: directive, agent setting, and the routine edit apply rules)
 - `backend/src/app/composition/copilotToolCatalog.ts` (default wiring and contributed-tool assembly)
 - `backend/src/modules/operatorCopilot/contribution.ts` (what a contributing module declares)
 - `ee/packages/backend-module/src/usageLimits/copilotTools.ts` (`workspace_usage_limits`, the Enterprise contribution)
@@ -484,7 +484,7 @@ Related docs, specs, and issues:
 ## Agent Bundle (portable agent export/import)
 
 Owns the portable form of a whole agent. Export composes the `AgentConfig`
-projection with the agent's published routines, context-variable enablements, and
+projection with the agent's routines, context-variable enablements, and
 skills, re-keying workspace-scoped references to natural keys and placeholding the
 ones that cannot travel. Import creates a new agent from that bundle through each
 owning module's own service, and returns every reference it could not resolve
@@ -525,6 +525,39 @@ Related specs and issues:
 
 - `specs/100-portable-agent-authoring/` (`plan-agent-bundle.md` is the design record)
 
+## Private Test Execution
+
+Owns operator-private single and comparison conversations pinned to immutable
+agent revisions, including sample-value validation, stream identity, side
+fences, and failed-side retry. It does not publish revisions or expose private
+history through public channels.
+
+Public surfaces and key files:
+
+- `backend/src/modules/test-execution/README.md`
+- `backend/src/modules/test-execution/service.ts`
+- `backend/src/app/http/routes/testExecutionRoutes.ts`
+- `backend/src/app/http/openapi/paths/testExecutionPaths.ts`
+- `backend/src/modules/chat/services/trustedTestExecutionRunnerAdapter.ts`
+- `backend/tests/unit/test-execution-service.test.ts`
+- `backend/tests/integration/test-execution-routes.integration.test.ts`
+
+## Revision Eval Runs
+
+Owns durable eval evidence for selected immutable revisions. It freezes
+candidate, case, input, and policy provenance, presents partial results, and
+retries failed cases without replacing completed sibling evidence. The regular
+eval case/run flow remains under the existing eval service.
+
+Public surfaces and key files:
+
+- `backend/src/modules/eval/README.md`
+- `backend/src/modules/eval/services/revisionEvalRun.ts`
+- `backend/src/modules/eval/routes/revisionEvalRoutes.ts`
+- `backend/src/db/repositories/revisionEvalRunRepository.ts`
+- `backend/tests/unit/revision-eval-run-service.test.ts`
+- `backend/tests/integration/revision-eval-run-repository.integration.test.ts`
+
 ## Context Variables
 
 Owns workspace context-variable definitions, per-agent enablements, pushed
@@ -555,6 +588,27 @@ Related specs and issues:
 
 - `specs/097-visitor-context-variables/`
 - Issues `#1036`, `#1046`, and `#1115`
+
+## Agent Revisions
+
+Owns the mutable agent draft and immutable candidate/publication aggregate. A
+successful authoring write advances the draft generation; only explicit
+publication changes the revision used by new production conversations. Existing
+agents receive a backfilled live baseline; new or imported agents remain private
+until first publication.
+
+Public surfaces and key files:
+
+- `backend/src/modules/agents/README.md`
+- `backend/src/modules/agents/agentRevision.ts`
+- `backend/src/db/repositories/agentRevisionRepository.ts`
+- `backend/src/app/http/routes/agentRevisionRoutes.ts`
+- `backend/src/app/http/openapi/paths/agentsPaths.ts`
+- `backend/tests/unit/agent-revision-service.test.ts`
+- `backend/tests/integration/agent-revision-publication.integration.test.ts`
+
+Private Test Chat and revision evals consume the agents module's narrow
+revision-reader ports. They do not read mutable authoring rows directly.
 
 ## Conversation Engine Contracts
 
@@ -776,6 +830,8 @@ Primary internals:
   clarification resolution, deferred commit, and metrics)
 - `backend/src/modules/chat/services/directTurnSkill.ts`
 - `backend/src/modules/chat/services/groundedAnswerPromptComposer.ts`
+- `backend/src/modules/answerCoverage/` (validated assessment producer,
+  immutable assessment/reaction storage, and history/Pulse read ports)
 - `backend/src/modules/chat/services/summary/conversationSummaryService.ts` (rolling
   per-conversation summary #866: regenerated post-turn, injected into interpretation
   and answer prompts; state in `conversation_summaries`. The same regeneration call
@@ -805,6 +861,7 @@ Related docs and specs:
 - `specs/044-async-chat-jobs/`
 - `specs/040-website-embed-widget/`
 - `specs/050-social-turn-intent/`
+- `specs/1149-answer-coverage-signals/`
 
 ## Directives
 
@@ -855,7 +912,8 @@ Related docs and specs:
 Owns the authoring side of multi-step routines: the definition data model, the
 compiler that turns a definition into the conversation-engine routine graph, the
 validator (author-facing diagnostics), and the per-agent repository. A routine is
-authored as data and published; the chat runtime loads an agent's published
+authored as data into the agent's draft, and reaches customers through the agent
+revision the operator publishes; the chat runtime loads an agent's enabled
 routines per turn and runs them through the engine. The runtime itself —
 activation, resume, guards, fast-forward, projecting a step into a directive —
 lives in `packages/conversation-engine`, not here.
@@ -871,7 +929,7 @@ Public surfaces and contracts:
 - `packages/routine-definition` (shared definition schemas and types)
 - `packages/routine-document` (routine block-document projection and shared guard/condition labeling, including `branchDecisionLabel` — the one place a branch's decision is named for the Document editor and the map)
 - `packages/routine-definition` also owns the shared slot-collection rule (`collectedSlotsByStep`, `SLOT_REFERENCE_PATTERN`) so the compiler, the population analysis, and the authoring surfaces agree on which step captures a slot
-- `backend/src/app/http/routes/agentRoutes.ts` (`/api/v1/agents/:agentId/routines` CRUD/validate/publish/revise/archive/restore)
+- `backend/src/app/http/routes/agentRoutes.ts` (`/api/v1/agents/:agentId/routines` CRUD and validate)
 - `packages/conversation-contract/index.d.ts` (the `Routine` graph and guards the compiler targets)
 - `packages/conversation-defaults/src/routineRegistry.ts` (ranked one-call
   activation over registered `{ routine, trigger: { description, priority } }`
@@ -881,7 +939,7 @@ Primary internals:
 
 - `backend/src/modules/routines/compiler.ts`, `validator.ts`, `domain.ts`, `service.ts`
 - `backend/src/db/repositories/routineDefinitionRepository.ts`, migrations `084`–`090`
-- `backend/src/app/composition/routineDefinitionSource.ts` (loads + compiles published routines for activation and pinned non-published routines for resume)
+- `backend/src/app/composition/routineDefinitionSource.ts` (loads + compiles the agent's enabled routines for activation and pinned routines for resume)
 - `packages/conversation-engine/src/routineRunner.ts` (runtime: activation, resume, guards, fast-forward)
 - `backend/prompts/chat/routine-next-step.md`, `routine-step-reply.md`, `routine-ranked-activation.md`
 - `frontend/components/dashboard/settings/assistant-routines-section.tsx` (authoring UI)

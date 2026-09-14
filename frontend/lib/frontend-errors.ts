@@ -1,15 +1,12 @@
-export const frontendErrorTypes = [
-  'frontend.react.unhandled',
-  'frontend.runtime.unhandled',
-  'frontend.promise.unhandled',
-] as const
-
-export type FrontendErrorType = (typeof frontendErrorTypes)[number]
+type FrontendErrorType =
+  | 'frontend.react.unhandled'
+  | 'frontend.runtime.unhandled'
+  | 'frontend.promise.unhandled'
 
 export const FRONTEND_ERROR_MESSAGE_MAX_LENGTH = 2048
 export const FRONTEND_ERROR_STACK_MAX_LENGTH = 16_384
 export const FRONTEND_ERROR_COMPONENT_STACK_MAX_LENGTH = 8192
-export const FRONTEND_ERROR_CLASS_MAX_LENGTH = 256
+const FRONTEND_ERROR_CLASS_MAX_LENGTH = 256
 
 export interface FrontendErrorEvent {
   errorType: FrontendErrorType
@@ -33,7 +30,7 @@ export interface FrontendErrorInput {
   source?: FrontendErrorEvent['source']
 }
 
-export interface FrontendErrorSink {
+interface FrontendErrorSink {
   record(event: FrontendErrorEvent): Promise<void> | void
 }
 
@@ -108,7 +105,30 @@ export const serializeFrontendThrowable = (
   }
 }
 
-export class NoopFrontendErrorSink implements FrontendErrorSink {
+const BROWSER_EXTENSION_STACK_SCHEMES = [
+  'chrome-extension',
+  'moz-extension',
+  'safari-web-extension',
+]
+
+// A thrown error lists its throw site first. When the topmost frame with a source
+// URL comes from a browser extension (a crypto wallet or ad blocker fighting over
+// globals such as `window.ethereum`), no Radioso code is on the stack, so the
+// report is third-party noise. We read the first `scheme://` in the stack: engine
+// frames such as `<anonymous>` carry no URL and are skipped, so the first URL
+// belongs to the topmost frame with a real origin.
+const STACK_FRAME_SCHEME_PATTERN = /([a-z][a-z0-9+.-]*):\/\//iu
+
+export const topStackFrameUsesBrowserExtensionScheme = (stack: string | undefined): boolean => {
+  const scheme = stack?.match(STACK_FRAME_SCHEME_PATTERN)?.[1]?.toLowerCase()
+  return scheme !== undefined && BROWSER_EXTENSION_STACK_SCHEMES.includes(scheme)
+}
+
+let droppedBrowserExtensionErrorCount = 0
+
+export const getDroppedBrowserExtensionErrorCount = (): number => droppedBrowserExtensionErrorCount
+
+class NoopFrontendErrorSink implements FrontendErrorSink {
   async record(): Promise<void> {}
 }
 
@@ -167,12 +187,19 @@ export const createFrontendErrorReporter = (
     }
 
     const serialized = serializeFrontendThrowable(input.error)
+    const stack = input.stack ?? serialized.stack
+
+    if (topStackFrameUsesBrowserExtensionScheme(stack)) {
+      droppedBrowserExtensionErrorCount += 1
+      return null
+    }
+
     const event: FrontendErrorEvent = {
       errorType: input.errorType,
       timestamp: (options.now ?? (() => new Date().toISOString()))(),
       message: truncate(input.message ?? serialized.message, FRONTEND_ERROR_MESSAGE_MAX_LENGTH) ?? 'Unknown frontend error',
       errorClass: truncate(input.errorClass ?? serialized.errorClass, FRONTEND_ERROR_CLASS_MAX_LENGTH),
-      stack: truncate(input.stack ?? serialized.stack, FRONTEND_ERROR_STACK_MAX_LENGTH),
+      stack: truncate(stack, FRONTEND_ERROR_STACK_MAX_LENGTH),
       componentStack: truncate(input.componentStack, FRONTEND_ERROR_COMPONENT_STACK_MAX_LENGTH),
       path: sanitizeFrontendErrorPath(input.path),
       source: input.source ?? 'frontend',

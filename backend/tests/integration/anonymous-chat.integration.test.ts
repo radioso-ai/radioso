@@ -40,6 +40,49 @@ describe("anonymous chat bootstrap integration", () => {
     resetRateLimiterState();
   });
 
+  it("does not expose coverage diagnostics from the public JSON or SSE response", async () => {
+    const { app, dependencies } = createTestApp();
+    const session = await issueTestSession(app, "anon-coverage-projection@example.com");
+    const headers = adminSessionHeaders(session);
+    const settings = await request(app).put("/api/v1/settings/general").set(headers).send({
+      anonymousChatEnabled: true,
+      assistantName: "Marta",
+    });
+    const chatToken = String(settings.body.anonymousChatUrl).split("/chat/")[1];
+    const publicSession = await createPublicSession(app, chatToken);
+    const operatorResponse = {
+      conversationId: "conversation-1",
+      assistantMessageId: "assistant-1",
+      answer: "Visitor-safe answer.",
+      route: { type: "retrieval" as const, reason: "evidence_required" as const },
+      activitySummary: { route: "retrieval" },
+      activityTrace: { traceId: "trace", stages: [] },
+      answerCoverage: { availability: "assessed", unresolvedRequest: "Internal visitor request" },
+      interactionTrace: { state: "evaluated", decisions: [{ targetId: "internal-routine" }] },
+    };
+    dependencies.assistantChatService.answer = async () => operatorResponse as never;
+    dependencies.assistantChatService.streamAnswer = async function* () {
+      yield { type: "done" as const, ...operatorResponse } as never;
+    };
+
+    const json = await request(app)
+      .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
+      .send({ message: "Can you help?", stream: false });
+    expect(json.status).toBe(200);
+    expect(json.body).not.toHaveProperty("answerCoverage");
+    expect(json.body).not.toHaveProperty("interactionTrace");
+
+    const stream = await request(app)
+      .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
+      .send({ message: "Can you help?", stream: true });
+    expect(stream.status).toBe(200);
+    expect(stream.text).not.toContain("answerCoverage");
+    expect(stream.text).not.toContain("interactionTrace");
+    expect(stream.text).not.toContain("Internal visitor request");
+  });
+
   it("returns an ephemeral public greeting and starts persistence on the first follow-up turn", async () => {
     const bootstrapGateway: ChatGateway = {
       async answer(input) {

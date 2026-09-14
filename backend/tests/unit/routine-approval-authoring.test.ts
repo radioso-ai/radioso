@@ -6,6 +6,7 @@ import { validateRoutineDefinition } from "../../src/modules/routines/validator.
 
 const approvalDraft = (): RoutineDefinitionDraftInput => ({
   name: "refund approval",
+  enabled: true,
   activation: {
     triggerDescription: "The user asks for a refund that needs human approval.",
     gateRef: null,
@@ -79,7 +80,7 @@ const approvalDefinition = (): RoutineDefinition => ({
   agentId: "agent_1",
   lineageId: "lineage_1",
   version: 1,
-  status: "published",
+  enabled: true,
   createdAt: new Date("2026-06-17T00:00:00.000Z"),
   updatedAt: new Date("2026-06-17T00:00:00.000Z"),
 });

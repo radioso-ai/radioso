@@ -29,6 +29,7 @@ import {
   InMemoryAuditEventRepository,
   InMemoryConversationRepository,
   InMemoryMessageRepository,
+  publishedRevisionResolverFixture,
 } from "../support/fakes.js";
 import { hathaRajaYogaCandidates } from "../fixtures/retrievalSenseCorpus.js";
 
@@ -205,6 +206,7 @@ const makeService = (input: {
       skillOutcomeCapabilities: { supportsGroundedAnswer: () => false },
     }),
     conversationEngine: createConversationEngine(),
+    agentRevisionRuntimeResolver: publishedRevisionResolverFixture(),
     clarificationStore: input.clarificationStore,
     clarifier: {
       phraseQuestion: input.phraseQuestion ?? vi.fn(async () => "Which yoga sense do you mean?"),

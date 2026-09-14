@@ -28,11 +28,6 @@
 [PRINCIPLE_5_DESCRIPTION]
 <!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
 
-### [PRINCIPLE_6_NAME]
-<!-- Example: VI. Modularity and Encapsulation -->
-[PRINCIPLE_6_DESCRIPTION]
-<!-- Example: Separate transport, orchestration, domain logic, and persistence; prefer focused modules over expanding god files; plans/tasks must name module ownership and seams -->
-
 ## [SECTION_2_NAME]
 <!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
 

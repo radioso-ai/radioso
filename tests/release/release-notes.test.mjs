@@ -197,6 +197,13 @@ test('refuses to re-cut a version already in the changelog', () => {
   assert.throws(() => updateChangelog(existing, entry, '1.1.0'), /cannot be re-cut/)
 })
 
+test('matches an existing release heading literally', () => {
+  const existing = `${CHANGELOG_HEADER}\n## [1x1x0] - 2026-09-06\n`
+  const entry = renderEntry({ version: '1.1.0', date: '2026-09-07', repo: REPO, commits: [] })
+
+  assert.doesNotThrow(() => updateChangelog(existing, entry, '1.1.0'))
+})
+
 test('turns the reference-style compare link into a clickable release-page line', () => {
   const entry = renderEntry({
     version: '1.1.0',

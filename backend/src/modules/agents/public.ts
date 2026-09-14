@@ -42,6 +42,9 @@ export {
   type AuthoredDirectiveServiceOptions,
 } from "./services/authoredDirectiveService.js";
 export {
+  createRoutineScopedReferenceGuard,
+} from "./routineScopedReferenceGuard.js";
+export {
   DirectiveAuthorService,
   directiveAuthorDraftInputSchema,
 } from "./services/directiveAuthorService.js";
@@ -78,6 +81,23 @@ export {
   type InternalAgentExternalSkillsConfig,
 } from "./externalSkillsConfig.js";
 export { createWebsiteEmbedSurfaceExtension } from "./services/websiteEmbedSurfaceExtension.js";
+export {
+  AgentRevisionService,
+  assertCandidateSnapshotIsRunnable,
+  equalScopedAuthoringSnapshots,
+  parseAgentRevisionSnapshot,
+  type AgentRevision,
+  type AgentDraft,
+  type AgentRevisionRepositoryPort,
+  type AgentRevisionSnapshot,
+  type AgentRevisionState,
+  type PublicationResult,
+} from "./agentRevision.js";
+export {
+  AgentRevisionRuntimeResolver,
+  applyAgentRevisionSnapshot,
+  type AgentRevisionRuntimeReaderPort,
+} from "./runtime/agentRevisionRuntimeResolver.js";
 export {
   embedConfigCachePath,
   noopEmbedConfigCacheInvalidator,

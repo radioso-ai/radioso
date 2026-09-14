@@ -52,6 +52,18 @@ describe("buildReplayInputs", () => {
     expect(replay?.history.map((message) => message.id)).toEqual(["u1", "a1"]);
   });
 
+  it("uses the snapshot ID as the private test conversation ID when no live source exists", () => {
+    const replay = buildReplayInputs(snapshot({
+      sourceConversationId: null,
+      replayTarget: {
+        userMessageId: "u2",
+        assistantMessageId: "a2",
+      },
+    }));
+
+    expect(replay?.history.map((message) => message.conversationId)).toEqual(["snap-1", "snap-1"]);
+  });
+
   it("surfaces the frozen conversation summary (#866) alongside query and history", () => {
     const replay = buildReplayInputs(snapshot({
       conversationSummary: "The user is comparing the Pro and Team plans.",

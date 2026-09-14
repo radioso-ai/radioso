@@ -163,8 +163,9 @@ operator reads here. The TypeScript SDK versions independently under its own
  *  the generator having to understand anything already in it. */
 export const updateChangelog = (existing, entry, version) => {
   const body = existing.trim().length === 0 ? CHANGELOG_HEADER : existing
+  const releaseHeading = `## [${version}]`
 
-  if (new RegExp(`^## \\[${version.replace(/\./g, '\\.')}\\]`, 'm').test(body)) {
+  if (body.split('\n').some((line) => line.startsWith(releaseHeading))) {
     throw new Error(`CHANGELOG.md already has an entry for ${version}; a release cannot be re-cut.`)
   }
 
@@ -176,11 +177,16 @@ export const updateChangelog = (existing, entry, version) => {
 
 /** The changelog keeps its compare URL as a reference-style definition, which renders as
  *  nothing on a GitHub release page. Swap it for a line a reader can actually click. */
-export const toReleaseBody = (entry, version) =>
-  entry.replace(
-    new RegExp(`^\\[${version.replace(/\./g, '\\.')}\\]: (.+)$`, 'm'),
-    '**Full changelog**: $1',
-  ).trim()
+export const toReleaseBody = (entry, version) => {
+  const compareReferencePrefix = `[${version}]: `
+  return entry
+    .split('\n')
+    .map((line) => line.startsWith(compareReferencePrefix)
+      ? `**Full changelog**: ${line.slice(compareReferencePrefix.length)}`
+      : line)
+    .join('\n')
+    .trim()
+}
 
 /** The types the changelog knows how to file. Exported so the PR-title gate and the generator
  *  cannot drift apart: anything the gate admits, the changelog already has a section for. */

@@ -92,7 +92,7 @@ test("workbench marks the agent's first reply as AI", async ({ page }) => {
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=chat`);
   await page.getByPlaceholder("Ask a question...").fill("Are you a person?");
-  await page.getByRole("button", { name: "Send message" }).click();
+  await page.getByRole("button", { name: "Send", exact: true }).click();
 
   await expect(page.getByText("Chat answer: Are you a person?")).toBeVisible();
   const identity = page.getByTestId("assistant-identity");

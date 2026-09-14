@@ -7,6 +7,7 @@ interface RoutineStateRow {
   // SQL rows keep database column names; the repository maps to the contract record.
   session_id: string;
   routine_id: string;
+  execution_id: string | null;
   path: string[] | null;
   variables: Record<string, unknown> | null;
   attempts: Record<string, unknown> | null;
@@ -14,7 +15,7 @@ interface RoutineStateRow {
   expires_at: Date | null;
 }
 
-const routineStateColumns = ["session_id", "routine_id", "path", "variables", "attempts", "status", "expires_at"] as const;
+const routineStateColumns = ["session_id", "routine_id", "execution_id", "path", "variables", "attempts", "status", "expires_at"] as const;
 
 const mapAttempts = (value: Record<string, unknown> | null): Record<string, number> | undefined => {
   if (!value) {
@@ -31,6 +32,7 @@ const mapState = (row: RoutineStateRow): RoutineState => {
   return {
     sessionId: row.session_id,
     routineId: row.routine_id,
+    ...(row.execution_id ? { executionId: row.execution_id } : {}),
     path: row.path ?? [],
     variables: row.variables ?? {},
     ...(attempts ? { attempts } : {}),
@@ -95,6 +97,7 @@ export class RoutineStateRepository implements ConversationRoutineStore {
       .values({
         session_id: state.sessionId,
         routine_id: state.routineId,
+        execution_id: state.executionId ?? null,
         path: state.path,
         variables: toJsonb(state.variables),
         attempts: toJsonb(state.attempts ?? {}),
@@ -105,6 +108,7 @@ export class RoutineStateRepository implements ConversationRoutineStore {
       .onConflict((oc) =>
         oc.column("session_id").doUpdateSet((eb) => ({
           routine_id: eb.ref("excluded.routine_id"),
+          execution_id: eb.ref("excluded.execution_id"),
           path: eb.ref("excluded.path"),
           variables: eb.ref("excluded.variables"),
           attempts: eb.ref("excluded.attempts"),

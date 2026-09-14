@@ -2,13 +2,40 @@ import { describe, expect, it } from "vitest";
 
 import { AGENT_BUDGET_CEILINGS, estimateAgentResultTokens } from "../../../src/shared/agent-runtime/index.js";
 import { COPILOT_TURN_BUDGET } from "../../../src/modules/operatorCopilot/turnBudget.js";
-import { compactForBudget, serializedLength, withTruncation } from "../../../src/modules/operatorCopilot/payloadCompaction.js";
+import { boundPayload, compactForBudget, serializedLength, withTruncation } from "../../../src/modules/operatorCopilot/payloadCompaction.js";
 import {
   boundConversationPayload,
   boundTurnTracePayload,
   CONVERSATION_PAYLOAD_CHAR_BUDGET,
   TURN_TRACE_PAYLOAD_CHAR_BUDGET,
 } from "../../../src/modules/operatorCopilot/tools/chatPayloadBounds.js";
+
+describe("boundPayload", () => {
+  it("returns a small payload unchanged, with no truncation signal", () => {
+    const payload = { skills: [{ id: "s1", name: "Retrieve" }] };
+    expect(boundPayload(payload)).toEqual(payload);
+  });
+
+  it("exposes a truncation signal when it cuts something, rather than discarding it", () => {
+    // The dashboard operator can eyeball a suspiciously short list; a stateless MCP client has no
+    // such fallback, so a compacted result without this signal is indistinguishable from a complete
+    // one.
+    const bounded = boundPayload({
+      summary: "x".repeat(2_000),
+      needsAttention: Array.from({ length: 100 }, (_, index) => ({ id: index })),
+    }) as Record<string, unknown>;
+
+    expect((bounded.summary as string).length).toBe(501);
+    expect((bounded.needsAttention as unknown[]).length).toBe(40);
+    expect(bounded.truncation).toMatchObject({
+      truncated: true,
+      entries: expect.arrayContaining([
+        expect.objectContaining({ path: "$.summary", reason: "string_length" }),
+        expect.objectContaining({ path: "$.needsAttention", reason: "array_length" }),
+      ]),
+    });
+  });
+});
 
 describe("boundConversationPayload", () => {
   it("returns small payloads compacted but structurally intact", () => {

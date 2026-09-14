@@ -8,9 +8,13 @@ export const workspaceId = "workspace-1";
 export const workspaceKey = "workspace-key";
 export const accountId = "account-1";
 export const defaultAgentId = "67acb0c8-caad-4a1b-9fef-70cbca3f7d12";
+const defaultCandidateRevisionId = "11111111-1111-4111-8111-111111111111";
+const defaultPublishedRevisionId = "22222222-2222-4222-8222-222222222222";
 
 export const nowIso = "2026-04-26T12:00:00.000Z";
 
+type AgentRevisionSummaryFixture = ApiSchemas["AgentRevisionSummary"];
+type AgentRevisionStateFixture = ApiSchemas["AgentRevisionState"];
 type AuthoredDirectiveFixture = ApiSchemas["AuthoredDirective"];
 // What a spec has to state to seed a directive: the rest is filled from the same defaults the
 // API applies.
@@ -43,9 +47,9 @@ type RoutineDraftAssistFixture = {
   validation: ApiSchemas["RoutineValidationResult"];
 };
 export type RoutineMutationFixture = {
-  method: "POST" | "PATCH" | "DELETE" | "VALIDATE" | "PUBLISH" | "ASSIST" | "REVISE" | "ARCHIVE" | "RESTORE";
+  method: "POST" | "PATCH" | "DELETE" | "VALIDATE" | "ASSIST";
   routineId?: string;
-  body?: Partial<RoutineDraftFixture>;
+  body?: Partial<RoutineDraftFixture> & { enabled?: boolean };
 };
 type WebhookDestinationFixture = ApiSchemas["WebhookDestination"];
 type McpConnectionFixture = {
@@ -190,6 +194,59 @@ export type WebhookDestinationMutationFixture = {
   destinationId?: string;
   body?: unknown;
 };
+
+const defaultPublishedRevision: AgentRevisionSummaryFixture = {
+  id: defaultPublishedRevisionId,
+  label: "v1",
+  kind: "published",
+  versionNumber: 1,
+  createdAt: nowIso,
+  publishedAt: nowIso,
+};
+
+const defaultCandidateRevision: AgentRevisionSummaryFixture = {
+  id: defaultCandidateRevisionId,
+  label: "Draft",
+  kind: "candidate",
+  versionNumber: null,
+  createdAt: nowIso,
+};
+
+const baseAgentRevisionState = (): AgentRevisionStateFixture => ({
+  agentId: defaultAgentId,
+  status: "draft_clean",
+  draft: {
+    generation: 1,
+    basePublishedRevisionId: defaultPublishedRevisionId,
+    updatedAt: nowIso,
+  },
+  publishedRevision: defaultPublishedRevision,
+  canPublish: true,
+  proactiveGreetingEnabled: false,
+});
+
+const buildRevisionDetail = (
+  revision: AgentRevisionSummaryFixture,
+): ApiSchemas["AgentRevisionDetailResponse"] => ({
+  revision: {
+    ...revision,
+    snapshotFormatVersion: 1,
+    scope: {
+      customInstructions: true,
+      directives: true,
+      routines: true,
+      contextVariableEnablements: true,
+    },
+    dependencyWarnings: [],
+    enabledContextVariableIds: [],
+    scopedChanges: {
+      customInstruction: { before: "Existing instructions", after: "Existing instructions", changed: false },
+      directives: [],
+      routines: [],
+      contextVariableEnablements: [],
+    },
+  },
+});
 
 export const basePlatformSettings = (): ApiSchemas["PlatformSettingsResponse"] => ({
   assistant: {
@@ -465,12 +522,12 @@ const validateRoutineFixture = (routine: RoutineDraftFixture | RoutineFixture): 
   return { ok: diagnostics.length === 0, diagnostics };
 };
 
-const buildRoutine = (input: RoutineDraftFixture & Partial<Pick<RoutineFixture, "id" | "lineageId" | "status" | "version">>): RoutineFixture => ({
+const buildRoutine = (input: RoutineDraftFixture & Partial<Pick<RoutineFixture, "id" | "lineageId" | "enabled" | "version">>): RoutineFixture => ({
   ...input,
   id: input.id ?? "55555555-5555-4555-8555-000000000001",
   lineageId: input.lineageId ?? input.id ?? "55555555-5555-4555-7555-000000000001",
   agentId: defaultAgentId,
-  status: input.status ?? "draft",
+  enabled: input.enabled ?? true,
   version: input.version ?? 1,
   createdAt: nowIso,
   updatedAt: nowIso,
@@ -892,6 +949,8 @@ export const installDashboardApiMocks = async (
   const documentTypeCatalogUpdates = options.documentTypeCatalogUpdates;
   let documentTypeCatalogStaleRevisionPending = options.documentTypeCatalogStaleRevision ?? false;
   let agentSettings = buildDefaultAgentSettings(platformSettings);
+  let agentRevisionState = baseAgentRevisionState();
+  let nextTestExecutionIndex = 1;
   let channelsLifecycle = buildDefaultChannelsLifecycle(platformSettings);
   const providerEncryptionConfigured = options.providerEncryptionConfigured ?? true;
   const providerCredentials: Record<string, { updatedAt: string } | null> = {
@@ -1658,6 +1717,98 @@ export const installDashboardApiMocks = async (
       return;
     }
 
+    if (request.method() === "GET" && path === `/agents/${defaultAgentId}/revision-state`) {
+      await json(route, agentRevisionState);
+      return;
+    }
+
+    if (request.method() === "GET" && path === `/agents/${defaultAgentId}/revisions`) {
+      await json(route, { revisions: url.searchParams.get("include") === "published" ? [defaultPublishedRevision] : [defaultCandidateRevision, defaultPublishedRevision] });
+      return;
+    }
+
+    if (request.method() === "POST" && path === `/agents/${defaultAgentId}/revisions/candidates`) {
+      await json(route, { candidate: defaultCandidateRevision }, 201);
+      return;
+    }
+
+    if (request.method() === "GET" && path === `/agents/${defaultAgentId}/revisions/${defaultCandidateRevisionId}`) {
+      await json(route, buildRevisionDetail(defaultCandidateRevision));
+      return;
+    }
+
+    if (request.method() === "GET" && path === `/agents/${defaultAgentId}/revisions/${defaultPublishedRevisionId}`) {
+      await json(route, buildRevisionDetail(defaultPublishedRevision));
+      return;
+    }
+
+    if (request.method() === "POST" && path === `/agents/${defaultAgentId}/revisions/${defaultCandidateRevisionId}/publish`) {
+      agentRevisionState = {
+        ...agentRevisionState,
+        status: "draft_clean",
+        publishedRevision: defaultCandidateRevision,
+        canPublish: false,
+      };
+      await json(route, {
+        publication: {
+          id: "publication-1",
+          revisionId: defaultCandidateRevisionId,
+          publishedAt: nowIso,
+          idempotentReplay: false,
+          revision: defaultCandidateRevision,
+        },
+        state: agentRevisionState,
+      });
+      return;
+    }
+
+    if (request.method() === "GET" && path === "/evals/cases") {
+      await json(route, { cases: [], summary: {} });
+      return;
+    }
+
+    if (request.method() === "GET" && path === `/agents/${defaultAgentId}/test-executions`) {
+      await json(route, { executions: [], nextCursor: null, hasMore: false });
+      return;
+    }
+
+    if (request.method() === "POST" && path === `/agents/${defaultAgentId}/test-executions`) {
+      const body = request.postDataJSON() as { mode?: "single" | "compare"; revisionIds?: string[] };
+      const generation = nextTestExecutionIndex;
+      nextTestExecutionIndex += 1;
+      await json(route, {
+        id: `execution-${generation}`,
+        generation,
+        mode: body.mode ?? "single",
+        sides: (body.revisionIds?.length ? body.revisionIds : [defaultCandidateRevisionId]).map((revisionId, index) => ({
+          id: `side-${generation}-${index}`,
+          revision: revisionId === defaultPublishedRevisionId ? defaultPublishedRevision : defaultCandidateRevision,
+          conversationId: `conversation-${generation}-${index}`,
+          state: "running",
+          retryable: false,
+          history: [],
+        })),
+      }, 201);
+      return;
+    }
+
+    if (request.method() === "POST" && /\/agents\/[^/]+\/test-executions\/[^/]+\/messages$/.test(path)) {
+      const body = request.postDataJSON() as { message?: string; executionGeneration?: number; turnId?: string; attemptId?: string };
+      const generation = body.executionGeneration ?? 1;
+      const turnId = body.turnId ?? `turn-${generation}`;
+      const attemptId = body.attemptId ?? `attempt-${generation}`;
+      const answer = `Chat answer: ${body.message ?? ""}`;
+      await route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body: [
+          { type: "message_delta", executionId: `execution-${generation}`, generation, sideId: `side-${generation}-0`, delta: answer, turnId, attemptId },
+          { type: "side_completed", executionId: `execution-${generation}`, generation, sideId: `side-${generation}-0`, messageId: `message-${generation}`, turnId, attemptId },
+        ].map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""),
+      });
+      return;
+    }
+
     if (path === `/agents/${defaultAgentId}`) {
       if (request.method() === "GET") {
         await json(route, agentSettings);
@@ -1918,10 +2069,14 @@ export const installDashboardApiMocks = async (
           await json(route, { error: { code: "not_found", message: "Directive not found" } }, 404);
           return;
         }
+        const { coverageCriteria, ...directivePatch } = body;
         const directive = {
           ...existing,
-          ...body,
+          ...directivePatch,
           condition: body.condition ?? existing.condition,
+          ...(coverageCriteria === null
+            ? { coverageCriteria: undefined }
+            : coverageCriteria === undefined ? {} : { coverageCriteria }),
           updatedAt: nowIso,
         };
         directives = directives.map((item) => item.id === directiveId ? directive : item);
@@ -2065,10 +2220,10 @@ export const installDashboardApiMocks = async (
       }
 
       if (request.method() === "PATCH" && !action) {
-        const body = request.postDataJSON() as RoutineDraftFixture;
+        const body = request.postDataJSON() as Partial<RoutineDraftFixture> & { enabled?: boolean };
         routineUpdates?.push({ method: "PATCH", routineId, body });
-        if (!existing || existing.status !== "draft") {
-          await json(route, { error: { code: "not_found", message: "Draft routine not found" } }, 404);
+        if (!existing) {
+          await json(route, { error: { code: "not_found", message: "Routine not found" } }, 404);
           return;
         }
         const routine: RoutineFixture = {
@@ -2098,97 +2253,6 @@ export const installDashboardApiMocks = async (
           return;
         }
         await json(route, { validation: validateRoutineFixture(existing) });
-        return;
-      }
-
-      if (request.method() === "POST" && action === "publish") {
-        routineUpdates?.push({ method: "PUBLISH", routineId });
-        if (!existing || existing.status !== "draft") {
-          await json(route, { error: { code: "not_found", message: "Draft routine not found" } }, 404);
-          return;
-        }
-        const validation = validateRoutineFixture(existing);
-        if (!validation.ok) {
-          await json(route, { error: "Routine definition is invalid", validation }, 422);
-          return;
-        }
-        const published: RoutineFixture = {
-          ...existing,
-          status: "published",
-          updatedAt: nowIso,
-        };
-        routines = routines
-          .map((routine) => routine.id === routineId
-            ? published
-            : routine.lineageId === existing.lineageId && routine.status === "published"
-            ? { ...routine, status: "superseded", updatedAt: nowIso }
-            : routine);
-        await json(route, { routine: published, validation, directiveScopeOrphans: [] });
-        return;
-      }
-
-      if (request.method() === "POST" && action === "revise") {
-        routineUpdates?.push({ method: "REVISE", routineId });
-        if (!existing || existing.status !== "published") {
-          await json(route, { error: { code: "not_found", message: "Published routine not found" } }, 404);
-          return;
-        }
-        const currentDraft = routines.find((routine) => routine.lineageId === existing.lineageId && routine.status === "draft");
-        if (currentDraft) {
-          await json(route, { routine: currentDraft });
-          return;
-        }
-        const draft: RoutineFixture = {
-          ...existing,
-          id: `55555555-5555-4555-8555-${String(nextRoutineIndex).padStart(12, "0")}`,
-          status: "draft",
-          version: Math.max(...routines.filter((routine) => routine.lineageId === existing.lineageId).map((routine) => routine.version), 0) + 1,
-          updatedAt: nowIso,
-        };
-        nextRoutineIndex += 1;
-        routines = [...routines, draft];
-        await json(route, { routine: draft });
-        return;
-      }
-
-      if (request.method() === "POST" && action === "archive") {
-        routineUpdates?.push({ method: "ARCHIVE", routineId });
-        if (!existing || existing.status !== "published") {
-          await json(route, { error: { code: "not_found", message: "Published routine not found" } }, 404);
-          return;
-        }
-        const archived: RoutineFixture = { ...existing, status: "archived", updatedAt: nowIso };
-        // Archiving retires the routine and discards any in-progress revision draft in the lineage.
-        routines = routines
-          .filter((routine) => !(routine.lineageId === existing.lineageId && routine.status === "draft"))
-          .map((routine) => routine.id === routineId ? archived : routine);
-        await json(route, { routine: archived });
-        return;
-      }
-
-      if (request.method() === "POST" && action === "restore") {
-        routineUpdates?.push({ method: "RESTORE", routineId });
-        if (!existing || existing.status !== "archived") {
-          await json(route, { error: { code: "not_found", message: "Archived routine not found" } }, 404);
-          return;
-        }
-        const hasPublishedInLineage = routines.some((routine) =>
-          routine.lineageId === existing.lineageId &&
-          routine.id !== existing.id &&
-          routine.status === "published"
-        );
-        if (hasPublishedInLineage) {
-          await json(route, {
-            error: {
-              code: "bad_request",
-              message: "Archived routine definition cannot be restored while another version is published",
-            },
-          }, 400);
-          return;
-        }
-        const restored: RoutineFixture = { ...existing, status: "published", updatedAt: nowIso };
-        routines = routines.map((routine) => routine.id === routineId ? restored : routine);
-        await json(route, { routine: restored });
         return;
       }
     }

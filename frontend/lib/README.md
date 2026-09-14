@@ -24,6 +24,13 @@ constructing ad hoc fetches.
 - `auth-context.tsx`, `workspace-context.tsx`, `chat-context.tsx`: React
   providers for major client state.
 - `dashboard-routes.ts`: dashboard route helpers.
+- `agent-draft-save-port.ts`: the agent-scoped async bridge that lets Test Chat
+  await the mounted editor's real private draft save before execution.
+- `agent-revision-test-chat-session.ts`: the in-memory Test Chat session store,
+  keyed by workspace and agent, that keeps selected revisions, sample values,
+  composer text, transcripts, and in-flight updates available while dashboard
+  routes remount. Workspace lifecycle owns disposal when the active workspace
+  changes.
 - `embed-widget.ts` and `radioso-embed-launcher.js`: website embed behavior.
 
 ## Common Change Paths

@@ -392,15 +392,15 @@ const probeWorkspace = async (deps: Deps, target: EvalTarget): Promise<{
   const quality = await deps.qualitySignalsService.listLowQualityTurns(target.workspaceId, { limit: 1, agentId: target.agentId });
   if (quality.items.length > 0) satisfied.add("quality_signal");
 
-  // Routine cases edit and publish, so they need a routine that is still a draft; proposing an
-  // edit to a published one would revise a real routine in an operator's workspace. The publish
-  // case additionally needs one that validates: against an invalid draft, Ray's correct refusal to
-  // draft a publish would be scored as a behaviour regression.
-  const drafts = (await deps.routineDefinitionService.list(target.workspaceId, target.agentId))
-    .filter((candidate) => candidate.status === "draft");
-  let routine = drafts[0] ?? null;
-  for (const candidate of drafts) {
-    if ((await deps.routineDefinitionService.validate(target.workspaceId, target.agentId, { id: candidate.id })).ok) {
+  // Every routine is editable now — there is no draft/published split left to gate on, and an
+  // edit never touches live customer content: it lands in the agent's private draft the same
+  // way a directive or skill edit does, and customers only see it after Review & Publish. Any
+  // routine satisfies a case that just needs one to read or edit; `publishable_routine` is the
+  // stricter "would also validate for serving" signal a future enable/disable-style case needs.
+  const routines = await deps.routineDefinitionService.list(target.workspaceId, target.agentId);
+  let routine = routines[0] ?? null;
+  for (const candidate of routines) {
+    if (candidate.enabled && (await deps.routineDefinitionService.validate(target.workspaceId, target.agentId, { id: candidate.id })).ok) {
       routine = candidate;
       satisfied.add("publishable_routine");
       break;

@@ -29,7 +29,7 @@ const FACET_TASK_DRAIN_MAX_JOBS = 100;
 
 type DocumentWorkerTaskRouteDependencies = Pick<
   AppDependencies,
-  "documentProcessingWorker" | "facetExtractionWorker" | "facetExtractionWorkspaceDrain" | "copilotRetentionWorker" | "agentBundleImportCleanupWorker"
+  "documentProcessingWorker" | "facetExtractionWorker" | "facetExtractionWorkspaceDrain" | "copilotRetentionWorker" | "testExecutionRetentionWorker" | "revisionEvalRunRetentionWorker" | "agentBundleImportCleanupWorker"
 >;
 
 // Compatibility tombstone for Cloud Tasks pushes enqueued before the crawler
@@ -147,6 +147,32 @@ export const createDocumentWorkerTaskRoutes = (
         return;
       }
       // Switched off or already in flight are both ordinary, and neither is worth a retry.
+      res.status(200).json({ deleted: result.status === "swept" ? result.deleted : 0, status: result.status });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/internal/tasks/agent-test-execution-retention/sweep", async (_req, res, next) => {
+    try {
+      const result = await dependencies.testExecutionRetentionWorker.sweep();
+      if (result.status === "failed") {
+        next(serviceUnavailable("Agent test execution retention sweep failed", { reason: result.error }));
+        return;
+      }
+      res.status(200).json({ deleted: result.status === "swept" ? result.deleted : 0, status: result.status });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/internal/tasks/agent-revision-eval-run-retention/sweep", async (_req, res, next) => {
+    try {
+      const result = await dependencies.revisionEvalRunRetentionWorker.sweep();
+      if (result.status === "failed") {
+        next(serviceUnavailable("Agent revision eval run retention sweep failed", { reason: result.error }));
+        return;
+      }
       res.status(200).json({ deleted: result.status === "swept" ? result.deleted : 0, status: result.status });
     } catch (error) {
       next(error);

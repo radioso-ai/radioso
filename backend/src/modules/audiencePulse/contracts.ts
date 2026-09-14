@@ -129,12 +129,26 @@ export const audiencePulseReportResponseSchema = z.object({
     distinctQuestionCount: z.number().int().min(0),
     weeklyPulse: z.array(z.object({ weekStart: dateTime, count: z.number().int().min(0) })),
     grounding: groundingSchema,
+    coverage: z.object({
+      answered: z.number().int().min(0),
+      partial: z.number().int().min(0),
+      unanswered: z.number().int().min(0),
+      unclear: z.number().int().min(0),
+      unassessed: z.number().int().min(0),
+      legacy: z.number().int().min(0),
+      reasons: z.record(z.string(), z.number().int().min(0)),
+    }).optional(),
     evidence: z.array(z.object({
       reference: z.string(),
       conversationId: z.string().uuid(),
       messageId: z.string().uuid(),
       question: z.string().max(AUDIENCE_PULSE_EVIDENCE_EXCERPT_MAX_CHARACTERS),
       occurrenceCount: z.number().int().min(1),
+      answerCoverage: z.object({
+        availability: z.enum(["assessed", "not_recorded", "failed", "invalid"]),
+        coverage: z.enum(["answered", "partial", "unanswered", "unclear"]).optional(),
+        reason: z.enum(["sufficient_evidence", "insufficient_evidence", "conflicting_evidence", "ambiguous_request", "intentional_scope_boundary"]).optional(),
+      }).optional(),
     })),
   })),
   contentGaps: z.array(z.object({

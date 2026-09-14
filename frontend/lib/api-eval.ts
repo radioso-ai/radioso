@@ -38,7 +38,7 @@ export interface EvalSnapshotReplayTarget {
 export interface EvalSnapshot {
   id: string
   workspaceId: string
-  sourceConversationId: string
+  sourceConversationId: string | null
   sourceMessageId: string | null
   replayTarget: EvalSnapshotReplayTarget | null
   fidelity: EvalSnapshotFidelity
@@ -98,9 +98,9 @@ export type EvalCaseExecutionMode = 'safe_test' | 'live'
 export type EvalRunMode = 'retrieval_only' | 'full_assistant'
 export type EvalRunStatus = 'pass' | 'fail' | 'error' | 'recorded'
 export type GroundingVerdict = 'grounded' | 'degraded' | 'no_support'
-export type GroundingEnvelopeParseStatus = 'valid_v2' | 'legacy_v1' | 'missing' | 'malformed' | 'invalid_v2'
+type GroundingEnvelopeParseStatus = 'valid_v2' | 'legacy_v1' | 'missing' | 'malformed' | 'invalid_v2'
 
-export interface GroundingSummary {
+interface GroundingSummary {
   protocolVersion: 1 | 2 | null
   parseStatus: GroundingEnvelopeParseStatus
   verdict: GroundingVerdict
@@ -126,7 +126,7 @@ export interface EvalCase {
   updatedAt: string
 }
 
-export interface EvalRunRetrievedChunk {
+interface EvalRunRetrievedChunk {
   chunkId: string
   documentId: string
   title: string
@@ -214,9 +214,9 @@ export interface EvalSuiteSummary {
   unscored: number
 }
 
-export type EvalSuiteCaseStatus = EvalRunStatus | 'skipped'
+type EvalSuiteCaseStatus = EvalRunStatus | 'skipped'
 
-export interface EvalSuiteCaseResult {
+interface EvalSuiteCaseResult {
   caseId: string
   name: string
   status: EvalSuiteCaseStatus
@@ -224,7 +224,7 @@ export interface EvalSuiteCaseResult {
   error: string | null
 }
 
-export interface EvalSuiteRunResult {
+interface EvalSuiteRunResult {
   results: EvalSuiteCaseResult[]
   summary: EvalSuiteSummary
 }
@@ -306,7 +306,7 @@ export interface WorkbenchReplayRunResponse {
   resolvedConfig?: Record<string, unknown>
 }
 
-export interface EvalMessageCaseLookup {
+interface EvalMessageCaseLookup {
   assistantMessageId: string
   case: EvalCase
   snapshot: EvalSnapshot
@@ -314,7 +314,7 @@ export interface EvalMessageCaseLookup {
   createdAt: string
 }
 
-export interface EvalMessageCaseResult extends EvalMessageCaseLookup {
+interface EvalMessageCaseResult extends EvalMessageCaseLookup {
   created: boolean
 }
 

@@ -135,6 +135,7 @@ export interface AgentDirectives {
   binding: Json | null;
   condition_description: string | null;
   condition_kind: string;
+  coverage_criteria: Json | null;
   created_at: Generated<Timestamp>;
   depends_on: Generated<string[]>;
   description: string | null;
@@ -158,6 +159,51 @@ export interface AgentDocumentSources {
   source_id: string | null;
 }
 
+export interface AgentDrafts {
+  agent_id: string;
+  base_published_revision_id: string | null;
+  created_at: Generated<Timestamp>;
+  generation: Generated<number>;
+  snapshot: Json;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
+export interface AgentPublications {
+  actor_account_id: string | null;
+  agent_id: string;
+  created_at: Generated<Timestamp>;
+  expected_draft_generation: number;
+  expected_published_revision_id: string | null;
+  id: string;
+  idempotency_key: string;
+  previous_revision_id: string | null;
+  revision_id: string;
+  workspace_id: string;
+}
+
+export interface AgentRevisionMigrationClassifications {
+  agent_id: string;
+  classification: string;
+  conversation_id: string;
+  created_at: Generated<Timestamp>;
+  routine_id: string;
+  workspace_id: string;
+}
+
+export interface AgentRevisions {
+  agent_id: string;
+  created_at: Generated<Timestamp>;
+  id: string;
+  published_at: Timestamp | null;
+  published_version: number | null;
+  snapshot: Json;
+  snapshot_format_version: Generated<number>;
+  source_base_published_revision_id: string | null;
+  source_draft_generation: number;
+  workspace_id: string;
+}
+
 export interface Agents {
   behavior_settings: Generated<Json>;
   chat_model: string | null;
@@ -168,6 +214,7 @@ export interface Agents {
   internal_name: Generated<string>;
   name: Generated<string>;
   output_modes: Generated<Json>;
+  published_revision_id: string | null;
   retrieval_enabled: Generated<boolean>;
   skill_settings: Generated<Json>;
   source_scope_mode: Generated<string>;
@@ -187,6 +234,99 @@ export interface AgentSkills {
   target_id: string | null;
   target_type: string | null;
   updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
+export interface AgentTestExecutionAttempts {
+  attempt_id: string;
+  created_at: Generated<Timestamp>;
+  execution_id: string;
+  failure_code: string | null;
+  fence: number;
+  input_fingerprint: string;
+  lease_expires_at: Timestamp;
+  result: Json | null;
+  side_id: string;
+  state: string;
+  turn_id: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface AgentTestExecutions {
+  agent_id: string;
+  created_at: Generated<Timestamp>;
+  generation: Generated<number>;
+  id: string;
+  idempotency_key: string;
+  mode: string;
+  state: string;
+  test_values: Json;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
+export interface AgentTestExecutionSides {
+  active_attempt_id: string | null;
+  active_fence: number | null;
+  active_turn_id: string | null;
+  agent_id: string;
+  continuation: Json | null;
+  conversation_id: string;
+  created_at: Generated<Timestamp>;
+  execution_id: string;
+  history: Generated<Json>;
+  id: string;
+  retained_execution_id: string | null;
+  retryable: Generated<boolean>;
+  revision_id: string;
+  side_ordinal: number;
+  state: string;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
+export interface AgentTestExecutionTurns {
+  created_at: Generated<Timestamp>;
+  execution_id: string;
+  input_fingerprint: string;
+  message: string;
+  state: string;
+  turn_id: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface AnswerCoverageAssessments {
+  assessed_at: Generated<Timestamp>;
+  assistant_message_id: string | null;
+  availability: string;
+  contextualized_request: string;
+  conversation_id: string;
+  coverage: string | null;
+  created_at: Generated<Timestamp>;
+  id: string;
+  interaction_evaluation_state: string | null;
+  originating_turn_id: string;
+  reason: string | null;
+  request_message_id: string;
+  schema_version: number;
+  unresolved_request: string | null;
+  workspace_id: string;
+}
+
+export interface AnswerCoverageReactionTraces {
+  assessment_id: string;
+  conversation_id: string;
+  created_at: Generated<Timestamp>;
+  decision: string;
+  directive_id: string | null;
+  evaluation_index: number;
+  evaluation_state: string;
+  id: string;
+  reaction_key: string;
+  reason_code: string;
+  routine_execution_id: string | null;
+  routine_id: string | null;
+  target_message_id: string;
   workspace_id: string;
 }
 
@@ -506,11 +646,13 @@ export interface ConversationOwnership {
 
 export interface Conversations {
   agent_id: string | null;
+  agent_revision_id: string | null;
   anonymous_session_id: string | null;
   channel_context: Json | null;
   created_at: Generated<Timestamp>;
   entry_page_url: string | null;
   id: string;
+  purpose: Generated<string>;
   source_channel: string | null;
   source_origin: string | null;
   title: string | null;
@@ -554,12 +696,16 @@ export interface CopilotProposals {
   conversation_id: string | null;
   created_at: Generated<Timestamp>;
   evidence: Json | null;
+  execution_invocation_id: string | null;
+  expires_at: Timestamp | null;
   failure_reason: string | null;
   id: string;
   message_id: string | null;
   operator_mcp_invocation_id: string | null;
   operator_user_id: string;
   payload: Json;
+  review_digest: string | null;
+  review_snapshot: Json | null;
   status: Generated<string>;
   target_ref: Json;
   target_type: string;
@@ -778,8 +924,9 @@ export interface EvalSnapshots {
   original_routine_state: Json | null;
   replay_target: Json | null;
   source_agent_id: string | null;
-  source_conversation_id: string;
+  source_conversation_id: string | null;
   source_message_id: string | null;
+  test_execution_replay: Json | null;
   workspace_id: string;
 }
 
@@ -1102,6 +1249,62 @@ export interface RetrievalSettings {
   workspace_id: string;
 }
 
+export interface RevisionEvalRunAttempts {
+  created_at: Generated<Timestamp>;
+  failure_code: string | null;
+  fence: number;
+  id: string;
+  lease_expires_at: Timestamp;
+  run_case_id: string;
+  state: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface RevisionEvalRunCases {
+  active_attempt_id: string | null;
+  active_fence: number | null;
+  assertion_verdicts: Json | null;
+  case_id: string;
+  completed_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  frozen_case: Json;
+  frozen_snapshot: Json;
+  id: string;
+  lease_expires_at: Timestamp | null;
+  observed_output: Json | null;
+  outcome: string;
+  outcome_reason: string | null;
+  resolved_config: Json | null;
+  side_id: string;
+  state: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface RevisionEvalRuns {
+  actor_account_id: string | null;
+  agent_id: string;
+  created_at: Generated<Timestamp>;
+  execution_policy: string;
+  id: string;
+  idempotency_key: string;
+  mode: string;
+  state: string;
+  test_values: Json;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
+export interface RevisionEvalRunSides {
+  created_at: Generated<Timestamp>;
+  frozen_revision: Json;
+  id: string;
+  revision_id: string;
+  run_id: string;
+  side_ordinal: number;
+  state: string;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface RoutineActionRequests {
   account_id: string | null;
   attempts: Generated<number>;
@@ -1129,12 +1332,14 @@ export interface RoutineCompletionExport {
 }
 
 export interface RoutineDefinition {
+  activation_coverage_criteria: Json | null;
   activation_gate_ref: string | null;
   activation_priority: Generated<number>;
   activation_reentry_mode: Generated<string>;
   activation_trigger_description: string;
   agent_id: string;
   created_at: Generated<Timestamp>;
+  enabled: Generated<boolean>;
   id: Generated<string>;
   lineage_id: string;
   name: string;
@@ -1160,6 +1365,7 @@ export interface RoutineSlot {
 export interface RoutineStates {
   attempts: Generated<Json>;
   created_at: Generated<Timestamp>;
+  execution_id: string | null;
   expires_at: Timestamp | null;
   path: Generated<string[]>;
   routine_id: string;
@@ -1542,8 +1748,18 @@ export interface DB {
   agent_converse_session_mappings: AgentConverseSessionMappings;
   agent_directives: AgentDirectives;
   agent_document_sources: AgentDocumentSources;
+  agent_drafts: AgentDrafts;
+  agent_publications: AgentPublications;
+  agent_revision_migration_classifications: AgentRevisionMigrationClassifications;
+  agent_revisions: AgentRevisions;
   agent_skills: AgentSkills;
+  agent_test_execution_attempts: AgentTestExecutionAttempts;
+  agent_test_execution_sides: AgentTestExecutionSides;
+  agent_test_execution_turns: AgentTestExecutionTurns;
+  agent_test_executions: AgentTestExecutions;
   agents: Agents;
+  answer_coverage_assessments: AnswerCoverageAssessments;
+  answer_coverage_reaction_traces: AnswerCoverageReactionTraces;
   api_credential_expiry_warnings: ApiCredentialExpiryWarnings;
   api_credentials: ApiCredentials;
   app_storage_audit_outbox: AppStorageAuditOutbox;
@@ -1608,6 +1824,10 @@ export interface DB {
   password_reset_tokens: PasswordResetTokens;
   pending_decisions: PendingDecisions;
   retrieval_settings: RetrievalSettings;
+  revision_eval_run_attempts: RevisionEvalRunAttempts;
+  revision_eval_run_cases: RevisionEvalRunCases;
+  revision_eval_run_sides: RevisionEvalRunSides;
+  revision_eval_runs: RevisionEvalRuns;
   routine_action_requests: RoutineActionRequests;
   routine_completion_export: RoutineCompletionExport;
   routine_definition: RoutineDefinition;

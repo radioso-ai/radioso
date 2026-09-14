@@ -175,7 +175,6 @@ describeIfDatabase("agent bundle round trip against Postgres", () => {
         ordinal: 1,
       }],
     } as never);
-    await routineDefinitionRepository.publish(source.id, draft.id);
 
     const services = buildServices();
 
@@ -212,10 +211,9 @@ describeIfDatabase("agent bundle round trip against Postgres", () => {
     expect(reExported.contextVariables).toEqual(bundle.contextVariables);
     expect(reExported.agentSkills).toEqual(bundle.agentSkills);
 
-    // The routine published rather than landing as a draft, so the imported agent
-    // actually runs it.
+    // The routine imports enabled rather than parked, so the imported agent actually runs it.
     const importedRoutines = await routineDefinitionRepository.listByAgent(imported.agentId);
-    expect(importedRoutines.filter((routine) => routine.status === "published")).toHaveLength(1);
+    expect(importedRoutines.filter((routine) => routine.enabled)).toHaveLength(1);
 
     // The resolver enablement resolved against the imported agent's own skill row,
     // not the source agent's — the CHECK constraint would reject a null one.

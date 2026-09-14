@@ -12,6 +12,15 @@ const parse = (input: Record<string, unknown>) =>
   });
 
 describe("authored directive surface scope", () => {
+  it("accepts typed coverage criteria and leaves them absent for legacy directives", () => {
+    expect(parse({ coverageCriteria: { coverage: ["partial"], reasons: ["insufficient_evidence"] } }).coverageCriteria)
+      .toEqual({ coverage: ["partial"], reasons: ["insufficient_evidence"] });
+    expect(parse({}).coverageCriteria).toBeUndefined();
+  });
+
+  it("rejects empty coverage criteria", () => {
+    expect(() => parse({ coverageCriteria: { coverage: [] } })).toThrow();
+  });
   it("defaults to an empty scope, which the renderer reads as the answering voice", () => {
     expect(parse({}).surfaces).toEqual([]);
   });

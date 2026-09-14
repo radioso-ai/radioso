@@ -7,6 +7,7 @@ const conversation: ConversationRecord = {
   id: "conversation-1",
   workspaceId: "workspace-1",
   agentId: null,
+  purpose: "production",
   agentName: null,
   agentInternalName: null,
   sourceChannel: "authenticated_chat",

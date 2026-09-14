@@ -70,6 +70,12 @@ const routineStructuralEditing = deferred(
   "Deferred: Ray edits routines by stable id, which cannot add or remove a step, so deleting a routine and reworking its graph stay in the routine editor.",
 );
 const wave2BehaviorAuthoring = deferred("Deferred to Wave 2 behavior authoring: Ray will create operator-confirmed proposals, not edit live behavior directly.");
+const agentRevisionLifecycle = deferred(
+  "Deferred: agent revision state, candidate materialization, revision detail, and publication are dashboard lifecycle operations. Ray's current descriptors can propose scoped authoring changes, but they do not select immutable candidates, run candidate-pinned tests/evals, or publish a revision with the required concurrency and idempotency controls.",
+);
+const revisionTestingAndEval = deferred(
+  "Deferred: private candidate test and frozen eval operations require explicit revision selection, sample-value validation, retry identity, and evidence handling that current Copilot descriptors do not expose.",
+);
 const wave3KnowledgeBase = deferred("Deferred to Wave 3 knowledge base work: document source and crawl changes need their own bounded proposal flows.");
 // Ray reads documents as search snippets and paged chunks, both derived and partial. This
 // operation replaces a document's whole body, so a proposal for it would apply text Ray never
@@ -415,6 +421,23 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   updateAgentDirective: "propose_directive",
   deleteAgentDirective: "propose_directive_removal",
   updateAgent: "propose_agent_setting",
+  // Revision lifecycle is intentionally dashboard-owned until Ray has explicit
+  // candidate selection, candidate-pinned test/eval, and publish capabilities.
+  getAgentRevisionState: agentRevisionLifecycle,
+  createAgentRevisionCandidate: agentRevisionLifecycle,
+  listAgentRevisions: agentRevisionLifecycle,
+  getAgentRevision: agentRevisionLifecycle,
+  publishAgentRevision: agentRevisionLifecycle,
+  listAgentTestExecutions: revisionTestingAndEval,
+  getAgentTestExecution: revisionTestingAndEval,
+  startAgentTestExecution: revisionTestingAndEval,
+  sendAgentTestExecutionMessage: revisionTestingAndEval,
+  retainAgentTestExecutionSide: revisionTestingAndEval,
+  captureAgentTestExecutionEvalSnapshot: revisionTestingAndEval,
+  retryAgentTestExecutionSide: revisionTestingAndEval,
+  createRevisionEvalRun: revisionTestingAndEval,
+  getRevisionEvalRun: revisionTestingAndEval,
+  retryRevisionEvalCase: revisionTestingAndEval,
   analyzeWebsiteForAgentWizard: "analyze_website",
   streamAgentWizardWebsiteAnalysis: "analyze_website",
   createAgentFromWizard: "propose_agent",
@@ -453,12 +476,6 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   updateAgentRoutine: "propose_routine_edit",
   draftAgentRoutineFromProcedure: deferred("Deferred to Wave 2 behavior authoring: Ray drafts new routines through propose_routine, which reaches this drafting pass through the service rather than the route."),
   validateAgentRoutine: "validate_routine",
-  publishAgentRoutine: "propose_routine_lifecycle",
-  // Revision is how an edit to a published routine is applied: propose_routine_edit revises it
-  // into a draft rather than editing what is serving.
-  reviseAgentRoutine: "propose_routine_edit",
-  archiveAgentRoutine: "propose_routine_lifecycle",
-  restoreAgentRoutine: "propose_routine_lifecycle",
   // Bundle export/import moves a whole agent as a file between workspaces. Export is a
   // bulk dump of what Ray already reads field by field through get_agent, so a tool for
   // it would add reach without adding an operator outcome. Import is the stronger

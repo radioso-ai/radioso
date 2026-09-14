@@ -27,7 +27,7 @@ const env = (overrides: Partial<Env> = {}): Env =>
 const repositories = () => ({
   webhookDestinationRepository: new InMemoryWebhookDestinationRepository(),
   routineDefinitionRepository: {
-    listPublishedRoutineNamesReferencingDestination: vi.fn(async () => []),
+    listRoutineNamesReferencingDestination: vi.fn(async () => []),
   },
 });
 

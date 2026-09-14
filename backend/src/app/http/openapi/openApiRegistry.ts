@@ -48,6 +48,14 @@ export interface OpenApiSchemaCatalog {
   AgentChannelCredentialMetadataSchema: z.ZodTypeAny;
   AgentChannelCredentialParamsSchema: RouteParameterSchema;
   AgentParamsSchema: RouteParameterSchema;
+  AgentRevisionStateSchema: z.ZodTypeAny;
+  AgentRevisionCandidateRequestSchema: z.ZodTypeAny;
+  AgentRevisionCandidateResponseSchema: z.ZodTypeAny;
+  AgentRevisionListResponseSchema: z.ZodTypeAny;
+  AgentRevisionDetailResponseSchema: z.ZodTypeAny;
+  AgentRevisionPublishRequestSchema: z.ZodTypeAny;
+  AgentRevisionPublishResponseSchema: z.ZodTypeAny;
+  AgentRevisionParamsSchema: RouteParameterSchema;
   AgentSchema: z.ZodTypeAny;
   AgentContextVariableEnablementListResponseSchema: z.ZodTypeAny;
   AgentContextVariableEnablementRequestSchema: z.ZodTypeAny;
@@ -88,10 +96,6 @@ export interface OpenApiSchemaCatalog {
   RoutineDefinitionGetResponseSchema: z.ZodTypeAny;
   RoutineDefinitionListResponseSchema: z.ZodTypeAny;
   RoutineDefinitionParamsSchema: RouteParameterSchema;
-  RoutineDefinitionLifecycleResponseSchema: z.ZodTypeAny;
-  RoutineDefinitionPublishResponseSchema: z.ZodTypeAny;
-  RoutineDefinitionPublishRejectedResponseSchema: z.ZodTypeAny;
-  RoutineDirectiveScopeOrphanSchema: z.ZodTypeAny;
   RoutineDefinitionResponseSchema: z.ZodTypeAny;
   RoutineDefinitionSaveResponseSchema: z.ZodTypeAny;
   RoutineDefinitionUpdateRequestSchema: z.ZodTypeAny;

@@ -179,6 +179,31 @@ describe("chat bootstrap service", () => {
     expect(chatGateway.answer).toHaveBeenCalledTimes(1);
   });
 
+  it("generates through the bootstrap guard for a neutral named pinned test override", async () => {
+    const workspaceRepository = new InMemoryWorkspaceRepository();
+    const workspace = await workspaceRepository.create("account-1", "Workspace");
+    const agentService = createAgentService(workspaceRepository);
+    const chatGateway = { answer: vi.fn(async () => "Ciao!"), streamAnswer: vi.fn() };
+    const service = new ChatBootstrapService(
+      workspaceRepository,
+      new InMemoryBootstrapGreetingCacheRepository(),
+      chatGateway,
+      createAuditService(),
+      undefined,
+      undefined,
+      agentService,
+    );
+    const defaultAgent = await agentService.resolve(workspace.id);
+
+    await expect(service.startConversation({
+      workspaceId: workspace.id,
+      revisionId: "revision-1",
+      agentOverride: { ...defaultAgent, name: "Assistant", proactiveGreetingEnabled: true, assistantDefaultLocale: "it" },
+    })).resolves.toMatchObject({ answer: "Ciao!" });
+
+    expect(chatGateway.answer).toHaveBeenCalledOnce();
+  });
+
   it("returns null when bootstrap is inactive", async () => {
     const workspaceRepository = new InMemoryWorkspaceRepository();
     const workspace = await workspaceRepository.create("account-1", "Workspace");

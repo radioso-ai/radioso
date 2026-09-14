@@ -5,8 +5,7 @@ import { useRouter } from 'next/navigation'
 
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
 import { AppSidebar } from './app-sidebar'
-import { AgentSubNavContainer } from './agent-subnav-container'
-import { KnowledgeSubNav, QualitySubNav, SettingsSubNav } from './area-subnavs'
+import { AgentAreaSubNav, KnowledgeSubNav, QualitySubNav, SettingsSubNav } from './area-subnavs'
 import { AgentView } from './agent-view'
 import { AccountView } from './account-view'
 import { AllConversationsView } from './inbox/all-conversations-view'
@@ -30,6 +29,7 @@ import {
   shouldWaitForRouteWorkspace,
 } from '@/lib/dashboard-workspace-sync'
 import { useWorkspace } from '@/lib/workspace-context'
+import { activateAgentRevisionTestChatSessionScope } from '@/lib/agent-revision-test-chat-session'
 import { useWorkspaceOnboarding } from '@/lib/onboarding'
 import { LogoSpinner } from '@/components/ui/spinner'
 import { copilotApi, isCopilotApiErrorStatus, type CopilotAvailability } from '@/lib/api-copilot'
@@ -66,6 +66,11 @@ export function DashboardShell({
   const showFirstRun = isAgentChatView && onboarding.shouldShowFirstRun
   const area = activeArea(routeState)
   const hasSubNav = area !== null && !showFirstRun
+
+  useEffect(() => {
+    if (!activeWorkspaceId) return
+    activateAgentRevisionTestChatSessionScope(accountId, activeWorkspaceId)
+  }, [accountId, activeWorkspaceId])
 
   useEffect(() => {
     if (!activeWorkspaceId) {
@@ -198,7 +203,7 @@ export function DashboardShell({
   // Computing it once keeps stateful containers (e.g. the agent switcher) from
   // mounting twice.
   const subNav = showFirstRun ? null : area === 'agents' ? (
-    <AgentSubNavContainer accountId={accountId} routeState={routeState} />
+    <AgentAreaSubNav accountId={accountId} routeState={routeState} />
   ) : area === 'knowledge' ? (
     <KnowledgeSubNav accountId={accountId} routeState={routeState} />
   ) : area === 'settings' ? (

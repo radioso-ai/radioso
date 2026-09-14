@@ -275,6 +275,15 @@ describe("evaluateAssertion answer_contains / answer_does_not_contain", () => {
     expect(verdict.status).toBe("pass");
   });
 
+  it("rejects regex constructs unsupported by the linear-time engine", () => {
+    const verdict = evaluateAssertion(
+      { type: "answer_contains", pattern: "(?=refund)refund", matchMode: "regex" },
+      { retrievedChunks: chunkSet, answer: "refund" },
+    );
+    expect(verdict.status).toBe("error");
+    expect(verdict.reason).toMatch(/unsafe or invalid regex/i);
+  });
+
   it("answer_contains errors when the regex is invalid", () => {
     const verdict = evaluateAssertion(
       { type: "answer_contains", pattern: "[unterminated", matchMode: "regex" },

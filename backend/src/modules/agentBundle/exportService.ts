@@ -20,7 +20,7 @@ import type {
   AgentBundleSkillConfigPortabilityPort,
 } from "./ports.js";
 
-export interface AgentBundleExportServiceOptions {
+interface AgentBundleExportServiceOptions {
   agents: AgentBundleAgentReaderPort;
   externalSkills: AgentBundleExternalSkillsReaderPort;
   routines: AgentBundleRoutineReaderPort;
@@ -40,7 +40,6 @@ const ROUTINE_IDENTITY_FIELDS = [
   "agentId",
   "lineageId",
   "version",
-  "status",
   "createdAt",
   "updatedAt",
 ] as const;
@@ -112,18 +111,15 @@ export class AgentBundleExportService {
   }
 
   /**
-   * Published only. A draft is work in progress the operator has not committed to
-   * the agent's behavior, and `superseded`/`archived` are history — exporting them
-   * would import behavior the source agent is not running.
+   * Every routine the source agent holds, carrying its own `enabled` flag: a routine parked
+   * out of service imports parked rather than silently going live in the target workspace.
    */
   private serializeRoutines(routines: readonly RoutineDefinition[]): AgentBundleRoutine[] {
-    return routines
-      .filter((routine) => routine.status === "published")
-      .map((routine) => ({
-        name: routine.name,
-        version: routine.version,
-        definition: stripRoutineIdentity(routine),
-      }));
+    return routines.map((routine) => ({
+      name: routine.name,
+      version: routine.version,
+      definition: stripRoutineIdentity(routine),
+    }));
   }
 
   /**

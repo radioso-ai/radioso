@@ -814,6 +814,27 @@ export const buildDashboardHref = (
   return `${pathname}${buildQueryString(normalized)}`
 }
 
+/**
+ * Build an agent section link from a shared route state. Section navigation
+ * leaves an agent routine detail route, while routine links continue to set
+ * `agentRoutineId` directly when they intentionally open a routine.
+ */
+export const buildAgentSectionHref = (
+  accountId: string,
+  routeState: DashboardRouteState,
+  agentId: string | undefined,
+  target: Pick<DashboardRouteState, 'agentTab' | 'anchor'>,
+  workspace?: Pick<DashboardRouteState, 'workspaceId' | 'workspacePublicRouteKey'>,
+) => buildDashboardHref(accountId, {
+  ...routeState,
+  ...workspace,
+  section: 'agents',
+  agentId,
+  agentTab: target.agentTab,
+  anchor: target.anchor,
+  agentRoutineId: undefined,
+})
+
 export const buildAccountRoute = (
   accountId: string,
   section: DashboardSection = DEFAULT_SECTION,

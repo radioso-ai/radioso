@@ -16,7 +16,7 @@ const mappedRoutine: RoutineFixture = {
   lineageId: "77777777-7777-4777-8777-000000000901",
   agentId: defaultAgentId,
   name: "Order return request",
-  status: "draft",
+  enabled: true,
   version: 1,
   activation: {
     triggerDescription: "Visitor wants to return something they bought.",
@@ -50,7 +50,7 @@ test("the routine map opens on demand and shows where the model decides", async 
   await installDashboardApiMocks(page, { routineUpdates: [], routines: [mappedRoutine] });
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
-  await page.getByRole("button", { name: "Edit draft Order return request" }).click();
+  await page.getByRole("button", { name: /^Order return request\b/ }).click();
 
   // The editor stays on the document until the map is asked for.
   await expect(page.locator(".react-flow")).toHaveCount(0);

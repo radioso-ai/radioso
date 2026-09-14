@@ -12,6 +12,7 @@ export const OPERATOR_MCP_SCOPES = [
   "operator:probe",
   "operator:act",
   "operator:propose",
+  "operator:write",
 ] as const;
 export const OPERATOR_MCP_LIFECYCLE_SCOPE = "offline_access" as const;
 export const OPERATOR_MCP_SHAPES = ["read", "probe", "act", "propose"] as const;

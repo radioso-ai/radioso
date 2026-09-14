@@ -108,6 +108,7 @@ describeIfDatabase("RoutineStateRepository suspended state integration", () => {
     database = createClientBackedDatabase(client);
     await applyTestMigration(database, "071_routine_states.sql");
     await database.execute("ALTER TABLE routine_states ADD COLUMN IF NOT EXISTS attempts JSONB NOT NULL DEFAULT '{}'::jsonb");
+    await database.execute("ALTER TABLE routine_states ADD COLUMN IF NOT EXISTS execution_id UUID");
     repository = new RoutineStateRepository(database.kysely, 60_000);
   });
 

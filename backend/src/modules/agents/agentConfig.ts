@@ -13,6 +13,7 @@ import type {
   AuthoredDirectiveCondition,
 } from "./authoredDirectives.js";
 import type { ChatTurnRoute } from "../../shared/domain/chatTurnRoute.js";
+import type { AnswerCoverageCriteria } from "../answerCoverage/public.js";
 import type { RetrieveSkillConfig } from "../retrieval/public.js";
 import {
   refPlaceholder,
@@ -43,7 +44,6 @@ export const AGENT_CONFIG_SCHEMA_VERSION = 4;
 
 export type {
   AgentConfigPortability,
-  AgentConfigRefKind,
   AgentConfigRefPlaceholder,
   AgentConfigSecretPlaceholder,
 } from "./agentConfigPlaceholders.js";
@@ -57,11 +57,11 @@ export interface AgentLogoConfig {
   sizeBytes: number;
 }
 
-export type AgentSourceScopeConfig =
+type AgentSourceScopeConfig =
   | { mode: "all" }
   | { mode: "selected"; sourceIds: AgentConfigRefPlaceholder[] };
 
-export interface WebsiteEmbedSurfaceConfig extends Omit<WebsiteEmbedSurfaceSettings, "token" | "allowedOrigins"> {
+interface WebsiteEmbedSurfaceConfig extends Omit<WebsiteEmbedSurfaceSettings, "token" | "allowedOrigins"> {
   token: AgentConfigSecretPlaceholder | null;
   allowedOrigins: AgentConfigRefPlaceholder[];
 }
@@ -89,19 +89,18 @@ export interface AuthoredDirectiveConfig {
   description: string | null;
   binding: AuthoredDirectiveBinding;
   lifecycle: AuthoredDirectiveLifecycle;
+  coverageCriteria?: AnswerCoverageCriteria;
   enabled: boolean;
   metadata: Record<string, unknown>;
 }
 
 export type InternalAgentLogoConfig = AgentLogo;
 
-export type InternalAgentSourceScopeConfig = AgentSourceScope;
-
-export type InternalWebsiteEmbedSurfaceConfig = WebsiteEmbedSurfaceSettings;
+type InternalAgentSourceScopeConfig = AgentSourceScope;
 
 export type InternalAgentSurfaceConfig = ConversationAgentSurfaceSettings;
 
-export interface AgentSkillEnvelope<Settings> {
+interface AgentSkillEnvelope<Settings> {
   enabled: boolean;
   settings: Settings;
 }
@@ -192,7 +191,7 @@ export interface InternalAgentConfig extends Omit<AgentConfig, InternalAgentConf
  * External skills and MCP connections are agent-scoped but live in their own
  * tables, so the export caller supplies them here (defaults to empty).
  */
-export interface AgentConfigSerializeContext {
+interface AgentConfigSerializeContext {
   externalSkills?: InternalAgentExternalSkillsConfig;
 }
 
@@ -409,7 +408,7 @@ export const splitRetrievalAnswerEnvelope = (skillSettings: InternalAgentSkillSe
  * every other configurable field of `RetrieveSkillConfig` projected onto one flat settings record,
  * keyed by canonical name (`instruction` renamed to `customInstruction`; every other kept field by
  * its own name). */
-export interface RetrieveAnswerSkillEffectiveSettings {
+interface RetrieveAnswerSkillEffectiveSettings {
   sourceScope: InternalAgentSourceScopeConfig;
   settings: Record<string, unknown>;
 }
@@ -641,6 +640,7 @@ const serializeAuthoredDirectives = (
     description: directive.description,
     binding: directive.binding,
     lifecycle: directive.lifecycle,
+    ...(directive.coverageCriteria ? { coverageCriteria: cloneJson(directive.coverageCriteria) } : {}),
     enabled: directive.enabled,
     metadata: cloneJson(directive.metadata),
   }));
@@ -848,6 +848,7 @@ const materializeAuthoredDirectives = (
     description: directive.description ?? null,
     binding: directive.binding ?? null,
     lifecycle: directive.lifecycle ?? null,
+    ...(directive.coverageCriteria ? { coverageCriteria: cloneJson(directive.coverageCriteria) } : {}),
     // Defensive default: a config serialized before this field existed carries no
     // `enabled` at all, and that silence must read as "live," not "off" — the field
     // is a reversible off switch an operator sets deliberately, so its absence can

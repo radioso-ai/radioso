@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   areDashboardRouteStatesEqual,
+  buildAgentSectionHref,
   buildAccountRoute,
   buildDashboardHref,
   buildLegacyDashboardHref,
@@ -89,6 +90,21 @@ describe('dashboard route state', () => {
       historyPage: 4,
       historyItemKind: 'search',
       historyItemId: 'search-77',
+    })
+  })
+
+  // The backend mints this exact shape for operator escalation email links — see
+  // `conversationPermalink` in backend/src/shared/domain/dashboardLinks.ts. If the parser stops
+  // honouring it, those emails start pointing at the dashboard's not-found redirect.
+  it('parses the conversation permalink the backend sends in escalation email', () => {
+    const permalink = new URL('http://localhost:3000/w/support-abc123/activity?tab=all&filter=chat&itemKind=chat&itemId=conversation-1')
+
+    expect(parseDashboardRoute(['activity'], permalink.searchParams)).toEqual({
+      section: 'activity',
+      activityTab: 'all',
+      historyFilter: 'chat',
+      historyItemKind: 'chat',
+      historyItemId: 'conversation-1',
     })
   })
 
@@ -246,6 +262,11 @@ describe('dashboard route state', () => {
     })).toBe('whatsapp-channel')
   })
 
+  it('uses the channels overview when a channels route has no legacy anchor', () => {
+    expect(agentSectionRoute('channels-overview')).toEqual({ agentTab: 'channels' })
+    expect(agentSectionFromRoute({ agentTab: 'channels' })).toBe('channels-overview')
+  })
+
   it('maps the directives agent section to the assistant directives anchor', () => {
     expect(agentSectionRoute('directives')).toEqual({
       agentTab: 'behavior',
@@ -282,6 +303,23 @@ describe('dashboard route state', () => {
     })
     expect(agentSectionFromRoute({ agentRoutineId: routineId })).toBe('routines')
     expect(parseDashboardRoute(['agents', agentId, 'routines', 'abc'], new URLSearchParams())).toBeNull()
+  })
+
+  it('leaves a routine detail route when building an agent section link', () => {
+    const agentId = '67acb0c8-caad-4a1b-9fef-70cbca3f7d12'
+    const routineId = '55555555-5555-4555-8555-000000000001'
+
+    expect(buildAgentSectionHref('account-1', {
+      section: 'agents',
+      workspacePublicRouteKey: 'support-abc123',
+      agentId,
+      agentRoutineId: routineId,
+      agentTab: 'behavior',
+      anchor: 'assistant-routines',
+    }, agentId, {
+      agentTab: 'channels',
+      anchor: 'api-channel',
+    })).toBe(`/w/support-abc123/agents/${agentId}?tab=channels&anchor=api-channel`)
   })
 
   it('preserves the agent chat conversation adoption parameter', () => {

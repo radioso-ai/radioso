@@ -66,7 +66,7 @@ export interface ChatPresentedAnswer {
  * tail of positional arguments; a decline reason carried on the grounding summary
  * needs no second argument at all.
  */
-export interface AnswerVerdict {
+interface AnswerVerdict {
   grounding?: GroundingSummary | GroundingVerdict;
   declineReason?: TurnDeclineReason;
 }
@@ -78,7 +78,7 @@ export interface SkillOutcomeCapabilityProvider {
   }): boolean;
 }
 
-export interface SkillOutcomeCapabilityRegistry {
+interface SkillOutcomeCapabilityRegistry {
   get(name: string): {
     outcomes?: Array<{
       name: string;
@@ -190,6 +190,26 @@ const withLegacyAnswerOutcome = <T extends Omit<ChatPresentedAnswer, "answerOutc
     status: presentation.skillStatus,
   }),
 });
+
+const outcomeWithAnswerCoverage = (
+  outcome: AssistantTurnOutcome | undefined,
+  session: PreparedSession,
+): AssistantTurnOutcome | undefined => {
+  const assessment = session.answerCoverage;
+  // A missing assessment is a legacy state, not inferred evidence of a gap.
+  if (!assessment || assessment.availability === "not_recorded") return outcome;
+  // Coverage is not a retrieval decline: a partial answer, a request requiring
+  // clarification, and an unavailable assessment must not trigger the existing
+  // refusal-only quality or handoff paths. Keep the execution/grounding outcome
+  // separate and expose a coverage-specific terminal status instead.
+  if (assessment.availability !== "assessed") return ASSISTANT_TURN_OUTCOME.COVERAGE_UNAVAILABLE;
+  switch (assessment.coverage) {
+    case "answered": return outcome;
+    case "partial": return ASSISTANT_TURN_OUTCOME.COVERAGE_PARTIAL;
+    case "unanswered": return ASSISTANT_TURN_OUTCOME.COVERAGE_UNANSWERED;
+    case "unclear": return ASSISTANT_TURN_OUTCOME.COVERAGE_UNCLEAR;
+  }
+};
 
 export class ChatAnswerPresenter {
   private readonly answerPresentationService: AnswerPresentationService;
@@ -321,7 +341,7 @@ export class ChatAnswerPresenter {
       ? SKILL_TURN_OUTCOME.RETRIEVAL_GROUNDED_DEGRADED
       : SKILL_TURN_OUTCOME.RETRIEVAL_GROUNDED;
 
-    return withLegacyAnswerOutcome({
+    const result = withLegacyAnswerOutcome({
       ...presented,
       grounding: groundingVerdict,
       groundingSummary,
@@ -332,6 +352,7 @@ export class ChatAnswerPresenter {
       skillOutcome: groundedOutcome.outcome,
       skillStatus: groundedOutcome.status,
     });
+    return { ...result, answerOutcome: outcomeWithAnswerCoverage(result.answerOutcome, session) };
   }
 
   applyAssistantSuggestions(

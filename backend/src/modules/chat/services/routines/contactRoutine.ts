@@ -7,7 +7,7 @@ export const CONTACT_SEND_ACTION_TYPE = "contact.send";
 export const HANDOFF_NOTIFY_ACTION_TYPE = "handoff.notify";
 
 /** The routine id. */
-export const CONTACT_ROUTINE_ID = "contact.request";
+const CONTACT_ROUTINE_ID = "contact.request";
 
 /**
  * The explicit intent that activates the routine. These match the public chat UI's
@@ -33,7 +33,7 @@ export const contactRoutineDefinition: RoutineDefinition = {
   lineageId: "builtin_contact_request",
   name: CONTACT_ROUTINE_ID,
   version: 1,
-  status: "published",
+  enabled: true,
   activation: {
     triggerDescription: "The user asks a human to follow up with them.",
     gateRef: CONTACT_INTENT_SKILL_NAME,

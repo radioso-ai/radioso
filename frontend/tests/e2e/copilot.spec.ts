@@ -555,7 +555,7 @@ test("applies a routine proposal and opens the routine editor", async ({ page })
     routines: [{
       id: routineId,
       lineageId: routineId,
-      status: "draft",
+      enabled: true,
       version: 1,
       agentId: defaultAgentId,
       name: targetLabel,

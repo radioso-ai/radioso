@@ -22,6 +22,12 @@ It does not own agent settings, routine authoring, skill configuration or contex
 variable definitions. Every write goes through the owning module's service so its
 validation, uniqueness rules and audit behavior apply unchanged.
 
+Bundle import creates a new agent through the agents authoring boundary. The
+new agent is private until its first explicit revision publication; an existing
+agent's backfilled baseline remains its live published revision. Bundle import
+does not publish a candidate and does not carry private test conversations or
+sample values.
+
 ## The bundle composes `AgentConfig`; it does not extend it
 
 `AgentConfig` (in `modules/agents`) stays agent-shaped and

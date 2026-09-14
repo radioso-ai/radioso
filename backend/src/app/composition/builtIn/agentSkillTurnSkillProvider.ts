@@ -37,7 +37,7 @@ import { NOTIFY_SKILLS_ADAPTER } from "../../../modules/notify/notifyExecutor.js
 import type { TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 
-export interface RepositoryAgentSkillTurnSkillProviderOptions {
+interface RepositoryAgentSkillTurnSkillProviderOptions {
   agentSkills: Pick<AgentSkillRepositoryPort, "listByAgent">;
   executorRegistry: SkillExecutorRegistry;
   capabilityPolicy: CapabilityPolicy;
@@ -453,7 +453,13 @@ export class RepositoryAgentSkillTurnSkillProvider implements AgentSkillTurnSkil
     coordination?: { throwIfCancelled?: () => void },
   ): Promise<AgentSkillTurnRuntime> {
     const throwIfCancelled = coordination?.throwIfCancelled ?? (() => undefined);
-    const records = await this.options.agentSkills.listByAgent(session.agent.workspaceId, session.agent.id);
+    // Directives read from the conversation's frozen revision snapshot
+    // (session.agent.authoredDirectives) so a pinned turn cannot see an operator's
+    // in-flight live edit. Agent-selectable skills must be frozen the same way: only
+    // fall back to a live lookup when the resolved agent carries no frozen snapshot at
+    // all (no revision was applied — e.g. a trusted historical replay baseline).
+    const records = session.agent.authoredAgentSkills
+      ?? await this.options.agentSkills.listByAgent(session.agent.workspaceId, session.agent.id);
     const skillStates = new Map<string, { enabled: boolean; turnCapable: boolean; stagingCapable: boolean; capabilityDenied?: boolean }>();
     const turnSkills: TurnSkill[] = [];
     const stagedRecords: AgentSkillSpine[] = [];

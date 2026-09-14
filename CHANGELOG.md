@@ -9,6 +9,14 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.0.1] - 2026-09-14
+
+### Fixed
+
+- make the skill picker's Connections link actually navigate ([#1247](https://github.com/radioso-ai/radioso/pull/1247))
+
+[1.0.1]: https://github.com/radioso-ai/radioso/compare/v1.0.0...v1.0.1
+
 ## [1.0.0] - 2026-09-14
 
 ### Breaking changes

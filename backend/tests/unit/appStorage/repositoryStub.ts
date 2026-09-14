@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { vi } from "vitest";
 
 import type {
+  AppStorageDiagnosticsPort,
   AppStorageRepositoryPort,
   AppStorageUnitOfWork,
 } from "../../../src/modules/appStorage/public.js";
@@ -104,3 +105,15 @@ export const statementFailure = (): Error =>
     code: "23502",
     detail: 'Failing row contains (post-1, {"external_id": "customer-secret"})',
   });
+
+/**
+ * A diagnostics port that records nothing but its own calls. Every service
+ * boundary that converts an exception now requires one; most tests only need
+ * it to exist, and the handful that are about diagnostics reporting itself
+ * inspect `failure.mock.calls`.
+ */
+export const buildDiagnosticsStub = (): AppStorageDiagnosticsPort & {
+  failure: ReturnType<typeof vi.fn<AppStorageDiagnosticsPort["failure"]>>;
+} => ({
+  failure: vi.fn<AppStorageDiagnosticsPort["failure"]>(),
+});

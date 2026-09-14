@@ -1482,8 +1482,12 @@ finishing and cancelling are compare-and-set against it. `completeIndexRebuild`
 takes a caller-owned `Transaction<DB>` — the platform's own type, so the `apps`
 domain can flip a release's visibility in the same commit that clears the marker.
 Every unsuccessful exit cancels the generation it owns; running out of batches
-instead keeps the marker and answers `in_progress`, with no completion token to
-activate against. Each marker carries a lease that every batch renews and that
+instead keeps the marker and answers `in_progress` with an opaque continuation
+naming the marker's generation and the cursor of whichever pass was running, and
+no completion token to activate against. Presenting that continuation to a later
+call resumes the same pass from its cursor; one naming a generation the marker
+has since moved past starts a fresh rebuild under a new generation instead. Each
+marker carries a lease that every batch renews and that
 convergence renews once more for the activation to come; `listAbandonedIndexRebuilds`
 and `cancelAbandonedIndexRebuilds` drop the ones that ran out, along with the
 entries built under them, and the next rebuild of an index collects them too. A
@@ -1497,22 +1501,29 @@ change, with `installationId` folded into the intent's metadata — the outbox
 itself carries no App Storage vocabulary. Publishing, leasing, and
 acknowledging that intent belongs to the audit module; this module knows only
 that an intent committed. A secondary audit-write failure on a
-refusal or failure path is logged through `AppStorageAuditLogPort` in
-identifiers and codes, and never replaces the primary answer.
+refusal or failure path, and every other exception a service in this module
+cannot attribute to the caller, is recorded through the mandatory
+`AppStorageDiagnosticsPort` — operation, known identifiers, classification, the
+exception's class, SQLSTATE, constraint, and stack, never a record key, a
+stored value, or a driver's own message text — and never replaces the primary
+answer.
 
 Primary paths:
 
 - `backend/src/modules/appStorage/public.ts` — the only import surface
-- `backend/src/modules/appStorage/domain/` — record validation, indexed-value bounds, quota, query bounds, expiry, retention policy, failure classification, compatibility
+- `backend/src/modules/appStorage/domain/` — record validation, indexed-value bounds, quota, query bounds, expiry, retention policy, failure classification, compatibility, exception diagnostics, index-rebuild continuation encoding
 - `backend/src/modules/appStorage/domain/compatibility.ts` — the two-direction reader matrix over a candidate and every surviving reader's declaration
+- `backend/src/modules/appStorage/domain/diagnostics.ts` — the safe facts an exception carries (class, SQLSTATE, constraint, stack), never its message, detail, or hint
 - `backend/src/modules/appStorage/ports/appStorageService.ts` — the capability, disposition, sweeper, and index-rebuild ports
 - `backend/src/modules/appStorage/ports/appStorageCompatibilityFacts.ts` — `storedSchemaVersions`, apart from the gateway-facing capability service
+- `backend/src/modules/appStorage/ports/appStorageDiagnostics.ts` — the mandatory port every exception-converting service records through
 - `backend/src/modules/appStorage/repositories/appStorageRepository.ts` — the generic Postgres model and the lock order
 - `backend/src/modules/appStorage/ports/appStorageRepository.ts` — the persistence port, the lock order it owns, and `AppStorageUnitOfWork`, the shared transaction activation runs in
 - `backend/src/modules/appStorage/services/appStorageDisposition.ts` — revoke, restore, export snapshots, retention and its cancellation, deletion, audit drain
 - `backend/src/modules/appStorage/services/appStorageSweeper.ts` — expiry claim/lease/reclaim, the retention deadline, and the abandoned-rebuild pass
-- `backend/src/modules/appStorage/services/appStorageIndexRebuilder.ts` — builds an added index over records already stored, under its own generation
-- `backend/src/app/composition/appStorage.ts` — repository, service, compatibility facts, disposition, rebuilder, and sweeper, wired to a caller-supplied `AuditOutboxPort`
+- `backend/src/modules/appStorage/services/appStorageIndexRebuilder.ts` — builds an added index over records already stored, under its own generation; a bounded run's continuation resumes the interrupted pass
+- `backend/src/modules/appStorage/services/appStorageDiagnosticsReporting.ts` — classifies an exception and, for `internal`/`unavailable`, records it through `AppStorageDiagnosticsPort` before discarding it
+- `backend/src/app/composition/appStorage.ts` — repository, service, compatibility facts, disposition, rebuilder, and sweeper, wired to a caller-supplied `AuditOutboxPort` and `AppLogger`
 - `backend/src/db/migrations/172_app_storage.sql`
 
 Useful searches:

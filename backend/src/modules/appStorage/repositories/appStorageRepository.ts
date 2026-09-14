@@ -1306,18 +1306,49 @@ export class AppStorageRepository implements AppStorageRepositoryPort {
     let idleTimer: ReturnType<typeof setTimeout> | null = null;
     /** The page query currently running, so nothing ends the transaction under it. */
     let inFlight: Promise<unknown> | null = null;
+    /**
+     * `open()`'s own promise, while a transaction is still being established.
+     * A close or an idle timeout arriving in that window has nothing in
+     * `transaction` to end yet — owning this too is what lets it end the
+     * transaction `open()` is about to produce instead of the call that
+     * started it discovering, after the fact, one nothing here ever closes.
+     */
+    let pendingOpen: Promise<ExportTransaction> | null = null;
+    /**
+     * `release` runs at most once. Without this, a close racing the idle
+     * timeout could each see `transaction` set and each try to end it — the
+     * second call would commit or roll back a transaction the first one
+     * already did.
+     */
+    let releasing: Promise<void> | null = null;
 
-    const release = async (commit: boolean): Promise<void> => {
-      if (idleTimer) clearTimeout(idleTimer);
-      idleTimer = null;
-      state = "closed";
-      const open = transaction;
-      transaction = null;
-      if (!open) return;
-      // Settled, not necessarily successful: a page that failed has still let go
-      // of the transaction, which is all this needs to know.
-      await inFlight?.catch(() => undefined);
-      await (commit ? open.commit().execute() : open.rollback().execute());
+    const release = (commit: boolean): Promise<void> => {
+      if (releasing) return releasing;
+      releasing = (async (): Promise<void> => {
+        if (idleTimer) clearTimeout(idleTimer);
+        idleTimer = null;
+        state = "closed";
+
+        if (pendingOpen) {
+          // `open()` may still be resolving. Waiting for it here — not just
+          // for the `transaction` it would otherwise assign — is what stops
+          // the transaction it produces from outliving this call: without
+          // it, `open()` resolves after this returns, `read` finds itself
+          // already closed and leaves the transaction untouched, and nothing
+          // ever ends it.
+          const opened = await pendingOpen.catch(() => null);
+          if (opened) transaction = opened;
+        }
+
+        const open = transaction;
+        transaction = null;
+        if (!open) return;
+        // Settled, not necessarily successful: a page that failed has still let
+        // go of the transaction, which is all this needs to know.
+        await inFlight?.catch(() => undefined);
+        await (commit ? open.commit().execute() : open.rollback().execute());
+      })();
+      return releasing;
     };
 
     const touch = (): void => {
@@ -1384,7 +1415,20 @@ export class AppStorageRepository implements AppStorageRepositoryPort {
       if (state === "reading") throw new AppStorageExportBusyError();
       state = "reading";
 
-      const trx = await open();
+      pendingOpen = open();
+      let trx: ExportTransaction;
+      try {
+        trx = await pendingOpen;
+      } finally {
+        pendingOpen = null;
+      }
+
+      // A close or an idle timeout can land while the transaction above was
+      // still being established. `release` claims it through `pendingOpen` in
+      // that case and owns closing it — touching it here too would end it a
+      // second time.
+      if (isClosed()) throw new AppStorageExportClosedError();
+
       transaction = trx;
       touch();
 
@@ -1392,11 +1436,13 @@ export class AppStorageRepository implements AppStorageRepositoryPort {
       try {
         // The first read inside the snapshot, and therefore what fixes it.
         const admitted = await track(readState(trx));
+        if (isClosed()) throw new AppStorageExportClosedError();
         if (admitted?.deletedAt) throw new AppStorageExportDeniedError();
 
         // Taken immediately after the state read, and reused by every page: a row
         // that is live in the snapshot must not be excluded by a later clock.
         const at = await track(freshTimestamp(trx));
+        if (isClosed()) throw new AppStorageExportClosedError();
         let after: ExportCursor | null = null;
 
         for (;;) {
@@ -1407,9 +1453,15 @@ export class AppStorageRepository implements AppStorageRepositoryPort {
           if (isClosed()) throw new AppStorageExportClosedError();
 
           const rows: ExportRow[] = await track(readPage(trx, after, at));
+          // The idle timeout can claim the snapshot while this page's fetch was
+          // already in flight; `release` waits for it to settle rather than
+          // cancel it, so it resolves anyway. Those rows belong to a snapshot
+          // this call no longer owns, and none of them may reach the caller.
+          if (isClosed()) throw new AppStorageExportClosedError();
           const last = rows[rows.length - 1];
 
           for (const row of rows) {
+            if (isClosed()) throw new AppStorageExportClosedError();
             touch();
             yield { ...mapRecord(row), collectionId: row.collection_id };
           }
@@ -1420,7 +1472,10 @@ export class AppStorageRepository implements AppStorageRepositoryPort {
 
         completed = true;
       } finally {
-        await release(completed);
+        // Already closed means `release` already ran, or is running, for this
+        // snapshot through another path; calling it again would commit or roll
+        // back a transaction a second time.
+        if (!isClosed()) await release(completed);
       }
     }
 

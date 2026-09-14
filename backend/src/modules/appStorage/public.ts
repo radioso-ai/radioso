@@ -19,13 +19,22 @@ export {
   INDEXED_STRING_BYTE_BOUND,
   INDEXED_STRING_CHARACTER_BOUND,
 } from "./domain/indexedValueBounds.js";
+export {
+  decodeIndexRebuildContinuation,
+  encodeIndexRebuildContinuation,
+} from "./domain/indexRebuildContinuation.js";
 export { resolveStorageQuery } from "./domain/queryBounds.js";
 export { validateStorageRecord } from "./domain/recordValidation.js";
 export { MAX_RETENTION_DAYS } from "./domain/retention.js";
 
 export type { StorageCollectionObservation } from "./domain/compatibility.js";
-export type { AppStorageAuditIntent, AppStorageAuditLogPort } from "./ports/appStorageAudit.js";
+export type { AppStorageIndexRebuildContinuation } from "./domain/indexRebuildContinuation.js";
+export type { AppStorageAuditIntent } from "./ports/appStorageAudit.js";
 export type { AppStorageCompatibilityFactsPort } from "./ports/appStorageCompatibilityFacts.js";
+export type {
+  AppStorageDiagnosticFields,
+  AppStorageDiagnosticsPort,
+} from "./ports/appStorageDiagnostics.js";
 export type {
   AppStorageCollectionScope,
   AppStorageInstallationScope,

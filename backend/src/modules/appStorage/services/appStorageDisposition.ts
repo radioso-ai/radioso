@@ -1,12 +1,12 @@
 import { MAX_RETENTION_DAYS, validateRetentionDeadline } from "../domain/retention.js";
 import {
   AppStorageExportBusyError,
-  classifyStorageFailure,
   storageFailure,
   storageSuccess,
   type AppStorageResult,
 } from "../domain/results.js";
-import type { AppStorageAuditIntent, AppStorageAuditLogPort } from "../ports/appStorageAudit.js";
+import type { AppStorageAuditIntent } from "../ports/appStorageAudit.js";
+import type { AppStorageDiagnosticsPort } from "../ports/appStorageDiagnostics.js";
 import type {
   AppStorageExportSnapshot,
   AppStorageInstallationScope,
@@ -19,15 +19,19 @@ import type {
   AppStorageExportAdmission,
   AppStorageExportEvent,
 } from "../ports/appStorageService.js";
+import { reportStorageFailure } from "./appStorageDiagnosticsReporting.js";
 
 interface AppStorageDispositionOptions {
   repository: AppStorageRepositoryPort;
   /**
-   * Where a secondary audit failure is said out loud. Optional because a
-   * disposition is correct without it — the primary answer is unaffected either
-   * way — and absent it the failure is simply not visible.
+   * Where an exception this disposition cannot attribute to the caller is
+   * recorded before it is discarded into a sanitized `internal` or
+   * `unavailable` result — including a secondary audit-intent write that
+   * failed. Mandatory: a disposition answers correctly without it, but an
+   * outbox outage would otherwise be visible only as trail entries nobody
+   * ever sees.
    */
-  logger?: AppStorageAuditLogPort;
+  diagnostics: AppStorageDiagnosticsPort;
   now?: () => Date;
   /** Rows read per round trip while an export streams; never the whole installation at once. */
   exportBatchSize?: number;
@@ -82,17 +86,25 @@ const tombstoned = <TValue>(): AppStorageResult<TValue> =>
 export const createAppStorageDisposition = (
   options: AppStorageDispositionOptions,
 ): AppStorageDisposition => {
-  const { repository } = options;
+  const { repository, diagnostics } = options;
   const clock = options.now ?? ((): Date => new Date());
   const batchSize = options.exportBatchSize ?? DEFAULT_EXPORT_BATCH_SIZE;
 
+  /**
+   * Runs the persistence half and turns anything it raises into a typed
+   * result. A driver error carries the statement that failed, and the
+   * statement carries the record, so none of it is allowed into the message —
+   * only the scope and the exception's own safe facts reach `diagnostics`.
+   */
   const attempt = async <TValue>(
-    operation: () => Promise<AppStorageResult<TValue>>,
+    operationName: string,
+    scope: AppStorageInstallationScope,
+    run: () => Promise<AppStorageResult<TValue>>,
   ): Promise<AppStorageResult<TValue>> => {
     try {
-      return await operation();
+      return await run();
     } catch (error) {
-      return classifyStorageFailure(error);
+      return reportStorageFailure(diagnostics, operationName, scope, error);
     }
   };
 
@@ -117,35 +129,15 @@ export const createAppStorageDisposition = (
   const enqueueBeside = async (
     scope: AppStorageInstallationScope,
     intent: AppStorageAuditIntent,
-  ): Promise<AppStorageResult<void>> => {
-    const recorded = await attempt(async () => {
+  ): Promise<AppStorageResult<void>> =>
+    attempt("enqueueAuditEvent", scope, async () => {
       await enqueue(scope, intent);
       return storageSuccess(undefined);
     });
 
-    if (!recorded.ok) {
-      // Identifiers and codes only. The event type and the installation are what
-      // an operator needs to find the disposition this belongs to; the intent's
-      // metadata is not, and the classifier's message is the one thing here that
-      // a database error could have shaped around a stored value.
-      options.logger?.warn(
-        {
-          installationId: scope.installationId,
-          workspaceId: scope.workspaceId,
-          eventType: intent.eventType,
-          eventStatus: intent.eventStatus,
-          failureCode: recorded.error.code,
-        },
-        "app storage audit intent was not committed",
-      );
-    }
-
-    return recorded;
-  };
-
   return {
     async revokeAccess(scope: AppStorageInstallationScope): Promise<AppStorageResult<void>> {
-      return attempt(async () => {
+      return attempt("revokeAccess", scope, async () => {
         const applied = await repository.setAccessRevoked(scope, clock());
         return applied.admitted ? storageSuccess(undefined) : tombstoned();
       });
@@ -158,7 +150,7 @@ export const createAppStorageDisposition = (
      * going to destroy is precisely the state the hold exists to prevent.
      */
     async restoreAccess(scope: AppStorageInstallationScope): Promise<AppStorageResult<void>> {
-      return attempt(async () => {
+      return attempt("restoreAccess", scope, async () => {
         const applied = await repository.setAccessRevoked(scope, null);
         if (!applied.admitted) return tombstoned();
         if (applied.value.outcome === "retention_active") {
@@ -193,7 +185,7 @@ export const createAppStorageDisposition = (
       });
       if (!requested.ok) return { ok: false, error: requested.error };
 
-      const admitted = await attempt(async () => {
+      const admitted = await attempt("openInstallationExport", scope, async () => {
         const opened = await repository.openInstallationExport({
           scope,
           batchSize,
@@ -252,7 +244,7 @@ export const createAppStorageDisposition = (
             if (error instanceof AppStorageExportBusyError) {
               refused = true;
               settled = true;
-              yield { kind: "error", error: classifyStorageFailure(error).error };
+              yield { kind: "error", error: reportStorageFailure(diagnostics, "export.read", scope, error).error };
               return;
             }
 
@@ -260,7 +252,7 @@ export const createAppStorageDisposition = (
             // simply stopped would be indistinguishable from one that finished,
             // and the difference is whether the operator has all of the
             // customer's data or some of it.
-            const failure = classifyStorageFailure(error);
+            const failure = reportStorageFailure(diagnostics, "export.read", scope, error);
             settled = true;
             await enqueueBeside(scope, closing(failure.error.code));
             yield { kind: "error", error: failure.error };
@@ -320,7 +312,7 @@ export const createAppStorageDisposition = (
         );
       }
 
-      return attempt(async () => {
+      return attempt("setRetention", scope, async () => {
         const applied = await repository.setRetention({
           scope,
           retainUntil: deadline.until,
@@ -348,7 +340,7 @@ export const createAppStorageDisposition = (
     async cancelRetention(
       scope: AppStorageInstallationScope,
     ): Promise<AppStorageResult<{ retainUntil: Date | null }>> {
-      return attempt(async () => {
+      return attempt("cancelRetention", scope, async () => {
         const cleared = await repository.cancelRetention({
           scope,
           audit: (state) => ({
@@ -386,7 +378,7 @@ export const createAppStorageDisposition = (
       });
       if (!requested.ok) return requested;
 
-      const removed = await attempt(async () =>
+      const removed = await attempt("deleteInstallationRecords", scope, async () =>
         storageSuccess(
           await repository.deleteInstallationRecords({
             scope,

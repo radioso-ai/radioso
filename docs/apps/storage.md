@@ -339,12 +339,17 @@ making that write maintain the index.
 Every way a rebuild ends says what becomes of its mark. A rebuild that is refused
 or that fails clears its own, so nothing is left making later writes maintain an
 index no release will query. A rebuild that runs out of its batch budget keeps
-its mark and reports that it is still in progress, because the entries it built
-are worth keeping maintained and another run can continue — it hands out no
-completion token, so nothing can be activated against it. And every mark carries
-a lease that each batch renews, so a rebuild whose process dies is collected by
-the next rebuild of that index or by the maintenance pass, which drops the mark
-and the entries built under it.
+its mark and reports that it is still in progress, together with a continuation
+naming exactly where it stopped — the mark's generation, and the cursor of
+whichever of the rebuild's two passes was running. The entries it has built are
+worth keeping maintained, and presenting that continuation to the next call
+resumes the same pass from that cursor rather than rescanning the collection
+from its first key. A continuation naming a generation the mark has since moved
+past starts a fresh rebuild instead, under a new generation. Either way it hands
+out no completion token, so nothing can be activated against it. And every mark
+carries a lease that each batch renews, so a rebuild whose process dies is
+collected by the next rebuild of that index or by the maintenance pass, which
+drops the mark and the entries built under it.
 
 A value stored before its field was indexed was never measured against the
 indexed-value bound, so a rebuild that meets one reports it with a count rather

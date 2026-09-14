@@ -1,3 +1,4 @@
+import type { AppStorageDiagnosticsPort } from "../ports/appStorageDiagnostics.js";
 import type {
   AppStorageInstallationScope,
   AppStorageRepositoryPort,
@@ -8,9 +9,17 @@ import type {
   AppStorageRetentionSweepResult,
   AppStorageSweeper,
 } from "../ports/appStorageService.js";
+import { reportStorageFailure } from "./appStorageDiagnosticsReporting.js";
 
 interface AppStorageSweeperOptions {
   repository: AppStorageRepositoryPort;
+  /**
+   * Where an exception a sweep pass cannot attribute to the installation it
+   * was working is recorded before the pass moves on. Mandatory: a retention
+   * reclaim or an outbox write that keeps failing here has only a counter to
+   * show for it otherwise.
+   */
+  diagnostics: AppStorageDiagnosticsPort;
   /** Rows one statement removes. Deleting a whole backlog at once holds the collection's lock for as long as the backlog is large. */
   batchSize?: number;
   /** Batches one expiry pass runs. A sweep is maintenance, not a job that owns the connection until the backlog is empty. */
@@ -43,7 +52,7 @@ const DEFAULT_MAX_INSTALLATIONS = 50;
  * name a deletion that rolled back or omit one that did not.
  */
 export const createAppStorageSweeper = (options: AppStorageSweeperOptions): AppStorageSweeper => {
-  const { repository } = options;
+  const { repository, diagnostics } = options;
   const batchSize = options.batchSize ?? DEFAULT_BATCH_SIZE;
   const maxBatches = options.maxBatches ?? DEFAULT_MAX_BATCHES;
   const maxInstallations = options.maxInstallations ?? DEFAULT_MAX_INSTALLATIONS;
@@ -133,12 +142,15 @@ export const createAppStorageSweeper = (options: AppStorageSweeperOptions): AppS
 
       if (removed.outcome !== "reclaimed") return { recordCount: 0, reclaimed: false, failed: false };
       return { recordCount: removed.summary.recordCount, reclaimed: true, failed: false };
-    } catch {
+    } catch (error) {
       // A failed reclamation is the case the trail exists for: the deadline
       // passed and the data is still here, and the next pass has to try again.
       // This event has no state change to ride along with — nothing committed —
-      // so it goes to the outbox on its own.
-      //
+      // so it goes to the outbox on its own. `failureCount` is what the caller
+      // sees; the cause goes to `diagnostics` so an operator can tell a
+      // transient outage from a fault that will keep failing every pass.
+      reportStorageFailure(diagnostics, "reclaimRetainedInstallation", scope, error);
+
       // Recording it is itself allowed to fail. The pass has already learned what
       // it needs to report about this installation, and an outbox write that
       // failed must not take the remaining installations down with it.
@@ -151,8 +163,9 @@ export const createAppStorageSweeper = (options: AppStorageSweeperOptions): AppS
             metadata: { reason: "retention_elapsed" },
           },
         });
-      } catch {
+      } catch (enqueueError) {
         // The failure is still reported through `failureCount`.
+        reportStorageFailure(diagnostics, "enqueueAuditEvent", scope, enqueueError);
       }
       return { recordCount: 0, reclaimed: false, failed: true };
     }

@@ -8,8 +8,9 @@ import {
   createAppStorageIndexRebuilder,
   createAppStorageService,
   createAppStorageSweeper,
-  type AppStorageAuditLogPort,
   type AppStorageCompatibilityFactsPort,
+  type AppStorageDiagnosticFields,
+  type AppStorageDiagnosticsPort,
   type AppStorageDisposition,
   type AppStorageIndexRebuilder,
   type AppStorageRepositoryPort,
@@ -17,6 +18,19 @@ import {
   type AppStorageSweeper,
 } from "../../modules/appStorage/public.js";
 import type { DB } from "../../shared/infra/kysely/types.js";
+import type { AppLogger } from "../../shared/observability/logger.js";
+
+/**
+ * Adapts the platform logger to the narrow port every appStorage service
+ * that converts an exception depends on. `error` rather than `warn`: both
+ * codes this port ever reports mean the host's problem, not a deterministic
+ * answer about the request.
+ */
+export const createAppStorageDiagnostics = (logger: AppLogger): AppStorageDiagnosticsPort => ({
+  failure(fields: AppStorageDiagnosticFields, message: string): void {
+    logger.error(fields, message);
+  },
+});
 
 export interface AppStorageComposition {
   repository: AppStorageRepositoryPort;
@@ -62,23 +76,23 @@ export const createAppStorageComposition = (options: {
   kysely: Kysely<DB>;
   auditOutbox: AuditOutboxPort;
   /**
-   * Where a secondary audit failure is written. A disposition answers correctly
-   * without it; what it buys is an outbox outage that is visible as itself rather
-   * than only as trail entries nobody ever sees.
+   * Where every service here sends an exception it cannot attribute to the
+   * caller before discarding it into a sanitized `internal` or `unavailable`
+   * result. Mandatory: a missing migration, a schema drift, or a persistent
+   * database fault must leave a cause an operator can act on, not just a
+   * result the caller retries.
    */
-  logger?: AppStorageAuditLogPort;
+  logger: AppLogger;
 }): AppStorageComposition => {
   const repository = new AppStorageRepository(options.kysely, options.auditOutbox);
+  const diagnostics = createAppStorageDiagnostics(options.logger);
 
   return {
     repository,
-    service: createAppStorageService({ repository }),
-    compatibilityFacts: createAppStorageCompatibilityFacts({ repository }),
-    disposition: createAppStorageDisposition({
-      repository,
-      ...(options.logger === undefined ? {} : { logger: options.logger }),
-    }),
-    indexRebuilder: createAppStorageIndexRebuilder({ repository }),
-    sweeper: createAppStorageSweeper({ repository }),
+    service: createAppStorageService({ repository, diagnostics }),
+    compatibilityFacts: createAppStorageCompatibilityFacts({ repository, diagnostics }),
+    disposition: createAppStorageDisposition({ repository, diagnostics }),
+    indexRebuilder: createAppStorageIndexRebuilder({ repository, diagnostics }),
+    sweeper: createAppStorageSweeper({ repository, diagnostics }),
   };
 };

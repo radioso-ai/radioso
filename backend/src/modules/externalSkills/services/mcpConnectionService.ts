@@ -25,7 +25,7 @@ import type { McpConnectionInput, McpConnectionUpdateInput, StoredOauthClientCon
 import type { ToolServiceFactory } from "../executor/mcpSkillExecutor.js";
 
 /** Non-secret view of a connection (the only shape returned to clients). */
-export interface McpConnectionSummary {
+interface McpConnectionSummary {
   id: string;
   displayName: string;
   serverUrl: string;
@@ -36,7 +36,7 @@ export interface McpConnectionSummary {
   updatedAt: string;
 }
 
-export interface DiscoveredTool {
+interface DiscoveredTool {
   name: string;
   description?: string;
   inputSchema?: unknown;
@@ -63,7 +63,7 @@ export class EncryptionNotConfiguredError extends AppError {
   }
 }
 
-export interface McpConnectionServiceOptions {
+interface McpConnectionServiceOptions {
   repository: McpConnectionRepositoryPort;
   toolServiceFactory: ToolServiceFactory;
   encryptionKey?: string;

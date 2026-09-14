@@ -2,8 +2,19 @@
 
 **Feature Branch**: `conversational-agent-plugins`  
 **Created**: 2026-09-06  
-**Status**: Draft  
+**Status**: Parked (2026-09-14) — see "Program status" below  
 **Input**: User description: "Define the right App-level abstraction for extending Radioso, including a Radioso Cloud-hosted runtime, typed runtime contributions, safe App storage, optional Agent Packs, and enough breadth to support WordPress/WooCommerce, Magento, Notion, and a CSAT widget without app-specific core changes."
+
+## Program status
+
+Parked on 2026-09-14 before Release A's PR 4. PR 1 (`packages/app-contract`, #1208) was merged and has since been removed from `main`; PR 2 (`apps` domain, #1214) and PR 3 (managed App Storage, #1217) were closed unmerged and their branches kept for reference. Nothing on the runtime path consumed any of it until the gateway and runtime provider of PR 4, and dormant tables and modules have no standalone value.
+
+The program resumes when either condition holds:
+
+- a named external party has committed to building an App within the coming quarter, or
+- a capability is identified that MCP, skills, and a pluggable document-source port cannot deliver.
+
+Until then, the WordPress integration stays on the `ConnectorPlugin` contract.
 
 ## Context
 

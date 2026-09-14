@@ -1149,6 +1149,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agents/{agentId}/greeting/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Save exact greeting content on the agent draft */
+        put: operations["updateAgentGreetingDraft"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agents/{agentId}/revisions/candidates": {
         parameters: {
             query?: never;
@@ -4756,6 +4773,33 @@ export interface components {
         AgentRevisionListResponse: {
             revisions: components["schemas"]["AgentRevisionSummary"][];
         };
+        ExactContentVariant: {
+            locale: string;
+            body: string;
+            chipLabels: {
+                [key: string]: string;
+            };
+        };
+        ExactContentItem: {
+            chips: string[];
+            variants: components["schemas"]["ExactContentVariant"][];
+        };
+        AgentGreetingDraft: {
+            exactWordsEnabled: boolean;
+            exactContent: components["schemas"]["ExactContentItem"] & (Record<string, never> | null);
+        };
+        AgentGreetingValidation: {
+            ok: boolean;
+            issues?: {
+                path: string;
+                code: string;
+                message: string;
+            }[];
+        };
+        AgentGreetingDraftResponse: {
+            greeting: components["schemas"]["AgentGreetingDraft"];
+            validation: components["schemas"]["AgentGreetingValidation"];
+        };
         AgentRevisionDetailResponse: {
             revision: components["schemas"]["AgentRevisionSummary"] & {
                 /** @enum {number} */
@@ -4769,6 +4813,8 @@ export interface components {
                     routines: true;
                     /** @enum {boolean} */
                     contextVariableEnablements: true;
+                    /** @enum {boolean} */
+                    greeting: true;
                 };
                 dependencyWarnings: {
                     code: string;
@@ -4805,6 +4851,11 @@ export interface components {
                         before?: unknown;
                         after?: unknown;
                     }[];
+                    greeting: {
+                        before: components["schemas"]["AgentGreetingDraft"];
+                        after: components["schemas"]["AgentGreetingDraft"];
+                        changed: boolean;
+                    };
                 };
             };
         };
@@ -6843,6 +6894,8 @@ export interface components {
             };
         };
         ChatSuggestion: {
+            /** @description Stable chip identity. Present for authored exact-content chips; absent for generated follow-up suggestions. */
+            id?: string;
             text: string;
             kind: string;
             citation?: components["schemas"]["Citation"];
@@ -13678,6 +13731,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentRevisionState"];
+                };
+            };
+        };
+    };
+    updateAgentGreetingDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentGreetingDraft"];
+            };
+        };
+        responses: {
+            /** @description Draft greeting saved; validation reports field-level issues without blocking the save unless Exact words is enabled */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentGreetingDraftResponse"];
+                };
+            };
+            /** @description bad_request when Exact words is enabled and the content fails validation */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -23090,7 +23178,7 @@ export interface operations {
                         /** @enum {string} */
                         reason: "ok" | "no_llm_capability";
                         canManage: boolean;
-                        applyableProposalTargets: ("directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl" | "workspace_setting")[];
+                        applyableProposalTargets: ("directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_greeting")[];
                     };
                 };
             };
@@ -23185,7 +23273,7 @@ export interface operations {
                                 /** Format: uuid */
                                 id: string;
                                 /** @enum {string} */
-                                targetType: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl" | "workspace_setting";
+                                targetType: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_greeting";
                                 targetLabel: string;
                                 summary: string;
                                 /** @enum {string} */
@@ -23331,11 +23419,11 @@ export interface operations {
                         /** Format: uuid */
                         workspaceId: string;
                         /** @enum {string} */
-                        targetType: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl" | "workspace_setting";
+                        targetType: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_greeting";
                         targetRef?: unknown;
                         target: {
                             /** @enum {string} */
-                            type: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl" | "workspace_setting";
+                            type: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_greeting";
                             ref?: unknown;
                         };
                         targetLabel: string;

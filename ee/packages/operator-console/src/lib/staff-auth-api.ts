@@ -22,6 +22,8 @@ export interface UsageLimitProfile {
   storedDocumentLimit: number | null;
   storedIndexedByteLimit: number | null;
   monthlyIndexedByteLimit: number | null;
+  monthlyConversationLimit: number | null;
+  repliesPerConversation: number;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -73,6 +75,8 @@ export interface TierPayload {
   storedDocumentLimit: number | null;
   storedIndexedByteLimit?: number | null;
   monthlyIndexedByteLimit?: number | null;
+  monthlyConversationLimit?: number | null;
+  repliesPerConversation?: number;
 }
 
 export interface StaffCreatePayload {

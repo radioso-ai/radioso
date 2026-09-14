@@ -19,9 +19,18 @@ export interface UsageLimitProfile {
   storedDocumentLimit: number | null;
   storedIndexedByteLimit: number | null;
   monthlyIndexedByteLimit: number | null;
+  /** When set, the account is metered in conversations (see `surfaceWeight`)
+   *  and `monthlyAnswerLimit` is ignored. */
+  monthlyConversationLimit: number | null;
+  /** A customer conversation is charged once per this many replies. */
+  repliesPerConversation: number;
   createdAt: string;
   updatedAt: string;
 }
+
+export type UsageKind = "conversation" | "copilot" | "test_run" | "pulse_report";
+
+export const USAGE_KINDS: readonly UsageKind[] = ["conversation", "copilot", "test_run", "pulse_report"];
 
 export interface AccountUsageSummary {
   accountId: string;
@@ -46,7 +55,59 @@ export interface AccountUsageSummary {
     used: number;
     limit: number | null;
   };
+  /** Present when the profile meters conversations. Values are conversations,
+   *  to one decimal, because ten test runs are one. */
+  monthlyConversations: {
+    periodStart: string;
+    resetAt: string;
+    used: number;
+    limit: number;
+    /** Remaining prepaid top-up conversations. Never expire. */
+    credits: number;
+    byKind: Record<UsageKind, number>;
+  } | null;
 }
+
+/** Everything is metered in tenths of a conversation so "ten test runs are one" is integer math. */
+const TENTHS_PER_CONVERSATION = 10;
+
+type SurfaceWeight = {
+  kind: UsageKind;
+  tenths: number;
+  /** Customer conversations pay once per block of replies; everything else pays per call. */
+  perConversationBlock: boolean;
+};
+
+/**
+ * The public counting table on radioso.ai/pricing, keyed on the `surface` every
+ * caller already passes. Keep it in step with `COUNTS_AS` on the website.
+ */
+export const surfaceWeight = (surface: string): SurfaceWeight | null => {
+  switch (surface) {
+    // The widget greeting on open. A visitor who opens the widget and leaves
+    // has not had a conversation.
+    case "chat.bootstrap":
+      return null;
+    case "operator_copilot":
+    case "operator_copilot_probe":
+      return { kind: "copilot", tenths: TENTHS_PER_CONVERSATION, perConversationBlock: false };
+    // The dashboard test chat, Workbench replays, and eval runs: ten for one.
+    case "authenticated_chat":
+    case "workbench_replay":
+    case "eval_replay":
+      return { kind: "test_run", tenths: 1, perConversationBlock: false };
+    // On-demand. A scheduled run should pass a distinct surface and cost nothing.
+    case "audience_pulse":
+      return { kind: "pulse_report", tenths: 10 * TENTHS_PER_CONVERSATION, perConversationBlock: false };
+    // Standalone answers over the API: each call is its own conversation.
+    case "retrieval.answer":
+    case "mcp.retrieval_answer":
+      return { kind: "conversation", tenths: TENTHS_PER_CONVERSATION, perConversationBlock: false };
+    // Every customer channel: website_embed, anonymous, slack, whatsapp, agent_api, mcp, assistant.
+    default:
+      return { kind: "conversation", tenths: TENTHS_PER_CONVERSATION, perConversationBlock: true };
+  }
+};
 
 const DOCUMENT_RESERVATION_TTL_MS = 10 * 60 * 1000;
 const STORAGE_RESERVATION_TTL_MS = 10 * 60 * 1000;
@@ -86,6 +147,8 @@ const mapProfile = (row: {
   stored_document_limit: number | null;
   stored_indexed_byte_limit: number | string | null;
   monthly_indexed_byte_limit: number | string | null;
+  monthly_conversation_limit: number | null;
+  replies_per_conversation: number;
   created_at: Date;
   updated_at: Date;
 }): UsageLimitProfile => ({
@@ -95,6 +158,8 @@ const mapProfile = (row: {
   storedDocumentLimit: row.stored_document_limit,
   storedIndexedByteLimit: toNullableNumber(row.stored_indexed_byte_limit),
   monthlyIndexedByteLimit: toNullableNumber(row.monthly_indexed_byte_limit),
+  monthlyConversationLimit: row.monthly_conversation_limit,
+  repliesPerConversation: row.replies_per_conversation,
   createdAt: row.created_at.toISOString(),
   updatedAt: row.updated_at.toISOString(),
 });
@@ -116,6 +181,8 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
         "stored_document_limit",
         "stored_indexed_byte_limit",
         "monthly_indexed_byte_limit",
+        "monthly_conversation_limit",
+        "replies_per_conversation",
         "created_at",
         "updated_at",
       ])
@@ -132,6 +199,8 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
     storedDocumentLimit: number | null;
     storedIndexedByteLimit?: number | null;
     monthlyIndexedByteLimit?: number | null;
+    monthlyConversationLimit?: number | null;
+    repliesPerConversation?: number;
   }): Promise<UsageLimitProfile> {
     const row = await this.db
       .insertInto("ee_usage_limit_profiles")
@@ -140,6 +209,8 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
         display_name: input.displayName,
         monthly_answer_limit: input.monthlyAnswerLimit,
         stored_document_limit: input.storedDocumentLimit,
+        monthly_conversation_limit: input.monthlyConversationLimit ?? null,
+        replies_per_conversation: input.repliesPerConversation ?? 10,
         stored_indexed_byte_limit:
           input.storedIndexedByteLimit === null || input.storedIndexedByteLimit === undefined
             ? null
@@ -156,6 +227,8 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
           stored_document_limit: (eb) => eb.ref("excluded.stored_document_limit"),
           stored_indexed_byte_limit: (eb) => eb.ref("excluded.stored_indexed_byte_limit"),
           monthly_indexed_byte_limit: (eb) => eb.ref("excluded.monthly_indexed_byte_limit"),
+          monthly_conversation_limit: (eb) => eb.ref("excluded.monthly_conversation_limit"),
+          replies_per_conversation: (eb) => eb.ref("excluded.replies_per_conversation"),
           updated_at: sql<Date>`now()`,
         }),
       )
@@ -166,6 +239,8 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
         "stored_document_limit",
         "stored_indexed_byte_limit",
         "monthly_indexed_byte_limit",
+        "monthly_conversation_limit",
+        "replies_per_conversation",
         "created_at",
         "updated_at",
       ])
@@ -233,6 +308,7 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
         used: monthlyIndexedBytes,
         limit: profile?.monthlyIndexedByteLimit ?? null,
       },
+      monthlyConversations: profile ? await this.readConversationUsage(accountId, profile, periodStart) : null,
     };
   }
 
@@ -247,8 +323,15 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
     }
 
     const profile = await this.findProfileForAccount(accountId);
-    const limit = profile?.monthlyAnswerLimit;
-    if (!profile || typeof limit !== "number") {
+    if (!profile) {
+      return noopReservation;
+    }
+    if (typeof profile.monthlyConversationLimit === "number") {
+      return this.reserveConversationUnits(accountId, profile, input);
+    }
+
+    const limit = profile.monthlyAnswerLimit;
+    if (typeof limit !== "number") {
       return noopReservation;
     }
 
@@ -306,6 +389,253 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
           .where("period_start", "=", sql<string>`${periodStart}::date`)
           .execute();
       },
+    };
+  }
+
+  /**
+   * One unit for everything. A customer conversation pays once per block of
+   * `repliesPerConversation` replies; operator work pays per call at its
+   * weight; prepaid credits absorb whatever runs past the plan limit.
+   */
+  private async reserveConversationUnits(
+    accountId: string,
+    profile: UsageLimitProfile,
+    input: { surface: string; conversationId?: string | null },
+  ): Promise<UsageLimitReservation> {
+    const weight = surfaceWeight(input.surface);
+    if (!weight) {
+      return noopReservation;
+    }
+    const periodStart = currentPeriodStart();
+    const limitTenths = (profile.monthlyConversationLimit ?? 0) * TENTHS_PER_CONVERSATION;
+
+    let releaseReply: (() => Promise<void>) | null = null;
+    if (weight.perConversationBlock && input.conversationId) {
+      const conversationId = input.conversationId;
+      const replyCount = await this.bumpConversationReplies(accountId, periodStart, conversationId, 1);
+      releaseReply = async () => {
+        await this.bumpConversationReplies(accountId, periodStart, conversationId, -1);
+      };
+      // Reply 1 opens the first block, reply 11 the second, and so on. Every
+      // other reply sits inside a block that has already been paid for.
+      if ((replyCount - 1) % profile.repliesPerConversation !== 0) {
+        return { commit: async () => {}, release: releaseReply };
+      }
+    }
+
+    let unit: UsageLimitReservation;
+    try {
+      unit = await this.reserveTenths(accountId, profile, periodStart, weight.kind, weight.tenths, limitTenths);
+    } catch (error) {
+      if (releaseReply) {
+        await releaseReply();
+      }
+      throw error;
+    }
+
+    return {
+      commit: async () => {},
+      release: async () => {
+        await unit.release();
+        if (releaseReply) {
+          await releaseReply();
+        }
+      },
+    };
+  }
+
+  private async bumpConversationReplies(
+    accountId: string,
+    periodStart: string,
+    conversationId: string,
+    delta: 1 | -1,
+  ): Promise<number> {
+    const row = await this.db
+      .insertInto("ee_usage_limit_conversation_replies")
+      .values({
+        account_id: accountId,
+        period_start: sql<string>`${periodStart}::date`,
+        conversation_id: conversationId,
+        reply_count: delta > 0 ? 1 : 0,
+      })
+      .onConflict((oc) =>
+        oc.columns(["account_id", "period_start", "conversation_id"]).doUpdateSet({
+          reply_count: sql<number>`greatest(ee_usage_limit_conversation_replies.reply_count + ${delta}, 0)`,
+          updated_at: sql<Date>`now()`,
+        }),
+      )
+      .returning("reply_count")
+      .executeTakeFirstOrThrow();
+    return row.reply_count;
+  }
+
+  /**
+   * Charge `tenths` against the period's allowance plus prepaid credits, in one
+   * transaction serialised on the account's counter row. Credits are consumed
+   * only for the part of a charge that runs past the plan limit, so the plan
+   * allowance is always spent first and credits carry over month to month.
+   */
+  private async reserveTenths(
+    accountId: string,
+    profile: UsageLimitProfile,
+    periodStart: string,
+    kind: UsageKind,
+    tenths: number,
+    limitTenths: number,
+  ): Promise<UsageLimitReservation> {
+    const consumedCredits = await this.db.transaction().execute(async (trx) => {
+      await trx
+        .insertInto("ee_usage_limit_unit_counters")
+        .values({ account_id: accountId, period_start: sql<string>`${periodStart}::date`, used_tenths: 0 })
+        .onConflict((oc) => oc.columns(["account_id", "period_start"]).doNothing())
+        .execute();
+      await trx
+        .insertInto("ee_usage_limit_credits")
+        .values({ account_id: accountId, balance_tenths: 0 })
+        .onConflict((oc) => oc.column("account_id").doNothing())
+        .execute();
+
+      const counter = await trx
+        .selectFrom("ee_usage_limit_unit_counters")
+        .select("used_tenths")
+        .where("account_id", "=", accountId)
+        .where("period_start", "=", sql<string>`${periodStart}::date`)
+        .forUpdate()
+        .executeTakeFirstOrThrow();
+      const credits = await trx
+        .selectFrom("ee_usage_limit_credits")
+        .select("balance_tenths")
+        .where("account_id", "=", accountId)
+        .executeTakeFirstOrThrow();
+
+      const usedBefore = counter.used_tenths;
+      const usedAfter = usedBefore + tenths;
+      if (usedAfter > limitTenths + credits.balance_tenths) {
+        throw new UsageLimitExceededError({
+          profileKey: profile.key,
+          resource: "monthly_conversations",
+          limit: profile.monthlyConversationLimit ?? 0,
+          used: usedBefore / TENTHS_PER_CONVERSATION,
+          periodStart,
+          resetAt: nextPeriodStart(periodStart),
+        });
+      }
+
+      const overshoot = Math.max(0, usedAfter - Math.max(limitTenths, usedBefore));
+      await trx
+        .updateTable("ee_usage_limit_unit_counters")
+        .set({ used_tenths: usedAfter, updated_at: sql<Date>`now()` })
+        .where("account_id", "=", accountId)
+        .where("period_start", "=", sql<string>`${periodStart}::date`)
+        .execute();
+      if (overshoot > 0) {
+        await trx
+          .updateTable("ee_usage_limit_credits")
+          .set({ balance_tenths: sql<number>`balance_tenths - ${overshoot}`, updated_at: sql<Date>`now()` })
+          .where("account_id", "=", accountId)
+          .execute();
+      }
+      await trx
+        .insertInto("ee_usage_limit_unit_kind_counters")
+        .values({ account_id: accountId, period_start: sql<string>`${periodStart}::date`, kind, used_tenths: tenths })
+        .onConflict((oc) =>
+          oc.columns(["account_id", "period_start", "kind"]).doUpdateSet({
+            used_tenths: sql<number>`ee_usage_limit_unit_kind_counters.used_tenths + ${tenths}`,
+            updated_at: sql<Date>`now()`,
+          }),
+        )
+        .execute();
+      return overshoot;
+    });
+
+    const db = this.db;
+    return {
+      async commit() {},
+      release: async () => {
+        await db.transaction().execute(async (trx) => {
+          await trx
+            .updateTable("ee_usage_limit_unit_counters")
+            .set({ used_tenths: sql<number>`greatest(used_tenths - ${tenths}, 0)`, updated_at: sql<Date>`now()` })
+            .where("account_id", "=", accountId)
+            .where("period_start", "=", sql<string>`${periodStart}::date`)
+            .execute();
+          if (consumedCredits > 0) {
+            await trx
+              .updateTable("ee_usage_limit_credits")
+              .set({ balance_tenths: sql<number>`balance_tenths + ${consumedCredits}`, updated_at: sql<Date>`now()` })
+              .where("account_id", "=", accountId)
+              .execute();
+          }
+          await trx
+            .updateTable("ee_usage_limit_unit_kind_counters")
+            .set({ used_tenths: sql<number>`greatest(used_tenths - ${tenths}, 0)`, updated_at: sql<Date>`now()` })
+            .where("account_id", "=", accountId)
+            .where("period_start", "=", sql<string>`${periodStart}::date`)
+            .where("kind", "=", kind)
+            .execute();
+        });
+      },
+    };
+  }
+
+  /** Prepaid top-up. Called by the Stripe webhook and the operator console. */
+  async addCredits(accountId: string, conversations: number): Promise<{ credits: number }> {
+    if (!Number.isInteger(conversations) || conversations <= 0) {
+      throw new Error("conversations must be a positive integer");
+    }
+    const tenths = conversations * TENTHS_PER_CONVERSATION;
+    const row = await this.db
+      .insertInto("ee_usage_limit_credits")
+      .values({ account_id: accountId, balance_tenths: tenths })
+      .onConflict((oc) =>
+        oc.column("account_id").doUpdateSet({
+          balance_tenths: sql<number>`ee_usage_limit_credits.balance_tenths + ${tenths}`,
+          updated_at: sql<Date>`now()`,
+        }),
+      )
+      .returning("balance_tenths")
+      .executeTakeFirstOrThrow();
+    return { credits: row.balance_tenths / TENTHS_PER_CONVERSATION };
+  }
+
+  private async readConversationUsage(
+    accountId: string,
+    profile: UsageLimitProfile,
+    periodStart: string,
+  ): Promise<AccountUsageSummary["monthlyConversations"]> {
+    if (typeof profile.monthlyConversationLimit !== "number") {
+      return null;
+    }
+    const counter = await this.db
+      .selectFrom("ee_usage_limit_unit_counters")
+      .select("used_tenths")
+      .where("account_id", "=", accountId)
+      .where("period_start", "=", sql<string>`${periodStart}::date`)
+      .executeTakeFirst();
+    const credits = await this.db
+      .selectFrom("ee_usage_limit_credits")
+      .select("balance_tenths")
+      .where("account_id", "=", accountId)
+      .executeTakeFirst();
+    const kinds = await this.db
+      .selectFrom("ee_usage_limit_unit_kind_counters")
+      .select(["kind", "used_tenths"])
+      .where("account_id", "=", accountId)
+      .where("period_start", "=", sql<string>`${periodStart}::date`)
+      .execute();
+    const byKind = Object.fromEntries(USAGE_KINDS.map((kind) => [kind, 0])) as Record<UsageKind, number>;
+    for (const row of kinds) {
+      if ((USAGE_KINDS as readonly string[]).includes(row.kind)) {
+        byKind[row.kind as UsageKind] = row.used_tenths / TENTHS_PER_CONVERSATION;
+      }
+    }
+    return {
+      periodStart,
+      resetAt: nextPeriodStart(periodStart),
+      used: (counter?.used_tenths ?? 0) / TENTHS_PER_CONVERSATION,
+      limit: profile.monthlyConversationLimit,
+      credits: (credits?.balance_tenths ?? 0) / TENTHS_PER_CONVERSATION,
+      byKind,
     };
   }
 
@@ -537,6 +867,8 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
         "p.stored_document_limit",
         "p.stored_indexed_byte_limit",
         "p.monthly_indexed_byte_limit",
+        "p.monthly_conversation_limit",
+        "p.replies_per_conversation",
         "p.created_at",
         "p.updated_at",
       ])

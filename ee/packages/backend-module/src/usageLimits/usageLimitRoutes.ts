@@ -22,6 +22,12 @@ const profileBodySchema = z.object({
   storedDocumentLimit: nullableLimitSchema,
   storedIndexedByteLimit: nullableByteLimitSchema,
   monthlyIndexedByteLimit: nullableByteLimitSchema,
+  monthlyConversationLimit: nullableLimitSchema.optional(),
+  repliesPerConversation: z.number().int().min(1).max(1000).optional(),
+});
+
+const creditsBodySchema = z.object({
+  conversations: z.number().int().min(1).max(100000),
 });
 
 const assignmentBodySchema = z.object({
@@ -146,6 +152,8 @@ export const createUsageLimitRoutes = (input: RouteDependencies | UsageLimitData
         storedDocumentLimit: body.storedDocumentLimit,
         storedIndexedByteLimit: body.storedIndexedByteLimit ?? null,
         monthlyIndexedByteLimit: body.monthlyIndexedByteLimit ?? null,
+        monthlyConversationLimit: body.monthlyConversationLimit ?? null,
+        repliesPerConversation: body.repliesPerConversation,
       });
       res.status(200).json({ profile });
     } catch (error) {
@@ -159,6 +167,19 @@ export const createUsageLimitRoutes = (input: RouteDependencies | UsageLimitData
       const body = parseRequest(assignmentBodySchema, req.body, "Invalid assignment payload");
       const usage = await service.assignProfile(accountId, body.profileKey);
       res.status(200).json(usage);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Prepaid top-up. The Stripe webhook and the operator console both land here.
+  router.post("/accounts/:accountId/credits", async (req, res, next) => {
+    try {
+      const accountId = parseRequest(accountIdSchema, req.params.accountId, "Invalid account id");
+      const body = parseRequest(creditsBodySchema, req.body, "Invalid credits payload");
+      const result = await service.addCredits(accountId, body.conversations);
+      const usage = await service.getAccountUsage(accountId);
+      res.status(200).json({ ...result, usage });
     } catch (error) {
       next(error);
     }

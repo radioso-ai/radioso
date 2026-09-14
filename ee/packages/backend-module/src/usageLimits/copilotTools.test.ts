@@ -12,6 +12,8 @@ const summary = (overrides: Partial<AccountUsageSummary> = {}): AccountUsageSumm
     storedDocumentLimit: 50,
     storedIndexedByteLimit: null,
     monthlyIndexedByteLimit: null,
+    monthlyConversationLimit: null,
+    repliesPerConversation: 10,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
   },
@@ -19,6 +21,7 @@ const summary = (overrides: Partial<AccountUsageSummary> = {}): AccountUsageSumm
   storedDocuments: { used: 12, limit: 50 },
   storedIndexedBytes: { used: 2048, limit: null },
   monthlyIndexedBytes: { periodStart: "2026-08-01", resetAt: "2026-09-01", used: 1024, limit: null },
+  monthlyConversations: null,
   ...overrides,
 });
 
@@ -61,6 +64,7 @@ describe("usage limit copilot contribution", () => {
       // An unlimited plan has no remaining figure; reporting 0 would read as exhausted.
       storedIndexedBytes: { used: 2048, limit: null, remaining: null, resetAt: null },
       monthlyIndexedBytes: { used: 1024, limit: null, remaining: null, resetAt: "2026-09-01" },
+    monthlyConversations: null,
     });
   });
 

@@ -840,6 +840,7 @@ export class ChatService {
         accountId: input.accountId,
         workspaceId: input.workspaceId,
         surface: input.sourceChannel ?? "assistant",
+        conversationId: input.conversationId ?? null,
       });
       this.setTurnStage(coordination, "preparing");
       session = await this.chatSessionPreparer.prepare({
@@ -1303,6 +1304,7 @@ export class ChatService {
         accountId: input.accountId,
         workspaceId: input.workspaceId,
         surface: input.sourceChannel ?? "assistant",
+        conversationId: input.conversationId ?? null,
       });
       this.setTurnStage(coordination, "preparing");
       session = await this.chatSessionPreparer.prepare({

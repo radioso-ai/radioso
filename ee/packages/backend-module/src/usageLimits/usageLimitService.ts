@@ -91,11 +91,13 @@ export const surfaceWeight = (surface: string): SurfaceWeight | null => {
     case "operator_copilot":
     case "operator_copilot_probe":
       return { kind: "copilot", tenths: TENTHS_PER_CONVERSATION, perConversationBlock: false };
-    // The dashboard test chat, Workbench replays, and eval runs: ten for one.
+    // The dashboard test chat, Workbench replays, and eval runs: two for one.
+    // A test reply is a full turn, so this is cheaper than a customer
+    // conversation without being sold at cost.
     case "authenticated_chat":
     case "workbench_replay":
     case "eval_replay":
-      return { kind: "test_run", tenths: 1, perConversationBlock: false };
+      return { kind: "test_run", tenths: TENTHS_PER_CONVERSATION / 2, perConversationBlock: false };
     // On-demand. A scheduled run should pass a distinct surface and cost nothing.
     case "audience_pulse":
       return { kind: "pulse_report", tenths: 10 * TENTHS_PER_CONVERSATION, perConversationBlock: false };

@@ -227,6 +227,7 @@ export function SkillList({ agentId }: { agentId: string }) {
 
       <CapabilityPicker
         open={pickerOpen}
+        agentId={agentId}
         capabilities={capabilities}
         onOpenChange={setPickerOpen}
         onSelect={selectCapability}

@@ -454,12 +454,12 @@ describeIfDatabase("EE usage limit service integration", () => {
       .resolves.toBeDefined();
   });
 
-  it("weights operator work by surface: ten test runs are one, Ray is one, a Pulse report is ten", async () => {
+  it("weights operator work by surface: two test runs are one, Ray is one, a Pulse report is ten", async () => {
     const { accountId, workspaceId } = await seedAccountWorkspace();
     await assignProfile(accountId, { monthlyConversationLimit: 12 });
     const service = new EnterpriseUsageLimitService(database);
 
-    for (let i = 0; i < 10; i += 1) {
+    for (let i = 0; i < 2; i += 1) {
       await service.reserveAnswer({ accountId, workspaceId, surface: "eval_replay" });
     }
     await service.reserveAnswer({ accountId, workspaceId, surface: "operator_copilot" });

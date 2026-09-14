@@ -147,7 +147,7 @@ export function TiersPage() {
               <label className="block text-sm font-medium text-zinc-200">
                 Monthly conversation limit
                 <Input className="mt-2 border-zinc-700 bg-zinc-950 text-zinc-100" type="number" min="0" value={form.monthlyConversationLimit} placeholder="unlimited" onChange={(event) => setForm({ ...form, monthlyConversationLimit: event.target.value })} />
-                <span className="mt-1 block text-xs font-normal text-zinc-500">One unit for everything: a Ray message is 1, ten test runs are 1, an on-demand Pulse report is 10.</span>
+                <span className="mt-1 block text-xs font-normal text-zinc-500">One unit for everything: a Ray message is 1, two test runs are 1, an on-demand Pulse report is 10.</span>
               </label>
               <label className="block text-sm font-medium text-zinc-200">
                 Replies per conversation

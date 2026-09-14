@@ -133,9 +133,13 @@ export function CapabilityPicker({
                 ? 'border-border bg-background hover:border-primary/60 hover:bg-muted/30'
                 : 'cursor-not-allowed border-border/70 bg-muted/20 text-muted-foreground opacity-70',
             )
+            const connectionUrl = enabled ? null : connectionHref(accountId, agentId, capability.id)
             const cardBody = (
               <>
-                <span className="space-y-3">
+                <span
+                  className="space-y-3"
+                  {...(!enabled ? { role: 'button', 'aria-disabled': 'true', tabIndex: -1 } : {})}
+                >
                   <span className={cn(
                     'inline-flex h-9 w-9 items-center justify-center rounded-md border',
                     enabled ? icon.tone : 'border-border bg-background text-muted-foreground',
@@ -147,18 +151,13 @@ export function CapabilityPicker({
                     <span className="mt-1 block text-xs text-muted-foreground">{capabilityDescription(capability)}</span>
                   </span>
                 </span>
-                <span className="mt-3 flex items-center justify-between gap-2 text-xs">
-                  {enabled ? (
-                    <Badge variant="secondary">Ready</Badge>
-                  ) : (
+                {!enabled ? (
+                  <span className="mt-3 flex items-center justify-between gap-2 text-xs">
                     <Badge variant="outline" className="text-muted-foreground">{unavailableReasonLabel(capability)}</Badge>
-                  )}
-                  {!enabled && (capability.requiresTarget ?? true) ? (
-                    (() => {
-                      const href = connectionHref(accountId, agentId, capability.id)
-                      return href ? (
+                    {(capability.requiresTarget ?? true) ? (
+                      connectionUrl ? (
                         <NextLink
-                          href={href}
+                          href={connectionUrl}
                           onClick={(event) => event.stopPropagation()}
                           className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
                         >
@@ -167,9 +166,9 @@ export function CapabilityPicker({
                       ) : (
                         <span className="text-muted-foreground">Connections</span>
                       )
-                    })()
-                  ) : null}
-                </span>
+                    ) : null}
+                  </span>
+                ) : null}
               </>
             )
 

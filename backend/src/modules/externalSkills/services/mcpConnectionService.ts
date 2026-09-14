@@ -1,4 +1,4 @@
-import { AppError, badRequest, conflict, notFound } from "../../../shared/domain/errors.js";
+import { AppError, badRequest, conflict, notFound, serviceUnavailable } from "../../../shared/domain/errors.js";
 import { encryptField, decryptField } from "../../../shared/infra/crypto/fieldEncryption.js";
 import { fetchPublicUrl } from "../../../shared/infra/http/publicUrlFetch.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
@@ -12,6 +12,8 @@ import {
   encryptOauthFlow,
   encryptOauthTokens,
   exchangeAuthorizationCode,
+  OauthClientError,
+  OauthNotAuthorizedError,
   resolveFreshAccessToken,
   type FetchLike,
 } from "../../integrationOauth/public.js";
@@ -23,7 +25,7 @@ import type { McpConnectionInput, McpConnectionUpdateInput, StoredOauthClientCon
 import type { ToolServiceFactory } from "../executor/mcpSkillExecutor.js";
 
 /** Non-secret view of a connection (the only shape returned to clients). */
-export interface McpConnectionSummary {
+interface McpConnectionSummary {
   id: string;
   displayName: string;
   serverUrl: string;
@@ -34,7 +36,7 @@ export interface McpConnectionSummary {
   updatedAt: string;
 }
 
-export interface DiscoveredTool {
+interface DiscoveredTool {
   name: string;
   description?: string;
   inputSchema?: unknown;
@@ -61,7 +63,7 @@ export class EncryptionNotConfiguredError extends AppError {
   }
 }
 
-export interface McpConnectionServiceOptions {
+interface McpConnectionServiceOptions {
   repository: McpConnectionRepositoryPort;
   toolServiceFactory: ToolServiceFactory;
   encryptionKey?: string;
@@ -261,6 +263,17 @@ export class McpConnectionService {
     try {
       const tools = await service.listTools();
       return tools.map((tool) => ({ name: tool.name, description: tool.description, inputSchema: tool.inputSchema }));
+    } catch (error) {
+      if (error instanceof OauthNotAuthorizedError) {
+        throw conflict("This connection needs re-authorization before tools can be discovered.");
+      }
+      // resolveFreshAccessToken only lets an OauthClientError escape when it marked itself
+      // retryable (transient 5xx/429/network failure) — a permanent one is already converted
+      // to OauthNotAuthorizedError above, so this is never a "needs reauth" case.
+      if (error instanceof OauthClientError) {
+        throw serviceUnavailable("The OAuth provider is temporarily unavailable. Try again shortly.");
+      }
+      throw error;
     } finally {
       await (service as { close?: () => Promise<void> }).close?.().catch(() => undefined);
     }

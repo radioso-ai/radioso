@@ -1,8 +1,8 @@
 import type { CopilotToolDescriptor } from "../contracts.js";
 import { attachCopilotCapabilityProvenance } from "../capabilityProvenance.js";
 import { attachOperatorMcpDispositions } from "../operatorMcpDisposition.js";
-import { createAgentConfigurationCopilotTools, createAgentSettingProposalCopilotTools } from "./agents.js";
-import type { AgentConfigurationCopilotToolDependencies, AgentSettingProposalCopilotToolDependencies, CopilotAgentConfigurationPort } from "./agents.js";
+import { createAgentConfigurationCopilotTools, createAgentSettingProposalCopilotTools, createGreetingProposalCopilotTools } from "./agents.js";
+import type { AgentConfigurationCopilotToolDependencies, AgentSettingProposalCopilotToolDependencies, CopilotAgentConfigurationPort, GreetingProposalCopilotToolDependencies } from "./agents.js";
 import { createAgentProposalCopilotTools, createWebsiteAnalysisProbeCopilotTools } from "./agentProposals.js";
 import type { AgentProposalCopilotToolDependencies, WebsiteAnalysisProbeCopilotToolDependencies } from "./agentProposals.js";
 import { createAgentSkillConfigProposalCopilotTools, createAgentSkillsCopilotTools } from "./agentSkills.js";
@@ -65,6 +65,7 @@ type CopilotToolCatalogDependencies = AgentConfigurationCopilotToolDependencies
   & Omit<DirectiveProposalCopilotToolDependencies, "agentLookup">
   & Omit<RoutineProposalCopilotToolDependencies, "agentLookup">
   & Omit<AgentSettingProposalCopilotToolDependencies, "agentLookup">
+  & Omit<GreetingProposalCopilotToolDependencies, "agentLookup">
   & Omit<AgentSkillConfigProposalCopilotToolDependencies, "agentLookup">
   & Omit<ContextVariableProposalCopilotToolDependencies, "agentLookup">
   & AgentProposalCopilotToolDependencies
@@ -99,6 +100,7 @@ export const createCopilotToolDescriptors = (
   ...createDirectiveProposalCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createRoutineProposalCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createAgentSettingProposalCopilotTools({ ...deps, agentLookup: deps.agentService }),
+  ...createGreetingProposalCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createAgentSkillConfigProposalCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createContextVariableProposalCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createWebsiteAnalysisProbeCopilotTools(deps),

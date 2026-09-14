@@ -32,6 +32,7 @@ describe("operator MCP descriptor disposition", () => {
       "propose_directive",
       "propose_directive_enablement",
       "propose_directive_removal",
+      "propose_greeting",
       "propose_ingestion_settings",
       "propose_routine",
       "propose_routine_edit",

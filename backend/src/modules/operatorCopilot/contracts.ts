@@ -142,7 +142,7 @@ export const withCopilotActor = (
  * tool-output zod enums) must derive from this array rather than repeating its own OR-chain or
  * literal enum, so adding a target type cannot silently miss one of those sites again.
  */
-export const copilotProposalTargetTypes = ["directive", "agent", "agent_setting", "routine", "agent_skill", "context_variable", "document", "ingestion_settings", "website_crawl", "workspace_setting"] as const;
+export const copilotProposalTargetTypes = ["directive", "agent", "agent_setting", "routine", "agent_skill", "context_variable", "document", "ingestion_settings", "website_crawl", "workspace_setting", "agent_greeting"] as const;
 export type CopilotProposalTargetType = (typeof copilotProposalTargetTypes)[number];
 /**
  * The permission an operator needs to apply a proposal, by what it changes. Applying is a write to
@@ -163,6 +163,7 @@ export const copilotProposalPermissions = {
   ingestion_settings: ["workspace.settings.manage"],
   website_crawl: ["workspace.documents.manage"],
   workspace_setting: ["workspace.settings.manage"],
+  agent_greeting: ["workspace.agents.manage"],
 } as const satisfies Record<CopilotProposalTargetType, readonly [AccountPermission, ...AccountPermission[]]>;
 
 /**
@@ -372,6 +373,21 @@ export interface CopilotAgentProposalAdapter extends CopilotProposalAdapter {
 }
 
 /**
+ * A greeting proposal is supplied by Ray from exact content it composed, not drafted from prose.
+ * Its target is the agent's draft snapshot, not a live setting: unlike `agent_setting`, applying
+ * this never touches the live `agents` row (spec 1150 F3/F8 — Off stays a live kill switch; exact
+ * content and its enabled flag live only in the draft/candidate/published snapshot until Review &
+ * Publish). Reusing `agent_setting` would either break that boundary or make one generic adapter
+ * carry a field it does not own; reusing `directive` would put a different domain's row shape
+ * behind directive's target ref. Addresses no field `directive` or `agent_setting` already cover.
+ */
+export interface CopilotAgentGreetingProposalAdapter extends CopilotProposalAdapter {
+  readonly targetType: "agent_greeting";
+  /** See {@link CopilotAgentSettingProposalAdapter.validatePayload} for why the token travels with the payload. */
+  validatePayload(workspaceId: string, targetRef: unknown, payload: unknown): Promise<{ targetRef: unknown; payload: unknown; versionToken: string }>;
+}
+
+/**
  * A crawl proposal is supplied by Ray from a URL an operator named or a source it read. Applying it
  * starts a job rather than changing a stored row, so nothing about it can go stale.
  */
@@ -395,7 +411,8 @@ export type CopilotAnyProposalAdapter =
   | CopilotDocumentProposalAdapter
   | CopilotIngestionSettingsProposalAdapter
   | CopilotWebsiteCrawlProposalAdapter
-  | CopilotWorkspaceSettingProposalAdapter;
+  | CopilotWorkspaceSettingProposalAdapter
+  | CopilotAgentGreetingProposalAdapter;
 
 export type CopilotProposalAdapterRegistry = ReadonlyArray<CopilotAnyProposalAdapter>;
 

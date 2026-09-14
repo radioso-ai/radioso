@@ -20,6 +20,7 @@ export class AuditService {
       ? { ...event, metadata: { ...event.metadata, ...contextualMetadata } }
       : event;
     await this.auditEventRepository.create({
+      id: attributedEvent.eventId,
       accountId: attributedEvent.accountId,
       workspaceId: attributedEvent.workspaceId,
       eventType: attributedEvent.eventType,

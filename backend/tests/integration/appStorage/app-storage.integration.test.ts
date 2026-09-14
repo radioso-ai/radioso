@@ -5,7 +5,6 @@ import type { BoundedJsonRecord, StorageCollection } from "@radioso/app-contract
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { buildStorageCollection } from "../../support/appStorageCollections.js";
-import { createAppStorageAuditSink } from "../../../src/app/composition/appStorage.js";
 import {
   AppStorageRepository,
   createAppStorageDisposition,
@@ -14,25 +13,11 @@ import {
   createAppStorageSweeper,
   INDEXED_STRING_BYTE_BOUND,
 } from "../../../src/modules/appStorage/public.js";
-import type { AuditEventInput, AuditService } from "../../../src/modules/audit/contracts/index.js";
+import { AuditOutboxRepository } from "../../../src/modules/audit/composition.js";
 import { Database } from "../../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "../support/integrationDatabase.js";
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
-
-// Events are collected as the audit spine receives them, so the identity a test
-// looks for is the one an operator would actually read back.
-const collectAudit = (events: AuditEventInput[]): AuditService => ({
-  async record(event) {
-    events.push(event);
-  },
-  async getLatestSuccessfulChatAnswerMetadata() {
-    return null;
-  },
-  async updateChatAnswerSuggestions() {
-    // The storage disposition writes no chat metadata.
-  },
-});
 
 // Managed App Storage against real Postgres. The unit suite proves the rules; what
 // only a database can show is that they hold where they are actually enforced — the
@@ -40,7 +25,8 @@ const collectAudit = (events: AuditEventInput[]): AuditService => ({
 // out, the expiry predicate, and the state row that fences a disposition.
 describeIntegration("Managed App Storage (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl);
-  const repository = new AppStorageRepository(database.kysely);
+  const auditOutbox = new AuditOutboxRepository(database.kysely);
+  const repository = new AppStorageRepository(database.kysely, auditOutbox);
   const service = createAppStorageService({ repository });
 
   const accountId = randomUUID();
@@ -469,11 +455,37 @@ describeIntegration("Managed App Storage (Postgres)", () => {
   });
 
   describe("disposition", () => {
-    const auditEvents: AuditEventInput[] = [];
-    const audit = createAppStorageAuditSink(collectAudit(auditEvents));
-    const disposition = createAppStorageDisposition({ repository, audit });
+    const disposition = createAppStorageDisposition({ repository });
 
-    const eventTypes = (): string[] => auditEvents.map((event) => event.eventType);
+    /**
+     * The intent a disposition committed, read back off the platform outbox it
+     * writes to in the same transaction as the change. The unit suite proves a
+     * disposition builds the right intent; what only a database can show is that
+     * it actually lands in `audit_outbox` rather than being published or drained
+     * by this module — that is the audit module's job now.
+     */
+    const outboxEventTypes = async (scope: { workspaceId: string; installationId: string }): Promise<string[]> => {
+      const rows = await database.query<{ event_type: string }>(
+        `SELECT event_type FROM audit_outbox
+         WHERE workspace_id = $1 AND metadata_json->>'installationId' = $2
+         ORDER BY created_at ASC`,
+        [scope.workspaceId, scope.installationId],
+      );
+      return rows.map((row) => row.event_type);
+    };
+
+    const outboxEntry = async (
+      scope: { workspaceId: string; installationId: string },
+      eventType: string,
+    ): Promise<{ event_status: string; metadata_json: Record<string, unknown> } | undefined> => {
+      const rows = await database.query<{ event_status: string; metadata_json: Record<string, unknown> }>(
+        `SELECT event_status, metadata_json FROM audit_outbox
+         WHERE workspace_id = $1 AND metadata_json->>'installationId' = $2 AND event_type = $3
+         ORDER BY created_at DESC LIMIT 1`,
+        [scope.workspaceId, scope.installationId, eventType],
+      );
+      return rows[0];
+    };
 
     it("revokes access without deleting, and restoring brings the record back", async () => {
       const scope = installation();
@@ -505,7 +517,7 @@ describeIntegration("Managed App Storage (Postgres)", () => {
       await put({ ...scope, collection: ttl }, "stale", { external_id: "stale" });
       await expireNow(scope, "stale");
 
-      const batched = createAppStorageDisposition({ repository, audit, exportBatchSize: 2 });
+      const batched = createAppStorageDisposition({ repository, exportBatchSize: 2 });
       const admission = await batched.export(scope);
       expect(admission.ok).toBe(true);
       if (!admission.ok) return;
@@ -515,7 +527,6 @@ describeIntegration("Managed App Storage (Postgres)", () => {
         expect(event.kind).toBe("line");
         if (event.kind === "line") lines.push(JSON.parse(event.line) as { collection: string; key: string });
       }
-      await batched.drainAuditOutbox();
 
       expect(lines.map((line) => `${line.collection}/${line.key}`)).toEqual([
         "export_ttl/kept",
@@ -523,15 +534,15 @@ describeIntegration("Managed App Storage (Postgres)", () => {
         "sync_state/three",
         "sync_state/two",
       ]);
-      expect(eventTypes()).toContain("app.data.export.completed");
+      expect(await outboxEventTypes(scope)).toContain("app.data.export.completed");
     });
 
-    it("audits an export whose consumer stops early as cancelled", async () => {
+    it("commits an export whose consumer stops early as cancelled to the outbox", async () => {
       const scope = installation();
       await put(scope, "one", { external_id: "one" });
       await put(scope, "two", { external_id: "two" });
 
-      const batched = createAppStorageDisposition({ repository, audit, exportBatchSize: 1 });
+      const batched = createAppStorageDisposition({ repository, exportBatchSize: 1 });
       const admission = await batched.export(scope);
       expect(admission.ok).toBe(true);
       if (!admission.ok) return;
@@ -539,9 +550,8 @@ describeIntegration("Managed App Storage (Postgres)", () => {
       for await (const _event of admission.snapshot.stream()) {
         break;
       }
-      await batched.drainAuditOutbox();
 
-      expect(eventTypes()).toContain("app.data.export.cancelled");
+      expect(await outboxEventTypes(scope)).toContain("app.data.export.cancelled");
     });
 
     it("leaves a tombstone that refuses every later operation, including a recreation", async () => {
@@ -567,24 +577,21 @@ describeIntegration("Managed App Storage (Postgres)", () => {
       expect(rows[0]?.count).toBe("0");
     });
 
-    it("refuses a retention deadline outside policy and audits the refusal", async () => {
+    it("commits a refusal to the outbox when a retention deadline is outside policy", async () => {
       const scope = installation();
       const beyond = new Date(Date.now() + 200 * 86_400_000);
       expect(await disposition.retain({ ...scope, until: beyond })).toMatchObject({
         ok: false,
         error: { code: "invalid_input" },
       });
-      // The refusal is committed to storage's own outbox, and draining is what
-      // puts it on the audit spine.
-      await disposition.drainAuditOutbox();
-      expect(
-        auditEvents.some(
-          (event) => event.eventType === "app.data.retention.changed" && event.eventStatus === "failure",
-        ),
-      ).toBe(true);
+      // The refusal committed to the outbox in the same transaction as the
+      // decision; publishing it onto the audit spine is the audit module's job.
+      expect(await outboxEntry(scope, "app.data.retention.changed")).toMatchObject({
+        event_status: "failure",
+      });
     });
 
-    it("deletes a retained installation once its deadline passes, and audits the counts", async () => {
+    it("commits the counts to the outbox when a retained installation's deadline passes", async () => {
       const scope = installation();
       await put(scope, "held", { external_id: "held" });
       await disposition.retain({ ...scope, until: new Date(Date.now() + 86_400_000) });
@@ -596,24 +603,13 @@ describeIntegration("Managed App Storage (Postgres)", () => {
         [scope.workspaceId, scope.installationId],
       );
 
-      const before = auditEvents.length;
       const swept = await createAppStorageSweeper({ repository }).runRetentionSweep();
       expect(swept.installationCount).toBeGreaterThanOrEqual(1);
-      // The reclaim committed its audit intent with the deletion; publishing it
-      // is the drain's job afterwards.
-      await disposition.drainAuditOutbox();
 
-      const completed = auditEvents
-        .slice(before)
-        .find(
-          (event) =>
-            event.eventType === "app.data.deletion.completed" &&
-            event.metadata?.installationId === scope.installationId,
-        );
+      const completed = await outboxEntry(scope, "app.data.deletion.completed");
       expect(completed).toMatchObject({
-        eventType: "app.data.deletion.completed",
-        eventStatus: "success",
-        metadata: expect.objectContaining({ reason: "retention_elapsed", recordCount: 1 }),
+        event_status: "success",
+        metadata_json: expect.objectContaining({ reason: "retention_elapsed", recordCount: 1 }),
       });
 
       // The tombstone the reclamation left outranks every later operation.
@@ -628,8 +624,15 @@ describeIntegration("Managed App Storage (Postgres)", () => {
      * the workspace row through the cascade every one of these tables carries, and
      * a second path removing the same rows without holding any installation's
      * fence could only race the first.
+     *
+     * The committed intent is not among them: `audit_outbox` carries no foreign
+     * key to `workspaces` on purpose, because it is the evidence of what
+     * happened to the data and a cascade would erase exactly the entry
+     * describing the last thing done to a workspace being torn down. Claiming,
+     * publishing, and acknowledging that surviving entry is the audit module's
+     * own behaviour, proved end to end in `tests/integration/audit/`.
      */
-    it("cascades out of the data tables when the workspace row itself is deleted, and keeps the trail", async () => {
+    it("cascades out of the data tables when the workspace row itself is deleted, and keeps the outbox intent", async () => {
       const doomed = randomUUID();
       await database.query(
         `INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1, $2, $3, $4)`,
@@ -638,9 +641,8 @@ describeIntegration("Managed App Storage (Postgres)", () => {
       const scope = { workspaceId: doomed, installationId: randomUUID(), collection };
       await put(scope, "z", { external_id: "z" });
 
-      // An undrained disposition event is the evidence of what happened to the
-      // data. It is committed here and deliberately not published, so the cascade
-      // meets it.
+      // An unpublished disposition event is committed here and deliberately left
+      // for the cascade to meet.
       await repository.enqueueAuditEvent({
         scope: { workspaceId: doomed, installationId: scope.installationId },
         intent: { eventType: "app.data.deletion.requested", eventStatus: "success", metadata: {} },
@@ -652,7 +654,7 @@ describeIntegration("Managed App Storage (Postgres)", () => {
            UNION ALL SELECT 'index_entries', count(*)::text FROM app_storage_index_entries WHERE workspace_id = $1
            UNION ALL SELECT 'usage', count(*)::text FROM app_storage_collection_usage WHERE workspace_id = $1
            UNION ALL SELECT 'state', count(*)::text FROM app_storage_installation_state WHERE workspace_id = $1
-           UNION ALL SELECT 'outbox', count(*)::text FROM app_storage_audit_outbox WHERE workspace_id = $1`,
+           UNION ALL SELECT 'outbox', count(*)::text FROM audit_outbox WHERE workspace_id = $1`,
           [doomed],
         );
         return Object.fromEntries(rows.map((row) => [row.table_name, row.count]));
@@ -677,61 +679,6 @@ describeIntegration("Managed App Storage (Postgres)", () => {
         state: "0",
         outbox: "1",
       });
-
-      // And the evidence is publishable, which is the whole point of preserving
-      // it. This sink writes the row `audit_events` actually holds, so the
-      // foreign key on its workspace decides the case rather than a stub: the
-      // column is nullable and its constraint sets it to null when a workspace
-      // goes, so a preserved entry reaches the trail with its former workspace as
-      // an identifier instead of failing that key on every retry forever.
-      const published: AuditEventInput[] = [];
-      const persisting = createAppStorageDisposition({
-        repository,
-        audit: createAppStorageAuditSink({
-          async record(event) {
-            published.push(event);
-            await database.query(
-              `INSERT INTO audit_events (id, event_type, event_status, metadata_json, workspace_id)
-               VALUES (gen_random_uuid(), $1, $2, $3::jsonb, $4)`,
-              [
-                event.eventType,
-                event.eventStatus,
-                JSON.stringify(event.metadata ?? {}),
-                event.workspaceId,
-              ],
-            );
-          },
-          async getLatestSuccessfulChatAnswerMetadata() {
-            return null;
-          },
-          async updateChatAnswerSuggestions() {
-            // The storage disposition writes no chat metadata.
-          },
-        }),
-      });
-
-      const drained = await persisting.drainAuditOutbox();
-      expect(drained.failureCount).toBe(0);
-      expect(drained.publishedCount).toBeGreaterThanOrEqual(1);
-
-      const preserved = published.find(
-        (event) => event.metadata?.installationId === scope.installationId,
-      );
-      expect(preserved).toMatchObject({
-        workspaceId: null,
-        eventType: "app.data.deletion.requested",
-        eventStatus: "success",
-        metadata: expect.objectContaining({ deletedWorkspaceId: doomed }),
-      });
-
-      // Acknowledged, so the entry is terminal: the row is gone and a second
-      // drain publishes nothing for this installation again.
-      expect(await counts()).toMatchObject({ outbox: "0" });
-      published.length = 0;
-      expect((await persisting.drainAuditOutbox()).failureCount).toBe(0);
-      expect(
-        published.filter((event) => event.metadata?.installationId === scope.installationId),
-      ).toEqual([]);
     });
   });
 });

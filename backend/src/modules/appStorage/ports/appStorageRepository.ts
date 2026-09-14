@@ -4,7 +4,7 @@ import type { Transaction } from "kysely";
 import type { DB } from "../../../shared/infra/kysely/types.js";
 import type { AppStorageIndexEntry, AppStorageIndexColumn } from "../domain/indexEntries.js";
 import type { AppStorageCollectionUsage } from "../domain/quota.js";
-import type { AppStorageAuditEvent, AppStorageAuditIntent } from "./appStorageAudit.js";
+import type { AppStorageAuditIntent } from "./appStorageAudit.js";
 
 /**
  * Both identifiers travel together because neither alone names an installation's
@@ -292,16 +292,6 @@ export type AppStorageSweepClaim =
   /** Tombstoned, already leased by a live worker, or taken by another pass. */
   | { claimed: false };
 
-/** One event as the outbox holds it, with the identity every delivery attempt carries. */
-export interface AppStorageAuditOutboxEntry extends AppStorageAuditEvent {
-  attemptCount: number;
-}
-
-export interface AppStorageAuditOutboxClaim {
-  claimToken: string;
-  entries: AppStorageAuditOutboxEntry[];
-}
-
 /**
  * The persistence port the storage domain depends on. It moves rows, holds the
  * ceilings a write must be checked against atomically, and owns the lock order —
@@ -457,21 +447,13 @@ export interface AppStorageRepositoryPort {
     scope: AppStorageInstallationScope;
     audit: (summary: AppStorageInstallationDeletion) => AppStorageAuditIntent;
   }): Promise<AppStorageInstallationDeletionResult>;
-  /** Records an audit intent that belongs to no state change of its own. */
+  /**
+   * Commits an audit intent to the platform's audit outbox in the same
+   * transaction as the change it describes. Publishing, leasing, and
+   * acknowledging that intent is the audit module's job from here on.
+   */
   enqueueAuditEvent(input: {
     scope: AppStorageInstallationScope;
     intent: AppStorageAuditIntent;
   }): Promise<void>;
-  /**
-   * Leases a bounded batch of committed intents and commits the lease. Publishing
-   * happens after this returns, outside any transaction: a drain that published
-   * while holding one would need a second pooled connection to reach the audit
-   * store and would hold row locks across the publisher's latency.
-   */
-  claimAuditOutboxBatch(input: {
-    limit: number;
-    leaseSeconds: number;
-  }): Promise<AppStorageAuditOutboxClaim>;
-  /** Removes the entries this claim published, by the token that leased them. */
-  acknowledgeAuditOutbox(input: { claimToken: string; eventIds: readonly string[] }): Promise<number>;
 }

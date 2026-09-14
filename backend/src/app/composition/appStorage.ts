@@ -1,6 +1,6 @@
 import type { Kysely } from "kysely";
 
-import type { AuditService } from "../../modules/audit/contracts/index.js";
+import type { AuditOutboxPort } from "../../modules/audit/contracts/index.js";
 import {
   AppStorageRepository,
   createAppStorageCompatibilityFacts,
@@ -8,9 +8,7 @@ import {
   createAppStorageIndexRebuilder,
   createAppStorageService,
   createAppStorageSweeper,
-  type AppStorageAuditEvent,
   type AppStorageAuditLogPort,
-  type AppStorageAuditPort,
   type AppStorageCompatibilityFactsPort,
   type AppStorageDisposition,
   type AppStorageIndexRebuilder,
@@ -19,46 +17,6 @@ import {
   type AppStorageSweeper,
 } from "../../modules/appStorage/public.js";
 import type { DB } from "../../shared/infra/kysely/types.js";
-
-/**
- * Puts `app.data.*` on the existing audit spine. The storage domain names the
- * event and its counts; where an audit event is stored, and what an operator
- * reads it through, stays the audit module's business.
- *
- * The sink is a publisher rather than a writer on the disposition's path. A
- * disposition commits its audit intent to storage's own outbox in the same
- * transaction as the change it describes, and `drainAuditOutbox` hands the
- * committed intents to this sink afterwards.
- */
-export const createAppStorageAuditSink = (auditService: AuditService): AppStorageAuditPort => ({
-  async record(event: AppStorageAuditEvent): Promise<void> {
-    await auditService.record({
-      workspaceId: event.workspaceId,
-      eventType: event.eventType,
-      eventStatus: event.eventStatus,
-      // The installation is an identity, so it belongs in the trail; a record key
-      // and a stored value are customer data, and the domain never puts either
-      // into an event to begin with. The event id travels with it because
-      // delivery is at-least-once: it is what an operator reading the trail twice
-      // recognises one event by.
-      //
-      // A deleted workspace arrives as a null `workspaceId` and its former
-      // identifier here. `audit_events.workspace_id` references `workspaces` and
-      // is set to null when one is deleted, so this is the only shape in which
-      // the storage outbox's deliberately surviving entries can be published at
-      // all — attributing them to a workspace row that is gone would fail the
-      // foreign key on every retry, forever.
-      metadata: {
-        ...event.metadata,
-        installationId: event.installationId,
-        eventId: event.eventId,
-        ...(event.deletedWorkspaceId === null
-          ? {}
-          : { deletedWorkspaceId: event.deletedWorkspaceId }),
-      },
-    });
-  },
-});
 
 export interface AppStorageComposition {
   repository: AppStorageRepositoryPort;
@@ -83,9 +41,7 @@ export interface AppStorageComposition {
    * write already ignore, so it can run late. Retention is the only thing that
    * makes an operator's bounded hold end, so it cannot. The rebuild sweep drops
    * markers whose lease ran out, which is a tax on every write to their
-   * collections rather than a correctness problem. The audit outbox drain on
-   * `disposition` is the fourth pass with the same property: the trail is already
-   * durable when a disposition returns, and draining is what publishes it.
+   * collections rather than a correctness problem.
    */
   sweeper: AppStorageSweeper;
 }
@@ -97,10 +53,14 @@ export interface AppStorageComposition {
  * sweeper. It wires implementations and holds no rules —
  * every decision about what a record may contain, which operations a collection
  * permits, and what a quota admits lives in `modules/appStorage`.
+ *
+ * Disposition commits its audit intent to the platform's audit outbox rather
+ * than publishing it; the caller supplies the outbox port, and the audit
+ * module's own composition is what assembles the dispatcher that publishes it.
  */
 export const createAppStorageComposition = (options: {
   kysely: Kysely<DB>;
-  auditService: AuditService;
+  auditOutbox: AuditOutboxPort;
   /**
    * Where a secondary audit failure is written. A disposition answers correctly
    * without it; what it buys is an outbox outage that is visible as itself rather
@@ -108,8 +68,7 @@ export const createAppStorageComposition = (options: {
    */
   logger?: AppStorageAuditLogPort;
 }): AppStorageComposition => {
-  const repository = new AppStorageRepository(options.kysely);
-  const audit = createAppStorageAuditSink(options.auditService);
+  const repository = new AppStorageRepository(options.kysely, options.auditOutbox);
 
   return {
     repository,
@@ -117,7 +76,6 @@ export const createAppStorageComposition = (options: {
     compatibilityFacts: createAppStorageCompatibilityFacts({ repository }),
     disposition: createAppStorageDisposition({
       repository,
-      audit,
       ...(options.logger === undefined ? {} : { logger: options.logger }),
     }),
     indexRebuilder: createAppStorageIndexRebuilder({ repository }),

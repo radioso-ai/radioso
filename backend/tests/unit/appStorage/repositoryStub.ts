@@ -93,8 +93,6 @@ export const buildRepositoryStub = (): AppStorageRepositoryPort => ({
     alreadyDeleted: false,
   })),
   enqueueAuditEvent: vi.fn(async () => {}),
-  claimAuditOutboxBatch: vi.fn(async () => ({ claimToken: randomUUID(), entries: [] })),
-  acknowledgeAuditOutbox: vi.fn(async () => 0),
 });
 
 /** The transient failure a driver raises when the connection is gone. */

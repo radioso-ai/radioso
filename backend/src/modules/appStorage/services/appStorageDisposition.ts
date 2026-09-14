@@ -6,11 +6,7 @@ import {
   storageSuccess,
   type AppStorageResult,
 } from "../domain/results.js";
-import type {
-  AppStorageAuditIntent,
-  AppStorageAuditLogPort,
-  AppStorageAuditPort,
-} from "../ports/appStorageAudit.js";
+import type { AppStorageAuditIntent, AppStorageAuditLogPort } from "../ports/appStorageAudit.js";
 import type {
   AppStorageExportSnapshot,
   AppStorageInstallationScope,
@@ -18,7 +14,6 @@ import type {
   ExportedAppStorageRecord,
 } from "../ports/appStorageRepository.js";
 import type {
-  AppStorageAuditDrainResult,
   AppStorageDeletionSummary,
   AppStorageDisposition,
   AppStorageExportAdmission,
@@ -27,7 +22,6 @@ import type {
 
 interface AppStorageDispositionOptions {
   repository: AppStorageRepositoryPort;
-  audit: AppStorageAuditPort;
   /**
    * Where a secondary audit failure is said out loud. Optional because a
    * disposition is correct without it — the primary answer is unaffected either
@@ -39,21 +33,9 @@ interface AppStorageDispositionOptions {
   exportBatchSize?: number;
   /** How long an admitted export may sit unread before its snapshot is aborted. */
   exportIdleTimeoutMs?: number;
-  /** Outbox entries one drain publishes, so a backlog is worked in passes rather than in one call. */
-  auditDrainLimit?: number;
-  /** How long a claimed batch stays this drain's before another pass may retry it. */
-  auditLeaseSeconds?: number;
 }
 
 const DEFAULT_EXPORT_BATCH_SIZE = 200;
-const DEFAULT_AUDIT_DRAIN_LIMIT = 200;
-
-/**
- * How long a claimed batch of audit events stays this drain's. It has to outlast
- * a slow publisher and expire soon enough that a drain that died does not hold
- * the trail back for long.
- */
-const DEFAULT_AUDIT_LEASE_SECONDS = 60;
 
 /**
  * One line of the export. The shape is the App's own vocabulary — the collection
@@ -84,12 +66,13 @@ const tombstoned = <TValue>(): AppStorageResult<TValue> =>
  *
  * What every method here returns describes what committed, and only that. An
  * irreversible change and the audit intent that describes it are written in one
- * transaction by the repository, so the trail cannot disagree with the data: a
- * deletion that committed always has its event, and an event never describes one
- * that rolled back. Publishing the events is `drainAuditOutbox`'s job afterwards,
- * which is why a publisher that is down costs a retry rather than the record of
- * what happened — and why a disposition never reports a failure for an effect
- * that already landed.
+ * transaction by the repository, to the platform's audit outbox, so the trail
+ * cannot disagree with the data: a deletion that committed always has its
+ * event, and an event never describes one that rolled back. Publishing those
+ * events onto the audit trail is the audit outbox's job afterwards, which is
+ * why a publisher that is down costs a retry rather than the record of what
+ * happened — and why a disposition never reports a failure for an effect that
+ * already landed.
  *
  * Events that describe no state change of their own — an export was asked for,
  * a deadline was outside policy, a consumer stopped mid-stream — go through the
@@ -99,11 +82,9 @@ const tombstoned = <TValue>(): AppStorageResult<TValue> =>
 export const createAppStorageDisposition = (
   options: AppStorageDispositionOptions,
 ): AppStorageDisposition => {
-  const { repository, audit } = options;
+  const { repository } = options;
   const clock = options.now ?? ((): Date => new Date());
   const batchSize = options.exportBatchSize ?? DEFAULT_EXPORT_BATCH_SIZE;
-  const drainLimit = options.auditDrainLimit ?? DEFAULT_AUDIT_DRAIN_LIMIT;
-  const leaseSeconds = options.auditLeaseSeconds ?? DEFAULT_AUDIT_LEASE_SECONDS;
 
   const attempt = async <TValue>(
     operation: () => Promise<AppStorageResult<TValue>>,
@@ -434,52 +415,6 @@ export const createAppStorageDisposition = (
         recordCount: removed.value.recordCount,
         collectionCount: removed.value.collectionCount,
       });
-    },
-
-    /**
-     * Leases a batch, publishes it outside any transaction, then acknowledges
-     * what landed.
-     *
-     * Publishing under the claim's own transaction is the shape this avoids: the
-     * audit store is the same database, so the sink needs a second pooled
-     * connection while the first is held — a one-connection pool deadlocks
-     * immediately and a larger one is exhausted by enough drainers — and the
-     * claim's row locks would be held across whatever latency the publisher has.
-     *
-     * What that costs is exactly-once delivery, which the outbox never had:
-     * a publish that succeeded and whose acknowledgement did not commit is
-     * published again. Every event carries a stable id for the sink to recognise
-     * it by, and at-least-once is the side to be wrong on when the subject is
-     * what became of customer data.
-     */
-    async drainAuditOutbox(): Promise<AppStorageAuditDrainResult> {
-      const claim = await repository.claimAuditOutboxBatch({
-        limit: drainLimit,
-        leaseSeconds: leaseSeconds,
-      });
-      if (claim.entries.length === 0) return { publishedCount: 0, failureCount: 0 };
-
-      const published: string[] = [];
-      let failureCount = 0;
-
-      for (const entry of claim.entries) {
-        try {
-          await audit.record(entry);
-          published.push(entry.eventId);
-        } catch {
-          // The lease keeps this entry out of other drains until it expires, and
-          // the next pass reclaims it. One publisher failure does not abandon the
-          // rest of the batch.
-          failureCount += 1;
-        }
-      }
-
-      await repository.acknowledgeAuditOutbox({
-        claimToken: claim.claimToken,
-        eventIds: published,
-      });
-
-      return { publishedCount: published.length, failureCount };
     },
   };
 };

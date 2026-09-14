@@ -7,7 +7,6 @@ import {
   createAppStorageDisposition,
   MAX_RETENTION_DAYS,
   type AppStorageAuditIntent,
-  type AppStorageAuditPort,
   type AppStorageExportEvent,
   type AppStorageRepositoryPort,
   type StoredAppStorageRecord,
@@ -50,14 +49,12 @@ const buildRepository = (): AppStorageRepositoryPort => {
 
 describe("app storage disposition", () => {
   let repository: AppStorageRepositoryPort;
-  let audit: AppStorageAuditPort & { record: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
     repository = buildRepository();
-    audit = { record: vi.fn(async () => undefined) };
   });
 
-  const disposition = () => createAppStorageDisposition({ repository, audit, now: () => now });
+  const disposition = () => createAppStorageDisposition({ repository, now: () => now });
 
   /**
    * What the disposition committed to the trail. An irreversible change writes
@@ -364,7 +361,6 @@ describe("app storage disposition", () => {
 
     const refused = await createAppStorageDisposition({
       repository,
-      audit,
       logger,
       now: () => now,
     }).export(scope);
@@ -415,84 +411,5 @@ describe("app storage disposition", () => {
     expect(admission.ok).toBe(true);
     // Admission is a decision, not a transaction. Reading is what opens one.
     expect(read).not.toHaveBeenCalled();
-  });
-
-  it("publishes claimed intents outside the claim, then acknowledges them by token", async () => {
-    // The audit store is the same database, so publishing while the claim's
-    // transaction is open needs a second pooled connection and holds row locks
-    // across the publisher. The claim commits first; the acknowledgement carries
-    // the token that leased the rows.
-    repository.claimAuditOutboxBatch = vi.fn(async () => ({
-      claimToken: "claim-1",
-      entries: [
-        {
-          eventId: "event-1",
-          workspaceId,
-          deletedWorkspaceId: null,
-          installationId,
-          eventType: "app.data.deletion.completed" as const,
-          eventStatus: "success" as const,
-          metadata: { recordCount: 4, collectionCount: 2 },
-          attemptCount: 1,
-        },
-      ],
-    }));
-
-    await expect(disposition().drainAuditOutbox()).resolves.toEqual({
-      publishedCount: 1,
-      failureCount: 0,
-    });
-    expect(audit.record).toHaveBeenCalledWith(
-      expect.objectContaining({ eventId: "event-1", eventType: "app.data.deletion.completed", workspaceId }),
-    );
-    expect(repository.acknowledgeAuditOutbox).toHaveBeenCalledWith({
-      claimToken: "claim-1",
-      eventIds: ["event-1"],
-    });
-  });
-
-  it("leaves an entry whose publish failed unacknowledged, for the next pass to retry", async () => {
-    repository.claimAuditOutboxBatch = vi.fn(async () => ({
-      claimToken: "claim-1",
-      entries: [
-        {
-          eventId: "kept",
-          workspaceId,
-          deletedWorkspaceId: null,
-          installationId,
-          eventType: "app.data.export.requested" as const,
-          eventStatus: "success" as const,
-          metadata: {},
-          attemptCount: 1,
-        },
-        {
-          eventId: "published",
-          workspaceId,
-          deletedWorkspaceId: null,
-          installationId,
-          eventType: "app.data.export.completed" as const,
-          eventStatus: "success" as const,
-          metadata: {},
-          attemptCount: 1,
-        },
-      ],
-    }));
-    let firstPublish = true;
-    audit.record = vi.fn(async () => {
-      if (!firstPublish) return;
-      firstPublish = false;
-      throw statementFailure();
-    });
-
-    await expect(disposition().drainAuditOutbox()).resolves.toEqual({
-      publishedCount: 1,
-      failureCount: 1,
-    });
-    // Only the one that landed is acknowledged; the other keeps its lease and is
-    // claimed again once the lease expires.
-    expect(repository.acknowledgeAuditOutbox).toHaveBeenCalledWith({
-      claimToken: "claim-1",
-      eventIds: ["published"],
-    });
   });
 });

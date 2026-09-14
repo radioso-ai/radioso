@@ -37,7 +37,11 @@ import { WorkspaceGrantRepository } from "../../../db/repositories/workspaceGran
 import { WorkspaceRepository } from "../../../db/repositories/workspaceRepository.js";
 import { MachineAccessRepository } from "../../../db/repositories/machineAccessRepository.js";
 import { PersonalCredentialLifecycleRepository } from "../../../db/repositories/personalCredentialLifecycleRepository.js";
-import { AuditService } from "../../../modules/audit/composition.js";
+import {
+  AuditOutboxRepository,
+  AuditService,
+  createAuditOutboxDispatcher,
+} from "../../../modules/audit/composition.js";
 import { type ApplicationComposition } from "../../composition/index.js";
 import { ChunkRepository } from "../../../modules/documents/composition.js";
 import { AbuseControlRepository } from "../../../db/repositories/abuseControlRepository.js";
@@ -90,6 +94,15 @@ export const buildInfrastructure = (input: {
   });
   const auditEventRepository = new AuditEventRepository(database.kysely);
   const auditService = new AuditService(logger, auditEventRepository);
+  // The platform's one durable audit outbox. Exposed for a domain composition
+  // to enqueue through and for the runtime that owns background work to
+  // schedule the dispatcher's drain; nothing schedules it here.
+  const auditOutboxRepository = new AuditOutboxRepository(database.kysely);
+  const auditOutboxDispatcher = createAuditOutboxDispatcher({
+    repository: auditOutboxRepository,
+    auditPort: auditService,
+    logger,
+  });
   const telemetryService = new TelemetryService({
     enabled: env.OBSERVABILITY_ENABLED,
     environment: env.OBSERVABILITY_ENVIRONMENT,
@@ -145,6 +158,8 @@ export const buildInfrastructure = (input: {
   return {
     auditEventRepository,
     auditService,
+    auditOutboxRepository,
+    auditOutboxDispatcher,
     database,
     errorReportingService,
     mailService,

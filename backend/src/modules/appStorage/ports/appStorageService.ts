@@ -121,23 +121,6 @@ export interface AppStorageDisposition {
   deleteInstallationStorage(
     scope: AppStorageInstallationScope,
   ): Promise<AppStorageResult<AppStorageDeletionSummary>>;
-  /**
-   * Publishes the audit intents dispositions committed alongside their changes.
-   * Exposed rather than scheduled: the runtime that owns background work decides
-   * the cadence, and a trail that is a few seconds behind is still a trail that
-   * agrees with the data.
-   *
-   * Delivery is at-least-once. Entries are leased, published outside any
-   * transaction, and only then acknowledged, so a publish whose acknowledgement
-   * did not commit is published again under the same event id.
-   */
-  drainAuditOutbox(): Promise<AppStorageAuditDrainResult>;
-}
-
-export interface AppStorageAuditDrainResult {
-  publishedCount: number;
-  /** Entries whose publish failed. Their lease expires and the next pass retries them. */
-  failureCount: number;
 }
 
 export interface AppStorageExpirySweepResult {

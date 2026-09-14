@@ -360,19 +360,6 @@ export interface ApiCredentials {
   workspace_id: string;
 }
 
-export interface AppStorageAuditOutbox {
-  attempt_count: Generated<number>;
-  claim_token: string | null;
-  claimed_until: Timestamp | null;
-  created_at: Generated<Timestamp>;
-  event_status: string;
-  event_type: string;
-  id: Generated<string>;
-  installation_id: string | null;
-  metadata: Generated<Json>;
-  workspace_id: string;
-}
-
 export interface AppStorageCollectionUsage {
   byte_size: Generated<Int8>;
   collection_id: string;
@@ -487,6 +474,19 @@ export interface AuditEvents {
   event_status: string;
   event_type: string;
   id: string;
+  metadata_json: Generated<Json>;
+  workspace_id: string | null;
+}
+
+export interface AuditOutbox {
+  account_id: string | null;
+  attempt_count: Generated<number>;
+  claim_token: string | null;
+  claimed_until: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  event_status: string;
+  event_type: string;
+  id: Generated<string>;
   metadata_json: Generated<Json>;
   workspace_id: string | null;
 }
@@ -1762,7 +1762,6 @@ export interface DB {
   answer_coverage_reaction_traces: AnswerCoverageReactionTraces;
   api_credential_expiry_warnings: ApiCredentialExpiryWarnings;
   api_credentials: ApiCredentials;
-  app_storage_audit_outbox: AppStorageAuditOutbox;
   app_storage_collection_usage: AppStorageCollectionUsage;
   app_storage_index_entries: AppStorageIndexEntries;
   app_storage_installation_state: AppStorageInstallationState;
@@ -1772,6 +1771,7 @@ export interface DB {
   assistant_answer_triage_transitions: AssistantAnswerTriageTransitions;
   audience_pulse_snapshots: AudiencePulseSnapshots;
   audit_events: AuditEvents;
+  audit_outbox: AuditOutbox;
   bootstrap_greeting_cache: BootstrapGreetingCache;
   chunk_embeddings: ChunkEmbeddings;
   chunks: Chunks;

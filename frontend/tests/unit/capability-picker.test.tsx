@@ -36,6 +36,22 @@ const unavailableMcpCapability: SkillCapabilityDescriptor = {
   unavailableReason: 'no_connection',
 }
 
+const availableRetrieveCapability: SkillCapabilityDescriptor = {
+  id: 'retrieve',
+  storedKind: 'retrieve',
+  targetKind: 'source_scope',
+  requiresTarget: false,
+  inputSchema: { source: 'static', schema: { fields: [] } },
+  settingsFields: [],
+  outcomeVocabulary: ['found'],
+  supportedInvocationModes: ['default_answer'],
+  defaultInvocationMode: 'default_answer',
+  executorAdapter: 'retrieval.answer',
+  targets: [],
+  available: true,
+  unavailableReason: null,
+}
+
 describe('CapabilityPicker connection affordance', () => {
   let container: HTMLDivElement
   let root: Root
@@ -91,5 +107,22 @@ describe('CapabilityPicker connection affordance', () => {
     })
 
     expect(document.querySelector('button[disabled]')).toBeNull()
+  })
+
+  it('does not label an available capability "Ready"', async () => {
+    const onSelect = vi.fn()
+    await act(async () => {
+      root.render(
+        <CapabilityPicker
+          open
+          agentId="agent-1"
+          capabilities={[availableRetrieveCapability]}
+          onOpenChange={() => {}}
+          onSelect={onSelect}
+        />,
+      )
+    })
+
+    expect(document.body.textContent).not.toContain('Ready')
   })
 })

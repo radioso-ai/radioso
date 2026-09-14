@@ -58,6 +58,7 @@ import {
   mergeAgentSurfaceSettings,
   validateAgentInput,
   authoredDirectiveInputSchema,
+  type AgentGreetingSnapshot,
   type AgentInput,
   type AgentRecord,
   type AgentSkillSettingsRegistry,
@@ -1113,6 +1114,7 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
 export class InMemoryAgentRepository implements AgentRepositoryPort {
   readonly items = new Map<string, AgentRecord>();
   readonly directives = new Map<string, AuthoredDirective>();
+  readonly draftGreetings = new Map<string, AgentGreetingSnapshot>();
   private defaultAgentIds = new Map<string, string>();
 
   constructor(
@@ -1259,6 +1261,15 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
     const deleted = this.directives.delete(directiveId);
     agent.authoredDirectives = await this.listDirectives(agentId, workspaceId);
     return deleted;
+  }
+
+  async updateDraftGreeting(agentId: string, workspaceId: string, input: AgentGreetingSnapshot): Promise<AgentGreetingSnapshot> {
+    const agent = await this.findByIdAndWorkspaceId(agentId, workspaceId);
+    if (!agent) {
+      throw new Error(`Agent ${agentId} not found`);
+    }
+    this.draftGreetings.set(agentId, input);
+    return input;
   }
 
   async update(agentId: string, workspaceId: string, input: AgentInput): Promise<AgentRecord> {

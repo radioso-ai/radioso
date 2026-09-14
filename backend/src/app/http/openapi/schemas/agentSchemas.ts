@@ -22,6 +22,7 @@ import {
   routineValidationCodes,
 } from "../../../../modules/routines/public.js";
 import { skillDisplayMetadataSchema, skillOutcomeStatusSchema } from "../../../../modules/skills/public.js";
+import { exactContentItemSchema } from "../../../../shared/domain/exactContent.js";
 import { AGENT_BUNDLE_SCHEMA_VERSION } from "../../../../modules/agentBundle/public.js";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
@@ -234,7 +235,16 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
   const AgentRevisionCandidateRequestSchema = registry.register("AgentRevisionCandidateRequest", createRevisionCandidateBodySchema);
   const AgentRevisionCandidateResponseSchema = registry.register("AgentRevisionCandidateResponse", z.object({ candidate: AgentRevisionSummarySchema }));
   const AgentRevisionListResponseSchema = registry.register("AgentRevisionListResponse", z.object({ revisions: z.array(AgentRevisionSummarySchema) }));
-  const AgentRevisionDetailResponseSchema = registry.register("AgentRevisionDetailResponse", z.object({ revision: AgentRevisionSummarySchema.extend({ snapshotFormatVersion: z.literal(1), scope: z.object({ customInstructions: z.literal(true), directives: z.literal(true), routines: z.literal(true), contextVariableEnablements: z.literal(true) }), dependencyWarnings: z.array(z.object({ code: z.string(), message: z.string() })), enabledContextVariableIds: z.array(z.string().uuid()), scopedChanges: z.object({ customInstruction: z.object({ before: z.string().nullable(), after: z.string().nullable(), changed: z.boolean() }), directives: z.array(z.object({ id: z.string().uuid(), change: z.enum(["added", "removed", "changed"]), before: z.unknown().optional(), after: z.unknown().optional() })), routines: z.array(z.object({ definitionId: z.string().uuid(), change: z.enum(["added", "removed", "changed"]), before: z.unknown().optional(), after: z.unknown().optional() })), contextVariableEnablements: z.array(z.object({ contextVariableId: z.string().uuid(), change: z.enum(["added", "removed", "changed"]), before: z.unknown().optional(), after: z.unknown().optional() })) }) }) }));
+  // Exact greeting content (spec 1150 Slice A). `ExactContentItemSchema` mirrors the shared
+  // domain contract (`backend/src/shared/domain/exactContent.ts`) directly rather than
+  // hand-duplicating it, so authoring, candidate/publish validation, and this documented
+  // contract cannot silently drift apart.
+  const ExactContentVariantSchema = registry.register("ExactContentVariant", z.object({ locale: z.string().min(1), body: z.string(), chipLabels: z.record(z.string(), z.string()) }));
+  const ExactContentItemSchema = registry.register("ExactContentItem", exactContentItemSchema.extend({ variants: z.array(ExactContentVariantSchema) }));
+  const AgentGreetingDraftSchema = registry.register("AgentGreetingDraft", z.object({ exactWordsEnabled: z.boolean(), exactContent: ExactContentItemSchema.nullable() }));
+  const AgentGreetingValidationSchema = registry.register("AgentGreetingValidation", z.object({ ok: z.boolean(), issues: z.array(z.object({ path: z.string(), code: z.string(), message: z.string() })).optional() }));
+  const AgentGreetingDraftResponseSchema = registry.register("AgentGreetingDraftResponse", z.object({ greeting: AgentGreetingDraftSchema, validation: AgentGreetingValidationSchema }));
+  const AgentRevisionDetailResponseSchema = registry.register("AgentRevisionDetailResponse", z.object({ revision: AgentRevisionSummarySchema.extend({ snapshotFormatVersion: z.literal(1), scope: z.object({ customInstructions: z.literal(true), directives: z.literal(true), routines: z.literal(true), contextVariableEnablements: z.literal(true), greeting: z.literal(true) }), dependencyWarnings: z.array(z.object({ code: z.string(), message: z.string() })), enabledContextVariableIds: z.array(z.string().uuid()), scopedChanges: z.object({ customInstruction: z.object({ before: z.string().nullable(), after: z.string().nullable(), changed: z.boolean() }), directives: z.array(z.object({ id: z.string().uuid(), change: z.enum(["added", "removed", "changed"]), before: z.unknown().optional(), after: z.unknown().optional() })), routines: z.array(z.object({ definitionId: z.string().uuid(), change: z.enum(["added", "removed", "changed"]), before: z.unknown().optional(), after: z.unknown().optional() })), contextVariableEnablements: z.array(z.object({ contextVariableId: z.string().uuid(), change: z.enum(["added", "removed", "changed"]), before: z.unknown().optional(), after: z.unknown().optional() })), greeting: z.object({ before: AgentGreetingDraftSchema, after: AgentGreetingDraftSchema, changed: z.boolean() }) }) }) }));
   const AgentRevisionPublishRequestSchema = registry.register("AgentRevisionPublishRequest", publishRevisionBodySchema);
   const AgentRevisionPublishResponseSchema = registry.register("AgentRevisionPublishResponse", z.object({ publication: z.object({ id: z.string().uuid(), revisionId: z.string().uuid(), publishedAt: z.string().datetime(), idempotentReplay: z.boolean(), revision: AgentRevisionSummarySchema }), state: AgentRevisionStateSchema }));
 
@@ -1067,6 +1077,8 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     AgentParamsSchema,
     AgentRevisionParamsSchema,
     AgentRevisionStateSchema,
+    AgentGreetingDraftSchema,
+    AgentGreetingDraftResponseSchema,
     AgentRevisionCandidateRequestSchema,
     AgentRevisionCandidateResponseSchema,
     AgentRevisionListResponseSchema,

@@ -204,6 +204,10 @@ class StubAgentRepository implements AgentRepositoryPort {
     throw new Error("not implemented");
   }
 
+  async updateDraftGreeting(): Promise<{ exactWordsEnabled: boolean; exactContent: null }> {
+    throw new Error("not implemented");
+  }
+
   async listDirectives() {
     return [];
   }

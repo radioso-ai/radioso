@@ -1,8 +1,22 @@
 import { z } from "zod";
 
 import { AppError, notFound } from "../../shared/domain/errors.js";
+import {
+  exactContentItemSchema,
+  validateExactContentItem,
+} from "../../shared/domain/exactContent.js";
 import { routineDefinitionSchema, validateRoutineDefinition, type RoutineDefinition, type RoutineValidationResult } from "../routines/public.js";
 import { authoredDirectiveInputSchema } from "./authoredDirectives.js";
+
+/**
+ * Bootstrap never resolves `resolveChatLocale` to a hardcoded language (it returns `null`
+ * when the agent has never set `assistantDefaultLocale`), but exact content's "one
+ * mandatory default-locale variant" rule (spec 1150 FR-005/FR-007) needs an actual language
+ * to require. An agent that has never set a default locale falls back to English here —
+ * both at draft-save time (`AgentService.updateDraftGreeting`) and at candidate/publish
+ * time (`AgentRevisionRepository`) — so the two checks never disagree with each other.
+ */
+export const DEFAULT_AGENT_LOCALE_FALLBACK = "en";
 
 const persistedDate = z.coerce.date();
 const revisionConflict = (message: string): AppError => new AppError(409, "revision_conflict", message);
@@ -47,6 +61,14 @@ const agentSkillSnapshotSchema = z.object({
   config: z.record(z.unknown()).optional(),
   createdAt: persistedDate, updatedAt: persistedDate,
 }).strict();
+// Optional on the snapshot for the same reason as `agentSkills` above: absent means "no
+// exact greeting has ever been authored/carried into this draft/revision", not "exact
+// words is off with empty content" — those two states happen to read back the same way
+// (see `readAgentRevisionGreeting`), but only the absent case needs no migration.
+const agentGreetingSnapshotSchema = z.object({
+  exactWordsEnabled: z.boolean(),
+  exactContent: exactContentItemSchema.nullable(),
+}).strict();
 
 /** The four fields whose behavior is released together for an agent. */
 export const agentRevisionSnapshotSchema = z.object({
@@ -57,6 +79,9 @@ export const agentRevisionSnapshotSchema = z.object({
   // legacy conversation whose exact non-current definition was safely identified.
   retainedRoutineDefinitions: z.array(routineSnapshotSchema).optional(),
   contextVariableEnablements: z.array(contextVariableEnablementSnapshotSchema),
+  // Exact greeting content (spec 1150 Slice A). See `agentGreetingSnapshotSchema` above for
+  // why this is optional rather than defaulted.
+  greeting: agentGreetingSnapshotSchema.optional(),
   // Agent-selectable/routine-named skill definitions (MCP tools, webhooks, etc.), frozen
   // the same way directives/routines are so a pinned conversation's turn dispatch cannot
   // read an operator's in-flight live edit. Optional/absent means "not yet tracked for
@@ -66,7 +91,13 @@ export const agentRevisionSnapshotSchema = z.object({
   agentSkills: z.array(agentSkillSnapshotSchema).optional(),
 }).strict();
 export type AgentRevisionSnapshot = z.infer<typeof agentRevisionSnapshotSchema>;
+export type AgentGreetingSnapshot = z.infer<typeof agentGreetingSnapshotSchema>;
 export const parseAgentRevisionSnapshot = (value: unknown): AgentRevisionSnapshot => agentRevisionSnapshotSchema.parse(value);
+
+/** Absent `greeting` (a draft/revision frozen before this field existed) reads back
+ * identically to an authored-but-inactive one: Automatic mode, no content. */
+export const readAgentRevisionGreeting = (snapshot: AgentRevisionSnapshot): AgentGreetingSnapshot =>
+  snapshot.greeting ?? { exactWordsEnabled: false, exactContent: null };
 
 /**
  * The authorable release surface deliberately excludes cutover-only retained
@@ -89,8 +120,17 @@ export const equalScopedAuthoringSnapshots = (
 ): boolean => JSON.stringify(projectScopedAuthoringSnapshot(left)) === JSON.stringify(projectScopedAuthoringSnapshot(right));
 
 /** Candidate/release validation happens after draft saves: incomplete graphs can
- * be authored, but cannot become a runnable immutable revision. */
-export const assertCandidateSnapshotIsRunnable = (snapshot: AgentRevisionSnapshot): void => {
+ * be authored, but cannot become a runnable immutable revision.
+ *
+ * `agentDefaultLocale` defaults to `DEFAULT_AGENT_LOCALE_FALLBACK` only so the small number
+ * of pre-existing unit tests that call this without the option keep compiling; both real
+ * callers (`AgentRevisionRepository#createCandidate`/`#publish`) always pass the agent's
+ * live `assistantDefaultLocale`, because FR-005 requires re-checking against the *current*
+ * default locale, not one frozen at authoring time. */
+export const assertCandidateSnapshotIsRunnable = (
+  snapshot: AgentRevisionSnapshot,
+  options: { agentDefaultLocale?: string } = {},
+): void => {
   // A disabled routine cannot activate, so it cannot break a conversation: parking a
   // half-finished flow must not block the agent's release. Directive scope closure below
   // still spans every routine, because a tag naming a parked routine is still a real one.
@@ -115,8 +155,24 @@ export const assertCandidateSnapshotIsRunnable = (snapshot: AgentRevisionSnapsho
       }
     }
   }
+  const greeting = readAgentRevisionGreeting(snapshot);
+  if (greeting.exactWordsEnabled) {
+    if (!greeting.exactContent) {
+      diagnostics.push({ routineId: null, code: "missing_exact_greeting_content", location: "greeting", message: "Exact words is enabled for the greeting but no content is authored" });
+    } else {
+      const validation = validateExactContentItem(greeting.exactContent, {
+        agentDefaultLocale: options.agentDefaultLocale ?? DEFAULT_AGENT_LOCALE_FALLBACK,
+        // Bootstrap supplies no context variables and the greeting has no routine slots
+        // (spec 1150 F4); every `{{…}}` in greeting content is therefore unknown.
+        availableReferenceKeys: new Set(),
+      });
+      if (!validation.ok) {
+        diagnostics.push(...validation.issues.map((issue) => ({ routineId: null, code: issue.code, location: `greeting.${issue.path}`, message: issue.message })));
+      }
+    }
+  }
   if (diagnostics.length > 0) {
-    throw new AppError(422, "revision_invalid", "The draft contains a routine graph that cannot be released.", { diagnostics });
+    throw new AppError(422, "revision_invalid", "The draft contains content that cannot be released.", { diagnostics });
   }
 };
 

@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
 import type { AgentRevisionService } from "../../../modules/agents/public.js";
+import { exactContentItemSchema } from "../../../shared/domain/exactContent.js";
 import {
   requireWorkspaceSession,
   type WorkspaceSessionDependencies,
@@ -14,9 +15,13 @@ import { createRevisionCandidateBodySchema, publishRevisionBodySchema, revisionL
 
 const agentParamsSchema = z.object({ agentId: z.string().uuid() });
 const revisionParamsSchema = agentParamsSchema.extend({ revisionId: z.string().uuid() });
+const agentGreetingDraftBodySchema = z.object({
+  exactWordsEnabled: z.boolean(),
+  exactContent: exactContentItemSchema.nullable(),
+}).strict();
 
 export type AgentRevisionRouteDependencies = WorkspaceSessionDependencies
-  & Pick<AppDependencies, "accountAccessService" | "agentRepository">
+  & Pick<AppDependencies, "accountAccessService" | "agentRepository" | "agentService">
   & { agentRevisionService: AgentRevisionService };
 
 export const createAgentRevisionRoutes = (dependencies: AgentRevisionRouteDependencies): Router => {
@@ -32,6 +37,18 @@ export const createAgentRevisionRoutes = (dependencies: AgentRevisionRouteDepend
       const canPublish = await dependencies.accountAccessService.hasPermission({ accountId, userId, workspaceId, permission: "workspace.agents.manage" });
       const agent = await dependencies.agentRepository.findByIdAndWorkspaceId(agentId, workspaceId);
       res.json(presentRevisionState(await dependencies.agentRevisionService.state(workspaceId, agentId), canPublish, agent?.proactiveGreetingEnabled ?? false));
+    } catch (error) { next(error); }
+  });
+
+  // Draft-only write (spec 1150 F3/F8): the agent's live `proactiveGreetingEnabled` kill
+  // switch stays on `PUT /agents/:agentId`; this route owns exact content and its own
+  // enabled flag, which only ever reach a conversation through a published revision.
+  router.put("/:agentId/greeting/draft", workspaceSession, agentManage, validateBody(agentGreetingDraftBodySchema), async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const { agentId } = agentParamsSchema.parse(req.params);
+      const { greeting, validation } = await dependencies.agentService.updateDraftGreeting(workspaceId, agentId, req.body);
+      res.status(200).json({ greeting, validation });
     } catch (error) { next(error); }
   });
 

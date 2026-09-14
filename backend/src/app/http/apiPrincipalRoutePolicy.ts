@@ -140,6 +140,7 @@ const declarations: readonly PolicyDeclaration[] = [
   // session boundary as the existing bearer-capable agent authoring routes.
   ...[
     ["GET", "/api/v1/agents/:agentId/revision-state", "workspace.agents.read"],
+    ["PUT", "/api/v1/agents/:agentId/greeting/draft", "workspace.agents.manage"],
     ["POST", "/api/v1/agents/:agentId/revisions/candidates", "workspace.agents.manage"],
     ["GET", "/api/v1/agents/:agentId/revisions", "workspace.agents.read"],
     ["GET", "/api/v1/agents/:agentId/revisions/:revisionId", "workspace.agents.read"],

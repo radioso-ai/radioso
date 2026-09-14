@@ -22,6 +22,8 @@ const outputSchema = z.object({
   storedDocuments: usageWindowSchema,
   storedIndexedBytes: usageWindowSchema,
   monthlyIndexedBytes: usageWindowSchema,
+  /** Null when the plan meters answers rather than conversations. */
+  monthlyConversations: usageWindowSchema.nullable(),
 });
 
 /** `null` limit means unlimited, so remaining is unknowable rather than zero. */
@@ -65,6 +67,7 @@ const usageDescriptor = (deps: { usage: CopilotAccountUsagePort }): CopilotToolD
         storedDocuments: window(usage.storedDocuments),
         storedIndexedBytes: window(usage.storedIndexedBytes),
         monthlyIndexedBytes: window(usage.monthlyIndexedBytes),
+        monthlyConversations: usage.monthlyConversations ? window(usage.monthlyConversations) : null,
       };
     },
   }),

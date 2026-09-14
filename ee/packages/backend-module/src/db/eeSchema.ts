@@ -36,7 +36,38 @@ export interface EeUsageLimitProfilesTable {
   stored_document_limit: number | null;
   stored_indexed_byte_limit: string | null;
   monthly_indexed_byte_limit: string | null;
+  monthly_conversation_limit: number | null;
+  replies_per_conversation: Generated<number>;
   created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface EeUsageLimitConversationRepliesTable {
+  account_id: string;
+  period_start: string;
+  conversation_id: string;
+  reply_count: Generated<number>;
+  updated_at: Generated<Date>;
+}
+
+export interface EeUsageLimitUnitCountersTable {
+  account_id: string;
+  period_start: string;
+  used_tenths: Generated<number>;
+  updated_at: Generated<Date>;
+}
+
+export interface EeUsageLimitUnitKindCountersTable {
+  account_id: string;
+  period_start: string;
+  kind: string;
+  used_tenths: Generated<number>;
+  updated_at: Generated<Date>;
+}
+
+export interface EeUsageLimitCreditsTable {
+  account_id: string;
+  balance_tenths: Generated<number>;
   updated_at: Generated<Date>;
 }
 
@@ -164,6 +195,10 @@ export interface EeDatabase {
   ee_usage_limit_profiles: EeUsageLimitProfilesTable;
   ee_usage_limit_account_assignments: EeUsageLimitAccountAssignmentsTable;
   ee_usage_limit_answer_counters: EeUsageLimitAnswerCountersTable;
+  ee_usage_limit_conversation_replies: EeUsageLimitConversationRepliesTable;
+  ee_usage_limit_unit_counters: EeUsageLimitUnitCountersTable;
+  ee_usage_limit_unit_kind_counters: EeUsageLimitUnitKindCountersTable;
+  ee_usage_limit_credits: EeUsageLimitCreditsTable;
   ee_usage_limit_document_reservations: EeUsageLimitDocumentReservationsTable;
   ee_usage_limit_storage_reservations: EeUsageLimitStorageReservationsTable;
   ee_usage_limit_monthly_indexed_byte_counters: EeUsageLimitMonthlyIndexedByteCountersTable;

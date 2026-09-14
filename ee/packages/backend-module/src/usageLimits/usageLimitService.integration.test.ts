@@ -157,6 +157,8 @@ describeIfDatabase("EE usage limit service integration", () => {
       storedDocumentLimit?: number | null;
       storedIndexedByteLimit?: number | null;
       monthlyIndexedByteLimit?: number | null;
+      monthlyConversationLimit?: number | null;
+      repliesPerConversation?: number;
     },
   ): Promise<void> => {
     const service = new EnterpriseUsageLimitService(database);
@@ -168,6 +170,8 @@ describeIfDatabase("EE usage limit service integration", () => {
       storedDocumentLimit: limits.storedDocumentLimit ?? null,
       storedIndexedByteLimit: limits.storedIndexedByteLimit ?? null,
       monthlyIndexedByteLimit: limits.monthlyIndexedByteLimit ?? null,
+      monthlyConversationLimit: limits.monthlyConversationLimit ?? null,
+      repliesPerConversation: limits.repliesPerConversation,
     });
     await service.assignProfile(accountId, key);
   };
@@ -414,5 +418,94 @@ describeIfDatabase("EE usage limit service integration", () => {
       storedIndexedByteLimit: 5_000_000,
       monthlyIndexedByteLimit: 2_000_000,
     });
+  });
+
+  // ── Conversation metering: one unit for everything ──────────────────────
+
+  it("charges a customer conversation once per block of replies", async () => {
+    const { accountId, workspaceId } = await seedAccountWorkspace();
+    await assignProfile(accountId, { monthlyConversationLimit: 1, repliesPerConversation: 3 });
+    const service = new EnterpriseUsageLimitService(database);
+    const conversationId = randomUUID();
+    const reserve = () => service.reserveAnswer({ accountId, workspaceId, surface: "website_embed", conversationId });
+
+    // Replies 1-3 sit inside the one paid block; reply 4 opens a second block the plan cannot afford.
+    await reserve();
+    await reserve();
+    await reserve();
+    await expect(reserve()).rejects.toBeInstanceOf(UsageLimitExceededError);
+
+    const usage = await service.getAccountUsage(accountId);
+    expect(usage.monthlyConversations).toMatchObject({ used: 1, limit: 1, credits: 0 });
+    expect(usage.monthlyConversations?.byKind.conversation).toBe(1);
+  });
+
+  it("charges a second conversation separately and releases it cleanly", async () => {
+    const { accountId, workspaceId } = await seedAccountWorkspace();
+    await assignProfile(accountId, { monthlyConversationLimit: 1 });
+    const service = new EnterpriseUsageLimitService(database);
+
+    const first = await service.reserveAnswer({ accountId, workspaceId, surface: "slack", conversationId: randomUUID() });
+    await expect(service.reserveAnswer({ accountId, workspaceId, surface: "slack", conversationId: randomUUID() }))
+      .rejects.toBeInstanceOf(UsageLimitExceededError);
+
+    await first.release();
+    await expect(service.reserveAnswer({ accountId, workspaceId, surface: "slack", conversationId: randomUUID() }))
+      .resolves.toBeDefined();
+  });
+
+  it("weights operator work by surface: ten test runs are one, Ray is one, a Pulse report is ten", async () => {
+    const { accountId, workspaceId } = await seedAccountWorkspace();
+    await assignProfile(accountId, { monthlyConversationLimit: 12 });
+    const service = new EnterpriseUsageLimitService(database);
+
+    for (let i = 0; i < 10; i += 1) {
+      await service.reserveAnswer({ accountId, workspaceId, surface: "eval_replay" });
+    }
+    await service.reserveAnswer({ accountId, workspaceId, surface: "operator_copilot" });
+    await service.reserveAnswer({ accountId, workspaceId, surface: "audience_pulse" });
+
+    const usage = await service.getAccountUsage(accountId);
+    expect(usage.monthlyConversations?.used).toBe(12);
+    expect(usage.monthlyConversations?.byKind).toEqual({ conversation: 0, copilot: 1, test_run: 1, pulse_report: 10 });
+    await expect(service.reserveAnswer({ accountId, workspaceId, surface: "workbench_replay" }))
+      .rejects.toBeInstanceOf(UsageLimitExceededError);
+  });
+
+  it("never charges the widget greeting", async () => {
+    const { accountId, workspaceId } = await seedAccountWorkspace();
+    await assignProfile(accountId, { monthlyConversationLimit: 0 });
+    const service = new EnterpriseUsageLimitService(database);
+
+    await expect(service.reserveAnswer({ accountId, workspaceId, surface: "chat.bootstrap" })).resolves.toBeDefined();
+    expect((await service.getAccountUsage(accountId)).monthlyConversations?.used).toBe(0);
+  });
+
+  it("spends the plan first, then prepaid credits, and refunds credits on release", async () => {
+    const { accountId, workspaceId } = await seedAccountWorkspace();
+    await assignProfile(accountId, { monthlyConversationLimit: 1 });
+    const service = new EnterpriseUsageLimitService(database);
+    await service.addCredits(accountId, 1);
+
+    await service.reserveAnswer({ accountId, workspaceId, surface: "agent_api", conversationId: randomUUID() });
+    const onCredit = await service.reserveAnswer({ accountId, workspaceId, surface: "agent_api", conversationId: randomUUID() });
+    expect((await service.getAccountUsage(accountId)).monthlyConversations).toMatchObject({ used: 2, limit: 1, credits: 0 });
+
+    await expect(service.reserveAnswer({ accountId, workspaceId, surface: "agent_api", conversationId: randomUUID() }))
+      .rejects.toBeInstanceOf(UsageLimitExceededError);
+
+    await onCredit.release();
+    expect((await service.getAccountUsage(accountId)).monthlyConversations).toMatchObject({ used: 1, credits: 1 });
+  });
+
+  it("keeps the legacy answer meter for profiles without a conversation limit", async () => {
+    const { accountId, workspaceId } = await seedAccountWorkspace();
+    await assignProfile(accountId, { monthlyAnswerLimit: 1 });
+    const service = new EnterpriseUsageLimitService(database);
+
+    await service.reserveAnswer({ accountId, workspaceId, surface: "website_embed", conversationId: randomUUID() });
+    await expect(service.reserveAnswer({ accountId, workspaceId, surface: "website_embed", conversationId: randomUUID() }))
+      .rejects.toBeInstanceOf(UsageLimitExceededError);
+    expect((await service.getAccountUsage(accountId)).monthlyConversations).toBeNull();
   });
 });

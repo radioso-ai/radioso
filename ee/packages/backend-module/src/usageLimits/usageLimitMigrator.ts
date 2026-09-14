@@ -90,6 +90,65 @@ export const usageLimitMigrator: ApplicationDatabaseMigrator = {
       CHECK (monthly_indexed_byte_limit IS NULL OR monthly_indexed_byte_limit >= 0)
     `);
 
+    // Conversation metering. One unit for everything, in tenths of a
+    // conversation so that "ten test runs count as one" stays integer math.
+    await database.query(`
+      ALTER TABLE ee_usage_limit_profiles
+      ADD COLUMN IF NOT EXISTS monthly_conversation_limit INTEGER
+      CHECK (monthly_conversation_limit IS NULL OR monthly_conversation_limit >= 0)
+    `);
+
+    await database.query(`
+      ALTER TABLE ee_usage_limit_profiles
+      ADD COLUMN IF NOT EXISTS replies_per_conversation INTEGER NOT NULL DEFAULT 10
+      CHECK (replies_per_conversation >= 1)
+    `);
+
+    // Replies seen per conversation this period. Only the first reply of each
+    // block of replies_per_conversation is charged.
+    await database.query(`
+      CREATE TABLE IF NOT EXISTS ee_usage_limit_conversation_replies (
+        account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        period_start DATE NOT NULL,
+        conversation_id UUID NOT NULL,
+        reply_count INTEGER NOT NULL DEFAULT 0 CHECK (reply_count >= 0),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (account_id, period_start, conversation_id)
+      )
+    `);
+
+    // The account's monthly unit counter, in tenths, plus a per-kind breakdown
+    // so the usage view can show where the month went.
+    await database.query(`
+      CREATE TABLE IF NOT EXISTS ee_usage_limit_unit_counters (
+        account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        period_start DATE NOT NULL,
+        used_tenths INTEGER NOT NULL DEFAULT 0 CHECK (used_tenths >= 0),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (account_id, period_start)
+      )
+    `);
+
+    await database.query(`
+      CREATE TABLE IF NOT EXISTS ee_usage_limit_unit_kind_counters (
+        account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        period_start DATE NOT NULL,
+        kind TEXT NOT NULL,
+        used_tenths INTEGER NOT NULL DEFAULT 0 CHECK (used_tenths >= 0),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (account_id, period_start, kind)
+      )
+    `);
+
+    // Prepaid top-ups. Not period-scoped: they never expire.
+    await database.query(`
+      CREATE TABLE IF NOT EXISTS ee_usage_limit_credits (
+        account_id UUID PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+        balance_tenths INTEGER NOT NULL DEFAULT 0 CHECK (balance_tenths >= 0),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+
     await database.query(`
       CREATE TABLE IF NOT EXISTS ee_usage_limit_storage_reservations (
         id UUID PRIMARY KEY,

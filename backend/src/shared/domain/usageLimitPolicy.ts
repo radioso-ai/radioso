@@ -24,6 +24,9 @@ export interface UsageLimitPolicy {
     accountId?: string | null;
     workspaceId: string;
     surface: string;
+    /** Customer conversations are metered in blocks of replies; pass the id so
+     *  the second reply of a conversation is not charged like the first. */
+    conversationId?: string | null;
   }): Promise<UsageLimitReservation>;
   reserveDocument(input: {
     accountId?: string | null;

@@ -98,7 +98,7 @@ export const surfaceWeight = (surface: string): SurfaceWeight | null => {
     case "workbench_replay":
     case "eval_replay":
       return { kind: "test_run", tenths: TENTHS_PER_CONVERSATION / 2, perConversationBlock: false };
-    // On-demand. A scheduled run should pass a distinct surface and cost nothing.
+    // Every Pulse report is on demand and costs ten. There is no scheduled run.
     case "audience_pulse":
       return { kind: "pulse_report", tenths: 10 * TENTHS_PER_CONVERSATION, perConversationBlock: false };
     // Standalone answers over the API: each call is its own conversation.

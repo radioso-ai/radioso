@@ -7,6 +7,7 @@ import { generateApiToken } from "../../auth/contracts/index.js";
 import type { EmbedConfigCacheInvalidator } from "./embedConfigCacheInvalidator.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../documents/contracts/index.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
+import { validateExactContentItem, type ExactContentValidationResult } from "../../../shared/domain/exactContent.js";
 import {
   getWebsiteEmbedSurfaceSettings,
   isAgentBootstrapActive,
@@ -14,6 +15,7 @@ import {
   type AgentInput,
   type AgentRecord,
 } from "../domain.js";
+import { DEFAULT_AGENT_LOCALE_FALLBACK, type AgentGreetingSnapshot } from "../agentRevision.js";
 
 export type AgentSettingsResource = Omit<AgentRecord, "authoredDirectives"> & {
   isDefault: boolean;
@@ -122,6 +124,43 @@ export class AgentService {
       await this.embedConfigCacheInvalidator.invalidateForToken(embedToken);
     }
     return this.present(updated, workspace.defaultAgentId);
+  }
+
+  /**
+   * Writes exact greeting content onto the agent draft (spec 1150 Slice A, FR-002/FR-007).
+   * Unlike `update`, this never touches the live `agents` row — see
+   * `AgentRepository#updateDraftGreeting`.
+   *
+   * Validation always runs when content is authored, so an operator always sees field-level
+   * diagnostics for what they typed, but it only *blocks* the save when Exact words is the
+   * selected mode: FR-007 requires valid complete content before Exact words can be
+   * selected, but lets inactive (Automatic/Off) content stay saved-but-incomplete so a
+   * half-finished draft is never silently discarded. Candidate creation and publish
+   * (`assertCandidateSnapshotIsRunnable`) re-validate independently before either turns
+   * this draft into something a conversation can use.
+   */
+  async updateDraftGreeting(
+    workspaceId: string,
+    agentId: string,
+    input: AgentGreetingSnapshot,
+  ): Promise<{ greeting: AgentGreetingSnapshot; validation: ExactContentValidationResult }> {
+    const agent = await this.agentRepository.findByIdAndWorkspaceId(agentId, workspaceId);
+    if (!agent) {
+      throw notFound("Agent not found");
+    }
+    const validation: ExactContentValidationResult = input.exactContent
+      ? validateExactContentItem(input.exactContent, {
+          agentDefaultLocale: agent.assistantDefaultLocale ?? DEFAULT_AGENT_LOCALE_FALLBACK,
+          // Bootstrap supplies no context variables and the greeting has no routine slots
+          // (spec 1150 F4): every `{{…}}` in greeting content is unknown.
+          availableReferenceKeys: new Set(),
+        })
+      : { ok: true };
+    if (input.exactWordsEnabled && !validation.ok) {
+      throw badRequest("Exact greeting content is invalid", { issues: validation.issues });
+    }
+    const greeting = await this.agentRepository.updateDraftGreeting(agentId, workspaceId, input);
+    return { greeting, validation };
   }
 
   /**

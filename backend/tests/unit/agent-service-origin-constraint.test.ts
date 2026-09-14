@@ -216,4 +216,5 @@ class InMemoryAgentRepository {
   async createDirective(): Promise<never> { throw new Error("not used"); }
   async updateDirective(): Promise<never> { throw new Error("not used"); }
   async deleteDirective(): Promise<boolean> { return false; }
+  async updateDraftGreeting(): Promise<never> { throw new Error("not used"); }
 }

@@ -81,8 +81,11 @@ export { createWebsiteEmbedSurfaceExtension } from "./services/websiteEmbedSurfa
 export {
   AgentRevisionService,
   assertCandidateSnapshotIsRunnable,
+  DEFAULT_AGENT_LOCALE_FALLBACK,
   equalScopedAuthoringSnapshots,
   parseAgentRevisionSnapshot,
+  readAgentRevisionGreeting,
+  type AgentGreetingSnapshot,
   type AgentRevision,
   type AgentDraft,
   type AgentRevisionRepositoryPort,

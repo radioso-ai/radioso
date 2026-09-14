@@ -70,6 +70,31 @@ describe("openapi contract", () => {
     });
   });
 
+  it("documents the agent greeting draft route and its exact content schema (spec 1150)", () => {
+    const document = createOpenApiDocument();
+    const operation = document.paths?.["/api/v1/agents/{agentId}/greeting/draft"]?.put as {
+      operationId?: string;
+      requestBody?: { content?: Record<string, { schema?: unknown }> };
+      responses?: Record<string, unknown>;
+    } | undefined;
+
+    expect(operation?.operationId).toBe("updateAgentGreetingDraft");
+    expect(operation?.requestBody?.content?.["application/json"]?.schema).toBeDefined();
+    expect(operation?.responses?.["200"]).toBeDefined();
+    expect(operation?.responses?.["400"]).toBeDefined();
+
+    const greetingSchema = document.components?.schemas?.AgentGreetingDraft as {
+      properties?: Record<string, unknown>;
+    } | undefined;
+    expect(greetingSchema?.properties).toHaveProperty("exactWordsEnabled");
+    expect(greetingSchema?.properties).toHaveProperty("exactContent");
+
+    const revisionDetail = document.components?.schemas?.AgentRevisionDetailResponse as {
+      properties?: { revision?: { allOf?: Array<{ properties?: { scope?: { properties?: Record<string, unknown> } } }> } };
+    } | undefined;
+    expect(revisionDetail?.properties?.revision?.allOf?.[1]?.properties?.scope?.properties).toHaveProperty("greeting");
+  });
+
   it("publishes the complete discriminated Eval assertion contract", () => {
     const schemas = createOpenApiDocument().components?.schemas ?? {};
     const assertions = schemas.EvalAssertion as {

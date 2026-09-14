@@ -25,6 +25,7 @@ import {
   type AuthoredDirectiveLifecycle,
   type AuthoredDirectiveInput,
   type NormalizedAuthoredDirectiveInput,
+  type AgentGreetingSnapshot,
 } from "../../modules/agents/public.js";
 import { parseDirectiveLifecycle } from "../../modules/directives/public.js";
 import { answerCoverageCriteriaSchema } from "../../modules/answerCoverage/public.js";
@@ -572,6 +573,10 @@ export interface AgentRepositoryPort {
   findByWebsiteEmbedToken(token: string): Promise<AgentRecord | null>;
   listByWorkspaceId(workspaceId: string): Promise<AgentRecord[]>;
   update(agentId: string, workspaceId: string, input: AgentInput, options?: AgentUpdateOptions): Promise<AgentRecord>;
+  /** Draft-only: unlike `update`, this never touches the live `agents` row (spec 1150 F3 —
+   * Off stays a live kill switch; exact content and its enabled flag live only in the draft/
+   * candidate/published snapshot). */
+  updateDraftGreeting(agentId: string, workspaceId: string, input: AgentGreetingSnapshot): Promise<AgentGreetingSnapshot>;
   listDirectives(agentId: string, workspaceId: string): Promise<AuthoredDirective[]>;
   createDirective(agentId: string, workspaceId: string, input: AuthoredDirectiveInput, options?: AgentDirectiveUpdateOptions): Promise<AuthoredDirective>;
   updateDirective(agentId: string, workspaceId: string, directiveId: string, input: Partial<AuthoredDirectiveInput>, options?: AgentDirectiveUpdateOptions): Promise<AuthoredDirective>;
@@ -804,6 +809,16 @@ export class AgentRepository implements AgentRepositoryPort {
         snapshot: { ...snapshot, customInstruction },
       };
     });
+  }
+
+  /** No live table to write — greeting exact content exists only in the draft/candidate/
+   * published snapshot (spec 1150 F3), so this is a projection into `agent_drafts.snapshot`
+   * and nothing else, unlike `updateCustomInstruction` above. */
+  async updateDraftGreeting(agentId: string, workspaceId: string, input: AgentGreetingSnapshot): Promise<AgentGreetingSnapshot> {
+    return withAgentDraftMutation(this.db, workspaceId, agentId, async (_trx, snapshot) => ({
+      result: input,
+      snapshot: { ...snapshot, greeting: input },
+    }));
   }
 
   async listDirectives(agentId: string, workspaceId: string): Promise<AuthoredDirective[]> {

@@ -180,6 +180,12 @@ interface WorkbenchReplayRunnerOptions {
   agentSkillTurnSkillProvider?: AgentSkillTurnSkillProvider;
   turnPlanCoordinator?: TurnPlanCoordinator;
   turnPlanInterpretationContextSettings?: TurnInterpretationContextSettings;
+  /**
+   * Post-evidence answer coverage for a replayed turn. Composition supplies the
+   * repository-less variant, so the assessment runs (and coverage-gated directives and
+   * routines can fire, exactly as in a live turn) without any durable write.
+   */
+  coverageAssessorFactory?: ChatTurnAssemblyOptions["coverageAssessorFactory"];
   logger?: Pick<AppLogger, "warn">;
 }
 
@@ -311,6 +317,7 @@ export class WorkbenchReplayRunner {
       chatSessionPreparer: preparer,
       directiveStateStore: effects.directiveStateStore,
       routineStore,
+      coverageAssessorFactory: this.options.coverageAssessorFactory,
     }) ?? new ChatTurnAssembly({
       chatGateway: this.options.chatGateway ?? unavailableRoutineGateway,
       chatAnswerPresenter: presenter,
@@ -331,6 +338,7 @@ export class WorkbenchReplayRunner {
         this.options.retrievalSenseClarificationPolicy
         ?? DEFAULT_RETRIEVAL_SENSE_CLARIFICATION_POLICY,
       agentSkillTurnSkillProvider: this.options.agentSkillTurnSkillProvider,
+      coverageAssessorFactory: this.options.coverageAssessorFactory,
       logger: this.options.logger,
     });
     const responseLanguagePromise = this.replayResponseLanguagePromise(input, session);

@@ -9,6 +9,19 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.0.2] - 2026-09-14
+
+### Fixed
+
+- run coverage gates in workbench replays ([#1250](https://github.com/radioso-ai/radioso/pull/1250))
+- clean up skill picker badge and MCP discovery error handling ([#1249](https://github.com/radioso-ai/radioso/pull/1249))
+
+### Internal
+
+- **apps:** park the hosted app runtime program and remove the unused app-contract package ([#1248](https://github.com/radioso-ai/radioso/pull/1248))
+
+[1.0.2]: https://github.com/radioso-ai/radioso/compare/v1.0.1...v1.0.2
+
 ## [1.0.1] - 2026-09-14
 
 ### Fixed

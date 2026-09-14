@@ -15,4 +15,8 @@ export {
   type AgentSkillRepositoryPort,
 } from "./repository.js";
 export { mergeSkillConfig } from "./configMerge.js";
+export {
+  AgentRetrievalAuthoringService,
+  type AgentRetrievalAuthoringPort,
+} from "./retrievalAuthoring.js";
 export * from "./copilotPrimitiveRegistry.js";

@@ -124,6 +124,81 @@ describeIntegration("FacetExtractionJobRepository (Postgres)", () => {
     expect(row.claimed_at).toBeNull();
   });
 
+  it("enqueueMany inserts a fresh job per message id in one call, all queued", async () => {
+    const messageIds = [await createMessage(), await createMessage(), await createMessage()];
+
+    await repository.enqueueMany({ messageIds, workspaceId });
+
+    const rows = await database.query<{ message_id: string; status: string }>(
+      `SELECT message_id, status FROM facet_extraction_jobs WHERE message_id = ANY($1)`,
+      [messageIds],
+    );
+    expect(rows).toHaveLength(3);
+    expect(rows.every((row) => row.status === "queued")).toBe(true);
+  });
+
+  it("enqueueMany without restartTerminal leaves an existing terminal job untouched", async () => {
+    const messageId = await createMessage();
+    const first = await repository.enqueue({ messageId, workspaceId });
+    const [claimed] = await repository.claimBatch(10, claimableNow());
+    await repository.markCompleted(claimed);
+
+    await repository.enqueueMany({ messageIds: [messageId], workspaceId });
+
+    const row = await readRow(first.id);
+    expect(row.status).toBe("completed");
+  });
+
+  it("enqueueMany with restartTerminal resets a terminal job back to queued, alongside unrelated fresh ids in the same batch", async () => {
+    const terminalMessageId = await createMessage();
+    const terminal = await repository.enqueue({ messageId: terminalMessageId, workspaceId });
+    const [claimed] = await repository.claimBatch(10, claimableNow());
+    await repository.markCompleted(claimed);
+    const freshMessageIds = [await createMessage(), await createMessage()];
+
+    await repository.enqueueMany({
+      messageIds: [terminalMessageId, ...freshMessageIds],
+      workspaceId,
+      restartTerminal: true,
+    });
+
+    const terminalRow = await readRow(terminal.id);
+    expect(terminalRow.status).toBe("queued");
+    expect(terminalRow.attempt_count).toBe(0);
+    expect(terminalRow.claimed_at).toBeNull();
+    const freshRows = await database.query<{ status: string }>(
+      `SELECT status FROM facet_extraction_jobs WHERE message_id = ANY($1)`,
+      [freshMessageIds],
+    );
+    expect(freshRows.every((row) => row.status === "queued")).toBe(true);
+  });
+
+  it("enqueueMany with restartTerminal leaves a queued or processing row untouched", async () => {
+    // Enqueue and claim the first message alone, so it is the only row `claimBatch`
+    // can pick up -- deterministically "processing" before the second message exists.
+    const processingMessageId = await createMessage();
+    const processing = await repository.enqueue({ messageId: processingMessageId, workspaceId });
+    const [claimed] = await repository.claimBatch(10, claimableNow(), workspaceId);
+    expect(claimed.id).toBe(processing.id);
+
+    const queuedMessageId = await createMessage();
+    const queued = await repository.enqueue({ messageId: queuedMessageId, workspaceId });
+
+    await repository.enqueueMany({
+      messageIds: [queuedMessageId, processingMessageId],
+      workspaceId,
+      restartTerminal: true,
+    });
+
+    const queuedRow = await readRow(queued.id);
+    expect(queuedRow.status).toBe("queued");
+    expect(queuedRow.attempt_count).toBe(0);
+    const processingRow = await readRow(processing.id);
+    expect(processingRow.status).toBe("processing");
+    expect(processingRow.attempt_count).toBe(1);
+    expect(processingRow.claimed_at).not.toBeNull();
+  });
+
   it("claimBatch claims due queued rows and marks them processing", async () => {
     const ids = await seed(2);
 

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { renderContextBlock } from "../../src/modules/context-variables/contextBlockRenderer.js";
-import { resolveContextForTurn, type ResolvedVariableInput } from "../../src/modules/context-variables/public.js";
+import { resolveContextForTurn, type ContextVariableScope, type ResolvedVariableInput } from "../../src/modules/context-variables/public.js";
 import { ChatAnswerSupport } from "../../src/modules/chat/services/chatAnswerSupport.js";
 import { buildAssistantReplyPrompt } from "../../src/modules/chat/services/assistantReplyPromptBuilder.js";
 import { ChatSessionPreparer } from "../../src/modules/chat/services/chatSessionPreparer.js";
@@ -20,6 +20,7 @@ import {
   InMemoryAgentRepository,
   InMemoryConversationRepository,
   InMemoryMessageRepository,
+  publishedRevisionResolverFor,
 } from "../support/fakes.js";
 
 const pageContext = {
@@ -111,7 +112,11 @@ const harness = async (capability: PageReadCapability = contentCapability) => {
       return fixedRetrievalResult(input.interpreted.request);
     },
   };
-  const resolveForAgent = vi.fn(async () => hostVariables);
+  const resolveForAgent = vi.fn(async (
+    _workspaceId: string,
+    _agentId: string,
+    _scopes: ContextVariableScope[],
+  ) => hostVariables);
   const preparer = new ChatSessionPreparer(
     new InMemoryConversationRepository(),
     new InMemoryMessageRepository(),
@@ -120,7 +125,16 @@ const harness = async (capability: PageReadCapability = contentCapability) => {
     undefined,
     { resolve: async () => agent },
     undefined,
-    { resolveForAgent },
+    {
+      resolveForAgent,
+      resolveForEnablements: async (workspaceId, agentId, _enablements, scopes) =>
+        resolveForAgent(workspaceId, agentId, scopes),
+    },
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    publishedRevisionResolverFor(agent),
   );
   const input = {
     workspaceId: "ws-1",

@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
-import type { AgentService } from "../../agents/public.js";
+import type { AgentService, ConversationAgent } from "../../agents/public.js";
 import { isAgentBootstrapActive } from "../../agents/public.js";
 import type { BootstrapGreetingCacheRepositoryPort } from "../../../db/repositories/bootstrapGreetingCacheRepository.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
@@ -77,13 +77,16 @@ export class ChatBootstrapService {
     sourceOrigin?: string | null;
     userExpectedLocale?: string | null;
     pageContext?: AssistantPageContext | null;
+    /** Trusted internal callers may supply an already-resolved immutable agent. */
+    agentOverride?: ConversationAgent;
+    revisionId?: string;
   }): Promise<ChatBootstrapResponse | null> {
     const workflowPolicy = assertInteractiveAssistantWorkflow("chat.bootstrap");
     const workspace = await this.workspaceRepository.findById(input.workspaceId);
     if (!workspace) {
       return null;
     }
-    const agent = await this.agentService.resolve(input.workspaceId, input.agentId);
+    const agent = input.agentOverride ?? await this.agentService.resolve(input.workspaceId, input.agentId);
     if (!isAgentBootstrapActive({
       name: agent.name,
       proactiveGreetingEnabled: agent.proactiveGreetingEnabled,
@@ -106,6 +109,7 @@ export class ChatBootstrapService {
       customInstruction: agent.customInstruction,
       assistantDefaultLocale: agent.assistantDefaultLocale,
       localeUsed,
+      revisionId: input.revisionId,
     });
 
     let usageReservation: Awaited<ReturnType<UsageLimitPolicy["reserveAnswer"]>> | null = null;
@@ -253,6 +257,7 @@ const createBootstrapFingerprint = (input: {
   customInstruction: string;
   assistantDefaultLocale: string | null;
   localeUsed: string | null;
+  revisionId?: string;
 }): string =>
   createHash("sha256")
     .update(JSON.stringify({
@@ -260,5 +265,6 @@ const createBootstrapFingerprint = (input: {
       customInstruction: input.customInstruction,
       assistantDefaultLocale: input.assistantDefaultLocale,
       localeUsed: input.localeUsed,
+      revisionId: input.revisionId ?? null,
     }))
     .digest("hex");

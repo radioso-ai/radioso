@@ -1,11 +1,9 @@
 import { AppError } from "../../shared/domain/errors.js";
 import type { RoutineDefinitionService } from "./service.js";
 
-/** Minimal routines-owned lookup for selecting eligible unpublished routine previews. */
+/** Minimal routines-owned lookup for resolving a workbench routine preview. */
 export interface ProbeRoutineReadPort {
-  findPreviewRoutine(workspaceId: string, agentId: string, routineId: string): Promise<{
-    status: "draft" | "published" | "superseded" | "archived";
-  } | null>;
+  findPreviewRoutine(workspaceId: string, agentId: string, routineId: string): Promise<{ id: string } | null>;
 }
 
 export class ProbeRoutineReader implements ProbeRoutineReadPort {

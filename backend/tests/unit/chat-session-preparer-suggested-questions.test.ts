@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { ConversationRecord } from "../../src/db/repositories/conversationRepository.js";
 import type { MessageRecord } from "../../src/db/repositories/messageRepository.js";
+import type { ContextVariableResolutionReaderPort } from "../../src/modules/context-variables/public.js";
 import { ChatSessionPreparer } from "../../src/modules/chat/services/chatSessionPreparer.js";
 import type { RetrievalTurnPort } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import type { RetrievalPipelineRequest, RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
@@ -10,6 +11,7 @@ import {
   InMemoryAgentRepository,
   InMemoryConversationRepository,
   InMemoryMessageRepository,
+  publishedRevisionResolverFor,
 } from "../support/fakes.js";
 
 const fixedRetrievalResult = (request: RetrievalPipelineRequest): RetrievalPipelineResult => {
@@ -55,6 +57,14 @@ const fixedRetrievalResult = (request: RetrievalPipelineRequest): RetrievalPipel
     },
   };
 };
+
+const revisionContextReader = (
+  resolveForAgent: ContextVariableResolutionReaderPort["resolveForAgent"],
+): ContextVariableResolutionReaderPort => ({
+  resolveForAgent,
+  resolveForEnablements: (workspaceId, agentId, _enablements, scopes) =>
+    resolveForAgent(workspaceId, agentId, scopes),
+});
 
 describe("ChatSessionPreparer suggested-question settings", () => {
   it("passes retrieval skill settings without legacy suggested-question responseBehavior overrides", async () => {
@@ -104,6 +114,8 @@ describe("ChatSessionPreparer suggested-question settings", () => {
           return agent;
         },
       },
+      undefined, undefined, undefined, undefined, undefined, undefined,
+      publishedRevisionResolverFor(agent),
     );
 
     await preparer.prepare({
@@ -144,6 +156,7 @@ describe("ChatSessionPreparer suggested-question settings", () => {
       id: "conv-ephemeral",
       workspaceId: "ws-1",
       agentId: agent.id,
+      purpose: "production",
       agentName: agent.name,
       agentInternalName: agent.internalName ?? null,
       sourceChannel: "workbench_replay",
@@ -201,6 +214,8 @@ describe("ChatSessionPreparer suggested-question settings", () => {
       createAuditService(),
       undefined,
       { resolve },
+      undefined, undefined, undefined, undefined, undefined, undefined,
+      publishedRevisionResolverFor(agent),
     );
 
     const session = await preparer.prepare({
@@ -216,7 +231,7 @@ describe("ChatSessionPreparer suggested-question settings", () => {
     expect(listRecent).not.toHaveBeenCalled();
     expect(createConversation).toHaveBeenCalledOnce();
     expect(createMessage).toHaveBeenCalledOnce();
-    expect(session.agent).toBe(agent);
+    expect(session.agent).toMatchObject({ id: agent.id, customInstruction: agent.customInstruction });
     expect(session.history).toBe(history);
     expect(capturedRequest?.history).toBe(history);
   });
@@ -259,6 +274,8 @@ describe("ChatSessionPreparer suggested-question settings", () => {
           return agent;
         },
       },
+      undefined, undefined, undefined, undefined, undefined, undefined,
+      publishedRevisionResolverFor(agent),
     );
     const baseSession = await preparer.prepare({
       workspaceId: "ws-1",
@@ -316,6 +333,8 @@ describe("ChatSessionPreparer suggested-question settings", () => {
           return agent;
         },
       },
+      undefined, undefined, undefined, undefined, undefined, undefined,
+      publishedRevisionResolverFor(agent),
     );
 
     const session = await preparer.prepare({
@@ -384,7 +403,9 @@ describe("ChatSessionPreparer suggested-question settings", () => {
       undefined,
       { async resolve() { return agent; } },
       undefined,
-      { resolveForAgent },
+      revisionContextReader(resolveForAgent),
+      undefined, undefined, undefined, undefined,
+      publishedRevisionResolverFor(agent),
     );
 
     const session = await preparer.prepare({
@@ -447,7 +468,9 @@ describe("ChatSessionPreparer suggested-question settings", () => {
       undefined,
       { async resolve() { return agent; } },
       undefined,
-      { resolveForAgent },
+      revisionContextReader(resolveForAgent),
+      undefined, undefined, undefined, undefined,
+      publishedRevisionResolverFor(agent),
     );
 
     const session = await preparer.prepare({
@@ -488,7 +511,9 @@ describe("ChatSessionPreparer suggested-question settings", () => {
       undefined,
       { async resolve() { return agent; } },
       undefined,
-      { resolveForAgent },
+      revisionContextReader(resolveForAgent),
+      undefined, undefined, undefined, undefined,
+      publishedRevisionResolverFor(agent),
     );
 
     const session = await preparer.prepare({
@@ -553,7 +578,9 @@ describe("ChatSessionPreparer suggested-question settings", () => {
       undefined,
       { async resolve() { return agent; } },
       undefined,
-      { resolveForAgent },
+      revisionContextReader(resolveForAgent),
+      undefined, undefined, undefined, undefined,
+      publishedRevisionResolverFor(agent),
     );
 
     const session = await preparer.prepare({
@@ -601,7 +628,9 @@ describe("ChatSessionPreparer suggested-question settings", () => {
       undefined,
       { async resolve() { return agent; } },
       undefined,
-      { resolveForAgent },
+      revisionContextReader(resolveForAgent),
+      undefined, undefined, undefined, undefined,
+      publishedRevisionResolverFor(agent),
     );
 
     const first = await preparer.prepare({

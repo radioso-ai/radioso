@@ -64,6 +64,10 @@ import {
   type AuthoredDirective,
   type AuthoredDirectiveInput,
 } from "../../src/modules/agents/public.js";
+import {
+  AgentRevisionRuntimeResolver,
+  type AgentRevision,
+} from "../../src/modules/agents/public.js";
 import type {
   BootstrapGreetingCacheRecord,
   BootstrapGreetingCacheRepositoryPort,
@@ -92,7 +96,6 @@ import type {
 import {
   routineDefinitionDraftInputSchema,
   type RoutineDefinition,
-  type RoutineDefinitionArchiveGuard,
   type RoutineDefinitionDraftInput,
   type RoutineDefinitionRepositoryPort,
   type RoutineDefinitionWriteGuard,
@@ -968,6 +971,15 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
     return this.items.get(id) ?? null;
   }
 
+  /** Test-harness seeding only: mirrors the persisted default-agent pointer. */
+  setDefaultAgentForTest(workspaceId: string, agentId: string): void {
+    const workspace = this.items.get(workspaceId);
+    if (!workspace) {
+      throw new Error(`Workspace ${workspaceId} not found`);
+    }
+    this.items.set(workspaceId, { ...workspace, defaultAgentId: agentId, updatedAt: new Date() });
+  }
+
   async findByIdAndAccountId(workspaceId: string, accountId: string): Promise<WorkspaceRecord | null> {
     const item = this.items.get(workspaceId);
     return item && item.accountId === accountId ? item : null;
@@ -1103,7 +1115,16 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
   readonly directives = new Map<string, AuthoredDirective>();
   private defaultAgentIds = new Map<string, string>();
 
-  constructor(private readonly skillSettings?: AgentSkillSettingsRegistry) {}
+  constructor(
+    private readonly skillSettings?: AgentSkillSettingsRegistry,
+    /** Real Postgres agent creation inserts the initial `agent_drafts` row in the same
+     * transaction as the `agents` row (see `AgentRepository#create`), so both the explicit
+     * create route and workspace-bootstrap's default-agent creation get a draft for free. This
+     * in-memory repository has no shared transaction to piggyback on, so a caller that needs
+     * that same guarantee (a real `AgentRevisionRepositoryPort`-backed draft to mutate or
+     * release) wires it here instead. */
+    private readonly onAgentCreated?: (agent: AgentRecord) => Promise<void> | void,
+  ) {}
 
   async create(workspaceId: string, input: AgentInput): Promise<AgentRecord> {
     const normalized = validateAgentInput(input, { skillSettings: this.skillSettings });
@@ -1118,6 +1139,7 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
     if (!this.defaultAgentIds.has(workspaceId)) {
       this.defaultAgentIds.set(workspaceId, record.id);
     }
+    await this.onAgentCreated?.(record);
     return record;
   }
 
@@ -1195,9 +1217,14 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
       dependsOn: input.dependsOn ?? existing.dependsOn,
       excludes: input.excludes ?? existing.excludes,
       routes: input.routes ?? existing.routes,
+      surfaces: input.surfaces ?? existing.surfaces,
       tags: input.tags ?? existing.tags,
       description: input.description ?? existing.description,
       binding: Object.prototype.hasOwnProperty.call(input, "binding") ? input.binding : existing.binding,
+      lifecycle: Object.prototype.hasOwnProperty.call(input, "lifecycle") ? input.lifecycle : existing.lifecycle,
+      coverageCriteria: Object.prototype.hasOwnProperty.call(input, "coverageCriteria")
+        ? input.coverageCriteria
+        : existing.coverageCriteria,
       enabled: Object.prototype.hasOwnProperty.call(input, "enabled") ? input.enabled : existing.enabled,
       metadata: input.metadata ?? existing.metadata,
     });
@@ -1232,50 +1259,6 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
     const deleted = this.directives.delete(directiveId);
     agent.authoredDirectives = await this.listDirectives(agentId, workspaceId);
     return deleted;
-  }
-
-  async repointRoutineScopeTags(input: {
-    agentId: string;
-    fromDefinitionId: string;
-    toDefinitionId: string;
-    survivingStepIds: ReadonlySet<string>;
-  }): Promise<{ repointed: number; orphans: Array<{ directiveId: string; scopeTag: string; reason: "missing_step" }> }> {
-    const routineTag = `routine:${input.fromDefinitionId}`;
-    const stepTagPrefix = `step:${input.fromDefinitionId}:`;
-    let repointed = 0;
-    const orphans: Array<{ directiveId: string; scopeTag: string; reason: "missing_step" }> = [];
-    for (const directive of this.directives.values()) {
-      if (directive.agentId !== input.agentId) {
-        continue;
-      }
-      let changed = false;
-      const tags = directive.tags.map((tag) => {
-        if (tag === routineTag) {
-          changed = true;
-          repointed += 1;
-          return `routine:${input.toDefinitionId}`;
-        }
-        if (!tag.startsWith(stepTagPrefix)) {
-          return tag;
-        }
-        const stepId = tag.slice(stepTagPrefix.length);
-        if (!input.survivingStepIds.has(stepId)) {
-          orphans.push({ directiveId: directive.id, scopeTag: tag, reason: "missing_step" });
-          return tag;
-        }
-        changed = true;
-        repointed += 1;
-        return `step:${input.toDefinitionId}:${stepId}`;
-      });
-      if (changed) {
-        this.directives.set(directive.id, {
-          ...directive,
-          tags,
-          updatedAt: new Date(),
-        });
-      }
-    }
-    return { repointed, orphans };
   }
 
   async update(agentId: string, workspaceId: string, input: AgentInput): Promise<AgentRecord> {
@@ -1334,9 +1317,31 @@ const nextInMemoryRoutineUpdatedAt = (current: Date): Date =>
 export class InMemoryRoutineDefinitionRepository implements RoutineDefinitionRepositoryPort {
   readonly items = new Map<string, RoutineDefinition>();
 
-  async listPublishedByAgent(agentId: string): Promise<RoutineDefinition[]> {
-    return [...this.items.values()]
-      .filter((definition) => definition.agentId === agentId && definition.status === "published")
+  constructor(
+    /** Real Postgres routine writes project the canonical routine graph into the owning
+     * agent's `agent_drafts.snapshot` in the same transaction (see `projectDraftSnapshot` in
+     * `src/db/repositories/routineDefinitionRepository.ts`), so a candidate/release check
+     * downstream sees a routine the moment it is authored. This in-memory repository has no
+     * shared transaction with an `AgentRevisionRepositoryPort`, so a caller that needs that
+     * same guarantee wires the projection here instead, run after each write that can change
+     * the agent's canonical routine set. */
+    private readonly onDraftChanged?: (workspaceId: string, agentId: string) => Promise<void>,
+  ) {}
+
+  /** One row per lineage — its highest version — mirroring the SQL repository's read surface. */
+  private canonical(agentId: string): RoutineDefinition[] {
+    const byLineage = new Map<string, RoutineDefinition>();
+    for (const definition of this.items.values()) {
+      if (definition.agentId !== agentId) continue;
+      const held = byLineage.get(definition.lineageId);
+      if (!held || definition.version > held.version) byLineage.set(definition.lineageId, definition);
+    }
+    return [...byLineage.values()];
+  }
+
+  async listActiveByAgent(agentId: string): Promise<RoutineDefinition[]> {
+    return this.canonical(agentId)
+      .filter((definition) => definition.enabled)
       .sort((left, right) =>
         right.activation.priority - left.activation.priority ||
         left.createdAt.getTime() - right.createdAt.getTime() ||
@@ -1345,10 +1350,17 @@ export class InMemoryRoutineDefinitionRepository implements RoutineDefinitionRep
   }
 
   async listByAgent(agentId: string): Promise<RoutineDefinition[]> {
+    return this.canonical(agentId).sort((left, right) =>
+      left.name.localeCompare(right.name) ||
+      left.createdAt.getTime() - right.createdAt.getTime() ||
+      left.id.localeCompare(right.id)
+    );
+  }
+
+  async listVersionsByAgent(agentId: string): Promise<RoutineDefinition[]> {
     return [...this.items.values()]
       .filter((definition) => definition.agentId === agentId)
       .sort((left, right) =>
-        left.status.localeCompare(right.status) ||
         left.name.localeCompare(right.name) ||
         left.version - right.version ||
         left.createdAt.getTime() - right.createdAt.getTime() ||
@@ -1357,24 +1369,26 @@ export class InMemoryRoutineDefinitionRepository implements RoutineDefinitionRep
   }
 
   async findById(agentId: string, id: string): Promise<RoutineDefinition | null> {
-    const item = this.items.get(id);
-    return item && item.agentId === agentId ? item : null;
+    const addressed = this.items.get(id);
+    if (!addressed || addressed.agentId !== agentId) return null;
+    return this.canonical(agentId).find((definition) => definition.lineageId === addressed.lineageId) ?? null;
   }
 
+  /** Resume-only: the exact stored row, not its lineage's canonical one. */
   async findPinnedById(agentId: string, id: string): Promise<RoutineDefinition | null> {
-    const item = await this.findById(agentId, id);
-    return item && item.status !== "draft" ? item : null;
+    const item = this.items.get(id);
+    return item && item.agentId === agentId ? item : null;
   }
 
   async createDraft(agentId: string, input: RoutineDefinitionDraftInput): Promise<RoutineDefinition> {
     const draft = routineDefinitionDraftInputSchema.parse(input);
     const now = new Date();
+    const id = randomUUID();
     const definition: RoutineDefinition = {
-      id: randomUUID(),
+      id,
       agentId,
-      lineageId: randomUUID(),
+      lineageId: id,
       version: 1,
-      status: "draft",
       ...draft,
       createdAt: now,
       updatedAt: now,
@@ -1392,10 +1406,9 @@ export class InMemoryRoutineDefinitionRepository implements RoutineDefinitionRep
     const existing = await this.findById(agentId, id);
     if (
       !existing ||
-      existing.status !== "draft" ||
       (options.expectedUpdatedAt !== undefined && existing.updatedAt.getTime() !== options.expectedUpdatedAt.getTime())
     ) {
-      // Mirrors the SQL repository's zero-row guard for a save racing publish or edit.
+      // Mirrors the SQL repository's zero-row guard for a save racing another edit.
       throw new Error(`routine_definition_update_conflict:${id}`);
     }
     const draft = routineDefinitionDraftInputSchema.parse(input);
@@ -1404,161 +1417,74 @@ export class InMemoryRoutineDefinitionRepository implements RoutineDefinitionRep
       ...draft,
       updatedAt: nextInMemoryRoutineUpdatedAt(existing.updatedAt),
     };
-    this.items.set(id, updated);
+    this.items.set(existing.id, updated);
     return updated;
   }
 
-  async publish(
-    agentId: string,
-    draftId: string,
-    options: Parameters<RoutineDefinitionRepositoryPort["publish"]>[2] = {},
-  ): Promise<RoutineDefinition> {
-    const draft = await this.findById(agentId, draftId);
-    if (!draft) {
-      throw new Error(`routine_definition_not_found:${draftId}`);
-    }
-    if (
-      draft.status !== "draft" ||
-      (options.expectedUpdatedAt !== undefined && draft.updatedAt.getTime() !== options.expectedUpdatedAt.getTime())
-    ) {
-      throw new Error(`routine_definition_publish_conflict:${draftId}`);
-    }
-    for (const definition of this.items.values()) {
-      if (
-        definition.agentId === agentId &&
-        definition.lineageId === draft.lineageId &&
-        definition.status === "published"
-      ) {
-        this.items.set(definition.id, {
-          ...definition,
-          status: "superseded",
-          updatedAt: nextInMemoryRoutineUpdatedAt(definition.updatedAt),
-        });
-      }
-    }
-    const published: RoutineDefinition = {
-      ...draft,
-      status: "published",
-      updatedAt: nextInMemoryRoutineUpdatedAt(draft.updatedAt),
-    };
-    this.items.set(draftId, published);
-    return published;
-  }
-
-  async createRevisionDraft(agentId: string, publishedId: string): Promise<RoutineDefinition | null> {
-    const published = await this.findById(agentId, publishedId);
-    if (!published || published.status !== "published") {
-      return null;
-    }
-    const existingDraft = [...this.items.values()].find((definition) =>
-      definition.agentId === agentId &&
-      definition.lineageId === published.lineageId &&
-      definition.status === "draft"
-    );
-    if (existingDraft) {
-      return existingDraft;
-    }
-    const now = new Date();
-    const draft: RoutineDefinition = {
-      ...published,
-      id: randomUUID(),
-      version: Math.max(
-        0,
-        ...[...this.items.values()]
-          .filter((definition) => definition.agentId === agentId && definition.lineageId === published.lineageId)
-          .map((definition) => definition.version),
-      ) + 1,
-      status: "draft",
-      createdAt: now,
-      updatedAt: now,
-    };
-    this.items.set(draft.id, draft);
-    return draft;
-  }
-
-  async archive(
-    agentId: string,
-    id: string,
-    options: RoutineDefinitionArchiveGuard = {},
-  ): Promise<boolean> {
-    const existing = await this.findById(agentId, id);
-    if (!existing || existing.status !== "published") {
-      return false;
-    }
-    const drafts = [...this.items.values()].filter((definition) =>
-      definition.agentId === agentId &&
-      definition.lineageId === existing.lineageId &&
-      definition.status === "draft"
-    );
-    if (options.expectedDraftRevision === null && drafts.length > 0) {
-      throw new Error(`routine_definition_archive_conflict:${id}`);
-    }
-    if (options.expectedDraftRevision) {
-      const discarded = drafts.find((definition) =>
-        definition.id === options.expectedDraftRevision!.id &&
-        definition.updatedAt.getTime() === options.expectedDraftRevision!.updatedAt.getTime()
-      );
-      if (!discarded) {
-        throw new Error(`routine_definition_archive_conflict:${id}`);
-      }
-    }
-    for (const definition of [...this.items.values()]) {
-      if (
-        definition.agentId === agentId &&
-        definition.lineageId === existing.lineageId &&
-        definition.status === "draft"
-      ) {
-        this.items.delete(definition.id);
-      }
-    }
-    this.items.set(id, {
-      ...existing,
-      status: "archived",
-      updatedAt: nextInMemoryRoutineUpdatedAt(existing.updatedAt),
-    });
-    return true;
-  }
-
-  async restore(agentId: string, id: string): Promise<boolean> {
-    const existing = await this.findById(agentId, id);
-    if (!existing || existing.status !== "archived") {
-      return false;
-    }
-    const hasPublished = [...this.items.values()].some((definition) =>
-      definition.agentId === agentId &&
-      definition.lineageId === existing.lineageId &&
-      definition.status === "published"
-    );
-    if (hasPublished) {
-      return false;
-    }
-    this.items.set(id, {
-      ...existing,
-      status: "published",
-      updatedAt: nextInMemoryRoutineUpdatedAt(existing.updatedAt),
-    });
-    return true;
-  }
-
+  /**
+   * Mirrors the SQL repository: a lineage that could ever have served (more than one row, or a
+   * currently enabled row, or a row touched since it was created) is disabled rather than
+   * removed, so `findPinnedById` keeps resolving for it. Only a single untouched, disabled row —
+   * one that never could have activated — is actually removed.
+   */
   async deleteDraft(agentId: string, id: string, options: RoutineDefinitionWriteGuard = {}) {
     const existing = await this.findById(agentId, id);
-    if (!existing || existing.status !== "draft") {
+    if (!existing) {
       return { outcome: "not_found" as const };
     }
     if (options.expectedUpdatedAt && existing.updatedAt.getTime() !== options.expectedUpdatedAt.getTime()) {
       return { outcome: "conflict" as const };
     }
-    this.items.delete(id);
+    const lineageRows = [...this.items.values()].filter(
+      (definition) => definition.agentId === agentId && definition.lineageId === existing.lineageId,
+    );
+    const neverServed = lineageRows.length === 1 &&
+      !existing.enabled &&
+      existing.createdAt.getTime() === existing.updatedAt.getTime();
+    if (!neverServed) {
+      this.items.set(existing.id, { ...existing, enabled: false, updatedAt: nextInMemoryRoutineUpdatedAt(existing.updatedAt) });
+      return { outcome: "deleted" as const };
+    }
+    for (const definition of lineageRows) {
+      this.items.delete(definition.id);
+    }
     return { outcome: "deleted" as const };
   }
 
-  async listPublishedRoutineNamesReferencingDestination(
+  // In-memory tests do not model SQL transactions; these preserve the authoring
+  // service port while the Postgres repository owns the atomic draft projection. The optional
+  // `onDraftChanged` hook (see the constructor) is this repository's own best-effort stand-in
+  // for that projection, for a caller that needs one.
+  async createDraftWithAgentDraft(workspaceId: string, agentId: string, input: RoutineDefinitionDraftInput): Promise<RoutineDefinition> {
+    const definition = await this.createDraft(agentId, input);
+    await this.onDraftChanged?.(workspaceId, agentId);
+    return definition;
+  }
+  async updateDraftWithAgentDraft(workspaceId: string, agentId: string, id: string, input: RoutineDefinitionDraftInput, options?: RoutineDefinitionWriteGuard): Promise<RoutineDefinition> {
+    const definition = await this.updateDraft(agentId, id, input, options);
+    await this.onDraftChanged?.(workspaceId, agentId);
+    return definition;
+  }
+  async setEnabledWithAgentDraft(workspaceId: string, agentId: string, id: string, enabled: boolean): Promise<RoutineDefinition | null> {
+    const existing = await this.findById(agentId, id);
+    if (!existing) return null;
+    const updated: RoutineDefinition = { ...existing, enabled, updatedAt: nextInMemoryRoutineUpdatedAt(existing.updatedAt) };
+    this.items.set(existing.id, updated);
+    await this.onDraftChanged?.(workspaceId, agentId);
+    return updated;
+  }
+  async deleteDraftWithAgentDraft(workspaceId: string, agentId: string, id: string, options?: RoutineDefinitionWriteGuard) {
+    const result = await this.deleteDraft(agentId, id, options);
+    if (result.outcome === "deleted") await this.onDraftChanged?.(workspaceId, agentId);
+    return result;
+  }
+
+  async listRoutineNamesReferencingDestination(
     _workspaceId: string,
     destinationId: string,
   ): Promise<string[]> {
     return [...this.items.values()]
       .filter((definition) =>
-        definition.status === "published" &&
         definition.completionExport?.enabled &&
         definition.completionExport.destinationRef === destinationId
       )
@@ -3753,6 +3679,70 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
   }
 }
 
+/** Explicit immutable-release fixture wiring for chat unit tests. */
+export const publishedRevisionResolverFor = (agent: AgentRecord): AgentRevisionRuntimeResolver => {
+  const revision: AgentRevision = {
+    id: randomUUID(),
+    snapshot: {
+      customInstruction: agent.customInstruction,
+      directives: agent.authoredDirectives ?? [],
+      routines: [],
+      contextVariableEnablements: [],
+    },
+    sourceDraftGeneration: 1,
+    sourceBasePublishedRevisionId: null,
+    createdAt: new Date(),
+    publishedAt: new Date(),
+    publishedVersion: 1,
+  };
+  return new AgentRevisionRuntimeResolver({
+    findCurrentPublished: async () => revision,
+    findRevision: async () => revision,
+  });
+};
+
+/**
+ * Explicit release fixture for chat service suites which create several agents.
+ * The revision id is deterministic so a test can pin an existing conversation to
+ * the same immutable release through `conversationRepository.create(..., { agentRevisionId })`.
+ */
+export const publishedRevisionIdFor = (agentId: string): string => `test-published-revision:${agentId}`;
+
+export const publishedRevisionResolverFixture = (): AgentRevisionRuntimeResolver => {
+  const revisionFor = (agentId: string): AgentRevision => ({
+    id: publishedRevisionIdFor(agentId),
+    snapshot: {
+      customInstruction: "",
+      directives: [],
+      routines: [],
+      contextVariableEnablements: [],
+    },
+    sourceDraftGeneration: 1,
+    sourceBasePublishedRevisionId: null,
+    createdAt: new Date(),
+    publishedAt: new Date(),
+    publishedVersion: 1,
+  });
+  return new AgentRevisionRuntimeResolver({
+    findCurrentPublished: async ({ agentId }) => revisionFor(agentId),
+    findRevision: async ({ agentId, revisionId }) =>
+      revisionId === publishedRevisionIdFor(agentId) ? revisionFor(agentId) : null,
+  });
+};
+
+/** Pins pre-existing in-memory conversations to the release fixture used by a chat suite. */
+export const pinExistingConversationsToPublishedRevisions = (
+  repository: InMemoryConversationRepository,
+): void => {
+  for (const conversation of repository.items.values()) {
+    if (conversation.agentRevisionId) continue;
+    repository.items.set(conversation.id, {
+      ...conversation,
+      agentRevisionId: publishedRevisionIdFor(conversation.agentId ?? conversation.workspaceId),
+    });
+  }
+};
+
 export class InMemoryConversationRepository implements ConversationRepositoryPort {
   readonly items = new Map<string, ConversationRecord>();
   private messageRepository: InMemoryMessageRepository | null = null;
@@ -3806,12 +3796,14 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
     sourceOrigin: string | null = null,
     channelContext: ConversationRecord["channelContext"] = null,
     verifiedCustomerId: string | null = null,
-    options?: { entryPageUrl?: string | null },
+    options?: { entryPageUrl?: string | null; agentRevisionId?: string | null; purpose?: ConversationRecord["purpose"] },
   ): Promise<ConversationRecord> {
     const record: ConversationRecord = {
       id: randomUUID(),
       workspaceId,
       agentId,
+      agentRevisionId: options?.agentRevisionId ?? null,
+      purpose: options?.purpose ?? "production",
       agentName: null,
       agentInternalName: null,
       sourceChannel,
@@ -3826,6 +3818,19 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
     };
     this.items.set(record.id, record);
     return record;
+  }
+
+  async bindAgentRevision(input: {
+    conversationId: string;
+    workspaceId: string;
+    agentId: string;
+    agentRevisionId: string;
+  }): Promise<ConversationRecord | null> {
+    const existing = await this.findByIdAndWorkspaceId(input.conversationId, input.workspaceId);
+    if (!existing || existing.agentId !== input.agentId) return null;
+    const bound = existing.agentRevisionId ? existing : { ...existing, agentRevisionId: input.agentRevisionId };
+    this.items.set(bound.id, bound);
+    return bound;
   }
 
   async createWithInitialAssistantMessage(input: {

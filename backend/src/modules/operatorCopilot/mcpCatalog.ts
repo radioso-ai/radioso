@@ -75,6 +75,7 @@ export class OperatorMcpCatalogService {
 
   async reconcileInvocation(input: {
     name: string;
+    arguments: unknown;
     invocation: OperatorMcpInvocationRecord;
     context: CopilotToolInvocationContext;
     scopes: ReadonlySet<OperatorMcpScope>;
@@ -84,15 +85,18 @@ export class OperatorMcpCatalogService {
     const descriptor = this.descriptors.get(input.name);
     if (!descriptor) throw new OperatorMcpCatalogError("unknown_tool");
     const disposition = eligible(descriptor);
-    if (!disposition || disposition.retry.effect !== "proposal" || !input.scopes.has(disposition.scope)) {
+    if (!disposition || !["proposal", "act"].includes(disposition.retry.effect) || !disposition.retry.idempotent || !input.scopes.has(disposition.scope)) {
       throw new OperatorMcpCatalogError("forbidden");
     }
     if (!(await hasCurrentCopilotToolPermissions(descriptor, input.context))) {
       throw new OperatorMcpCatalogError("forbidden");
     }
+    const parsedInput = descriptor.inputSchema.safeParse(input.arguments);
+    if (!parsedInput.success) throw new OperatorMcpCatalogError("invalid_arguments");
     if (!descriptor.reconcileMcpInvocation) return { status: "conflict" };
     const reconciliation = await descriptor.reconcileMcpInvocation({
       invocation: input.invocation,
+      arguments: parsedInput.data,
       context: input.context,
       staleBefore: input.staleBefore,
       now: input.now,

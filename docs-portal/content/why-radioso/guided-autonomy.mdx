@@ -44,7 +44,7 @@ Backward jumps are bounded, so a loop always ends. The canonical shape is "try t
 
 An **approval gate** suspends the routine, waits for an operator's decision, and resumes; the conversation stays AI-owned throughout. A gate offers between two and eight choices, and at least two because an approval is a real decision — an operator has to be able to decline, not only rubber-stamp. That is different from a handoff, which ends the routine and transfers the conversation to a person.
 
-The lifecycle is **validate**, then **publish**. Validation reports problems in author terms: an unreachable step, an undeclared variable, a tool step naming a skill the agent does not have. Publishing creates an immutable version, and new conversations use it. Conversations already running keep the version they started on, so nobody mid-flow gets swapped onto new steps. Draft routines run only in the operator-only test chat; publishing is the only way to make a routine live.
+Validation reports problems in author terms: an unreachable step, an undeclared variable, a tool step naming a skill the agent does not have. The operator test chat runs the agent's draft, so you try the change on a real message before anyone else meets it. **Review & Publish** on the agent is what makes it live — the routine ships in one reviewed snapshot with the directives, skills, and context variables you changed alongside it. Conversations already running keep the revision they started on, so nobody mid-flow gets swapped onto new steps.
 
 Re-entry is yours to choose per routine: once per conversation (the default), every time it matches, or let the agent decide whether to resume the existing run, start fresh, or leave it finished.
 

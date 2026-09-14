@@ -381,26 +381,6 @@ export const copilotEvalCases: CopilotEvalCase[] = [
     ],
   },
   {
-    id: "routine-publish-proposal",
-    name: "Going live is proposed on its own, after checking the routine validates",
-    description: "The lifecycle tool is separate from the edit tool: what an agent is running changes only through a publish an operator applies.",
-    tags: ["tool_selection", "proposal_quality"],
-    permissions: FULL_OPERATOR,
-    pageContext: page("agent", { agentId: COPILOT_EVAL_AGENT_ID }),
-    message: "Is the Order status routine ready to go live? If it is, put it in front of me to publish.",
-    requires: ["publishable_routine"],
-    plan: [
-      { tool: "validate_routine", input: { agentId: COPILOT_EVAL_AGENT_ID, routineId: COPILOT_EVAL_ROUTINE_ID } },
-      { tool: "propose_routine_lifecycle", input: { agentId: COPILOT_EVAL_AGENT_ID, routineId: COPILOT_EVAL_ROUTINE_ID, action: "publish" } },
-    ],
-    finalMessage: "It validates cleanly, so I drafted a publish for you to apply.",
-    assertions: [
-      { type: "tool_call_order", tools: ["validate_routine", "propose_routine_lifecycle"] },
-      { type: "proposal_drafted", targetType: "routine" },
-      { type: "turn_outcome", outcome: "completed" },
-    ],
-  },
-  {
     id: "routine-structural-change-handoff",
     name: "Adding a step is handed to the routine editor rather than approximated",
     description: "Ray edits by stable id, so it cannot add or remove a step. The failure to avoid is proposing something adjacent instead of saying so.",

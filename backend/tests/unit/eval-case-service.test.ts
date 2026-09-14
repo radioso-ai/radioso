@@ -93,3 +93,22 @@ describe("EvalCaseService.setExecutionMode", () => {
     expect(update).not.toHaveBeenCalled();
   });
 });
+
+describe("EvalCaseService assertion validation", () => {
+  it("rejects a regex assertion unsupported by the linear-time engine", async () => {
+    const workspaceId = randomUUID();
+    const snap = snapshot(workspaceId);
+    const repository = createInMemoryEvalRepository({ snapshots: [snap] });
+    const service = new EvalCaseService(repository);
+
+    await expect(service.create({
+      workspaceId,
+      snapshotId: snap.id,
+      name: "Unsupported regex",
+      assertions: [{ type: "answer_contains", pattern: "(?=answer)answer", matchMode: "regex" }],
+    })).rejects.toMatchObject({
+      code: "bad_request",
+      message: expect.stringMatching(/unsafe.*regex/i),
+    });
+  });
+});

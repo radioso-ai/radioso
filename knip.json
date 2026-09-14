@@ -16,7 +16,8 @@
   ],
   "ignoreIssues": {
     "backend/src/shared/infra/kysely/schema.ts": ["types"],
-    "ee/packages/backend-module/src/radiosoModuleTypes.ts": ["types"]
+    "ee/packages/backend-module/src/radiosoModuleTypes.ts": ["types"],
+    "typescript-sdk/src/resources/routines.ts": ["types"]
   },
   "workspaces": {
     ".": {
@@ -44,6 +45,7 @@
         "tests/support/**/*.ts",
         "tests/fixtures/**/*.ts",
         "tests/contract/kysely-typecheck.ts"
+        ,"tests/acceptance/operatorAuthoringBackend.ts"
       ],
       "project": [
         "src/**/*.ts",

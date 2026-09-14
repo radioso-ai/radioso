@@ -101,10 +101,11 @@ const saveRoutineState = async (
 ): Promise<void> => {
   const expiresAt = state.status === "suspended" ? null : new Date(Date.now() + ttlMs).toISOString();
   await sql`
-    INSERT INTO routine_states (session_id, routine_id, path, variables, attempts, status, expires_at, updated_at)
+    INSERT INTO routine_states (session_id, routine_id, execution_id, path, variables, attempts, status, expires_at, updated_at)
     VALUES (
       ${state.sessionId},
       ${state.routineId},
+      ${state.executionId ?? null},
       ${sql.val(state.path)}::text[],
       ${toJsonb(state.variables)},
       ${toJsonb(state.attempts ?? {})},
@@ -114,6 +115,7 @@ const saveRoutineState = async (
     )
     ON CONFLICT (session_id) DO UPDATE SET
       routine_id = EXCLUDED.routine_id,
+      execution_id = EXCLUDED.execution_id,
       path = EXCLUDED.path,
       variables = EXCLUDED.variables,
       attempts = EXCLUDED.attempts,
@@ -320,6 +322,20 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
       const message = result.rows[0];
       if (!message) {
         throw new Error("Expected inserted assistant message");
+      }
+
+      if (input.answerCoverageRequestMessageId) {
+        // Coverage assessment is deliberately saved before a reply is durable so a
+        // retry can reuse it. This is the sole confirmation point: the exact request
+        // and assistant reply now exist in the same committing transaction.
+        await sql`
+          UPDATE answer_coverage_assessments
+          SET assistant_message_id = ${messageId}
+          WHERE workspace_id = ${input.workspaceId}
+            AND conversation_id = ${input.conversationId}
+            AND request_message_id = ${input.answerCoverageRequestMessageId}
+            AND assistant_message_id IS NULL
+        `.execute(db);
       }
 
       await sql`

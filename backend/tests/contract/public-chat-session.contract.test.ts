@@ -8,7 +8,13 @@ import {
   verifyConverseChatSession,
 } from "../../src/modules/settings/contracts/publicChatSession.js";
 import type { PublicChatActionAdvertiserPort } from "../../src/modules/chat/services/publicChatActionAdvertiser.js";
-import { adminSessionHeaders, createTestApp, issueTestSession, issueTestToken } from "../support/testApp.js";
+import {
+  adminSessionHeaders,
+  createTestApp,
+  issueTestSession,
+  issueTestToken,
+  publishTestAgentBaseline,
+} from "../support/testApp.js";
 
 describe("public chat session contract", () => {
   const decodePublicSessionPayload = (token: string): Record<string, unknown> => {
@@ -817,6 +823,7 @@ describe("public chat session contract", () => {
       .set("Cookie", session.cookie)
       .set("X-Workspace-Id", session.workspaceId)
       .expect(200);
+    await publishTestAgentBaseline(app, { workspaceId: session.workspaceId, agentId: sideAgent.body.id });
 
     const defaultToken = defaultAgent.body.surfaceSettings.anonymousChat.token as string;
     const sideToken = sideAgentWithToken.body.surfaceSettings.anonymousChat.token as string;

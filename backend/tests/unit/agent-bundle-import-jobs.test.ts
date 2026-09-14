@@ -59,7 +59,7 @@ describe("AgentBundleImportService import jobs", () => {
         findSkillIdByName: async () => null,
         enable: async () => undefined,
       },
-      routines: { createDraft: async () => ({ routineId: "routine-1" }), publish: async () => ({ published: true as const }) },
+      routines: { createDraft: async () => ({ routineId: "routine-1" }), validateMany: async () => new Map(), setEnabled: async () => undefined },
     } as never);
 
     const result = await service.import({ workspaceId: "workspace-1", actorAccountId: "account-1", idempotencyKey: "import-1", bundle: bundle() });
@@ -88,7 +88,7 @@ describe("AgentBundleImportService import jobs", () => {
       directives: { create: async () => undefined },
       skills: { hasCapability: () => true, create: async () => undefined },
       contextVariables: { findVariableIdByName: async () => null, findSkillIdByName: async () => null, enable: async () => undefined },
-      routines: { createDraft: async () => ({ routineId: "routine-1" }), publish: async () => ({ published: true as const }) },
+      routines: { createDraft: async () => ({ routineId: "routine-1" }), validateMany: async () => new Map(), setEnabled: async () => undefined },
     } as never);
 
     await expect(service.import({ workspaceId: "workspace-1", actorAccountId: "account-1", idempotencyKey: "same-key", bundle: bundle() }))
@@ -103,7 +103,7 @@ describe("AgentBundleImportService import jobs", () => {
       directives: { create: async () => undefined },
       skills: { hasCapability: () => true, create: async () => undefined },
       contextVariables: { findVariableIdByName: async () => null, findSkillIdByName: async () => null, enable: async () => undefined },
-      routines: { createDraft: async () => ({ routineId: "routine-1" }), publish: async () => ({ published: true as const }) },
+      routines: { createDraft: async () => ({ routineId: "routine-1" }), validateMany: async () => new Map(), setEnabled: async () => undefined },
     } as never);
 
     await expect(service.import({ workspaceId: "workspace-1", actorAccountId: "account-1", idempotencyKey: "same-key", bundle: bundle() }))
@@ -123,7 +123,7 @@ describe("AgentBundleImportService import jobs", () => {
       directives: { create: async () => { throw new Error("invalid directive"); } },
       skills: { hasCapability: () => true, create: async () => undefined },
       contextVariables: { findVariableIdByName: async () => null, findSkillIdByName: async () => null, enable: async () => undefined },
-      routines: { createDraft: async () => ({ routineId: "routine-1" }), publish: async () => ({ published: true as const }) },
+      routines: { createDraft: async () => ({ routineId: "routine-1" }), validateMany: async () => new Map(), setEnabled: async () => undefined },
     } as never);
 
     const invalidDirectiveBundle = bundle();
@@ -146,7 +146,7 @@ describe("AgentBundleImportService import jobs", () => {
       directives: { create: async () => undefined },
       skills: { hasCapability: () => true, create: async () => undefined },
       contextVariables: { findVariableIdByName: async () => null, findSkillIdByName: async () => null, enable: async () => undefined },
-      routines: { createDraft: async () => ({ routineId: "routine-1" }), publish: async () => ({ published: true as const }) },
+      routines: { createDraft: async () => ({ routineId: "routine-1" }), validateMany: async () => new Map(), setEnabled: async () => undefined },
     } as never);
 
     await expect(service.import({ workspaceId: "workspace-1", actorAccountId: "account-1", bundle: bundle() }))

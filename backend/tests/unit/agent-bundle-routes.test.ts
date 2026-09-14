@@ -171,7 +171,7 @@ describe("agent bundle routes", () => {
       enabled: true,
     });
 
-    const draft = await dependencies.routineDefinitionService.createDraft(workspaceId, agentId, {
+    await dependencies.routineDefinitionService.createDraft(workspaceId, agentId, {
       name: "answer-with-context",
       activation: {
         triggerDescription: "When the visitor asks about their plan",
@@ -211,7 +211,6 @@ describe("agent bundle routes", () => {
         ordinal: 1,
       }],
     });
-    await dependencies.routineDefinitionService.publish(workspaceId, agentId, draft.routine.id);
 
     const exported = await request(app)
       .get(`/api/v1/agents/${agentId}/bundle`)

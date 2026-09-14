@@ -6,6 +6,7 @@ import {
   type RoutineDefinition,
   type RoutineDefinitionDraftAuthoringInput,
 } from "./domain.js";
+import { answerCoverageCriteriaSchema } from "../answerCoverage/public.js";
 
 /**
  * What an authoring surface outside the routine editor may change about a routine.
@@ -30,10 +31,15 @@ const addressedOnce = <TItem>(
 
 export const routineFieldPatchSchema = z.object({
   name: z.string().trim().min(1).max(ROUTINE_DEFINITION_LIMITS.name).optional(),
+  // Whether the routine may activate, mirroring the same field on the plain update endpoint.
+  // Absent means unchanged — applyRoutineFieldPatch overlays this onto the stored routine's own
+  // draft shape, so an edit that never mentions it cannot reset it (the enabled-reset bug class).
+  enabled: z.boolean().optional(),
   activation: z.object({
     triggerDescription: z.string().trim().min(1).max(ROUTINE_DEFINITION_LIMITS.triggerDescription).optional(),
     priority: z.number().int().optional(),
     reentryMode: z.enum(routineReentryModes).optional(),
+    coverageCriteria: answerCoverageCriteriaSchema.optional(),
   }).strict().partial().refine((activation) => Object.keys(activation).length > 0, {
     message: "activation must change at least one field",
   }).optional(),
@@ -58,7 +64,7 @@ export const routineFieldPatchSchema = z.object({
   message: "a routine edit must change at least one field",
 });
 
-export type RoutineFieldPatch = z.infer<typeof routineFieldPatchSchema>;
+type RoutineFieldPatch = z.infer<typeof routineFieldPatchSchema>;
 
 /** An edit that named an element the routine does not have. The message lists what it does have. */
 export class RoutineFieldPatchError extends Error {
@@ -92,9 +98,13 @@ const requireExactlyOneAddress = <T>(
 
 /** Strips persistence identity so a stored routine re-enters the authoring schema. */
 export const draftInputFromRoutine = (routine: RoutineDefinition): RoutineDefinitionDraftAuthoringInput => {
-  const { id: _id, agentId: _agentId, lineageId: _lineageId, version: _version, status: _status, createdAt: _createdAt, updatedAt: _updatedAt, ...draft } = routine;
+  const { id: _id, agentId: _agentId, lineageId: _lineageId, version: _version, createdAt: _createdAt, updatedAt: _updatedAt, ...draft } = routine;
   return draft;
 };
+
+/** Canonical persistence-free authoring projection for external bounded readers. */
+export const canonicalRoutineAuthoringDraft = (routine: RoutineDefinition): RoutineDefinitionDraftAuthoringInput =>
+  draftInputFromRoutine(routine);
 
 export const applyRoutineFieldPatch = (
   routine: RoutineDefinition,
@@ -112,6 +122,7 @@ export const applyRoutineFieldPatch = (
   return {
     ...draft,
     ...(patch.name ? { name: patch.name } : {}),
+    ...(patch.enabled === undefined ? {} : { enabled: patch.enabled }),
     activation: { ...draft.activation, ...patch.activation },
     slots: draft.slots?.map((slot) => {
       const edit = slotEdits.get(slot.key);
@@ -133,13 +144,21 @@ export const applyRoutineFieldPatch = (
   };
 };
 
+const describeCoverageCriteria = (criteria: NonNullable<NonNullable<RoutineFieldPatch["activation"]>["coverageCriteria"]>): string => {
+  const coverage = criteria.coverage.map((value) => value.replaceAll("_", " ")).join(" or ");
+  const reasons = criteria.reasons?.map((value) => value.replaceAll("_", " ")).join(" or ");
+  return reasons ? `answer coverage ${coverage} (${reasons})` : `answer coverage ${coverage}`;
+};
+
 /** Names what an edit touches, in the operator's routine vocabulary rather than field paths. */
 export const describeRoutineFieldPatch = (patch: RoutineFieldPatch): string => {
   const parts: string[] = [];
   if (patch.name) parts.push("name");
+  if (patch.enabled !== undefined) parts.push(patch.enabled ? "enabled" : "disabled");
   if (patch.activation?.triggerDescription) parts.push("trigger");
   if (patch.activation?.priority !== undefined) parts.push("priority");
   if (patch.activation?.reentryMode) parts.push("re-entry");
+  if (patch.activation?.coverageCriteria) parts.push(describeCoverageCriteria(patch.activation.coverageCriteria));
   for (const step of patch.steps ?? []) parts.push(`step ${step.stableStepId}`);
   for (const terminal of patch.terminals ?? []) parts.push(`ending ${terminal.stableStepId}`);
   for (const slot of patch.slots ?? []) parts.push(`field ${slot.key}`);
@@ -157,6 +176,9 @@ export const describeRoutineFieldPatch = (patch: RoutineFieldPatch): string => {
  */
 export const projectRoutineForReview = (routine: RoutineDefinitionDraftAuthoringInput): Record<string, unknown> => ({
   name: routine.name,
+  // Surfaced so a reviewer can see whether a Ray-proposed create or edit ships the routine armed
+  // or parked, the same way the dashboard's list-row switch and editor show it.
+  enabled: routine.enabled ?? true,
   activation: {
     triggerDescription: routine.activation.triggerDescription,
     gateRef: routine.activation.gateRef ?? null,

@@ -16,6 +16,12 @@ import {
   routineTurnSignalFromSpine,
   turnTraceRollup,
 } from '@/lib/turn-trace'
+import {
+  answerCoverageAwareOutcome,
+  normalizeAnswerCoverage,
+  normalizeAnswerCoverageInteractionTrace,
+} from '@/lib/answer-coverage'
+import { AnswerCoverageSection } from './answer-coverage-section'
 
 type ChatConversationTurnDebug = NonNullable<ChatConversationTurn['debug']>
 
@@ -36,6 +42,8 @@ export interface TurnDiagnosticsInput {
   /** Turn spine envelope; drives routine/clarification signals and the flow graph. */
   turnTrace?: TurnTraceEnvelope
   visitorContext?: unknown
+  answerCoverage?: unknown
+  interactionTrace?: unknown
 }
 
 const toneStyles: Record<DiagnosticPresentation['tone'], string> = {
@@ -104,11 +112,13 @@ export function TurnDiagnosticsPanel({
   routineNamesById,
   selectedStageId,
   onSelectLeafStage,
+  onOpenTargetMessage,
 }: {
   diagnostics: TurnDiagnosticsInput | null
   routineNamesById?: ReadonlyMap<string, string>
   selectedStageId?: string
   onSelectLeafStage: (stageId: string) => void
+  onOpenTargetMessage?: (messageId: string) => void
 }) {
   if (!diagnostics) {
     return (
@@ -125,16 +135,35 @@ export function TurnDiagnosticsPanel({
   // of flattening everything that isn't retrieval to a "direct reply".
   const spine = diagnostics.turnTrace?.spine
   const routineSignal = routineTurnSignalFromSpine(spine)
+  const clarificationDecision = clarificationDecisionFromSpine(spine)
   const routineName = routineSignal ? routineNamesById?.get(routineSignal.routineId) : undefined
   const outcomePresentation = presentActivityOutcome({
     trace: resolvedActivityTrace,
     route: diagnostics.route,
     answerOutcome: diagnostics.answerOutcome,
     routine: routineSignal ? { name: routineName, completed: routineSignal.completed } : undefined,
-    clarificationAsked: clarificationDecisionFromSpine(spine) === 'asked',
+    clarificationAsked: clarificationDecision === 'asked',
   })
   const runParameters = presentRunParameters(resolvedActivityTrace)
   const rollup = turnTraceRollup(activeEnvelope)
+  const normalizedAnswerCoverage = normalizeAnswerCoverage(diagnostics.answerCoverage)
+  const answerCoverage = normalizedAnswerCoverage ?? { availability: 'not_recorded' as const, originatingTurnId: '', originatingRequestId: '' }
+  const interactionTrace = normalizeAnswerCoverageInteractionTrace(diagnostics.interactionTrace)
+  const displayedOutcome = answerCoverageAwareOutcome(outcomePresentation, normalizedAnswerCoverage, {
+    // Old history records had no route/trace discriminator. Preserve their legacy
+    // warning, while current non-retrieval turns carry an explicit not_recorded state.
+    legacyUnavailable: !normalizedAnswerCoverage
+      && !diagnostics.route
+      && !diagnostics.turnTrace
+      && !diagnostics.activityTrace,
+  })
+  const hasOutcomeEvidence = Boolean(
+    resolvedActivityTrace
+    || diagnostics.route
+    || diagnostics.answerOutcome
+    || routineSignal
+    || clarificationDecision === 'asked',
+  )
 
   return (
     <div className="space-y-4">
@@ -146,7 +175,16 @@ export function TurnDiagnosticsPanel({
         </div>
       ) : null}
 
-      <DiagnosticPresentationSection label="Outcome summary" presentation={outcomePresentation} />
+      {hasOutcomeEvidence ? (
+        <DiagnosticPresentationSection label="Outcome summary" presentation={displayedOutcome} />
+      ) : activeEnvelope ? (
+        <section className="rounded-lg border border-border/70 bg-background/60 p-3">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Recorded turn</p>
+          <p className="mt-1 text-sm text-muted-foreground">The complete execution trace is available in Flow.</p>
+        </section>
+      ) : null}
+
+      <AnswerCoverageSection assessment={answerCoverage} interaction={interactionTrace} isLegacy={!normalizedAnswerCoverage} onOpenTargetMessage={onOpenTargetMessage} />
 
       {rollup ? (
         <section className="rounded-lg border border-border/70 bg-background/60 p-3">

@@ -114,12 +114,13 @@
     "express": "^4.22.1",
     "kysely": "^0.29.2",
     "mammoth": "^1.11.0",
-    "multer": "^2.2.0",
+    "multer": "^2.3.0",
     "openai": "^5.20.0",
     "pdf-parse": "^1.1.1",
     "pg": "^8.16.3",
     "pino": "^9.9.0",
     "pino-http": "^10.5.0",
+    "re2": "1.26.1",
     "redis": "6.2.1",
     "swagger-ui-express": "^5.0.1",
     "undici": "8.10.0",
@@ -136,6 +137,7 @@
     "@types/node": "^24.3.0",
     "@types/pg": "^8.15.5",
     "@types/supertest": "^6.0.3",
+    "@vitest/coverage-v8": "^4.1.8",
     "dependency-cruiser": "^17.4.0",
     "kysely-codegen": "^0.20.0",
     "openapi-typescript": "^7.13.0",
@@ -145,7 +147,6 @@
     "vitest": "^4.1.8"
   },
   "overrides": {
-    "path-to-regexp": "0.1.13",
-    "@xmldom/xmldom": "0.9.10"
+    "path-to-regexp": "0.1.13"
   }
 }

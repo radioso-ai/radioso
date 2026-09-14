@@ -59,6 +59,7 @@ const censusResult = (): CensusRunResult => ({
   unclassifiedCount: 0,
   facetReadyQuestionCount: 2,
   fullyFacetReady: true,
+  requeuedForExtraction: 0,
   dissolvedTopicIds: [],
   dissolvedTopics: [],
   topics: [{

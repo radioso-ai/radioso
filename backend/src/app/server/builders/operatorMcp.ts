@@ -7,6 +7,7 @@ import {
   OperatorMcpCredentialValidationService,
   OperatorMcpGrantService,
   createOperatorMcpClientMetadataService,
+  type OperatorMcpClientMetadataServiceOptions,
 } from "../../../modules/operatorMcpAuthorization/public.js";
 import type { Database } from "../../../shared/infra/database.js";
 import type { Env } from "../../config/env.js";
@@ -24,9 +25,11 @@ export const buildOperatorMcpServices = (input: {
   logger: AppLogger;
   metricsRegistry: MetricsRegistry | null;
   copilotToolCatalog: readonly CopilotToolDescriptor[];
+  /** Acceptance composition may inject an already-reviewed client identity. Production leaves this absent and resolves public HTTPS CIMD. */
+  operatorMcpClientMetadataOptions?: Pick<OperatorMcpClientMetadataServiceOptions, "preregisteredClients">;
 }) => {
   const repository = new OperatorMcpAuthorizationRepository(input.database.kysely);
-  const metadata = createOperatorMcpClientMetadataService();
+  const metadata = createOperatorMcpClientMetadataService(input.operatorMcpClientMetadataOptions);
   const operatorMcpClientResolver = {
     resolve: async (clientId: string, redirectUri: string) => repository.persistClientSnapshot(
       await metadata.resolve({ clientId, redirectUri }),

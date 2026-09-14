@@ -48,7 +48,7 @@ interface AgentBundleImportInput {
  * failure path safe — see the compensating delete below.
  *
  * Order is load-bearing. Skills exist before context variables (an enablement's
- * resolver is a skill) and before routines (a tool step names a skill, and publish
+ * resolver is a skill) and before routines (a tool step names a skill, and serving
  * validation checks that name against the agent's skills).
  */
 export class AgentBundleImportService {
@@ -349,38 +349,62 @@ export class AgentBundleImportService {
     }
   }
 
+  /**
+   * Every routine in one import shares an agent, so the routines port's `validateMany` resolves
+   * that agent's workspace-scoped skill/context-variable state once for the whole batch rather
+   * than once per routine (item 8 of the routine-lifecycle-collapse review). Each routine's own
+   * row still has to exist before it can be validated or referenced, so creation stays a
+   * sequential per-routine pass; only validation moves to one batched call after every draft that
+   * could be created has been.
+   */
   private async importRoutines(
     workspaceId: string,
     agentId: string,
     routines: readonly AgentBundle["routines"][number][],
     unresolved: AgentBundleUnresolvedReference[],
   ): Promise<void> {
+    type RoutineOutcome =
+      | { status: "create_failed"; name: string; error: unknown }
+      | { status: "created"; name: string; routineId: string };
+
+    const outcomes: RoutineOutcome[] = [];
     for (const routine of routines) {
-      let routineId: string;
       try {
-        ({ routineId } = await this.options.routines.createDraft(
-          workspaceId,
-          agentId,
-          routine.definition,
-        ));
+        const { routineId } = await this.options.routines.createDraft(workspaceId, agentId, routine.definition);
+        outcomes.push({ status: "created", name: routine.name, routineId });
       } catch (error) {
+        outcomes.push({ status: "create_failed", name: routine.name, error });
+      }
+    }
+
+    const created = outcomes.filter((outcome): outcome is Extract<RoutineOutcome, { status: "created" }> =>
+      outcome.status === "created");
+    const diagnosticsByRoutineId = created.length > 0
+      ? await this.options.routines.validateMany(workspaceId, agentId, created.map((outcome) => outcome.routineId))
+      : new Map<string, readonly string[]>();
+
+    // A second pass, in the routines' original order, so `unresolved` reads the same whether a
+    // routine failed to create or failed to validate — the two waves above only change when each
+    // check runs, not the order the outcomes are reported in.
+    for (const outcome of outcomes) {
+      if (outcome.status === "create_failed") {
         unresolved.push({
           kind: "routine_invalid",
-          element: `routine:${routine.name}`,
-          detail: `Could not be created: ${error instanceof Error ? error.message : String(error)}`,
+          element: `routine:${outcome.name}`,
+          detail: `Could not be created: ${outcome.error instanceof Error ? outcome.error.message : String(outcome.error)}`,
         });
         continue;
       }
-
-      const outcome = await this.options.routines.publish(workspaceId, agentId, routineId);
-      if (!outcome.published) {
-        // The routine is kept as a draft rather than deleted: the operator can see
-        // it, read the validator's diagnostics, and fix the binding. Dropping it
-        // would lose authored work to a missing skill.
+      // A routine whose tool step names a skill that did not travel is imported out of service
+      // rather than dropped: the operator can see it, read the diagnostics, and fix the binding
+      // in place. Deleting it would lose authored work to a missing skill.
+      const diagnostics = diagnosticsByRoutineId.get(outcome.routineId) ?? [];
+      if (diagnostics.length > 0) {
+        await this.options.routines.setEnabled(workspaceId, agentId, outcome.routineId, false);
         unresolved.push({
           kind: "routine_invalid",
-          element: `routine:${routine.name}`,
-          detail: `Imported as a draft — publishing was rejected: ${outcome.reason}`,
+          element: `routine:${outcome.name}`,
+          detail: `Imported out of service — it does not pass validation: ${diagnostics.join("; ")}`,
         });
       }
     }

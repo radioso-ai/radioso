@@ -19,7 +19,6 @@ export const ROUTINE_DEFINITION_LIMITS = {
   fieldValue: 500,
 } as const;
 
-export const routineDefinitionStatuses = ["draft", "published", "superseded", "archived"] as const;
 // Reentry policy for a completed routine instance within a conversation (issue #746).
 // `once_per_conversation` is the safe default and preserves the historical behaviour
 // (a completed instance suppresses re-activation). `semantic` is reserved for a later
@@ -86,6 +85,39 @@ const optionalStructuredParamText = (maxLength: number) =>
 
 const optionalAuthoringParamText = (maxLength: number) =>
   z.string().trim().min(1).max(maxLength).optional().nullable();
+
+const answerCoverageValues = ["answered", "partial", "unanswered", "unclear"] as const;
+const answerCoverageReasonValues = [
+  "sufficient_evidence", "insufficient_evidence", "conflicting_evidence", "ambiguous_request", "intentional_scope_boundary",
+] as const;
+const compatibleCoverageReasons: Record<(typeof answerCoverageValues)[number], readonly (typeof answerCoverageReasonValues)[number][]> = {
+  answered: ["sufficient_evidence"],
+  partial: ["insufficient_evidence", "conflicting_evidence", "intentional_scope_boundary"],
+  unanswered: ["insufficient_evidence", "conflicting_evidence", "intentional_scope_boundary"],
+  unclear: ["ambiguous_request"],
+};
+
+const answerCoverageCriteriaSchema = z.object({
+  coverage: z.array(z.enum(answerCoverageValues)).min(1).refine(
+    (coverage) => new Set(coverage).size === coverage.length,
+    "Coverage criteria cannot repeat a coverage value",
+  ),
+  reasons: z.array(z.enum(answerCoverageReasonValues)).min(1).refine(
+    (reasons) => new Set(reasons).size === reasons.length,
+    "Coverage criteria cannot repeat a reason",
+  ).optional(),
+}).strict().superRefine((criteria, ctx) => {
+  for (const reason of criteria.reasons ?? []) {
+    const compatible = criteria.coverage.some((coverage) => compatibleCoverageReasons[coverage].includes(reason));
+    if (!compatible) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["reasons"],
+        message: `Reason ${reason} is incompatible with selected coverage`,
+      });
+    }
+  }
+});
 
 const stableIdSchema = trimmedText(ROUTINE_DEFINITION_LIMITS.stableId).regex(identifierPattern);
 // captureKey lives in the slot-key namespace (no dots/dashes): approval field
@@ -368,11 +400,15 @@ const routineDefinitionDraftSchema = <
   completionExport: TCompletionExport,
 ) => z.object({
   name,
+  // Whether the routine may activate, mirroring `agent_skills.enabled`. Defaults to
+  // enabled so a create body that says nothing about it authors a working routine.
+  enabled: z.boolean().default(true),
   activation: z.object({
     triggerDescription,
     gateRef: optionalTrimmedText(ROUTINE_DEFINITION_LIMITS.gateRef),
     priority: z.number().int(),
     reentryMode: z.enum(routineReentryModes).default("once_per_conversation"),
+    coverageCriteria: answerCoverageCriteriaSchema.optional(),
   }).strict(),
   slots,
   steps,
@@ -393,6 +429,35 @@ export const routineDefinitionDraftInputSchema = routineDefinitionDraftSchema(
   routineCompletionExportSchema.optional(),
 );
 
+const withoutDefault = <T extends z.ZodTypeAny>(schema: z.ZodDefault<T>): z.ZodOptional<T> =>
+  schema.removeDefault().optional();
+
+/**
+ * The full-body PATCH variant of the draft input. `validateBody`
+ * (backend/src/app/http/middleware/validate.ts) replaces the request body with Zod's parsed
+ * result — defaults included — before `RoutineDefinitionService.updateDraft`'s
+ * omission-preserving merge (`mergeDraftInputWithExisting`) ever runs, so any field that
+ * carries a `.default()` on the create schema needs a genuinely `undefined` omission here
+ * instead, or the merge can never see that the caller left it out. That is true one level
+ * into `activation` and `completionExport` too, not just at the top level: `enabled`,
+ * `activation.reentryMode`, and every `completionExport` field all default on the create
+ * schema. `routineDefinitionDraftInputSchema` — defaults intact — still gates the assembled,
+ * merged result inside `validateInput`, so nothing here weakens what a saved routine may look
+ * like; it only controls what counts as "the caller didn't mention this."
+ */
+export const routineDefinitionDraftUpdateInputSchema = routineDefinitionDraftInputSchema.extend({
+  enabled: withoutDefault(routineDefinitionDraftInputSchema.shape.enabled),
+  activation: routineDefinitionDraftInputSchema.shape.activation.extend({
+    reentryMode: withoutDefault(routineDefinitionDraftInputSchema.shape.activation.shape.reentryMode),
+  }),
+  completionExport: z.object({
+    enabled: withoutDefault(routineCompletionExportFields.enabled),
+    triggerKinds: withoutDefault(routineCompletionExportFields.triggerKinds),
+    destinationRef: withoutDefault(routineCompletionExportFields.destinationRef),
+  }).strict().optional(),
+});
+export type RoutineDefinitionDraftUpdateInput = z.infer<typeof routineDefinitionDraftUpdateInputSchema>;
+
 /** The editing superset of a draft — what an authoring surface may hold mid-edit. */
 export const routineDefinitionDraftEditingInputSchema = routineDefinitionDraftSchema(
   editingText(ROUTINE_DEFINITION_LIMITS.name),
@@ -409,7 +474,6 @@ export const routineDefinitionSchema = routineDefinitionDraftInputSchema.extend(
   agentId: z.string().min(1),
   lineageId: z.string().min(1),
   version: z.number().int().min(1),
-  status: z.enum(routineDefinitionStatuses),
   createdAt: z.date(),
   updatedAt: z.date(),
 }).strict();

@@ -15,6 +15,7 @@ import { summarizeSuite } from "../domain/suite.js";
 import { evalAssertionSchema } from "../domain/assertionSchema.js";
 import { workbenchReplayRateLimiter, type WorkbenchReplayRateLimitDependencies } from "./workbenchReplayRateLimit.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
+import { createRevisionEvalRoutes, type RevisionEvalRouteDependencies } from "./revisionEvalRoutes.js";
 
 const captureSnapshotSchema = z.object({
   conversationId: z.string().uuid(),
@@ -190,10 +191,14 @@ export interface EvalRouteDependencies extends WorkspaceSessionDependencies {
   abuseControlService: WorkbenchReplayRateLimitDependencies["abuseControlService"];
   auditService: WorkbenchReplayRateLimitDependencies["auditService"];
   logger: Pick<AppLogger, "warn">;
+  revisionEvalRunService?: RevisionEvalRouteDependencies["revisionEvalRunService"];
 }
 
 export const createEvalRoutes = (dependencies: EvalRouteDependencies): Router => {
   const router = Router();
+  if (dependencies.revisionEvalRunService) {
+    router.use(createRevisionEvalRoutes({ ...dependencies, revisionEvalRunService: dependencies.revisionEvalRunService }));
+  }
   const workspaceSession = requireWorkspaceSession(dependencies);
   const requireQuery = requireWorkspacePermission(dependencies, "workspace.retrieval.query");
   const rateLimitWorkbenchReplay = workbenchReplayRateLimiter(dependencies);

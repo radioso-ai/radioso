@@ -63,6 +63,7 @@ export type RoutineBlockStep = Omit<DraftStep, 'instruction' | 'ordinal' | 'meta
 
 export type RoutineBlockDoc = {
   name: string
+  enabled: boolean
   activation: RoutineDefinitionDraftEditingInput['activation']
   information: RoutineBlockSlot[]
   steps: RoutineBlockStep[]
@@ -199,6 +200,7 @@ export function routineToBlockDoc(input: RoutineDefinitionDraftEditingAuthoringI
     ok: true,
     doc: {
       name: draft.name,
+      enabled: draft.enabled,
       activation: draft.activation,
       information: [...draft.slots].sort(byOrdinal).map(({ ordinal: _ordinal, ...slot }) => slot),
       steps: steps.map(({ instruction, ordinal: _ordinal, metadata, ...step }) => ({
@@ -243,6 +245,7 @@ export function draftFromBlockDoc(doc: RoutineBlockDoc): RoutineDefinitionDraftA
 
   return {
     name: doc.name,
+    enabled: doc.enabled,
     activation: doc.activation,
     slots: doc.information.map((slot, ordinal) => ({ ...slot, ordinal })),
     steps: doc.steps.map(({ instruction, inputBindings, outputAssignments, mode, additionalMetadata, branches: _branches, ...step }, ordinal) => ({

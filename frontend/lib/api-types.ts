@@ -63,7 +63,6 @@ export type AgentContextVariableEnablementRequest = ApiSchemas['AgentContextVari
 export type AgentContextVariableEnablementResponse = ApiSchemas['AgentContextVariableEnablementResponse']
 export type AgentContextVariableEnablementListResponse = ApiSchemas['AgentContextVariableEnablementListResponse']
 
-export type RoutineDefinitionStatus = ApiSchemas['RoutineDefinition']['status']
 export type RoutineSlotType = 'text' | 'number' | 'boolean' | 'email' | 'date'
 export type RoutineStepKind = 'chat' | 'tool' | 'action' | 'approval'
 export type RoutineGuardKind = 'llm' | 'default' | 'slot_filled' | 'outcome' | 'counter' | 'field'
@@ -109,11 +108,19 @@ export type RoutineTerminal = Omit<ApiSchemas['RoutineDefinition']['terminals'][
 export type RoutineCompletionExport = NonNullable<ApiSchemas['RoutineDefinition']['completionExport']>
 export type RoutineDefinitionDraft = {
   name: string
+  // Whether the routine may activate. Optional on the draft shape so a caller that never reads
+  // or shows it (e.g. an older client) omits it rather than sending a stale default — the
+  // backend carries the stored value forward for a field the payload never mentions.
+  enabled?: boolean
   activation: {
     triggerDescription: string
     gateRef?: string | null
     priority: number
     reentryMode?: RoutineReentryMode
+    coverageCriteria?: {
+      coverage: Array<'answered' | 'partial' | 'unanswered' | 'unclear'>
+      reasons?: Array<'sufficient_evidence' | 'insufficient_evidence' | 'conflicting_evidence' | 'ambiguous_request' | 'intentional_scope_boundary'>
+    }
   }
   slots: RoutineSlot[]
   steps: RoutineStep[]
@@ -126,16 +133,18 @@ export type RoutineDefinition = RoutineDefinitionDraft & {
   lineageId: string
   agentId: string
   version: number
-  status: RoutineDefinitionStatus
+  enabled: boolean
   createdAt: string
   updatedAt: string
 }
+// The single write shape: authored content, enablement, or both. A row toggle sends only
+// `enabled` so it cannot overwrite content it never read.
+export type RoutineDefinitionUpdate = Partial<RoutineDefinitionDraft>
 export type RoutineDefinitionListResponse = { routines: RoutineDefinition[] }
 export type RoutineDefinitionGetResponse = { routine: RoutineDefinition }
 export type RoutineDefinitionSaveResponse = {
   routine: RoutineDefinition
   validation: RoutineValidationResult
-  directiveScopeOrphans?: ApiSchemas['RoutineDirectiveScopeOrphan'][]
 }
 export type RoutineDefinitionValidateResponse = { validation: RoutineValidationResult }
 export type RoutineDraftAssistRequest = { prose: string }
@@ -143,11 +152,6 @@ export type RoutineDraftAssistResponse = {
   draft: RoutineDefinitionDraft
   validation: RoutineValidationResult
 }
-export type RoutineDefinitionPublishRejectedResponse = {
-  error: 'Routine definition is invalid'
-  validation: RoutineValidationResult
-}
-
 export type WebhookDestination = ApiSchemas['WebhookDestination']
 export type WebhookDestinationRequest = ApiSchemas['WebhookDestinationRequest']
 export type WebhookDestinationListResponse = ApiSchemas['WebhookDestinationListResponse']

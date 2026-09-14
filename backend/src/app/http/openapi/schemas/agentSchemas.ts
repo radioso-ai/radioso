@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { publicChatSessionSchema } from "../../routes/publicChatRouteSchemas.js";
+import { createRevisionCandidateBodySchema, publishRevisionBodySchema } from "../../routes/agentRevisionRequestSchemas.js";
 import {
   agentChannelChatSchema,
   agentChannelCredentialIssueSchema,
@@ -16,8 +17,8 @@ import {
 import type { AgentConfig } from "../../../../modules/agents/public.js";
 import {
   routineDefinitionDraftInputSchema,
+  routineDefinitionDraftUpdateInputSchema,
   routineDraftAssistRequestSchema,
-  routineDefinitionStatuses,
   routineValidationCodes,
 } from "../../../../modules/routines/public.js";
 import { skillDisplayMetadataSchema, skillOutcomeStatusSchema } from "../../../../modules/skills/public.js";
@@ -227,6 +228,15 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
   const AgentParamsSchema = z.object({
     agentId: z.string().uuid(),
   });
+  const AgentRevisionParamsSchema = z.object({ agentId: z.string().uuid(), revisionId: z.string().uuid() });
+  const AgentRevisionSummarySchema = registry.register("AgentRevisionSummary", z.object({ id: z.string().uuid(), label: z.string(), kind: z.enum(["candidate", "published"]), versionNumber: z.number().int().positive().nullable(), createdAt: z.string().datetime(), publishedAt: z.string().datetime().optional() }));
+  const AgentRevisionStateSchema = registry.register("AgentRevisionState", z.object({ agentId: z.string().uuid(), status: z.enum(["unpublished", "draft_clean", "draft_dirty", "published_changed_since_draft"]), draft: z.object({ generation: z.number().int().positive(), basePublishedRevisionId: z.string().uuid().nullable(), updatedAt: z.string().datetime() }), publishedRevision: z.union([AgentRevisionSummarySchema, z.null()]), canPublish: z.boolean(), proactiveGreetingEnabled: z.boolean() }));
+  const AgentRevisionCandidateRequestSchema = registry.register("AgentRevisionCandidateRequest", createRevisionCandidateBodySchema);
+  const AgentRevisionCandidateResponseSchema = registry.register("AgentRevisionCandidateResponse", z.object({ candidate: AgentRevisionSummarySchema }));
+  const AgentRevisionListResponseSchema = registry.register("AgentRevisionListResponse", z.object({ revisions: z.array(AgentRevisionSummarySchema) }));
+  const AgentRevisionDetailResponseSchema = registry.register("AgentRevisionDetailResponse", z.object({ revision: AgentRevisionSummarySchema.extend({ snapshotFormatVersion: z.literal(1), scope: z.object({ customInstructions: z.literal(true), directives: z.literal(true), routines: z.literal(true), contextVariableEnablements: z.literal(true) }), dependencyWarnings: z.array(z.object({ code: z.string(), message: z.string() })), enabledContextVariableIds: z.array(z.string().uuid()), scopedChanges: z.object({ customInstruction: z.object({ before: z.string().nullable(), after: z.string().nullable(), changed: z.boolean() }), directives: z.array(z.object({ id: z.string().uuid(), change: z.enum(["added", "removed", "changed"]), before: z.unknown().optional(), after: z.unknown().optional() })), routines: z.array(z.object({ definitionId: z.string().uuid(), change: z.enum(["added", "removed", "changed"]), before: z.unknown().optional(), after: z.unknown().optional() })), contextVariableEnablements: z.array(z.object({ contextVariableId: z.string().uuid(), change: z.enum(["added", "removed", "changed"]), before: z.unknown().optional(), after: z.unknown().optional() })) }) }) }));
+  const AgentRevisionPublishRequestSchema = registry.register("AgentRevisionPublishRequest", publishRevisionBodySchema);
+  const AgentRevisionPublishResponseSchema = registry.register("AgentRevisionPublishResponse", z.object({ publication: z.object({ id: z.string().uuid(), revisionId: z.string().uuid(), publishedAt: z.string().datetime(), idempotentReplay: z.boolean(), revision: AgentRevisionSummarySchema }), state: AgentRevisionStateSchema }));
 
   const AgentAssistantLogoQuerySchema = z.object({
     workspaceId: z.string().uuid().optional(),
@@ -323,6 +333,13 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       z.object({ kind: z.literal("cooldown"), turns: z.number().int().min(1).max(1000) }).strict(),
     ]),
   );
+  const AnswerCoverageCriteriaSchema = registry.register(
+    "AnswerCoverageCriteria",
+    z.object({
+      coverage: z.array(z.enum(["answered", "partial", "unanswered", "unclear"])).min(1),
+      reasons: z.array(z.enum(["sufficient_evidence", "insufficient_evidence", "conflicting_evidence", "ambiguous_request", "intentional_scope_boundary"])).min(1).optional(),
+    }),
+  );
 
   const GenerationSurfaceSchema = registry.register(
     "GenerationSurface",
@@ -345,6 +362,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     description: z.string().min(1).max(1000).nullable().optional(),
     binding: z.union([AuthoredDirectiveBindingSchema, z.null()]).optional(),
     lifecycle: z.union([AuthoredDirectiveLifecycleSchema, z.null()]).optional(),
+    coverageCriteria: AnswerCoverageCriteriaSchema.optional(),
     enabled: z.boolean().optional().openapi({
       description: "Reversible off switch. A disabled directive keeps its authored text but never reaches the matcher. Defaults to true.",
     }),
@@ -358,7 +376,10 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
 
   const AuthoredDirectiveUpdateRequestSchema = registry.register(
     "AuthoredDirectiveUpdateRequest",
-    AuthoredDirectiveRequestBaseSchema.partial().strict(),
+    AuthoredDirectiveRequestBaseSchema.partial().extend({
+      // PATCH omission preserves the stored condition; explicit null removes it.
+      coverageCriteria: z.union([AnswerCoverageCriteriaSchema, z.null()]).optional(),
+    }).strict(),
   );
 
   const DirectiveDraftRequestSchema = registry.register(
@@ -412,6 +433,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       description: z.string().nullable(),
       binding: z.union([AuthoredDirectiveBindingSchema, z.null()]),
       lifecycle: z.union([AuthoredDirectiveLifecycleSchema, z.null()]),
+      coverageCriteria: AnswerCoverageCriteriaSchema.optional(),
       enabled: z.boolean(),
       metadata: z.record(z.unknown()),
       createdAt: z.string().datetime(),
@@ -472,7 +494,14 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
 
   const RoutineDefinitionUpdateRequestSchema = registry.register(
     "RoutineDefinitionUpdateRequest",
-    routineDefinitionDraftInputSchema,
+    z.union([
+      z.object({ enabled: z.boolean() }).strict(),
+      // No defaults on `enabled`, `activation.reentryMode`, or any `completionExport` field
+      // here, unlike the create schema: an update payload that omits one must carry the
+      // stored value forward rather than silently resetting it. Mirrors
+      // `routineDefinitionPatchBodySchema` in `../routes/agentRoutes.ts`.
+      routineDefinitionDraftUpdateInputSchema,
+    ]),
   );
 
   const RoutineDraftAssistRequestSchema = registry.register(
@@ -499,7 +528,6 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       agentId: z.string().uuid(),
       lineageId: z.string().uuid(),
       version: z.number().int().min(1),
-      status: z.enum(routineDefinitionStatuses),
       createdAt: z.string().datetime(),
       updatedAt: z.string().datetime(),
     }),
@@ -527,31 +555,6 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     }),
   );
 
-  const RoutineDirectiveScopeOrphanSchema = registry.register(
-    "RoutineDirectiveScopeOrphan",
-    z.object({
-      directiveId: z.string(),
-      scopeTag: z.string(),
-      reason: z.literal("missing_step"),
-    }),
-  );
-
-  const RoutineDefinitionPublishResponseSchema = registry.register(
-    "RoutineDefinitionPublishResponse",
-    z.object({
-      routine: RoutineDefinitionResponseSchema,
-      validation: RoutineValidationResultSchema,
-      directiveScopeOrphans: z.array(RoutineDirectiveScopeOrphanSchema),
-    }),
-  );
-
-  const RoutineDefinitionLifecycleResponseSchema = registry.register(
-    "RoutineDefinitionLifecycleResponse",
-    z.object({
-      routine: RoutineDefinitionResponseSchema,
-    }),
-  );
-
   const RoutineDefinitionValidateResponseSchema = registry.register(
     "RoutineDefinitionValidateResponse",
     z.object({
@@ -563,14 +566,6 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     "RoutineDraftAssistResponse",
     z.object({
       draft: routineDefinitionDraftInputSchema,
-      validation: RoutineValidationResultSchema,
-    }),
-  );
-
-  const RoutineDefinitionPublishRejectedResponseSchema = registry.register(
-    "RoutineDefinitionPublishRejectedResponse",
-    z.object({
-      error: z.literal("Routine definition is invalid"),
       validation: RoutineValidationResultSchema,
     }),
   );
@@ -743,6 +738,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       description: z.string().nullable(),
       binding: z.union([AuthoredDirectiveBindingSchema, z.null()]),
       lifecycle: z.union([AuthoredDirectiveLifecycleSchema, z.null()]),
+      coverageCriteria: AnswerCoverageCriteriaSchema.optional(),
       enabled: z.boolean(),
       metadata: z.record(z.unknown()),
     }).openapi({
@@ -932,7 +928,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
         "- resolver_skill_missing: the enablement's resolver skill did not survive import, so it stays unbound.",
         "- skill_target_unbound: the skill's connection target is a credential-bearing workspace row.",
         "- skill_capability_unknown: no capability with this id is registered in this deployment.",
-        "- routine_invalid: the routine imported as a draft because publish validation rejected it.",
+        "- routine_invalid: the routine imported out of service (disabled) because it does not pass validation.",
         "- document_source_unresolved: selected document sources cannot be matched; scope imports empty, not \"all\".",
         "- surface_credential_unbound: a surface whose token cannot travel; imported disabled so it cannot serve.",
         "- mcp_connection_unbound: an external MCP connection reference; the skill imports without its server.",
@@ -1069,6 +1065,14 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     AgentChannelCredentialMetadataSchema,
     AgentChannelCredentialParamsSchema: agentChannelCredentialParamsSchema,
     AgentParamsSchema,
+    AgentRevisionParamsSchema,
+    AgentRevisionStateSchema,
+    AgentRevisionCandidateRequestSchema,
+    AgentRevisionCandidateResponseSchema,
+    AgentRevisionListResponseSchema,
+    AgentRevisionDetailResponseSchema,
+    AgentRevisionPublishRequestSchema,
+    AgentRevisionPublishResponseSchema,
     AgentAssistantLogoQuerySchema,
     AuthoredDirectiveConditionSchema,
     AuthoredDirectiveBindingSchema,
@@ -1089,11 +1093,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     RoutineDefinitionGetResponseSchema,
     RoutineDefinitionListResponseSchema,
     RoutineDefinitionParamsSchema,
-    RoutineDefinitionLifecycleResponseSchema,
-    RoutineDefinitionPublishResponseSchema,
-    RoutineDefinitionPublishRejectedResponseSchema,
     RoutineSkillCatalogResponseSchema,
-    RoutineDirectiveScopeOrphanSchema,
     SkillAuthoringDescriptorSchema,
     RoutineDefinitionResponseSchema,
     RoutineDefinitionSaveResponseSchema,

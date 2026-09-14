@@ -26,6 +26,7 @@ on:
       - packages/document-parser/**
       - packages/mcp-source-proof/**
       - packages/operator-mcp-contract/**
+      - packages/product-docs/**
       - packages/routine-definition/**
       - packages/routine-document/**
       - packages/radioso-mcp-server/**

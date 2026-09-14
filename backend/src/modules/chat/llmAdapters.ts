@@ -1,4 +1,4 @@
-export { ModelChatGateway, OpenAIChatGateway } from "./services/chatGateways.js";
+export { ModelChatGateway } from "./services/chatGateways.js";
 export type { ChatGateway } from "./contracts/chatGateway.js";
 export type { ChatGatewayInput } from "./contracts/chatGateway.js";
 export {

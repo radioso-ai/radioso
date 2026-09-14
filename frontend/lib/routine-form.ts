@@ -23,7 +23,7 @@ export type RoutineSlotForm = {
   mutable: boolean
 }
 
-export type RoutineTransitionForm = {
+type RoutineTransitionForm = {
   fromStep: string
   toRef: string
   guardKind: RoutineGuardKind
@@ -40,7 +40,7 @@ export type RoutineTransitionForm = {
 // An approval option as authored in the Form editor: its id/label/description plus the
 // step or terminal the routine branches to when a human picks it. The target is synthesized
 // into a deterministic field-guard transition on save (see formToRoutineDraft).
-export type RoutineApprovalOptionForm = {
+type RoutineApprovalOptionForm = {
   id: string
   label: string
   description: string
@@ -69,10 +69,15 @@ export type RoutineTerminalForm = {
 
 export type RoutineFormState = {
   name: string
+  enabled: boolean
   activation: {
     triggerDescription: string
     priority: string
     reentryMode: RoutineReentryMode
+    coverageCriteria?: {
+      coverage: Array<'answered' | 'partial' | 'unanswered' | 'unclear'>
+      reasons?: Array<'sufficient_evidence' | 'insufficient_evidence' | 'conflicting_evidence' | 'ambiguous_request' | 'intentional_scope_boundary'>
+    }
   }
   slots: RoutineSlotForm[]
   steps: RoutineStepForm[]
@@ -84,7 +89,7 @@ export type RoutineFormState = {
   }
 }
 
-export type RoutineDraftHeader = Pick<RoutineFormState, 'name' | 'activation'>
+export type RoutineDraftHeader = Pick<RoutineFormState, 'name' | 'enabled' | 'activation'>
 
 // The artifact a validation diagnostic is rendered against. Terminals share the step id
 // namespace in the producer grammar, so they are addressed with the `step` scope; there is
@@ -119,18 +124,18 @@ const slugifySlotKey = (value: string, fallback: string): string =>
 // with a `/`), so both the draft builder and the editor's diagnostic anchors go through
 // these helpers — one definition of "what will this artifact be called on the wire".
 
-export const draftSlotKey = (slot: RoutineSlotForm, index: number): string =>
+const draftSlotKey = (slot: RoutineSlotForm, index: number): string =>
   slugify(slot.key, `slot_${index + 1}`).replace(/[^A-Za-z0-9_]/gu, '_')
 
-export const draftStepId = (step: RoutineStepForm, index: number): string =>
+const draftStepId = (step: RoutineStepForm, index: number): string =>
   slugify(step.stableStepId, `step_${index + 1}`)
 
-export const draftTerminalId = (terminal: RoutineTerminalForm, index: number): string =>
+const draftTerminalId = (terminal: RoutineTerminalForm, index: number): string =>
   slugify(terminal.stableStepId, `complete_${index + 1}`)
 
-export const draftTransitionTargetRef = (toRef: string): string => slugify(toRef, 'complete')
+const draftTransitionTargetRef = (toRef: string): string => slugify(toRef, 'complete')
 
-export const draftTransitionId = (
+const draftTransitionId = (
   step: RoutineStepForm,
   transition: RoutineTransitionForm,
 ): string =>
@@ -140,7 +145,7 @@ export const draftTransitionId = (
 // diagnostics it can attract (`approval_step_unknown_option`, `field_guard_*`) arrive under
 // that edge's location rather than the step's. Returns null for an unwired option, which
 // synthesizes no edge at all.
-export const draftApprovalOptionTransitionId = (
+const draftApprovalOptionTransitionId = (
   step: RoutineStepForm,
   stepIndex: number,
   option: RoutineApprovalOptionForm,
@@ -148,13 +153,6 @@ export const draftApprovalOptionTransitionId = (
   option.target.trim().length > 0
     ? `${draftStepId(step, stepIndex)}->${draftTransitionTargetRef(option.target)}`
     : null
-
-// Every id a diagnostic's `step:`/`node:` form can name, in draft space. Terminals are in
-// this set because they share the step id namespace.
-export const draftNodeIds = (form: RoutineFormState): ReadonlySet<string> => new Set([
-  ...form.steps.map((step, index) => draftStepId(step, index)),
-  ...form.terminals.map((terminal, index) => draftTerminalId(terminal, index)),
-])
 
 type LegacyRoutineStepKind = RoutineStepKind | 'fork'
 type LegacyRoutineGuardKind = RoutineGuardKind | 'always' | 'fallback'
@@ -169,6 +167,7 @@ const normalizeGuardKind = (kind: LegacyRoutineGuardKind): RoutineGuardKind => (
 
 export const createEmptyRoutineForm = (): RoutineFormState => ({
   name: '',
+  enabled: true,
   activation: {
     triggerDescription: '',
     priority: '0',
@@ -196,48 +195,6 @@ export const createEmptyRoutineForm = (): RoutineFormState => ({
     triggerKinds: ['complete'],
     destinationRef: '',
   },
-})
-
-export const createSlotForm = (index: number): RoutineSlotForm => ({
-  stableSlotId: `slot_${index + 1}`,
-  key: `slot_${index + 1}`,
-  type: 'text',
-  required: true,
-  description: '',
-  mutable: false,
-})
-
-export const createStepForm = (index: number): RoutineStepForm => ({
-  stableStepId: `step_${index + 1}`,
-  kind: 'chat',
-  instruction: '',
-  toolRef: '',
-  actionType: '',
-  captureKey: '',
-  options: [],
-  metadata: {},
-  transitions: [],
-})
-
-export const createApprovalOptionForm = (index: number): RoutineApprovalOptionForm => ({
-  id: `option_${index + 1}`,
-  label: '',
-  description: '',
-  target: '',
-})
-
-// A fresh approval gate seeds the two choices every approval needs — approve and decline —
-// so the author starts from a real decision (the validator requires at least two) and only
-// has to point each at a branch. Targets stay empty so the author wires them deliberately.
-export const createDefaultApprovalOptions = (): RoutineApprovalOptionForm[] => ([
-  { id: 'approve', label: 'Approve', description: '', target: '' },
-  { id: 'decline', label: 'Decline', description: '', target: '' },
-])
-
-export const createTerminalForm = (index: number): RoutineTerminalForm => ({
-  stableStepId: `complete_${index + 1}`,
-  kind: 'complete',
-  instruction: '',
 })
 
 export const createTransitionForm = (fromStep: string, toRef: string): RoutineTransitionForm => ({
@@ -276,10 +233,12 @@ export const routineToForm = (routine: RoutineDefinition): RoutineFormState => {
 
   return {
     name: routine.name,
+    enabled: routine.enabled,
     activation: {
       triggerDescription: routine.activation.triggerDescription,
       priority: String(routine.activation.priority),
       reentryMode: routine.activation.reentryMode ?? 'once_per_conversation',
+      coverageCriteria: routine.activation.coverageCriteria,
     },
     slots: [...routine.slots].sort((left, right) => left.ordinal - right.ordinal).map((slot) => ({
       stableSlotId: slot.stableSlotId,
@@ -354,10 +313,12 @@ export const formToRoutineDraft = (
 
   return {
     name: header.name.trim(),
+    enabled: header.enabled,
     activation: {
       triggerDescription: header.activation.triggerDescription.trim(),
       priority: Number.parseInt(header.activation.priority, 10) || 0,
       reentryMode: header.activation.reentryMode,
+      ...(header.activation.coverageCriteria ? { coverageCriteria: header.activation.coverageCriteria } : {}),
     },
     slots: form.slots.map((slot, index) => {
       const key = draftSlotKey(slot, index)
@@ -434,6 +395,23 @@ export const formToRoutineDraft = (
     })),
     ...(completionExport ? { completionExport } : {}),
   }
+}
+
+/**
+ * The payload the editor's autosave sends for an *existing* routine's content edit. It never
+ * carries `enabled` — the dedicated enable/disable toggle (`toggleRoutineEnabled`, a one-field
+ * PATCH) is the only writer for that field. Two independent in-flight PATCH requests (an
+ * enable/disable toggle and a content autosave debounce) can resolve in either order; if the
+ * content autosave also carried a copy of `enabled` — even a freshly-read one — the request that
+ * happens to land second wins regardless of which the operator triggered second. Omitting the
+ * field lets the backend's omission-preserving merge (`RoutineDefinitionService.updateDraft`)
+ * make the toggle race-proof: whichever write lands last, the stored `enabled` value only ever
+ * moves because the toggle itself said so.
+ */
+export const routineContentUpdatePayload = (draft: RoutineDefinitionDraft): Omit<RoutineDefinitionDraft, 'enabled'> => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructured only to omit `enabled` from the rest
+  const { enabled: _enabled, ...content } = draft
+  return content
 }
 
 export const buildCompletionExportPayloadPreview = (form: RoutineFormState): Record<string, unknown> => ({

@@ -1,9 +1,12 @@
+import { randomUUID } from "node:crypto";
+import { scopeTag } from "@radioso/conversation-defaults";
 import { getEnv, type Env } from "../config/env.js";
 import { apiPrincipalRouteInventory } from "../http/apiPrincipalRoutePolicy.js";
 import {
   createDefaultAgentSkillSettingsRegistry,
   createDefaultApplicationComposition,
   createDefaultFacetExtractionDrainDispatcher,
+  createLiveAgentConfigReader,
   createRealtimePublisherComposition,
   type ApplicationModule,
 } from "../composition/index.js";
@@ -11,8 +14,10 @@ import { parseRealtimeConfig } from "../../modules/realtime/infrastructure/confi
 import { createRealtimeRolloutPolicy } from "../../modules/realtime/domain/realtimeRolloutPolicy.js";
 import { resolveGcpRedisCredentialsProvider } from "../../runtime/gcpMetadataRedisCredentials.js";
 import type { RealtimePublisherComposition } from "../composition/realtimePublisherComposition.js";
-import { AgentService, AgentSurfaceExtensionRegistry, projectInternalAgentConfig, projectInternalAgentExternalSkills, serializeAuthoredDirectivesWithIds } from "../../modules/agents/public.js";
-import { InMemoryPublicConversationEventBus } from "../../modules/chat/composition.js";
+import { AgentRevisionService, AgentService, AgentSurfaceExtensionRegistry, createRoutineScopedReferenceGuard, projectInternalAgentConfig, projectInternalAgentExternalSkills, serializeAuthoredDirectivesWithIds } from "../../modules/agents/public.js";
+import { AgentRetrievalAuthoringService } from "../../modules/agentSkills/public.js";
+import { InMemoryPublicConversationEventBus, TrustedTestExecutionRunnerAdapter } from "../../modules/chat/composition.js";
+import { TestExecutionService } from "../../modules/test-execution/testExecution.js";
 import {
   createFacetExtractionWorker,
   FacetExtractionService,
@@ -71,11 +76,16 @@ import {
   RetrievalProbeService,
 } from "../../modules/operatorCopilot/public.js";
 import { AgenticCapabilityRunner, DefaultAgentRuntime } from "../../shared/agent-runtime/index.js";
+import { TtlRetentionWorker } from "../../shared/domain/ttlRetentionWorker.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 import { createCopilotDocumentAuthoringPort, createCopilotToolCatalog, createCopilotWorkspaceAccountResolver, createCopilotWorkspaceRouteKeyResolver, createCopilotWorkspaceSettingPort } from "../composition/copilotToolCatalog.js";
 import { ProbeConversationReader, ReplyDraftRunner } from "../../modules/chat/composition.js";
 import { ProbeRoutineReader } from "../../modules/routines/public.js";
+import { AgentRepository } from "../../db/repositories/agentRepository.js";
 import { createAgentSettingCopilotProposalAdapter, createAgentSkillCopilotProposalAdapter, createContextVariableCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../../modules/operatorCopilot/proposalAdapters.js";
+import { createAgentPublicationProposalAdapter } from "../../modules/operatorCopilot/agentPublicationProposalAdapter.js";
+import { createRoutineMcpApplyPort } from "../composition/copilotRoutineAtomicApply.js";
+import { createAgentSkillMcpApplyPort } from "../composition/copilotAgentSkillAtomicApply.js";
 import { createDocumentCopilotProposalAdapter } from "../../modules/operatorCopilot/documentProposalAdapter.js";
 import { createIngestionSettingsCopilotProposalAdapter } from "../../modules/operatorCopilot/ingestionSettingsProposalAdapter.js";
 import { createWorkspaceSettingCopilotProposalAdapter } from "../../modules/operatorCopilot/workspaceSettingProposalAdapter.js";
@@ -91,10 +101,12 @@ import { ConversationSummaryRepository } from "../../db/repositories/conversatio
 import { RoutineStateRepository } from "../../db/repositories/routineStateRepository.js";
 import { QUALITY_RESOLUTION_REASONS } from "../../modules/quality/domain/resolution.js";
 import { buildOperatorMcpServices } from "./builders/operatorMcp.js";
+import type { OperatorMcpClientMetadataSnapshot } from "../../modules/operatorMcpAuthorization/public.js";
 
 interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
   realtimePublisherComposition?: RealtimePublisherComposition;
+  operatorMcpPreregisteredClients?: ReadonlyMap<string, OperatorMcpClientMetadataSnapshot>;
 }
 
 export const buildDependencies = (env: Env = getEnv(), options: BuildDependenciesOptions = {}): AppDependencies => {
@@ -344,6 +356,21 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     agentReader: { get: agentService.get.bind(agentService) },
     agentSkillsReader: { list: agentSkillsService.list.bind(agentSkillsService) },
   });
+  const testExecutionService = new TestExecutionService({
+    revisions: repositories.testExecutionRepository,
+    contextCatalog: contextVariableRepository,
+    repository: repositories.testExecutionRepository,
+    runner: new TrustedTestExecutionRunnerAdapter({
+      replay: chat.workbenchReplayRunner,
+      liveAgentConfig: createLiveAgentConfigReader({ agentRepository: repositories.agentRepository }),
+      revisions: repositories.testExecutionRepository,
+      bootstrap: chat.chatBootstrapService,
+    }),
+    usageLimitPolicy: infrastructure.usageLimitPolicy,
+    audit: infrastructure.auditService,
+    logger,
+    createId: randomUUID,
+  });
 
   // Lazy-loaded crawler utility provider for EE agent wizard, also reused by
   // the connector ingestion port for HTML-to-text normalisation.
@@ -378,6 +405,17 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     routineDefinitionService,
     routineDraftAssistService,
   } = routineAuthoring;
+  // Constructed only once the routine authoring services exist: the agent-revision release
+  // gate needs RoutineDefinitionService's skill/capability/webhook-aware validation
+  // (validateForServing) to reject a candidate or publish whose enabled routine references a
+  // skill, capability, or webhook destination the workspace no longer has.
+  const agentRevisionService = new AgentRevisionService(repositories.agentRevisionRepository, randomUUID, {
+    validateForServing: routineDefinitionService.validateForServing.bind(routineDefinitionService),
+    // Batched form: a candidate/publish snapshot's enabled routines all belong to one agent, so
+    // this resolves the workspace-scoped skill/context-variable state once for the whole release
+    // check instead of once per routine (item 8 of the routine-lifecycle-collapse review).
+    validateManyForServing: routineDefinitionService.validateManyForServing.bind(routineDefinitionService),
+  });
   const evalServices = buildEvalServices({
     chat,
     infrastructure,
@@ -390,11 +428,14 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     retrievalDefaultsProvider,
     skillSettingsResolver,
     workspaceInvalidationPublisher: realtimePublisherComposition.publisher,
+    revisionEvalRunRetentionDays: env.AGENT_REVISION_EVAL_RUN_RETENTION_DAYS,
   });
   const {
     evalCaseService,
     evalMessageCaseService,
     evalRunService,
+    revisionEvalRunService,
+    revisionEvalRunRetentionWorker,
     evalSnapshotService,
     evalSuiteService,
     operatorReplyService,
@@ -444,6 +485,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     abuseControlService: chat.abuseControlService,
     embeddingBindingResolver,
     facetDrain: facetExtractionWorkspaceDrain,
+    facetRequeue: repositories.facetExtractionJobRepository,
   });
   const websiteCrawlerLimits = (() => {
     const config = resolveWebsiteCrawlerConfig();
@@ -466,6 +508,15 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     auditService: infrastructure.auditService,
     fetchImpl: fetchPublicUrl,
   });
+  const retrievalAuthoring = new AgentRetrievalAuthoringService({
+    agentSkills: agentSkillsService,
+    defaults: retrievalDefaultsProvider,
+    documentSources: repositories.documentSourceRepository,
+  });
+  const scopedRoutineReferences = createRoutineScopedReferenceGuard({
+    listDirectiveTags: async ({ workspaceId, agentId }) => (await authoredDirectiveService.list(workspaceId, agentId)).map((directive) => directive.tags),
+    buildStepScopeTag: scopeTag.step,
+  });
   const copilotProposalAdapters = [
     createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService }),
     createAgentSettingCopilotProposalAdapter({ agentService }),
@@ -473,8 +524,27 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       agentCreation: { createFromWizard: (input) => agentWizardService.createAgentFromWizard(input) },
       workspaceAccount: createCopilotWorkspaceAccountResolver({ workspaceRepository: repositories.workspaceRepository }),
     }),
-    createRoutineCopilotProposalAdapter({ agentService, routineDraftAssistService, routineDefinitionService, logger }),
-    createAgentSkillCopilotProposalAdapter({ agentService, agentSkillsService, skillCapabilityRegistry }),
+    createRoutineCopilotProposalAdapter({
+      agentService,
+      routineDraftAssistService,
+      routineDefinitionService,
+      routineMcpApply: createRoutineMcpApplyPort(infrastructure.database.kysely, {
+        validateScopedReferences: async (input, db) => createRoutineScopedReferenceGuard({
+          listDirectiveTags: async ({ workspaceId, agentId }) => (await new AgentRepository(db).listDirectives(agentId, workspaceId)).map((directive) => directive.tags),
+          buildStepScopeTag: scopeTag.step,
+        }).assertNoScopedReferences(input),
+      }),
+      scopedReferences: scopedRoutineReferences,
+      logger,
+    }),
+    createAgentSkillCopilotProposalAdapter({
+      agentService,
+      agentSkillsService,
+      skillCapabilityRegistry,
+      atomicMcpApply: createAgentSkillMcpApplyPort(infrastructure.database.kysely),
+      retrievalAuthoring,
+    }),
+    createAgentPublicationProposalAdapter({ revisions: agentRevisionService }),
     createContextVariableCopilotProposalAdapter({ contextVariables: contextVariableService }),
     createDocumentCopilotProposalAdapter({
       documentAuthoring: createCopilotDocumentAuthoringPort(documents.documentIngestionService),
@@ -745,9 +815,35 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     proposalRecovery: repositories.copilotRepository,
     proposalAdapters: copilotProposalAdapters,
     auditService: infrastructure.auditService,
+    revisions: agentRevisionService,
+    routines: {
+      findCreateConflict: routineDefinitionService.findCreateConflict.bind(routineDefinitionService),
+      get: routineDefinitionService.get.bind(routineDefinitionService),
+      validate: routineDefinitionService.validate.bind(routineDefinitionService),
+    },
+    scopedReferences: scopedRoutineReferences,
+    reviewedProposalExecution: {
+      executeMcpReviewedProposal: async (input) => {
+        if (!operatorCopilotService) throw new Error("Operator Copilot execution service is not initialized");
+        return operatorCopilotService.executeMcpReviewedProposal(input);
+      },
+    },
+    reviewedProposalOutcome: {
+      getMcpReviewedProposal: async (input) => {
+        if (!operatorCopilotService) throw new Error("Operator Copilot execution service is not initialized");
+        return operatorCopilotService.getMcpReviewedProposal(input);
+      },
+    },
+    cancelReviewedProposal: {
+      cancelMcpReviewedProposal: async (input) => {
+        if (!operatorCopilotService) throw new Error("Operator Copilot execution service is not initialized");
+        return operatorCopilotService.cancelMcpReviewedProposal(input);
+      },
+    },
+    retrievalAuthoring,
     logger,
   });
-  const operatorCopilotService = new OperatorCopilotService({
+  const operatorCopilotService: OperatorCopilotService = new OperatorCopilotService({
     repository: repositories.copilotRepository,
     capabilityRunner: copilotCapabilityRunner,
     usageLimitPolicy: infrastructure.usageLimitPolicy,
@@ -776,6 +872,13 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
     retentionDays: env.COPILOT_CONVERSATION_RETENTION_DAYS,
   });
+  const testExecutionRetentionWorker = new TtlRetentionWorker({
+    subject: "agent_test_execution",
+    sweep: { deleteBefore: (input) => repositories.testExecutionRepository.deleteExecutionsUpdatedBefore(input) },
+    audit: infrastructure.auditService,
+    logger,
+    retentionDays: env.AGENT_TEST_EXECUTION_RETENTION_DAYS,
+  });
   const operatorMcp = buildOperatorMcpServices({
     env,
     database: infrastructure.database,
@@ -784,6 +887,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
     metricsRegistry: infrastructure.metricsRegistry,
     copilotToolCatalog,
+    ...(options.operatorMcpPreregisteredClients ? { operatorMcpClientMetadataOptions: { preregisteredClients: options.operatorMcpPreregisteredClients } } : {}),
   });
 
   const agentBundleServices = createAgentBundleServices({
@@ -886,6 +990,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     approvalDecisionService: chat.approvalDecisionService,
     operatorReplyService,
     workbenchReplayRunner: chat.workbenchReplayRunner,
+    testExecutionService,
     chatBootstrapService: chat.chatBootstrapService,
     chatHistoryService: chat.chatHistoryService,
     conversationForkService: chat.conversationForkService,
@@ -899,9 +1004,11 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     evalMessageCaseService,
     evalCaseService,
     evalRunService,
+    revisionEvalRunService,
     evalSuiteService,
     platformSettingsService,
     agentService,
+    agentRevisionService,
     authoredDirectiveService,
     agentBundleExportService: agentBundleServices.exportService,
     agentBundleImportService: agentBundleServices.importService,
@@ -933,6 +1040,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     chatInferencePipeline,
     operatorCopilotService,
     copilotRetentionWorker,
+    testExecutionRetentionWorker,
+    revisionEvalRunRetentionWorker,
     copilotToolCatalog,
     copilotCapabilityRunner,
     copilotPrompt,

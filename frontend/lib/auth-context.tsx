@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react'
 import { authApi, clearWorkspaceStorage, seedWorkspaceSession } from '@/lib/api'
 
-export interface User {
+interface User {
   userId: string
   accountId: string
   email: string
@@ -32,7 +32,7 @@ const normalizeStoredOrganizationName = (value: unknown): string | undefined => 
   return trimmed || undefined
 }
 
-export const readStoredAccountOrganizationNames = (
+const readStoredAccountOrganizationNames = (
   storage: Pick<Storage, 'getItem' | 'removeItem'> | null,
 ): Record<string, string> => {
   if (!storage) {
@@ -211,6 +211,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ...(normalizedOrganizationName ? { organizationName: normalizedOrganizationName } : {}),
     }
     if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('radioso:auth-session-ended'))
       persistAuthUser(window.localStorage, nextUser)
     }
 
@@ -220,6 +221,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     setUser(null)
     if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('radioso:auth-session-ended'))
       window.localStorage.removeItem(AUTH_STORAGE_KEY)
       window.localStorage.removeItem(LAST_ACCOUNT_STORAGE_KEY)
     }

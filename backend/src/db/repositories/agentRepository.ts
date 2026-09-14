@@ -1,8 +1,7 @@
 import { randomUUID } from "node:crypto";
 
-import { sql } from "kysely";
+import { sql, type Transaction } from "kysely";
 
-import type { RoutineDirectiveScopeOrphan } from "../../modules/routines/public.js";
 import { conflict, notFound } from "../../shared/domain/errors.js";
 import {
   mergeAgentSurfaceSettings,
@@ -28,10 +27,12 @@ import {
   type NormalizedAuthoredDirectiveInput,
 } from "../../modules/agents/public.js";
 import { parseDirectiveLifecycle } from "../../modules/directives/public.js";
+import { answerCoverageCriteriaSchema } from "../../modules/answerCoverage/public.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../modules/documents/contracts/index.js";
 import { currentTimestamp, optionalTimestampMatch, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
-import type { Db } from "../../shared/infra/kysely/types.js";
+import type { DB, Db } from "../../shared/infra/kysely/types.js";
 import type { LlmProviderName } from "../../shared/infra/llm/providerTypes.js";
+import { withAgentDraftMutation } from "./agentDraftMutation.js";
 
 interface AgentRow {
   id: string;
@@ -54,7 +55,7 @@ interface AgentRow {
   updated_at: Date;
 }
 
-interface AgentDirectiveRow {
+export interface AgentDirectiveRow {
   id: string;
   agent_id: string;
   name: string;
@@ -72,6 +73,7 @@ interface AgentDirectiveRow {
   binding: AuthoredDirectiveBinding;
   lifecycle: AuthoredDirectiveLifecycle;
   enabled: boolean;
+  coverage_criteria: unknown;
   metadata: Record<string, unknown>;
   created_at: Date;
   updated_at: Date;
@@ -93,28 +95,11 @@ interface LoadedDirectiveJson {
   description?: unknown;
   binding?: unknown;
   lifecycle?: unknown;
+  coverageCriteria?: unknown;
   enabled?: unknown;
   metadata?: unknown;
   createdAt?: unknown;
   updatedAt?: unknown;
-}
-
-interface DirectiveScopeTagRow {
-  id: string;
-  scope_tags: string[];
-}
-
-export interface RepointRoutineScopeTagsInput {
-  agentId: string;
-  fromDefinitionId: string;
-  toDefinitionId: string;
-  survivingStepIds: ReadonlySet<string>;
-  transaction?: unknown;
-}
-
-export interface RepointRoutineScopeTagsResult {
-  repointed: number;
-  orphans: RoutineDirectiveScopeOrphan[];
 }
 
 const agentDirectiveNameUniqueConstraint = "agent_directives_agent_id_name_key";
@@ -212,6 +197,7 @@ const agentColumns = sql`
           'binding', agent_directives.binding,
           'lifecycle', agent_directives.lifecycle,
           'enabled', agent_directives.enabled,
+          'coverageCriteria', agent_directives.coverage_criteria,
           'metadata', agent_directives.metadata,
           'createdAt', agent_directives.created_at,
           'updatedAt', agent_directives.updated_at
@@ -339,6 +325,8 @@ const mapDirectiveJson = (agentId: string, value: LoadedDirectiveJson): Authored
     description: typeof value.description === "string" ? value.description : null,
     binding: asDirectiveBinding(value.binding),
     lifecycle: asDirectiveLifecycle(value.lifecycle),
+    coverageCriteria: answerCoverageCriteriaSchema.safeParse(value.coverageCriteria).success
+      ? answerCoverageCriteriaSchema.parse(value.coverageCriteria) : undefined,
     // A snapshot loaded from before this column existed carries no `enabled` at all;
     // its absence must read as "live," never as "off" (mirrors agentConfig materialize).
     enabled: typeof value.enabled === "boolean" ? value.enabled : true,
@@ -355,7 +343,7 @@ const mapLoadedDirectives = (agentId: string, value: unknown): AuthoredDirective
         .filter((entry): entry is AuthoredDirective => entry !== null)
     : [];
 
-const mapDirectiveRow = (row: AgentDirectiveRow): AuthoredDirective => ({
+export const mapDirectiveRow = (row: AgentDirectiveRow): AuthoredDirective => ({
   id: row.id,
   agentId: row.agent_id,
   name: row.name,
@@ -373,6 +361,8 @@ const mapDirectiveRow = (row: AgentDirectiveRow): AuthoredDirective => ({
   description: row.description,
   binding: asDirectiveBinding(row.binding),
   lifecycle: asDirectiveLifecycle(row.lifecycle),
+  coverageCriteria: answerCoverageCriteriaSchema.safeParse(row.coverage_criteria).success
+    ? answerCoverageCriteriaSchema.parse(row.coverage_criteria) : undefined,
   enabled: row.enabled,
   metadata: asMetadata(row.metadata),
   createdAt: new Date(row.created_at),
@@ -381,6 +371,11 @@ const mapDirectiveRow = (row: AgentDirectiveRow): AuthoredDirective => ({
 
 const hasOwn = <K extends PropertyKey>(value: object, key: K): value is object & Record<K, unknown> =>
   Object.prototype.hasOwnProperty.call(value, key);
+
+const isCustomInstructionOnlyUpdate = (
+  input: AgentInput,
+): input is AgentInput & { customInstruction: string } =>
+  Object.keys(input).length === 1 && typeof input.customInstruction === "string";
 
 const readContactRequestDelivery = (record: Record<string, unknown>): AgentContactRequestDelivery | undefined =>
   record.contactRequestDelivery && typeof record.contactRequestDelivery === "object" && !Array.isArray(record.contactRequestDelivery)
@@ -581,7 +576,6 @@ export interface AgentRepositoryPort {
   createDirective(agentId: string, workspaceId: string, input: AuthoredDirectiveInput, options?: AgentDirectiveUpdateOptions): Promise<AuthoredDirective>;
   updateDirective(agentId: string, workspaceId: string, directiveId: string, input: Partial<AuthoredDirectiveInput>, options?: AgentDirectiveUpdateOptions): Promise<AuthoredDirective>;
   deleteDirective(agentId: string, workspaceId: string, directiveId: string, options?: AgentDirectiveUpdateOptions): Promise<boolean>;
-  repointRoutineScopeTags?(input: RepointRoutineScopeTagsInput): Promise<RepointRoutineScopeTagsResult>;
   setDefault(workspaceId: string, agentId: string): Promise<void>;
   deleteByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<boolean>;
   countByWorkspaceId(workspaceId: string): Promise<number>;
@@ -638,6 +632,16 @@ export class AgentRepository implements AgentRepositoryPort {
       if (!row) {
         throw new Error("Expected created agent");
       }
+      await trx.insertInto("agent_drafts").values({
+        agent_id: agentId,
+        workspace_id: workspaceId,
+        snapshot: toJsonb({
+          customInstruction: normalized.customInstruction,
+          directives: [],
+          routines: [],
+          contextVariableEnablements: [],
+        }),
+      }).onConflict((oc) => oc.column("agent_id").doNothing()).execute();
       return mapAgent({
         ...row,
         source_ids: normalized.sourceScope.mode === "selected" ? normalized.sourceScope.sourceIds : [],
@@ -697,6 +701,9 @@ export class AgentRepository implements AgentRepositoryPort {
   }
 
   async update(agentId: string, workspaceId: string, input: AgentInput, options: AgentUpdateOptions = {}): Promise<AgentRecord> {
+    if (isCustomInstructionOnlyUpdate(input)) {
+      return this.updateCustomInstruction(agentId, workspaceId, input.customInstruction, options);
+    }
     const current = await this.findByIdAndWorkspaceId(agentId, workspaceId);
     if (!current) {
       throw new Error(`Agent ${agentId} not found`);
@@ -711,39 +718,91 @@ export class AgentRepository implements AgentRepositoryPort {
       { extensions: this.surfaceExtensions, skillSettings: this.skillSettings },
     );
     const expectedUpdatedAt = options.expectedUpdatedAt ?? current.updatedAt;
+    if (input.customInstruction !== undefined) {
+      return withAgentDraftMutation(this.db, workspaceId, agentId, async (trx, snapshot) => ({
+        result: await this.updateLiveAgent(trx, agentId, workspaceId, normalized, expectedUpdatedAt, input.sourceScope !== undefined),
+        snapshot: { ...snapshot, customInstruction: normalized.customInstruction },
+      }));
+    }
     return this.db.transaction().execute(async (trx) => {
+      return this.updateLiveAgent(trx, agentId, workspaceId, normalized, expectedUpdatedAt, input.sourceScope !== undefined);
+    });
+  }
+
+  private async updateLiveAgent(
+    trx: Transaction<DB>,
+    agentId: string,
+    workspaceId: string,
+    normalized: NormalizedAgentInput,
+    expectedUpdatedAt: Date,
+    replaceSourceScope: boolean,
+  ): Promise<AgentRecord> {
+    const result = await sql<AgentRow>`
+      UPDATE agents
+      SET name = ${normalized.name},
+          internal_name = ${normalized.internalName},
+          retrieval_enabled = ${normalized.retrievalEnabled},
+          source_scope_mode = ${normalized.sourceScope.mode},
+          behavior_settings = ${toJsonb(toBehaviorSettings(normalized))},
+          greeting_settings = ${toJsonb(toGreetingSettings(normalized))},
+          output_modes = ${toJsonb(toOutputModes(normalized))},
+          skill_settings = ${toJsonb(toSkillSettings(normalized))},
+          chat_provider = ${normalized.chatModelOverride?.provider ?? null},
+          chat_model = ${normalized.chatModelOverride?.model ?? null},
+          updated_at = ${currentTimestamp()}
+      WHERE id = ${agentId}
+        AND workspace_id = ${workspaceId}
+        AND date_trunc('milliseconds', updated_at) = date_trunc('milliseconds', ${expectedUpdatedAt}::timestamptz)
+      RETURNING ${agentColumns}
+    `.execute(trx);
+    const row = result.rows[0];
+    if (!row) {
+      throw conflict("Agent was updated by another writer; reload before saving again");
+    }
+    if (replaceSourceScope) {
+      await this.replaceSourceScope(trx, agentId, normalized.sourceScope);
+    }
+    const syncedDefaultRetrieveSkill = await this.syncDefaultRetrieveSkill(trx, agentId, normalized);
+    return mapAgent({
+      ...row,
+      source_ids: normalized.sourceScope.mode === "selected" ? normalized.sourceScope.sourceIds : [],
+      default_retrieve_enabled: syncedDefaultRetrieveSkill ? normalized.retrievalEnabled : row.default_retrieve_enabled,
+      default_retrieve_config: syncedDefaultRetrieveSkill ? toDefaultRetrieveSkillConfig(normalized) : row.default_retrieve_config,
+    }, this.surfaceExtensions, this.skillSettings);
+  }
+
+  /**
+   * Custom instructions are scoped authoring data. Keep the normalized authoring
+   * row that powers operator reloads and the immutable draft projection together;
+   * production resolution overlays the published revision instead of this row.
+   */
+  async updateCustomInstruction(
+    agentId: string,
+    workspaceId: string,
+    customInstruction: string,
+    options: AgentUpdateOptions = {},
+  ): Promise<AgentRecord> {
+    return withAgentDraftMutation(this.db, workspaceId, agentId, async (trx, snapshot) => {
       const result = await sql<AgentRow>`
         UPDATE agents
-        SET name = ${normalized.name},
-            internal_name = ${normalized.internalName},
-            retrieval_enabled = ${normalized.retrievalEnabled},
-            source_scope_mode = ${normalized.sourceScope.mode},
-            behavior_settings = ${toJsonb(toBehaviorSettings(normalized))},
-            greeting_settings = ${toJsonb(toGreetingSettings(normalized))},
-            output_modes = ${toJsonb(toOutputModes(normalized))},
-            skill_settings = ${toJsonb(toSkillSettings(normalized))},
-            chat_provider = ${normalized.chatModelOverride?.provider ?? null},
-            chat_model = ${normalized.chatModelOverride?.model ?? null},
+        SET behavior_settings = COALESCE(behavior_settings, '{}'::jsonb) || ${toJsonb({ customInstruction })},
             updated_at = ${currentTimestamp()}
         WHERE id = ${agentId}
           AND workspace_id = ${workspaceId}
-          AND date_trunc('milliseconds', updated_at) = date_trunc('milliseconds', ${expectedUpdatedAt}::timestamptz)
+          AND (${options.expectedUpdatedAt ?? null}::timestamptz IS NULL OR date_trunc('milliseconds', updated_at) = date_trunc('milliseconds', ${options.expectedUpdatedAt ?? null}::timestamptz))
         RETURNING ${agentColumns}
       `.execute(trx);
       const row = result.rows[0];
       if (!row) {
-        throw conflict("Agent was updated by another writer; reload before saving again");
+        throw options.expectedUpdatedAt
+          ? conflict("Agent was updated by another writer; reload before saving again")
+          : notFound("Agent not found");
       }
-      if (input.sourceScope !== undefined) {
-        await this.replaceSourceScope(trx, agentId, normalized.sourceScope);
-      }
-      const syncedDefaultRetrieveSkill = await this.syncDefaultRetrieveSkill(trx, agentId, normalized);
-      return mapAgent({
-        ...row,
-        source_ids: normalized.sourceScope.mode === "selected" ? normalized.sourceScope.sourceIds : [],
-        default_retrieve_enabled: syncedDefaultRetrieveSkill ? normalized.retrievalEnabled : row.default_retrieve_enabled,
-        default_retrieve_config: syncedDefaultRetrieveSkill ? toDefaultRetrieveSkillConfig(normalized) : row.default_retrieve_config,
-      }, this.surfaceExtensions, this.skillSettings);
+      const saved = mapAgent(row, this.surfaceExtensions, this.skillSettings);
+      return {
+        result: saved,
+        snapshot: { ...snapshot, customInstruction },
+      };
     });
   }
 
@@ -761,7 +820,7 @@ export class AgentRepository implements AgentRepositoryPort {
 
   async createDirective(agentId: string, workspaceId: string, input: AuthoredDirectiveInput, options: AgentDirectiveUpdateOptions = {}): Promise<AuthoredDirective> {
     const directive: NormalizedAuthoredDirectiveInput = authoredDirectiveInputSchema.parse(input);
-    return this.db.transaction().execute(async (trx) => {
+    return withAgentDraftMutation(this.db, workspaceId, agentId, async (trx, snapshot) => {
       let result: { rows: AgentDirectiveRow[] };
       try {
         result = await sql<AgentDirectiveRow>`
@@ -790,6 +849,7 @@ export class AgentRepository implements AgentRepositoryPort {
             binding,
             lifecycle,
             enabled,
+            coverage_criteria,
             metadata
           )
           SELECT
@@ -809,6 +869,7 @@ export class AgentRepository implements AgentRepositoryPort {
             ${toJsonb(directive.binding)},
             ${toJsonb(directive.lifecycle)},
             ${directive.enabled},
+            ${directive.coverageCriteria ? toJsonb(directive.coverageCriteria) : null},
             ${toJsonb(directive.metadata)}
           FROM matched_agent
           RETURNING *
@@ -823,7 +884,14 @@ export class AgentRepository implements AgentRepositoryPort {
       if (!row) {
         throw options.expectedAgentUpdatedAt ? conflict("Agent was updated by another writer; reload before saving again") : notFound("Agent not found");
       }
-      return mapDirectiveRow(row);
+      const saved = mapDirectiveRow(row);
+      return {
+        result: saved,
+        snapshot: {
+          ...snapshot,
+          directives: [...snapshot.directives.filter((existing) => existing.id !== saved.id), saved],
+        },
+      };
     });
   }
 
@@ -834,30 +902,41 @@ export class AgentRepository implements AgentRepositoryPort {
     input: Partial<AuthoredDirectiveInput>,
     options: AgentDirectiveUpdateOptions = {},
   ): Promise<AuthoredDirective> {
-    const existing = (await this.listDirectives(agentId, workspaceId)).find((directive) => directive.id === directiveId);
-    if (!existing) {
-      throw options.expectedUpdatedAt ? conflict("Directive was updated by another writer; reload before saving again") : notFound("Directive not found");
-    }
-    const directive: NormalizedAuthoredDirectiveInput = authoredDirectiveInputSchema.parse({
-      name: input.name ?? existing.name,
-      condition: input.condition ?? existing.condition,
-      action: input.action ?? existing.action,
-      priority: hasOwn(input, "priority") ? input.priority : existing.priority,
-      requiredCapabilities: input.requiredCapabilities ?? existing.requiredCapabilities,
-      dependsOn: input.dependsOn ?? existing.dependsOn,
-      excludes: input.excludes ?? existing.excludes,
-      routes: input.routes ?? existing.routes,
-      surfaces: input.surfaces ?? existing.surfaces,
-      tags: input.tags ?? existing.tags,
-      description: hasOwn(input, "description") ? input.description : existing.description,
-      binding: hasOwn(input, "binding") ? input.binding : existing.binding,
-      lifecycle: hasOwn(input, "lifecycle") ? input.lifecycle : existing.lifecycle,
-      enabled: hasOwn(input, "enabled") ? input.enabled : existing.enabled,
-      metadata: input.metadata ?? existing.metadata,
-    });
-    let rows: AgentDirectiveRow[];
-    try {
-      const result = await sql<AgentDirectiveRow>`
+    return withAgentDraftMutation(this.db, workspaceId, agentId, async (trx, snapshot) => {
+      const existingResult = await sql<AgentDirectiveRow>`
+        SELECT agent_directives.*
+        FROM agent_directives
+        INNER JOIN agents ON agents.id = agent_directives.agent_id
+        WHERE agent_directives.id = ${directiveId}
+          AND agent_directives.agent_id = ${agentId}
+          AND agents.workspace_id = ${workspaceId}
+      `.execute(trx);
+      const existingRow = existingResult.rows[0];
+      if (!existingRow) {
+        throw options.expectedUpdatedAt ? conflict("Directive was updated by another writer; reload before saving again") : notFound("Directive not found");
+      }
+      const existing = mapDirectiveRow(existingRow);
+      const directive: NormalizedAuthoredDirectiveInput = authoredDirectiveInputSchema.parse({
+        name: input.name ?? existing.name,
+        condition: input.condition ?? existing.condition,
+        action: input.action ?? existing.action,
+        priority: hasOwn(input, "priority") ? input.priority : existing.priority,
+        requiredCapabilities: input.requiredCapabilities ?? existing.requiredCapabilities,
+        dependsOn: input.dependsOn ?? existing.dependsOn,
+        excludes: input.excludes ?? existing.excludes,
+        routes: input.routes ?? existing.routes,
+        surfaces: input.surfaces ?? existing.surfaces,
+        tags: input.tags ?? existing.tags,
+        description: hasOwn(input, "description") ? input.description : existing.description,
+        binding: hasOwn(input, "binding") ? input.binding : existing.binding,
+        lifecycle: hasOwn(input, "lifecycle") ? input.lifecycle : existing.lifecycle,
+        coverageCriteria: hasOwn(input, "coverageCriteria") ? input.coverageCriteria : existing.coverageCriteria,
+        enabled: hasOwn(input, "enabled") ? input.enabled : existing.enabled,
+        metadata: input.metadata ?? existing.metadata,
+      });
+      let rows: AgentDirectiveRow[];
+      try {
+        const result = await sql<AgentDirectiveRow>`
         WITH updated_directive AS (
           UPDATE agent_directives
           SET name = ${directive.name},
@@ -875,6 +954,7 @@ export class AgentRepository implements AgentRepositoryPort {
             binding = ${toJsonb(directive.binding)},
             lifecycle = ${toJsonb(directive.lifecycle)},
             enabled = ${directive.enabled},
+            coverage_criteria = ${directive.coverageCriteria ? toJsonb(directive.coverageCriteria) : null},
             metadata = ${toJsonb(directive.metadata)},
             updated_at = ${currentTimestamp()}
           FROM agents
@@ -894,23 +974,32 @@ export class AgentRepository implements AgentRepositoryPort {
         SELECT updated_directive.*
         FROM updated_directive
         INNER JOIN touched_agent ON touched_agent.id = updated_directive.agent_id
-      `.execute(this.db);
-      rows = result.rows;
-    } catch (error) {
-      if (isAgentDirectiveNameUniqueViolation(error)) {
-        throw directiveNameConflict(directive.name);
+        `.execute(trx);
+        rows = result.rows;
+      } catch (error) {
+        if (isAgentDirectiveNameUniqueViolation(error)) {
+          throw directiveNameConflict(directive.name);
+        }
+        throw error;
       }
-      throw error;
-    }
-    const row = rows[0];
-    if (!row) {
-      throw options.expectedUpdatedAt ? conflict("Directive was updated by another writer; reload before saving again") : notFound("Directive not found");
-    }
-    return mapDirectiveRow(row);
+      const row = rows[0];
+      if (!row) {
+        throw options.expectedUpdatedAt ? conflict("Directive was updated by another writer; reload before saving again") : notFound("Directive not found");
+      }
+      const saved = mapDirectiveRow(row);
+      return {
+        result: saved,
+        snapshot: {
+          ...snapshot,
+          directives: [...snapshot.directives.filter((current) => current.id !== saved.id), saved],
+        },
+      };
+    });
   }
 
   async deleteDirective(agentId: string, workspaceId: string, directiveId: string, options: AgentDirectiveUpdateOptions = {}): Promise<boolean> {
-    const result = await sql<{ deleted: boolean }>`
+    return withAgentDraftMutation(this.db, workspaceId, agentId, async (trx, snapshot) => {
+      const result = await sql<{ deleted: boolean }>`
       WITH deleted_directive AS (
         DELETE FROM agent_directives
         USING agents
@@ -928,72 +1017,18 @@ export class AgentRepository implements AgentRepositoryPort {
         RETURNING agents.id
       )
       SELECT EXISTS(SELECT 1 FROM touched_agent) AS deleted
-    `.execute(this.db);
-    return result.rows[0]?.deleted ?? false;
-  }
-
-  async repointRoutineScopeTags(input: RepointRoutineScopeTagsInput): Promise<RepointRoutineScopeTagsResult> {
-    // A threaded transaction (when present) is a Kysely `Transaction<DB>`, assignable to
-    // `Db`; otherwise run on the shared executor. This is the shared-transaction contract
-    // the routine-definition repository threads its `Transaction<DB>` through.
-    const db = (input.transaction as Db | undefined) ?? this.db;
-    const routineTag = `routine:${input.fromDefinitionId}`;
-    const stepTagPrefix = `step:${input.fromDefinitionId}:`;
-    const selected = await sql<DirectiveScopeTagRow>`
-      SELECT id::text, scope_tags
-      FROM agent_directives
-      WHERE agent_id = ${input.agentId}
-        AND (
-          ${routineTag} = ANY(scope_tags)
-          OR EXISTS (
-            SELECT 1
-            FROM unnest(scope_tags) AS scope_tag
-            WHERE scope_tag LIKE ${`${stepTagPrefix}%`}
-          )
-        )
-      ORDER BY created_at ASC, id ASC
-    `.execute(db);
-    const rows = selected.rows;
-
-    let repointed = 0;
-    const orphans: RoutineDirectiveScopeOrphan[] = [];
-    for (const row of rows) {
-      let changed = false;
-      const nextTags = row.scope_tags.map((tag) => {
-        if (tag === routineTag) {
-          changed = true;
-          repointed += 1;
-          return `routine:${input.toDefinitionId}`;
-        }
-        if (!tag.startsWith(stepTagPrefix)) {
-          return tag;
-        }
-        const stepId = tag.slice(stepTagPrefix.length);
-        if (!input.survivingStepIds.has(stepId)) {
-          orphans.push({
-            directiveId: row.id,
-            scopeTag: tag,
-            reason: "missing_step",
-          });
-          return tag;
-        }
-        changed = true;
-        repointed += 1;
-        return `step:${input.toDefinitionId}:${stepId}`;
-      });
-      if (!changed) {
-        continue;
-      }
-      await sql`
-        UPDATE agent_directives
-        SET scope_tags = ${sql.val(nextTags)}::text[],
-            updated_at = ${currentTimestamp()}
-        WHERE id = ${row.id}
-          AND agent_id = ${input.agentId}
-      `.execute(db);
-    }
-
-    return { repointed, orphans };
+      `.execute(trx);
+      const deleted = result.rows[0]?.deleted ?? false;
+      return deleted
+        ? {
+            result: true,
+            snapshot: {
+              ...snapshot,
+              directives: snapshot.directives.filter((directive) => directive.id !== directiveId),
+            },
+          }
+        : { result: false, unchanged: true };
+    });
   }
 
   async setDefault(workspaceId: string, agentId: string): Promise<void> {

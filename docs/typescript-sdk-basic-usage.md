@@ -1,7 +1,7 @@
 ---
 title: "Radioso TypeScript SDK: Basic Usage"
 description: "SDK tutorial covering documents, settings, skills, agents, authoring, chat, streaming, history, and error handling patterns."
-last_updated: 2026-09-01
+last_updated: 2026-09-10
 ---
 
 # Radioso TypeScript SDK: Basic Usage
@@ -258,12 +258,12 @@ provision an agent, then chat with it, without a session cookie.
 ### Routines
 
 Routines are the multi-step flows an agent follows. Define one as a graph of
-steps, transitions, and terminals, then publish it.
+steps, transitions, and terminals.
 
-Create a routine and publish it:
+Create a routine:
 
 ```ts
-const draft = await client.agents.routines.create(agentId, {
+const created = await client.agents.routines.create(agentId, {
   name: "Book a demo",
   activation: { triggerDescription: "the visitor asks for a demo", priority: 50 },
   slots: [
@@ -281,19 +281,26 @@ const draft = await client.agents.routines.create(agentId, {
     { stableStepId: "done", kind: "complete", instruction: "Confirm the booking.", ordinal: 0 },
   ],
 });
-
-await client.agents.routines.publish(agentId, draft.routine.id);
 ```
 
-Validation runs on save and again on publish, so a routine that references an
-unknown skill or leaves a step unreachable is rejected before it can run.
+The write lands in the agent's private draft, next to its directives, skills, and
+context variables. Review & Publish on the agent snapshots all four into a
+revision, and the revision is what serves conversations.
 
-List, validate, and manage lifecycle:
+`validate` reports what would stop the routine from running — a step nothing can
+reach, a missing ending, a step calling a skill the agent does not hold:
 
 ```ts
 const routines = await client.agents.routines.list(agentId);
-const check = await client.agents.routines.validate(agentId, routineId);
-await client.agents.routines.archive(agentId, routineId);
+const check = await client.agents.routines.validate(agentId, created.routine.id);
+```
+
+Each routine carries an `enabled` flag you set through the same update call as
+the rest of its content. Turn a routine off to take it out of play while keeping
+everything you built:
+
+```ts
+await client.agents.routines.update(agentId, routineId, { enabled: false });
 ```
 
 ### Directives
@@ -471,6 +478,7 @@ try {
 - Public chat and website embed launch credentials are intentionally public and are not accepted as SDK API tokens.
 - Streaming chat is layered on top of the assistant chat contract, `POST /api/v1/assistant/chat`, with `stream: true`.
 - Skill discovery is exposed through `client.skills.list()` and `client.skills.get(name)`. The catalog describes current assistant, retrieval, document, and MCP contracts; it does not execute skills directly.
+- The SDK's OpenAPI snapshot and generated types include the revision, private test-execution, and frozen revision-eval operations. The published high-level client does not currently add resource wrappers for these routes, so call the REST API directly when you need them. Candidate IDs and sample values are operator-private, and publishing remains a separate command after review.
 - Retrieval-only clients should use the REST retrieval surfaces, `POST /api/v1/retrieval/search` and `POST /api/v1/retrieval/answer`, when they do not want assistant persona or assistant-owned chat history. Pass `includeDebug: true` when callers need shape, resolved-step diagnostics, or retrieval answer evidence. Callers do not select shapes directly.
 - Both retrieval calls take an optional `agentId` and run on that agent's source scope, answering instruction, and retrieval skill settings. The response reports what it measured in `agentScope`, so a result can be attributed to the agent that produced it; `agentScope` is `null` for a call that ran on workspace defaults. Scoping needs `workspace.agents.read` in addition to `workspace.retrieval.query`.
 - Shared workspace settings are exposed by the REST platform settings resource, `GET /api/v1/settings` and `PUT /api/v1/settings`, with assistant and channel settings. Ingestion settings are exposed separately through the settings API.

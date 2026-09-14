@@ -134,11 +134,6 @@ export function AppSidebar({ accountId, currentView, routeState, areaSubNav }: A
               {navItems.map((item) => {
                 const isActive = item.isActive(routeState)
                 const showBadge = item.id === 'inbox' && inboxCount > 0
-                // In the Agents section the row IS the agent picker (rendered inline by
-                // areaSubNav), so there's a single agent entry instead of a picker above an
-                // "Agents" row. Until areaSubNav is ready (e.g. workspace still loading) we
-                // keep the plain row so the entry never collapses to an empty gap.
-                const isAgentsPicker = item.id === 'agents' && isActive && Boolean(areaSubNav)
                 const navState: DashboardRouteState = {
                   section: item.section,
                   ...item.extraRouteState,
@@ -151,16 +146,12 @@ export function AppSidebar({ accountId, currentView, routeState, areaSubNav }: A
                     key={item.id}
                     className={item.id === 'inbox' ? 'mb-1' : undefined}
                   >
-                    {isAgentsPicker ? null : (
-                        <SidebarMenuButton asChild isActive={isActive} tooltip={item.label}>
-                          <Link
-                            href={buildDashboardHref(accountId, navState)}
-                        >
-                          <item.icon className="w-4 h-4" />
-                          <span>{item.label}</span>
-                        </Link>
-                      </SidebarMenuButton>
-                    )}
+                    <SidebarMenuButton asChild isActive={isActive} tooltip={item.label}>
+                      <Link href={buildDashboardHref(accountId, navState)}>
+                        <item.icon className="w-4 h-4" />
+                        <span>{item.label}</span>
+                      </Link>
+                    </SidebarMenuButton>
                     {showBadge ? (
                       <SidebarMenuBadge
                         className="bg-secondary text-secondary-foreground"

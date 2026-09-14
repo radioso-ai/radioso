@@ -50,6 +50,24 @@ describe("ContextualCensusServiceFactory (composition)", () => {
     expect(service).toBeInstanceOf(CensusService);
   });
 
+  it("constructs a real CensusService when a facetRequeue dependency is supplied", () => {
+    const facetRequeue = { enqueueMany: vi.fn(async () => undefined) };
+    const factory = new ContextualCensusServiceFactory({
+      historySource: new PostgresAudiencePulseHistorySource(fakeDb),
+      facetSource: new MessageFacetRepository(fakeDb),
+      topicRepository: new TopicRepository(fakeDb),
+      embeddingBindingResolver,
+      currentFacetPromptVersion: "facet-extraction/1",
+      namingInferenceFactory: buildInferenceFactory(),
+      privacyAuditInferenceFactory: buildInferenceFactory(),
+      facetRequeue,
+    });
+
+    const service = factory.create({ workspaceId: "33333333-3333-3333-3333-333333333333" });
+
+    expect(service).toBeInstanceOf(CensusService);
+  });
+
   it("builds an independent CensusService per workspace", () => {
     const factory = new ContextualCensusServiceFactory({
       historySource: new PostgresAudiencePulseHistorySource(fakeDb),

@@ -20,6 +20,8 @@ export type SubNavEntry = {
   active?: boolean
   /** On/off status dot (omit for entries without a toggle). */
   status?: boolean
+  statusLabel?: string
+  statusTone?: 'active' | 'attention'
   href?: string
   onClick?: () => void
 }
@@ -115,10 +117,16 @@ export function SubNavRow({ entry }: { entry: SubNavEntry }) {
       />
       <span className="min-w-0 flex-1 truncate text-left">{entry.label}</span>
       {entry.status !== undefined ? (
-        <span
-          className={cn('h-1.5 w-1.5 shrink-0 rounded-full', entry.status ? 'bg-emerald-500' : 'bg-sidebar-foreground/25')}
-          title={entry.status ? 'On' : 'Off'}
-        />
+        <span className="flex shrink-0 items-center gap-1.5 text-[10px] text-sidebar-foreground/50">
+          <span
+            className={cn(
+              'h-1.5 w-1.5 rounded-full',
+              entry.statusTone === 'attention' ? 'bg-amber-500' : entry.status ? 'bg-emerald-500' : 'bg-sidebar-foreground/25',
+            )}
+            title={entry.statusLabel ?? (entry.status ? 'On' : 'Off')}
+          />
+          {entry.statusLabel ? <span>{entry.statusLabel}</span> : null}
+        </span>
       ) : null}
     </>
   )

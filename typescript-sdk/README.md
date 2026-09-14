@@ -66,7 +66,7 @@ pnpm run build
 
 ### Agent authoring
 
-- `client.agents.routines.*` — list, get, create, update, delete, archive, restore, publish, revise, validate, draftAssist, skillCatalog
+- `client.agents.routines.*` — list, get, create, update, delete, validate, draftAssist, skillCatalog
 - `client.agents.directives.*` — list, draft, create, update, delete
 - `client.agents.contextVariables.*` — list, upsert, delete (per-agent enablement); signing-key reveal remains session-only
 - `client.contextVariables.*` — list, create, get, update, delete, getValue, upsertValue, deleteValue (workspace definitions and values)

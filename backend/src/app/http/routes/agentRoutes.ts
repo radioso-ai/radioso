@@ -3,7 +3,12 @@ import { Router, type RequestHandler } from "express";
 import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
-import { requireWorkspaceSession, WORKSPACE_HEADER, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
+import {
+  createAgentRevisionRoutes,
+  type AgentRevisionRouteDependencies,
+} from "./agentRevisionRoutes.js";
+import { presentRevisionState } from "./agentRevisionPresenters.js";
+import { requireWorkspaceSession, WORKSPACE_HEADER } from "../middleware/requireWorkspaceSession.js";
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { requireSurfaceExtension } from "../shared/requireSurfaceExtension.js";
 import { validateBody } from "../middleware/validate.js";
@@ -31,9 +36,11 @@ import {
 } from "../../../modules/agents/public.js";
 import {
   routineDefinitionDraftInputSchema,
+  routineDefinitionDraftUpdateInputSchema,
   routineDraftAssistRequestSchema,
 } from "../../../modules/routines/public.js";
 import type { AgentSettingsResource } from "../../../modules/agents/public.js";
+import { answerCoverageCriteriaSchema } from "../../../modules/answerCoverage/public.js";
 import { builtInAnswerDirectiveViews } from "../../../modules/directives/public.js";
 import {
   ASSISTANT_LOGO_MIME_TYPES,
@@ -59,8 +66,23 @@ const agentRoutineParamsSchema = z.object({
 });
 
 const authoredDirectiveBodySchema = authoredDirectiveInputSchema.omit({ routes: true });
-const authoredDirectivePatchBodySchema = authoredDirectiveBodySchema.partial().strict();
+const authoredDirectivePatchBodySchema = authoredDirectiveBodySchema.partial().extend({
+  coverageCriteria: z.union([answerCoverageCriteriaSchema, z.null()]).optional(),
+}).strict();
 const routineDefinitionBodySchema = routineDefinitionDraftInputSchema;
+// Taking a routine out of service is a one-field decision made from a list row, which does not
+// hold the authored graph. Requiring the full draft to flip the flag would force the caller to
+// resend steps it never read — and rewrite them on the way through.
+const routineEnabledPatchSchema = z.object({ enabled: z.boolean() }).strict();
+// The full-body PATCH variant must NOT default `enabled` (or `activation.reentryMode`, or any
+// `completionExport` field) the way the create schema does. `validateBody`
+// (../middleware/validate.js) replaces `req.body` with the parsed result, defaults included,
+// before the route handler or `RoutineDefinitionService.updateDraft`'s omission-preserving
+// merge ever sees it — so a create-oriented default here would silently re-enable a routine an
+// operator disabled, or reset a reentry mode/completion export field, on the very next content
+// edit that never mentions it. Issue: enabled-reset bug, HTTP layer (round 2), and one level
+// deeper into `activation`/`completionExport` (round 2, item 7).
+const routineDefinitionPatchBodySchema = z.union([routineEnabledPatchSchema, routineDefinitionDraftUpdateInputSchema]);
 
 export const agentBodySchema = z.object({
   name: agentInputFieldSchemas.name.optional(),
@@ -85,7 +107,7 @@ export const agentBodySchema = z.object({
   surfaceSettings: agentInputFieldSchemas.surfaceSettings.omit({ extensions: true }).optional(),
 });
 
-type AgentRouteDependencies = WorkspaceSessionDependencies & Pick<AppDependencies, "accountAccessService" | "accessGrantService" | "agentRepository" | "agentService" | "assistantChatService" | "authoredDirectiveService" | "directiveAuthorService" | "skillAuthoringCatalog" | "routineDefinitionService" | "routineDraftAssistService" | "agentSurfaceExtensions" | "documentStorage" | "logger" | "metricsRegistry" | "abuseControlService" | "auditService">;
+type AgentRouteDependencies = AgentRevisionRouteDependencies & Pick<AppDependencies, "accessGrantService" | "agentRepository" | "agentService" | "assistantChatService" | "authoredDirectiveService" | "directiveAuthorService" | "skillAuthoringCatalog" | "routineDefinitionService" | "routineDraftAssistService" | "agentSurfaceExtensions" | "documentStorage" | "logger" | "metricsRegistry" | "abuseControlService" | "auditService">;
 
 const channelForAudience = (audience: "mcp" | "rest") =>
   audience === "mcp" ? "mcp-converse" as const : "agent-api" as const;
@@ -227,6 +249,7 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
   const runUploadSingle = createAssistantLogoUploadHandler();
   const rateLimitRestAgentChat = agentChannelChatRateLimiters(dependencies, "rest");
   const rateLimitRestAgentSource = createAgentChannelSourceRateLimiter(dependencies);
+  router.use(createAgentRevisionRoutes(dependencies));
 
   router.get("/", workspaceSession, agentRead, async (_req, res, next) => {
     try {
@@ -573,17 +596,25 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
     "/:agentId/routines/:routineId",
     workspaceSession,
     agentManage,
-    validateBody(routineDefinitionBodySchema),
+    validateBody(routineDefinitionPatchBodySchema),
     async (req, res, next) => {
       try {
         const { workspaceId } = res.locals as { workspaceId: string };
         const parsed = agentRoutineParamsSchema.parse(req.params);
-        const result = await dependencies.routineDefinitionService.updateDraft(
-          workspaceId,
-          parsed.agentId,
-          parsed.routineId,
-          req.body,
-        );
+        const enabledOnly = routineEnabledPatchSchema.safeParse(req.body);
+        const result = enabledOnly.success
+          ? await dependencies.routineDefinitionService.setEnabled(
+              workspaceId,
+              parsed.agentId,
+              parsed.routineId,
+              enabledOnly.data.enabled,
+            )
+          : await dependencies.routineDefinitionService.updateDraft(
+              workspaceId,
+              parsed.agentId,
+              parsed.routineId,
+              req.body,
+            );
         res.status(200).json(result);
       } catch (error) {
         next(error);
@@ -601,64 +632,6 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
         { id: parsed.routineId },
       );
       res.status(200).json({ validation });
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  router.post("/:agentId/routines/:routineId/publish", workspaceSession, agentManage, async (req, res, next) => {
-    try {
-      const { workspaceId } = res.locals as { workspaceId: string };
-      const parsed = agentRoutineParamsSchema.parse(req.params);
-      const result = await dependencies.routineDefinitionService.publish(workspaceId, parsed.agentId, parsed.routineId);
-      if ("rejected" in result) {
-        res.status(422).json({
-          error: "Routine definition is invalid",
-          validation: result.validation,
-        });
-        return;
-      }
-      res.status(200).json(result);
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  router.post("/:agentId/routines/:routineId/revise", workspaceSession, agentManage, async (req, res, next) => {
-    try {
-      const { workspaceId } = res.locals as { workspaceId: string };
-      const parsed = agentRoutineParamsSchema.parse(req.params);
-      const routine = await dependencies.routineDefinitionService.revise(workspaceId, parsed.agentId, parsed.routineId);
-      res.status(200).json({ routine });
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  router.post("/:agentId/routines/:routineId/archive", workspaceSession, agentManage, async (req, res, next) => {
-    try {
-      const { workspaceId } = res.locals as { workspaceId: string };
-      const parsed = agentRoutineParamsSchema.parse(req.params);
-      const routine = await dependencies.routineDefinitionService.archive(workspaceId, parsed.agentId, parsed.routineId);
-      res.status(200).json({ routine });
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  router.post("/:agentId/routines/:routineId/restore", workspaceSession, agentManage, async (req, res, next) => {
-    try {
-      const { workspaceId } = res.locals as { workspaceId: string };
-      const parsed = agentRoutineParamsSchema.parse(req.params);
-      const result = await dependencies.routineDefinitionService.restore(workspaceId, parsed.agentId, parsed.routineId);
-      if ("rejected" in result) {
-        res.status(422).json({
-          error: "Routine definition is invalid",
-          validation: result.validation,
-        });
-        return;
-      }
-      res.status(200).json({ routine: result.routine });
     } catch (error) {
       next(error);
     }
@@ -682,12 +655,24 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
       const parsed = agentParamsSchema.parse(req.params);
       const current = await dependencies.agentService.resolve(workspaceId, parsed.agentId);
       rejectMachineLaunchSurfaceInput(authPrincipal, req.body);
-      const agent = await dependencies.agentService.update(
-        workspaceId,
-        parsed.agentId,
-        dependencies.agentService.withRotatedTokens(current, req.body),
-      );
-      res.status(200).json(presentAgentForPrincipal(agent, authPrincipal));
+      const { customInstruction, ...liveChanges } = req.body;
+      let agent = await dependencies.agentService.get(workspaceId, parsed.agentId);
+      if (Object.keys(liveChanges).length > 0) {
+        agent = await dependencies.agentService.update(
+          workspaceId,
+          parsed.agentId,
+          dependencies.agentService.withRotatedTokens(current, liveChanges),
+        );
+      }
+      if (customInstruction !== undefined) {
+        agent = await dependencies.agentService.update(workspaceId, parsed.agentId, { customInstruction });
+      }
+      res.status(200).json({
+        ...presentAgentForPrincipal(agent, authPrincipal),
+        ...(customInstruction === undefined
+          ? {}
+          : { revisionState: presentRevisionState(await dependencies.agentRevisionService.state(workspaceId, parsed.agentId), true) }),
+      });
     } catch (error) {
       next(error);
     }

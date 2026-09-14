@@ -12,12 +12,49 @@ describe("operator MCP descriptor disposition", () => {
     expect(Object.keys(operatorMcpDispositions).sort()).toEqual(Object.keys(copilotCapabilityProvenance).sort());
   });
 
-  it("admits the limited read, probe, and proposal catalog only", () => {
+  it("admits the limited read, probe, act, and proposal catalog only", () => {
     const eligible = Object.entries(operatorMcpDispositions)
       .filter(([, disposition]) => disposition.status === "eligible")
       .map(([name]) => name)
       .sort();
-    expect(eligible).toEqual(["propose_ingestion_settings", "retrieval_probe", "workspace_settings"]);
+    expect(eligible).toEqual([
+      "agent_configuration",
+      "agent_publication_candidate",
+      "agent_publication_candidate_change",
+      "agent_publication_state",
+      "agent_skills",
+      "cancel_reviewed_proposal",
+      "context_variables",
+      "conversation_history_search",
+      "conversation_transcript",
+      "document_chunks",
+      "document_search",
+      "document_status",
+      "eval_results",
+      "execute_reviewed_proposal",
+      "prepare_agent_publication",
+      "prepare_retrieval_settings",
+      "prepare_routine_structure",
+      "propose_agent_setting",
+      "propose_context_variable",
+      "propose_directive",
+      "propose_directive_enablement",
+      "propose_directive_removal",
+      "propose_ingestion_settings",
+      "propose_routine",
+      "propose_routine_edit",
+      "propose_skill_config",
+      "quality_signals",
+      "retrieval_probe",
+      "retrieval_settings",
+      "reviewed_proposal_outcome",
+      "routine_definition",
+      "set_triage_state",
+      "turn_trace",
+      "validate_routine",
+      "workspace_settings",
+      "workspace_triage",
+    ]);
   });
 
   it("requires safe metadata for eligibility and a reason for exclusion", () => {
@@ -26,7 +63,7 @@ describe("operator MCP descriptor disposition", () => {
         expect(disposition.reason.trim().length).toBeGreaterThan(0);
       } else {
         expect(disposition.inputStrategy).toBe("explicit");
-        expect(disposition.retry.effect).toMatch(/^(none|proposal)$/);
+        expect(disposition.retry.effect).toMatch(/^(none|proposal|act)$/);
       }
     }
   });

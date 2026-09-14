@@ -399,7 +399,7 @@ test("no-override chat tab sends through the normal chat flow", async ({ page })
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=chat`);
   await page.getByPlaceholder("Ask a question...").fill("Explain workbench replay");
-  await page.getByRole("button", { name: "Send message" }).click();
+  await page.getByRole("button", { name: "Send", exact: true }).click();
 
   await expect(page.getByText("Chat answer: Explain workbench replay")).toBeVisible();
   expect(requestBodies.some((body) => JSON.stringify(body).includes("agentConfigOverride"))).toBe(false);

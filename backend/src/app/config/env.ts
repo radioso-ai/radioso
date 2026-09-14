@@ -8,6 +8,9 @@ import {
   COPILOT_PROBE_BUDGET_PER_TURN_DEFAULT,
 } from "../../modules/operatorCopilot/public.js";
 
+/** Shared default for both agent-revision test/eval evidence retention knobs; see their env entries. */
+const AGENT_TEST_EVIDENCE_RETENTION_DAYS_DEFAULT = 90;
+
 const emptyStringToUndefined = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess((value) => (value === "" ? undefined : value), schema.optional());
 const emptyStringToDefault = <T extends z.ZodTypeAny>(schema: T, defaultValue: z.input<T>) =>
@@ -150,6 +153,13 @@ const envSchema = z.object({
   COPILOT_PROBE_BUDGET_PER_TURN: z.coerce.number().int().positive().default(COPILOT_PROBE_BUDGET_PER_TURN_DEFAULT),
   // Days a copilot conversation is kept after its last activity. 0 keeps them indefinitely.
   COPILOT_CONVERSATION_RETENTION_DAYS: z.coerce.number().int().nonnegative().default(COPILOT_CONVERSATION_RETENTION_DAYS_DEFAULT),
+  // Days a private agent-revision test execution (full transcript) is kept after its last
+  // activity. Operator-only evidence, same story as copilot retention: long enough to find last
+  // quarter's test, short enough not to be an indefinite archive. 0 keeps them indefinitely.
+  AGENT_TEST_EXECUTION_RETENTION_DAYS: z.coerce.number().int().nonnegative().default(AGENT_TEST_EVIDENCE_RETENTION_DAYS_DEFAULT),
+  // Days a private revision-eval run (frozen candidate + case snapshots) is kept after its last
+  // activity. 0 keeps them indefinitely.
+  AGENT_REVISION_EVAL_RUN_RETENTION_DAYS: z.coerce.number().int().nonnegative().default(AGENT_TEST_EVIDENCE_RETENTION_DAYS_DEFAULT),
   // Applying imports older than this are treated as crashed work and compensated by the worker.
   AGENT_BUNDLE_IMPORT_ORPHAN_AGE_MS: z.coerce.number().int().positive().default(AGENT_BUNDLE_IMPORT_ORPHAN_AGE_MS_DEFAULT),
   PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),

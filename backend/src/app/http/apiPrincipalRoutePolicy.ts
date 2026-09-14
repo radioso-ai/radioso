@@ -136,6 +136,22 @@ const declarations: readonly PolicyDeclaration[] = [
     .map((path) => allow("GET", `/api/v1/agents${path}`, "workspace.agents.read")),
   ...["/:agentId/channels/lifecycle", "/:agentId/directives", "/:agentId/routine-skill-catalog", "/:agentId/routines", "/:agentId/routines/:routineId", "/:agentId/bundle"]
     .map((path) => allow("GET", `/api/v1/agents${path}`, "workspace.agents.read")),
+  // Revision authoring and private candidate testing use the same workspace
+  // session boundary as the existing bearer-capable agent authoring routes.
+  ...[
+    ["GET", "/api/v1/agents/:agentId/revision-state", "workspace.agents.read"],
+    ["POST", "/api/v1/agents/:agentId/revisions/candidates", "workspace.agents.manage"],
+    ["GET", "/api/v1/agents/:agentId/revisions", "workspace.agents.read"],
+    ["GET", "/api/v1/agents/:agentId/revisions/:revisionId", "workspace.agents.read"],
+    ["POST", "/api/v1/agents/:agentId/revisions/:revisionId/publish", "workspace.agents.manage"],
+    ["GET", "/api/v1/agents/:agentId/test-executions", "workspace.agents.manage"],
+    ["GET", "/api/v1/agents/:agentId/test-executions/:executionId", "workspace.agents.manage"],
+    ["POST", "/api/v1/agents/:agentId/test-executions", "workspace.agents.manage"],
+    ["POST", "/api/v1/agents/:agentId/test-executions/:executionId/messages", "workspace.agents.manage"],
+    ["POST", "/api/v1/agents/:agentId/test-executions/:executionId/sides/:sideId/retain", "workspace.agents.manage"],
+    ["POST", "/api/v1/agents/:agentId/test-executions/:executionId/sides/:sideId/eval-snapshots/:messageId", "workspace.agents.manage"],
+    ["POST", "/api/v1/agents/:agentId/test-executions/:executionId/sides/:sideId/retry", "workspace.agents.manage"],
+  ].map(([method, path, permission]) => allow(method, path, permission)),
   allow("GET", "/api/v1/agents/bundle/imports/:importId", "workspace.agents.read"),
   allow("POST", "/api/v1/agents", "workspace.agents.manage"),
   // Importing a bundle creates an agent, so it sits with agent creation rather than
@@ -144,7 +160,7 @@ const declarations: readonly PolicyDeclaration[] = [
   ...["/:agentId/directives", "/:agentId/directives/draft", "/:agentId/routines", "/:agentId/routines/draft-assist"]
     .map((path) => allow("POST", `/api/v1/agents${path}`, "workspace.agents.manage")),
   allow("POST", "/api/v1/agents/:agentId/routines/:routineId/validate", "workspace.agents.read"),
-  ...["/:agentId/routines/:routineId/publish", "/:agentId/routines/:routineId/revise", "/:agentId/routines/:routineId/archive", "/:agentId/routines/:routineId/restore", "/:agentId/assistant-logo", "/:agentId/default"]
+  ...["/:agentId/assistant-logo", "/:agentId/default"]
     .map((path) => allow("POST", `/api/v1/agents${path}`, "workspace.agents.manage")),
   allow("PUT", "/api/v1/agents/:agentId", "workspace.agents.manage"),
   ...["/:agentId/directives/:directiveId", "/:agentId/routines/:routineId"]
@@ -174,6 +190,13 @@ const declarations: readonly PolicyDeclaration[] = [
 
   ...["/snapshots", "/cases", "/cases/run", "/cases/:id/runs", "/runs"]
     .map((path) => allow("POST", `/api/v1/evals${path}`, "workspace.retrieval.query")),
+  // Frozen revision evals remain workspace-scoped and bearer-capable, while
+  // candidate IDs and private evidence stay behind agent permissions.
+  ...[
+    ["POST", "/api/v1/evals/revision-runs", "workspace.agents.manage"],
+    ["GET", "/api/v1/evals/revision-runs/:runId", "workspace.agents.read"],
+    ["POST", "/api/v1/evals/revision-runs/:runId/sides/:revisionId/cases/:caseId/retry", "workspace.agents.manage"],
+  ].map(([method, path, permission]) => allow(method, path, permission)),
   ...["/snapshots/:id", "/cases", "/cases/:id", "/cases/by-source-message/:assistantMessageId"]
     .map((path) => allow("GET", `/api/v1/evals${path}`, "workspace.retrieval.query")),
   allow("PUT", "/api/v1/evals/cases/by-source-message/:assistantMessageId", "workspace.retrieval.query"),

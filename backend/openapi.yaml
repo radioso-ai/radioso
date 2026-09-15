@@ -2582,11 +2582,10 @@ components:
         exactWordsEnabled:
           type: boolean
         exactContent:
-          allOf:
+          anyOf:
             - $ref: "#/components/schemas/ExactContentItem"
-            - type:
-                - object
-                - "null"
+            - type: "null"
+            - type: "null"
       required:
         - exactWordsEnabled
         - exactContent

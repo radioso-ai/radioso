@@ -16,6 +16,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json && node scripts/copy-prompts.mjs",
+    "pretest": "pnpm --dir ../../../packages/plan-catalog run build",
     "test": "vitest run --passWithNoTests --testTimeout 20000"
   },
   "files": [
@@ -23,6 +24,7 @@
     "prompts"
   ],
   "dependencies": {
+    "@radioso/plan-catalog": "workspace:*",
     "@radioso/skill-contract": "workspace:*",
     "@radioso/usage-contract": "workspace:*",
     "bcryptjs": "^2.4.3",

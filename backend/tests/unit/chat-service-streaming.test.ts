@@ -348,6 +348,7 @@ describe("chat service streaming", () => {
     const reservation = {
       commit: vi.fn(async () => {}),
       release: vi.fn(async () => {}),
+      confirmConversationId: vi.fn(async () => {}),
     };
     const usageLimitPolicy: NonNullable<ChatServiceOptions["usageLimitPolicy"]> = {
       reserveAnswer: vi.fn(async () => reservation),
@@ -414,6 +415,63 @@ describe("chat service streaming", () => {
       }),
     );
     expect(JSON.stringify(observeHistogram.mock.calls)).not.toContain("Hello");
+  });
+
+  it("confirms the usage reservation's conversation id once prepare() creates the conversation", async () => {
+    // Turn 1 of a brand-new conversation reserves usage before the conversation
+    // row exists (input.conversationId is unset), so chatService cannot pass an
+    // id to reserveAnswer. It must instead tell the reservation the real id once
+    // chatSessionPreparer.prepare() resolves one, so EE's block-of-replies
+    // bookkeeping (see EnterpriseUsageLimitService.reserveConversationUnits) can
+    // attribute this charge to the conversation instead of a later reply
+    // re-opening (and re-charging) the same block.
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const { usageLimitPolicy, reservation } = createUsageLimitPolicy();
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return "Hello there.";
+      },
+      async *streamAnswer() {
+        yield "Hello there.";
+      },
+    };
+    const service = new ChatService({
+      conversationRepository,
+      messageRepository,
+      retrievalTurn: new RetrievalTurnController(asChatActivityPipeline(
+        createIntentRoutedNoContextPipeline({ query: "hello" }),
+      ) as never),
+      chatGateway,
+      auditService,
+      turnRuntime: buildChatTurnRuntime({
+        chatGateway,
+        fallbackReplyComposer,
+        skillOutcomeCapabilities: groundedSkillCapabilities,
+      }),
+      usageLimitPolicy,
+      turnRouter: {
+        async classify() {
+          return { route: "direct" as const, framing: { isIdentityQuestion: false } };
+        },
+      },
+      conversationEngine: createConversationEngine(),
+      agentRevisionRuntimeResolver: publishedRevisionResolverFixture(),
+    });
+
+    for await (const _event of service.streamAnswer({
+      workspaceId: "workspace-1",
+      query: "hello",
+      stream: true,
+    })) {
+      // drain
+    }
+
+    const [conversation] = [...conversationRepository.items.values()];
+    expect(conversation).toBeDefined();
+    expect(reservation.confirmConversationId).toHaveBeenCalledOnce();
+    expect(reservation.confirmConversationId).toHaveBeenCalledWith(conversation.id);
   });
 
   it("labels an engine-prepared retrieval chunk from the updated prepared route", async () => {

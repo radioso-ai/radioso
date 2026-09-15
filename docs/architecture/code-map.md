@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-09-10
+last_updated: 2026-09-15
 ---
 
 # Code Map
@@ -1474,17 +1474,32 @@ Primary paths:
 - `ee/`
 - `backend/src/app/composition/`
 - relevant `backend/src/modules/*/composition.ts` files
+- `packages/plan-catalog/` — the source of truth for Radioso Cloud plan numbers
+  (prices, quotas, default plan, self-serve ceiling, usage-counting weights,
+  top-up, managed service). Entry point `src/index.ts`
+  (`PLAN_CATALOG`, `findPlan`, `formatPrice`); data in `src/plans.json`; focused
+  test `tests/planCatalog.test.ts`.
+- `ee/packages/backend-module/src/billing/` — publishes the plan catalog over
+  HTTP. Entry point `applicationModule.ts`
+  (`createBillingApplicationModule`), which mounts `plansRoutes.ts`
+  (`createPlansRoutes`, public `GET /api/v1/plans`); focused test
+  `plansRoutes.test.ts`. `ee/packages/backend-module/src/usageLimits/planCatalogSeed.ts`
+  maps a catalog plan onto `ee_usage_limit_profiles` columns for the migrator
+  in `usageLimitMigrator.ts`; focused test `planCatalogSeed.test.ts`.
 
 Useful searches:
 
 - `rg "Enterprise|edition|license|capability" ee backend/src frontend`
 - `rg "extension|capability policy|composition" ee backend/src/app/composition backend/src/modules`
+- `rg "PLAN_CATALOG|plan-catalog" ee packages/plan-catalog`
 
 Focused checks:
 
 - `./run-ee-dev.sh` for local Enterprise runtime
 - `cd ee && pnpm run build`
 - `cd ee && pnpm test`
+- `pnpm --dir packages/plan-catalog test`
+- `pnpm --dir ee/packages/backend-module exec vitest run src/billing src/usageLimits`
 
 Related docs and specs:
 

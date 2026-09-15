@@ -125,6 +125,7 @@ export class ChatBootstrapService {
             accountId: input.accountId,
             workspaceId: input.workspaceId,
             surface: input.sourceChannel ?? "chat.bootstrap",
+            usage: "greeting",
           });
       const normalizedAnswer = cachedGreeting?.greetingText
         ?? (await this.chatGateway.answer({

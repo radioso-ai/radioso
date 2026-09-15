@@ -264,8 +264,8 @@ describe("TestExecutionService", () => {
 
     expect(runner).toHaveBeenCalledTimes(2);
     expect(reserveAnswer).toHaveBeenCalledTimes(2);
-    expect(reserveAnswer).toHaveBeenNthCalledWith(1, { accountId: "account-1", workspaceId, surface: "test_execution" });
-    expect(reserveAnswer).toHaveBeenNthCalledWith(2, { accountId: "account-1", workspaceId, surface: "test_execution" });
+    expect(reserveAnswer).toHaveBeenNthCalledWith(1, { accountId: "account-1", workspaceId, surface: "test_execution", usage: "test_run" });
+    expect(reserveAnswer).toHaveBeenNthCalledWith(2, { accountId: "account-1", workspaceId, surface: "test_execution", usage: "test_run" });
     expect(commit).toHaveBeenCalledTimes(2);
   });
 

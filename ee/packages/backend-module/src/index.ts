@@ -4,6 +4,7 @@ import { createEnterpriseObservabilityApplicationModule } from "./observability/
 import { createUsageLimitsApplicationModule } from "./usageLimits/applicationModule.js";
 import { createGoogleLoginApplicationModule } from "./googleLogin/applicationModule.js";
 import { createStaffConsoleApplicationModule } from "./staffConsole/applicationModule.js";
+import { createBillingApplicationModule } from "./billing/applicationModule.js";
 
 export {
   collectFrontendRouteContributions,
@@ -22,6 +23,7 @@ export const createEnterpriseBackendModule = (): ApplicationModule => {
     createUsageLimitsApplicationModule(),
     createStaffConsoleApplicationModule(),
     createGoogleLoginApplicationModule(),
+    createBillingApplicationModule(),
   ];
 
   return {
@@ -41,5 +43,3 @@ export const createEnterpriseBackendModule = (): ApplicationModule => {
 };
 
 export const applicationModule: ApplicationModule = createEnterpriseBackendModule();
-
-export default applicationModule;

@@ -150,6 +150,7 @@ const declarations: readonly PolicyDeclaration[] = [
     ["POST", "/api/v1/agents/:agentId/test-executions", "workspace.agents.manage"],
     ["POST", "/api/v1/agents/:agentId/test-executions/:executionId/messages", "workspace.agents.manage"],
     ["POST", "/api/v1/agents/:agentId/test-executions/:executionId/sides/:sideId/retain", "workspace.agents.manage"],
+    ["POST", "/api/v1/agents/:agentId/test-executions/:executionId/sides/:sideId/eval-snapshots/:messageId", "workspace.agents.manage"],
     ["POST", "/api/v1/agents/:agentId/test-executions/:executionId/sides/:sideId/retry", "workspace.agents.manage"],
   ].map(([method, path, permission]) => allow(method, path, permission)),
   allow("GET", "/api/v1/agents/bundle/imports/:importId", "workspace.agents.read"),

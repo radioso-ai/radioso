@@ -1,5 +1,6 @@
 import type { RoutineState } from "@radioso/conversation-contract";
-import type { AgentSnapshot, InternalAgentConfig } from "../../agents/public.js";
+import type { AgentRevision, AgentSnapshot, InternalAgentConfig } from "../../agents/public.js";
+import type { FrozenTestValue } from "../../context-variables/public.js";
 import type {
   AnswerSegment,
   ChatCitation,
@@ -46,10 +47,22 @@ export interface EvalSnapshotReplayTarget {
   assistantMessageId: string | null;
 }
 
+/**
+ * Private Test Chat needs the exact revision-side runtime inputs that produced a
+ * captured response. They are separate from the baseline agent config because
+ * routines and context-variable enablements are revision-owned, not agent-config
+ * fields. Ordinary conversation snapshots deliberately leave this absent.
+ */
+export interface EvalSnapshotTestExecutionReplay {
+  revision: AgentRevision;
+  testValues: readonly FrozenTestValue[];
+}
+
 export interface EvalSnapshot {
   id: string;
   workspaceId: string;
-  sourceConversationId: string;
+  /** Null when evidence came from a private test execution rather than a live conversation. */
+  sourceConversationId: string | null;
   sourceMessageId: string | null;
   replayTarget: EvalSnapshotReplayTarget | null;
   fidelity: EvalSnapshotFidelity;
@@ -86,6 +99,14 @@ export interface EvalSnapshot {
   conversationSummary?: string;
   capturedAt: string;
   capturedBy: string | null;
+}
+
+/**
+ * Server-only extension for executing a frozen Test Chat snapshot. It must never
+ * be returned by a snapshot route: `testValues` can include private context data.
+ */
+export interface EvalSnapshotForReplay extends EvalSnapshot {
+  testExecutionReplay?: EvalSnapshotTestExecutionReplay;
 }
 
 // An assertion is one *check* a case makes about a run's observed output.

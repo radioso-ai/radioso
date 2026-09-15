@@ -1,6 +1,6 @@
 # Architecture: Radioso Hosted App Runtime
 
-**Status**: Draft companion to [Hosted App Runtime specification](./spec.md)  
+**Status**: Parked (2026-09-14) companion to [Hosted App Runtime specification](./spec.md)  
 **Date**: 2026-09-06  
 **Scope**: The stable App abstraction and a Radioso Cloud-hosted execution option. Provider selection and implementation tasking belong in the later plan.
 

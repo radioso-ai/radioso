@@ -102,6 +102,10 @@ export const draftInputFromRoutine = (routine: RoutineDefinition): RoutineDefini
   return draft;
 };
 
+/** Canonical persistence-free authoring projection for external bounded readers. */
+export const canonicalRoutineAuthoringDraft = (routine: RoutineDefinition): RoutineDefinitionDraftAuthoringInput =>
+  draftInputFromRoutine(routine);
+
 export const applyRoutineFieldPatch = (
   routine: RoutineDefinition,
   patch: RoutineFieldPatch,

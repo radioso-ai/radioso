@@ -255,4 +255,46 @@ describe("AgentRevisionService", () => {
     expect(validateForServing).toHaveBeenCalledWith(workspaceId, expect.objectContaining({ id: routineA.id }));
     expect(validateForServing).toHaveBeenCalledWith(workspaceId, expect.objectContaining({ id: routineB.id }));
   });
+
+  it("compares a candidate to its saved base revision, not a newer current publication", async () => {
+    const repository = new InMemoryRevisionRepository();
+    repository.revisions.set("published-1", snapshot("base instruction"));
+    repository.draft = { ...repository.draft, snapshot: snapshot("candidate instruction") };
+    const service = new AgentRevisionService(repository, () => "candidate-1");
+    await service.createCandidate(workspaceId, agentId, 2);
+    repository.publishedRevisionId = "newer-published";
+    repository.revisions.set("newer-published", snapshot("newer instruction"));
+    await expect(service.describeCandidateRelease(workspaceId, agentId, "candidate-1")).resolves.toMatchObject({ basePublishedRevisionId: "published-1", changes: [expect.objectContaining({ field: "customInstruction", before: "base instruction", after: "candidate instruction" })] });
+  });
+
+  it("rejects an invalid candidate rather than labeling it valid", async () => {
+    const repository = new InMemoryRevisionRepository();
+    repository.revisions.set("candidate-invalid", { ...snapshot("invalid"), directives: [{ id: "00000000-0000-4000-8000-000000000007", agentId, name: "bad", instruction: "bad", enabled: true, tags: [`routine:${routineId}`], createdAt: new Date(), updatedAt: new Date() }] });
+    const service = new AgentRevisionService(repository, () => "candidate-1");
+    await expect(service.describeCandidateRelease(workspaceId, agentId, "candidate-invalid")).rejects.toMatchObject({ code: "revision_invalid" });
+  });
+
+  it("chunks release resources, returns null for an absent side, and rejects unknown ids", async () => {
+    const repository = new InMemoryRevisionRepository();
+    const long = routine(true, routineId, routineLineageId); long.steps[0].instruction = "x".repeat(3_000);
+    repository.revisions.set("published-1", snapshot("base"));
+    repository.revisions.set("candidate-chunk", { ...snapshot("candidate"), routines: [long] });
+    const service = new AgentRevisionService(repository, () => "candidate-1");
+    const first = await service.readCandidateReleaseChange(workspaceId, agentId, "candidate-chunk", { field: "routines", id: routineId, side: "after", offset: 0, limit: 2000 });
+    const second = await service.readCandidateReleaseChange(workspaceId, agentId, "candidate-chunk", { field: "routines", id: routineId, side: "after", offset: first.nextOffset!, limit: 2000 });
+    expect(`${first.text}${second.text}`).toContain("x".repeat(3_000));
+    await expect(service.readCandidateReleaseChange(workspaceId, agentId, "candidate-chunk", { field: "routines", id: routineId, side: "before", offset: 0, limit: 10 })).resolves.toMatchObject({ text: null });
+    await expect(service.readCandidateReleaseChange(workspaceId, agentId, "candidate-chunk", { field: "routines", id: "missing", side: "after", offset: 0, limit: 10 })).rejects.toMatchObject({ statusCode: 404 });
+  });
+
+  it("redacts agent skill config from owner review summaries and chunks", async () => {
+    const repository = new InMemoryRevisionRepository();
+    const skill = { id: "33333333-3333-4333-8333-333333333333", agentId, workspaceId, skillName: "retrieval.answer", kind: "tool", invocationMode: "manual", enabled: true, config: { token: "SECRET_SENTINEL" }, createdAt: new Date(), updatedAt: new Date() };
+    repository.revisions.set("published-1", { ...snapshot("base"), agentSkills: [skill] });
+    repository.revisions.set("candidate-skill", { ...snapshot("candidate"), agentSkills: [{ ...skill, config: { token: "OTHER" } }] });
+    const service = new AgentRevisionService(repository, () => "candidate-1");
+    const review = await service.describeCandidateRelease(workspaceId, agentId, "candidate-skill");
+    const chunk = await service.readCandidateReleaseChange(workspaceId, agentId, "candidate-skill", { field: "agentSkills", id: skill.id, side: "before", offset: 0, limit: 2000 });
+    expect(JSON.stringify(review)).not.toContain("SECRET_SENTINEL"); expect(JSON.stringify(chunk)).not.toContain("SECRET_SENTINEL"); expect(JSON.stringify(review)).toContain("configRedacted");
+  });
 });

@@ -24,6 +24,7 @@ import type {
   EvalRunOverrides,
   EvalRunResolvedConfig,
   EvalSnapshot,
+  EvalSnapshotForReplay,
 } from "../domain/types.js";
 import { NoopUsageLimitPolicy, type UsageLimitPolicy, type UsageLimitReservation } from "../../../shared/domain/usageLimitPolicy.js";
 import type { EvalRepositoryPort } from "./evalRepository.js";
@@ -141,15 +142,18 @@ const toObservedGrounding = (
   };
 };
 
-const resolveSnapshotReplayAgent = (snapshot: EvalSnapshot) => {
+const resolveSnapshotReplayAgent = (snapshot: EvalSnapshotForReplay) => {
   if (snapshot.originalAgentConfig) {
     if (!snapshot.sourceAgentId) {
       throw badRequest("Snapshot is missing source agent identity");
     }
-    return materializeAgentFromConfig(snapshot.originalAgentConfig, {
+    const agent = materializeAgentFromConfig(snapshot.originalAgentConfig, {
       agentId: snapshot.sourceAgentId,
       workspaceId: snapshot.workspaceId,
     });
+    return snapshot.testExecutionReplay
+      ? applyAgentRevisionSnapshot(agent, snapshot.testExecutionReplay.revision)
+      : agent;
   }
 
   return snapshot.originalAgent;
@@ -171,6 +175,25 @@ const resolveReplayRetrievalSettingsOverride = (
     ...original,
     ...(override ?? {}),
   };
+};
+
+const testExecutionVariables = (snapshot: EvalSnapshotForReplay): ResolvedVariableInput[] | undefined => {
+  const replay = snapshot.testExecutionReplay;
+  if (!replay) return undefined;
+  return replay.testValues.map((value) => {
+    const enablement = replay.revision.snapshot.contextVariableEnablements.find(
+      (candidate) => candidate.variableId === value.contextVariableId && candidate.enabled,
+    );
+    if (!enablement) throw badRequest("Frozen Test Chat context value is not enabled in its captured revision");
+    return {
+      name: value.name,
+      description: value.description,
+      value: value.value,
+      surfacing: enablement.surfacing,
+      sensitive: value.sensitive,
+      trust: value.trust,
+    };
+  });
 };
 
 /** Overrides that only the conversation-engine replay path can honor. */
@@ -364,7 +387,7 @@ export class EvalRunService {
   }
 
   private async executeReserved(input: EvalRunInput, reserve: () => Promise<void>): Promise<EvalRunOutcome> {
-    const snapshot = await this.repository.findSnapshot(input.workspaceId, input.snapshotId);
+    const snapshot = await this.findSnapshotForReplay(input.workspaceId, input.snapshotId);
     if (!snapshot) {
       throw notFound("Snapshot not found");
     }
@@ -561,7 +584,7 @@ export class EvalRunService {
       throw badRequest("Workbench replay requires full_assistant mode");
     }
 
-    const snapshot = await this.repository.findSnapshot(input.workspaceId, input.snapshotId);
+    const snapshot = await this.findSnapshotForReplay(input.workspaceId, input.snapshotId);
     if (!snapshot) {
       throw notFound("Snapshot not found");
     }
@@ -606,6 +629,8 @@ export class EvalRunService {
         accountId: input.accountId,
         sourceAgentId: snapshot.sourceAgentId,
         baselineAgentConfig: snapshot.originalAgentConfig,
+        candidateRevision: snapshot.testExecutionReplay?.revision,
+        preResolvedHostVariables: testExecutionVariables(snapshot),
         executionMode,
         agentConfigOverride,
         query: replay.query,
@@ -726,5 +751,10 @@ export class EvalRunService {
     }
 
     return { run: updatedCase ? run : { ...run, caseId: null }, case: updatedCase };
+  }
+
+  private findSnapshotForReplay(workspaceId: string, snapshotId: string): Promise<EvalSnapshotForReplay | null> {
+    return this.repository.findSnapshotForReplay?.(workspaceId, snapshotId)
+      ?? this.repository.findSnapshot(workspaceId, snapshotId);
   }
 }

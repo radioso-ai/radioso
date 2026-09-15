@@ -56,7 +56,7 @@ describe("operator MCP 2026-07-28 feasibility fixture", () => {
       authorization_servers: ["https://app.example"],
       bearer_methods_supported: ["header"],
       resource: "https://mcp.example/operator/mcp",
-      scopes_supported: ["operator:read", "operator:probe", "operator:act", "operator:propose"],
+      scopes_supported: ["operator:read", "operator:probe", "operator:act", "operator:propose", "operator:write"],
     });
     expect(metadata.scopes_supported).not.toContain("offline_access");
   });

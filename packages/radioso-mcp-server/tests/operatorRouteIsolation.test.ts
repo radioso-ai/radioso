@@ -35,7 +35,7 @@ describe("operator route isolation", () => {
     if (!address || typeof address === "string") throw new Error("expected TCP address");
     const metadata = await fetch(`http://127.0.0.1:${address.port}/.well-known/oauth-protected-resource/operator/mcp`);
     expect(metadata.status).toBe(200);
-    await expect(metadata.json()).resolves.toMatchObject({ resource: "https://mcp.example/operator/mcp", scopes_supported: ["operator:read", "operator:probe", "operator:act", "operator:propose"] });
+    await expect(metadata.json()).resolves.toMatchObject({ resource: "https://mcp.example/operator/mcp", scopes_supported: ["operator:read", "operator:probe", "operator:act", "operator:propose", "operator:write"] });
     const protectedRequest = await fetch(`http://127.0.0.1:${address.port}/operator/mcp`, { method: "POST", body: "{}", headers: { "content-type": "application/json" } });
     expect(protectedRequest.status).toBe(401);
     await server.close();

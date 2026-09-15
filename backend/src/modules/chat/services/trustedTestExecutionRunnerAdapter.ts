@@ -144,6 +144,7 @@ export class TrustedTestExecutionRunnerAdapter implements TrustedTestExecutionRu
     return {
       answer: replayed.answer,
       messageId: replayed.messageId,
+      turnTrace: replayed.turnTrace,
       continuation: replayed.continuation,
     };
   }

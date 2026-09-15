@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { projectRoutineToPortableDocument, routineDefinitionDraftInputSchema, routineFieldPatchSchema, type RoutineDefinition } from "../../routines/public.js";
+import { canonicalRoutineAuthoringDraft, projectRoutineToPortableDocument, routineDefinitionDraftInputSchema, routineFieldPatchSchema, type RoutineDefinition } from "../../routines/public.js";
 import type {
   CopilotMcpInvocationReconciliation,
   CopilotMcpProposalRecoveryPort,
@@ -36,12 +36,14 @@ const routineDefinitionInputSchema = z.object({
   agentName: entityNameSchema.optional(),
   routineId: idSchema.optional(),
   routineTitle: entityNameSchema.optional(),
+  authoringDetail: z.object({ offset: z.number().int().min(0), limit: z.number().int().min(1).max(4000) }).strict().optional(),
 });
 const routineDefinitionOutputSchema = z.object({
   routineCount: z.number().int().nonnegative(),
   routinesTruncated: z.boolean(),
   routine: z.record(z.unknown()).nullable(),
   routines: z.array(z.record(z.unknown())),
+  authoringDetail: z.object({ text: z.string(), nextOffset: z.number().int().nonnegative().nullable(), totalLength: z.number().int().nonnegative(), version: z.string().datetime() }).nullable(),
 });
 const copilotRoutineListLimit = 40;
 const copilotRoutineContentCharLimit = 20_000;
@@ -101,15 +103,18 @@ export const createRoutineDefinitionCopilotTools = (deps: RoutineDefinitionCopil
       description: "List an agent's routines, or read one routine: its wording as portable Markdown, plus the stable ids of every step, ending, and information field an edit can address.",
       inputSchema: routineDefinitionInputSchema,
       outputSchema: routineDefinitionOutputSchema,
-      invoke: async ({ agentId, routineId }) => {
+      invoke: async ({ agentId, routineId, authoringDetail }) => {
         const resolvedAgentId = agentId ?? requiredPageAgent(context.pageContext.agentId);
+        if (authoringDetail && !routineId) throw new Error("authoringDetail requires routineId");
         if (routineId) {
           const routine = await deps.routineDefinitionService.get(context.workspaceId, resolvedAgentId, routineId);
+          const serialized = JSON.stringify(canonicalRoutineAuthoringDraft(routine));
           return {
             routineCount: 1,
             routinesTruncated: false,
             routine: projectRoutineDetail(routine),
             routines: [],
+            authoringDetail: authoringDetail ? { text: serialized.slice(authoringDetail.offset, authoringDetail.offset + authoringDetail.limit), nextOffset: authoringDetail.offset + authoringDetail.limit < serialized.length ? authoringDetail.offset + authoringDetail.limit : null, totalLength: serialized.length, version: routine.updatedAt.toISOString() } : null,
           };
         }
         const definitions = await deps.routineDefinitionService.list(context.workspaceId, resolvedAgentId);
@@ -118,6 +123,7 @@ export const createRoutineDefinitionCopilotTools = (deps: RoutineDefinitionCopil
           routinesTruncated: definitions.length > copilotRoutineListLimit,
           routine: null,
           routines: definitions.slice(0, copilotRoutineListLimit).map(projectRoutineSummary),
+          authoringDetail: null,
         };
       },
     }),
@@ -222,6 +228,9 @@ const cappedEditableElements = <T>(elements: ReadonlyArray<T>): { items: T[]; tr
 });
 
 const projectRoutineEditableElements = (routine: RoutineDefinition) => {
+  // Structural MCP edits such as replace_step compare the complete existing node. Expose that
+  // canonical authoring shape here so a client can read, modify, and submit it without guessing
+  // persistence-owned defaults or reaching around the public tool surface.
   const steps = cappedEditableElements(routine.steps.map((step) => ({ stableStepId: step.stableStepId, kind: step.kind, instruction: locator(step.instruction) })));
   const endings = cappedEditableElements(routine.terminals.map((terminal) => ({ stableStepId: terminal.stableStepId, kind: terminal.kind, instruction: locator(terminal.instruction ?? null) })));
   const fields = cappedEditableElements((routine.slots ?? []).map((slot) => ({ key: slot.key, type: slot.type, required: slot.required, description: locator(slot.description ?? null) })));

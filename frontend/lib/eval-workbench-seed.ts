@@ -2,7 +2,7 @@ import type { ChatConversationDetail, ChatConversationTurn } from './api'
 import type { EvalAssertion, EvalSnapshot } from './api-eval'
 import type { WorkbenchSeedTurn } from '@/components/dashboard/workbench/use-workbench-state'
 
-export interface EventRetrievalWorkbenchSeedCase {
+interface EventRetrievalWorkbenchSeedCase {
   id: string
   name: string
   query: string
@@ -75,8 +75,10 @@ const snapshotMessageToTurn = (
   answerSegments: message.answerSegments,
 })
 
-export const buildSnapshotConversation = (snapshot: EvalSnapshot): ChatConversationDetail => ({
-  conversationId: snapshot.sourceConversationId,
+const buildSnapshotConversation = (snapshot: EvalSnapshot): ChatConversationDetail => ({
+  // Private Test Chat evidence has no persisted conversation row. The snapshot
+  // ID is still a stable UUID for local seed identity; replay uses snapshotId.
+  conversationId: snapshot.sourceConversationId ?? snapshot.id,
   workspaceId: snapshot.workspaceId,
   agentId: snapshot.sourceAgentId,
   sourceChannel: null,

@@ -18884,859 +18884,6 @@
         "description": "A server-sent event stream with named ready, invalidate, and resync events. Each data field is JSON matching the corresponding WorkspaceEvent*Data schema. Heartbeat records are SSE comments (`: heartbeat`) and carry no data. Protocol version 1 has no event ID, cursor, replay, timestamp, or resource identifier.",
         "example": "event: ready\ndata: {\"protocolVersion\":1}\n\nevent: invalidate\ndata: {\"protocolVersion\":1,\"changeKinds\":[\"document.status_changed\"]}\n\nevent: resync\ndata: {\"protocolVersion\":1}\n"
       },
-      "TestExecutionEvent": {
-        "oneOf": [
-          {
-            "type": "object",
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": [
-                  "side_started"
-                ]
-              },
-              "executionId": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "generation": {
-                "type": "integer"
-              },
-              "turnId": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "attemptId": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "sideId": {
-                "type": "string",
-                "format": "uuid"
-              }
-            },
-            "required": [
-              "type",
-              "executionId",
-              "generation",
-              "turnId",
-              "attemptId",
-              "sideId"
-            ]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": [
-                  "message_delta"
-                ]
-              },
-              "executionId": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "generation": {
-                "type": "integer"
-              },
-              "turnId": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "attemptId": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "sideId": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "delta": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "type",
-              "executionId",
-              "generation",
-              "turnId",
-              "attemptId",
-              "sideId",
-              "delta"
-            ]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": [
-                  "side_completed"
-                ]
-              },
-              "executionId": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "generation": {
-                "type": "integer"
-              },
-              "turnId": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "attemptId": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "sideId": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "messageId": {
-                "type": "string",
-                "format": "uuid"
-              }
-            },
-            "required": [
-              "type",
-              "executionId",
-              "generation",
-              "turnId",
-              "attemptId",
-              "sideId",
-              "messageId"
-            ]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": [
-                  "side_failed"
-                ]
-              },
-              "executionId": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "generation": {
-                "type": "integer"
-              },
-              "turnId": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "attemptId": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "sideId": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "code": {
-                "type": "string"
-              },
-              "retryable": {
-                "type": "boolean"
-              }
-            },
-            "required": [
-              "type",
-              "executionId",
-              "generation",
-              "turnId",
-              "attemptId",
-              "sideId",
-              "code",
-              "retryable"
-            ]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": [
-                  "execution_partial"
-                ]
-              },
-              "executionId": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "generation": {
-                "type": "integer"
-              },
-              "turnId": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "attemptId": {
-                "type": "string",
-                "format": "uuid"
-              }
-            },
-            "required": [
-              "type",
-              "executionId",
-              "generation",
-              "turnId",
-              "attemptId"
-            ]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": [
-                  "execution_completed"
-                ]
-              },
-              "executionId": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "generation": {
-                "type": "integer"
-              },
-              "turnId": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "attemptId": {
-                "type": "string",
-                "format": "uuid"
-              }
-            },
-            "required": [
-              "type",
-              "executionId",
-              "generation",
-              "turnId",
-              "attemptId"
-            ]
-          }
-        ]
-      },
-      "TestExecutionSide": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "revision": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "label": {
-                "type": "string"
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "candidate",
-                  "published"
-                ]
-              },
-              "versionNumber": {
-                "type": [
-                  "integer",
-                  "null"
-                ],
-                "exclusiveMinimum": 0
-              },
-              "createdAt": {
-                "type": "string",
-                "format": "date-time"
-              },
-              "publishedAt": {
-                "type": "string",
-                "format": "date-time"
-              }
-            },
-            "required": [
-              "id",
-              "label",
-              "kind",
-              "versionNumber",
-              "createdAt"
-            ]
-          },
-          "conversationId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "state": {
-            "type": "string",
-            "enum": [
-              "running",
-              "partial",
-              "failed",
-              "completed"
-            ]
-          },
-          "retryable": {
-            "type": "boolean"
-          },
-          "history": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "turnId": {
-                  "type": "string",
-                  "format": "uuid"
-                },
-                "role": {
-                  "type": "string",
-                  "enum": [
-                    "user",
-                    "assistant"
-                  ]
-                },
-                "content": {
-                  "type": "string"
-                },
-                "messageId": {
-                  "type": "string",
-                  "format": "uuid"
-                },
-                "attemptId": {
-                  "type": "string",
-                  "format": "uuid"
-                },
-                "createdAt": {
-                  "type": "string",
-                  "format": "date-time"
-                }
-              },
-              "required": [
-                "turnId",
-                "role",
-                "content",
-                "attemptId",
-                "createdAt"
-              ]
-            }
-          }
-        },
-        "required": [
-          "id",
-          "revision",
-          "conversationId",
-          "state",
-          "retryable",
-          "history"
-        ]
-      },
-      "StartTestExecutionRequest": {
-        "type": "object",
-        "properties": {
-          "mode": {
-            "type": "string",
-            "enum": [
-              "single",
-              "compare"
-            ]
-          },
-          "revisionIds": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "minItems": 1,
-            "maxItems": 2
-          },
-          "testValues": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "contextVariableId": {
-                  "type": "string",
-                  "format": "uuid"
-                },
-                "value": {}
-              },
-              "required": [
-                "contextVariableId"
-              ],
-              "additionalProperties": false
-            },
-            "maxItems": 100
-          },
-          "expectedDraftGeneration": {
-            "type": "integer",
-            "exclusiveMinimum": 0
-          },
-          "idempotencyKey": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 200
-          }
-        },
-        "required": [
-          "mode",
-          "revisionIds",
-          "testValues",
-          "idempotencyKey"
-        ],
-        "additionalProperties": false
-      },
-      "TestExecution": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "generation": {
-            "type": "integer",
-            "exclusiveMinimum": 0
-          },
-          "mode": {
-            "type": "string",
-            "enum": [
-              "single",
-              "compare"
-            ]
-          },
-          "sides": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/TestExecutionSide"
-            }
-          }
-        },
-        "required": [
-          "id",
-          "generation",
-          "mode",
-          "sides"
-        ]
-      },
-      "TestExecutionMessageRequest": {
-        "type": "object",
-        "properties": {
-          "message": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 20000
-          },
-          "executionGeneration": {
-            "type": "integer",
-            "exclusiveMinimum": 0
-          },
-          "turnId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "attemptId": {
-            "type": "string",
-            "format": "uuid"
-          }
-        },
-        "required": [
-          "message",
-          "executionGeneration",
-          "turnId",
-          "attemptId"
-        ],
-        "additionalProperties": false
-      },
-      "TestExecutionRetryRequest": {
-        "type": "object",
-        "properties": {
-          "executionGeneration": {
-            "type": "integer",
-            "exclusiveMinimum": 0
-          },
-          "turnId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "attemptId": {
-            "type": "string",
-            "format": "uuid"
-          }
-        },
-        "required": [
-          "executionGeneration",
-          "turnId",
-          "attemptId"
-        ],
-        "additionalProperties": false
-      },
-      "TestExecutionHistoryItem": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "generation": {
-            "type": "integer",
-            "exclusiveMinimum": 0
-          },
-          "mode": {
-            "type": "string",
-            "enum": [
-              "single",
-              "compare"
-            ]
-          },
-          "state": {
-            "type": "string",
-            "enum": [
-              "running",
-              "partial",
-              "failed",
-              "completed"
-            ]
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "sides": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "id": {
-                  "type": "string",
-                  "format": "uuid"
-                },
-                "revision": {
-                  "type": "object",
-                  "properties": {
-                    "id": {
-                      "type": "string",
-                      "format": "uuid"
-                    },
-                    "label": {
-                      "type": "string"
-                    },
-                    "kind": {
-                      "type": "string",
-                      "enum": [
-                        "candidate",
-                        "published"
-                      ]
-                    },
-                    "versionNumber": {
-                      "type": [
-                        "integer",
-                        "null"
-                      ],
-                      "exclusiveMinimum": 0
-                    },
-                    "createdAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "publishedAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    }
-                  },
-                  "required": [
-                    "id",
-                    "label",
-                    "kind",
-                    "versionNumber",
-                    "createdAt"
-                  ]
-                },
-                "conversationId": {
-                  "type": "string",
-                  "format": "uuid"
-                },
-                "state": {
-                  "type": "string",
-                  "enum": [
-                    "ready",
-                    "running",
-                    "failed",
-                    "completed"
-                  ]
-                },
-                "retryable": {
-                  "type": "boolean"
-                }
-              },
-              "required": [
-                "id",
-                "revision",
-                "conversationId",
-                "state",
-                "retryable"
-              ]
-            }
-          }
-        },
-        "required": [
-          "id",
-          "generation",
-          "mode",
-          "state",
-          "createdAt",
-          "sides"
-        ]
-      },
-      "TestExecutionAttemptRecord": {
-        "type": "object",
-        "properties": {
-          "executionId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "sideId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "turnId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "attemptId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "fence": {
-            "type": "integer",
-            "exclusiveMinimum": 0
-          },
-          "state": {
-            "type": "string",
-            "enum": [
-              "running",
-              "failed",
-              "completed"
-            ]
-          },
-          "failureCode": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "leaseExpiresAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "updatedAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "executionId",
-          "sideId",
-          "turnId",
-          "attemptId",
-          "fence",
-          "state",
-          "failureCode",
-          "leaseExpiresAt",
-          "createdAt",
-          "updatedAt"
-        ]
-      },
-      "TestExecutionHistoryDetail": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/TestExecutionHistoryItem"
-          },
-          {
-            "type": "object",
-            "properties": {
-              "sides": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "id": {
-                      "type": "string",
-                      "format": "uuid"
-                    },
-                    "revision": {
-                      "type": "object",
-                      "properties": {
-                        "id": {
-                          "type": "string",
-                          "format": "uuid"
-                        },
-                        "label": {
-                          "type": "string"
-                        },
-                        "kind": {
-                          "type": "string",
-                          "enum": [
-                            "candidate",
-                            "published"
-                          ]
-                        },
-                        "versionNumber": {
-                          "type": [
-                            "integer",
-                            "null"
-                          ],
-                          "exclusiveMinimum": 0
-                        },
-                        "createdAt": {
-                          "type": "string",
-                          "format": "date-time"
-                        },
-                        "publishedAt": {
-                          "type": "string",
-                          "format": "date-time"
-                        }
-                      },
-                      "required": [
-                        "id",
-                        "label",
-                        "kind",
-                        "versionNumber",
-                        "createdAt"
-                      ]
-                    },
-                    "conversationId": {
-                      "type": "string",
-                      "format": "uuid"
-                    },
-                    "state": {
-                      "type": "string",
-                      "enum": [
-                        "ready",
-                        "running",
-                        "failed",
-                        "completed"
-                      ]
-                    },
-                    "retryable": {
-                      "type": "boolean"
-                    },
-                    "history": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "turnId": {
-                            "type": "string",
-                            "format": "uuid"
-                          },
-                          "role": {
-                            "type": "string",
-                            "enum": [
-                              "user",
-                              "assistant"
-                            ]
-                          },
-                          "content": {
-                            "type": "string"
-                          },
-                          "messageId": {
-                            "type": "string",
-                            "format": "uuid"
-                          },
-                          "attemptId": {
-                            "type": "string",
-                            "format": "uuid"
-                          },
-                          "createdAt": {
-                            "type": "string",
-                            "format": "date-time"
-                          }
-                        },
-                        "required": [
-                          "turnId",
-                          "role",
-                          "content",
-                          "attemptId",
-                          "createdAt"
-                        ]
-                      }
-                    }
-                  },
-                  "required": [
-                    "id",
-                    "revision",
-                    "conversationId",
-                    "state",
-                    "retryable",
-                    "history"
-                  ]
-                }
-              },
-              "testValues": {
-                "type": "array",
-                "items": {}
-              },
-              "attempts": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/TestExecutionAttemptRecord"
-                }
-              }
-            },
-            "required": [
-              "testValues",
-              "attempts"
-            ]
-          }
-        ]
-      },
-      "TestExecutionHistoryListResponse": {
-        "type": "object",
-        "properties": {
-          "executions": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/TestExecutionHistoryItem"
-            }
-          },
-          "nextCursor": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "hasMore": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "executions",
-          "nextCursor",
-          "hasMore"
-        ]
-      },
-      "TestExecutionHistoryDetailResponse": {
-        "type": "object",
-        "properties": {
-          "execution": {
-            "$ref": "#/components/schemas/TestExecutionHistoryDetail"
-          }
-        },
-        "required": [
-          "execution"
-        ]
-      },
       "PendingApprovalDecisionOption": {
         "type": "object",
         "properties": {
@@ -20615,7 +19762,10 @@
                 "format": "uuid"
               },
               "sourceConversationId": {
-                "type": "string",
+                "type": [
+                  "string",
+                  "null"
+                ],
                 "format": "uuid"
               },
               "sourceMessageId": {
@@ -20918,7 +20068,10 @@
             "format": "uuid"
           },
           "sourceConversationId": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "uuid"
           },
           "sourceMessageId": {
@@ -21144,6 +20297,862 @@
         "required": [
           "cases",
           "summary"
+        ]
+      },
+      "TestExecutionEvent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "side_started"
+                ]
+              },
+              "executionId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "generation": {
+                "type": "integer"
+              },
+              "turnId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "attemptId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "sideId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "type",
+              "executionId",
+              "generation",
+              "turnId",
+              "attemptId",
+              "sideId"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "message_delta"
+                ]
+              },
+              "executionId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "generation": {
+                "type": "integer"
+              },
+              "turnId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "attemptId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "sideId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "delta": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "executionId",
+              "generation",
+              "turnId",
+              "attemptId",
+              "sideId",
+              "delta"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "side_completed"
+                ]
+              },
+              "executionId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "generation": {
+                "type": "integer"
+              },
+              "turnId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "attemptId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "sideId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "messageId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "turnTrace": {}
+            },
+            "required": [
+              "type",
+              "executionId",
+              "generation",
+              "turnId",
+              "attemptId",
+              "sideId",
+              "messageId"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "side_failed"
+                ]
+              },
+              "executionId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "generation": {
+                "type": "integer"
+              },
+              "turnId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "attemptId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "sideId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "code": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "type",
+              "executionId",
+              "generation",
+              "turnId",
+              "attemptId",
+              "sideId",
+              "code",
+              "retryable"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "execution_partial"
+                ]
+              },
+              "executionId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "generation": {
+                "type": "integer"
+              },
+              "turnId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "attemptId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "type",
+              "executionId",
+              "generation",
+              "turnId",
+              "attemptId"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "execution_completed"
+                ]
+              },
+              "executionId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "generation": {
+                "type": "integer"
+              },
+              "turnId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "attemptId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "type",
+              "executionId",
+              "generation",
+              "turnId",
+              "attemptId"
+            ]
+          }
+        ]
+      },
+      "TestExecutionSide": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "revision": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "label": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "candidate",
+                  "published"
+                ]
+              },
+              "versionNumber": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "exclusiveMinimum": 0
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "publishedAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "id",
+              "label",
+              "kind",
+              "versionNumber",
+              "createdAt"
+            ]
+          },
+          "conversationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "running",
+              "partial",
+              "failed",
+              "completed"
+            ]
+          },
+          "retryable": {
+            "type": "boolean"
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "turnId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "user",
+                    "assistant"
+                  ]
+                },
+                "content": {
+                  "type": "string"
+                },
+                "messageId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "turnTrace": {},
+                "attemptId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "required": [
+                "turnId",
+                "role",
+                "content",
+                "attemptId",
+                "createdAt"
+              ]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "revision",
+          "conversationId",
+          "state",
+          "retryable",
+          "history"
+        ]
+      },
+      "StartTestExecutionRequest": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "single",
+              "compare"
+            ]
+          },
+          "revisionIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "testValues": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "contextVariableId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "value": {}
+              },
+              "required": [
+                "contextVariableId"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 100
+          },
+          "expectedDraftGeneration": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "mode",
+          "revisionIds",
+          "testValues",
+          "idempotencyKey"
+        ],
+        "additionalProperties": false
+      },
+      "TestExecution": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "generation": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "single",
+              "compare"
+            ]
+          },
+          "sides": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TestExecutionSide"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "generation",
+          "mode",
+          "sides"
+        ]
+      },
+      "TestExecutionMessageRequest": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20000
+          },
+          "executionGeneration": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "turnId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "attemptId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "message",
+          "executionGeneration",
+          "turnId",
+          "attemptId"
+        ],
+        "additionalProperties": false
+      },
+      "TestExecutionRetryRequest": {
+        "type": "object",
+        "properties": {
+          "executionGeneration": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "turnId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "attemptId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "executionGeneration",
+          "turnId",
+          "attemptId"
+        ],
+        "additionalProperties": false
+      },
+      "TestExecutionHistoryItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "generation": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "single",
+              "compare"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "running",
+              "partial",
+              "failed",
+              "completed"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "sides": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "revision": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "candidate",
+                        "published"
+                      ]
+                    },
+                    "versionNumber": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "exclusiveMinimum": 0
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "publishedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "label",
+                    "kind",
+                    "versionNumber",
+                    "createdAt"
+                  ]
+                },
+                "conversationId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "ready",
+                    "running",
+                    "failed",
+                    "completed"
+                  ]
+                },
+                "retryable": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "revision",
+                "conversationId",
+                "state",
+                "retryable"
+              ]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "generation",
+          "mode",
+          "state",
+          "createdAt",
+          "sides"
+        ]
+      },
+      "TestExecutionAttemptRecord": {
+        "type": "object",
+        "properties": {
+          "executionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sideId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "turnId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "attemptId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "fence": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "running",
+              "failed",
+              "completed"
+            ]
+          },
+          "failureCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "leaseExpiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "executionId",
+          "sideId",
+          "turnId",
+          "attemptId",
+          "fence",
+          "state",
+          "failureCode",
+          "leaseExpiresAt",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "TestExecutionHistoryDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/TestExecutionHistoryItem"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "sides": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "revision": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "candidate",
+                            "published"
+                          ]
+                        },
+                        "versionNumber": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "exclusiveMinimum": 0
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "publishedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "label",
+                        "kind",
+                        "versionNumber",
+                        "createdAt"
+                      ]
+                    },
+                    "conversationId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "ready",
+                        "running",
+                        "failed",
+                        "completed"
+                      ]
+                    },
+                    "retryable": {
+                      "type": "boolean"
+                    },
+                    "history": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "turnId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "role": {
+                            "type": "string",
+                            "enum": [
+                              "user",
+                              "assistant"
+                            ]
+                          },
+                          "content": {
+                            "type": "string"
+                          },
+                          "messageId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "turnTrace": {},
+                          "attemptId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        },
+                        "required": [
+                          "turnId",
+                          "role",
+                          "content",
+                          "attemptId",
+                          "createdAt"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "revision",
+                    "conversationId",
+                    "state",
+                    "retryable",
+                    "history"
+                  ]
+                }
+              },
+              "testValues": {
+                "type": "array",
+                "items": {}
+              },
+              "attempts": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/TestExecutionAttemptRecord"
+                }
+              }
+            },
+            "required": [
+              "testValues",
+              "attempts"
+            ]
+          }
+        ]
+      },
+      "TestExecutionHistoryListResponse": {
+        "type": "object",
+        "properties": {
+          "executions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TestExecutionHistoryItem"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hasMore": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "executions",
+          "nextCursor",
+          "hasMore"
+        ]
+      },
+      "TestExecutionHistoryDetailResponse": {
+        "type": "object",
+        "properties": {
+          "execution": {
+            "$ref": "#/components/schemas/TestExecutionHistoryDetail"
+          }
+        },
+        "required": [
+          "execution"
         ]
       },
       "AssistantChatSseStream": {
@@ -27621,7 +27630,8 @@
                                 "operator:read",
                                 "operator:probe",
                                 "operator:act",
-                                "operator:propose"
+                                "operator:propose",
+                                "operator:write"
                               ]
                             }
                           },
@@ -27829,7 +27839,8 @@
                           "operator:read",
                           "operator:probe",
                           "operator:act",
-                          "operator:propose"
+                          "operator:propose",
+                          "operator:write"
                         ]
                       }
                     },
@@ -28058,7 +28069,8 @@
                           "operator:read",
                           "operator:probe",
                           "operator:act",
-                          "operator:propose"
+                          "operator:propose",
+                          "operator:write"
                         ]
                       }
                     },
@@ -28257,7 +28269,8 @@
                           "operator:read",
                           "operator:probe",
                           "operator:act",
-                          "operator:propose"
+                          "operator:propose",
+                          "operator:write"
                         ]
                       }
                     },
@@ -28463,7 +28476,8 @@
                         "operator:read",
                         "operator:probe",
                         "operator:act",
-                        "operator:propose"
+                        "operator:propose",
+                        "operator:write"
                       ]
                     },
                     "minItems": 1,
@@ -32672,330 +32686,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/agents/{agentId}/test-executions": {
-      "get": {
-        "tags": [
-          "Agents"
-        ],
-        "summary": "List private immutable revision tests",
-        "operationId": "listAgentTestExecutions",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "agentId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 100,
-              "default": 50
-            },
-            "required": false,
-            "name": "limit",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            },
-            "required": false,
-            "name": "cursor",
-            "in": "query"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Private test history returned",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TestExecutionHistoryListResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "Agents"
-        ],
-        "summary": "Start an operator-private immutable revision test",
-        "operationId": "startAgentTestExecution",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "agentId",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/StartTestExecutionRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Private test execution created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TestExecution"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/agents/{agentId}/test-executions/{executionId}": {
-      "get": {
-        "tags": [
-          "Agents"
-        ],
-        "summary": "Get private immutable revision test evidence",
-        "operationId": "getAgentTestExecution",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "agentId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "executionId",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Private test evidence returned",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TestExecutionHistoryDetailResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/agents/{agentId}/test-executions/{executionId}/messages": {
-      "post": {
-        "tags": [
-          "Agents"
-        ],
-        "summary": "Run a fenced private test turn",
-        "operationId": "sendAgentTestExecutionMessage",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "agentId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "executionId",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TestExecutionMessageRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Fenced side events",
-            "content": {
-              "text/event-stream": {
-                "schema": {
-                  "$ref": "#/components/schemas/TestExecutionEvent"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/agents/{agentId}/test-executions/{executionId}/sides/{sideId}/retain": {
-      "post": {
-        "tags": [
-          "Agents"
-        ],
-        "summary": "Continue one settled comparison version as a private test",
-        "operationId": "retainAgentTestExecutionSide",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "agentId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "executionId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "sideId",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "201": {
-            "description": "Single private test execution created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TestExecution"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/agents/{agentId}/test-executions/{executionId}/sides/{sideId}/retry": {
-      "post": {
-        "tags": [
-          "Agents"
-        ],
-        "summary": "Retry one failed private test side",
-        "operationId": "retryAgentTestExecutionSide",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "agentId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "executionId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "sideId",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TestExecutionRetryRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Fenced side events",
-            "content": {
-              "text/event-stream": {
-                "schema": {
-                  "$ref": "#/components/schemas/TestExecutionEvent"
                 }
               }
             }
@@ -46761,6 +46451,7 @@
                           "ingestion_settings",
                           "website_crawl",
                           "workspace_setting",
+                          "agent_publication",
                           "agent_greeting"
                         ]
                       }
@@ -47018,6 +46709,7 @@
                                         "ingestion_settings",
                                         "website_crawl",
                                         "workspace_setting",
+                                        "agent_publication",
                                         "agent_greeting"
                                       ]
                                     },
@@ -47359,6 +47051,7 @@
                         "ingestion_settings",
                         "website_crawl",
                         "workspace_setting",
+                        "agent_publication",
                         "agent_greeting"
                       ]
                     },
@@ -47379,6 +47072,7 @@
                             "ingestion_settings",
                             "website_crawl",
                             "workspace_setting",
+                            "agent_publication",
                             "agent_greeting"
                           ]
                         },
@@ -50137,6 +49831,394 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/test-executions": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "List private immutable revision tests",
+        "operationId": "listAgentTestExecutions",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Private test history returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestExecutionHistoryListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Start an operator-private immutable revision test",
+        "operationId": "startAgentTestExecution",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartTestExecutionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Private test execution created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestExecution"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/test-executions/{executionId}": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Get private immutable revision test evidence",
+        "operationId": "getAgentTestExecution",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "executionId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Private test evidence returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestExecutionHistoryDetailResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/test-executions/{executionId}/messages": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Run a fenced private test turn",
+        "operationId": "sendAgentTestExecutionMessage",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "executionId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestExecutionMessageRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Fenced side events",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestExecutionEvent"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/test-executions/{executionId}/sides/{sideId}/retain": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Continue one settled comparison version as a private test",
+        "operationId": "retainAgentTestExecutionSide",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "executionId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "sideId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Single private test execution created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestExecution"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/test-executions/{executionId}/sides/{sideId}/eval-snapshots/{messageId}": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Capture a private test response as immutable Eval evidence",
+        "operationId": "captureAgentTestExecutionEvalSnapshot",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "executionId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "sideId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "messageId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Immutable Eval snapshot captured from the private test turn",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvalSnapshot"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/test-executions/{executionId}/sides/{sideId}/retry": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Retry one failed private test side",
+        "operationId": "retryAgentTestExecutionSide",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "executionId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "sideId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestExecutionRetryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Fenced side events",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestExecutionEvent"
                 }
               }
             }

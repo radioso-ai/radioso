@@ -69,7 +69,7 @@ export interface EvalRetrievalRunnerPort {
   }>;
 }
 
-export interface ReplayInputs {
+interface ReplayInputs {
   query: string;
   history: MessageRecord[];
   /** Rolling conversation summary (#866) frozen at capture time; injected into the
@@ -126,17 +126,10 @@ export const buildReplayInputs = (snapshot: EvalSnapshot): ReplayInputs | null =
   const queryMessage = snapshot.messages[lastUserIdx];
   const history = snapshot.messages
     .slice(0, lastUserIdx)
-    .map((m) => toMessageRecord(m, snapshot.workspaceId, snapshot.sourceConversationId));
+    .map((m) => toMessageRecord(m, snapshot.workspaceId, snapshot.sourceConversationId ?? snapshot.id));
   return {
     query: queryMessage.content,
     history,
     ...(snapshot.conversationSummary ? { conversationSummary: snapshot.conversationSummary } : {}),
   };
 };
-
-/**
- * @deprecated use buildReplayInputs instead. Kept for backwards-compat with
- * tests that only need the bare last-user-message string.
- */
-export const findLastUserMessage = (snapshot: EvalSnapshot): string | null =>
-  buildReplayInputs(snapshot)?.query ?? null;

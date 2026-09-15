@@ -54,7 +54,6 @@ export const registerOpenApiPaths = (
   registerWorkspacePaths(registry, schemas, security);
   registerSettingsPaths(registry, schemas, security);
   registerAgentsPaths(registry, schemas, security);
-  registerTestExecutionPaths(registry, security);
   registerAgentWizardPaths(registry, schemas, security);
   registerContextVariablePaths(registry, schemas, security);
   registerRetrievalSearchPaths(registry, schemas, security);
@@ -77,7 +76,8 @@ export const registerOpenApiPaths = (
   registerQualityPaths(registry, schemas, security);
   registerAudiencePulsePaths(registry, schemas, security);
   registerCopilotPaths(registry, schemas, security);
-  registerEvalPaths(registry, schemas, security);
+  const evalSchemas = registerEvalPaths(registry, schemas, security);
+  registerTestExecutionPaths(registry, security, evalSchemas.EvalSnapshotSchema);
   registerMcpConversePaths(registry, schemas, security);
   registerAssistantPublicChatPaths(registry, schemas, security);
   registerWorkspaceEventsPaths(registry, schemas, security);

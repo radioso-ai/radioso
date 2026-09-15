@@ -1,6 +1,7 @@
 import { API_BASE, buildError, getStoredActiveWorkspaceId, request } from './api-client'
 import { createClientId } from './client-id'
-import type { AgentGreetingDraft } from './api-types'
+import type { AgentGreetingDraft, TurnTraceEnvelope } from './api-types'
+import type { EvalSnapshot } from './api-eval'
 
 export type RevisionStatus = 'unpublished' | 'draft_clean' | 'draft_dirty' | 'published_changed_since_draft'
 export type EvidenceState = 'current' | 'configuration_changed' | 'environment_changed' | 'comparability_unknown'
@@ -72,6 +73,7 @@ export interface TestExecution {
       role: 'user' | 'assistant'
       content: string
       messageId?: string
+      turnTrace?: TurnTraceEnvelope
       attemptId: string
       createdAt: string
     }>
@@ -101,6 +103,7 @@ export interface TestExecutionHistoryDetail extends Omit<TestExecutionHistoryIte
       role: 'user' | 'assistant'
       content: string
       messageId?: string
+      turnTrace?: TurnTraceEnvelope
       attemptId: string
       createdAt: string
     }>
@@ -121,7 +124,7 @@ export interface TestExecutionHistoryDetail extends Omit<TestExecutionHistoryIte
 export type TestExecutionEvent =
   | { type: 'side_started'; executionId: string; generation: number; sideId: string; turnId: string; attemptId: string }
   | { type: 'message_delta'; executionId: string; generation: number; sideId: string; delta: string; turnId: string; attemptId: string }
-  | { type: 'side_completed'; executionId: string; generation: number; sideId: string; messageId: string; turnId: string; attemptId: string }
+  | { type: 'side_completed'; executionId: string; generation: number; sideId: string; messageId: string; turnId: string; attemptId: string; turnTrace?: TurnTraceEnvelope }
   | { type: 'side_failed'; executionId: string; generation: number; sideId: string; code: string; retryable: boolean; turnId: string; attemptId: string }
   | { type: 'execution_partial'; executionId: string; generation: number; turnId: string; attemptId: string }
   | { type: 'execution_completed'; executionId: string; generation: number; turnId: string; attemptId: string }
@@ -233,6 +236,14 @@ export const agentRevisionsApi = {
     })
     if (!response.ok) throw await buildError(response)
     return response
+  },
+
+  captureTestExecutionSnapshot(agentId: string, executionId: string, sideId: string, assistantMessageId: string): Promise<EvalSnapshot> {
+    return request<EvalSnapshot>(
+      `/agents/${agentId}/test-executions/${executionId}/sides/${sideId}/eval-snapshots/${encodeURIComponent(assistantMessageId)}`,
+      { method: 'POST' },
+      { withSession: true },
+    )
   },
 
   startEval(input: {

@@ -18,7 +18,7 @@ import {
   type CitationOpenResult,
   linkifyText,
 } from './chat-citations'
-import { SendToEvalAction } from './send-to-eval-action'
+import { SendToEvalAction, type SendToEvalActionProps } from './send-to-eval-action'
 import { API_BASE } from '@/lib/api-client'
 import {
   BeaconFrontendProductAnalyticsSink,
@@ -373,6 +373,8 @@ export function ChatMessageThread({
   documentInteractivity = 'open',
   conversationId,
   evalCaptureEnabled = false,
+  captureEvalSnapshot,
+  shouldShowEvalCapture,
   analyticsSurface = 'dashboard',
   analyticsEnabled = true,
   onEmbedAnalyticsEvent,
@@ -404,6 +406,8 @@ export function ChatMessageThread({
   // the control must stay explicitly opt-in.
   conversationId?: string
   evalCaptureEnabled?: boolean
+  captureEvalSnapshot?: (assistantMessageId: string) => ReturnType<NonNullable<SendToEvalActionProps['captureSnapshot']>>
+  shouldShowEvalCapture?: (assistantMessageId: string) => boolean
   analyticsSurface?: ChatLinkAnalyticsSurface
   analyticsEnabled?: boolean
   onEmbedAnalyticsEvent?: (event: WebsiteEmbedAnalyticsInput) => void
@@ -835,7 +839,8 @@ export function ChatMessageThread({
                           {message.content ? (
                             <MessageCopyButton content={message.content} theme={theme} />
                           ) : null}
-                          {evalCaptureEnabled && conversationId && assistantMessageId ? (
+                          {evalCaptureEnabled && conversationId && assistantMessageId
+                            && (shouldShowEvalCapture?.(assistantMessageId) ?? true) ? (
                             <SendToEvalAction
                               conversationId={conversationId}
                               assistantMessageId={assistantMessageId}
@@ -848,6 +853,9 @@ export function ChatMessageThread({
                                 return undefined
                               })()}
                               originalAnswer={message.content}
+                              captureSnapshot={captureEvalSnapshot
+                                ? () => captureEvalSnapshot(assistantMessageId)
+                                : undefined}
                               className="inline-flex size-5 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
                             />
                           ) : null}

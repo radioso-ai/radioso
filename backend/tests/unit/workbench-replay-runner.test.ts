@@ -10,6 +10,7 @@ import type {
 import type { ConversationAgent } from "../../src/modules/agents/domain.js";
 import { projectInternalAgentConfig } from "../../src/modules/agents/agentConfig.js";
 import { WorkbenchReplayRunner } from "../../src/modules/chat/services/workbenchReplayRunner.js";
+import { ChatAnswerCoverageAssessorFactory } from "../../src/modules/chat/services/chatAnswerCoverageAssessor.js";
 import type { ChatRoutineProvider } from "../../src/modules/chat/services/chatService.js";
 import type { ChatAnswerPresenter } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import type { MessageRecord } from "../../src/db/repositories/messageRepository.js";
@@ -1201,6 +1202,56 @@ describe("WorkbenchReplayRunner", () => {
       options: [{ id: "approve", label: "Approve" }],
     });
     expect(result.handoff).toEqual({ routineId: "contact", stepId: "handoff" });
+  });
+
+  it("wires the ephemeral coverage assessor and coverage routine port into a replayed turn", async () => {
+    const coverageActivator = {
+      evaluateCandidates: vi.fn(() => []),
+      activate: vi.fn(async () => null),
+    };
+    const routineProvider: ChatRoutineProvider = {
+      async forTurn() {
+        return { activator: { activate: async () => null }, runner: {} as never, coverageActivator };
+      },
+    };
+    const gateway = {
+      answer: vi.fn(async () => JSON.stringify({
+        classification: "unanswered_insufficient_evidence",
+        requestFocus: "Refund timing",
+      })),
+    };
+
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: stubTurnRouter("retrieval"),
+      routineProvider,
+      chatGateway: gateway,
+      chatAnswerPresenter: presenterStub(),
+      // Replay is ephemeral: the assessor runs with no repository so nothing durable is written.
+      coverageAssessorFactory: new ChatAnswerCoverageAssessorFactory(gateway as never),
+    });
+
+    const result = await runner.run({
+      workspaceId: "ws-1",
+      executionMode: "safe_test" as const,
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      query: "How long do refunds take?",
+      history: [],
+    });
+
+    expect(result.turnTrace?.spine.stages.find((stage) => stage.kind === "answer_coverage_assessment"))
+      .toMatchObject({ status: "applied", outputs: { availability: "assessed" } });
+    expect(coverageActivator.evaluateCandidates).toHaveBeenCalledWith(expect.objectContaining({
+      turn: expect.objectContaining({
+        metadata: expect.objectContaining({
+          answerCoverage: expect.objectContaining({ coverage: "unanswered", reason: "insufficient_evidence" }),
+        }),
+      }),
+    }));
   });
 
   it("seeds the in-memory routine store so the engine resumes mid-routine", async () => {

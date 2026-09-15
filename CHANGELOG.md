@@ -9,6 +9,57 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.0.2] - 2026-09-14
+
+### Fixed
+
+- run coverage gates in workbench replays ([#1250](https://github.com/radioso-ai/radioso/pull/1250))
+- clean up skill picker badge and MCP discovery error handling ([#1249](https://github.com/radioso-ai/radioso/pull/1249))
+
+### Internal
+
+- **apps:** park the hosted app runtime program and remove the unused app-contract package ([#1248](https://github.com/radioso-ai/radioso/pull/1248))
+
+[1.0.2]: https://github.com/radioso-ai/radioso/compare/v1.0.1...v1.0.2
+
+## [1.0.1] - 2026-09-14
+
+### Fixed
+
+- make the skill picker's Connections link actually navigate ([#1247](https://github.com/radioso-ai/radioso/pull/1247))
+
+[1.0.1]: https://github.com/radioso-ai/radioso/compare/v1.0.0...v1.0.1
+
+## [1.0.0] - 2026-09-14
+
+### Breaking changes
+
+- publish routine changes through agent revisions ([#1243](https://github.com/radioso-ai/radioso/pull/1243))
+
+### Added
+
+- add confirmed operator MCP authoring ([#1244](https://github.com/radioso-ai/radioso/pull/1244))
+
+### Fixed
+
+- restore agent test chat history ([#1245](https://github.com/radioso-ai/radioso/pull/1245))
+
+### Database migrations
+
+This release adds 9 migrations. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `181_routine_definition_enabled.sql`
+- `182_webhook_destination_delete_gate_enabled.sql`
+- `183_routine_definition_promote_stranded_published_content.sql`
+- `184_routine_completion_export_trigger_enabled_gate.sql`
+- `185_reproject_agent_draft_routines_after_lifecycle_collapse.sql`
+- `186_eval_snapshot_optional_source.sql`
+- `186_operator_mcp_write_scope.sql`
+- `187_eval_snapshot_test_execution_replay.sql`
+- `187_operator_mcp_reviewed_proposals.sql`
+
+[1.0.0]: https://github.com/radioso-ai/radioso/compare/v0.4.0...v1.0.0
+
 ## [0.4.0] - 2026-09-11
 
 ### Added

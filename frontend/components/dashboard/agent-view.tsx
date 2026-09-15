@@ -6,6 +6,7 @@ import { RefreshCw, X } from 'lucide-react'
 
 import { AgentCockpitNav, type AgentCockpitTab } from '@/components/dashboard/agent-cockpit-nav'
 import { AgentRevisionTestChat } from '@/components/dashboard/agent-revision-test-chat'
+import { AgentRevisionHistory } from '@/components/dashboard/agent-revision-history'
 import { AgentRevisionHeader } from '@/components/dashboard/agent-revision-header'
 import { ChatView } from '@/components/dashboard/chat-view'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
@@ -58,7 +59,7 @@ const readAgentCreationHandoff: ReadAgentCreationHandoff = rawReadAgentCreationH
 const clearAgentCreationHandoff: () => void = rawClearAgentCreationHandoff
 
 /** Each non-chat agent section maps to a content mode and a column-3 title. */
-const AGENT_SECTION_META: Record<Exclude<AgentSectionId, 'chat'>, AgentSectionMeta> = {
+const AGENT_SECTION_META: Record<Exclude<AgentSectionId, 'chat' | 'changes'>, AgentSectionMeta> = {
   profile: { title: 'Profile', mode: 'assistant' },
   skills: {
     title: 'Skills',
@@ -342,6 +343,12 @@ export function AgentView({
     const route = agentSectionRoute(tab)
     return buildAgentSectionHref(accountId, routeState, selectedAgentId, route)
   }
+  const agentVersionsHref = buildAgentSectionHref(
+    accountId,
+    routeState,
+    selectedAgentId,
+    agentSectionRoute('changes'),
+  )
   const evalsHref = buildDashboardHref(accountId, { ...routeState, section: 'eval', evalCaseId: undefined })
 
   const agentUnavailableContent = agentSelectionPending ? (
@@ -416,6 +423,7 @@ export function AgentView({
   // The sidebar owns section selection; this view renders the route's section.
   const section = agentSectionFromRoute(routeState)
   const showRevisionActions = section === 'chat'
+    || section === 'changes'
     || section === 'profile'
     || section === 'directives'
     || section === 'routines'
@@ -428,7 +436,7 @@ export function AgentView({
     ? <AgentRevisionHeader key={selectedAgentId} agentId={selectedAgentId} saveState={saveState.state} canSaveDraft={isDraftDirty} testChatHref={cockpitHrefFor('chat')} />
     : null
 
-  const settingsSection = section === 'chat' ? 'profile' : section
+  const settingsSection = section === 'chat' || section === 'changes' ? 'profile' : section
   const settingsMeta = AGENT_SECTION_META[settingsSection]
   const settingsPage = (
     <SkillsHeaderActionProvider>
@@ -453,7 +461,7 @@ export function AgentView({
   )
   return (
     <>
-      <div className={section === 'chat' ? 'hidden' : 'flex min-h-0 min-w-0 flex-1 flex-col'} aria-hidden={section === 'chat'}>
+      <div className={section === 'chat' || section === 'changes' ? 'hidden' : 'flex min-h-0 min-w-0 flex-1 flex-col'} aria-hidden={section === 'chat' || section === 'changes'}>
         {settingsPage}
       </div>
       {section === 'chat' ? (
@@ -471,9 +479,14 @@ export function AgentView({
           />
         ) : (
           <DashboardPage title="Test Chat" actions={<>{cockpitActions}<div ref={setTestActionsContainer} /></>} actionsClassName="w-full max-w-full justify-start sm:w-auto sm:justify-end" headerContent={cockpitNavigation} contentClassName="min-h-0 overflow-hidden p-0" contentScroll={false}>
-            <AgentRevisionTestChat key={selectedAgentId} agentId={selectedAgentId} workspaceId={activeWorkspaceId ?? selectedAgent.workspaceId} assistantName={selectedAgent?.name} evalsHref={evalsHref} actionsContainer={testActionsContainer} />
+            <AgentRevisionTestChat key={selectedAgentId} agentId={selectedAgentId} workspaceId={activeWorkspaceId ?? selectedAgent.workspaceId} assistantName={selectedAgent?.name} evalsHref={evalsHref} agentVersionsHref={agentVersionsHref} actionsContainer={testActionsContainer} />
           </DashboardPage>
         )
+      ) : null}
+      {section === 'changes' ? (
+        <DashboardPage title="Agent versions" actions={cockpitActions} actionsClassName="w-full max-w-full justify-start sm:w-auto sm:justify-end" headerContent={cockpitNavigation}>
+          <AgentRevisionHistory key={selectedAgentId} agentId={selectedAgentId} />
+        </DashboardPage>
       ) : null}
     </>
   )

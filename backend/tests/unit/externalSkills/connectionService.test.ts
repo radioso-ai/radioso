@@ -160,6 +160,89 @@ describe("McpConnectionService (unit)", () => {
     expect(discoveredTokens).toEqual(["at-1"]);
   });
 
+  it("surfaces a 409 conflict (not a 500) when OAuth refresh fails during discovery", async () => {
+    const repository = new InMemoryMcpConnectionRepository();
+    const fetchImpl = vi.fn<FetchLike>(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        // No refresh_token and an already-expired token: the next discovery
+        // attempt must refresh and has nothing to refresh with.
+        json: async () => ({ access_token: "at-1", expires_in: -10 }),
+      }),
+    );
+    // Mirrors production: listTools() resolves the bearer token through the
+    // provider closure before it can talk to the server.
+    const toolServiceFactory: ToolServiceFactory = {
+      create: (connection) => ({
+        listTools: async () => {
+          await connection.oauthAccessTokenProvider?.();
+          return [{ name: "oauth_tool" }];
+        },
+      } as never),
+    };
+    const service = new McpConnectionService({
+      repository,
+      toolServiceFactory,
+      encryptionKey,
+      oauthRedirectUri: "https://app.example.com/oauth/mcp-callback",
+      fetchImpl,
+    });
+    const created = await service.create("agent-1", oauthInput);
+    const { authorizationUrl } = await service.startOauthAuthorization("agent-1", created.id);
+    const state = new URL(authorizationUrl).searchParams.get("state")!;
+    await service.completeOauthAuthorization("agent-1", created.id, "auth-code", state);
+
+    await expect(service.discoverTools("agent-1", created.id)).rejects.toMatchObject({
+      statusCode: 409,
+      code: "conflict",
+    });
+
+    const after = await service.get("agent-1", created.id);
+    expect(after.status).toBe("needs_reauth");
+  });
+
+  it("surfaces a 503 (not a 500) when the OAuth provider is transiently down during discovery, and leaves the connection authorized", async () => {
+    const repository = new InMemoryMcpConnectionRepository();
+    const fetchImpl = vi.fn<FetchLike>()
+      // Initial consent: succeeds, with a refresh token and an already-expired access token.
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ access_token: "at-1", refresh_token: "rt-1", expires_in: -10 }),
+      })
+      // The refresh attempt during discovery: the provider's token endpoint is down.
+      .mockResolvedValueOnce({ ok: false, status: 503, json: async () => ({}) });
+    const toolServiceFactory: ToolServiceFactory = {
+      create: (connection) => ({
+        listTools: async () => {
+          await connection.oauthAccessTokenProvider?.();
+          return [{ name: "oauth_tool" }];
+        },
+      } as never),
+    };
+    const service = new McpConnectionService({
+      repository,
+      toolServiceFactory,
+      encryptionKey,
+      oauthRedirectUri: "https://app.example.com/oauth/mcp-callback",
+      fetchImpl,
+    });
+    const created = await service.create("agent-1", oauthInput);
+    const { authorizationUrl } = await service.startOauthAuthorization("agent-1", created.id);
+    const state = new URL(authorizationUrl).searchParams.get("state")!;
+    await service.completeOauthAuthorization("agent-1", created.id, "auth-code", state);
+
+    await expect(service.discoverTools("agent-1", created.id)).rejects.toMatchObject({
+      statusCode: 503,
+      code: "service_unavailable",
+    });
+
+    // A transient provider outage must not force the operator through re-authorization.
+    const after = await service.get("agent-1", created.id);
+    expect(after.status).toBe("authorized");
+  });
+
   it("never returns OAuth secrets in the connection summary", async () => {
     const service = new McpConnectionService({
       repository: new InMemoryMcpConnectionRepository(),

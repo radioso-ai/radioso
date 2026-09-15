@@ -212,7 +212,7 @@ export class AgentSkillRepository implements AgentSkillRepositoryPort {
     id: string,
     input: AgentSkillUpdateRecord,
   ): Promise<AgentSkillSpine | null> {
-    return this.db.transaction().execute(async (trx) => {
+    const updateOn = async (trx: Transaction<DB>): Promise<AgentSkillSpine | null> => {
       await transactionAdvisoryLock(agentRevisionLockKey(workspaceId, agentId)).execute(trx);
       const updated = input.config !== undefined && input.replaceConfig === undefined
         ? await this.updateWithConfigMerge(trx, workspaceId, agentId, id, input)
@@ -223,7 +223,13 @@ export class AgentSkillRepository implements AgentSkillRepositoryPort {
       await this.syncDraftAgentSkill(trx, workspaceId, agentId, (agentSkills) =>
         agentSkills?.map((skill) => (skill.id === id ? updated : skill)));
       return updated;
-    });
+    };
+    // Composition-owned reviewed-operation units of work need the skill write, its draft
+    // projection, and the execution receipt settlement to share one transaction. Ordinary
+    // callers retain the existing standalone transaction behavior.
+    return this.db.isTransaction
+      ? updateOn(this.db as Transaction<DB>)
+      : this.db.transaction().execute(updateOn);
   }
 
   /**

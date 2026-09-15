@@ -16,6 +16,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { evalsApi } from '@/lib/api'
+import type { EvalSnapshot } from '@/lib/api-eval'
 import type { AgentConfigOverrideInput } from '@/lib/api-eval'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
@@ -23,7 +24,7 @@ import { buildEvalPromotionPayload } from '@/lib/workbench-handoffs'
 import { useAuth } from '@/lib/auth-context'
 import { useWorkspace } from '@/lib/workspace-context'
 
-interface SendToEvalActionProps {
+export interface SendToEvalActionProps {
   conversationId: string
   assistantMessageId: string
   // First few characters of the user's last question, used as the default
@@ -37,6 +38,8 @@ interface SendToEvalActionProps {
   label?: string
   ariaLabel?: string
   className?: string
+  /** Private execution surfaces provide their own immutable snapshot source. */
+  captureSnapshot?: () => Promise<EvalSnapshot>
 }
 
 export function SendToEvalAction({
@@ -48,6 +51,7 @@ export function SendToEvalAction({
   label,
   ariaLabel,
   className,
+  captureSnapshot,
 }: SendToEvalActionProps) {
   const [open, setOpen] = useState(false)
 
@@ -73,6 +77,7 @@ export function SendToEvalAction({
           userQueryPreview={userQueryPreview}
           originalAnswer={originalAnswer}
           agentConfigOverride={agentConfigOverride}
+          captureSnapshot={captureSnapshot}
           onClose={() => setOpen(false)}
         />
       ) : null}
@@ -87,6 +92,7 @@ interface SendToEvalDialogProps {
   originalAnswer?: string
   agentConfigOverride?: AgentConfigOverrideInput
   onClose: () => void
+  captureSnapshot?: () => Promise<EvalSnapshot>
 }
 
 const defaultCaseName = (queryPreview: string | undefined): string => {
@@ -110,6 +116,7 @@ function SendToEvalDialog({
   originalAnswer,
   agentConfigOverride,
   onClose,
+  captureSnapshot,
 }: SendToEvalDialogProps) {
   const router = useRouter()
   const { user } = useAuth()
@@ -141,7 +148,9 @@ function SendToEvalDialog({
         conversationId,
         messageId: assistantMessageId,
       }
-      const snapshot = await evalsApi.captureSnapshot(captureInput)
+      const snapshot = captureSnapshot
+        ? await captureSnapshot()
+        : await evalsApi.captureSnapshot(captureInput)
       const payload = buildEvalPromotionPayload({
         conversationId,
         assistantMessageId,
@@ -174,6 +183,7 @@ function SendToEvalDialog({
     activeWorkspaceId,
     agentConfigOverride,
     assistantMessageId,
+    captureSnapshot,
     conversationId,
     name,
     onClose,

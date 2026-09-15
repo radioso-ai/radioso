@@ -4460,10 +4460,21 @@ export interface components {
             provider: "openai" | "openai-compatible" | "gemini" | "claude";
             model: string;
         } | null;
+        /** @description The model the workspace's plan runs for this capability instead of the stored preference. Null when the workspace's own preference (or the deployment default) applies. */
+        WorkspaceLlmManagedModel: {
+            /** @enum {string} */
+            provider: "openai" | "openai-compatible" | "gemini" | "claude";
+            model: string;
+        } | null;
         WorkspaceLlmModelsResponse: {
             chat: components["schemas"]["WorkspaceLlmCapabilityPreference"];
             rewrite: components["schemas"]["WorkspaceLlmCapabilityPreference"];
             rerank: components["schemas"]["WorkspaceLlmCapabilityPreference"];
+            managed: {
+                chat: components["schemas"]["WorkspaceLlmManagedModel"];
+                rewrite: components["schemas"]["WorkspaceLlmManagedModel"];
+                rerank: components["schemas"]["WorkspaceLlmManagedModel"];
+            };
             knownModelsByProvider: {
                 openai: string[];
                 "openai-compatible": string[];

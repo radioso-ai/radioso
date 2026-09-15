@@ -287,7 +287,6 @@
   "exports|packages/conversation-defaults/src/routineRegistry.ts|DEFAULT_ROUTINE_RANKED_ACTIVATION_PROMPT",
   "exports|packages/conversation-engine/src/traceSummaries.ts|summarizeFraming",
   "exports|packages/conversation-engine/src/traceSummaries.ts|summarizeOutcomeForCompose",
-  "exports|packages/crawler/src/transport/htmlContentExtraction.ts|extractLinks",
   "exports|packages/crawler/src/transport/htmlProcessing.ts|extractMainContentHtml",
   "exports|packages/crawler/src/transport/htmlProcessing.ts|stripTags",
   "exports|packages/crawler/src/transport/pageFetchTransport.ts|BLOCKED_HTTP_STATUS_CODES",

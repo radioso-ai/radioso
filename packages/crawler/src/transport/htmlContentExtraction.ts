@@ -231,7 +231,7 @@ const isStructurallyLinkDensePage = ($: CheerioAPI): boolean => {
   return normalizeText(anchors.text()).length / Math.max(text.length, 1) >= LINK_DENSE_MIN_RATIO;
 };
 
-export const extractLinks = ($: CheerioAPI, loadedUrl: string): string[] =>
+const extractLinks = ($: CheerioAPI, loadedUrl: string): string[] =>
   $("a[href]")
     .toArray()
     .map((anchor) => {

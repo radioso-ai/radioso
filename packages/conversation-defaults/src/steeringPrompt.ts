@@ -1,9 +1,22 @@
+import type { AnswerCoverageCriteria } from "@radioso/conversation-contract";
 import { orderSteeringRules, type SteeringRule } from "./domain.js";
 import { renderPromptTemplate } from "./promptTemplate.js";
 import {
   DEFAULT_CLARIFICATION_STEERING_PROMPT,
   DEFAULT_STEERING_PROMPT,
 } from "./generated/defaultPrompts.js";
+
+/**
+ * A steering rule conditioned on the coverage verdict the answer model is about
+ * to emit (#1260). The engine starts producing rules shaped like this once it
+ * matches coverage directives before compose without the verdict (a later
+ * slice); `coverageCriteria` belongs on `SteeringRule` itself from that slice —
+ * until then this is a backend/package-local widening so the renderer and its
+ * tests can express one without waiting on the contract change.
+ */
+export type CoverageConditionalSteeringRule = SteeringRule & {
+  coverageCriteria?: Pick<AnswerCoverageCriteria, "coverage">;
+};
 
 export {
   DEFAULT_CLARIFICATION_STEERING_PROMPT,
@@ -23,9 +36,23 @@ export interface RenderSteeringRulesOptions {
   includeRuleIds?: boolean;
 }
 
-const formatRule = (rule: SteeringRule, includeRuleIds: boolean): string => {
+/**
+ * A rule carrying `coverageCriteria` renders as a condition on the classification
+ * the model is about to emit, layered the same way an authored `condition`
+ * clause is (FR-010). Both can be present on the same rule.
+ */
+const withCoverageCondition = (rule: CoverageConditionalSteeringRule, action: string): string => {
+  if (!rule.coverageCriteria) {
+    return action;
+  }
+  const criteria = rule.coverageCriteria.coverage.join(", ");
+  return `Only when your coverage verdict is one of [${criteria}]: ${action}`;
+};
+
+const formatRule = (rule: CoverageConditionalSteeringRule, includeRuleIds: boolean): string => {
   const prefix = includeRuleIds && rule.id ? `- [${rule.id}] ` : "- ";
-  return rule.condition ? `${prefix}${rule.action} (when: ${rule.condition})` : `${prefix}${rule.action}`;
+  const action = withCoverageCondition(rule, rule.action);
+  return rule.condition ? `${prefix}${action} (when: ${rule.condition})` : `${prefix}${action}`;
 };
 
 /**

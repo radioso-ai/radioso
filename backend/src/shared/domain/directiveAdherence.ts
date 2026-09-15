@@ -2,6 +2,16 @@ import type { DirectiveAdherenceEntry, SteeringRule } from "@radioso/conversatio
 import type { AnswerSchemaExtension, AnswerSideChannel } from "./answerSideChannel.js";
 
 /**
+ * Widens the shared attestation entry with whether the rule's own criteria
+ * applied this turn (#1260): a conditional rule (e.g. gated on a coverage
+ * verdict) that never met its criteria attests `applicable: false` instead of
+ * `satisfied: false`, so it is not read as a violation. Belongs on
+ * `@radioso/conversation-contract`'s `DirectiveAdherenceEntry` from the slice
+ * that teaches the engine to read it; until then this is what `resolve` returns.
+ */
+type DirectiveAdherenceAttestation = DirectiveAdherenceEntry & { applicable: boolean };
+
+/**
  * Directive adherence is a steering-domain concern, not a retrieval one: the model
  * self-attests, per active directive rule, whether its reply satisfied that rule.
  * This probe owns the whole directive side of that mechanism — the schema fragment
@@ -10,7 +20,7 @@ import type { AnswerSchemaExtension, AnswerSideChannel } from "./answerSideChann
  * A composer only provides transport: it merges {@link responseSchemaFragment} into
  * its structured output schema and hands the parsed side-channel back to {@link resolve}.
  */
-export interface DirectiveAdherenceProbe {
+interface DirectiveAdherenceProbe {
   /**
    * Schema fragment (strict-mode `properties` + `required`) to merge into a
    * composer's structured answer schema, or `null` when no directive rules are
@@ -24,21 +34,22 @@ export interface DirectiveAdherenceProbe {
   resolve(
     sideChannel: Record<string, unknown> | undefined,
     logger?: DirectiveAdherenceLogger,
-  ): DirectiveAdherenceEntry[] | undefined;
+  ): DirectiveAdherenceAttestation[] | undefined;
 }
 
-export interface DirectiveAdherenceLogger {
+interface DirectiveAdherenceLogger {
   debug(payload: Record<string, unknown>, message: string): void;
 }
 
 /** The key the attestation array occupies in a composer's structured side-channel. */
-export const ADHERENCE_FIELD = "adherence";
+const ADHERENCE_FIELD = "adherence";
 
 const normalizeWhitespace = (value: string): string => value.replace(/\s+/g, " ").trim();
 
 interface RawAttestation {
   rule: string;
   satisfied: boolean;
+  applicable: boolean;
   note: string;
 }
 
@@ -49,10 +60,10 @@ const readAttestation = (entry: unknown): RawAttestation | null => {
   const record = entry as Record<string, unknown>;
   const rule = typeof record.rule === "string" ? record.rule.trim() : "";
   const note = typeof record.note === "string" ? normalizeWhitespace(record.note) : "";
-  if (!rule || typeof record.satisfied !== "boolean" || !note) {
+  if (!rule || typeof record.satisfied !== "boolean" || typeof record.applicable !== "boolean" || !note) {
     return null;
   }
-  return { rule, satisfied: record.satisfied, note };
+  return { rule, satisfied: record.satisfied, applicable: record.applicable, note };
 };
 
 /**
@@ -83,10 +94,13 @@ export const createDirectiveAdherenceProbe = (
             items: {
               type: "object",
               additionalProperties: false,
-              required: ["rule", "satisfied", "note"],
+              required: ["rule", "satisfied", "applicable", "note"],
               properties: {
                 rule: { type: "string", enum: [...ruleIds] },
                 satisfied: { type: "boolean" },
+                // A conditional rule (coverage-gated) whose criteria did not match
+                // this turn's verdict attests false here, not false `satisfied`.
+                applicable: { type: "boolean" },
                 note: { type: "string" },
               },
             },
@@ -113,6 +127,7 @@ export const createDirectiveAdherenceProbe = (
             directive,
             ruleId: attestation.rule,
             satisfied: attestation.satisfied,
+            applicable: attestation.applicable,
             note: attestation.note,
           },
         ];

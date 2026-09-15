@@ -14,6 +14,7 @@ import {
 import type { ChatGateway } from "../contracts/chatGateway.js";
 import type { PreparedSession } from "./chatSessionPreparer.js";
 import { setTraceAttributes } from "../../../shared/observability/tracing/operations.js";
+import { buildContextualizedRequest } from "./contextualizedRequest.js";
 
 // Retrieval's FinalPromptContext list is already the exact token-bounded set that
 // answer composition receives. Do not independently shorten it here: assessing a
@@ -25,10 +26,7 @@ const admittedEvidence = (session: PreparedSession) => session.retrieval.context
     content: context.content,
   }));
 
-const contextualizedRequest = (session: PreparedSession, request: string): string => {
-  const history = session.history.slice(-6).map((message) => `${message.role}: ${message.content}`).join("\n");
-  return history ? `${history}\nuser: ${session.effectiveQuery || request}` : session.effectiveQuery || request;
-};
+const contextualizedRequest = buildContextualizedRequest;
 
 const assessmentFromRecord = (record: AnswerCoverageRecord): AnswerCoverageAssessment =>
   record.availability === "assessed"

@@ -96,9 +96,15 @@ const assertionManifest = (answer: string): number[][] =>
     return [[...group[0].matchAll(/\[\[(\d+)\]\]/g)].map((match) => Number(match[1]))];
   });
 
+// A sentinel-delimited tail never carries a head (the answer text already
+// streamed before it arrives), but the tail's own v2 validity still requires
+// coverage/requestFocus (#1260); this default is a placeholder verdict, not
+// something these tests assert on.
 const envelopeTail = (answer: string, suggestions: unknown[] = []): string =>
   JSON.stringify({
     v: 2,
+    coverage: "answered_sufficient_evidence",
+    requestFocus: "the streamed answer",
     outcome: "answer",
     claims: assertionManifest(answer),
     suggestions,
@@ -114,6 +120,8 @@ const groundingEnvelope = (
   suggestions: unknown[] = [],
 ): string => `${answer}\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify({
   v: 2,
+  coverage: "answered_sufficient_evidence",
+  requestFocus: "the streamed answer",
   outcome: "answer",
   claims: grounding === "degraded" && !answer.includes("[[?]]")
     ? [...assertionManifest(answer), []]

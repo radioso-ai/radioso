@@ -435,6 +435,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   startAgentTestExecution: revisionTestingAndEval,
   sendAgentTestExecutionMessage: revisionTestingAndEval,
   retainAgentTestExecutionSide: revisionTestingAndEval,
+  captureAgentTestExecutionEvalSnapshot: revisionTestingAndEval,
   retryAgentTestExecutionSide: revisionTestingAndEval,
   createRevisionEvalRun: revisionTestingAndEval,
   getRevisionEvalRun: revisionTestingAndEval,

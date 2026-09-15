@@ -5,6 +5,8 @@ import type { ConversationRecord, ConversationRepositoryPort } from "../../src/d
 import type { MessageRecord, MessageRepositoryPort } from "../../src/db/repositories/messageRepository.js";
 import type { AuthoredDirective, AuthoredDirectiveInput } from "../../src/modules/agents/authoredDirectives.js";
 import type { ConversationAgent } from "../../src/modules/agents/domain.js";
+import type { AgentRevision } from "../../src/modules/agents/agentRevision.js";
+import type { TestExecution } from "../../src/modules/test-execution/testExecution.js";
 import type { RetrievalSettingsRecord } from "../../src/modules/settings/contracts/retrieval.js";
 import { defaultRetrievalSettings, freezeRetrievalSettings } from "../../src/modules/settings/contracts/retrieval.js";
 import { createRetrievalSkillSettingsResolver } from "../../src/app/composition/skillSettingsResolver.js";
@@ -363,6 +365,91 @@ class CapturingEvalRepository implements EvalRepositoryPort {
     throw new Error("not implemented");
   }
 }
+
+describe("EvalSnapshotService.captureTestExecutionTurn", () => {
+  it("captures only the private test transcript through the selected assistant response", async () => {
+    const repository = new CapturingEvalRepository();
+    const revision: AgentRevision = {
+      id: "revision-1",
+      snapshot: {
+        customInstruction: "Frozen test instruction",
+        directives: [],
+        routines: [{ id: "routine-1", name: "Returns", activation: { priority: 1 } }] as never,
+        contextVariableEnablements: [{ variableId: "context-1", enabled: true, surfacing: "always" }] as never,
+      },
+      sourceDraftGeneration: 3,
+      sourceBasePublishedRevisionId: null,
+      createdAt: fixedDate,
+      publishedAt: fixedDate,
+      publishedVersion: 4,
+    };
+    const execution: TestExecution = {
+      id: "execution-1",
+      workspaceId: "ws-1",
+      agentId: "agent-1",
+      generation: 1,
+      mode: "single",
+      state: "completed",
+      testValues: [{
+        contextVariableId: "context-1",
+        name: "Customer tier",
+        description: "Frozen test context",
+        value: "gold",
+        sensitive: false,
+        trust: "verified",
+      }],
+      createdAt: fixedDate,
+      sides: [{
+        id: "side-1",
+        executionId: "execution-1",
+        revision,
+        conversationId: "private-conversation-1",
+        state: "completed",
+        retryable: false,
+        continuation: null,
+        history: [
+          { turnId: "turn-1", attemptId: "attempt-1", role: "user", content: "Can I return it?", createdAt: fixedDate },
+          { turnId: "turn-1", attemptId: "attempt-1", role: "assistant", content: "Yes, within 30 days.", messageId: "assistant-1", createdAt: fixedDate },
+          { turnId: "turn-2", attemptId: "attempt-2", role: "user", content: "What about gifts?", createdAt: fixedDate },
+        ],
+      }],
+    };
+    const service = new EvalSnapshotService(
+      new StubConversationRepository(null),
+      new StubMessageRepository([]),
+      new StubAgentRepository(agent()),
+      new StubRetrievalDefaultsProvider(),
+      createRetrievalSkillSettingsResolver(),
+      repository,
+    );
+
+    const captured = await service.captureTestExecutionTurn({
+      workspaceId: "ws-1",
+      agentId: "agent-1",
+      execution,
+      sideId: "side-1",
+      assistantMessageId: "assistant-1",
+      capturedBy: "account-1",
+    });
+
+    expect(repository.lastCreateInput).toMatchObject({
+      sourceConversationId: null,
+      sourceMessageId: null,
+      replayTarget: { userMessageId: "turn-1", assistantMessageId: "assistant-1" },
+      fidelity: "messages_only",
+      capturedBy: "account-1",
+      messages: [
+        { id: "turn-1", role: "user", content: "Can I return it?" },
+        { id: "assistant-1", role: "assistant", content: "Yes, within 30 days." },
+      ],
+      testExecutionReplay: {
+        revision,
+        testValues: execution.testValues,
+      },
+    });
+    expect(captured).not.toHaveProperty("testExecutionReplay");
+  });
+});
 
 describe("EvalSnapshotService.capture", () => {
   it("prepares an immutable snapshot input without persisting it", async () => {

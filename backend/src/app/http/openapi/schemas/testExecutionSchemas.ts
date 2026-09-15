@@ -8,13 +8,13 @@ export const registerTestExecutionSchemas = (registry: OpenAPIRegistry) => {
   const TestExecutionEventSchema = registry.register("TestExecutionEvent", z.discriminatedUnion("type", [
     z.object({ type: z.literal("side_started"), executionId: uuid, generation: z.number().int(), turnId: uuid, attemptId: uuid, sideId: uuid }),
     z.object({ type: z.literal("message_delta"), executionId: uuid, generation: z.number().int(), turnId: uuid, attemptId: uuid, sideId: uuid, delta: z.string() }),
-    z.object({ type: z.literal("side_completed"), executionId: uuid, generation: z.number().int(), turnId: uuid, attemptId: uuid, sideId: uuid, messageId: uuid }),
+    z.object({ type: z.literal("side_completed"), executionId: uuid, generation: z.number().int(), turnId: uuid, attemptId: uuid, sideId: uuid, messageId: uuid, turnTrace: z.unknown().optional() }),
     z.object({ type: z.literal("side_failed"), executionId: uuid, generation: z.number().int(), turnId: uuid, attemptId: uuid, sideId: uuid, code: z.string(), retryable: z.boolean() }),
     z.object({ type: z.literal("execution_partial"), executionId: uuid, generation: z.number().int(), turnId: uuid, attemptId: uuid }),
     z.object({ type: z.literal("execution_completed"), executionId: uuid, generation: z.number().int(), turnId: uuid, attemptId: uuid }),
   ]));
   const RevisionSummarySchema = z.object({ id: uuid, label: z.string(), kind: z.enum(["candidate", "published"]), versionNumber: z.number().int().positive().nullable(), createdAt: z.string().datetime(), publishedAt: z.string().datetime().optional() });
-  const TestExecutionHistoryEntrySchema = z.object({ turnId: uuid, role: z.enum(["user", "assistant"]), content: z.string(), messageId: uuid.optional(), attemptId: uuid, createdAt: z.string().datetime() });
+  const TestExecutionHistoryEntrySchema = z.object({ turnId: uuid, role: z.enum(["user", "assistant"]), content: z.string(), messageId: uuid.optional(), turnTrace: z.unknown().optional(), attemptId: uuid, createdAt: z.string().datetime() });
   const TestExecutionSideSchema = registry.register("TestExecutionSide", z.object({
     id: uuid, revision: RevisionSummarySchema,
     conversationId: uuid, state: z.enum(["running", "partial", "failed", "completed"]), retryable: z.boolean(), history: z.array(TestExecutionHistoryEntrySchema),

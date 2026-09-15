@@ -282,6 +282,16 @@ export class RoutineDefinitionService {
     return this.savedRoutine(workspaceId, agentId, "routine_definition.update", saved);
   }
 
+  /**
+   * Completes best-effort owner side effects after a composition-owned atomic write. The caller
+   * has already committed the routine and its external receipt, so this deliberately has the
+   * same non-throwing semantics as `savedRoutine` rather than making the receipt lie about a
+   * successful write.
+   */
+  async completeExternalDraftMutation(workspaceId: string, agentId: string, routine: RoutineDefinition): Promise<void> {
+    await this.savedRoutine(workspaceId, agentId, "routine_definition.update", routine);
+  }
+
   /** Takes a routine in or out of service, leaving its authored graph untouched. */
   async setEnabled(
     workspaceId: string,

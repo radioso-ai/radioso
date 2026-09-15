@@ -246,12 +246,8 @@ const buildRevisionDetail = (
       routines: [],
       contextVariableEnablements: [],
       greeting: {
-        // The generated `AgentGreetingDraft.exactContent` type is an openapi-typescript
-        // artifact (`ExactContentItem & (Record<string, never> | null)`) that collapses to
-        // non-nullable under structural assignability; `null` is the real, valid "no
-        // content authored" contract value (`exactContentItemSchema.nullable()`).
-        before: { exactWordsEnabled: false, exactContent: null } as unknown as ApiSchemas["AgentGreetingDraft"],
-        after: { exactWordsEnabled: false, exactContent: null } as unknown as ApiSchemas["AgentGreetingDraft"],
+        before: { exactWordsEnabled: false, exactContent: null },
+        after: { exactWordsEnabled: false, exactContent: null },
         changed: false,
       },
     },

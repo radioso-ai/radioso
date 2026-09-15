@@ -41,6 +41,18 @@ import { createProductDocsCopilotTools } from "./productDocs.js";
 import type { ProductDocsCopilotToolDependencies } from "./productDocs.js";
 import { createWorkspaceSettingsCopilotTools } from "./settings.js";
 import type { CopilotWorkspaceSettingsPort } from "./settings.js";
+import { createRoutineStructuralPreparationTool } from "./routineStructuralPreparation.js";
+import type { RoutineStructuralPreparationDependencies } from "./routineStructuralPreparation.js";
+import { createReviewedProposalExecutionTool } from "./reviewedProposalExecution.js";
+import type { ReviewedProposalExecutionPort } from "./reviewedProposalExecution.js";
+import { createReviewedProposalOutcomeTool } from "./reviewedProposalOutcome.js";
+import type { ReviewedProposalOutcomePort } from "./reviewedProposalOutcome.js";
+import { createCancelReviewedProposalTool } from "./cancelReviewedProposal.js";
+import type { CancelReviewedProposalPort } from "./cancelReviewedProposal.js";
+import { createAgentPublicationCopilotTools } from "./agentPublication.js";
+import type { AgentPublicationCopilotToolDependencies } from "./agentPublication.js";
+import { createRetrievalAuthoringCopilotTools } from "./retrievalAuthoring.js";
+import type { RetrievalAuthoringCopilotToolDependencies } from "./retrievalAuthoring.js";
 
 export type CopilotAgentPort = CopilotAgentConfigurationPort & CopilotAgentSkillsAgentPort & CopilotContextVariablesAgentPort;
 
@@ -71,7 +83,11 @@ type CopilotToolCatalogDependencies = AgentConfigurationCopilotToolDependencies
   & AgentProposalCopilotToolDependencies
   & WebsiteAnalysisProbeCopilotToolDependencies
   & IngestionSettingsProposalCopilotToolDependencies
-  & ProductDocsCopilotToolDependencies;
+  & ProductDocsCopilotToolDependencies
+  & RoutineStructuralPreparationDependencies
+  & AgentPublicationCopilotToolDependencies
+  & RetrievalAuthoringCopilotToolDependencies
+  & { readonly reviewedProposalExecution: ReviewedProposalExecutionPort; readonly reviewedProposalOutcome: ReviewedProposalOutcomePort; readonly cancelReviewedProposal: CancelReviewedProposalPort };
 
 /** Composition-only barrel; each descriptor remains published from its owner module. */
 export const createCopilotToolDescriptors = (
@@ -109,6 +125,12 @@ export const createCopilotToolDescriptors = (
   ...createIngestionSettingsProposalCopilotTools(deps),
   ...createWorkspaceSettingProposalCopilotTools(deps),
   ...createWebsiteCrawlProposalCopilotTools(deps),
+  createRoutineStructuralPreparationTool(deps),
+  ...createAgentPublicationCopilotTools(deps),
+  ...createRetrievalAuthoringCopilotTools(deps),
+  createReviewedProposalExecutionTool(deps.reviewedProposalExecution),
+  createReviewedProposalOutcomeTool(deps.reviewedProposalOutcome),
+  createCancelReviewedProposalTool(deps.cancelReviewedProposal),
 ]));
 
 export type { CopilotAgentSkillsPort, CopilotSkillCapabilityTargetsPort } from "./agentSkills.js";

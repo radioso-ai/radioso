@@ -1,12 +1,12 @@
 ---
 title: "Operator MCP OAuth Access"
 description: "Connect an OAuth-capable MCP client to Ray's governed workspace tools and manage its access."
-last_updated: 2026-09-10
+last_updated: 2026-09-13
 ---
 
 # Operator MCP OAuth Access
 
-Operator MCP lets a signed-in workspace member use a compatible remote MCP client to inspect settings, run a retrieval probe, or draft an ingestion-settings proposal. You choose the workspace and scopes in Radioso before the client receives a credential. Each tool call rechecks the user, membership, grant, client, and current workspace permission.
+Operator MCP lets a signed-in workspace member inspect and author an agent from a compatible remote MCP client. You choose the workspace and scopes in Radioso before the client receives a credential. Each tool call rechecks the user, membership, grant, client, and current workspace permission.
 
 This is separate from an agent's **Channels → MCP** connection. The agent connection exposes `ask_agent` for one configured agent. Operator MCP exposes a small set of Ray tools for the person who completed OAuth consent.
 
@@ -24,12 +24,21 @@ The setup snippets are labelled **Not verified** until Radioso has captured a fu
 
 The catalog is rebuilt from the caller's current permissions for every list or call, and every production Ray descriptor carries a reviewed disposition: eligible with a scope and retry contract, or excluded with a stated reason. It currently admits:
 
-- **Reads** (`operator:read`) — `workspace_settings`, `agent_configuration`, `agent_skills`, `context_variables`, `conversation_history_search`, `conversation_transcript`, `document_chunks`, `document_search`, `document_status`, `eval_results`, `quality_signals`, `routine_definition`, `turn_trace`, `validate_routine`, `workspace_triage`.
+- **Reads** (`operator:read`) — the existing bounded workspace, agent, routine, history, document, quality, and trace readers, plus `retrieval_settings`, `agent_publication_state`, `agent_publication_candidate`, and `agent_publication_candidate_change`. Retrieval settings show code-owned system defaults as read-only and identify the writable per-agent setting.
 - **Probes** (`operator:probe`) — `retrieval_probe`.
-- **Proposals** (`operator:propose`) — `propose_ingestion_settings`, `propose_agent_setting`, `propose_context_variable`, `propose_directive`, `propose_directive_enablement`, `propose_directive_removal`, `propose_greeting`, `propose_routine`, `propose_routine_edit`, `propose_skill_config`. Each requires an operation id: a lost response is reconciled from the proposal it already created rather than duplicating it.
+- **Proposals** (`operator:propose`) — the existing proposal tools (including `propose_greeting`), plus `prepare_routine_structure`, `prepare_retrieval_settings`, and `prepare_agent_publication`. A routine preparation returns a bounded before/after review of its explicit step, slot, terminal, and edge edits; its full detail remains available through the reviewed outcome. Retrieval preparation changes the existing per-agent retrieval skill; probe overrides remain diagnostic-only. Publication preparation creates an immutable candidate and returns its identity, fences, and validation result. Read `agent_publication_candidate` page by page, then use `agent_publication_candidate_change` for any truncated value before asking for confirmation. Each requires an operation id: a lost response is reconciled from the proposal it already created rather than duplicating it.
+- **Reviewed execution** (`operator:write`) — `execute_reviewed_proposal`, `reviewed_proposal_outcome`, and `cancel_reviewed_proposal`. First read the prepared result and show its digest, target, expected version, expiry, and draft/live effect in the conversation. Call execution only after the person confirms that exact result. The outcome reader reconciles a lost response; cancellation is available only while the same bound reviewed operation is pending and has not started execution.
 - **Acts** (`operator:act`) — `set_triage_state`, admitted because it is fenced by an expected version rather than appended: a lost-response retry either lands the transition once or comes back a conflict against whatever won, never a duplicate effect.
 
 Queue-backed reprocessing, recrawling, eval-suite runs, customer replies, credential administration, and provider authorization stay outside this catalog — each either has no owner-approved retry contract yet or depends on dashboard/Ray-conversation context the stateless transport does not provide.
+
+## Conversational confirmation
+
+The MCP client is responsible for asking the person to confirm a reviewed operation. Radioso binds execution to the prepared proposal, grant, client, workspace, principal, digest, expiry, and version fence, but it cannot independently prove that a person saw or approved the conversation. Grant `operator:write` only to clients you trust to honor that confirmation step.
+
+Routine edits and publication are separate operations. Applying a routine or retrieval proposal changes the relevant draft according to its existing lifecycle; publishing requires a separately prepared candidate and confirmation. A changed draft, target, or expired review needs a fresh preparation.
+
+Only reviewed MCP proposals created by this flow can use the reviewed execution, outcome, or cancellation tools. Existing dashboard and conversation proposals remain on their original surfaces.
 
 ## OAuth profile
 

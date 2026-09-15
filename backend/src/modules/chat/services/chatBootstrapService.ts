@@ -124,7 +124,11 @@ export class ChatBootstrapService {
         : await this.usageLimitPolicy.reserveAnswer({
             accountId: input.accountId,
             workspaceId: input.workspaceId,
-            surface: input.sourceChannel ?? "chat.bootstrap",
+            // Always bill this reservation on the free bootstrap surface, no
+            // matter which real channel asked for the proactive greeting.
+            // `sourceChannel` is preserved for audit/analytics below; it must
+            // never override the billing surface for this call.
+            surface: "chat.bootstrap",
           });
       const normalizedAnswer = cachedGreeting?.greetingText
         ?? (await this.chatGateway.answer({

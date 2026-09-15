@@ -1,7 +1,7 @@
 ---
 title: "Answer Coverage Signals"
 description: "Read semantic answer coverage in turn diagnostics and Audience Pulse, and use it to steer directives and routines."
-last_updated: 2026-09-14
+last_updated: 2026-09-15
 ---
 
 # Answer Coverage Signals
@@ -12,7 +12,7 @@ Answer coverage tells you whether the agent resolved the visitor's contextualize
 
 In a directive editor, choose the coverage values and optional reasons that should make the rule eligible. For a routine, keep its **Starts when** trigger as the description of the visitor task. Open that line, then choose **Add condition** and **Answer coverage** when the flow also requires a recorded assessment. The available coverage values are **Answered**, **Partly answered**, **Unanswered**, and **Needs clarification**. Reasons include sufficient evidence, insufficient evidence, conflicting evidence, ambiguous request, and intentional scope boundary.
 
-The routine’s semantic trigger and coverage condition both have to match. The rule receives the recorded assessment after evidence is available. Existing routine confirmation, capability, reentry, and interruption rules still apply. An offer remains an offer until the visitor accepts it, and completing a routine does not rewrite the originating assessment. A reaction can link to the actual message it targeted; selecting that link opens the matching Activity turn, where you can inspect its Flow.
+The routine’s semantic trigger and coverage condition both have to match. The rule receives the recorded assessment after evidence is available. Existing routine confirmation, capability, reentry, and interruption rules still apply. When a routine starts from an `unanswered` coverage condition, its first reply says that the request could not be answered and then follows the first step in the same message, so a visitor who asked something the agent has no material for hears both the limit and the offer. `Partly answered` and `Needs clarification` coverage starts the authored step without forcing that refusal, because those assessments do not mean the agent had no answer. An offer remains an offer until the visitor accepts it, and completing a routine does not rewrite the originating assessment. A reaction can link to the actual message it targeted; selecting that link opens the matching Activity turn, where you can inspect its Flow.
 
 A draft test chat and an eval replay assess coverage the same way, so you can try a coverage-gated directive or routine on the agent's draft before you publish. Those turns keep the assessment in the turn's Flow only; they store no assessment record and no reaction trace.
 

@@ -1,4 +1,3 @@
-import type { AnswerCoverageCriteria } from "@radioso/conversation-contract";
 import { orderSteeringRules, type SteeringRule } from "./domain.js";
 import { renderPromptTemplate } from "./promptTemplate.js";
 import {
@@ -8,15 +7,14 @@ import {
 
 /**
  * A steering rule conditioned on the coverage verdict the answer model is about
- * to emit (#1260). The engine starts producing rules shaped like this once it
- * matches coverage directives before compose without the verdict (a later
- * slice); `coverageCriteria` belongs on `SteeringRule` itself from that slice —
- * until then this is a backend/package-local widening so the renderer and its
- * tests can express one without waiting on the contract change.
+ * to emit (#1260). The engine matches coverage directives before compose,
+ * without the verdict, and tags each resulting rule with its `coverageCriteria`
+ * so this renderer can layer it as a condition — see
+ * `packages/conversation-engine/src/steering.ts`. Kept as a named alias for
+ * callers that want to be explicit about rendering a conditional rule; it is
+ * exactly `SteeringRule`, which already carries `coverageCriteria`.
  */
-export type CoverageConditionalSteeringRule = SteeringRule & {
-  coverageCriteria?: Pick<AnswerCoverageCriteria, "coverage">;
-};
+export type CoverageConditionalSteeringRule = SteeringRule;
 
 export {
   DEFAULT_CLARIFICATION_STEERING_PROMPT,

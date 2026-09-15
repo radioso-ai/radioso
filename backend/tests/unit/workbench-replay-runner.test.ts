@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { DefaultConversationEngine } from "@radioso/conversation-engine";
 import type {
+  AnswerCoverageAssessment,
   AttemptRoutineInput,
   ConversationEngine,
   ProcessTurnInput,
@@ -218,6 +219,38 @@ const answerSkill = (): TurnSkill => ({
         assertionMismatch: false,
       },
     }),
+  },
+});
+
+/**
+ * A `TurnSkill` stand-in that reports a fixed coverage verdict to the engine's
+ * sink before rendering, mirroring what the real retrieval skill does from
+ * inside its own answer generation (#1260). `answerSkill` above never touches
+ * `ctx.coverageVerdict`, so a test that exercises coverage-gated wiring on a
+ * replayed turn needs this instead.
+ */
+const coverageReportingAnswerSkill = (assessment: AnswerCoverageAssessment): TurnSkill => ({
+  definition: { name: "replay.answer", outcomeKinds: ["replay"] },
+  selects: () => true,
+  dispatch: (session) => ({
+    kind: "replay",
+    skillName: "replay.answer",
+    outcome: { status: "completed", answer: `Answered with ${session.agent.customInstruction}` },
+    stagedContext: session.stagedContext,
+    steering: session.directiveSteering?.rules ?? [],
+    trace: session.turnTrace,
+  }),
+  renderer: {
+    supports: (outcome) => outcome.kind === "replay",
+    render: async (outcome, ctx) => {
+      await ctx.coverageVerdict?.report({ assessment });
+      return {
+        answer: outcome.outcome.answer ?? "",
+        skillName: outcome.skillName,
+        skillOutcome: outcome.outcome.status,
+        skillStatus: outcome.outcome.status,
+      };
+    },
   },
 });
 
@@ -1204,7 +1237,7 @@ describe("WorkbenchReplayRunner", () => {
     expect(result.handoff).toEqual({ routineId: "contact", stepId: "handoff" });
   });
 
-  it("wires the ephemeral coverage assessor and coverage routine port into a replayed turn", async () => {
+  it("wires the coverage routine port into a replayed turn's reported coverage verdict", async () => {
     const coverageActivator = {
       evaluateCandidates: vi.fn(() => []),
       activate: vi.fn(async () => null),
@@ -1214,23 +1247,29 @@ describe("WorkbenchReplayRunner", () => {
         return { activator: { activate: async () => null }, runner: {} as never, coverageActivator };
       },
     };
-    const gateway = {
-      answer: vi.fn(async () => JSON.stringify({
-        classification: "unanswered_insufficient_evidence",
-        requestFocus: "Refund timing",
-      })),
-    };
+    const gateway = { answer: vi.fn(async () => "unused") };
 
     const runner = new WorkbenchReplayRunner({
       retrievalTurn: retrievalTurn([]),
       auditService: createAuditService(),
-      turnSkills: [answerSkill()],
+      // The answer envelope's own head carries the verdict now (#1260): this
+      // skill reports it directly, the same way the real retrieval skill
+      // reports what it parsed from its own answer generation.
+      turnSkills: [coverageReportingAnswerSkill({
+        availability: "assessed",
+        coverage: "unanswered",
+        reason: "insufficient_evidence",
+        unresolvedRequest: "Refund timing",
+        schemaVersion: 1,
+        producer: "answer_head",
+      })],
       conversationEngine: new DefaultConversationEngine(),
       turnRouter: stubTurnRouter("retrieval"),
       routineProvider,
       chatGateway: gateway,
       chatAnswerPresenter: presenterStub(),
-      // Replay is ephemeral: the assessor runs with no repository so nothing durable is written.
+      // Replay is ephemeral: kept constructed (a later slice repurposes it as
+      // the shadow), but its `.assess()` no longer sits on the engine path.
       coverageAssessorFactory: new ChatAnswerCoverageAssessorFactory(gateway as never),
     });
 
@@ -1243,7 +1282,7 @@ describe("WorkbenchReplayRunner", () => {
       history: [],
     });
 
-    expect(result.turnTrace?.spine.stages.find((stage) => stage.kind === "answer_coverage_assessment"))
+    expect(result.turnTrace?.spine.stages.find((stage) => stage.kind === "answer_coverage_head"))
       .toMatchObject({ status: "applied", outputs: { availability: "assessed" } });
     expect(coverageActivator.evaluateCandidates).toHaveBeenCalledWith(expect.objectContaining({
       turn: expect.objectContaining({

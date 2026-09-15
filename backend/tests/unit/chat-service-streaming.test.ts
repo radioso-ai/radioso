@@ -1,8 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type {
-  AnswerCoverageAssessment,
-  AnswerCoverageRecord,
   ConversationCoverageReactionRecorder,
   ConversationEngine,
   RoutineState,
@@ -2470,41 +2468,9 @@ describe("chat service streaming", () => {
     blockFirstAssessment?: { started: () => void; release: Promise<void> };
     assistantTurnPersistence?: ChatServiceOptions["assistantTurnPersistence"];
   } = {}) => {
-    const assessment: Extract<AnswerCoverageAssessment, { availability: "assessed" }> = {
-      availability: "assessed",
-      coverage: "unanswered",
-      reason: "insufficient_evidence",
-      schemaVersion: 1,
-    };
-    const assessmentRecord: AnswerCoverageRecord = {
-      ...assessment,
-      id: "coverage-assessment-1",
-      workspaceId: "workspace-1",
-      conversationId: "coverage-conversation-1",
-      requestMessageId: "coverage-request-1",
-      originatingTurnId: "coverage-request-1",
-      contextualizedRequest: "Please arrange a consultation.",
-      assessedAt: new Date("2026-01-01T00:00:00.000Z"),
-      createdAt: new Date("2026-01-01T00:00:00.000Z"),
-    };
     const persistedReactions: Parameters<ConversationCoverageReactionRecorder["record"]>[0][] = [];
     const pendingClarifications: unknown[] = [];
     const coverageAssessorFactory = {
-      create: ({ onAssessment }: {
-        onAssessment?: (input: {
-          assessment: AnswerCoverageAssessment;
-          record?: AnswerCoverageRecord;
-        }) => void;
-      }) => ({
-        assess: async () => {
-          if (input.blockFirstAssessment && assessmentCalls++ === 0) {
-            input.blockFirstAssessment.started();
-            await input.blockFirstAssessment.release;
-          }
-          onAssessment?.({ assessment, record: assessmentRecord });
-          return assessment;
-        },
-      }),
       createReactionRecorder: ({ onRecorded }: { onRecorded?: (reaction: Parameters<ConversationCoverageReactionRecorder["record"]>[0]) => void }) => ({
         record: async (reaction: Parameters<ConversationCoverageReactionRecorder["record"]>[0]) => {
           if (input.failReactionRecord) {
@@ -2515,7 +2481,27 @@ describe("chat service streaming", () => {
         },
       }),
     } as unknown as NonNullable<ChatServiceOptions["coverageAssessorFactory"]>;
-    let assessmentCalls = 0;
+    let answerCalls = 0;
+    // The coverage verdict is the answer envelope's own head now (#1260): the fake
+    // gateway reports "unanswered" from a valid_v2 head instead of a separate
+    // pre-compose assessor, so the barrier that used to delay `.assess()` now
+    // delays the one model call that produces it.
+    const unansweredEnvelope = (answer: string): string => JSON.stringify({
+      coverage: "unanswered_insufficient_evidence",
+      requestFocus: "the requested consultation",
+      outcome: "no_support",
+      answer,
+      v: 2,
+      claims: [],
+      suggestions: [],
+      grounding: "degraded",
+    });
+    const awaitBlockOnFirstCall = async () => {
+      if (input.blockFirstAssessment && answerCalls++ === 0) {
+        input.blockFirstAssessment.started();
+        await input.blockFirstAssessment.release;
+      }
+    };
     const routineStore: NonNullable<ChatServiceOptions["routineStore"]> = {
       loadActive: async () => null,
       loadCompleted: async () => [],
@@ -2563,7 +2549,16 @@ describe("chat service streaming", () => {
       input.conversationRepository ?? new InMemoryConversationRepository(),
       new InMemoryMessageRepository(),
       new RetrievalTurnController(asChatActivityPipeline(createGroundedPipeline()) as never),
-      { async answer() { return "unused"; }, async *streamAnswer() { yield "unused"; } },
+      {
+        async answer() {
+          await awaitBlockOnFirstCall();
+          return unansweredEnvelope("unused");
+        },
+        async *streamAnswer() {
+          await awaitBlockOnFirstCall();
+          yield unansweredEnvelope("unused");
+        },
+      },
       createAuditService(),
       fallbackReplyComposer,
       undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
@@ -2668,6 +2663,9 @@ describe("chat service streaming", () => {
           return events.find((event) => event.type === "done");
         })()
       : await coverage.service.answer(request);
+    if (!response) {
+      throw new Error("expected a response");
+    }
     expect(response.interactionTrace).toMatchObject({ state: "evaluated" });
     expect(coverage.persistedReactions).toHaveLength(1);
   });
@@ -2867,13 +2865,15 @@ describe("chat service streaming", () => {
         })()
       : await coverage.service.answer(request);
 
-    expect(response).toMatchObject({
-      answer: "I can arrange a consultation.",
-      interactionTrace: {
-        state: "not_evaluated",
-        decisions: [],
-      },
-    });
+    // The `not_evaluated` baseline used to seed from the persisted assessment
+    // record the pre-compose assessor wrote before the reaction pass ran
+    // (`applyCoverageAssessment`). The answer-head path (#1260) reports the
+    // verdict straight to the sink with no persisted record yet — writing one
+    // is FR-016/017, a later slice — so there is nothing to seed a truthful
+    // `not_evaluated` baseline from, and `interactionTrace` stays absent when
+    // the reaction commit itself fails.
+    expect(response).toMatchObject({ answer: "I can arrange a consultation." });
+    expect((response as { interactionTrace?: unknown }).interactionTrace).toBeUndefined();
     expect(coverage.routineStore.save).toHaveBeenCalledOnce();
     expect(coverage.persistedReactions).toEqual([]);
   });

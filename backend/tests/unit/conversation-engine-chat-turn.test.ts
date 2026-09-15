@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { ConversationEngine } from "@radioso/conversation-contract";
+import type { AnswerCoverageAssessment, ConversationEngine } from "@radioso/conversation-contract";
 import { DefaultConversationEngine } from "@radioso/conversation-engine";
 import type { ConversationRecord } from "../../src/db/repositories/conversationRepository.js";
 import type { MessageRecord } from "../../src/db/repositories/messageRepository.js";
@@ -300,6 +300,115 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
       type: "final",
       presentation: expect.objectContaining({ answer: "Would you like a consultation or a callback?" }),
     }));
+  });
+
+  // A skill standing in for the retrieval skill's real behavior (#1260): it
+  // reports a fixed coverage verdict to the engine's sink, from inside its own
+  // render/stream, before producing anything. Exercises the real engine so the
+  // sink is genuinely constructed and forwarded end to end, not faked.
+  const coverageReportingSkill = (assessment: AnswerCoverageAssessment): TurnSkill => ({
+    definition: { name: "answer", outcomeKinds: ["generic"] },
+    selects: () => true,
+    dispatch: () => ({
+      kind: "generic",
+      skillName: "answer",
+      outcome: { status: "completed", answer: "The skill's own answer." },
+      stagedContext: [],
+      steering: [],
+      trace: { traceId: "skill", startedAt: new Date(0).toISOString(), stages: [] },
+    }),
+    renderer: {
+      supports: (outcome) => outcome.kind === "generic",
+      async render(outcome, ctx) {
+        const decision = await ctx.coverageVerdict?.report({ assessment });
+        return decision?.decision === "yield_turn"
+          ? { answer: "", yielded: true, skillName: "answer", skillOutcome: "yielded", skillStatus: "completed" }
+          : { answer: outcome.outcome.answer ?? "", skillName: "answer", skillOutcome: "completed", skillStatus: "completed" };
+      },
+      async *stream(outcome, ctx) {
+        const decision = await ctx.coverageVerdict?.report({ assessment });
+        if (decision?.decision === "yield_turn") {
+          return {
+            finalPresentation: { answer: "", yielded: true, skillName: "answer", skillOutcome: "yielded", skillStatus: "completed" },
+            suggestions: { mode: "presentation" as const },
+            hasStreamedAnswer: false,
+            streamedAnswer: "",
+            yielded: true,
+          };
+        }
+        yield outcome.outcome.answer ?? "";
+        return {
+          finalPresentation: { answer: outcome.outcome.answer ?? "", skillName: "answer", skillOutcome: "completed", skillStatus: "completed" },
+          suggestions: { mode: "presentation" as const },
+          hasStreamedAnswer: true,
+          streamedAnswer: outcome.outcome.answer ?? "",
+        };
+      },
+    },
+  });
+
+  const unansweredAssessment: AnswerCoverageAssessment = {
+    availability: "assessed",
+    coverage: "unanswered",
+    reason: "insufficient_evidence",
+    schemaVersion: 1,
+    producer: "answer_head",
+  };
+
+  const coverageRoutinePorts = {
+    coverageRoutineActivator: {
+      evaluateCandidates: () => [{ routineId: "support", decision: "candidate" as const, reasonCode: "coverage_criteria_candidate" }],
+      activate: async () => ({ kind: "activate" as const, routineId: "support" }),
+    },
+    routineStore: { loadActive: async () => null, save: async () => {}, clear: async () => {} },
+    routineRunner: { resume: async () => ({ response: { answer: "I can connect you with support." }, nextState: null }) },
+  };
+
+  it("presents the post-evidence routine's answer, not the skill's, when the reported coverage verdict yields the turn", async () => {
+    const turnSkills = [coverageReportingSkill(unansweredAssessment)];
+    const { presentation, result } = await runPreparedChatTurnWithConversationEngine({
+      engine: new DefaultConversationEngine(),
+      session: session(),
+      chatAnswerPresenter: { presentRoutineAnswer: (answer: string) => ({ answer, skillName: "routine", skillOutcome: "completed", skillStatus: "completed" }) } as unknown as ChatAnswerPresenter,
+      turnSkillSelector: new ChatTurnSkillSelector(turnSkills, new DefaultTurnSelectionStrategy()),
+      turnSkills,
+      query: "Where is my order?",
+      ...coverageRoutinePorts,
+    });
+
+    expect(presentation.answer).toBe("I can connect you with support.");
+    expect(result.trace.stages.find((stage) => stage.kind === "compose")).toMatchObject({
+      outputs: expect.objectContaining({ yielded: true }),
+    });
+  });
+
+  it("streams nothing from the skill and presents the routine's committed answer when the reported coverage verdict yields the turn", async () => {
+    const turnSkills = [coverageReportingSkill(unansweredAssessment)];
+    const events: RunPreparedChatTurnStreamWithConversationEngineEvent[] = [];
+    for await (const event of runPreparedChatTurnStreamWithConversationEngine({
+      engine: new DefaultConversationEngine(),
+      session: session(),
+      chatAnswerPresenter: { presentRoutineAnswer: (answer: string) => ({ answer, skillName: "routine", skillOutcome: "completed", skillStatus: "completed" }) } as unknown as ChatAnswerPresenter,
+      turnSkillSelector: new ChatTurnSkillSelector(turnSkills, new DefaultTurnSelectionStrategy()),
+      turnSkills,
+      query: "Where is my order?",
+      ...coverageRoutinePorts,
+    })) {
+      events.push(event);
+    }
+
+    const chunks = events.filter((event) => event.type === "chunk");
+    // The one delta that streams is the routine's committed answer, not the
+    // skill's own text — the skill's stream released nothing before yielding.
+    expect(chunks.map((event) => event.text)).toEqual(["I can connect you with support."]);
+    const final = events.find((event) => event.type === "final");
+    if (!final || final.type !== "final") {
+      throw new Error("expected a final event");
+    }
+    expect(final.presentation.answer).toBe("I can connect you with support.");
+    expect(final.engineTrace.stages.find((stage) => stage.kind === "compose")).toMatchObject({
+      outputs: expect.objectContaining({ yielded: true }),
+    });
   });
 
   it("yields mapped, deduplicated progress while the engine remains blocked", async () => {

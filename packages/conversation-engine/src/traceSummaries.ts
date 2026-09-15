@@ -32,7 +32,7 @@ export const summarizeDirectiveMatch = (match: DirectiveMatch): Record<string, u
 });
 
 /** Keep conversational text out of audit/debug traces; expose structural facts only. */
-export const summarizeOutcomeForCompose = (outcome: TurnOutcome): Record<string, unknown> => ({
+const summarizeOutcomeForCompose = (outcome: TurnOutcome): Record<string, unknown> => ({
   skillName: outcome.skillName,
   status: outcome.outcome.status,
   errorCode: outcome.outcome.error?.code,
@@ -54,6 +54,10 @@ export const composeOutputsFor = (
     streamed: options.streamed,
     outcomes: outcomes.map(summarizeOutcomeForCompose),
     ...(adherence ? { adherence } : {}),
+    // A coverage verdict sink yielded this turn before any answer text was
+    // released (#1260): the compose stage still ran, but produced nothing —
+    // the post-evidence routine result is what the turn actually returns.
+    ...(response.yielded ? { yielded: true } : {}),
   };
 };
 
@@ -69,7 +73,7 @@ export const composeTraceMetricsFor = (response: RenderableTurn): Record<string,
   return Object.keys(metrics).length > 0 ? metrics : undefined;
 };
 
-export const summarizeFraming = (
+const summarizeFraming = (
   framing: ConversationTurnInterpretation["framing"],
 ): Record<string, unknown> | undefined => {
   if (!framing) {

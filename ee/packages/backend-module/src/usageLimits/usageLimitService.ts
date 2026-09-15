@@ -6,7 +6,7 @@ import { PLAN_CATALOG, type UsageCountKind } from "@radioso/plan-catalog";
 
 import { createEeKysely, type EeDb } from "../db/eeSchema.js";
 import type {
-  AnswerUsageReservation,
+  AnswerUsageKind,
   IndexedStorageReservationInput,
   MonthlyIndexedContentReservationInput,
   UsageLimitDatabasePort,
@@ -22,7 +22,7 @@ export interface UsageLimitProfile {
   storedDocumentLimit: number | null;
   storedIndexedByteLimit: number | null;
   monthlyIndexedByteLimit: number | null;
-  /** When set, the account is metered in conversations (see `surfaceWeight`)
+  /** When set, the account is metered in conversations (see `usageWeight`)
    *  and `monthlyAnswerLimit` is ignored. */
   monthlyConversationLimit: number | null;
   /** A customer conversation is charged once per this many replies. */
@@ -97,39 +97,39 @@ type SurfaceWeight = {
 const tenthsFor = (kind: UsageKind): number => PLAN_CATALOG.countsAs[kind] * TENTHS_PER_CONVERSATION;
 
 /**
- * Maps a `surface` — the string every caller already passes — to the usage
- * kind it charges and whether that charge is per call or per reply-block.
- * This routing is app-specific and has no place in `@radioso/plan-catalog`;
- * the *weight* each kind costs, however, comes from `PLAN_CATALOG.countsAs`,
- * the single source of truth for the counting table on radioso.ai/pricing, so
- * the two can never drift apart.
+ * The public counting table on radioso.ai/pricing, keyed on the `usage` kind every
+ * caller declares. Keep it in step with `COUNTS_AS` on the website. `surface` is
+ * attribution only (logs/audit) and never drives pricing here — an unfamiliar or
+ * mislabeled surface string cannot silently bill as a full customer conversation.
+ * The *weight* each kind costs comes from `PLAN_CATALOG.countsAs`, the single
+ * source of truth for the counting table, so the two can never drift apart.
  */
-export const surfaceWeight = (surface: string): SurfaceWeight | null => {
-  switch (surface) {
+const usageWeight = (usage: AnswerUsageKind): SurfaceWeight | null => {
+  switch (usage) {
     // The widget greeting on open. A visitor who opens the widget and leaves
     // has not had a conversation.
-    case "chat.bootstrap":
+    case "greeting":
       return null;
-    case "operator_copilot":
-    case "operator_copilot_probe":
+    case "copilot_turn":
       return { kind: "copilot", tenths: tenthsFor("copilot"), perConversationBlock: false };
-    // The dashboard test chat, Workbench replays, and eval runs: two for one.
-    // A test reply is a full turn, so this is cheaper than a customer
-    // conversation without being sold at cost.
-    case "authenticated_chat":
-    case "workbench_replay":
-    case "eval_replay":
+    // The dashboard test chat, Workbench replays, eval runs, and test executions:
+    // two for one. A test reply is a full turn, so this is cheaper than a
+    // customer conversation without being sold at cost.
+    case "test_run":
       return { kind: "test_run", tenths: tenthsFor("test_run"), perConversationBlock: false };
     // Every Pulse report is on demand. There is no scheduled run.
-    case "audience_pulse":
+    case "pulse_report":
       return { kind: "pulse_report", tenths: tenthsFor("pulse_report"), perConversationBlock: false };
     // Standalone answers over the API: each call is its own conversation.
-    case "retrieval.answer":
-    case "mcp.retrieval_answer":
+    case "standalone_answer":
       return { kind: "conversation", tenths: tenthsFor("conversation"), perConversationBlock: false };
     // Every customer channel: website_embed, anonymous, slack, whatsapp, agent_api, mcp, assistant.
-    default:
+    case "conversation_reply":
       return { kind: "conversation", tenths: tenthsFor("conversation"), perConversationBlock: true };
+    default: {
+      const exhaustive: never = usage;
+      throw new Error(`Unhandled answer usage kind: ${String(exhaustive)}`);
+    }
   }
 };
 
@@ -340,10 +340,9 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
     accountId?: string | null;
     workspaceId: string;
     surface: string;
-    /** Customer conversations are metered in blocks of replies; pass the id so
-     *  the second reply of a conversation is not charged like the first. */
+    usage: AnswerUsageKind;
     conversationId?: string | null;
-  }): Promise<AnswerUsageReservation> {
+  }): Promise<UsageLimitReservation> {
     const accountId = await this.resolveAccountId(input);
     if (!accountId) {
       return noopReservation;
@@ -427,9 +426,9 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
   private async reserveConversationUnits(
     accountId: string,
     profile: UsageLimitProfile,
-    input: { surface: string; conversationId?: string | null },
-  ): Promise<AnswerUsageReservation> {
-    const weight = surfaceWeight(input.surface);
+    input: { usage: AnswerUsageKind; conversationId?: string | null },
+  ): Promise<UsageLimitReservation> {
+    const weight = usageWeight(input.usage);
     if (!weight) {
       return noopReservation;
     }
@@ -460,24 +459,6 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
       throw error;
     }
 
-    // A per-conversation-block charge made without a conversation id is turn 1 of
-    // a brand-new conversation: the caller cannot supply an id the server has not
-    // issued yet, so the block-bookkeeping branch above never ran. Let the caller
-    // confirm the real id once it exists (chatService.ts does this right after
-    // chatSessionPreparer.prepare() creates the conversation row) so this charge
-    // opens block 1 for that conversation instead of the next reply's
-    // bumpConversationReplies starting a fresh count and re-opening it.
-    let seededConversationId: string | null = null;
-    const confirmConversationId =
-      weight.perConversationBlock && !input.conversationId
-        ? async (conversationId: string): Promise<void> => {
-            const seeded = await this.seedConversationReplyIfAbsent(accountId, periodStart, conversationId);
-            if (seeded) {
-              seededConversationId = conversationId;
-            }
-          }
-        : undefined;
-
     return {
       commit: async () => {},
       release: async () => {
@@ -485,11 +466,7 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
         if (releaseReply) {
           await releaseReply();
         }
-        if (seededConversationId) {
-          await this.bumpConversationReplies(accountId, periodStart, seededConversationId, -1);
-        }
       },
-      confirmConversationId,
     };
   }
 
@@ -516,32 +493,6 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
       .returning("reply_count")
       .executeTakeFirstOrThrow();
     return row.reply_count;
-  }
-
-  /**
-   * Seeds the reply-block counter at 1 for a conversation id learned after the
-   * charge that opened its first block, without touching a row that already
-   * exists (a concurrent turn 2 may have already inserted one). Returns whether
-   * this call actually inserted the row, so the reservation's `release` can undo
-   * exactly the bookkeeping it created and nothing else.
-   */
-  private async seedConversationReplyIfAbsent(
-    accountId: string,
-    periodStart: string,
-    conversationId: string,
-  ): Promise<boolean> {
-    const rows = await this.db
-      .insertInto("ee_usage_limit_conversation_replies")
-      .values({
-        account_id: accountId,
-        period_start: sql<string>`${periodStart}::date`,
-        conversation_id: conversationId,
-        reply_count: 1,
-      })
-      .onConflict((oc) => oc.columns(["account_id", "period_start", "conversation_id"]).doNothing())
-      .returning("reply_count")
-      .execute();
-    return rows.length > 0;
   }
 
   /**

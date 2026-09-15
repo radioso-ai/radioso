@@ -127,6 +127,7 @@ export class RetrievalAnswerService {
     const usageReservation = await (this.dependencies.usageLimitPolicy ?? new NoopUsageLimitPolicy()).reserveAnswer({
       workspaceId: input.workspaceId,
       surface: execution.surface === "mcp_capability" ? "mcp.retrieval_answer" : "retrieval.answer",
+      usage: "standalone_answer",
     });
     try {
       const rawAnswer = (await this.dependencies.chatGateway.answer({

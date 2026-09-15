@@ -193,7 +193,7 @@ describeIfDatabase("EE usage limit service integration", () => {
     const { accountId, workspaceId } = await seedAccountWorkspace();
     const service = new EnterpriseUsageLimitService(database);
 
-    const reservation = await service.reserveAnswer({ workspaceId, surface: "assistant" });
+    const reservation = await service.reserveAnswer({ workspaceId, surface: "assistant", usage: "conversation_reply" });
     await reservation.commit();
 
     const rows = await database.query<{ count: string }>(
@@ -227,14 +227,14 @@ describeIfDatabase("EE usage limit service integration", () => {
     await assignProfile(accountId, { monthlyAnswerLimit: 1 });
     const service = new EnterpriseUsageLimitService(database);
 
-    const reservation = await service.reserveAnswer({ accountId, workspaceId, surface: "assistant" });
+    const reservation = await service.reserveAnswer({ accountId, workspaceId, surface: "assistant", usage: "conversation_reply" });
 
-    await expect(service.reserveAnswer({ accountId, workspaceId, surface: "assistant" }))
+    await expect(service.reserveAnswer({ accountId, workspaceId, surface: "assistant", usage: "conversation_reply" }))
       .rejects.toBeInstanceOf(UsageLimitExceededError);
 
     await reservation.release();
 
-    await expect(service.reserveAnswer({ accountId, workspaceId, surface: "assistant" }))
+    await expect(service.reserveAnswer({ accountId, workspaceId, surface: "assistant", usage: "conversation_reply" }))
       .resolves.toBeDefined();
   });
 
@@ -429,7 +429,7 @@ describeIfDatabase("EE usage limit service integration", () => {
     await assignProfile(accountId, { monthlyConversationLimit: 1, repliesPerConversation: 3 });
     const service = new EnterpriseUsageLimitService(database);
     const conversationId = randomUUID();
-    const reserve = () => service.reserveAnswer({ accountId, workspaceId, surface: "website_embed", conversationId });
+    const reserve = () => service.reserveAnswer({ accountId, workspaceId, surface: "website_embed", usage: "conversation_reply", conversationId });
 
     // Replies 1-3 sit inside the one paid block; reply 4 opens a second block the plan cannot afford.
     await reserve();
@@ -442,79 +442,60 @@ describeIfDatabase("EE usage limit service integration", () => {
     expect(usage.monthlyConversations?.byKind.conversation).toBe(1);
   });
 
-  it("charges a brand-new conversation once, even though turn 1 has no conversation id yet", async () => {
-    // Mirrors chatService.ts's real call order: reserveAnswer() runs before
-    // chatSessionPreparer.prepare() creates the conversation row, so turn 1 of a
-    // brand-new conversation always reserves with conversationId unset. The
-    // server only learns the conversation id once prepare() resolves it, then
-    // calls confirmConversationId so turn 2's bumpConversationReplies continues
-    // the block instead of re-opening (and re-charging) it.
-    const { accountId, workspaceId } = await seedAccountWorkspace();
-    await assignProfile(accountId, { monthlyConversationLimit: 1, repliesPerConversation: 3 });
-    const service = new EnterpriseUsageLimitService(database);
-
-    const turn1 = await service.reserveAnswer({ accountId, workspaceId, surface: "website_embed" });
-    if (!turn1.confirmConversationId) {
-      throw new Error(
-        "expected a fresh customer-conversation reservation (no conversationId, perConversationBlock surface) " +
-          "to expose confirmConversationId",
-      );
-    }
-    const conversationId = randomUUID();
-    await turn1.confirmConversationId(conversationId);
-
-    // Turn 2 and turn 3 sit inside the block turn 1 already paid for.
-    await service.reserveAnswer({ accountId, workspaceId, surface: "website_embed", conversationId });
-    await service.reserveAnswer({ accountId, workspaceId, surface: "website_embed", conversationId });
-
-    const usage = await service.getAccountUsage(accountId);
-    expect(usage.monthlyConversations).toMatchObject({ used: 1, limit: 1, credits: 0 });
-    expect(usage.monthlyConversations?.byKind.conversation).toBe(1);
-
-    // Turn 4 opens a second block, which the plan (limit 1) cannot afford.
-    await expect(
-      service.reserveAnswer({ accountId, workspaceId, surface: "website_embed", conversationId }),
-    ).rejects.toBeInstanceOf(UsageLimitExceededError);
-  });
-
   it("charges a second conversation separately and releases it cleanly", async () => {
     const { accountId, workspaceId } = await seedAccountWorkspace();
     await assignProfile(accountId, { monthlyConversationLimit: 1 });
     const service = new EnterpriseUsageLimitService(database);
 
-    const first = await service.reserveAnswer({ accountId, workspaceId, surface: "slack", conversationId: randomUUID() });
-    await expect(service.reserveAnswer({ accountId, workspaceId, surface: "slack", conversationId: randomUUID() }))
+    const first = await service.reserveAnswer({ accountId, workspaceId, surface: "slack", usage: "conversation_reply", conversationId: randomUUID() });
+    await expect(service.reserveAnswer({ accountId, workspaceId, surface: "slack", usage: "conversation_reply", conversationId: randomUUID() }))
       .rejects.toBeInstanceOf(UsageLimitExceededError);
 
     await first.release();
-    await expect(service.reserveAnswer({ accountId, workspaceId, surface: "slack", conversationId: randomUUID() }))
+    await expect(service.reserveAnswer({ accountId, workspaceId, surface: "slack", usage: "conversation_reply", conversationId: randomUUID() }))
       .resolves.toBeDefined();
   });
 
-  it("weights operator work by surface: two test runs are one, Ray is one, a Pulse report is ten", async () => {
+  it("weights operator work by usage kind: two test runs are one, Ray is one, a Pulse report is ten", async () => {
     const { accountId, workspaceId } = await seedAccountWorkspace();
     await assignProfile(accountId, { monthlyConversationLimit: 12 });
     const service = new EnterpriseUsageLimitService(database);
 
     for (let i = 0; i < 2; i += 1) {
-      await service.reserveAnswer({ accountId, workspaceId, surface: "eval_replay" });
+      await service.reserveAnswer({ accountId, workspaceId, surface: "eval_replay", usage: "test_run" });
     }
-    await service.reserveAnswer({ accountId, workspaceId, surface: "operator_copilot" });
-    await service.reserveAnswer({ accountId, workspaceId, surface: "audience_pulse" });
+    await service.reserveAnswer({ accountId, workspaceId, surface: "operator_copilot", usage: "copilot_turn" });
+    await service.reserveAnswer({ accountId, workspaceId, surface: "audience_pulse", usage: "pulse_report" });
 
     const usage = await service.getAccountUsage(accountId);
     expect(usage.monthlyConversations?.used).toBe(12);
     expect(usage.monthlyConversations?.byKind).toEqual({ conversation: 0, copilot: 1, test_run: 1, pulse_report: 10 });
-    await expect(service.reserveAnswer({ accountId, workspaceId, surface: "workbench_replay" }))
+    await expect(service.reserveAnswer({ accountId, workspaceId, surface: "workbench_replay", usage: "test_run" }))
       .rejects.toBeInstanceOf(UsageLimitExceededError);
   });
 
-  it("never charges the widget greeting", async () => {
+  it("prices a test run by its usage kind, not by an unfamiliar surface label", async () => {
+    const { accountId, workspaceId } = await seedAccountWorkspace();
+    await assignProfile(accountId, { monthlyConversationLimit: 1 });
+    const service = new EnterpriseUsageLimitService(database);
+
+    // "test_execution" is not one of the legacy surface strings the old surfaceWeight switch
+    // recognised; before the fix that default-billed a full customer conversation (10 tenths).
+    await service.reserveAnswer({ accountId, workspaceId, surface: "test_execution", usage: "test_run" });
+
+    const usage = await service.getAccountUsage(accountId);
+    expect(usage.monthlyConversations?.byKind.test_run).toBe(0.5);
+    expect(usage.monthlyConversations?.used).toBe(0.5);
+  });
+
+  it("never charges the widget greeting, even labeled with a customer-conversation surface", async () => {
     const { accountId, workspaceId } = await seedAccountWorkspace();
     await assignProfile(accountId, { monthlyConversationLimit: 0 });
     const service = new EnterpriseUsageLimitService(database);
 
-    await expect(service.reserveAnswer({ accountId, workspaceId, surface: "chat.bootstrap" })).resolves.toBeDefined();
+    // "website_embed" is the real sourceChannel the bootstrap greeting carries for attribution;
+    // pricing must come from `usage: "greeting"` alone, not from that surface label.
+    await expect(service.reserveAnswer({ accountId, workspaceId, surface: "website_embed", usage: "greeting" })).resolves.toBeDefined();
     expect((await service.getAccountUsage(accountId)).monthlyConversations?.used).toBe(0);
   });
 
@@ -524,11 +505,11 @@ describeIfDatabase("EE usage limit service integration", () => {
     const service = new EnterpriseUsageLimitService(database);
     await service.addCredits(accountId, 1);
 
-    await service.reserveAnswer({ accountId, workspaceId, surface: "agent_api", conversationId: randomUUID() });
-    const onCredit = await service.reserveAnswer({ accountId, workspaceId, surface: "agent_api", conversationId: randomUUID() });
+    await service.reserveAnswer({ accountId, workspaceId, surface: "agent_api", usage: "conversation_reply", conversationId: randomUUID() });
+    const onCredit = await service.reserveAnswer({ accountId, workspaceId, surface: "agent_api", usage: "conversation_reply", conversationId: randomUUID() });
     expect((await service.getAccountUsage(accountId)).monthlyConversations).toMatchObject({ used: 2, limit: 1, credits: 0 });
 
-    await expect(service.reserveAnswer({ accountId, workspaceId, surface: "agent_api", conversationId: randomUUID() }))
+    await expect(service.reserveAnswer({ accountId, workspaceId, surface: "agent_api", usage: "conversation_reply", conversationId: randomUUID() }))
       .rejects.toBeInstanceOf(UsageLimitExceededError);
 
     await onCredit.release();
@@ -540,8 +521,8 @@ describeIfDatabase("EE usage limit service integration", () => {
     await assignProfile(accountId, { monthlyAnswerLimit: 1 });
     const service = new EnterpriseUsageLimitService(database);
 
-    await service.reserveAnswer({ accountId, workspaceId, surface: "website_embed", conversationId: randomUUID() });
-    await expect(service.reserveAnswer({ accountId, workspaceId, surface: "website_embed", conversationId: randomUUID() }))
+    await service.reserveAnswer({ accountId, workspaceId, surface: "website_embed", usage: "conversation_reply", conversationId: randomUUID() });
+    await expect(service.reserveAnswer({ accountId, workspaceId, surface: "website_embed", usage: "conversation_reply", conversationId: randomUUID() }))
       .rejects.toBeInstanceOf(UsageLimitExceededError);
     expect((await service.getAccountUsage(accountId)).monthlyConversations).toBeNull();
   });

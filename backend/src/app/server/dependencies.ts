@@ -101,7 +101,7 @@ import { ConversationSummaryRepository } from "../../db/repositories/conversatio
 import { RoutineStateRepository } from "../../db/repositories/routineStateRepository.js";
 import { QUALITY_RESOLUTION_REASONS } from "../../modules/quality/domain/resolution.js";
 import { buildOperatorMcpServices } from "./builders/operatorMcp.js";
-import { resolveWorkspaceManagedLlmModels } from "../../modules/settings/services/workspaceLlmManagedModels.js";
+import { resolveWorkspaceManagedLlmModels } from "../../shared/infra/llm/workspaceManagedModels.js";
 import type { OperatorMcpClientMetadataSnapshot } from "../../modules/operatorMcpAuthorization/public.js";
 
 interface BuildDependenciesOptions {

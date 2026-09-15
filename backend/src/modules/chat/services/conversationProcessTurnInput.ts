@@ -4,7 +4,6 @@ import type {
   ConversationEvent,
   ConversationClarificationStore,
   ConversationClarifier,
-  ConversationCoverageAssessor,
   ConversationCoverageRoutineActivator,
   ConversationCoverageReactionRecorder,
   ConversationModelGateway,
@@ -77,7 +76,6 @@ interface ChatProcessTurnInputOptions {
   turnInterpreter?: ConversationTurnInterpreter;
   retrievalWork?: ConversationRetrievalWorkPort;
   getSession?: () => PreparedSession;
-  coverageAssessor?: ConversationCoverageAssessor;
   coverageReactionRecorder?: ConversationCoverageReactionRecorder;
 }
 
@@ -262,7 +260,6 @@ export const createChatProcessTurnInput = (options: ChatProcessTurnInputOptions)
     inputEvent: effectiveInputEventForSession(readSession()),
     skills: options.skills ?? [],
     directives: directiveWiring.directives,
-    ...(options.coverageAssessor ? { coverageAssessor: options.coverageAssessor } : {}),
     ...(options.coverageReactionRecorder ? { coverageReactionRecorder: options.coverageReactionRecorder } : {}),
     stores: {
       async loadHistory() {

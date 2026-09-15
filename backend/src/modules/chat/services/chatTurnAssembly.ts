@@ -742,12 +742,6 @@ export class ChatTurnAssembly {
       query: input.query,
       userExpectedLocale: input.userExpectedLocale,
       accountId: input.accountId,
-      coverageAssessor: this.options.coverageAssessorFactory?.create({
-        getSession: () => session,
-        accountId: input.accountId,
-        signal: input.coordination?.signal,
-        onAssessment: (assessment) => { applyCoverageAssessment(session, assessment); },
-      }),
       ...coverageTurnRuntime,
     });
     this.logCoverageRoutineFailure(result.trace, session);
@@ -832,12 +826,6 @@ export class ChatTurnAssembly {
       query: input.request.query,
       userExpectedLocale: input.request.userExpectedLocale,
       accountId: input.request.accountId,
-      coverageAssessor: this.options.coverageAssessorFactory?.create({
-        getSession: () => sessionRef.current,
-        accountId: input.request.accountId,
-        signal: input.coordination?.signal,
-        onAssessment: (assessment) => { applyCoverageAssessment(sessionRef.current, assessment); },
-      }),
       ...coverageTurnRuntime,
     });
     const stage = clarificationTraceStage(clarificationState.current);
@@ -886,12 +874,6 @@ export class ChatTurnAssembly {
       userExpectedLocale: input.userExpectedLocale,
       accountId: input.accountId,
       signal: input.coordination?.signal,
-      coverageAssessor: this.options.coverageAssessorFactory?.create({
-        getSession: () => session,
-        accountId: input.accountId,
-        signal: input.coordination?.signal,
-        onAssessment: (assessment) => { applyCoverageAssessment(session, assessment); },
-      }),
       ...coverageTurnRuntime,
     })) {
       if (event.type === "status" || event.type === "chunk") {
@@ -979,12 +961,6 @@ export class ChatTurnAssembly {
       userExpectedLocale: input.request.userExpectedLocale,
       accountId: input.request.accountId,
       signal: input.coordination?.signal,
-      coverageAssessor: this.options.coverageAssessorFactory?.create({
-        getSession: () => sessionRef.current,
-        accountId: input.request.accountId,
-        signal: input.coordination?.signal,
-        onAssessment: (assessment) => { applyCoverageAssessment(sessionRef.current, assessment); },
-      }),
       ...coverageTurnRuntime,
     })) {
       if (event.type === "status" || event.type === "chunk") {

@@ -6,12 +6,13 @@ export {
 } from "./generationSurface.js";
 import type {
   AttemptRoutineInput,
-  AnswerCoverageAssessment,
   ConversationEngine,
   ConversationEvent,
   AwaitingSkillInput,
   ConversationSkillInputResolution,
   ConversationTraceStage,
+  Directive,
+  DirectiveMatch,
   ProcessTurnInput,
   ProcessTurnResult,
   ProcessTurnStreamEvent,
@@ -22,12 +23,14 @@ import type {
   SelectionDecision,
   SkillDefinition,
   SelectedSkill,
+  SteeringRule,
   TurnContext,
   TurnOutcome,
 } from "@radioso/conversation-contract";
 
 import { resumeAwaitingDecision } from "./awaitingDecision.js";
-import { attemptRoutine, attemptRoutineActivation, RoutineActivationFailure } from "./routineActivation.js";
+import { attemptRoutine } from "./routineActivation.js";
+import { createCoverageVerdictSink, type CoverageVerdictSinkDeps } from "./coverageVerdictSink.js";
 import { buildResolvedSteering, resolveDirectiveMatches } from "./steering.js";
 import {
   createInputEvent,
@@ -52,23 +55,6 @@ import {
   summarizeInterpretation,
 } from "./traceSummaries.js";
 
-/** The trace is operator-facing; retain only a bounded failure category here. */
-const coverageRoutineFailureKind = (
-  error: unknown,
-): "routine_selection_failed" | "routine_resume_failed" | "type_error" | "activation_error" => {
-  if (error instanceof RoutineActivationFailure) {
-    return error.phase === "selection" ? "routine_selection_failed" : "routine_resume_failed";
-  }
-  return error instanceof TypeError ? "type_error" : "activation_error";
-};
-
-const coverageRoutineFailureCauseType = (error: unknown): string => {
-  if (error instanceof RoutineActivationFailure) {
-    return error.cause instanceof Error ? error.cause.name : typeof error.cause;
-  }
-  return error instanceof Error ? error.name : typeof error;
-};
-
 interface PreparedTurnRun {
   stages: ConversationTraceStage[];
   events: ConversationEvent[];
@@ -76,8 +62,14 @@ interface PreparedTurnRun {
   outcomes: TurnOutcome[];
   composeTurn: TurnContext;
   awaitingSkillInput?: AwaitingSkillInput[];
-  postEvidenceRoutineResult?: ProcessTurnResult;
-  postEvidenceRoutineStageOffset?: number;
+  /** Directives without a coverage gate — passed through to coverage routine activation unchanged. */
+  legacyDirectives: readonly Directive[];
+  /** Every coverage directive that passed the contextual matcher, unfiltered by classification (#1260). */
+  coverageDirectiveMatches: readonly DirectiveMatch[];
+  /** The turn's final resolved steering, kept for the coverage verdict sink's applicability checks. */
+  directiveSteering: readonly SteeringRule[];
+  /** Directive ids that survived conflict resolution into the rendered steering set. */
+  appliedCoverageDirectiveIds: ReadonlySet<string>;
 }
 
 const mergePostEvidenceRoutineResult = (
@@ -91,12 +83,11 @@ const mergePostEvidenceRoutineResult = (
       stageIds.add(entry.id);
       return true;
     });
-  const stageOffset = prepared.postEvidenceRoutineStageOffset ?? prepared.stages.length;
-  const stages = [
-    ...prepared.stages.slice(0, stageOffset),
-    ...routineStages,
-    ...prepared.stages.slice(stageOffset),
-  ];
+  // The coverage verdict sink runs from inside compose, so by the time a routine
+  // claims the turn every stage this turn has produced so far (through the
+  // compose stage itself) already sits in `prepared.stages`; the routine's own
+  // stages land straight after it.
+  const stages = [...prepared.stages, ...routineStages];
   const eventIds = new Set(prepared.events.flatMap((event) => event.id ? [event.id] : []));
   const events = [
     ...prepared.events,
@@ -122,6 +113,21 @@ const mergePostEvidenceRoutineResult = (
     awaitingSkillInput: routineResult.awaitingSkillInput,
   });
 };
+
+const coverageVerdictSinkDeps = (
+  input: ProcessTurnInput | ProcessTurnStreamInput,
+  prepared: PreparedTurnRun,
+  composeStartedAt: number,
+): CoverageVerdictSinkDeps => ({
+  attemptRoutineInput: input,
+  composeTurn: prepared.composeTurn,
+  legacyDirectives: prepared.legacyDirectives,
+  coverageDirectiveMatches: prepared.coverageDirectiveMatches,
+  directiveSteering: prepared.directiveSteering,
+  appliedCoverageDirectiveIds: prepared.appliedCoverageDirectiveIds,
+  stages: prepared.stages,
+  composeStartedAt,
+});
 
 export class DefaultConversationEngine implements ConversationEngine {
   private async prepareTurn(input: ProcessTurnInput | ProcessTurnStreamInput): Promise<PreparedTurnRun> {
@@ -196,8 +202,7 @@ export class DefaultConversationEngine implements ConversationEngine {
       directiveMatcher: input.directiveMatcher,
       steeringResolver: input.steeringResolver,
     });
-    // Keep every legacy directive's existing decision ahead of retrieval. Coverage
-    // criteria are intentionally absent here: they require the post-evidence signal.
+    // Keep every legacy directive's existing decision ahead of retrieval.
     const legacyResolved = await resolveDirectives(legacyDirectives);
     const shouldRunRetrieval = Boolean(input.retrievalWork && interpretation?.route === "retrieval");
     const retrievalStartedAt = Date.now();
@@ -222,46 +227,19 @@ export class DefaultConversationEngine implements ConversationEngine {
         ...(retrievalResult?.subTrace ? { subTrace: retrievalResult.subTrace } : {}),
       }));
     }
-    const assessmentInputTurn: TurnContext = {
+    const retrievedTurn: TurnContext = {
       ...interpretedTurn,
       stagedContext: retrievalResult?.stagedContext ?? [],
     };
-    const assessmentStartedAt = Date.now();
-    let assessment: AnswerCoverageAssessment = { availability: "not_recorded" };
-    if (input.coverageAssessor) {
-      try {
-        assessment = await input.coverageAssessor.assess({ turn: assessmentInputTurn });
-      } catch {
-        // A host extension cannot turn an otherwise safe answer into a failed turn.
-        assessment = { availability: "failed" };
-      }
-      stages.push(timedStage(assessmentStartedAt, Date.now(), {
-        id: "answer_coverage_assessment",
-        kind: "answer_coverage_assessment",
-        status: assessment.availability === "assessed" ? "applied" : "fallback",
-        outputs: { availability: assessment.availability },
-      }));
-    }
-    const assessedTurn: TurnContext = assessment.availability === "assessed"
-      ? {
-          ...assessmentInputTurn,
-          metadata: {
-            ...(assessmentInputTurn.metadata ?? {}),
-            answerCoverage: assessment,
-          },
-        }
-      : assessmentInputTurn;
-    const coverageEligibleDirectives = assessment.availability !== "assessed"
-      ? []
-      : coverageDirectives.filter((directive) => {
-          const criteria = directive.coverageCriteria!;
-          return criteria.coverage.includes(assessment.coverage)
-            && (criteria.reasons === undefined || criteria.reasons.includes(assessment.reason));
-        });
-    const coverageResolved = coverageEligibleDirectives.length > 0
+    // Coverage directives are matched contextually here, before the verdict exists
+    // (#1260): the matcher runs on every coverage directive regardless of its
+    // criteria, and each resulting rule renders conditionally on the classification
+    // the answer model is about to emit. Applicability against the actual verdict
+    // is judged once it arrives, at compose time (see `coverageVerdictSink.ts`).
+    const coverageResolved = coverageDirectives.length > 0
       ? await buildResolvedSteering({
-          turn: assessedTurn,
-          directives: coverageEligibleDirectives,
+          turn: retrievedTurn,
+          directives: coverageDirectives,
           directiveMatcher: input.directiveMatcher,
           steeringResolver: input.steeringResolver,
           traceKind: "coverage_directive_match",
@@ -269,7 +247,7 @@ export class DefaultConversationEngine implements ConversationEngine {
       : null;
     const directiveMatches = [...legacyResolved.directiveMatches, ...(coverageResolved?.directiveMatches ?? [])];
     const directiveSteering = resolveDirectiveMatches({
-      turn: assessedTurn,
+      turn: retrievedTurn,
       directiveMatches,
       steeringResolver: input.steeringResolver,
     });
@@ -282,127 +260,10 @@ export class DefaultConversationEngine implements ConversationEngine {
     if (coverageResolved) stages.push(coverageResolved.traceStage);
 
     const selectedTurn: TurnContext = {
-      ...assessedTurn,
+      ...retrievedTurn,
       stagedContext: retrievalResult?.stagedContext ?? [],
       steering: [...directiveSteering, ...(retrievalResult?.steering ?? [])],
     };
-    let postEvidenceRoutine: ProcessTurnResult | null = null;
-    const postEvidenceRoutineStageOffset = stages.length;
-    let coverageRoutineEvaluationFailed = false;
-    const completedCoverageRoutineIds = input.routineStore?.loadCompleted
-      ? (await input.routineStore.loadCompleted({ sessionId: input.sessionId })).map((state) => state.routineId)
-      : [];
-    const coverageRoutineCandidates = assessment.availability === "assessed" && input.coverageRoutineActivator
-      ? input.coverageRoutineActivator.evaluateCandidates({
-          turn: selectedTurn,
-          suppressedRoutineIds: completedCoverageRoutineIds,
-        })
-      : [];
-    // The pre-retrieval pass can yield an active routine so grounding answers the
-    // current message. Do not give the post-evidence activation pass a second chance
-    // to resume or replace that active state.
-    const activeRoutineAtCoveragePass = input.routineStore
-      ? await input.routineStore.loadActive({ sessionId: input.sessionId })
-      : null;
-    if (
-      assessment.availability === "assessed" &&
-      input.coverageRoutineActivator &&
-      activeRoutineAtCoveragePass?.status !== "active"
-    ) {
-      try {
-        postEvidenceRoutine = await this.attemptCoverageRoutineActivation({
-          ...input,
-          // Coverage-gated activation receives only the directives whose criteria
-          // have been evaluated for this signal. It must not reintroduce an
-          // ineligible authored rule through the routine resume path.
-          directives: [...legacyDirectives, ...coverageEligibleDirectives],
-          routineActivator: input.coverageRoutineActivator,
-          ...(input.coverageRoutineActivator.reentryGate
-            ? { routineReentryGate: input.coverageRoutineActivator.reentryGate }
-            : {}),
-          turnContext: selectedTurn,
-          inputEventAlreadyAppended: true,
-        });
-      } catch (error) {
-        coverageRoutineEvaluationFailed = true;
-        stages.push(stage({
-          id: "answer_coverage_routine_activation",
-          kind: "answer_coverage_routine_activation",
-          status: "fallback",
-          outputs: {
-            availability: "failed",
-            failureKind: coverageRoutineFailureKind(error),
-            causeType: coverageRoutineFailureCauseType(error),
-          },
-        }));
-      }
-    }
-    if (assessment.availability === "assessed" && input.coverageReactionRecorder && !coverageRoutineEvaluationFailed) {
-      try {
-        const directiveReactions = (coverageResolved?.directiveMatches ?? []).map((match, index) => {
-          const applied = match.directive.id
-            ? appliedCoverageDirectiveIds.has(match.directive.id)
-            : match.renderInSteering !== false && directiveSteering.some((rule) =>
-              rule.source === "directive" && rule.action === match.directive.action,
-            );
-          return {
-          reactionKey: `directive:${match.directive.id ?? match.directive.name}:${index}`,
-          ...(match.directive.id ? { directiveId: match.directive.id } : {}),
-          decision: applied ? "applied" as const : "suppressed" as const,
-          reasonCode: applied
-            ? "coverage_criteria_applied"
-            : "coverage_steering_conflict",
-          };
-        });
-        const routineExecution = postEvidenceRoutine?.routineExecution;
-        const offeredRoutineIds = new Set(postEvidenceRoutine?.routineClarificationRoutineIds ?? []);
-        const activeRoutineKeepsControl = activeRoutineAtCoveragePass?.status === "active";
-        const routineReactions = coverageRoutineCandidates.map((candidate) => {
-          const activated = routineExecution?.routineId === candidate.routineId;
-          const offered = offeredRoutineIds.has(candidate.routineId);
-          return {
-            reactionKey: `routine:${candidate.routineId}:${candidate.decision}`,
-            routineId: candidate.routineId,
-            ...(activated && routineExecution?.executionId ? { routineExecutionId: routineExecution.executionId } : {}),
-            decision: activated ? "activated" as const
-              : activeRoutineKeepsControl ? "suppressed" as const
-              : candidate.decision === "suppressed" ? "suppressed" as const
-              : offered ? "offered" as const : "skipped" as const,
-            reasonCode: activated ? "coverage_criteria_activated"
-              : activeRoutineKeepsControl ? "active_routine_keeps_control"
-              : candidate.decision === "suppressed" ? candidate.reasonCode
-              : offered ? "coverage_activation_offered" : "coverage_activation_not_selected",
-          };
-        });
-        await input.coverageReactionRecorder.record({
-          assessment,
-          evaluationState: "evaluated",
-          reactions: [
-            ...directiveReactions,
-            ...routineReactions,
-          ],
-        });
-      } catch {
-        // Trace/persistence extensions remain observational and cannot fail a turn.
-        stages.push(stage({
-          id: "answer_coverage_reaction_recording",
-          kind: "answer_coverage_reaction_recording",
-          status: "fallback",
-          outputs: { availability: "failed" },
-        }));
-      }
-    }
-    if (postEvidenceRoutine) {
-      return {
-        stages,
-        events,
-        decision: postEvidenceRoutine.decision,
-        outcomes: postEvidenceRoutine.outcomes,
-        composeTurn: selectedTurn,
-        postEvidenceRoutineResult: postEvidenceRoutine,
-        postEvidenceRoutineStageOffset,
-      };
-    }
     const selectionStartedAt = Date.now();
     reportProgress(input, "selecting");
     const decision = await input.selector.select({
@@ -560,6 +421,10 @@ export class DefaultConversationEngine implements ConversationEngine {
       },
       outcomes,
       composeTurn,
+      legacyDirectives,
+      coverageDirectiveMatches: coverageResolved?.directiveMatches ?? [],
+      directiveSteering,
+      appliedCoverageDirectiveIds,
       ...(asksForSkillInput ? { awaitingSkillInput } : {}),
     };
   }
@@ -567,11 +432,6 @@ export class DefaultConversationEngine implements ConversationEngine {
   /** Runs the routine path before ordinary skill selection when the host wires it. */
   async attemptRoutine(input: AttemptRoutineInput): Promise<ProcessTurnResult | null> {
     return attemptRoutine(input);
-  }
-
-  /** Coverage runs after evidence and can only start/reenter an eligible routine. */
-  async attemptCoverageRoutineActivation(input: AttemptRoutineInput): Promise<ProcessTurnResult | null> {
-    return attemptRoutineActivation(input);
   }
 
   async resumeAwaitingDecision(input: ResumeAwaitingDecisionInput): Promise<ConversationRoutineDecisionResult> {
@@ -591,14 +451,13 @@ export class DefaultConversationEngine implements ConversationEngine {
       return resumed;
     }
     const prepared = await this.prepareTurn(input);
-    if (prepared.postEvidenceRoutineResult) {
-      return mergePostEvidenceRoutineResult(input, prepared, prepared.postEvidenceRoutineResult);
-    }
     const composeStartedAt = Date.now();
+    const coverageVerdict = createCoverageVerdictSink(coverageVerdictSinkDeps(input, prepared, composeStartedAt));
     const response = await input.composer.compose({
       turn: prepared.composeTurn,
       outcomes: prepared.outcomes,
       decision: prepared.decision,
+      coverageVerdict: coverageVerdict.sink,
     });
     const composeCompletedAt = Date.now();
     prepared.stages.push(timedStage(composeStartedAt, composeCompletedAt, {
@@ -607,6 +466,13 @@ export class DefaultConversationEngine implements ConversationEngine {
       status: "applied",
       outputs: composeOutputsFor(response, prepared.outcomes, { streamed: false }),
     }));
+
+    if (response.yielded) {
+      const routineResult = coverageVerdict.getRoutineResult();
+      if (routineResult) {
+        return mergePostEvidenceRoutineResult(input, prepared, routineResult);
+      }
+    }
 
     const responseEvent = createResponseEvent(input.sessionId, response);
     await input.stores.appendEvent(responseEvent);
@@ -637,25 +503,17 @@ export class DefaultConversationEngine implements ConversationEngine {
       return;
     }
     const prepared = await this.prepareTurn(input);
-    if (prepared.postEvidenceRoutineResult) {
-      const result = mergePostEvidenceRoutineResult(input, prepared, prepared.postEvidenceRoutineResult);
-      const chunks = input.composer.streamCommitted?.(result.response)
-        ?? (result.response.answer ? [result.response.answer] : []);
-      for (const text of chunks) {
-        if (text) yield { type: "delta", sessionId: input.sessionId, text };
-      }
-      yield { type: "final", result };
-      return;
-    }
     let response: RenderableTurn | null = null;
     let finalMetadata: Record<string, unknown> | undefined;
     const composeStartedAt = Date.now();
     reportProgress(input, "composing");
+    const coverageVerdict = createCoverageVerdictSink(coverageVerdictSinkDeps(input, prepared, composeStartedAt));
 
     for await (const event of input.composer.stream({
       turn: prepared.composeTurn,
       outcomes: prepared.outcomes,
       decision: prepared.decision,
+      coverageVerdict: coverageVerdict.sink,
     })) {
       if (response) {
         throw new Error("conversation_stream_event_after_final");
@@ -685,6 +543,20 @@ export class DefaultConversationEngine implements ConversationEngine {
       outputs: composeOutputsFor(response, prepared.outcomes, { streamed: true }),
       metrics: composeTraceMetricsFor(response),
     }));
+
+    if (response.yielded) {
+      const routineResult = coverageVerdict.getRoutineResult();
+      if (routineResult) {
+        const result = mergePostEvidenceRoutineResult(input, prepared, routineResult);
+        const chunks = input.composer.streamCommitted?.(routineResult.response)
+          ?? (routineResult.response.answer ? [routineResult.response.answer] : []);
+        for (const text of chunks) {
+          if (text) yield { type: "delta", sessionId: input.sessionId, text };
+        }
+        yield { type: "final", result };
+        return;
+      }
+    }
 
     const responseEvent = createResponseEvent(input.sessionId, response);
     await input.stores.appendEvent(responseEvent);

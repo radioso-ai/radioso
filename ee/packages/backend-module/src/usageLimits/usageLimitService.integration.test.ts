@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { PLAN_CATALOG } from "@radioso/plan-catalog";
+
 import { EnterpriseUsageLimitService } from "./usageLimitService.js";
 import { UsageLimitExceededError } from "./errors.js";
 import { usageLimitMigrator } from "./usageLimitMigrator.js";
@@ -440,6 +442,41 @@ describeIfDatabase("EE usage limit service integration", () => {
     expect(usage.monthlyConversations?.byKind.conversation).toBe(1);
   });
 
+  it("charges a brand-new conversation once, even though turn 1 has no conversation id yet", async () => {
+    // Mirrors chatService.ts's real call order: reserveAnswer() runs before
+    // chatSessionPreparer.prepare() creates the conversation row, so turn 1 of a
+    // brand-new conversation always reserves with conversationId unset. The
+    // server only learns the conversation id once prepare() resolves it, then
+    // calls confirmConversationId so turn 2's bumpConversationReplies continues
+    // the block instead of re-opening (and re-charging) it.
+    const { accountId, workspaceId } = await seedAccountWorkspace();
+    await assignProfile(accountId, { monthlyConversationLimit: 1, repliesPerConversation: 3 });
+    const service = new EnterpriseUsageLimitService(database);
+
+    const turn1 = await service.reserveAnswer({ accountId, workspaceId, surface: "website_embed" });
+    if (!turn1.confirmConversationId) {
+      throw new Error(
+        "expected a fresh customer-conversation reservation (no conversationId, perConversationBlock surface) " +
+          "to expose confirmConversationId",
+      );
+    }
+    const conversationId = randomUUID();
+    await turn1.confirmConversationId(conversationId);
+
+    // Turn 2 and turn 3 sit inside the block turn 1 already paid for.
+    await service.reserveAnswer({ accountId, workspaceId, surface: "website_embed", conversationId });
+    await service.reserveAnswer({ accountId, workspaceId, surface: "website_embed", conversationId });
+
+    const usage = await service.getAccountUsage(accountId);
+    expect(usage.monthlyConversations).toMatchObject({ used: 1, limit: 1, credits: 0 });
+    expect(usage.monthlyConversations?.byKind.conversation).toBe(1);
+
+    // Turn 4 opens a second block, which the plan (limit 1) cannot afford.
+    await expect(
+      service.reserveAnswer({ accountId, workspaceId, surface: "website_embed", conversationId }),
+    ).rejects.toBeInstanceOf(UsageLimitExceededError);
+  });
+
   it("charges a second conversation separately and releases it cleanly", async () => {
     const { accountId, workspaceId } = await seedAccountWorkspace();
     await assignProfile(accountId, { monthlyConversationLimit: 1 });
@@ -507,5 +544,46 @@ describeIfDatabase("EE usage limit service integration", () => {
     await expect(service.reserveAnswer({ accountId, workspaceId, surface: "website_embed", conversationId: randomUUID() }))
       .rejects.toBeInstanceOf(UsageLimitExceededError);
     expect((await service.getAccountUsage(accountId)).monthlyConversations).toBeNull();
+  });
+
+  it("seeds a profile per @radioso/plan-catalog plan with the catalog's own values", async () => {
+    const service = new EnterpriseUsageLimitService(database);
+    const profiles = await service.listProfiles();
+
+    for (const plan of PLAN_CATALOG.plans) {
+      const profile = profiles.find((candidate) => candidate.key === plan.id);
+      expect(profile).toMatchObject({
+        key: plan.id,
+        displayName: plan.name,
+        monthlyAnswerLimit: null,
+        storedDocumentLimit: plan.documents,
+        storedIndexedByteLimit: plan.storedBytes,
+        monthlyIndexedByteLimit: plan.monthlyIndexedBytes,
+        monthlyConversationLimit: plan.monthlyConversations,
+        repliesPerConversation: PLAN_CATALOG.repliesPerConversation,
+      });
+    }
+  });
+
+  it("keeps a console edit to a seeded profile when the migrator runs again", async () => {
+    const service = new EnterpriseUsageLimitService(database);
+    const satellite = PLAN_CATALOG.plans.find((plan) => plan.id === "satellite")!;
+    const edited = await service.upsertProfile({
+      key: "satellite",
+      displayName: satellite.name,
+      monthlyAnswerLimit: null,
+      storedDocumentLimit: satellite.documents,
+      storedIndexedByteLimit: satellite.storedBytes,
+      monthlyIndexedByteLimit: satellite.monthlyIndexedBytes,
+      monthlyConversationLimit: 42,
+      repliesPerConversation: PLAN_CATALOG.repliesPerConversation,
+    });
+    expect(edited.monthlyConversationLimit).toBe(42);
+
+    await usageLimitMigrator.migrate(database);
+
+    const profiles = await service.listProfiles();
+    const reread = profiles.find((candidate) => candidate.key === "satellite");
+    expect(reread?.monthlyConversationLimit).toBe(42);
   });
 });

@@ -1,4 +1,7 @@
+import { PLAN_CATALOG } from "@radioso/plan-catalog";
+
 import type { ApplicationDatabaseMigrator } from "../radiosoModuleTypes.js";
+import { profileSeedFromPlan } from "./planCatalogSeed.js";
 
 // NOTE: the durable usage-event ledger (usage_events / embedding_usage_items /
 // usage_daily_rollups) is now owned by OSS (backend migration
@@ -207,5 +210,37 @@ export const usageLimitMigrator: ApplicationDatabaseMigrator = {
         ('starter_250', 'Starter 250', 250, 250)
       ON CONFLICT (key) DO NOTHING
     `);
+
+    // One profile per @radioso/plan-catalog plan (comet/satellite/planet). `DO NOTHING`
+    // on conflict so a console edit to a seeded profile is never reverted by a later boot.
+    for (const plan of PLAN_CATALOG.plans) {
+      const seed = profileSeedFromPlan(plan, PLAN_CATALOG.repliesPerConversation);
+      await database.query(
+        `
+        INSERT INTO ee_usage_limit_profiles (
+          key,
+          display_name,
+          monthly_answer_limit,
+          stored_document_limit,
+          stored_indexed_byte_limit,
+          monthly_indexed_byte_limit,
+          monthly_conversation_limit,
+          replies_per_conversation
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        ON CONFLICT (key) DO NOTHING
+        `,
+        [
+          seed.key,
+          seed.displayName,
+          seed.monthlyAnswerLimit,
+          seed.storedDocumentLimit,
+          seed.storedIndexedByteLimit,
+          seed.monthlyIndexedByteLimit,
+          seed.monthlyConversationLimit,
+          seed.repliesPerConversation,
+        ],
+      );
+    }
   },
 };

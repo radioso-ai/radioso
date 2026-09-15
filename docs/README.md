@@ -25,6 +25,7 @@ Before creating or revising documentation in this repo, read the [Docs Style Gui
 - [Assistant Execution Model](./assistant-execution-model.md) - why interactive chat and deferred work stay separate
 - [Architecture Extension Points](./architecture-extension-points.md) - supported module boundaries, default composition, and extension rules
 - [API Contract Workflow](./api-contract-workflow.md) - backend OpenAPI, SDK, and MCP generated artifact update flow
+- [Exact Words](./exact-words.md) - author the greeting verbatim, per language, with suggestion chips
 - [Human Takeover](./human-takeover.md) - operator API and ownership behavior for human-owned conversations
 - [Embedding Coverage](./embedding-coverage.md) - read how much of a workspace is indexed, repair what is missing, and verify vector search agrees
 - [Website Crawler Provider](./website-crawler.md) - OSS crawler provider port and document crawl API

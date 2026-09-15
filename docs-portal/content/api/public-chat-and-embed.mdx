@@ -61,6 +61,23 @@ The response includes `publicChatToken`, `publicSessionId`, `publicSessionToken`
 
 `chatSessionId` and `anonymousSessionId` are accepted as client hints but are not trusted as resume credentials. Use `resumeToken` to resume and the returned `publicSessionToken` for chat requests.
 
+## Bootstrap greeting response
+
+When you request a new conversation with `startConversation: true`, a bootstrap greeting is returned if the agent has one configured. The greeting text is in `answer`; `suggestions` carries the authored chips when the greeting uses Exact words. Each suggestion has a stable `id`, and a click submits its `text` as a normal user message.
+
+```json
+{
+  "bootstrapGreetingId": "5f2c1c2e-8d0a-4d0e-9d61-7c7a4b3a1f10",
+  "answer": "Welcome to our support team! How can we help?",
+  "suggestions": [
+    { "id": "chip-faq", "text": "Browse FAQs", "kind": "authored", "action": { "kind": "ask_followup" } },
+    { "id": "chip-schedule", "text": "Schedule a call", "kind": "authored", "action": { "kind": "ask_followup" } }
+  ]
+}
+```
+
+An Exact words greeting is delivered verbatim with no model call; its chips use `kind: "authored"`.
+
 ## Send a public chat message
 
 ```json
@@ -144,6 +161,7 @@ Example response fragment:
 {
   "suggestions": [
     {
+      "id": "chip-contact",
       "text": "Contact us",
       "kind": "contact_human",
       "action": {
@@ -154,7 +172,7 @@ Example response fragment:
         }
       }
     },
-    { "text": "What's covered here?", "kind": "deeper" }
+    { "id": "chip-faq", "text": "What's covered here?", "kind": "deeper" }
   ]
 }
 ```

@@ -117,13 +117,6 @@ export class ChatBootstrapService {
       userExpectedLocale: requestedLocale,
       assistantDefaultLocale: agent.assistantDefaultLocale,
     });
-    const fingerprint = createBootstrapFingerprint({
-      assistantName: agent.name,
-      customInstruction: agent.customInstruction,
-      assistantDefaultLocale: agent.assistantDefaultLocale,
-      localeUsed,
-      revisionId: input.revisionId,
-    });
 
     const revisionGreeting = await this.resolveRevisionGreeting({
       workspaceId: input.workspaceId,
@@ -146,6 +139,14 @@ export class ChatBootstrapService {
         exactContent: revisionGreeting.greeting.exactContent,
       });
     }
+
+    const fingerprint = createBootstrapFingerprint({
+      assistantName: agent.name,
+      customInstruction: agent.customInstruction,
+      assistantDefaultLocale: agent.assistantDefaultLocale,
+      localeUsed,
+      revisionId: input.revisionId,
+    });
 
     let usageReservation: Awaited<ReturnType<UsageLimitPolicy["reserveAnswer"]>> | null = null;
     try {

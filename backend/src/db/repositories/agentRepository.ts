@@ -565,6 +565,14 @@ export interface AgentDirectiveUpdateOptions {
   expectedAgentUpdatedAt?: Date;
 }
 
+export interface AgentGreetingUpdateOptions {
+  /** Compared against `agent_drafts.generation` inside the same mutation transaction that
+   * writes the greeting; a mismatch throws the same `conflict` a concurrent draft writer
+   * (e.g. a directive or routine edit) already throws elsewhere in this file. Absent for the
+   * dashboard's own draft route, which keeps last-write-wins like every other draft field. */
+  expectedDraftGeneration?: number;
+}
+
 export interface AgentRepositoryPort {
   create(workspaceId: string, input: AgentInput, options?: { agentId?: string }): Promise<AgentRecord>;
   findByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<AgentRecord | null>;
@@ -576,7 +584,7 @@ export interface AgentRepositoryPort {
   /** Draft-only: unlike `update`, this never touches the live `agents` row (spec 1150 F3 —
    * Off stays a live kill switch; exact content and its enabled flag live only in the draft/
    * candidate/published snapshot). */
-  updateDraftGreeting(agentId: string, workspaceId: string, input: AgentGreetingSnapshot): Promise<AgentGreetingSnapshot>;
+  updateDraftGreeting(agentId: string, workspaceId: string, input: AgentGreetingSnapshot, options?: AgentGreetingUpdateOptions): Promise<AgentGreetingSnapshot>;
   listDirectives(agentId: string, workspaceId: string): Promise<AuthoredDirective[]>;
   createDirective(agentId: string, workspaceId: string, input: AuthoredDirectiveInput, options?: AgentDirectiveUpdateOptions): Promise<AuthoredDirective>;
   updateDirective(agentId: string, workspaceId: string, directiveId: string, input: Partial<AuthoredDirectiveInput>, options?: AgentDirectiveUpdateOptions): Promise<AuthoredDirective>;
@@ -814,11 +822,13 @@ export class AgentRepository implements AgentRepositoryPort {
   /** No live table to write — greeting exact content exists only in the draft/candidate/
    * published snapshot (spec 1150 F3), so this is a projection into `agent_drafts.snapshot`
    * and nothing else, unlike `updateCustomInstruction` above. */
-  async updateDraftGreeting(agentId: string, workspaceId: string, input: AgentGreetingSnapshot): Promise<AgentGreetingSnapshot> {
-    return withAgentDraftMutation(this.db, workspaceId, agentId, async (_trx, snapshot) => ({
-      result: input,
-      snapshot: { ...snapshot, greeting: input },
-    }));
+  async updateDraftGreeting(agentId: string, workspaceId: string, input: AgentGreetingSnapshot, options: AgentGreetingUpdateOptions = {}): Promise<AgentGreetingSnapshot> {
+    return withAgentDraftMutation(this.db, workspaceId, agentId, async (_trx, snapshot, generation) => {
+      if (options.expectedDraftGeneration !== undefined && generation !== options.expectedDraftGeneration) {
+        throw conflict("Agent draft changed before the greeting proposal was applied; reload before saving again");
+      }
+      return { result: input, snapshot: { ...snapshot, greeting: input } };
+    });
   }
 
   async listDirectives(agentId: string, workspaceId: string): Promise<AuthoredDirective[]> {

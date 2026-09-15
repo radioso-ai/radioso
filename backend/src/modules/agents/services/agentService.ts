@@ -1,4 +1,4 @@
-import type { AgentRepositoryPort, AgentUpdateOptions } from "../../../db/repositories/agentRepository.js";
+import type { AgentGreetingUpdateOptions, AgentRepositoryPort, AgentUpdateOptions } from "../../../db/repositories/agentRepository.js";
 import type { DocumentSourceRepositoryPort } from "../../../db/repositories/documentSourceRepository.js";
 import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { AccessGrantService } from "../../accessGrants/public.js";
@@ -143,6 +143,7 @@ export class AgentService {
     workspaceId: string,
     agentId: string,
     input: AgentGreetingSnapshot,
+    options?: AgentGreetingUpdateOptions,
   ): Promise<{ greeting: AgentGreetingSnapshot; validation: ExactContentValidationResult }> {
     const agent = await this.agentRepository.findByIdAndWorkspaceId(agentId, workspaceId);
     if (!agent) {
@@ -159,7 +160,12 @@ export class AgentService {
     if (input.exactWordsEnabled && !validation.ok) {
       throw badRequest("Exact greeting content is invalid", { issues: validation.issues });
     }
-    const greeting = await this.agentRepository.updateDraftGreeting(agentId, workspaceId, input);
+    // Forwarded only when a caller actually supplies it (Ray's proposal apply); the dashboard's
+    // own draft route passes none, keeping the 3-argument call every other draft field's
+    // last-write-wins write already makes here.
+    const greeting = options
+      ? await this.agentRepository.updateDraftGreeting(agentId, workspaceId, input, options)
+      : await this.agentRepository.updateDraftGreeting(agentId, workspaceId, input);
     return { greeting, validation };
   }
 

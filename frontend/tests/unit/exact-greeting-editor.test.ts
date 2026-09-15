@@ -154,6 +154,14 @@ describe('validation-issue path mapping', () => {
     expect(issuesForVariantLocale(issues, 1)).toEqual([issues[1]])
   })
 
+  it('finds an invalid_locale issue the same way, since the lookup is path-based, not code-based', () => {
+    const withInvalidLocale = [
+      ...issues,
+      { path: 'variants[2].locale', code: 'invalid_locale', message: '"xx_YY" is not a valid locale tag' },
+    ]
+    expect(issuesForVariantLocale(withInvalidLocale, 2)).toEqual([withInvalidLocale[5]])
+  })
+
   it('finds the issue for a chip label by index and chip id', () => {
     expect(issuesForChipLabel(issues, 0, 'chip-1')).toEqual([issues[2]])
     expect(issuesForChipLabel(issues, 0, 'chip-2')).toEqual([])

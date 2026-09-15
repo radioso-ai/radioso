@@ -113,6 +113,7 @@ const findUnknownReferenceTokens = (
 
 type ExactContentValidationIssueCode =
   | "missing_default_variant"
+  | "invalid_locale"
   | "duplicate_locale"
   | "blank_body"
   | "body_too_long"
@@ -163,11 +164,19 @@ export const validateExactContentItem = (
 
   const localeOwnerByTag = new Map<string, number>();
   let hasDefaultVariant = false;
-  const normalizedDefault = canonicalizeLocaleTag(input.agentDefaultLocale) ?? input.agentDefaultLocale;
+  const canonicalDefault = canonicalizeLocaleTag(input.agentDefaultLocale);
+  if (canonicalDefault === null) {
+    pushIssue("agentDefaultLocale", "invalid_locale", `"${input.agentDefaultLocale}" is not a valid locale tag`);
+  }
+  const normalizedDefault = canonicalDefault ?? input.agentDefaultLocale;
 
   item.variants.forEach((variant, index) => {
-    const normalizedLocale = canonicalizeLocaleTag(variant.locale) ?? variant.locale;
+    const canonicalLocale = canonicalizeLocaleTag(variant.locale);
     const path = `variants[${index}]`;
+    if (canonicalLocale === null) {
+      pushIssue(`${path}.locale`, "invalid_locale", `"${variant.locale}" is not a valid locale tag`);
+    }
+    const normalizedLocale = canonicalLocale ?? variant.locale;
 
     const owner = localeOwnerByTag.get(normalizedLocale);
     if (owner === undefined) {
@@ -302,8 +311,12 @@ export const resolveExactContent = (
 
   const variantByLocale = new Map<string, ExactContentVariant>();
   for (const variant of item.variants) {
-    const tag = canonicalizeLocaleTag(variant.locale) ?? variant.locale;
-    if (!variantByLocale.has(tag)) {
+    // A variant whose locale never canonicalizes (malformed data that predates locale
+    // validation, or an author-supplied tag the format check missed) can never be an
+    // addressable delivery target: it is excluded here rather than keyed by its raw string,
+    // so it cannot coincidentally match a request or default that also failed to canonicalize.
+    const tag = canonicalizeLocaleTag(variant.locale);
+    if (tag !== null && !variantByLocale.has(tag)) {
       variantByLocale.set(tag, variant);
     }
   }

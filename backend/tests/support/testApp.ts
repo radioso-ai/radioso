@@ -245,7 +245,7 @@ import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../src/shared/do
 import { NoopManagedModelPolicy, type ManagedModelPolicy } from "../../src/shared/domain/managedModelPolicy.js";
 import { WorkspaceLlmCapabilityResolver } from "../../src/app/composition/workspaceLlmCapabilityResolver.js";
 import { resolveLlmConfig } from "../../src/shared/infra/llm/providerConfig.js";
-import { resolveWorkspaceManagedLlmModels } from "../../src/modules/settings/services/workspaceLlmManagedModels.js";
+import { resolveWorkspaceManagedLlmModels } from "../../src/shared/infra/llm/workspaceManagedModels.js";
 import { NoopUsageEventRecorder } from "../../src/shared/domain/usageEventRecorder.js";
 import {
   noopOrganizationCreationGuard,

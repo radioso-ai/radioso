@@ -1,6 +1,6 @@
-import type { ManagedModelSelection } from "../../../shared/domain/managedModelPolicy.js";
-import type { LlmCapabilityResolver } from "../../../shared/infra/llm/capabilityResolver.js";
-import { workspaceLlmCapabilities, type WorkspaceLlmCapability } from "../contracts/llmCapability.js";
+import type { ManagedModelSelection } from "../../domain/managedModelPolicy.js";
+import type { LlmCapabilityResolver } from "./capabilityResolver.js";
+import { workspaceLlmCapabilities, type WorkspaceLlmCapability } from "../../../modules/settings/contracts/llmCapability.js";
 
 type WorkspaceManagedLlmModels = Record<WorkspaceLlmCapability, ManagedModelSelection | null>;
 

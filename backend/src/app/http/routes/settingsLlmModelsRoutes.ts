@@ -11,7 +11,7 @@ import {
   type WorkspaceLlmCapability,
 } from "../../../modules/settings/contracts/llmCapability.js";
 import { knownModelsByProvider } from "../../../shared/infra/llm/knownModels.js";
-import { resolveWorkspaceManagedLlmModels } from "../../../modules/settings/services/workspaceLlmManagedModels.js";
+import { resolveWorkspaceManagedLlmModels } from "../../../shared/infra/llm/workspaceManagedModels.js";
 
 export const workspaceLlmProviderNames = ["openai", "openai-compatible", "gemini", "claude"] as const;
 

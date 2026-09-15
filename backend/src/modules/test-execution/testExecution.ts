@@ -379,6 +379,7 @@ export class TestExecutionService {
         accountId: identity.accountId,
         workspaceId: identity.workspaceId,
         surface: "test_execution",
+        usage: "test_run",
       });
       const result = await this.options.runner.run({ workspaceId: identity.workspaceId, agentId: identity.agentId, candidateRevision: side.revision, conversationId: side.conversationId, message: claim.attempt.message, history: side.history, continuation: side.continuation, testValues: execution.testValues, executionMode: "safe_test" });
       const stored = await this.options.repository.complete({ workspaceId: identity.workspaceId, agentId: identity.agentId, executionId: identity.executionId, sideId: side.id, turnId: identity.turnId, attemptId: identity.attemptId, fence: claim.attempt.fence, result, now: this.now() });

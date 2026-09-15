@@ -226,18 +226,6 @@ export interface UsageLimitReservation {
   release(): Promise<void>;
 }
 
-export interface AnswerUsageReservation extends UsageLimitReservation {
-  /**
-   * Present when this reservation charged a per-conversation-block surface
-   * without yet knowing the conversation id — turn 1 of a brand-new
-   * conversation, reserved before `chatSessionPreparer.prepare()` has created
-   * the conversation row. Call once the real id is known so the next reply's
-   * block bookkeeping continues from this charge instead of re-opening (and
-   * re-charging) block 1.
-   */
-  confirmConversationId?(conversationId: string): Promise<void>;
-}
-
 export interface IndexedStorageReservationInput {
   accountId?: string | null;
   workspaceId: string;
@@ -254,15 +242,30 @@ export interface MonthlyIndexedContentReservationInput {
   externalDocumentId?: string | null;
 }
 
+/**
+ * Mirrors OSS's `AnswerUsageKind` (in `backend/src/shared/domain/usageLimitPolicy.ts`). Kept
+ * structurally compatible so EE can price a reservation without importing OSS types directly, the
+ * same arrangement the rest of this file uses.
+ */
+export type AnswerUsageKind =
+  | "conversation_reply"
+  | "standalone_answer"
+  | "greeting"
+  | "copilot_turn"
+  | "test_run"
+  | "pulse_report";
+
 export interface UsageLimitPolicy {
   reserveAnswer(input: {
     accountId?: string | null;
     workspaceId: string;
+    /** Attribution only (logs/audit). Pricing comes from `usage`. */
     surface: string;
+    usage: AnswerUsageKind;
     /** Customer conversations are metered in blocks of replies; pass the id so
      *  the second reply of a conversation is not charged like the first. */
     conversationId?: string | null;
-  }): Promise<AnswerUsageReservation>;
+  }): Promise<UsageLimitReservation>;
   reserveDocument(input: {
     accountId?: string | null;
     workspaceId: string;

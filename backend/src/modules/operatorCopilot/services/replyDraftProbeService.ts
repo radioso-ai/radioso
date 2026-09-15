@@ -50,6 +50,7 @@ export class ReplyDraftProbeService implements CopilotReplyDraftPort {
               accountId: input.accountId,
               workspaceId: input.workspaceId,
               surface: OPERATOR_COPILOT_PROBE_SOURCE_CHANNEL,
+              usage: "copilot_turn",
             });
           },
         });

@@ -738,6 +738,7 @@ export class AudiencePulseService implements AudiencePulsePort {
           accountId: input.accountId,
           workspaceId: input.workspaceId,
           surface: "audience_pulse",
+          usage: "pulse_report",
         });
       } catch (error) {
         if (isUsageLimitExceededError(error)) {

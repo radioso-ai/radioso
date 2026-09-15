@@ -52,10 +52,11 @@ import {
 } from "../../../shared/analytics/productAnalyticsService.js";
 import {
   NoopUsageLimitPolicy,
-  type AnswerUsageReservation,
+  type AnswerUsageKind,
   type UsageLimitPolicy,
   type UsageLimitReservation,
 } from "../../../shared/domain/usageLimitPolicy.js";
+import { WORKBENCH_TEST_SOURCE_CHANNELS } from "../../../shared/domain/conversationSource.js";
 import { ChatSessionPreparer, type PreparedSession } from "./chatSessionPreparer.js";
 import type { ConversationSummaryStore } from "../contracts/conversationSummary.js";
 import type { ConversationSummaryUpdater } from "./summary/conversationSummaryService.js";
@@ -158,6 +159,13 @@ export { BlankChatAnswerError } from "./chatAnswerErrors.js";
 export { ModelChatGateway } from "./chatGateways.js";
 export type { SuspendedRoutineReader } from "./approvalResumeTurn.js";
 export { ChatTurnSupersededError } from "./conversationTurnRegistry.js";
+
+/** Operator-driven workbench/test-chat traffic metering as a cheaper `test_run`; every
+ *  other channel is a real customer conversation reply. */
+const chatAnswerUsageKind = (sourceChannel?: string | null): AnswerUsageKind =>
+  sourceChannel != null && (WORKBENCH_TEST_SOURCE_CHANNELS as readonly string[]).includes(sourceChannel)
+    ? "test_run"
+    : "conversation_reply";
 
 const chatTurnTraceAttributes = (input: {
   accountId?: string;
@@ -536,43 +544,6 @@ export class ChatService {
     }
   }
 
-  /**
-   * A per-conversation-block reservation acquired before the conversation row
-   * existed (turn 1 of a brand-new conversation, when the caller has no id to
-   * send yet) exposes `confirmConversationId` so its charge can be attributed to
-   * the conversation once `chatSessionPreparer.prepare()` resolves the real id.
-   * Every other reservation shape (already had an id, or isn't a customer
-   * conversation at all) has no such hook, so this is a no-op for them — chat
-   * orchestration never needs to know which case it is.
-   */
-  private async confirmUsageReservationConversationId(
-    reservation: AnswerUsageReservation | null,
-    input: {
-      workspaceId: string;
-      conversationId: string;
-      sourceChannel?: string | null;
-      stream: boolean;
-    },
-  ): Promise<void> {
-    if (!reservation?.confirmConversationId) {
-      return;
-    }
-    try {
-      await reservation.confirmConversationId(input.conversationId);
-    } catch (error) {
-      this.logger?.warn(
-        {
-          workspaceId: input.workspaceId,
-          conversationId: input.conversationId,
-          surface: input.sourceChannel ?? "assistant",
-          stream: input.stream,
-          errorType: error instanceof Error ? error.name : typeof error,
-        },
-        "Chat usage reservation conversation id confirmation failed",
-      );
-    }
-  }
-
   private async registerPreparedTurn(
     coordination: TurnCoordinationState,
     conversationId: string,
@@ -871,15 +842,9 @@ export class ChatService {
     let session: PreparedSession | null = null;
     let assistantMessageId: string | undefined;
     const workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn");
-    let usageReservation: AnswerUsageReservation | null = null;
+    let usageReservation: UsageLimitReservation | null = null;
 
     try {
-      usageReservation = await this.usageLimitPolicy.reserveAnswer({
-        accountId: input.accountId,
-        workspaceId: input.workspaceId,
-        surface: input.sourceChannel ?? "assistant",
-        conversationId: input.conversationId ?? null,
-      });
       this.setTurnStage(coordination, "preparing");
       session = await this.chatSessionPreparer.prepare({
         ...input,
@@ -888,8 +853,14 @@ export class ChatService {
           input.pageContext,
         ),
       }, { skipRetrieval: true });
-      await this.confirmUsageReservationConversationId(usageReservation, {
-        ...input,
+      // Reserved after prepare, once the conversation is known: a customer conversation's
+      // reply block is keyed on `session.conversation.id`, which does not exist yet for a
+      // brand-new conversation until prepare() creates it.
+      usageReservation = await this.usageLimitPolicy.reserveAnswer({
+        accountId: input.accountId,
+        workspaceId: input.workspaceId,
+        surface: input.sourceChannel ?? "assistant",
+        usage: chatAnswerUsageKind(input.sourceChannel),
         conversationId: session.conversation.id,
       });
       await this.registerPreparedTurn(coordination, session.conversation.id);
@@ -1316,7 +1287,7 @@ export class ChatService {
       | undefined;
     let persistedQuestionSuggestions: NonNullable<ChatPresentedAnswer["suggestions"]> = [];
     const workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn");
-    let usageReservation: AnswerUsageReservation | null = null;
+    let usageReservation: UsageLimitReservation | null = null;
     let usageReservationCommitted = false;
     let usageReservationReleased = false;
     let lastPublicStatus: ChatStatusStage | undefined;
@@ -1340,14 +1311,6 @@ export class ChatService {
     };
 
     try {
-      // Keep the #868 turn stage "waiting" until after reserveAnswer succeeds:
-      // supersession during acquisition must continue to report that stage.
-      usageReservation = await this.usageLimitPolicy.reserveAnswer({
-        accountId: input.accountId,
-        workspaceId: input.workspaceId,
-        surface: input.sourceChannel ?? "assistant",
-        conversationId: input.conversationId ?? null,
-      });
       this.setTurnStage(coordination, "preparing");
       session = await this.chatSessionPreparer.prepare({
         ...input,
@@ -1356,8 +1319,14 @@ export class ChatService {
           input.pageContext,
         ),
       }, { skipRetrieval: true });
-      await this.confirmUsageReservationConversationId(usageReservation, {
-        ...input,
+      // Reserved after prepare, once the conversation is known: a customer conversation's
+      // reply block is keyed on `session.conversation.id`, which does not exist yet for a
+      // brand-new conversation until prepare() creates it.
+      usageReservation = await this.usageLimitPolicy.reserveAnswer({
+        accountId: input.accountId,
+        workspaceId: input.workspaceId,
+        surface: input.sourceChannel ?? "assistant",
+        usage: chatAnswerUsageKind(input.sourceChannel),
         conversationId: session.conversation.id,
       });
       await this.registerPreparedTurn(coordination, session.conversation.id);

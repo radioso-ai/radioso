@@ -191,7 +191,7 @@ describe('step instruction prose mapping', () => {
     ])
   })
 
-  it('turns a variable chip into a slot reference but leaves any other chip kind as plain text', () => {
+  it('turns a variable chip into a slot reference but writes any other chip kind back as typed text', () => {
     expect(proseParagraphsToInstruction([
       { segments: [
         { kind: 'text', text: 'Ask via ' },
@@ -206,9 +206,9 @@ describe('step instruction prose mapping', () => {
       { kind: 'text', text: 'Ask via ' },
       { kind: 'slotReference', key: 'order_total', source: '{{slot.order_total}}' },
       { kind: 'text', text: ' or ' },
-      { kind: 'text', text: 'ananda_edizioni_mcp' },
+      { kind: 'text', text: '#ananda_edizioni_mcp' },
       { kind: 'text', text: ', then ' },
-      { kind: 'text', text: 'billing' },
+      { kind: 'text', text: '@billing' },
       { kind: 'text', text: '.' },
     ])
   })

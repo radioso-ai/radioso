@@ -79,6 +79,8 @@ export const customerEmailExposedInputSchema = z
   .object({
     description: trimmedText(1000).optional(),
     slotBinding: trimmedText(120).regex(slotBindingPattern).optional(),
+    // Authoring-surface only: the fixed input list above decides which inputs are required.
+    required: z.boolean().optional(),
   })
   .strict();
 

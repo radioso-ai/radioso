@@ -265,3 +265,51 @@ test("inserts a step between two existing rows", async ({ page }) => {
     steps: [{ instruction: "First step text" }, { instruction: "Inserted step text" }, { instruction: "Second step text" }],
   });
 });
+
+test("a step instruction offers only the variable menu, never a skill or flow-target menu", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    routineUpdates,
+    routineSkillCatalog: [{
+      skillName: "orders.check_eligibility",
+      displayName: "Check eligibility",
+      category: "external_mcp",
+      inputs: [],
+      outcomes: [],
+      hasDataOutputs: false,
+    }],
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await expect(page.getByRole("heading", { name: "Routines", level: 1 })).toBeVisible();
+  await page.getByRole("button", { name: "New routine" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Step text stays plain");
+
+  const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+  await documentEditor.getByRole("button", { name: "Starts when", exact: true }).click();
+  await documentEditor.getByLabel("Activation trigger", { exact: true }).fill("a visitor opens a conversation.");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await documentEditor.getByRole("button", { name: "Step", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Chat" }).click();
+  await documentEditor.getByRole("button", { name: "Chat", exact: true }).click();
+
+  // A step's instruction is stored as text plus slot references only, so `#` — the skill
+  // trigger everywhere else in a routine — must not open a menu here: a skill is called
+  // through a tool step, never through step text.
+  const instruction = documentEditor.getByLabel("Step 1 instruction");
+  await instruction.click();
+  await instruction.pressSequentially("Ask via #ananda_edizioni_mcp");
+  await expect(page.getByRole("listbox")).toHaveCount(0);
+
+  // `@` still opens the variable menu, undisturbed by `#` finding nothing.
+  await instruction.pressSequentially(" then @order_total");
+  await expect(page.getByRole("listbox", { name: "Insert a variable" })).toBeVisible();
+  await page.getByRole("option", { name: /Create variable “order_total”/ }).click();
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  // The `#` text was never converted to a chip: it reads back exactly as typed.
+  await expect(documentEditor).toContainText("Ask via #ananda_edizioni_mcp then order_total");
+});

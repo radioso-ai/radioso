@@ -91,7 +91,7 @@ const isTypingControl = (element: EventTarget | null) => {
   return tagName === 'button' || tagName === 'a' || tagName === 'select'
 }
 
-export function readWebsiteEmbedViewportSnapshot() {
+function readWebsiteEmbedViewportSnapshot() {
   if (typeof window === 'undefined') {
     return {
       viewportWidth: Number.POSITIVE_INFINITY,
@@ -1117,7 +1117,7 @@ export function PublicChatShell({
   surface = 'public',
   pageContext,
   clientContextCapabilities,
-  signedIdentity,
+  resolveSignedIdentity,
   onAnalyticsEvent,
 }: {
   token: string
@@ -1133,7 +1133,7 @@ export function PublicChatShell({
   surface?: PublicChatSurface
   pageContext?: WebsiteEmbedPageContext | null
   clientContextCapabilities?: ClientContextCapabilities
-  signedIdentity?: string | null
+  resolveSignedIdentity?: () => Promise<string | null>
   onAnalyticsEvent?: (event: WebsiteEmbedAnalyticsInput) => void
 }) {
   const theme = getWebsiteEmbedTheme(themeOverrides)
@@ -1147,7 +1147,7 @@ export function PublicChatShell({
       localeOverride={localeOverride}
       pageContext={pageContext}
       clientContextCapabilities={clientContextCapabilities}
-      signedIdentity={signedIdentity}
+      resolveSignedIdentity={resolveSignedIdentity}
       onAnalyticsEvent={surface === 'embed' ? onAnalyticsEvent : undefined}
     >
       <div

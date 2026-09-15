@@ -37,11 +37,27 @@ import type { MetricsRegistry } from "../../../shared/observability/metrics/metr
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { BoundedGroundingStreamGate } from "./boundedGroundingStreamGate.js";
 import { recordDirectiveSurfaceRendered } from "./directives/directiveSurfaceRendering.js";
+import { GroundedAnswerHeadReader } from "./groundedAnswerHeadReader.js";
+import {
+  buildAnswerCoverageAssessmentFromHead,
+  buildDeterministicZeroEvidenceAssessment,
+  buildInvalidHeadAssessment,
+} from "./answerCoverageFromHead.js";
+import { buildContextualizedRequest } from "./contextualizedRequest.js";
+import type { AnswerCoverageAssessment, RetrievalCoverageVerdictSink } from "../contracts/answerCoverage.js";
 
 class GroundingStreamGateBoundError extends Error {
   constructor() {
     super("grounding_stream_gate_bound");
     this.name = "GroundingStreamGateBoundError";
+  }
+}
+
+/** Abort reason for the model stream when a coverage verdict sink yields the turn (#1260, FR-006). */
+class CoverageVerdictYieldedError extends Error {
+  constructor() {
+    super("coverage_verdict_yielded");
+    this.name = "CoverageVerdictYieldedError";
   }
 }
 
@@ -93,6 +109,47 @@ export class RetrievalAnswerComposer {
 
   private isEnvelopeDecline(outcome: GroundedAnswerEnvelope["outcome"]): boolean {
     return outcome === "no_support" || outcome === "out_of_scope";
+  }
+
+  /**
+   * Maps a completed envelope's head to the coverage verdict sink's assessment
+   * shape (#1260). `invalid` covers every way a completed envelope can fail to
+   * carry a usable head — a legacy/non-v2 parse, or any of the three head
+   * fields missing — never a failed turn (FR-004).
+   */
+  private assessmentFromEnvelope(envelope: GroundedAnswerEnvelope): AnswerCoverageAssessment {
+    if (envelope.parseStatus !== "valid_v2" || !envelope.coverage || !envelope.requestFocus || !envelope.outcome) {
+      return buildInvalidHeadAssessment();
+    }
+    return buildAnswerCoverageAssessmentFromHead({
+      coverage: envelope.coverage,
+      requestFocus: envelope.requestFocus,
+      outcome: envelope.outcome,
+    });
+  }
+
+  /** The presentation for a turn a coverage verdict sink yielded before any text was composed. */
+  private yieldedPresentedAnswer(): ChatPresentedAnswer {
+    return {
+      answer: "",
+      skillName: RETRIEVAL_TURN_SKILL,
+      skillOutcome: "coverage_yielded",
+      skillStatus: "completed",
+      yielded: true,
+    };
+  }
+
+  /** The streamed turn result for a turn a coverage verdict sink yielded before any text streamed. */
+  private yieldedStreamResult(coverageHeadMs?: number): TurnStreamResult {
+    return {
+      finalPresentation: this.yieldedPresentedAnswer(),
+      suggestions: { mode: "assistant", planned: [] },
+      hasStreamedAnswer: false,
+      streamedAnswer: "",
+      deliveryMode: "yielded",
+      yielded: true,
+      ...(coverageHeadMs === undefined ? {} : { traceMetrics: { coverageHeadMs } }),
+    };
   }
 
   private recordGroundingOutcome(
@@ -187,7 +244,6 @@ export class RetrievalAnswerComposer {
       conversationSummary: session.conversationSummary,
       steering: session.directiveSteering?.rules ?? [],
       retrievalSenseOfferAlternatives: session.retrievalSenseOfferAlternatives,
-      answerCoverage: session.answerCoverage,
     });
     if (session.directiveSteering) {
       // Whether the follow-up question generator's block went into the prompt at all.
@@ -291,6 +347,7 @@ export class RetrievalAnswerComposer {
     query: string,
     userExpectedLocale: string | null | undefined,
     accountId: string | undefined,
+    coverageVerdict?: RetrievalCoverageVerdictSink,
   ): Promise<ChatPresentedAnswer> {
     let answer: string;
     let plannedSuggestions: PlannedEnvelopeSuggestion[] = [];
@@ -299,6 +356,12 @@ export class RetrievalAnswerComposer {
     let declineReason: TurnDeclineReason | undefined;
 
     if (session.retrieval.contexts.length === 0) {
+      const zeroEvidenceVerdict = await coverageVerdict?.report({
+        assessment: buildDeterministicZeroEvidenceAssessment(buildContextualizedRequest(session, query)),
+      });
+      if (zeroEvidenceVerdict?.decision === "yield_turn") {
+        return this.yieldedPresentedAnswer();
+      }
       const fallback = await this.generateAnswerWithPageContext(session, query, accountId);
       if (fallback) {
         answer = fallback.answer;
@@ -330,6 +393,10 @@ export class RetrievalAnswerComposer {
         accountId,
         "grounded",
       );
+      const headVerdict = await coverageVerdict?.report({ assessment: this.assessmentFromEnvelope(envelope) });
+      if (headVerdict?.decision === "yield_turn") {
+        return this.yieldedPresentedAnswer();
+      }
       const summary = computeGroundingSummary({
         body: envelope.answer,
         envelope,
@@ -413,6 +480,7 @@ export class RetrievalAnswerComposer {
     userExpectedLocale: string | null | undefined,
     accountId: string | undefined,
     signal?: AbortSignal,
+    coverageVerdict?: RetrievalCoverageVerdictSink,
   ): AsyncGenerator<string, TurnStreamResult> {
     let rawAnswer = "";
     let plannedSuggestions: PlannedEnvelopeSuggestion[] = [];
@@ -422,8 +490,15 @@ export class RetrievalAnswerComposer {
     let hasStreamedAnswer = false;
     let streamedAnswer = "";
     let groundingGateWaitMs: number | undefined;
+    let coverageHeadMs: number | undefined;
 
     if (session.retrieval.contexts.length === 0) {
+      const zeroEvidenceVerdict = await coverageVerdict?.report({
+        assessment: buildDeterministicZeroEvidenceAssessment(buildContextualizedRequest(session, query)),
+      });
+      if (zeroEvidenceVerdict?.decision === "yield_turn") {
+        return this.yieldedStreamResult();
+      }
       const fallbackEnvelope = await this.generateAnswerWithPageContext(session, query, accountId, signal);
       if (fallbackEnvelope) {
         rawAnswer = fallbackEnvelope.answer;
@@ -459,6 +534,10 @@ export class RetrievalAnswerComposer {
         this.support.buildPromptWithContext(session.retrieval.prompt, session),
         session,
       );
+      const headReader = new GroundedAnswerHeadReader();
+      const composeStartedAt = performance.now();
+      let bypassCitationGate = false;
+      let yieldedTurn = false;
       const candidateStream = this.chatGateway.streamAnswer({
         query,
         history: session.history,
@@ -479,8 +558,32 @@ export class RetrievalAnswerComposer {
         if (!text) {
           continue;
         }
+        // The head is read from the same raw chunks as the answer field, but
+        // nothing derived from them reaches the gate or the client until it
+        // resolves (FR-003) — parsed, or invalid the moment `answer` opens early.
+        headReader.push(text);
         const parsedText = reader.push(text);
-        const decision = requiresIndexedSourceGate
+        if (headReader.current.kind === "pending") {
+          continue;
+        }
+        if (coverageHeadMs === undefined) {
+          coverageHeadMs = performance.now() - composeStartedAt;
+          const headStatus = headReader.current;
+          const assessment = headStatus.kind === "parsed"
+            ? buildAnswerCoverageAssessmentFromHead(headStatus.head)
+            : buildInvalidHeadAssessment();
+          const verdict = await coverageVerdict?.report({ assessment });
+          if (verdict?.decision === "yield_turn") {
+            yieldedTurn = true;
+            gateController.abort(new CoverageVerdictYieldedError());
+            break;
+          }
+          // A decline commitment streams from its own text; the citation gate
+          // exists only to hold an `answer` commitment until it earns one (FR-027).
+          bypassCitationGate = headStatus.kind === "parsed" && headStatus.head.outcome !== "answer";
+        }
+        const appliesCitationGate = requiresIndexedSourceGate && !bypassCitationGate;
+        const decision = appliesCitationGate
           ? gate.push(parsedText)
           : undefined;
         if (decision?.kind === "bound") {
@@ -488,7 +591,10 @@ export class RetrievalAnswerComposer {
           gateController.abort(new GroundingStreamGateBoundError());
           break;
         }
-        const cleanChunk = citationSanitizer.push(decision?.kind === "release" ? decision.text : "");
+        const releaseText = bypassCitationGate
+          ? parsedText
+          : (decision?.kind === "release" ? decision.text : "");
+        const cleanChunk = citationSanitizer.push(releaseText);
         if (cleanChunk) {
           streamedAnswer += cleanChunk;
           yield cleanChunk;
@@ -499,6 +605,9 @@ export class RetrievalAnswerComposer {
       groundingGateWaitMs = gate.waitDurationMs;
       if (signal?.aborted) {
         throw signal.reason ?? new Error("chat_turn_aborted");
+      }
+      if (yieldedTurn) {
+        return this.yieldedStreamResult(coverageHeadMs);
       }
       if (gateBound) {
         const decline = await this.composeFocusedDecline(
@@ -524,7 +633,10 @@ export class RetrievalAnswerComposer {
           hasStreamedAnswer: false,
           streamedAnswer: "",
           deliveryMode: "bounded_decline",
-          traceMetrics: { groundingGateWaitMs },
+          traceMetrics: {
+            groundingGateWaitMs,
+            ...(coverageHeadMs === undefined ? {} : { coverageHeadMs }),
+          },
         };
       }
 
@@ -590,7 +702,12 @@ export class RetrievalAnswerComposer {
       hasStreamedAnswer,
       streamedAnswer,
       deliveryMode: hasStreamedAnswer ? "live" : "committed",
-      ...(groundingGateWaitMs === undefined ? {} : { traceMetrics: { groundingGateWaitMs } }),
+      ...(groundingGateWaitMs === undefined && coverageHeadMs === undefined ? {} : {
+        traceMetrics: {
+          ...(groundingGateWaitMs === undefined ? {} : { groundingGateWaitMs }),
+          ...(coverageHeadMs === undefined ? {} : { coverageHeadMs }),
+        },
+      }),
     };
   }
 }
@@ -607,8 +724,8 @@ export const createRetrievalTurnSkill = (composer: RetrievalAnswerComposer): Tur
   renderer: {
     supports: (outcome) => outcome.kind === RETRIEVAL_OUTCOME_KIND,
     render: (_outcome, ctx: TurnRenderContext) =>
-      composer.composeAnswer(ctx.session, ctx.query, ctx.userExpectedLocale, ctx.accountId),
+      composer.composeAnswer(ctx.session, ctx.query, ctx.userExpectedLocale, ctx.accountId, ctx.coverageVerdict),
     stream: (_outcome, ctx: TurnRenderContext) =>
-      composer.streamAnswer(ctx.session, ctx.query, ctx.userExpectedLocale, ctx.accountId, ctx.signal),
+      composer.streamAnswer(ctx.session, ctx.query, ctx.userExpectedLocale, ctx.accountId, ctx.signal, ctx.coverageVerdict),
   },
 });

@@ -5,6 +5,7 @@ import {
   appendSteeringRules,
   renderSteeringRules,
 } from "../src/steeringPrompt.js";
+import type { CoverageConditionalSteeringRule } from "../src/steeringPrompt.js";
 import type { SteeringRule } from "../src/domain.js";
 
 const rule = (action: string, priority: number, extra: Partial<SteeringRule> = {}): SteeringRule => ({
@@ -37,6 +38,40 @@ describe("renderSteeringRules", () => {
     const block = renderSteeringRules([rule("Keep it short.", 10, { condition: "the user seems rushed" })]);
 
     expect(block).toContain("Keep it short. (when: the user seems rushed)");
+  });
+
+  it("renders a coverage-conditional rule as a condition on the verdict the model is about to emit (#1260)", () => {
+    // The engine does not produce coverageCriteria-bearing rules until slice 2;
+    // this is dead-but-tested rendering ahead of that wiring.
+    const conditional: CoverageConditionalSteeringRule = {
+      ...rule("Offer the contact form.", 10),
+      coverageCriteria: { coverage: ["partial", "unanswered"] },
+    };
+
+    const block = renderSteeringRules([conditional]);
+
+    expect(block).toContain(
+      "Only when your coverage verdict is one of [partial, unanswered]: Offer the contact form.",
+    );
+  });
+
+  it("layers a coverage condition with an authored condition clause", () => {
+    const conditional: CoverageConditionalSteeringRule = {
+      ...rule("Offer the contact form.", 10, { condition: "the visitor seems frustrated" }),
+      coverageCriteria: { coverage: ["unanswered"] },
+    };
+
+    const block = renderSteeringRules([conditional]);
+
+    expect(block).toContain(
+      "Only when your coverage verdict is one of [unanswered]: Offer the contact form. (when: the visitor seems frustrated)",
+    );
+  });
+
+  it("renders an ordinary rule unchanged when it carries no coverageCriteria", () => {
+    const block = renderSteeringRules([rule("Be warm.", 10)]);
+    expect(block).toContain("- Be warm.");
+    expect(block).not.toContain("coverage verdict");
   });
 
   it("renders the caller's template so each surface can frame its own guidance", () => {

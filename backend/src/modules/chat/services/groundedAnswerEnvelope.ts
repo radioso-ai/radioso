@@ -2,6 +2,11 @@ import type { ChatSuggestionKind } from "../types/chatResponses.js";
 import type { JsonSchemaResponseFormat } from "../../../shared/infra/llm/providerTypes.js";
 import type { AnswerSchemaExtension } from "../../../shared/domain/answerSideChannel.js";
 import { StructuredAnswerFieldReader } from "./structuredAnswerFieldReader.js";
+import {
+  classificationValues,
+  REQUEST_FOCUS_MAX_LENGTH,
+  type AnswerCoverageClassification,
+} from "../../answerCoverage/public.js";
 
 export const SUGGESTIONS_SENTINEL = "<<<RADIOSO_FOLLOWUPS_JSON>>>";
 
@@ -26,6 +31,14 @@ export interface PlannedEnvelopeSuggestion {
 }
 
 export interface GroundedAnswerEnvelope {
+  /**
+   * The verdict the model commits to before writing `answer` (#1260): the
+   * coverage classification, the short unresolved-request phrase, and whether it
+   * is answering from the Results at all. `null` when the head is missing or
+   * failed to parse — legacy free text, or a provider that violated key order.
+   */
+  coverage: AnswerCoverageClassification | null;
+  requestFocus: string | null;
   answer: string;
   protocolVersion: 1 | 2 | null;
   parseStatus: GroundingEnvelopeParseStatus;
@@ -42,7 +55,20 @@ export interface GroundedAnswerEnvelope {
 }
 
 /** Top-level envelope keys the envelope interprets itself; anything else is an extra. */
-const CORE_ENVELOPE_KEYS = new Set(["answer", "v", "outcome", "claims", "suggestions", "grounding"]);
+const CORE_ENVELOPE_KEYS = new Set([
+  "coverage", "requestFocus", "answer", "v", "outcome", "claims", "suggestions", "grounding",
+]);
+
+const isCoverageClassification = (value: unknown): value is AnswerCoverageClassification =>
+  typeof value === "string" && (classificationValues as readonly string[]).includes(value);
+
+const readRequestFocus = (value: unknown): string | null => {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed ? trimmed.slice(0, REQUEST_FOCUS_MAX_LENGTH) : null;
+};
 
 const GROUNDED_ANSWER_RESPONSE_FORMAT_BASE: JsonSchemaResponseFormat = {
   type: "json_schema",
@@ -51,14 +77,25 @@ const GROUNDED_ANSWER_RESPONSE_FORMAT_BASE: JsonSchemaResponseFormat = {
   schema: {
     type: "object",
     additionalProperties: false,
-    required: ["answer", "v", "outcome", "claims", "suggestions", "grounding"],
+    required: ["coverage", "requestFocus", "outcome", "answer", "v", "claims", "suggestions", "grounding"],
     properties: {
+      coverage: {
+        type: "string",
+        description: "Your coverage verdict for this request against the admitted Results, committed before you write the answer.",
+        enum: [...classificationValues],
+      },
+      requestFocus: {
+        type: "string",
+        description: "A short noun phrase naming what the request asks for (if answered) or what remains unresolved.",
+        minLength: 1,
+        maxLength: REQUEST_FOCUS_MAX_LENGTH,
+      },
+      outcome: { type: "string", enum: ["answer", "no_support", "out_of_scope"] },
       answer: {
         type: "string",
         description: "Visible markdown answer only. Never include a follow-up-question heading, menu, or list here.",
       },
       v: { type: "integer", enum: [2] },
-      outcome: { type: "string", enum: ["answer", "no_support", "out_of_scope"] },
       claims: {
         type: "array",
         items: {
@@ -115,6 +152,8 @@ export const GROUNDED_ANSWER_RESPONSE_FORMAT = buildGroundedAnswerResponseFormat
 type ParsedEnvelopeTail = Omit<GroundedAnswerEnvelope, "answer">;
 
 const emptyTail = (parseStatus: GroundingEnvelopeParseStatus): ParsedEnvelopeTail => ({
+  coverage: null,
+  requestFocus: null,
   protocolVersion: null,
   parseStatus,
   outcome: null,
@@ -164,15 +203,27 @@ const collectExtras = (record: Record<string, unknown>): Record<string, unknown>
   return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 };
 
+/**
+ * Legacy transports (a bare suggestions array, or a sentinel-delimited tail with
+ * no `v` key) never carry a head: the answer body already streamed before this
+ * tail arrives, so there is no "before `answer`" position left for a verdict.
+ */
+const legacyTail = (
+  parseStatus: Extract<GroundingEnvelopeParseStatus, "legacy_v1">,
+  suggestions: PlannedEnvelopeSuggestion[],
+): ParsedEnvelopeTail => ({
+  coverage: null,
+  requestFocus: null,
+  protocolVersion: 1,
+  parseStatus,
+  outcome: null,
+  claims: [],
+  suggestions,
+});
+
 const parseEnvelopeValue = (parsed: unknown): ParsedEnvelopeTail => {
   if (Array.isArray(parsed)) {
-    return {
-      protocolVersion: 1,
-      parseStatus: "legacy_v1",
-      outcome: null,
-      claims: [],
-      suggestions: readSuggestionsArray(parsed),
-    };
+    return legacyTail("legacy_v1", readSuggestionsArray(parsed));
   }
 
   if (!parsed || typeof parsed !== "object") {
@@ -181,13 +232,7 @@ const parseEnvelopeValue = (parsed: unknown): ParsedEnvelopeTail => {
 
   const record = parsed as Record<string, unknown>;
   if (!("v" in record)) {
-    return {
-      protocolVersion: 1,
-      parseStatus: "legacy_v1",
-      outcome: null,
-      claims: [],
-      suggestions: readSuggestionsArray(record.suggestions),
-    };
+    return legacyTail("legacy_v1", readSuggestionsArray(record.suggestions));
   }
 
   const isV2 = record.v === 2 || record.v === "2";
@@ -196,13 +241,17 @@ const parseEnvelopeValue = (parsed: unknown): ParsedEnvelopeTail => {
     || record.outcome === "out_of_scope"
     ? record.outcome
     : null;
+  const coverage = isCoverageClassification(record.coverage) ? record.coverage : null;
+  const requestFocus = readRequestFocus(record.requestFocus);
   const claims = Array.isArray(record.claims) && record.claims.every(Array.isArray)
     ? record.claims
     : null;
   const suggestionsValid = Array.isArray(record.suggestions)
     && record.suggestions.every((entry) => readSuggestion(entry) !== null);
-  if (!isV2 || !outcome || !claims || !suggestionsValid) {
+  if (!isV2 || !outcome || !coverage || !requestFocus || !claims || !suggestionsValid) {
     return {
+      coverage,
+      requestFocus,
       protocolVersion: isV2 ? 2 : null,
       parseStatus: "invalid_v2",
       outcome,
@@ -213,6 +262,8 @@ const parseEnvelopeValue = (parsed: unknown): ParsedEnvelopeTail => {
 
   const extras = collectExtras(record);
   return {
+    coverage,
+    requestFocus,
     protocolVersion: 2,
     parseStatus: "valid_v2",
     outcome,
@@ -273,7 +324,7 @@ export const parseGroundedAnswerEnvelope = (raw: string): GroundedAnswerEnvelope
 // when the sentinel itself is split at the earliest possible chunk boundary.
 const SENTINEL_HOLDBACK = SUGGESTIONS_SENTINEL.length + 1;
 
-export interface ReaderFinalizeResult extends Omit<GroundedAnswerEnvelope, "answer"> {
+interface ReaderFinalizeResult extends Omit<GroundedAnswerEnvelope, "answer"> {
   trailingAnswer: string;
   fullAnswer: string;
 }
@@ -360,6 +411,8 @@ export class GroundedAnswerEnvelopeReader {
       return {
         trailingAnswer,
         fullAnswer: parsed.answer,
+        coverage: parsed.coverage,
+        requestFocus: parsed.requestFocus,
         protocolVersion: parsed.protocolVersion,
         parseStatus: parsed.parseStatus,
         outcome: parsed.outcome,

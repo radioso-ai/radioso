@@ -25,6 +25,35 @@ const answerCoverageReasonSchema = z.enum([
   "intentional_scope_boundary",
 ]);
 
+/**
+ * The eight-value classification a coverage judge (the pre-compose assessor today,
+ * the answer envelope head after #1260) emits. Shared here so both a producer and
+ * the envelope schema/head reader classify against exactly one table.
+ */
+export const classifications = {
+  answered_sufficient_evidence: { coverage: "answered", reason: "sufficient_evidence" },
+  partial_insufficient_evidence: { coverage: "partial", reason: "insufficient_evidence" },
+  partial_conflicting_evidence: { coverage: "partial", reason: "conflicting_evidence" },
+  partial_intentional_scope_boundary: { coverage: "partial", reason: "intentional_scope_boundary" },
+  unanswered_insufficient_evidence: { coverage: "unanswered", reason: "insufficient_evidence" },
+  unanswered_conflicting_evidence: { coverage: "unanswered", reason: "conflicting_evidence" },
+  unanswered_intentional_scope_boundary: { coverage: "unanswered", reason: "intentional_scope_boundary" },
+  unclear_ambiguous_request: { coverage: "unclear", reason: "ambiguous_request" },
+} as const satisfies Record<string, { coverage: AnswerCoverage; reason: AnswerCoverageReason }>;
+
+export type AnswerCoverageClassification = keyof typeof classifications;
+
+export const classificationValues = Object.keys(classifications) as [
+  AnswerCoverageClassification,
+  ...AnswerCoverageClassification[],
+];
+
+/** Classification taxonomy version, carried on every assessed record. */
+export const ANSWER_COVERAGE_SCHEMA_VERSION = 1;
+
+/** Bound shared by the assessor's `requestFocus` field and the envelope head's. */
+export const REQUEST_FOCUS_MAX_LENGTH = 600;
+
 
 const compatibleReasonsByCoverage: Record<AnswerCoverage, readonly AnswerCoverageReason[]> = {
   answered: ["sufficient_evidence"],

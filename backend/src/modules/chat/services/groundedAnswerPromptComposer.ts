@@ -7,7 +7,6 @@ import {
 import { renderSteeringBlock } from "../../../shared/infra/prompts/steeringPromptRenderer.js";
 import { GENERATION_SURFACE } from "../../../shared/domain/generationSurface.js";
 import { steeringForSurface } from "../../../shared/domain/steeringRule.js";
-import type { AnswerCoverageAssessment } from "../../answerCoverage/public.js";
 
 interface GroundedAnswerSystemPromptInput {
   baseSystemPrompt: string;
@@ -21,7 +20,6 @@ interface GroundedAnswerSystemPromptInput {
   steering?: SteeringRule[];
   /** Labels/descriptions for retrieval-sense alternatives to offer after the grounded answer. */
   retrievalSenseOfferAlternatives?: Array<{ label: string; description?: string }>;
-  answerCoverage?: AnswerCoverageAssessment;
 }
 
 /**
@@ -83,18 +81,19 @@ export const composeGroundedAnswerSystemPrompt = (
     : withSteering;
 
   const envelopeBlock = renderPromptTemplate("chat/answer-envelope.md", {});
-  const assessedCoverage = input.answerCoverage?.availability === "assessed"
-    ? input.answerCoverage
-    : undefined;
-  const coverageGuidance = assessedCoverage
-    ? renderPromptTemplate("chat/answer-coverage-response-guidance.md", {})
-    : "";
-  const withEnvelope = joinBlocks(coverageGuidance ? joinBlocks(grounded, coverageGuidance) : grounded, envelopeBlock);
+  // The model commits its own coverage verdict as the envelope's head rather than
+  // receiving one (#1260), so both blocks render on every grounded call.
+  const coverageHeadBlock = renderPromptTemplate("chat/answer-coverage-head.md", {});
+  const coverageGuidance = renderPromptTemplate("chat/answer-coverage-response-guidance.md", {});
+  const withEnvelope = joinBlocks(
+    joinBlocks(joinBlocks(grounded, coverageHeadBlock), coverageGuidance),
+    envelopeBlock,
+  );
   if (!suggestionsExpected) {
     return {
       systemPrompt: withEnvelope,
-      conversationContextPrompt: input.conversationSummary?.trim() || alternatives || assessedCoverage
-        ? renderConversationContextPrompt({ ...input, answerCoverage: assessedCoverage })
+      conversationContextPrompt: input.conversationSummary?.trim() || alternatives
+        ? renderConversationContextPrompt(input)
         : "",
       suggestionsExpected: false,
     };
@@ -112,18 +111,16 @@ export const composeGroundedAnswerSystemPrompt = (
 
   return {
     systemPrompt: joinBlocks(withEnvelope, suggestionBlock),
-    conversationContextPrompt: renderConversationContextPrompt({ ...input, answerCoverage: assessedCoverage }),
+    conversationContextPrompt: renderConversationContextPrompt(input),
     suggestionsExpected: true,
   };
 };
 
 const renderConversationContextPrompt = (input: GroundedAnswerSystemPromptInput): string =>
-  [renderPromptTemplate("chat/grounded-answer-conversation-context.md", {
+  renderPromptTemplate("chat/grounded-answer-conversation-context.md", {
     conversation_summary: input.conversationSummary?.trim() || "None",
     recent_turns_json: formatConversationIntentSnapshot(input.conversationIntentSnapshot),
     active_subject: input.conversationIntentSnapshot.activeSubject ?? "None",
     active_goal: input.conversationIntentSnapshot.activeGoal ?? "None",
     retrieval_sense_offer_alternatives: formatOfferAlternatives(input.retrievalSenseOfferAlternatives) || "None",
-  }), input.answerCoverage ? renderPromptTemplate("chat/answer-coverage-composition-context.md", {
-    answer_coverage: JSON.stringify(input.answerCoverage),
-  }) : ""].filter(Boolean).join("\n\n");
+  });

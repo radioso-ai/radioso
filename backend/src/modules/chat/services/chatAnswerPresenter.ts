@@ -57,6 +57,12 @@ export interface ChatPresentedAnswer {
    * chat→engine adapter forwards the recognized keys onto the trace.
    */
   metadata?: Record<string, unknown>;
+  /**
+   * Set when a coverage verdict sink yielded this turn before any answer text was
+   * composed (#1260): `answer` is empty and must not be shown — the host presents
+   * whatever the sink's consumer (a coverage routine) produced instead.
+   */
+  yielded?: boolean;
 }
 
 /**

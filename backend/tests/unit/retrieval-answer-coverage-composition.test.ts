@@ -34,12 +34,14 @@ const session = (): PreparedSession => ({
 } as unknown as PreparedSession);
 
 describe("RetrievalAnswerComposer coverage composition", () => {
-  it("passes the assessment into the real final-answer call and does not leave its unresolved result green", async () => {
+  it("wires the coverage head verdict instructions unconditionally and leaves the assessor's own turn outcome intact (#1260)", async () => {
     const gateway = {
       answer: vi.fn(async () => JSON.stringify({
+        coverage: "unanswered_insufficient_evidence",
+        requestFocus: "whether one-day attendance is permitted",
+        outcome: "answer",
         answer: "The course meets on Saturday[[1]], but I cannot confirm one-day attendance[[?]].",
         v: 2,
-        outcome: "answer",
         claims: [[1], []],
         suggestions: [],
         grounding: "degraded",
@@ -58,10 +60,15 @@ describe("RetrievalAnswerComposer coverage composition", () => {
 
     const result = await composer.composeAnswer(session(), "Can I attend for one day?", undefined, undefined);
 
-    expect(gateway.answer).toHaveBeenCalledWith(expect.objectContaining({
-      systemPrompt: expect.stringContaining("Coverage-aware response"),
-      prompt: expect.stringContaining('"coverage":"unanswered"'),
-    }));
+    const call = (gateway.answer as unknown as { mock: { calls: Array<[{ systemPrompt: string; prompt: string }]> } }).mock.calls[0][0];
+    expect(call.systemPrompt).toContain("Coverage verdict");
+    expect(call.systemPrompt).toContain("Coverage-aware response");
+    // The pre-compose assessor's own result no longer reaches the prompt (#1260):
+    // the model commits its own verdict in the envelope head instead of receiving one.
+    expect(call.prompt).not.toContain("coverage");
+    expect(call.prompt).not.toContain("Whether one-day attendance is permitted");
+    // The assessor still runs in this slice and still drives the turn's coverage
+    // outcome; only the prompt injection is gone.
     expect(result.answerOutcome).toBe("coverage_unanswered");
   });
 });

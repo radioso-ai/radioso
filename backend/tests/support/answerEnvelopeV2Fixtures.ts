@@ -14,9 +14,15 @@ export const NO_SUPPORT_V2_BODY =
 export const formatV2Envelope = (body: string, tail: unknown): string =>
   `${body}\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify(tail)}`;
 
+// Sentinel-delimited transports never carry a head (the answer body already
+// streamed before this tail arrives), but the tail's own v2 validity still
+// requires `coverage`/`requestFocus` (#1260); these are placeholder verdicts
+// coherent with each fixture's outcome, not something a caller should assert on.
 export const groundedV2Envelope = (): string =>
   formatV2Envelope(GROUNDED_V2_BODY, {
     v: 2,
+    coverage: "answered_sufficient_evidence",
+    requestFocus: "the advanced workshop schedule",
     outcome: "answer",
     claims: [[1], [2, 3]],
     suggestions: [{ text: "What does registration require?", kind: "deeper", contextIndex: 2 }],
@@ -26,6 +32,8 @@ export const groundedV2Envelope = (): string =>
 export const degradedV2Envelope = (): string =>
   formatV2Envelope(DEGRADED_V2_BODY, {
     v: 2,
+    coverage: "partial_insufficient_evidence",
+    requestFocus: "the accommodation fee",
     outcome: "answer",
     claims: [[1], []],
     suggestions: [{ text: "Who can attend the workshop?", kind: "deeper", contextIndex: 1 }],
@@ -38,6 +46,8 @@ export const OUT_OF_SCOPE_V2_BODY =
 export const outOfScopeV2Envelope = (): string =>
   formatV2Envelope(OUT_OF_SCOPE_V2_BODY, {
     v: 2,
+    coverage: "unanswered_intentional_scope_boundary",
+    requestFocus: "the unrelated request",
     outcome: "out_of_scope",
     claims: [],
     suggestions: [],
@@ -47,6 +57,8 @@ export const outOfScopeV2Envelope = (): string =>
 export const noSupportV2Envelope = (): string =>
   formatV2Envelope(NO_SUPPORT_V2_BODY, {
     v: 2,
+    coverage: "unanswered_insufficient_evidence",
+    requestFocus: "the unsupported request",
     outcome: "no_support",
     claims: [],
     suggestions: [],

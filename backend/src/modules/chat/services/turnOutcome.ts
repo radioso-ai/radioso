@@ -3,6 +3,7 @@ import type { SkillDefinition, TurnOutcome } from "@radioso/conversation-contrac
 import type { ChatPresentedAnswer } from "./chatAnswerPresenter.js";
 import type { PreparedSession } from "./chatSessionPreparer.js";
 import type { PlannedEnvelopeSuggestion } from "./groundedAnswerEnvelope.js";
+import type { RetrievalCoverageVerdictSink } from "../contracts/answerCoverage.js";
 
 /**
  * The generic, per-turn result the assistant composes its reply from — the
@@ -24,6 +25,13 @@ export interface TurnRenderContext {
   userExpectedLocale?: string | null;
   accountId?: string;
   signal?: AbortSignal;
+  /**
+   * Where a retrieval-style skill reports its coverage verdict before releasing
+   * any answer text (#1260). Absent until composition wires the engine's sink
+   * (a later slice); a skill that receives none proceeds exactly as it does
+   * today, so this stays optional rather than forcing every renderer to supply one.
+   */
+  coverageVerdict?: RetrievalCoverageVerdictSink;
 }
 
 /**
@@ -142,7 +150,14 @@ export interface TurnStreamResult {
   suggestions: TurnStreamSuggestions;
   hasStreamedAnswer: boolean;
   streamedAnswer: string;
-  deliveryMode?: "live" | "committed" | "bounded_decline";
+  deliveryMode?: "live" | "committed" | "bounded_decline" | "yielded";
+  /**
+   * Set when a coverage verdict sink yielded this turn before any answer text
+   * was released (#1260, FR-006): the model stream was aborted, `finalPresentation`
+   * carries no answer, and the host is expected to present whatever the sink's
+   * consumer (a coverage routine) produced instead.
+   */
+  yielded?: boolean;
   traceMetrics?: Record<string, number>;
 }
 

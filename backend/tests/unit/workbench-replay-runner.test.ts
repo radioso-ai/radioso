@@ -583,6 +583,7 @@ describe("WorkbenchReplayRunner", () => {
       directiveClassifications: [{ name: "refund-tone", matched: true, confidence: 0.9 }],
     });
     const plannerComplete = vi.fn(async (_request: { prompt: string }) => ({ text: planText }));
+    const plannerCreate = vi.fn(async () => ({ complete: plannerComplete }));
     const throwingDirectiveGatewayFactory = {
       create: vi.fn(async () => {
         throw new Error("directive gateway must not be created on the fused fast path");
@@ -605,9 +606,7 @@ describe("WorkbenchReplayRunner", () => {
         }],
         directiveMatchGatewayFactory: throwingDirectiveGatewayFactory,
       }),
-      turnPlanCoordinator: new TurnPlanCoordinator(
-        new TurnPlanService({ create: async () => ({ complete: plannerComplete }) }),
-      ),
+      turnPlanCoordinator: new TurnPlanCoordinator(new TurnPlanService({ create: plannerCreate })),
       turnPlanInterpretationContextSettings: {
         retrievalDefaultsProvider: { getDefaults: () => ({} as never) },
         skillSettingsResolver: {
@@ -633,6 +632,10 @@ describe("WorkbenchReplayRunner", () => {
     // The planner ran once; the staged router and directive gateway never did —
     // the identical fast-path schedule as live chat.
     expect(plannerComplete).toHaveBeenCalledTimes(1);
+    // The replayed agent's chat model override reaches the planner exactly as in live chat.
+    expect(plannerCreate).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceContext: { workspaceId: "ws-1", capabilityOverride: { provider: "openai", model: "gpt-5-mini" } },
+    }));
     expect(plannerComplete.mock.calls[0]?.[0].prompt).toContain("Replay semantic guidance.");
     expect(plannerComplete.mock.calls[0]?.[0].prompt).toContain("Replay lexical guidance.");
     expect(plannerComplete.mock.calls[0]?.[0].prompt).toContain("The buyer already returned the item last week.");

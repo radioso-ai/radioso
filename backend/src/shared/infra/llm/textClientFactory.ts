@@ -5,7 +5,7 @@ import { GeminiTextGenerationClient } from "./geminiProvider.js";
 import { OpenAITextGenerationClient } from "./openaiProvider.js";
 import type { LlmCapabilityConfig, TextGenerationClient } from "./providerTypes.js";
 
-export const createTextGenerationClient = (config: LlmCapabilityConfig): TextGenerationClient => {
+const createTextGenerationClient = (config: LlmCapabilityConfig): TextGenerationClient => {
   switch (config.provider) {
     case "openai":
     case "openai-compatible":
@@ -25,7 +25,7 @@ const clientCacheKey = (config: LlmCapabilityConfig): string =>
 
 const DEFAULT_MAX_ENTRIES = 256;
 
-export interface TextGenerationClientCacheOptions {
+interface TextGenerationClientCacheOptions {
   /** Soft cap on cached client instances. Oldest entries evict first. */
   maxEntries?: number;
 }

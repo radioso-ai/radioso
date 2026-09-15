@@ -5,7 +5,7 @@ import type { CopilotToolContribution, CopilotToolDescriptor } from "../radiosoM
 import type { AccountUsageSummary } from "./usageLimitService.js";
 
 /** The one read this contribution needs; the service itself owns reservation and enforcement. */
-export interface CopilotAccountUsagePort {
+interface CopilotAccountUsagePort {
   getAccountUsage(accountId: string): Promise<AccountUsageSummary>;
 }
 
@@ -16,12 +16,23 @@ const usageWindowSchema = z.object({
   resetAt: z.string().nullable(),
 });
 
+// Conversation metering counts in tenths (ten test runs make one conversation), so used/limit/remaining
+// can land on a fractional value like 0.5; every other window counts whole units.
+const fractionalUsageWindowSchema = z.object({
+  used: z.number().nonnegative(),
+  limit: z.number().nonnegative().nullable(),
+  remaining: z.number().nonnegative().nullable(),
+  resetAt: z.string().nullable(),
+});
+
 const outputSchema = z.object({
   planName: z.string().nullable(),
   monthlyAnswers: usageWindowSchema,
   storedDocuments: usageWindowSchema,
   storedIndexedBytes: usageWindowSchema,
   monthlyIndexedBytes: usageWindowSchema,
+  /** Null when the plan meters answers rather than conversations. */
+  monthlyConversations: fractionalUsageWindowSchema.nullable(),
 });
 
 /** `null` limit means unlimited, so remaining is unknowable rather than zero. */
@@ -65,6 +76,7 @@ const usageDescriptor = (deps: { usage: CopilotAccountUsagePort }): CopilotToolD
         storedDocuments: window(usage.storedDocuments),
         storedIndexedBytes: window(usage.storedIndexedBytes),
         monthlyIndexedBytes: window(usage.monthlyIndexedBytes),
+        monthlyConversations: usage.monthlyConversations ? window(usage.monthlyConversations) : null,
       };
     },
   }),

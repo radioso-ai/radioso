@@ -1,0 +1,14 @@
+{
+  "currency": "EUR",
+  "plans": [
+    { "id": "comet",     "name": "Comet",     "priceCents": 0,     "annualPriceCents": null,   "interval": "month", "monthlyConversations": 50,   "storedBytes": 10485760,  "monthlyIndexedBytes": 20971520,  "documents": 2000,  "models": "managed", "support": "community", "stripe": null },
+    { "id": "satellite", "name": "Satellite", "priceCents": 14900, "annualPriceCents": 149000, "interval": "month", "monthlyConversations": 1000, "storedBytes": 20971520,  "monthlyIndexedBytes": 41943040,  "documents": 10000, "models": "managed", "support": "email",     "stripe": { "monthLookupKey": "satellite_month", "yearLookupKey": "satellite_year" } },
+    { "id": "planet",    "name": "Planet",    "priceCents": 49900, "annualPriceCents": 499000, "interval": "month", "monthlyConversations": 5000, "storedBytes": 104857600, "monthlyIndexedBytes": 209715200, "documents": 50000, "models": "byok",    "support": "priority",  "stripe": { "monthLookupKey": "planet_month", "yearLookupKey": "planet_year" } }
+  ],
+  "defaultPlanId": "comet",
+  "selfServeCeilingPlanId": "planet",
+  "repliesPerConversation": 10,
+  "countsAs": { "conversation": 1, "copilot": 1, "test_run": 0.5, "pulse_report": 10, "other": 0 },
+  "topUp":   { "conversations": 300, "priceCents": 5000, "stripeLookupKey": "topup_300" },
+  "managedService": { "priceCents": 9900, "interval": "month", "stripeLookupKey": "managed_month" }
+}

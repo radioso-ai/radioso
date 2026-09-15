@@ -740,6 +740,8 @@ export interface UsageLimitProfile {
   storedDocumentLimit: number | null
   storedIndexedByteLimit: number | null
   monthlyIndexedByteLimit: number | null
+  monthlyConversationLimit: number | null
+  repliesPerConversation: number
   createdAt: string
   updatedAt: string
 }
@@ -767,4 +769,14 @@ export interface AccountUsageSummary {
     used: number
     limit: number | null
   }
+  /** Present when the profile meters conversations instead of answers; `monthlyAnswers.limit` is null in that case. */
+  monthlyConversations: {
+    periodStart: string
+    resetAt: string
+    used: number
+    limit: number
+    /** Remaining prepaid top-up conversations. Never expire. */
+    credits: number
+    byKind: Record<'conversation' | 'copilot' | 'test_run' | 'pulse_report', number>
+  } | null
 }

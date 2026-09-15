@@ -428,6 +428,7 @@ export class OperatorCopilotService {
       accountId: input.accountId,
       workspaceId: input.workspaceId,
       surface: "operator_copilot",
+      usage: "copilot_turn",
     });
     let terminalPersisted = false;
     const activity: Array<{ tool: string; outcome: "completed" | "failed"; entity?: CopilotEntityReference }> = [];

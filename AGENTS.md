@@ -254,6 +254,7 @@ radioso/
 |   |-- document-parser/         # local parser package
 |   |-- product-docs/            # published documentation compiled for Ray and MCP
 |   |-- connector-api/           # connector contract package
+|   |-- plan-catalog/            # Radioso Cloud plan numbers: prices, quotas, defaults
 |   `-- ui/                      # shared shadcn primitives (frontend + docs-portal)
 |-- typescript-sdk/              # first-party TypeScript SDK
 |-- docs/                        # product, SDK, MCP, and settings docs

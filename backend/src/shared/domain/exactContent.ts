@@ -11,16 +11,16 @@ import { normalizeLocaleTag } from "./locale.js";
  * available to them and interpret the outcome.
  */
 
-export const EXACT_CONTENT_MAX_CHIPS = 5;
-export const EXACT_CONTENT_BODY_MIN_CODE_POINTS = 1;
+const EXACT_CONTENT_MAX_CHIPS = 5;
+const EXACT_CONTENT_BODY_MIN_CODE_POINTS = 1;
 export const EXACT_CONTENT_BODY_MAX_CODE_POINTS = 8000;
-export const EXACT_CONTENT_CHIP_LABEL_MIN_CODE_POINTS = 1;
+const EXACT_CONTENT_CHIP_LABEL_MIN_CODE_POINTS = 1;
 export const EXACT_CONTENT_CHIP_LABEL_MAX_CODE_POINTS = 80;
 
 /** Counts Unicode code points, not UTF-16 units, so a single emoji counts once (FR-009). */
 const codePointLength = (value: string): number => [...value].length;
 
-export const exactContentVariantSchema = z
+const exactContentVariantSchema = z
   .object({
     locale: z.string().min(1),
     body: z.string(),
@@ -38,7 +38,7 @@ export const exactContentItemSchema = z
   })
   .strict();
 
-export type ExactContentVariant = z.infer<typeof exactContentVariantSchema>;
+type ExactContentVariant = z.infer<typeof exactContentVariantSchema>;
 export type ExactContentItem = z.infer<typeof exactContentItemSchema>;
 
 /**
@@ -113,7 +113,7 @@ const findUnknownReferenceTokens = (
   return [...unknown];
 };
 
-export type ExactContentValidationIssueCode =
+type ExactContentValidationIssueCode =
   | "missing_default_variant"
   | "duplicate_locale"
   | "blank_body"
@@ -136,7 +136,7 @@ export type ExactContentValidationResult =
   | { ok: true }
   | { ok: false; issues: ExactContentValidationIssue[] };
 
-export interface ValidateExactContentItemInput {
+interface ValidateExactContentItemInput {
   agentDefaultLocale: string;
   availableReferenceKeys: ReadonlySet<string>;
 }
@@ -257,7 +257,7 @@ const substitute = (
   return { text: substituted, ok };
 };
 
-export interface ResolveExactContentInput {
+interface ResolveExactContentInput {
   requestedLocale: string | null;
   agentDefaultLocale: string;
   references: ReadonlyMap<string, string | number | boolean>;
@@ -268,7 +268,7 @@ export interface ExactContentChipResolution {
   label: string;
 }
 
-export type ExactResolutionOutcome =
+type ExactResolutionOutcome =
   | {
       kind: "resolved";
       locale: string;

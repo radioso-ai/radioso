@@ -101,6 +101,7 @@ import { ConversationSummaryRepository } from "../../db/repositories/conversatio
 import { RoutineStateRepository } from "../../db/repositories/routineStateRepository.js";
 import { QUALITY_RESOLUTION_REASONS } from "../../modules/quality/domain/resolution.js";
 import { buildOperatorMcpServices } from "./builders/operatorMcp.js";
+import { resolveWorkspaceManagedLlmModels } from "../../modules/settings/services/workspaceLlmManagedModels.js";
 import type { OperatorMcpClientMetadataSnapshot } from "../../modules/operatorMcpAuthorization/public.js";
 
 interface BuildDependenciesOptions {
@@ -794,6 +795,9 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       },
       async listLlmModels(workspaceId) {
         return workspaceLlmCapabilitySettingsService.listForWorkspace(workspaceId);
+      },
+      async getManagedLlmModels(workspaceId) {
+        return resolveWorkspaceManagedLlmModels(llmCapabilityResolver, workspaceId);
       },
       async getProviderCredentialHealth(workspaceId) {
         return {

@@ -49,6 +49,25 @@ export interface PlanManagedService {
   readonly stripeLookupKey: string;
 }
 
+/** The provider names the backend's capability resolver accepts. */
+export type ManagedModelProvider = "openai" | "openai-compatible" | "gemini" | "claude";
+
+/** A provider/model pair as the backend's capability resolver names them. */
+export interface ManagedModelSelection {
+  readonly provider: ManagedModelProvider;
+  readonly model: string;
+}
+
+/**
+ * The model set a workspace on a `models: "managed"` plan runs when it has no provider key of its
+ * own. `chat` covers answers and Ray; `default` covers every other text capability (rewrite,
+ * rerank). Embeddings are never managed. This is the only place these model names live.
+ */
+export interface PlanManagedModels {
+  readonly chat: ManagedModelSelection;
+  readonly default: ManagedModelSelection;
+}
+
 export type UsageCountKind = "conversation" | "copilot" | "test_run" | "pulse_report" | "other";
 
 export type PlanUsageWeights = Readonly<Record<UsageCountKind, number>>;
@@ -62,6 +81,7 @@ export interface PlanCatalog {
   readonly countsAs: PlanUsageWeights;
   readonly topUp: PlanTopUp;
   readonly managedService: PlanManagedService;
+  readonly managedModels: PlanManagedModels;
 }
 
 // `resolveJsonModule` infers widened primitive types (string, number) for JSON literals, not the

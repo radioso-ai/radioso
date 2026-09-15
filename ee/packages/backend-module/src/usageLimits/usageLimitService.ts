@@ -947,6 +947,20 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
     };
   }
 
+  /**
+   * The plan key a workspace's account is assigned to, or `null` when the
+   * workspace, its account, or an assignment is missing. Read-only; the
+   * managed-model policy is the consumer.
+   */
+  async findProfileKeyForWorkspace(workspaceId: string): Promise<string | null> {
+    const accountId = await this.resolveAccountId({ workspaceId });
+    if (!accountId) {
+      return null;
+    }
+    const profile = await this.findProfileForAccount(accountId);
+    return profile?.key ?? null;
+  }
+
   private async lockAccountUsage(db: EeDb, accountId: string): Promise<void> {
     await sql`SELECT pg_advisory_xact_lock(hashtextextended(${accountId}, 0))`.execute(db);
   }

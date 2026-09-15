@@ -4,6 +4,7 @@ import { createEnterpriseBackendModule } from "./index.js";
 import type {
   ApplicationAccountCreatedHandler,
   ApplicationDatabaseMigrator,
+  ApplicationManagedModelPolicyRegistration,
   ApplicationModuleRegistrationContext,
   ApplicationOrganizationCreationGuardRegistration,
   ApplicationRouteMount,
@@ -15,6 +16,7 @@ const createCaptureContext = () => {
   const routeMounts: ApplicationRouteMount[] = [];
   const accountCreatedHandlers: ApplicationAccountCreatedHandler[] = [];
   let usageLimitPolicy: ApplicationUsageLimitPolicyRegistration | undefined;
+  let managedModelPolicy: ApplicationManagedModelPolicyRegistration | undefined;
   let organizationCreationGuard: ApplicationOrganizationCreationGuardRegistration | undefined;
 
   const context: ApplicationModuleRegistrationContext = {
@@ -29,6 +31,9 @@ const createCaptureContext = () => {
     },
     registerUsageLimitPolicy(policy) {
       usageLimitPolicy = policy;
+    },
+    registerManagedModelPolicy(policy) {
+      managedModelPolicy = policy;
     },
     registerOrganizationCreationGuard(guard) {
       organizationCreationGuard = guard;
@@ -45,6 +50,9 @@ const createCaptureContext = () => {
     databaseMigrators,
     get usageLimitPolicy() {
       return usageLimitPolicy;
+    },
+    get managedModelPolicy() {
+      return managedModelPolicy;
     },
     get organizationCreationGuard() {
       return organizationCreationGuard;
@@ -73,6 +81,7 @@ describe("Enterprise backend module aggregation", () => {
     ]);
     expect(capture.accountCreatedHandlers).toHaveLength(1);
     expect(capture.usageLimitPolicy).toBeTypeOf("function");
+    expect(capture.managedModelPolicy).toBeTypeOf("function");
     expect(capture.organizationCreationGuard).toBeTypeOf("function");
   });
 });

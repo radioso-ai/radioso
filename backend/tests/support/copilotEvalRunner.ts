@@ -471,6 +471,7 @@ export const copilotEvalCatalogDependencies = (): Parameters<typeof createCopilo
       getRetrievalDefaults: async () => ({}),
       getIngestionSettings: async () => ({}),
       listLlmModels: async () => [],
+      getManagedLlmModels: async () => ({ chat: null, rewrite: null, rerank: null }),
       getProviderCredentialHealth: async () => ({}),
       getGeneralSettings: async () => ({}),
     },

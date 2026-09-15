@@ -57,6 +57,11 @@ export interface CopilotWorkspaceSettingsPort {
     provider: string;
     model: string;
   }>>;
+  /** Per capability, the model the plan runs instead of the preference; null when the workspace chooses. */
+  getManagedLlmModels(workspaceId: string): Promise<Record<
+    "chat" | "rewrite" | "rerank",
+    { provider: string; model: string } | null
+  >>;
   getProviderCredentialHealth(workspaceId: string): Promise<{
     encryptionConfigured: boolean;
     credentials: ReadonlyArray<{ provider: string; updatedAt: Date }>;
@@ -141,6 +146,11 @@ const workspaceSettingsOutputSchema = z.object({
     chat: z.object({ provider: z.string(), model: z.string() }).strict().nullable(),
     rewrite: z.object({ provider: z.string(), model: z.string() }).strict().nullable(),
     rerank: z.object({ provider: z.string(), model: z.string() }).strict().nullable(),
+    managed: z.object({
+      chat: z.object({ provider: z.string(), model: z.string() }).strict().nullable(),
+      rewrite: z.object({ provider: z.string(), model: z.string() }).strict().nullable(),
+      rerank: z.object({ provider: z.string(), model: z.string() }).strict().nullable(),
+    }).strict(),
   }).strict(),
   credentials: z.object({
     encryptionConfigured: z.boolean(),
@@ -195,6 +205,7 @@ export const createWorkspaceSettingsCopilotTools = (deps: {
           credentialHealth,
           general,
           embeddingCoverage,
+          managedModels,
         ] = await Promise.all([
           deps.workspaceSettings.getRetrievalDefaults(context.workspaceId),
           deps.workspaceSettings.getIngestionSettings(context.workspaceId),
@@ -202,7 +213,12 @@ export const createWorkspaceSettingsCopilotTools = (deps: {
           deps.workspaceSettings.getProviderCredentialHealth(context.workspaceId),
           deps.workspaceSettings.getGeneralSettings(context.workspaceId),
           deps.workspaceSettings.getEmbeddingCoverage(context.workspaceId),
+          deps.workspaceSettings.getManagedLlmModels(context.workspaceId),
         ]);
+        const managedSelection = (capability: "chat" | "rewrite" | "rerank") => {
+          const selection = managedModels[capability];
+          return selection ? { provider: selection.provider, model: selection.model } : null;
+        };
         const preferencesByCapability = new Map(preferences.map((preference) => [
           preference.capability,
           { provider: preference.provider, model: preference.model },
@@ -261,6 +277,11 @@ export const createWorkspaceSettingsCopilotTools = (deps: {
             chat: preferencesByCapability.get("chat") ?? null,
             rewrite: preferencesByCapability.get("rewrite") ?? null,
             rerank: preferencesByCapability.get("rerank") ?? null,
+            managed: {
+              chat: managedSelection("chat"),
+              rewrite: managedSelection("rewrite"),
+              rerank: managedSelection("rerank"),
+            },
           },
           credentials: {
             encryptionConfigured: credentialHealth.encryptionConfigured,

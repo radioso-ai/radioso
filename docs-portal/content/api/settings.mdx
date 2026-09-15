@@ -307,17 +307,26 @@ was written.
 
 Workspaces choose which provider and model are used for each LLM job — chat, query rewrite, rerank. (This is a model-selection job slot, distinct from a skill's `capability` field elsewhere in this API, such as `retrieve` or `email` — see [Agents and skills](/api/agents-and-skills).) Resolution at request time walks: agent override (chat only) → workspace preference → env default. API keys come from the workspace credential first, then the matching environment variable.
 
-`GET /api/v1/settings/llm-models` returns the current preferences. `null` for a job means "inherit env default":
+On Radioso Cloud, a workspace on a managed plan (Comet or Satellite) runs the plan catalog's managed model set: `gpt-5.4-mini` on OpenAI for chat (answers and Ray), query rewrite, and rerank. The lock applies while the workspace has no credential of its own for the provider its preference or agent override names; add that credential and the preference takes effect exactly as on any other workspace. Planet and self-hosted deployments choose freely. Embedding models are set through ingestion settings and are never managed.
+
+`GET /api/v1/settings/llm-models` returns the current preferences plus, under `managed`, what the plan runs instead of them. `null` for a job means "inherit env default"; `null` under `managed` means the workspace's own choice applies:
 
 ```json
 {
   "chat": { "provider": "claude", "model": "claude-sonnet-4-5" },
   "rewrite": null,
-  "rerank": null
+  "rerank": null,
+  "managed": {
+    "chat": { "provider": "openai", "model": "gpt-5.4-mini" },
+    "rewrite": { "provider": "openai", "model": "gpt-5.4-mini" },
+    "rerank": { "provider": "openai", "model": "gpt-5.4-mini" }
+  }
 }
 ```
 
-`PUT /api/v1/settings/llm-models` is a merge-update. Send only the jobs you want to change. Pass `null` to clear one and fall back to the env default. The response echoes the full resolved preferences.
+Here the workspace has asked for `claude-sonnet-4-5` for chat, but its plan runs `gpt-5.4-mini` because the workspace holds no Claude key of its own. The dashboard shows the same picture: the picker is read-only with the managed model and a line explaining why. A stored preference stays stored, so it applies as soon as the workspace adds its own key or moves to Planet.
+
+`PUT /api/v1/settings/llm-models` is a merge-update. Send only the jobs you want to change. Pass `null` to clear one and fall back to the env default. The response echoes the full stored preferences; read `GET` for the plan's `managed` view.
 
 ```json
 {

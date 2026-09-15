@@ -328,6 +328,7 @@ export interface OpenApiSchemaCatalog {
   WebhookDestinationRequestSchema: z.ZodTypeAny;
   WebhookDestinationParamsSchema: RouteParameterSchema;
   WorkspaceLlmCapabilityPreferenceSchema: z.ZodTypeAny;
+  WorkspaceLlmManagedModelSchema: z.ZodTypeAny;
   WorkspaceLlmModelsResponseSchema: z.ZodTypeAny;
   UpdateWorkspaceLlmModelsRequestSchema: z.ZodTypeAny;
   workspaceParamsSchema: RouteParameterSchema;

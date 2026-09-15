@@ -2,6 +2,8 @@ import type {
   LlmCapabilityConfig,
   LlmCapabilityDefault,
   LlmCapabilityName,
+  LlmCapabilityResolvedBy,
+  LlmCapabilitySelection,
   LlmProviderName,
   ResolvedLlmConfig,
 } from "../../shared/infra/llm/providerTypes.js";
@@ -14,33 +16,48 @@ import type {
   WorkspaceLlmCapabilityPreference,
 } from "../../modules/settings/contracts/llmCapability.js";
 import { ProviderConfigurationError } from "../../shared/infra/llm/providerTypes.js";
+import type { ManagedModelPolicy } from "../../shared/domain/managedModelPolicy.js";
+import type { AppLogger } from "../../shared/observability/logger.js";
 
-export interface WorkspaceCapabilityPreferencePort {
+interface WorkspaceCapabilityPreferencePort {
   getPreference(
     workspaceId: string,
     capability: WorkspaceLlmCapability,
   ): Promise<WorkspaceLlmCapabilityPreference | null>;
 }
 
-export interface WorkspaceCapabilityCredentialPort {
+interface WorkspaceCapabilityCredentialPort {
   getApiKey(workspaceId: string, provider: LlmProviderName): Promise<string | undefined>;
+  /** Presence only; never decrypts. */
+  hasCredentials(workspaceId: string, provider: LlmProviderName): Promise<boolean>;
 }
 
-export interface EnvProviderKeyResolver {
+interface EnvProviderKeyResolver {
   resolveEnvApiKey(provider: LlmProviderName): string | undefined;
 }
 
-export interface WorkspaceLlmCapabilityResolverDependencies {
+interface WorkspaceLlmCapabilityResolverDependencies {
   defaults: ResolvedLlmConfig;
   settings: WorkspaceCapabilityPreferencePort;
   credentials: WorkspaceCapabilityCredentialPort;
   envKeys: EnvProviderKeyResolver;
   /** Base URLs for env-configured providers (e.g. openai-compatible). */
   envBaseUrls?: Partial<Record<LlmProviderName, string>>;
+  /** Absent means every workspace picks freely (self-host). */
+  managedModelPolicy?: ManagedModelPolicy;
+  logger?: Pick<AppLogger, "debug" | "info">;
 }
 
 const isWorkspaceCapability = (capability: LlmCapabilityName): capability is WorkspaceLlmCapability =>
   capability === "chat" || capability === "rewrite" || capability === "rerank";
+
+type UnmanagedResolvedBy = Exclude<LlmCapabilityResolvedBy, "managed_plan">;
+
+interface CandidateSelection {
+  provider: LlmProviderName;
+  model: string;
+  resolvedBy: UnmanagedResolvedBy;
+}
 
 export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
   constructor(private readonly deps: WorkspaceLlmCapabilityResolverDependencies) {}
@@ -51,8 +68,7 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
   ): Promise<LlmCapabilityConfig> {
     const envDefault = this.deps.defaults[capability];
 
-    const resolvedProviderAndModel = await this.resolveProviderAndModel(capability, input);
-    const { provider, model } = resolvedProviderAndModel;
+    const { provider, model, resolvedBy } = await this.resolveSelection(capability, input);
 
     const apiKey = await this.resolveApiKey(input.workspaceId, provider, capability);
     const baseUrl = this.resolveBaseUrl(
@@ -67,30 +83,84 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
       provider,
       model,
       apiKey,
+      resolvedBy,
       ...(baseUrl ? { baseUrl } : {}),
     };
   }
 
-  private async resolveProviderAndModel(
+  async resolveSelection(
     capability: LlmCapabilityName,
     input: LlmCapabilityResolveInput,
-  ): Promise<{ provider: LlmProviderName; model: string }> {
+  ): Promise<LlmCapabilitySelection> {
+    const candidate = await this.resolveCandidate(capability, input);
+    const managed = await this.resolveManaged(capability, input.workspaceId, candidate.provider);
+    const selection: LlmCapabilitySelection = managed
+      ? { provider: managed.provider, model: managed.model, resolvedBy: "managed_plan" }
+      : candidate;
+
+    const logFields = {
+      capability,
+      workspaceId: input.workspaceId,
+      resolvedBy: selection.resolvedBy,
+      provider: selection.provider,
+      model: selection.model,
+    };
+    this.deps.logger?.debug(logFields, "Resolved LLM capability");
+    if (managed && candidate.resolvedBy !== "environment_default") {
+      this.deps.logger?.info(
+        {
+          ...logFields,
+          overrode: candidate.resolvedBy,
+          requestedProvider: candidate.provider,
+          requestedModel: candidate.model,
+        },
+        "Managed plan replaced the requested LLM model",
+      );
+    }
+    return selection;
+  }
+
+  private async resolveCandidate(
+    capability: LlmCapabilityName,
+    input: LlmCapabilityResolveInput,
+  ): Promise<CandidateSelection> {
     if (input.capabilityOverride) {
       return {
         provider: input.capabilityOverride.provider,
         model: input.capabilityOverride.model,
+        resolvedBy: "agent_override",
       };
     }
 
     if (isWorkspaceCapability(capability)) {
       const preference = await this.deps.settings.getPreference(input.workspaceId, capability);
       if (preference) {
-        return { provider: preference.provider, model: preference.model };
+        return { provider: preference.provider, model: preference.model, resolvedBy: "workspace_preference" };
       }
     }
 
     const envDefault = this.deps.defaults[capability];
-    return { provider: envDefault.provider, model: envDefault.model };
+    return { provider: envDefault.provider, model: envDefault.model, resolvedBy: "environment_default" };
+  }
+
+  /**
+   * The lock applies to text capabilities only, and only while the workspace
+   * has no key of its own for the provider it would otherwise use.
+   */
+  private async resolveManaged(
+    capability: LlmCapabilityName,
+    workspaceId: string,
+    candidateProvider: LlmProviderName,
+  ) {
+    if (!this.deps.managedModelPolicy || !isWorkspaceCapability(capability)) {
+      return null;
+    }
+    const managed = await this.deps.managedModelPolicy.resolveManagedModel({ workspaceId, capability });
+    if (!managed) {
+      return null;
+    }
+    const ownsCandidateKey = await this.deps.credentials.hasCredentials(workspaceId, candidateProvider);
+    return ownsCandidateKey ? null : managed;
   }
 
   private async resolveApiKey(

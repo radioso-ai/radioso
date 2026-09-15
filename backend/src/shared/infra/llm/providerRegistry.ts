@@ -14,7 +14,7 @@ import {
 import {
   ModelEmbeddingGenerationGateway,
 } from "../../../modules/embeddingProfiles/public.js";
-import type { LlmCapabilityResolver } from "./capabilityResolver.js";
+import type { LlmCapabilityConfigResolver } from "./capabilityResolver.js";
 import {
   ContextualChatGateway,
   ContextualFallbackReplyComposer,
@@ -172,13 +172,13 @@ class RoutedEmbeddingClient implements EmbeddingClient {
   }
 }
 
-export interface LlmProviderRegistryOptions {
+interface LlmProviderRegistryOptions {
   /** When provided, gateways become workspace-aware and resolve per-call configs. */
-  resolver?: LlmCapabilityResolver;
+  resolver?: LlmCapabilityConfigResolver;
 }
 
 export class LlmProviderRegistry {
-  private resolver: LlmCapabilityResolver | undefined;
+  private resolver: LlmCapabilityConfigResolver | undefined;
   private readonly clientCache = new TextGenerationClientCache();
 
   constructor(
@@ -197,7 +197,7 @@ export class LlmProviderRegistry {
    * `createXGateway()` method that should return a workspace-aware gateway.
    * The embedding gateway is unaffected — embedding stays env-default.
    */
-  setResolver(resolver: LlmCapabilityResolver): void {
+  setResolver(resolver: LlmCapabilityConfigResolver): void {
     this.resolver = resolver;
   }
 

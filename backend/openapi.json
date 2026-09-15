@@ -8273,6 +8273,9 @@
                       },
                       "slotBinding": {
                         "type": "string"
+                      },
+                      "required": {
+                        "type": "boolean"
                       }
                     }
                   }
@@ -34791,6 +34794,9 @@
                         },
                         "description": {
                           "type": "string"
+                        },
+                        "required": {
+                          "type": "boolean"
                         }
                       }
                     }
@@ -35172,6 +35178,9 @@
                         },
                         "description": {
                           "type": "string"
+                        },
+                        "required": {
+                          "type": "boolean"
                         }
                       }
                     }
@@ -37355,6 +37364,9 @@
                                 },
                                 "slotBinding": {
                                   "type": "string"
+                                },
+                                "required": {
+                                  "type": "boolean"
                                 }
                               }
                             }
@@ -37499,6 +37511,9 @@
                         },
                         "slotBinding": {
                           "type": "string"
+                        },
+                        "required": {
+                          "type": "boolean"
                         }
                       }
                     },
@@ -37568,6 +37583,9 @@
                               },
                               "slotBinding": {
                                 "type": "string"
+                              },
+                              "required": {
+                                "type": "boolean"
                               }
                             }
                           }
@@ -37756,6 +37774,9 @@
                               },
                               "slotBinding": {
                                 "type": "string"
+                              },
+                              "required": {
+                                "type": "boolean"
                               }
                             }
                           }
@@ -37899,6 +37920,9 @@
                         },
                         "slotBinding": {
                           "type": "string"
+                        },
+                        "required": {
+                          "type": "boolean"
                         }
                       }
                     }
@@ -37962,6 +37986,9 @@
                               },
                               "slotBinding": {
                                 "type": "string"
+                              },
+                              "required": {
+                                "type": "boolean"
                               }
                             }
                           }

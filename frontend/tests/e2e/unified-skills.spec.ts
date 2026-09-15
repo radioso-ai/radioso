@@ -124,7 +124,7 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
   await expect(page.getByRole("switch", { name: "Suggested questions", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Advanced" }).click();
   await page.getByLabel("When to use").click();
-  await page.getByRole("option", { name: "Only when a routine calls it (@name)" }).click();
+  await page.getByRole("option", { name: "Only when a routine step calls it" }).click();
   await page.locator("#skill-setting-retrievalStrategy").click();
   await page.getByRole("option", { name: "Reasoning" }).click();
   await page.getByLabel("Vector top K").fill("12");

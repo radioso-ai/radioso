@@ -95,6 +95,8 @@ const exposedParamSpecSchema = z
     description: trimmedText(1000).optional(),
     // Optional explicit binding to a named routine slot; default = LLM-filled.
     slotBinding: trimmedText(EXTERNAL_SKILLS_LIMITS.paramKey).regex(paramKeyPattern).optional(),
+    // Authoring-surface only: the discovered tool's input schema is the runtime source of truth for requiredness.
+    required: z.boolean().optional(),
   })
   .strict();
 

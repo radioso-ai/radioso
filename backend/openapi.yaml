@@ -5545,6 +5545,8 @@ components:
                       type: string
                     slotBinding:
                       type: string
+                    required:
+                      type: boolean
               declaredOutcomes:
                 type:
                   - array
@@ -22871,6 +22873,8 @@ paths:
                         type: string
                       description:
                         type: string
+                      required:
+                        type: boolean
                 declaredOutcomes:
                   type: array
                   items:
@@ -23114,6 +23118,8 @@ paths:
                         type: string
                       description:
                         type: string
+                      required:
+                        type: boolean
                 declaredOutcomes:
                   type: array
                   items:
@@ -24502,6 +24508,8 @@ paths:
                                 type: string
                               slotBinding:
                                 type: string
+                              required:
+                                type: boolean
                         enabled:
                           type: boolean
                         outcomes:
@@ -24587,6 +24595,8 @@ paths:
                         type: string
                       slotBinding:
                         type: string
+                      required:
+                        type: boolean
                   default: {}
                 enabled:
                   type: boolean
@@ -24634,6 +24644,8 @@ paths:
                               type: string
                             slotBinding:
                               type: string
+                            required:
+                              type: boolean
                       enabled:
                         type: boolean
                       outcomes:
@@ -24749,6 +24761,8 @@ paths:
                               type: string
                             slotBinding:
                               type: string
+                            required:
+                              type: boolean
                       enabled:
                         type: boolean
                       outcomes:
@@ -24833,6 +24847,8 @@ paths:
                         type: string
                       slotBinding:
                         type: string
+                      required:
+                        type: boolean
                 enabled:
                   type: boolean
       responses:
@@ -24875,6 +24891,8 @@ paths:
                               type: string
                             slotBinding:
                               type: string
+                            required:
+                              type: boolean
                       enabled:
                         type: boolean
                       outcomes:

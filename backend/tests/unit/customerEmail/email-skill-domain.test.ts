@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  customerEmailExposedInputsSchema,
   customerEmailSkillDefinitionCreateSchema,
   customerEmailSkillDefinitionUpdateSchema,
   customerEmailSkillOutcomes,
@@ -93,5 +94,29 @@ describe("customer email skill definition domain", () => {
     });
 
     expect(patch.success).toBe(false);
+  });
+});
+
+describe("customerEmailExposedInputsSchema (exposed input spec)", () => {
+  it("accepts an exposed input spec with required: true", () => {
+    const parsed = customerEmailExposedInputsSchema.parse({
+      to: { description: "Recipient", slotBinding: "customerEmail", required: true },
+    });
+    expect(parsed.to?.required).toBe(true);
+  });
+
+  it("accepts an exposed input spec with required: false", () => {
+    const parsed = customerEmailExposedInputsSchema.parse({
+      to: { description: "Recipient", slotBinding: "customerEmail", required: false },
+    });
+    expect(parsed.to?.required).toBe(false);
+  });
+
+  it("rejects a non-boolean required", () => {
+    expect(() => customerEmailExposedInputsSchema.parse({ to: { required: "yes" } })).toThrow();
+  });
+
+  it("rejects unknown keys (strict)", () => {
+    expect(() => customerEmailExposedInputsSchema.parse({ to: { required: true, surprise: 1 } })).toThrow();
   });
 });

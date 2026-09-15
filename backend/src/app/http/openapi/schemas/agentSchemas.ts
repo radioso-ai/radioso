@@ -783,6 +783,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
         exposedParams: z.record(z.object({
           description: z.string().optional(),
           slotBinding: z.string().optional(),
+          required: z.boolean().optional(),
         })),
         declaredOutcomes: z.array(z.string()).nullable(),
         outcomeMap: z.record(z.string()).nullable(),

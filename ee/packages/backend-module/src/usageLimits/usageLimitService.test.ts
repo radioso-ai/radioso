@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
-// `surfaceWeight()` must price every kind off `PLAN_CATALOG.countsAs`, the
+import type { AnswerUsageKind } from "../radiosoModuleTypes.js";
+
+// `usageWeight()` must price every kind off `PLAN_CATALOG.countsAs`, the
 // single source of truth documented in `@radioso/plan-catalog`'s README and
 // PR #1253. This module is mocked to a fixture that differs from the real
-// catalog on purpose: if `surfaceWeight()` ever regresses back to numbers it
+// catalog on purpose: if `usageWeight()` ever regresses back to numbers it
 // reimplements by hand (as it did before this test existed), the assertions
 // below — derived from this same fixture, never from a copy-pasted literal —
 // stop matching and the test fails, even though the *real* catalog's numbers
@@ -21,31 +23,26 @@ vi.mock("@radioso/plan-catalog", () => ({
 }));
 
 const { PLAN_CATALOG } = await import("@radioso/plan-catalog");
-const { surfaceWeight, TENTHS_PER_CONVERSATION, USAGE_KINDS } = await import("./usageLimitService.js");
+const { usageWeight, TENTHS_PER_CONVERSATION, USAGE_KINDS } = await import("./usageLimitService.js");
 
-describe("surfaceWeight", () => {
+describe("usageWeight", () => {
   it("never charges the widget greeting", () => {
-    expect(surfaceWeight("chat.bootstrap")).toBeNull();
+    expect(usageWeight("greeting")).toBeNull();
   });
 
   it("derives every mapped kind's tenths from PLAN_CATALOG.countsAs, not a hardcoded literal", () => {
-    const cases: Array<{ surface: string; kind: keyof typeof countsAsFixture; perConversationBlock: boolean }> = [
-      { surface: "operator_copilot", kind: "copilot", perConversationBlock: false },
-      { surface: "operator_copilot_probe", kind: "copilot", perConversationBlock: false },
-      { surface: "authenticated_chat", kind: "test_run", perConversationBlock: false },
-      { surface: "workbench_replay", kind: "test_run", perConversationBlock: false },
-      { surface: "eval_replay", kind: "test_run", perConversationBlock: false },
-      { surface: "audience_pulse", kind: "pulse_report", perConversationBlock: false },
-      { surface: "retrieval.answer", kind: "conversation", perConversationBlock: false },
-      { surface: "mcp.retrieval_answer", kind: "conversation", perConversationBlock: false },
-      // Every other surface (website_embed, anonymous, slack, whatsapp, agent_api, mcp, assistant, ...)
-      // falls into the default: a customer conversation charged once per reply-block.
-      { surface: "website_embed", kind: "conversation", perConversationBlock: true },
-      { surface: "slack", kind: "conversation", perConversationBlock: true },
+    const cases: Array<{ usage: AnswerUsageKind; kind: keyof typeof countsAsFixture; perConversationBlock: boolean }> = [
+      { usage: "copilot_turn", kind: "copilot", perConversationBlock: false },
+      { usage: "test_run", kind: "test_run", perConversationBlock: false },
+      { usage: "pulse_report", kind: "pulse_report", perConversationBlock: false },
+      // Standalone answers over the API: each call is its own conversation.
+      { usage: "standalone_answer", kind: "conversation", perConversationBlock: false },
+      // Every customer channel: website_embed, anonymous, slack, whatsapp, agent_api, mcp, assistant.
+      { usage: "conversation_reply", kind: "conversation", perConversationBlock: true },
     ];
 
-    for (const { surface, kind, perConversationBlock } of cases) {
-      const weight = surfaceWeight(surface);
+    for (const { usage, kind, perConversationBlock } of cases) {
+      const weight = usageWeight(usage);
       expect(weight).not.toBeNull();
       expect(weight).toEqual({
         kind,

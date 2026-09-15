@@ -4781,7 +4781,7 @@ export interface components {
         };
         AgentGreetingDraft: {
             exactWordsEnabled: boolean;
-            exactContent: components["schemas"]["ExactContentItem"] & (Record<string, never> | null);
+            exactContent: components["schemas"]["ExactContentItem"] | null;
         };
         AgentGreetingValidation: {
             ok: boolean;

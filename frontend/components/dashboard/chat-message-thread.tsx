@@ -786,7 +786,7 @@ export function ChatMessageThread({
                                 : null
                               return onSuggestionSelect ? (
                                 <Button
-                                  key={`${message.id}-suggestion-${suggestionIndex}`}
+                                  key={suggestion.id ?? `${message.id}-suggestion-${suggestionIndex}`}
                                   type="button"
                                   variant="outline"
                                   size="sm"
@@ -806,7 +806,7 @@ export function ChatMessageThread({
                                 </Button>
                               ) : (
                                 <div
-                                  key={`${message.id}-suggestion-${suggestionIndex}`}
+                                  key={suggestion.id ?? `${message.id}-suggestion-${suggestionIndex}`}
                                   className="flex items-center rounded-full border border-border bg-muted/40 px-3 py-1 text-sm leading-snug text-foreground"
                                   style={
                                     theme

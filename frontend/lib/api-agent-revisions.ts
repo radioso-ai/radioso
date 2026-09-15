@@ -1,5 +1,6 @@
 import { API_BASE, buildError, getStoredActiveWorkspaceId, request } from './api-client'
 import { createClientId } from './client-id'
+import type { AgentGreetingDraft } from './api-types'
 
 export type RevisionStatus = 'unpublished' | 'draft_clean' | 'draft_dirty' | 'published_changed_since_draft'
 export type EvidenceState = 'current' | 'configuration_changed' | 'environment_changed' | 'comparability_unknown'
@@ -42,6 +43,7 @@ export interface AgentRevisionDetail extends AgentRevisionSummary {
     directives: true
     routines: true
     contextVariableEnablements: true
+    greeting: true
   }
   dependencyWarnings: Array<{ code: string; message: string }>
   /** Immutable snapshot selection; never substitute current authoring enablements. */
@@ -51,6 +53,7 @@ export interface AgentRevisionDetail extends AgentRevisionSummary {
     directives: Array<{ id: string; change: 'added' | 'removed' | 'changed'; before?: unknown; after?: unknown }>
     routines: Array<{ definitionId: string; change: 'added' | 'removed' | 'changed'; before?: unknown; after?: unknown }>
     contextVariableEnablements: Array<{ contextVariableId: string; change: 'added' | 'removed' | 'changed'; before?: unknown; after?: unknown }>
+    greeting: { before: AgentGreetingDraft; after: AgentGreetingDraft; changed: boolean }
   }
 }
 

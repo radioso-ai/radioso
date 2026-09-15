@@ -135,6 +135,12 @@ export const targetReference = (
     const id = agentId
     return id ? { entity: { type: 'agent', id }, agentId: id } : null
   }
+  if (summary.targetType === 'agent_greeting') {
+    // Singleton per agent, like agent_setting/context_variable — the target ref/appliedRef
+    // carry only agentId, never a separate greeting id (spec 1150 Slice A).
+    const id = agentId
+    return id ? { entity: { type: 'agent_greeting', id }, agentId: id } : null
+  }
   if (summary.targetType === 'routine') {
     const routineId = applied.routineId ?? ref.routineId ?? ref.id
     return typeof routineId === 'string' ? {

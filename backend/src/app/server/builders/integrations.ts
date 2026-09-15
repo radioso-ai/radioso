@@ -26,6 +26,7 @@ import { resolveLlmConfig } from "../../../shared/infra/llm/providerConfig.js";
 import { LlmProviderRegistry } from "../../../shared/infra/llm/providerRegistry.js";
 import { AgentSkillRepository } from "../../../modules/agentSkills/public.js";
 import { type AppLogger } from "../../../shared/observability/logger.js";
+import type { ManagedModelPolicy } from "../../../shared/domain/managedModelPolicy.js";
 import type { Env } from "../../config/env.js";
 import { buildInfrastructure, buildRepositories } from "./infra.js";
 import { McpConnectionService } from "../../../modules/externalSkills/services/mcpConnectionService.js";
@@ -107,6 +108,8 @@ export const buildLlmCapabilityResolver = (input: {
   defaults: ReturnType<typeof resolveLlmConfig>;
   settings: WorkspaceLlmCapabilitySettingsService;
   credentials: WorkspaceProviderCredentialsService;
+  managedModelPolicy: ManagedModelPolicy;
+  logger: Pick<AppLogger, "debug" | "info">;
 }): LlmCapabilityResolver => {
   const keys = envApiKeyMap(input.env);
   return new WorkspaceLlmCapabilityResolver({
@@ -116,7 +119,10 @@ export const buildLlmCapabilityResolver = (input: {
     },
     credentials: {
       getApiKey: (workspaceId, provider) => input.credentials.getApiKey(workspaceId, provider),
+      hasCredentials: (workspaceId, provider) => input.credentials.hasCredentials(workspaceId, provider),
     },
+    managedModelPolicy: input.managedModelPolicy,
+    logger: input.logger,
     envKeys: {
       resolveEnvApiKey: (provider) => keys[provider],
     },

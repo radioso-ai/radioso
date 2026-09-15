@@ -22,7 +22,7 @@ composition calls them and assembles the result.
 - `applicationModule.ts`: module registration shape.
 - `builtIn/`: built-in module registrations for optional surfaces that ship
   with the default app.
-- `workspaceLlmCapabilityResolver.ts`: workspace-scoped LLM capability wiring.
+- `workspaceLlmCapabilityResolver.ts`: workspace-scoped LLM capability wiring. Precedence is agent override → workspace preference → env default, then a registered `ManagedModelPolicy` (`shared/domain/managedModelPolicy.ts`, `registerManagedModelPolicy`) may replace the candidate for a workspace that holds no key of its own for the candidate provider; `resolvedBy` on the result names the winning step.
 - `backend/src/modules/*/composition.ts`: module-owned construction helpers.
 
 ## Common Change Paths

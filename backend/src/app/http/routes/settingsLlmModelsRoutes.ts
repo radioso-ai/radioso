@@ -11,6 +11,7 @@ import {
   type WorkspaceLlmCapability,
 } from "../../../modules/settings/contracts/llmCapability.js";
 import { knownModelsByProvider } from "../../../shared/infra/llm/knownModels.js";
+import { resolveWorkspaceManagedLlmModels } from "../../../shared/infra/llm/workspaceManagedModels.js";
 
 export const workspaceLlmProviderNames = ["openai", "openai-compatible", "gemini", "claude"] as const;
 
@@ -28,7 +29,7 @@ export const updateWorkspaceLlmModelsSchema = z.object({
 });
 
 type SettingsLlmRouteDependencies = WorkspaceSessionDependencies &
-  Pick<AppDependencies, "workspaceLlmCapabilitySettingsService" | "accountAccessService">;
+  Pick<AppDependencies, "workspaceLlmCapabilitySettingsService" | "accountAccessService" | "llmCapabilityResolver">;
 
 export const createSettingsLlmModelsRoutes = (
   dependencies: SettingsLlmRouteDependencies,
@@ -41,7 +42,10 @@ export const createSettingsLlmModelsRoutes = (
   router.get("/", workspaceSession, settingsRead, async (_req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
-      const preferences = await dependencies.workspaceLlmCapabilitySettingsService.listForWorkspace(workspaceId);
+      const [preferences, managed] = await Promise.all([
+        dependencies.workspaceLlmCapabilitySettingsService.listForWorkspace(workspaceId),
+        resolveWorkspaceManagedLlmModels(dependencies.llmCapabilityResolver, workspaceId),
+      ]);
       const indexed = Object.fromEntries(
         preferences.map((entry) => [entry.capability, { provider: entry.provider, model: entry.model }]),
       ) as Record<WorkspaceLlmCapability, { provider: string; model: string }>;
@@ -49,6 +53,7 @@ export const createSettingsLlmModelsRoutes = (
         chat: indexed.chat ?? null,
         rewrite: indexed.rewrite ?? null,
         rerank: indexed.rerank ?? null,
+        managed,
         knownModelsByProvider: {
           openai: [...knownModelsByProvider.openai],
           "openai-compatible": [...knownModelsByProvider["openai-compatible"]],

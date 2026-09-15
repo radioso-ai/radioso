@@ -58,6 +58,7 @@ import {
   type LlmCapabilityPreference,
   type LlmProviderName,
   type ProviderCredentialSummary,
+  type LlmManagedModel,
   type WorkspaceLlmModels,
 } from '@/lib/api-llm-providers'
 
@@ -539,14 +540,17 @@ function ModelsCard({
       <div className="divide-y divide-border/60 rounded-xl border border-border/60 bg-background/40">
         {llmCapabilityNames.map((capability) => {
           const current = models[capability] ?? null
-          // Remount the row whenever the persisted preference changes so the
-          // editable provider/model fields reset to the new server value.
-          const remountKey = `${capability}:${current?.provider ?? ''}:${current?.model ?? ''}`
+          const managed = models.managed?.[capability] ?? null
+          // Remount the row whenever the persisted preference or the plan's
+          // decision changes so the editable provider/model fields reset to
+          // the new server value.
+          const remountKey = `${capability}:${current?.provider ?? ''}:${current?.model ?? ''}:${managed?.provider ?? ''}:${managed?.model ?? ''}`
           return (
             <ModelRow
               key={remountKey}
               capability={capability}
               value={current}
+              managed={managed}
               credentialProviders={credentialProviders}
               availableProviders={availableProviders}
               knownModelsByProvider={models.knownModelsByProvider}
@@ -572,6 +576,7 @@ function ModelsCard({
 function ModelRow({
   capability,
   value,
+  managed,
   credentialProviders,
   availableProviders,
   knownModelsByProvider,
@@ -580,18 +585,34 @@ function ModelRow({
 }: {
   capability: LlmCapabilityName
   value: LlmCapabilityPreference | null
+  managed: LlmManagedModel | null
   credentialProviders: Set<LlmProviderName>
   availableProviders: Set<LlmProviderName>
   knownModelsByProvider: KnownModelsByProvider
   onChange: () => Promise<unknown>
   emitSaveState: (state: SaveState) => void
 }) {
-  const [provider, setProvider] = useState<LlmProviderName | ''>(value?.provider ?? '')
-  const [model, setModel] = useState(value?.model ?? '')
+  // While the plan decides, the pickers show its choice, read-only. The stored
+  // preference stays on the server and comes back the moment the lock lifts.
+  const shown = managed ?? value
+  const [provider, setProvider] = useState<LlmProviderName | ''>(shown?.provider ?? '')
+  const [model, setModel] = useState(shown?.model ?? '')
   const [busy, setBusy] = useState(false)
 
+  const locked = managed !== null
   const hasValue = value !== null
-  const savedProviderUnavailable = value !== null && !availableProviders.has(value.provider)
+  const savedProviderUnavailable = !locked && value !== null && !availableProviders.has(value.provider)
+  // A managed model outside the deployment catalog still has to be visible in
+  // the closed-set picker.
+  const pickerModels = useMemo(() => {
+    if (!managed || knownModelsByProvider[managed.provider]?.includes(managed.model)) {
+      return knownModelsByProvider
+    }
+    return {
+      ...knownModelsByProvider,
+      [managed.provider]: [managed.model, ...(knownModelsByProvider[managed.provider] ?? [])],
+    }
+  }, [managed, knownModelsByProvider])
 
   const persistModel = async (nextProvider: LlmProviderName, nextModel: string) => {
     setBusy(true)
@@ -656,19 +677,24 @@ function ModelRow({
           <div className="flex flex-wrap items-center gap-1.5">
             <p className="text-sm font-medium text-foreground">{capabilityDisplayName[capability]}</p>
             <Badge
-              variant={hasValue ? 'default' : 'outline'}
+              variant={hasValue && !locked ? 'default' : 'outline'}
               className={
-                hasValue
+                hasValue && !locked
                   ? 'bg-emerald-500/10 text-emerald-700 ring-1 ring-inset ring-emerald-500/30 dark:text-emerald-300'
                   : 'text-muted-foreground'
               }
             >
-              {hasValue ? 'Workspace override' : 'Default'}
+              {locked ? 'Managed plan' : hasValue ? 'Workspace override' : 'Default'}
             </Badge>
           </div>
           <p className="text-xs leading-relaxed text-muted-foreground">{visual.description}</p>
+          {locked ? (
+            <p className="text-xs leading-relaxed text-foreground" data-testid={`llm-model-managed-${capability}`}>
+              Managed plans run on {managed.model}. Add your own keys, or move to Planet, to choose.
+            </p>
+          ) : null}
           <p className="sr-only">
-            {hasValue ? 'Workspace override' : 'Using deployment default'}
+            {locked ? 'Managed by plan' : hasValue ? 'Workspace override' : 'Using deployment default'}
           </p>
         </div>
       </div>
@@ -676,8 +702,8 @@ function ModelRow({
         <Label htmlFor={`provider-${capability}`} className="text-xs uppercase tracking-wide text-muted-foreground">
           Provider
         </Label>
-        <Select value={provider} onValueChange={handleProviderChange}>
-          <SelectTrigger id={`provider-${capability}`} className="w-full min-w-0" disabled={busy}>
+        <Select value={provider} onValueChange={handleProviderChange} disabled={locked}>
+          <SelectTrigger id={`provider-${capability}`} className="w-full min-w-0" disabled={busy || locked}>
             <SelectValue placeholder="Choose provider" />
           </SelectTrigger>
           <SelectContent>
@@ -710,16 +736,16 @@ function ModelRow({
         <ModelPicker
           inputId={`model-${capability}`}
           provider={provider}
-          knownModelsByProvider={knownModelsByProvider}
+          knownModelsByProvider={pickerModels}
           value={model}
           onChange={setModel}
           onCommit={handleModelCommit}
-          disabled={busy}
+          disabled={busy || locked}
           className="w-full min-w-0"
         />
       </div>
       <div className="flex items-end gap-2 sm:justify-end sm:pl-2">
-        {hasValue ? (
+        {hasValue && !locked ? (
           <Button type="button" size="sm" variant="ghost" onClick={handleReset} disabled={busy}>
             Reset
           </Button>

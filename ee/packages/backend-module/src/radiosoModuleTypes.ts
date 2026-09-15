@@ -21,6 +21,7 @@ export interface ApplicationModuleRegistrationContext {
   registerDatabaseMigrator(migrator: ApplicationDatabaseMigrator): void;
   registerRouteMount(mount: ApplicationRouteMount): void;
   registerUsageLimitPolicy(policy: ApplicationUsageLimitPolicyRegistration): void;
+  registerManagedModelPolicy?(policy: ApplicationManagedModelPolicyRegistration): void;
   registerOrganizationCreationGuard?(guard: ApplicationOrganizationCreationGuardRegistration): void;
   registerUsageEventRecorder?(recorder: ApplicationUsageEventRecorderRegistration): void;
   registerAccountCreatedHandler(handler: ApplicationAccountCreatedHandler): void;
@@ -605,6 +606,34 @@ export type ApplicationUsageLimitPolicyRegistration =
         error(entry: unknown, message?: string): void;
       };
     }) => UsageLimitPolicy);
+
+/**
+ * Mirrors OSS's `ManagedModelPolicy` (`backend/src/shared/domain/managedModelPolicy.ts`): the
+ * capability resolver asks it, per workspace and capability, whether the plan picks the model.
+ * `null` leaves the workspace free to choose.
+ */
+export type ManagedModelCapability = "chat" | "rewrite" | "rerank" | "embeddings";
+
+export interface ManagedModelSelection {
+  provider: "openai" | "openai-compatible" | "gemini" | "claude";
+  model: string;
+}
+
+export interface ManagedModelPolicy {
+  resolveManagedModel(input: {
+    workspaceId: string;
+    capability: ManagedModelCapability;
+  }): Promise<ManagedModelSelection | null>;
+}
+
+export type ApplicationManagedModelPolicyRegistration =
+  | ManagedModelPolicy
+  | ((context: {
+      database: UsageLimitDatabasePort;
+      logger: {
+        error(entry: unknown, message?: string): void;
+      };
+    }) => ManagedModelPolicy);
 
 export type ApplicationOrganizationCreationGuardRegistration =
   | OrganizationCreationGuard

@@ -226,6 +226,18 @@ export interface UsageLimitReservation {
   release(): Promise<void>;
 }
 
+export interface AnswerUsageReservation extends UsageLimitReservation {
+  /**
+   * Present when this reservation charged a per-conversation-block surface
+   * without yet knowing the conversation id — turn 1 of a brand-new
+   * conversation, reserved before `chatSessionPreparer.prepare()` has created
+   * the conversation row. Call once the real id is known so the next reply's
+   * block bookkeeping continues from this charge instead of re-opening (and
+   * re-charging) block 1.
+   */
+  confirmConversationId?(conversationId: string): Promise<void>;
+}
+
 export interface IndexedStorageReservationInput {
   accountId?: string | null;
   workspaceId: string;
@@ -250,7 +262,7 @@ export interface UsageLimitPolicy {
     /** Customer conversations are metered in blocks of replies; pass the id so
      *  the second reply of a conversation is not charged like the first. */
     conversationId?: string | null;
-  }): Promise<UsageLimitReservation>;
+  }): Promise<AnswerUsageReservation>;
   reserveDocument(input: {
     accountId?: string | null;
     workspaceId: string;

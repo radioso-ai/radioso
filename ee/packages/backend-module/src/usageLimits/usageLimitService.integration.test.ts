@@ -442,6 +442,41 @@ describeIfDatabase("EE usage limit service integration", () => {
     expect(usage.monthlyConversations?.byKind.conversation).toBe(1);
   });
 
+  it("charges a brand-new conversation once, even though turn 1 has no conversation id yet", async () => {
+    // Mirrors chatService.ts's real call order: reserveAnswer() runs before
+    // chatSessionPreparer.prepare() creates the conversation row, so turn 1 of a
+    // brand-new conversation always reserves with conversationId unset. The
+    // server only learns the conversation id once prepare() resolves it, then
+    // calls confirmConversationId so turn 2's bumpConversationReplies continues
+    // the block instead of re-opening (and re-charging) it.
+    const { accountId, workspaceId } = await seedAccountWorkspace();
+    await assignProfile(accountId, { monthlyConversationLimit: 1, repliesPerConversation: 3 });
+    const service = new EnterpriseUsageLimitService(database);
+
+    const turn1 = await service.reserveAnswer({ accountId, workspaceId, surface: "website_embed" });
+    if (!turn1.confirmConversationId) {
+      throw new Error(
+        "expected a fresh customer-conversation reservation (no conversationId, perConversationBlock surface) " +
+          "to expose confirmConversationId",
+      );
+    }
+    const conversationId = randomUUID();
+    await turn1.confirmConversationId(conversationId);
+
+    // Turn 2 and turn 3 sit inside the block turn 1 already paid for.
+    await service.reserveAnswer({ accountId, workspaceId, surface: "website_embed", conversationId });
+    await service.reserveAnswer({ accountId, workspaceId, surface: "website_embed", conversationId });
+
+    const usage = await service.getAccountUsage(accountId);
+    expect(usage.monthlyConversations).toMatchObject({ used: 1, limit: 1, credits: 0 });
+    expect(usage.monthlyConversations?.byKind.conversation).toBe(1);
+
+    // Turn 4 opens a second block, which the plan (limit 1) cannot afford.
+    await expect(
+      service.reserveAnswer({ accountId, workspaceId, surface: "website_embed", conversationId }),
+    ).rejects.toBeInstanceOf(UsageLimitExceededError);
+  });
+
   it("charges a second conversation separately and releases it cleanly", async () => {
     const { accountId, workspaceId } = await seedAccountWorkspace();
     await assignProfile(accountId, { monthlyConversationLimit: 1 });

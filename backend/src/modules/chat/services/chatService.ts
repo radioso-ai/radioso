@@ -52,6 +52,7 @@ import {
 } from "../../../shared/analytics/productAnalyticsService.js";
 import {
   NoopUsageLimitPolicy,
+  type AnswerUsageReservation,
   type UsageLimitPolicy,
   type UsageLimitReservation,
 } from "../../../shared/domain/usageLimitPolicy.js";
@@ -535,6 +536,43 @@ export class ChatService {
     }
   }
 
+  /**
+   * A per-conversation-block reservation acquired before the conversation row
+   * existed (turn 1 of a brand-new conversation, when the caller has no id to
+   * send yet) exposes `confirmConversationId` so its charge can be attributed to
+   * the conversation once `chatSessionPreparer.prepare()` resolves the real id.
+   * Every other reservation shape (already had an id, or isn't a customer
+   * conversation at all) has no such hook, so this is a no-op for them — chat
+   * orchestration never needs to know which case it is.
+   */
+  private async confirmUsageReservationConversationId(
+    reservation: AnswerUsageReservation | null,
+    input: {
+      workspaceId: string;
+      conversationId: string;
+      sourceChannel?: string | null;
+      stream: boolean;
+    },
+  ): Promise<void> {
+    if (!reservation?.confirmConversationId) {
+      return;
+    }
+    try {
+      await reservation.confirmConversationId(input.conversationId);
+    } catch (error) {
+      this.logger?.warn(
+        {
+          workspaceId: input.workspaceId,
+          conversationId: input.conversationId,
+          surface: input.sourceChannel ?? "assistant",
+          stream: input.stream,
+          errorType: error instanceof Error ? error.name : typeof error,
+        },
+        "Chat usage reservation conversation id confirmation failed",
+      );
+    }
+  }
+
   private async registerPreparedTurn(
     coordination: TurnCoordinationState,
     conversationId: string,
@@ -833,7 +871,7 @@ export class ChatService {
     let session: PreparedSession | null = null;
     let assistantMessageId: string | undefined;
     const workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn");
-    let usageReservation: UsageLimitReservation | null = null;
+    let usageReservation: AnswerUsageReservation | null = null;
 
     try {
       usageReservation = await this.usageLimitPolicy.reserveAnswer({
@@ -850,6 +888,10 @@ export class ChatService {
           input.pageContext,
         ),
       }, { skipRetrieval: true });
+      await this.confirmUsageReservationConversationId(usageReservation, {
+        ...input,
+        conversationId: session.conversation.id,
+      });
       await this.registerPreparedTurn(coordination, session.conversation.id);
       const ownership = await this.conversationOwnershipReader?.load(session.conversation.id) ?? null;
       this.checkTurnCancellation(coordination, "routing");
@@ -1274,7 +1316,7 @@ export class ChatService {
       | undefined;
     let persistedQuestionSuggestions: NonNullable<ChatPresentedAnswer["suggestions"]> = [];
     const workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn");
-    let usageReservation: UsageLimitReservation | null = null;
+    let usageReservation: AnswerUsageReservation | null = null;
     let usageReservationCommitted = false;
     let usageReservationReleased = false;
     let lastPublicStatus: ChatStatusStage | undefined;
@@ -1314,6 +1356,10 @@ export class ChatService {
           input.pageContext,
         ),
       }, { skipRetrieval: true });
+      await this.confirmUsageReservationConversationId(usageReservation, {
+        ...input,
+        conversationId: session.conversation.id,
+      });
       await this.registerPreparedTurn(coordination, session.conversation.id);
       const ownership = await this.conversationOwnershipReader?.load(session.conversation.id) ?? null;
       this.checkTurnCancellation(coordination, "routing");

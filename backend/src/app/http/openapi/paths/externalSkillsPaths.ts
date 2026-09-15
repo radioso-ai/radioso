@@ -58,7 +58,11 @@ const SkillCreateSchema = z.object({
   toolName: z.string(),
   boundParams: z.record(z.unknown()).optional(),
   exposedParams: z
-    .record(z.object({ slotBinding: z.string().optional(), description: z.string().optional() }))
+    .record(z.object({
+      slotBinding: z.string().optional(),
+      description: z.string().optional(),
+      required: z.boolean().optional(),
+    }))
     .optional(),
   declaredOutcomes: z.array(z.string()).optional(),
   outcomeMap: z.record(z.string()).optional(),
@@ -86,7 +90,13 @@ const ConnectionUpdateSchema = z.object({
 
 const SkillUpdateSchema = z.object({
   boundParams: z.record(z.unknown()).optional(),
-  exposedParams: z.record(z.object({ slotBinding: z.string().optional(), description: z.string().optional() })).optional(),
+  exposedParams: z
+    .record(z.object({
+      slotBinding: z.string().optional(),
+      description: z.string().optional(),
+      required: z.boolean().optional(),
+    }))
+    .optional(),
   declaredOutcomes: z.array(z.string()).optional(),
   outcomeMap: z.record(z.string()).optional(),
   enabled: z.boolean().optional(),

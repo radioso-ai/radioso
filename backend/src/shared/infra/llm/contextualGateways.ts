@@ -129,8 +129,9 @@ export const createRewriteTierStructuredInferenceFactory = (
 ): ContextualInferenceFactory => new ContextualStructuredInferenceFactory(deps, usageEventRecorder, "rewrite");
 
 /**
- * Resolves the workspace chat-tier model for the fused turn-planning call and
- * binds the `turn_planning` usage operation, mirroring
+ * Resolves the chat-tier model for the fused turn-planning call — the agent's
+ * chat model override when the caller threads one, else the workspace
+ * preference — and binds the `turn_planning` usage operation, mirroring
  * {@link ContextualDirectiveMatchGatewayFactory}. The `TurnPlanService` owns the
  * prompt, parsing, and validation; this factory owns only per-workspace client
  * resolution and usage attribution.
@@ -319,5 +320,3 @@ export class ContextualRerankGateway implements RerankGateway {
     return new ModelRerankGateway(toInferencePipeline(client, this.usageEventRecorder), this.logger).rerank(input);
   }
 }
-
-// Re-export the standalone helper so external composition code can use the cache.

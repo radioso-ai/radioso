@@ -13,7 +13,7 @@ import type {
   UsageLimitPolicy,
   UsageLimitReservation,
 } from "../radiosoModuleTypes.js";
-import { UsageLimitExceededError } from "./errors.js";
+import { UsageLimitAccountNotFoundError, UsageLimitExceededError } from "./errors.js";
 
 export interface UsageLimitProfile {
   key: string;
@@ -226,6 +226,14 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
     monthlyConversationLimit?: number | null;
     repliesPerConversation?: number;
   }): Promise<UsageLimitProfile> {
+    // An omitted optional field preserves the stored value on update; an
+    // explicit `null` clears it. Only fields the caller actually named go into
+    // the ON CONFLICT SET clause, so Postgres leaves the rest of the row alone.
+    const hasStoredIndexedByteLimit = "storedIndexedByteLimit" in input;
+    const hasMonthlyIndexedByteLimit = "monthlyIndexedByteLimit" in input;
+    const hasMonthlyConversationLimit = "monthlyConversationLimit" in input;
+    const hasRepliesPerConversation = "repliesPerConversation" in input;
+
     const row = await this.db
       .insertInto("ee_usage_limit_profiles")
       .values({
@@ -249,10 +257,18 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
           display_name: (eb) => eb.ref("excluded.display_name"),
           monthly_answer_limit: (eb) => eb.ref("excluded.monthly_answer_limit"),
           stored_document_limit: (eb) => eb.ref("excluded.stored_document_limit"),
-          stored_indexed_byte_limit: (eb) => eb.ref("excluded.stored_indexed_byte_limit"),
-          monthly_indexed_byte_limit: (eb) => eb.ref("excluded.monthly_indexed_byte_limit"),
-          monthly_conversation_limit: (eb) => eb.ref("excluded.monthly_conversation_limit"),
-          replies_per_conversation: (eb) => eb.ref("excluded.replies_per_conversation"),
+          ...(hasStoredIndexedByteLimit
+            ? { stored_indexed_byte_limit: (eb) => eb.ref("excluded.stored_indexed_byte_limit") }
+            : {}),
+          ...(hasMonthlyIndexedByteLimit
+            ? { monthly_indexed_byte_limit: (eb) => eb.ref("excluded.monthly_indexed_byte_limit") }
+            : {}),
+          ...(hasMonthlyConversationLimit
+            ? { monthly_conversation_limit: (eb) => eb.ref("excluded.monthly_conversation_limit") }
+            : {}),
+          ...(hasRepliesPerConversation
+            ? { replies_per_conversation: (eb) => eb.ref("excluded.replies_per_conversation") }
+            : {}),
           updated_at: sql<Date>`now()`,
         }),
       )
@@ -316,7 +332,9 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
         periodStart,
         resetAt: nextPeriodStart(periodStart),
         used: Math.max(answerCounter?.used_count ?? 0, persistedAnswerCount),
-        limit: profile?.monthlyAnswerLimit ?? null,
+        // A conversation-metered profile ignores monthlyAnswerLimit (see
+        // UsageLimitProfile.monthlyConversationLimit), so that cap is not enforced.
+        limit: typeof profile?.monthlyConversationLimit === "number" ? null : profile?.monthlyAnswerLimit ?? null,
       },
       storedDocuments: {
         used: storedDocumentCount,
@@ -509,7 +527,7 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
     tenths: number,
     limitTenths: number,
   ): Promise<UsageLimitReservation> {
-    const consumedCredits = await this.db.transaction().execute(async (trx) => {
+    await this.db.transaction().execute(async (trx) => {
       await trx
         .insertInto("ee_usage_limit_unit_counters")
         .values({ account_id: accountId, period_start: sql<string>`${periodStart}::date`, used_tenths: 0 })
@@ -536,7 +554,15 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
 
       const usedBefore = counter.used_tenths;
       const usedAfter = usedBefore + tenths;
-      if (usedAfter > limitTenths + credits.balance_tenths) {
+      // The part of this charge that runs past the plan limit — negative (and
+      // therefore never over budget) while usedBefore is already within the
+      // limit. Checking `overshoot > balance` here, not `usedAfter > limit +
+      // balance`, matters once a prior call has already dipped into credits:
+      // `max(limitTenths, usedBefore)` tracks the account's high-water mark,
+      // so a later call is only charged (and only needs to fit) against what
+      // IS still unpaid, not against the limit re-added on top of it.
+      const overshoot = usedAfter - Math.max(limitTenths, usedBefore);
+      if (overshoot > credits.balance_tenths) {
         throw new UsageLimitExceededError({
           profileKey: profile.key,
           resource: "monthly_conversations",
@@ -547,7 +573,6 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
         });
       }
 
-      const overshoot = Math.max(0, usedAfter - Math.max(limitTenths, usedBefore));
       await trx
         .updateTable("ee_usage_limit_unit_counters")
         .set({ used_tenths: usedAfter, updated_at: sql<Date>`now()` })
@@ -571,7 +596,6 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
           }),
         )
         .execute();
-      return overshoot;
     });
 
     const db = this.db;
@@ -579,16 +603,35 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
       async commit() {},
       release: async () => {
         await db.transaction().execute(async (trx) => {
+          // Recompute the refund from current occupancy under the same row
+          // lock `reserveTenths` uses, rather than replaying what this specific
+          // reservation drew from credits when it was made. Releases can land
+          // out of order (e.g. a plan-funded reservation released after a
+          // later, credit-funded one), and only the current totals say whether
+          // the tenths being freed were, in the end, funded by the plan or by
+          // credits.
+          const counter = await trx
+            .selectFrom("ee_usage_limit_unit_counters")
+            .select("used_tenths")
+            .where("account_id", "=", accountId)
+            .where("period_start", "=", sql<string>`${periodStart}::date`)
+            .forUpdate()
+            .executeTakeFirstOrThrow();
+
+          const usedBefore = counter.used_tenths;
+          const usedAfter = Math.max(usedBefore - tenths, 0);
+          const refund = Math.max(0, usedBefore - Math.max(limitTenths, usedAfter));
+
           await trx
             .updateTable("ee_usage_limit_unit_counters")
-            .set({ used_tenths: sql<number>`greatest(used_tenths - ${tenths}, 0)`, updated_at: sql<Date>`now()` })
+            .set({ used_tenths: usedAfter, updated_at: sql<Date>`now()` })
             .where("account_id", "=", accountId)
             .where("period_start", "=", sql<string>`${periodStart}::date`)
             .execute();
-          if (consumedCredits > 0) {
+          if (refund > 0) {
             await trx
               .updateTable("ee_usage_limit_credits")
-              .set({ balance_tenths: sql<number>`balance_tenths + ${consumedCredits}`, updated_at: sql<Date>`now()` })
+              .set({ balance_tenths: sql<number>`balance_tenths + ${refund}`, updated_at: sql<Date>`now()` })
               .where("account_id", "=", accountId)
               .execute();
           }
@@ -604,24 +647,64 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
     };
   }
 
-  /** Prepaid top-up. Called by the Stripe webhook and the operator console. */
-  async addCredits(accountId: string, conversations: number): Promise<{ credits: number }> {
+  /**
+   * Prepaid top-up. Called by the Stripe webhook and the operator console.
+   * Idempotent on `(accountId, reference)` — a Stripe event id or any other
+   * caller-supplied unique string — so a webhook replay never double-grants.
+   */
+  async addCredits(input: {
+    accountId: string;
+    conversations: number;
+    reference: string;
+  }): Promise<{ credits: number; applied: boolean }> {
+    const { accountId, conversations, reference } = input;
     if (!Number.isInteger(conversations) || conversations <= 0) {
       throw new Error("conversations must be a positive integer");
     }
+    if (!reference || reference.length > 200) {
+      throw new Error("reference must be a non-empty string of at most 200 characters");
+    }
     const tenths = conversations * TENTHS_PER_CONVERSATION;
-    const row = await this.db
-      .insertInto("ee_usage_limit_credits")
-      .values({ account_id: accountId, balance_tenths: tenths })
-      .onConflict((oc) =>
-        oc.column("account_id").doUpdateSet({
-          balance_tenths: sql<number>`ee_usage_limit_credits.balance_tenths + ${tenths}`,
-          updated_at: sql<Date>`now()`,
-        }),
-      )
-      .returning("balance_tenths")
-      .executeTakeFirstOrThrow();
-    return { credits: row.balance_tenths / TENTHS_PER_CONVERSATION };
+
+    return this.db.transaction().execute(async (trx) => {
+      const account = await trx
+        .selectFrom("accounts")
+        .select("id")
+        .where("id", "=", accountId)
+        .executeTakeFirst();
+      if (!account) {
+        throw new UsageLimitAccountNotFoundError({ accountId });
+      }
+
+      const grant = await trx
+        .insertInto("ee_usage_limit_credit_grants")
+        .values({ account_id: accountId, reference, conversations })
+        .onConflict((oc) => oc.columns(["account_id", "reference"]).doNothing())
+        .returning("account_id")
+        .executeTakeFirst();
+      const applied = Boolean(grant);
+
+      if (applied) {
+        await trx
+          .insertInto("ee_usage_limit_credits")
+          .values({ account_id: accountId, balance_tenths: tenths })
+          .onConflict((oc) =>
+            oc.column("account_id").doUpdateSet({
+              balance_tenths: sql<number>`ee_usage_limit_credits.balance_tenths + ${tenths}`,
+              updated_at: sql<Date>`now()`,
+            }),
+          )
+          .execute();
+      }
+
+      const credits = await trx
+        .selectFrom("ee_usage_limit_credits")
+        .select("balance_tenths")
+        .where("account_id", "=", accountId)
+        .executeTakeFirst();
+
+      return { credits: (credits?.balance_tenths ?? 0) / TENTHS_PER_CONVERSATION, applied };
+    });
   }
 
   private async readConversationUsage(
@@ -632,23 +715,25 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
     if (typeof profile.monthlyConversationLimit !== "number") {
       return null;
     }
-    const counter = await this.db
-      .selectFrom("ee_usage_limit_unit_counters")
-      .select("used_tenths")
-      .where("account_id", "=", accountId)
-      .where("period_start", "=", sql<string>`${periodStart}::date`)
-      .executeTakeFirst();
-    const credits = await this.db
-      .selectFrom("ee_usage_limit_credits")
-      .select("balance_tenths")
-      .where("account_id", "=", accountId)
-      .executeTakeFirst();
-    const kinds = await this.db
-      .selectFrom("ee_usage_limit_unit_kind_counters")
-      .select(["kind", "used_tenths"])
-      .where("account_id", "=", accountId)
-      .where("period_start", "=", sql<string>`${periodStart}::date`)
-      .execute();
+    const [counter, credits, kinds] = await Promise.all([
+      this.db
+        .selectFrom("ee_usage_limit_unit_counters")
+        .select("used_tenths")
+        .where("account_id", "=", accountId)
+        .where("period_start", "=", sql<string>`${periodStart}::date`)
+        .executeTakeFirst(),
+      this.db
+        .selectFrom("ee_usage_limit_credits")
+        .select("balance_tenths")
+        .where("account_id", "=", accountId)
+        .executeTakeFirst(),
+      this.db
+        .selectFrom("ee_usage_limit_unit_kind_counters")
+        .select(["kind", "used_tenths"])
+        .where("account_id", "=", accountId)
+        .where("period_start", "=", sql<string>`${periodStart}::date`)
+        .execute(),
+    ]);
     const byKind = Object.fromEntries(USAGE_KINDS.map((kind) => [kind, 0])) as Record<UsageKind, number>;
     for (const row of kinds) {
       if ((USAGE_KINDS as readonly string[]).includes(row.kind)) {

@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PLAN_CATALOG } from "@radioso/plan-catalog";
 
 import { EnterpriseUsageLimitService } from "./usageLimitService.js";
-import { UsageLimitExceededError } from "./errors.js";
+import { UsageLimitAccountNotFoundError, UsageLimitExceededError } from "./errors.js";
 import { usageLimitMigrator } from "./usageLimitMigrator.js";
 import type { UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
 
@@ -503,7 +503,7 @@ describeIfDatabase("EE usage limit service integration", () => {
     const { accountId, workspaceId } = await seedAccountWorkspace();
     await assignProfile(accountId, { monthlyConversationLimit: 1 });
     const service = new EnterpriseUsageLimitService(database);
-    await service.addCredits(accountId, 1);
+    await service.addCredits({ accountId, conversations: 1, reference: "plan-then-credit" });
 
     await service.reserveAnswer({ accountId, workspaceId, surface: "agent_api", usage: "conversation_reply", conversationId: randomUUID() });
     const onCredit = await service.reserveAnswer({ accountId, workspaceId, surface: "agent_api", usage: "conversation_reply", conversationId: randomUUID() });
@@ -566,5 +566,150 @@ describeIfDatabase("EE usage limit service integration", () => {
     const profiles = await service.listProfiles();
     const reread = profiles.find((candidate) => candidate.key === "satellite");
     expect(reread?.monthlyConversationLimit).toBe(42);
+  });
+
+  it("does not report a monthly-answers cap when the profile meters conversations", async () => {
+    const { accountId } = await seedAccountWorkspace();
+    await assignProfile(accountId, { monthlyAnswerLimit: 500, monthlyConversationLimit: 10 });
+    const service = new EnterpriseUsageLimitService(database);
+
+    const usage = await service.getAccountUsage(accountId);
+    expect(usage.monthlyAnswers.limit).toBeNull();
+  });
+
+  // ── Profile partial update ───────────────────────────────────────────────
+
+  it("preserves conversation-metering fields when a later upsert sends only the legacy fields", async () => {
+    const service = new EnterpriseUsageLimitService(database);
+    const key = `it_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
+
+    await service.upsertProfile({
+      key,
+      displayName: "Metered",
+      monthlyAnswerLimit: null,
+      storedDocumentLimit: null,
+      monthlyConversationLimit: 100,
+      repliesPerConversation: 25,
+    });
+
+    const updated = await service.upsertProfile({
+      key,
+      displayName: "Metered v2",
+      monthlyAnswerLimit: 10,
+      storedDocumentLimit: 5,
+    });
+
+    expect(updated.displayName).toBe("Metered v2");
+    expect(updated.monthlyAnswerLimit).toBe(10);
+    expect(updated.storedDocumentLimit).toBe(5);
+    expect(updated.monthlyConversationLimit).toBe(100);
+    expect(updated.repliesPerConversation).toBe(25);
+  });
+
+  it("clears a conversation-metering field only when the caller sends an explicit null", async () => {
+    const service = new EnterpriseUsageLimitService(database);
+    const key = `it_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
+
+    await service.upsertProfile({
+      key,
+      displayName: "Metered",
+      monthlyAnswerLimit: null,
+      storedDocumentLimit: null,
+      monthlyConversationLimit: 100,
+      repliesPerConversation: 25,
+    });
+
+    const cleared = await service.upsertProfile({
+      key,
+      displayName: "Metered v3",
+      monthlyAnswerLimit: null,
+      storedDocumentLimit: null,
+      monthlyConversationLimit: null,
+    });
+
+    expect(cleared.monthlyConversationLimit).toBeNull();
+    // repliesPerConversation was omitted, not cleared, so the earlier value survives.
+    expect(cleared.repliesPerConversation).toBe(25);
+  });
+
+  // ── Credits ledger ───────────────────────────────────────────────────────
+
+  it("addCredits is idempotent on (accountId, reference)", async () => {
+    const { accountId } = await seedAccountWorkspace();
+    await assignProfile(accountId, { monthlyConversationLimit: 10 });
+    const service = new EnterpriseUsageLimitService(database);
+
+    const first = await service.addCredits({ accountId, conversations: 5, reference: "stripe-evt-1" });
+    expect(first).toEqual({ credits: 5, applied: true });
+
+    const second = await service.addCredits({ accountId, conversations: 5, reference: "stripe-evt-1" });
+    expect(second).toEqual({ credits: 5, applied: false });
+
+    const usage = await service.getAccountUsage(accountId);
+    expect(usage.monthlyConversations?.credits).toBe(5);
+  });
+
+  it("addCredits throws a typed not-found error for an unknown account", async () => {
+    const service = new EnterpriseUsageLimitService(database);
+
+    await expect(service.addCredits({ accountId: randomUUID(), conversations: 5, reference: "unknown-account" }))
+      .rejects.toBeInstanceOf(UsageLimitAccountNotFoundError);
+  });
+
+  // ── Metering math: overdraw check and release-time refund ──────────────
+
+  it("reviewer scenario: limit 100, buy 50 credits, spend all 150, buy 50 more so the next reply succeeds", async () => {
+    const { accountId, workspaceId } = await seedAccountWorkspace();
+    await assignProfile(accountId, { monthlyConversationLimit: 100 });
+    const service = new EnterpriseUsageLimitService(database);
+    await service.addCredits({ accountId, conversations: 50, reference: "grant-1" });
+
+    // A pulse_report call weighs ten conversations; fifteen calls spend all 150
+    // conversations available (100 plan + 50 credits).
+    for (let i = 0; i < 15; i += 1) {
+      await service.reserveAnswer({ accountId, workspaceId, surface: "audience_pulse", usage: "pulse_report" });
+    }
+
+    const drained = await service.getAccountUsage(accountId);
+    expect(drained.monthlyConversations).toMatchObject({ used: 150, limit: 100, credits: 0 });
+
+    await expect(service.reserveAnswer({ accountId, workspaceId, surface: "audience_pulse", usage: "pulse_report" }))
+      .rejects.toBeInstanceOf(UsageLimitExceededError);
+
+    await service.addCredits({ accountId, conversations: 50, reference: "grant-2" });
+
+    await expect(service.reserveAnswer({ accountId, workspaceId, surface: "audience_pulse", usage: "pulse_report" }))
+      .resolves.toBeDefined();
+  });
+
+  it("reviewer scenario: limit 1 with 1 credit, releasing the plan-funded reservation still refunds a credit", async () => {
+    const { accountId, workspaceId } = await seedAccountWorkspace();
+    await assignProfile(accountId, { monthlyConversationLimit: 1 });
+    const service = new EnterpriseUsageLimitService(database);
+    await service.addCredits({ accountId, conversations: 1, reference: "grant-b" });
+
+    // Reserve A spends the plan unit (no credit touched); Reserve B spends the
+    // one credit. Releasing A — not B — must still refund a credit, because the
+    // refund is computed from current occupancy at release time, not from which
+    // reservation happened to draw on credits when it was first made.
+    const reserveA = await service.reserveAnswer({
+      accountId,
+      workspaceId,
+      surface: "agent_api",
+      usage: "conversation_reply",
+      conversationId: randomUUID(),
+    });
+    await service.reserveAnswer({
+      accountId,
+      workspaceId,
+      surface: "agent_api",
+      usage: "conversation_reply",
+      conversationId: randomUUID(),
+    });
+
+    await reserveA.release();
+
+    const usage = await service.getAccountUsage(accountId);
+    expect(usage.monthlyConversations).toMatchObject({ used: 1, credits: 1 });
   });
 });

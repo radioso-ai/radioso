@@ -194,7 +194,7 @@ import {
   TextRoutedToolCallingGateway,
 } from "../../src/shared/agent-runtime/index.js";
 import { createCopilotToolCatalog, createCopilotWorkspaceRouteKeyResolver } from "../../src/app/composition/copilotToolCatalog.js";
-import { createAgentSettingCopilotProposalAdapter, createAgentSkillCopilotProposalAdapter, createContextVariableCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../../src/modules/operatorCopilot/proposalAdapters.js";
+import { createAgentGreetingCopilotProposalAdapter, createAgentSettingCopilotProposalAdapter, createAgentSkillCopilotProposalAdapter, createContextVariableCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../../src/modules/operatorCopilot/proposalAdapters.js";
 import { createDocumentCopilotProposalAdapter } from "../../src/modules/operatorCopilot/documentProposalAdapter.js";
 import { createIngestionSettingsCopilotProposalAdapter } from "../../src/modules/operatorCopilot/ingestionSettingsProposalAdapter.js";
 import { createWorkspaceSettingCopilotProposalAdapter } from "../../src/modules/operatorCopilot/workspaceSettingProposalAdapter.js";
@@ -209,7 +209,7 @@ import { buildTelemetrySinks } from "../../src/shared/observability/telemetry/bu
 import { TelemetryService } from "../../src/shared/observability/telemetry/telemetryService.js";
 import type { AppDependencies } from "../../src/app/server/types.js";
 import type { RealtimeRolloutPolicy } from "../../src/modules/realtime/domain/realtimeRolloutPolicy.js";
-import { badRequest, conflict } from "../../src/shared/domain/errors.js";
+import { badRequest, conflict, notFound } from "../../src/shared/domain/errors.js";
 import { apiPrincipalRouteInventory } from "../../src/app/http/apiPrincipalRoutePolicy.js";
 import type {
   AgentContextVariableEnablement,
@@ -1464,6 +1464,15 @@ export const createTestDependencies = (overrides: {
   const agentRepository = new InMemoryAgentRepository(
     createDefaultAgentSkillSettingsRegistry(),
     (agent) => agentRevisionRepository.initializeDraft(agent.workspaceId, agent.id, agent.customInstruction),
+    async (workspaceId, agentId, input, options) => {
+      const draft = await agentRevisionRepository.readDraft(workspaceId, agentId);
+      if (!draft) throw notFound("Agent draft not found");
+      if (options.expectedDraftGeneration !== undefined && draft.generation !== options.expectedDraftGeneration) {
+        throw conflict("Agent draft changed before the greeting proposal was applied; reload before saving again");
+      }
+      await agentRevisionRepository.mutateDraft(workspaceId, agentId, (snapshot) => ({ ...snapshot, greeting: input }));
+      return input;
+    },
   );
   const contextVariableRepository = new InMemoryContextVariableRepository(agentSkillRepository);
   const identityNonces = new Map<string, Date>();
@@ -2001,6 +2010,7 @@ export const createTestDependencies = (overrides: {
   const copilotProposalAdapters = [
     createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService }),
     createAgentSettingCopilotProposalAdapter({ agentService }),
+    createAgentGreetingCopilotProposalAdapter({ agentService, agentRevisions: agentRevisionService }),
     createRoutineCopilotProposalAdapter({ agentService, routineDraftAssistService, routineDefinitionService }),
     createAgentSkillCopilotProposalAdapter({ agentService, agentSkillsService, skillCapabilityRegistry }),
     createContextVariableCopilotProposalAdapter({ contextVariables: contextVariableService }),

@@ -21,6 +21,12 @@ export type ChatSuggestionAction =
     };
 
 export interface ChatSuggestion {
+  /**
+   * Stable chip identity (spec 1150 FR-008). Optional: only authored exact-content
+   * chips carry one today: generated follow-up suggestions have no durable identity
+   * to key on.
+   */
+  id?: string;
   text: string;
   kind: ChatSuggestionKind;
   citation?: ChatCitation;

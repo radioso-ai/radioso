@@ -1,4 +1,4 @@
-import type { AgentRevision, AgentRevisionSnapshot, AgentRevisionState } from "../../../modules/agents/public.js";
+import { readAgentRevisionGreeting, type AgentRevision, type AgentRevisionSnapshot, type AgentRevisionState } from "../../../modules/agents/public.js";
 
 type RevisionSummary = { id: string; label: string; kind: "candidate" | "published"; versionNumber: number | null; createdAt: string; publishedAt?: string };
 type RevisionSummaryInput = Pick<AgentRevision, "id" | "createdAt" | "publishedAt" | "publishedVersion">;
@@ -61,7 +61,9 @@ const emptySnapshot: AgentRevisionSnapshot = { customInstruction: null, directiv
 /** Revision review compares recorded immutable snapshots, never the mutable draft. */
 export const presentRevisionDetail = (revision: AgentRevision, baseRevision: AgentRevision | null) => {
   const before = baseRevision?.snapshot ?? emptySnapshot;
-  return { ...presentRevisionSummary(revision), snapshotFormatVersion: 1, scope: { customInstructions: true, directives: true, routines: true, contextVariableEnablements: true }, dependencyWarnings: [], enabledContextVariableIds: revision.snapshot.contextVariableEnablements.filter((enablement) => enablement.enabled).map((enablement) => enablement.variableId).sort(), scopedChanges: { customInstruction: { before: before.customInstruction, after: revision.snapshot.customInstruction, changed: before.customInstruction !== revision.snapshot.customInstruction }, directives: diffDirectives(before.directives, revision.snapshot.directives), routines: diffRoutines(before.routines, revision.snapshot.routines), contextVariableEnablements: diffContextVariableEnablements(before, revision.snapshot) } };
+  const beforeGreeting = readAgentRevisionGreeting(before);
+  const afterGreeting = readAgentRevisionGreeting(revision.snapshot);
+  return { ...presentRevisionSummary(revision), snapshotFormatVersion: 1, scope: { customInstructions: true, directives: true, routines: true, contextVariableEnablements: true, greeting: true }, dependencyWarnings: [], enabledContextVariableIds: revision.snapshot.contextVariableEnablements.filter((enablement) => enablement.enabled).map((enablement) => enablement.variableId).sort(), scopedChanges: { customInstruction: { before: before.customInstruction, after: revision.snapshot.customInstruction, changed: before.customInstruction !== revision.snapshot.customInstruction }, directives: diffDirectives(before.directives, revision.snapshot.directives), routines: diffRoutines(before.routines, revision.snapshot.routines), contextVariableEnablements: diffContextVariableEnablements(before, revision.snapshot), greeting: { before: beforeGreeting, after: afterGreeting, changed: stableJson(beforeGreeting) !== stableJson(afterGreeting) } } };
 };
 
 export const presentRevisionState = (state: AgentRevisionState, canPublish: boolean, proactiveGreetingEnabled = false) => ({ agentId: state.agentId, status: state.status, draft: { generation: state.draft.generation, basePublishedRevisionId: state.draft.basePublishedRevisionId, updatedAt: state.draft.updatedAt.toISOString() }, publishedRevision: state.publishedRevision ? presentRevisionSummary(state.publishedRevision) : null, canPublish, proactiveGreetingEnabled });

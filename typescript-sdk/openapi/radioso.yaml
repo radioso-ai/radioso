@@ -2543,6 +2543,84 @@ components:
             $ref: "#/components/schemas/AgentRevisionSummary"
       required:
         - revisions
+    ExactContentVariant:
+      type: object
+      properties:
+        locale:
+          type: string
+          minLength: 1
+        body:
+          type: string
+        chipLabels:
+          type: object
+          additionalProperties:
+            type: string
+      required:
+        - locale
+        - body
+        - chipLabels
+    ExactContentItem:
+      type: object
+      properties:
+        chips:
+          type: array
+          items:
+            type: string
+            minLength: 1
+          maxItems: 5
+        variants:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExactContentVariant"
+      required:
+        - chips
+        - variants
+      additionalProperties: false
+    AgentGreetingDraft:
+      type: object
+      properties:
+        exactWordsEnabled:
+          type: boolean
+        exactContent:
+          anyOf:
+            - $ref: "#/components/schemas/ExactContentItem"
+            - type: "null"
+            - type: "null"
+      required:
+        - exactWordsEnabled
+        - exactContent
+    AgentGreetingValidation:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        issues:
+          type: array
+          items:
+            type: object
+            properties:
+              path:
+                type: string
+              code:
+                type: string
+              message:
+                type: string
+            required:
+              - path
+              - code
+              - message
+      required:
+        - ok
+    AgentGreetingDraftResponse:
+      type: object
+      properties:
+        greeting:
+          $ref: "#/components/schemas/AgentGreetingDraft"
+        validation:
+          $ref: "#/components/schemas/AgentGreetingValidation"
+      required:
+        - greeting
+        - validation
     AgentRevisionDetailResponse:
       type: object
       properties:
@@ -2574,11 +2652,16 @@ components:
                       type: boolean
                       enum:
                         - true
+                    greeting:
+                      type: boolean
+                      enum:
+                        - true
                   required:
                     - customInstructions
                     - directives
                     - routines
                     - contextVariableEnablements
+                    - greeting
                 dependencyWarnings:
                   type: array
                   items:
@@ -2673,11 +2756,25 @@ components:
                         required:
                           - contextVariableId
                           - change
+                    greeting:
+                      type: object
+                      properties:
+                        before:
+                          $ref: "#/components/schemas/AgentGreetingDraft"
+                        after:
+                          $ref: "#/components/schemas/AgentGreetingDraft"
+                        changed:
+                          type: boolean
+                      required:
+                        - before
+                        - after
+                        - changed
                   required:
                     - customInstruction
                     - directives
                     - routines
                     - contextVariableEnablements
+                    - greeting
               required:
                 - snapshotFormatVersion
                 - scope
@@ -8733,6 +8830,9 @@ components:
     ChatSuggestion:
       type: object
       properties:
+        id:
+          type: string
+          description: Stable chip identity. Present for authored exact-content chips; absent for generated follow-up suggestions.
         text:
           type: string
         kind:
@@ -20035,6 +20135,39 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentRevisionState"
+  /api/v1/agents/{agentId}/greeting/draft:
+    put:
+      tags:
+        - Agents
+      summary: Save exact greeting content on the agent draft
+      operationId: updateAgentGreetingDraft
+      security: *a71
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentGreetingDraft"
+      responses:
+        "200":
+          description: Draft greeting saved; validation reports field-level issues without blocking the save unless Exact words is enabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentGreetingDraftResponse"
+        "400":
+          description: bad_request when Exact words is enabled and the content fails validation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/revisions/candidates:
     post:
       tags:
@@ -29919,6 +30052,7 @@ paths:
                         - website_crawl
                         - workspace_setting
                         - agent_publication
+                        - agent_greeting
                 required:
                   - available
                   - reason

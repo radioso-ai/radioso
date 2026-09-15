@@ -236,6 +236,7 @@ const buildRevisionDetail = (
       directives: true,
       routines: true,
       contextVariableEnablements: true,
+      greeting: true,
     },
     dependencyWarnings: [],
     enabledContextVariableIds: [],
@@ -244,6 +245,11 @@ const buildRevisionDetail = (
       directives: [],
       routines: [],
       contextVariableEnablements: [],
+      greeting: {
+        before: { exactWordsEnabled: false, exactContent: null },
+        after: { exactWordsEnabled: false, exactContent: null },
+        changed: false,
+      },
     },
   },
 });

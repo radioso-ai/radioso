@@ -19,6 +19,7 @@ type AgentDraftMutationResult<T> =
 type AgentDraftMutationOperation<T> = (
   trx: Transaction<DB>,
   snapshot: AgentRevisionSnapshot,
+  generation: number,
 ) => Promise<AgentDraftMutationResult<T>>;
 
 const isTransaction = (db: Db): db is Transaction<DB> => db.isTransaction;
@@ -52,7 +53,7 @@ export const withAgentDraftMutation = async <T>(
       throw notFound("Agent draft not found");
     }
 
-    const mutation = await operation(trx, parseAgentRevisionSnapshot(draft.snapshot));
+    const mutation = await operation(trx, parseAgentRevisionSnapshot(draft.snapshot), draft.generation);
     if ("unchanged" in mutation) {
       return mutation.result;
     }

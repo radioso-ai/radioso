@@ -91,7 +91,7 @@ const isTypingControl = (element: EventTarget | null) => {
   return tagName === 'button' || tagName === 'a' || tagName === 'select'
 }
 
-export function readWebsiteEmbedViewportSnapshot() {
+function readWebsiteEmbedViewportSnapshot() {
   if (typeof window === 'undefined') {
     return {
       viewportWidth: Number.POSITIVE_INFINITY,
@@ -512,7 +512,7 @@ function PublicChatCenteredIntro({
               .map((suggestion, suggestionIndex) => {
                 return (
                   <Button
-                    key={`centered-suggestion-${suggestionIndex}`}
+                    key={suggestion.id ?? `centered-suggestion-${suggestionIndex}`}
                     type="button"
                     variant="outline"
                     size="sm"

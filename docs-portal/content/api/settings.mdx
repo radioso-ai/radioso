@@ -328,7 +328,7 @@ Workspaces choose which provider and model are used for each LLM job — chat, q
 
 The `openai-compatible` provider also requires `OPENAI_COMPATIBLE_BASE_URL` to be configured on the backend. Selecting it for a workspace without a base URL fails at resolve time with a clear error instead of silently calling the default OpenAI endpoint.
 
-For per-agent chat model overrides, set `chatModelOverride` on the agent through `PUT /api/v1/agents/<agentId>`. `null` clears the override; `{ "provider": "...", "model": "..." }` sets it.
+For per-agent chat model overrides, set `chatModelOverride` on the agent through `PUT /api/v1/agents/<agentId>`. `null` clears the override; `{ "provider": "...", "model": "..." }` sets it. The override covers every model call the agent makes on its own turn — planning the turn, assessing how well the retrieved sources cover the question, and composing the answer — so switching an agent to a smaller model cuts the whole turn's latency, not just the answer's. Fallback and safety calls, such as the staged router that takes over when a plan fails to parse, stay on the workspace `chat` model.
 
 ## Endpoint reference
 

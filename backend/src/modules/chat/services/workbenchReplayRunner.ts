@@ -84,6 +84,7 @@ import type {
   AssistantPageContext,
 } from "../types/assistantApi.js";
 import { pageReadCapabilityFromRequest } from "./pageRead/pageReadCapabilityResolver.js";
+import { buildAgentChatWorkspaceContext } from "./agentChatWorkspaceContext.js";
 
 const DEFAULT_RETRIEVAL_SENSE_CLARIFICATION_POLICY: ClarificationPolicy = {
   floor: 0,
@@ -428,7 +429,7 @@ export class WorkbenchReplayRunner {
             }),
         }),
         visitorContext: visitorMatchContext(session).context,
-        workspaceContext: { workspaceId: session.agent.workspaceId },
+        workspaceContext: buildAgentChatWorkspaceContext(session.agent),
         usageContext: {
           accountId: input.accountId ?? undefined,
           workspaceId: session.agent.workspaceId,

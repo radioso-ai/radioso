@@ -13,6 +13,7 @@ import {
   renderPageContextCondition,
   type PageContextCondition,
 } from "./pageRead/pageContextCondition.js";
+import { buildAgentChatWorkspaceContext } from "./agentChatWorkspaceContext.js";
 
 /**
  * Capability-agnostic answer-composition utilities shared by every terminal answer
@@ -32,10 +33,7 @@ export class ChatAnswerSupport {
   ) {}
 
   buildChatWorkspaceContext(session: PreparedSession): LlmCapabilityResolveInput {
-    return {
-      workspaceId: session.agent.workspaceId,
-      capabilityOverride: session.agent.chatModelOverride ?? undefined,
-    };
+    return buildAgentChatWorkspaceContext(session.agent);
   }
 
   buildChatUsageContext(

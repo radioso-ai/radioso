@@ -1,7 +1,7 @@
 // Frontend calls reach the backend through the Next proxy at /backend
 // (see frontend app/backend/[...path]/route.ts and api-client API_BASE),
 // not the bare /api path. Using /api here 404s in the real app.
-export const operatorConsoleApiBase = "/backend/api/v1/ee/operator-console";
+const operatorConsoleApiBase = "/backend/api/v1/ee/operator-console";
 
 export type StaffRole = "support_read" | "billing_write" | "owner";
 export type StaffStatus = "active" | "disabled";
@@ -79,7 +79,7 @@ export interface OrganizationDirectoryPage {
   };
 }
 
-export interface TierPayload {
+interface TierPayload {
   displayName: string;
   monthlyAnswerLimit: number | null;
   storedDocumentLimit: number | null;
@@ -89,7 +89,7 @@ export interface TierPayload {
   repliesPerConversation?: number;
 }
 
-export interface StaffCreatePayload {
+interface StaffCreatePayload {
   email: string;
   name: string;
   role: StaffRole;
@@ -123,7 +123,7 @@ const parseErrorBody = async (response: Response): Promise<{ message: string; co
   }
 };
 
-export const operatorFetch = async <T>(
+const operatorFetch = async <T>(
   path: string,
   init: RequestInit = {},
 ): Promise<T> => {

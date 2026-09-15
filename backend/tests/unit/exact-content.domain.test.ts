@@ -71,6 +71,34 @@ describe("validateExactContentItem", () => {
     }
   });
 
+  it("rejects a variant whose locale cannot be canonicalized", () => {
+    const result = validateExactContentItem(
+      item({
+        variants: [
+          { locale: "en", body: "Hello.", chipLabels: {} },
+          { locale: "not a locale!", body: "???", chipLabels: {} },
+        ],
+      }),
+      validateInput,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issues).toContainEqual(
+        expect.objectContaining({ path: "variants[1].locale", code: "invalid_locale" }),
+      );
+    }
+  });
+
+  it("rejects an agent default locale that cannot be canonicalized", () => {
+    const result = validateExactContentItem(item(), { ...validateInput, agentDefaultLocale: "not a locale!" });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issues).toContainEqual(
+        expect.objectContaining({ path: "agentDefaultLocale", code: "invalid_locale" }),
+      );
+    }
+  });
+
   it("rejects a blank body", () => {
     const result = validateExactContentItem(
       item({ variants: [{ locale: "en", body: "   ", chipLabels: {} }] }),
@@ -329,6 +357,20 @@ describe("resolveExactContent selection order", () => {
     const outcome = resolveExactContent(
       item({ variants: [{ locale: "fr", body: "Bonjour.", chipLabels: {} }] }),
       { requestedLocale: "pt-BR", agentDefaultLocale: "en", references: new Map() },
+    );
+    expect(outcome).toEqual({ kind: "unavailable", reason: "missing_variant" });
+  });
+
+  it("treats a variant whose locale cannot be canonicalized as unmatched, never as a raw-string match", () => {
+    const outcome = resolveExactContent(
+      item({
+        variants: [
+          // Malformed data (predates locale-tag validation, or missed the format check);
+          // resolution must not compare this to the default/requested locale as a raw string.
+          { locale: "not a locale!", body: "Broken.", chipLabels: {} },
+        ],
+      }),
+      { requestedLocale: null, agentDefaultLocale: "not a locale!", references: new Map() },
     );
     expect(outcome).toEqual({ kind: "unavailable", reason: "missing_variant" });
   });

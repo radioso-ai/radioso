@@ -48,7 +48,7 @@ import type {
 } from "../../src/modules/auth/services/authService.js";
 import type { UserRecord, UserRepositoryPort } from "../../src/db/repositories/userRepository.js";
 import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../src/db/repositories/workspaceRepository.js";
-import type { AgentRepositoryPort } from "../../src/db/repositories/agentRepository.js";
+import type { AgentGreetingUpdateOptions, AgentRepositoryPort } from "../../src/db/repositories/agentRepository.js";
 import type {
   DocumentOriginKind,
   DocumentSourceRecord,
@@ -1126,6 +1126,17 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
      * that same guarantee (a real `AgentRevisionRepositoryPort`-backed draft to mutate or
      * release) wires it here instead. */
     private readonly onAgentCreated?: (agent: AgentRecord) => Promise<void> | void,
+    /** Mirrors `AgentRepository#updateDraftGreeting` writing through `withAgentDraftMutation`:
+     * the real write bumps `agent_drafts.generation`, which is the fence Ray's greeting
+     * proposal checks staleness against (see `createAgentGreetingCopilotProposalAdapter`). This
+     * repository holds no draft-generation state of its own, so a caller that also constructs
+     * an `InMemoryAgentRevisionRepository` wires this the same way it wires `onAgentCreated`. */
+    private readonly onDraftGreetingUpdated?: (
+      workspaceId: string,
+      agentId: string,
+      input: AgentGreetingSnapshot,
+      options: AgentGreetingUpdateOptions,
+    ) => Promise<AgentGreetingSnapshot>,
   ) {}
 
   async create(workspaceId: string, input: AgentInput): Promise<AgentRecord> {
@@ -1263,13 +1274,16 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
     return deleted;
   }
 
-  async updateDraftGreeting(agentId: string, workspaceId: string, input: AgentGreetingSnapshot): Promise<AgentGreetingSnapshot> {
+  async updateDraftGreeting(agentId: string, workspaceId: string, input: AgentGreetingSnapshot, options: AgentGreetingUpdateOptions = {}): Promise<AgentGreetingSnapshot> {
     const agent = await this.findByIdAndWorkspaceId(agentId, workspaceId);
     if (!agent) {
       throw new Error(`Agent ${agentId} not found`);
     }
-    this.draftGreetings.set(agentId, input);
-    return input;
+    const greeting = this.onDraftGreetingUpdated
+      ? await this.onDraftGreetingUpdated(workspaceId, agentId, input, options)
+      : input;
+    this.draftGreetings.set(agentId, greeting);
+    return greeting;
   }
 
   async update(agentId: string, workspaceId: string, input: AgentInput): Promise<AgentRecord> {

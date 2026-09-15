@@ -1550,24 +1550,38 @@ describe("propose_greeting tool", () => {
 });
 
 describe("agent greeting proposal adapter", () => {
+  // `generation` is shared, mutable state standing in for `agent_drafts.generation`: every
+  // fake `updateDraftGreeting` call below bumps it, exactly like the real
+  // `AgentRepository#updateDraftGreeting` bumps the column inside `withAgentDraftMutation` —
+  // and unlike the agent's own `updatedAt`, which that write never touches (the bug finding 1
+  // fixes). `agentRevisions.state` always reads the live value, so a token read before a second
+  // write disagrees with one read after, the same way Ray's proposal card would go stale.
   const buildAdapter = async (agentOverrides: Record<string, unknown> = {}) => {
     const { createAgentGreetingCopilotProposalAdapter } = await import("../../../src/modules/operatorCopilot/proposalAdapters.js");
-    const updatedAt = new Date("2026-09-01T00:00:00.000Z");
+    let generation = 1;
     const agentService = {
-      get: vi.fn(async () => ({ id: agentId, workspaceId, assistantDefaultLocale: "en", updatedAt, ...agentOverrides })),
-      updateDraftGreeting: vi.fn(async (_workspaceId: string, _agentId: string, input: unknown) => ({ greeting: input, validation: { ok: true } })),
+      get: vi.fn(async () => ({ id: agentId, workspaceId, assistantDefaultLocale: "en", updatedAt: new Date("2026-09-01T00:00:00.000Z"), ...agentOverrides })),
+      updateDraftGreeting: vi.fn(async (_workspaceId: string, _agentId: string, input: unknown, options?: { expectedDraftGeneration?: number }) => {
+        if (options?.expectedDraftGeneration !== undefined && options.expectedDraftGeneration !== generation) {
+          throw conflict("Agent draft changed before the greeting proposal was applied; reload before saving again");
+        }
+        generation += 1;
+        return { greeting: input, validation: { ok: true } };
+      }),
     };
-    const adapter = createAgentGreetingCopilotProposalAdapter({ agentService: agentService as never });
-    return { adapter, agentService, updatedAt };
+    const agentRevisions = { state: vi.fn(async () => ({ draft: { generation } })) };
+    const adapter = createAgentGreetingCopilotProposalAdapter({ agentService: agentService as never, agentRevisions: agentRevisions as never });
+    return { adapter, agentService, agentRevisions };
   };
 
-  it("validates valid content without throwing and returns the agent's updatedAt as the version token", async () => {
-    const { adapter, updatedAt } = await buildAdapter();
+  it("returns the draft's current generation as the version token, not the agent's updatedAt", async () => {
+    const { adapter, agentRevisions } = await buildAdapter();
     const result = await adapter.validatePayload(workspaceId, { agentId }, {
       exactWordsEnabled: true,
       exactContent: greetingExactContent(),
     });
-    expect(result).toMatchObject({ versionToken: updatedAt.toISOString() });
+    expect(result.versionToken).toEqual(await adapter.readVersionToken(workspaceId, { agentId }));
+    expect(agentRevisions.state).toHaveBeenCalledWith(workspaceId, agentId);
   });
 
   it("rejects invalid content with the same issue codes AgentService.updateDraftGreeting reports, only when Exact words is enabled", async () => {
@@ -1590,28 +1604,49 @@ describe("agent greeting proposal adapter", () => {
   });
 
   it("applies through AgentService.updateDraftGreeting only, never the live agent row", async () => {
-    const { adapter, agentService, updatedAt } = await buildAdapter();
+    const { adapter, agentService } = await buildAdapter();
+    const token = await adapter.readVersionToken(workspaceId, { agentId });
     const result = await adapter.applyIfVersionMatches(workspaceId, { agentId }, {
       exactWordsEnabled: true,
       exactContent: greetingExactContent(),
-    }, updatedAt.toISOString());
+    }, token);
 
     expect(result).toEqual({ outcome: "applied", appliedRef: { agentId } });
     expect(agentService.updateDraftGreeting).toHaveBeenCalledWith(workspaceId, agentId, {
       exactWordsEnabled: true,
       exactContent: greetingExactContent(),
-    });
+    }, { expectedDraftGeneration: 1 });
     expect((agentService as unknown as { update?: unknown }).update).toBeUndefined();
   });
 
-  it("reports stale instead of applying when the agent moved since the proposal's version token", async () => {
-    const { adapter } = await buildAdapter();
+  it("reports stale when a dashboard greeting edit lands between the proposal's token read and its apply", async () => {
+    const { adapter, agentService } = await buildAdapter();
+    const token = await adapter.readVersionToken(workspaceId, { agentId });
+
+    // The dashboard's own `PUT .../greeting/draft` route calls `AgentService.updateDraftGreeting`
+    // with no expectation (last-write-wins there, same as every other draft field) — this is
+    // that write landing in between, exactly the sequence finding 1 fixes.
+    await agentService.updateDraftGreeting(workspaceId, agentId, { exactWordsEnabled: false, exactContent: null });
+
     const result = await adapter.applyIfVersionMatches(workspaceId, { agentId }, {
       exactWordsEnabled: true,
       exactContent: greetingExactContent(),
-    }, new Date("2020-01-01T00:00:00.000Z").toISOString());
+    }, token);
 
     expect(result).toEqual({ outcome: "stale" });
+  });
+
+  it("does not go stale when an unrelated agent field changes, since the draft's own generation is untouched", async () => {
+    const { adapter, agentService } = await buildAdapter();
+    const token = await adapter.readVersionToken(workspaceId, { agentId });
+    agentService.get.mockResolvedValueOnce({ id: agentId, workspaceId, assistantDefaultLocale: "en", updatedAt: new Date("2030-01-01T00:00:00.000Z") });
+
+    const result = await adapter.applyIfVersionMatches(workspaceId, { agentId }, {
+      exactWordsEnabled: true,
+      exactContent: greetingExactContent(),
+    }, token);
+
+    expect(result).toEqual({ outcome: "applied", appliedRef: { agentId } });
   });
 });
 

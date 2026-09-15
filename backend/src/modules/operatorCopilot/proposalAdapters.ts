@@ -4,6 +4,7 @@ import {
   AuthoredDirectiveService,
   DirectiveAuthorService,
   AgentService,
+  AgentRevisionService,
   agentInputFieldSchemas,
   mergeAgentSurfaceSettings,
   validateAgentInput,
@@ -360,22 +361,36 @@ const greetingPayloadSchema = z.object({
   summary: z.string().min(1).max(MAX_COPILOT_PROPOSAL_SUMMARY).optional(),
 }).strict();
 
+/** Encodes/decodes `agent_drafts.generation` as the greeting proposal's version token. Not the
+ * `versionToken`/`versionDate` pair above: those anchor to a row's `updated_at`, but the
+ * greeting has no row of its own, and anchoring to the *agent's* `updatedAt` is what let a
+ * dashboard greeting edit go undetected (that write only ever bumps `agent_drafts`). */
+const draftGenerationToken = (generation: number): string => `draft-generation:${generation}`;
+const parseDraftGenerationToken = (token: string): number | null => {
+  const match = /^draft-generation:(\d+)$/.exec(token);
+  return match ? Number(match[1]) : null;
+};
+
 /**
  * Composition adapter: writes exact greeting content through `AgentService.updateDraftGreeting`
  * only — never the live `agents` row `agent_setting` writes through (see
  * `CopilotAgentGreetingProposalAdapter`'s doc comment for why that adapter is not reused here).
- * `updateDraftGreeting` itself carries no optimistic-concurrency parameter (the dashboard's own
- * `PUT .../greeting/draft` route has none either), so staleness is checked here against a read of
- * the agent's own `updatedAt` — the same coarse anchor `agent_setting` and a fresh directive use
- * for a target that names no row of its own to version against.
+ * Staleness is checked against `agent_drafts.generation` — the same fence every other draft
+ * writer (a directive create, a routine field patch, `AgentRevisionService.createCandidate`)
+ * already serializes on — because that is the column the greeting write actually bumps. The
+ * comparison itself happens inside `AgentRepository#updateDraftGreeting`'s own
+ * `withAgentDraftMutation` transaction, not here: reading the generation and writing the
+ * greeting as two separate steps would reopen the same race this fixes.
  */
 export const createAgentGreetingCopilotProposalAdapter = (deps: {
   readonly agentService: Pick<AgentService, "get" | "updateDraftGreeting">;
+  readonly agentRevisions: Pick<AgentRevisionService, "state">;
 }): CopilotAgentGreetingProposalAdapter => ({
   targetType: "agent_greeting",
   async readVersionToken(workspaceId, rawTargetRef) {
     const targetRef = greetingTargetRefSchema.parse(rawTargetRef);
-    return versionToken((await deps.agentService.get(workspaceId, targetRef.agentId)).updatedAt);
+    const state = await deps.agentRevisions.state(workspaceId, targetRef.agentId);
+    return draftGenerationToken(state.draft.generation);
   },
   async preview(_workspaceId, rawTargetRef, rawPayload) {
     greetingTargetRefSchema.parse(rawTargetRef);
@@ -389,24 +404,24 @@ export const createAgentGreetingCopilotProposalAdapter = (deps: {
   async applyIfVersionMatches(workspaceId, rawTargetRef, rawPayload, token) {
     const targetRef = greetingTargetRefSchema.parse(rawTargetRef);
     const payload = greetingPayloadSchema.parse(rawPayload);
+    const expectedDraftGeneration = parseDraftGenerationToken(token);
+    if (expectedDraftGeneration === null) return { outcome: "stale" as const };
     const agent = await deps.agentService.get(workspaceId, targetRef.agentId).catch(() => null);
     if (!agent) return { outcome: "failed" as const, reason: "Agent not found" };
-    if (versionToken(agent.updatedAt) !== token) return { outcome: "stale" as const };
     try {
       await deps.agentService.updateDraftGreeting(workspaceId, targetRef.agentId, {
         exactWordsEnabled: payload.exactWordsEnabled,
         exactContent: payload.exactContent,
-      });
+      }, { expectedDraftGeneration });
       return { outcome: "applied" as const, appliedRef: { agentId: targetRef.agentId } };
     } catch (error) {
+      if (isStale(error)) return { outcome: "stale" as const };
       return { outcome: "failed" as const, reason: error instanceof Error ? error.message : "Greeting draft save failed" };
     }
   },
   async validatePayload(workspaceId, rawTargetRef, rawPayload) {
     const targetRef = greetingTargetRefSchema.parse(rawTargetRef);
     const payload = greetingPayloadSchema.parse(rawPayload);
-    // The version token is derived from this same read for the reason documented on
-    // `CopilotAgentSettingProposalAdapter.validatePayload`.
     const agent = await deps.agentService.get(workspaceId, targetRef.agentId);
     // Mirrors `AgentService.updateDraftGreeting` exactly (same locale fallback, same empty
     // reference set — bootstrap supplies no context variables and the greeting has no routine
@@ -420,7 +435,10 @@ export const createAgentGreetingCopilotProposalAdapter = (deps: {
     if (payload.exactWordsEnabled && !validation.ok) {
       throw badRequest("Exact greeting content is invalid", { issues: validation.issues });
     }
-    return { targetRef, payload, versionToken: versionToken(agent.updatedAt) };
+    // Read right before returning, for the same reason `agent_setting`'s validatePayload reads
+    // its token from this same call rather than a follow-up `readVersionToken`.
+    const state = await deps.agentRevisions.state(workspaceId, targetRef.agentId);
+    return { targetRef, payload, versionToken: draftGenerationToken(state.draft.generation) };
   },
 });
 

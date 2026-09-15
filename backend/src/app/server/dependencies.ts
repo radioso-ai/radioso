@@ -520,7 +520,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const copilotProposalAdapters = [
     createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService }),
     createAgentSettingCopilotProposalAdapter({ agentService }),
-    createAgentGreetingCopilotProposalAdapter({ agentService }),
+    createAgentGreetingCopilotProposalAdapter({ agentService, agentRevisions: agentRevisionService }),
     createAgentCopilotProposalAdapter({
       agentCreation: { createFromWizard: (input) => agentWizardService.createAgentFromWizard(input) },
       workspaceAccount: createCopilotWorkspaceAccountResolver({ workspaceRepository: repositories.workspaceRepository }),

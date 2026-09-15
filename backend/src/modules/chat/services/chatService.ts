@@ -52,9 +52,11 @@ import {
 } from "../../../shared/analytics/productAnalyticsService.js";
 import {
   NoopUsageLimitPolicy,
+  type AnswerUsageKind,
   type UsageLimitPolicy,
   type UsageLimitReservation,
 } from "../../../shared/domain/usageLimitPolicy.js";
+import { WORKBENCH_TEST_SOURCE_CHANNELS } from "../../../shared/domain/conversationSource.js";
 import { ChatSessionPreparer, type PreparedSession } from "./chatSessionPreparer.js";
 import type { ConversationSummaryStore } from "../contracts/conversationSummary.js";
 import type { ConversationSummaryUpdater } from "./summary/conversationSummaryService.js";
@@ -157,6 +159,13 @@ export { BlankChatAnswerError } from "./chatAnswerErrors.js";
 export { ModelChatGateway } from "./chatGateways.js";
 export type { SuspendedRoutineReader } from "./approvalResumeTurn.js";
 export { ChatTurnSupersededError } from "./conversationTurnRegistry.js";
+
+/** Operator-driven workbench/test-chat traffic metering as a cheaper `test_run`; every
+ *  other channel is a real customer conversation reply. */
+const chatAnswerUsageKind = (sourceChannel?: string | null): AnswerUsageKind =>
+  sourceChannel != null && (WORKBENCH_TEST_SOURCE_CHANNELS as readonly string[]).includes(sourceChannel)
+    ? "test_run"
+    : "conversation_reply";
 
 const chatTurnTraceAttributes = (input: {
   accountId?: string;
@@ -836,11 +845,6 @@ export class ChatService {
     let usageReservation: UsageLimitReservation | null = null;
 
     try {
-      usageReservation = await this.usageLimitPolicy.reserveAnswer({
-        accountId: input.accountId,
-        workspaceId: input.workspaceId,
-        surface: input.sourceChannel ?? "assistant",
-      });
       this.setTurnStage(coordination, "preparing");
       session = await this.chatSessionPreparer.prepare({
         ...input,
@@ -849,6 +853,16 @@ export class ChatService {
           input.pageContext,
         ),
       }, { skipRetrieval: true });
+      // Reserved after prepare, once the conversation is known: a customer conversation's
+      // reply block is keyed on `session.conversation.id`, which does not exist yet for a
+      // brand-new conversation until prepare() creates it.
+      usageReservation = await this.usageLimitPolicy.reserveAnswer({
+        accountId: input.accountId,
+        workspaceId: input.workspaceId,
+        surface: input.sourceChannel ?? "assistant",
+        usage: chatAnswerUsageKind(input.sourceChannel),
+        conversationId: session.conversation.id,
+      });
       await this.registerPreparedTurn(coordination, session.conversation.id);
       const ownership = await this.conversationOwnershipReader?.load(session.conversation.id) ?? null;
       this.checkTurnCancellation(coordination, "routing");
@@ -1297,13 +1311,6 @@ export class ChatService {
     };
 
     try {
-      // Keep the #868 turn stage "waiting" until after reserveAnswer succeeds:
-      // supersession during acquisition must continue to report that stage.
-      usageReservation = await this.usageLimitPolicy.reserveAnswer({
-        accountId: input.accountId,
-        workspaceId: input.workspaceId,
-        surface: input.sourceChannel ?? "assistant",
-      });
       this.setTurnStage(coordination, "preparing");
       session = await this.chatSessionPreparer.prepare({
         ...input,
@@ -1312,6 +1319,16 @@ export class ChatService {
           input.pageContext,
         ),
       }, { skipRetrieval: true });
+      // Reserved after prepare, once the conversation is known: a customer conversation's
+      // reply block is keyed on `session.conversation.id`, which does not exist yet for a
+      // brand-new conversation until prepare() creates it.
+      usageReservation = await this.usageLimitPolicy.reserveAnswer({
+        accountId: input.accountId,
+        workspaceId: input.workspaceId,
+        surface: input.sourceChannel ?? "assistant",
+        usage: chatAnswerUsageKind(input.sourceChannel),
+        conversationId: session.conversation.id,
+      });
       await this.registerPreparedTurn(coordination, session.conversation.id);
       const ownership = await this.conversationOwnershipReader?.load(session.conversation.id) ?? null;
       this.checkTurnCancellation(coordination, "routing");

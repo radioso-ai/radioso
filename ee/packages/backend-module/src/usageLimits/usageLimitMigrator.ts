@@ -1,4 +1,7 @@
+import { PLAN_CATALOG } from "@radioso/plan-catalog";
+
 import type { ApplicationDatabaseMigrator } from "../radiosoModuleTypes.js";
+import { profileSeedFromPlan } from "./planCatalogSeed.js";
 
 // NOTE: the durable usage-event ledger (usage_events / embedding_usage_items /
 // usage_daily_rollups) is now owned by OSS (backend migration
@@ -90,6 +93,79 @@ export const usageLimitMigrator: ApplicationDatabaseMigrator = {
       CHECK (monthly_indexed_byte_limit IS NULL OR monthly_indexed_byte_limit >= 0)
     `);
 
+    // Conversation metering. One unit for everything, in tenths of a
+    // conversation so that "ten test runs count as one" stays integer math.
+    await database.query(`
+      ALTER TABLE ee_usage_limit_profiles
+      ADD COLUMN IF NOT EXISTS monthly_conversation_limit INTEGER
+      CHECK (monthly_conversation_limit IS NULL OR monthly_conversation_limit >= 0)
+    `);
+
+    await database.query(`
+      ALTER TABLE ee_usage_limit_profiles
+      ADD COLUMN IF NOT EXISTS replies_per_conversation INTEGER NOT NULL DEFAULT 10
+      CHECK (replies_per_conversation >= 1)
+    `);
+
+    // Replies seen per conversation this period. Only the first reply of each
+    // block of replies_per_conversation is charged.
+    await database.query(`
+      CREATE TABLE IF NOT EXISTS ee_usage_limit_conversation_replies (
+        account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        period_start DATE NOT NULL,
+        conversation_id UUID NOT NULL,
+        reply_count INTEGER NOT NULL DEFAULT 0 CHECK (reply_count >= 0),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (account_id, period_start, conversation_id)
+      )
+    `);
+
+    // The account's monthly unit counter, in tenths, plus a per-kind breakdown
+    // so the usage view can show where the month went.
+    await database.query(`
+      CREATE TABLE IF NOT EXISTS ee_usage_limit_unit_counters (
+        account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        period_start DATE NOT NULL,
+        used_tenths INTEGER NOT NULL DEFAULT 0 CHECK (used_tenths >= 0),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (account_id, period_start)
+      )
+    `);
+
+    await database.query(`
+      CREATE TABLE IF NOT EXISTS ee_usage_limit_unit_kind_counters (
+        account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        period_start DATE NOT NULL,
+        kind TEXT NOT NULL,
+        used_tenths INTEGER NOT NULL DEFAULT 0 CHECK (used_tenths >= 0),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (account_id, period_start, kind)
+      )
+    `);
+
+    // Prepaid top-ups. Not period-scoped: they never expire.
+    await database.query(`
+      CREATE TABLE IF NOT EXISTS ee_usage_limit_credits (
+        account_id UUID PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+        balance_tenths INTEGER NOT NULL DEFAULT 0 CHECK (balance_tenths >= 0),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+
+    // Prepaid top-up grants, one row per idempotency reference (a Stripe event
+    // id or any other caller-supplied unique string). `addCredits` inserts here
+    // ON CONFLICT DO NOTHING and only bumps ee_usage_limit_credits when a row
+    // was actually inserted, so replaying the same reference is a no-op.
+    await database.query(`
+      CREATE TABLE IF NOT EXISTS ee_usage_limit_credit_grants (
+        account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        reference TEXT NOT NULL,
+        conversations INTEGER NOT NULL CHECK (conversations > 0),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (account_id, reference)
+      )
+    `);
+
     await database.query(`
       CREATE TABLE IF NOT EXISTS ee_usage_limit_storage_reservations (
         id UUID PRIMARY KEY,
@@ -148,5 +224,37 @@ export const usageLimitMigrator: ApplicationDatabaseMigrator = {
         ('starter_250', 'Starter 250', 250, 250)
       ON CONFLICT (key) DO NOTHING
     `);
+
+    // One profile per @radioso/plan-catalog plan (comet/satellite/planet). `DO NOTHING`
+    // on conflict so a console edit to a seeded profile is never reverted by a later boot.
+    for (const plan of PLAN_CATALOG.plans) {
+      const seed = profileSeedFromPlan(plan, PLAN_CATALOG.repliesPerConversation);
+      await database.query(
+        `
+        INSERT INTO ee_usage_limit_profiles (
+          key,
+          display_name,
+          monthly_answer_limit,
+          stored_document_limit,
+          stored_indexed_byte_limit,
+          monthly_indexed_byte_limit,
+          monthly_conversation_limit,
+          replies_per_conversation
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        ON CONFLICT (key) DO NOTHING
+        `,
+        [
+          seed.key,
+          seed.displayName,
+          seed.monthlyAnswerLimit,
+          seed.storedDocumentLimit,
+          seed.storedIndexedByteLimit,
+          seed.monthlyIndexedByteLimit,
+          seed.monthlyConversationLimit,
+          seed.repliesPerConversation,
+        ],
+      );
+    }
   },
 };

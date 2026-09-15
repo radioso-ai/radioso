@@ -9,7 +9,7 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "pnpm --filter @radioso/enterprise-backend-module --filter @radioso/enterprise-auth-frontend --filter @radioso/enterprise-operator-console run build",
+    "build": "pnpm --filter @radioso/enterprise-backend-module... --filter @radioso/enterprise-auth-frontend... --filter @radioso/enterprise-operator-console... run build",
     "test": "pnpm --filter @radioso/enterprise-backend-module --filter @radioso/enterprise-auth-frontend --filter @radioso/enterprise-operator-console run test"
   },
   "devDependencies": {

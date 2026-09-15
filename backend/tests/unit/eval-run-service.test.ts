@@ -1864,7 +1864,7 @@ describe("EvalRunService metering", () => {
 
     await service.execute({ workspaceId: "ws-1", accountId: "account-1", snapshotId: snapshot.id, caseId: evalCase.id, mode: "retrieval_only" });
 
-    expect(metering.reserveAnswer).toHaveBeenCalledWith({ accountId: "account-1", workspaceId: "ws-1", surface: "eval_replay" });
+    expect(metering.reserveAnswer).toHaveBeenCalledWith({ accountId: "account-1", workspaceId: "ws-1", surface: "eval_replay", usage: "test_run" });
     expect(metering.commit).toHaveBeenCalledOnce();
     expect(metering.release).not.toHaveBeenCalled();
   });
@@ -1902,7 +1902,7 @@ describe("EvalRunService metering", () => {
       overrides: { agentConfigOverride: { customInstruction: "Workbench override." } },
     });
 
-    expect(metering.reserveAnswer).toHaveBeenCalledWith({ accountId: "account-1", workspaceId: "ws-1", surface: "eval_replay" });
+    expect(metering.reserveAnswer).toHaveBeenCalledWith({ accountId: "account-1", workspaceId: "ws-1", surface: "eval_replay", usage: "test_run" });
     expect(metering.commit).toHaveBeenCalledOnce();
   });
 

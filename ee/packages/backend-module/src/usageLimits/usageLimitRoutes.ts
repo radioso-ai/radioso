@@ -22,6 +22,13 @@ const profileBodySchema = z.object({
   storedDocumentLimit: nullableLimitSchema,
   storedIndexedByteLimit: nullableByteLimitSchema,
   monthlyIndexedByteLimit: nullableByteLimitSchema,
+  monthlyConversationLimit: nullableLimitSchema.optional(),
+  repliesPerConversation: z.number().int().min(1).max(1000).optional(),
+});
+
+const creditsBodySchema = z.object({
+  conversations: z.number().int().min(1).max(100000),
+  reference: z.string().trim().min(1).max(200),
 });
 
 const assignmentBodySchema = z.object({
@@ -111,6 +118,7 @@ export const createUsageLimitRoutes = (input: RouteDependencies | UsageLimitData
   const database = isRouteDependencies(input) ? input.connectorDb : input;
   const service = new EnterpriseUsageLimitService(database);
   const organizationCreationGuard = new EnterpriseOrganizationCreationGuard(database);
+  const auditService = isRouteDependencies(input) ? input.auditService : undefined;
 
   if (isRouteDependencies(input)) {
     router.get("/me", requireAccountSession(input), async (req, res, next) => {
@@ -139,13 +147,27 @@ export const createUsageLimitRoutes = (input: RouteDependencies | UsageLimitData
     try {
       const profileKey = parseRequest(profileKeySchema, req.params.profileKey, "Invalid profile key");
       const body = parseRequest(profileBodySchema, req.body, "Invalid profile payload");
+      // The service treats a key's mere presence on this object as "the caller named this
+      // field" (omitted = preserve, explicit null = clear). A key set to `undefined` still
+      // counts as present in JS, so each optional field is spread in only when the request
+      // body actually carried it — never assigned unconditionally with a `?? null` fallback.
       const profile = await service.upsertProfile({
         key: profileKey,
         displayName: body.displayName,
         monthlyAnswerLimit: body.monthlyAnswerLimit,
         storedDocumentLimit: body.storedDocumentLimit,
-        storedIndexedByteLimit: body.storedIndexedByteLimit ?? null,
-        monthlyIndexedByteLimit: body.monthlyIndexedByteLimit ?? null,
+        ...(Object.prototype.hasOwnProperty.call(body, "storedIndexedByteLimit")
+          ? { storedIndexedByteLimit: body.storedIndexedByteLimit ?? null }
+          : {}),
+        ...(Object.prototype.hasOwnProperty.call(body, "monthlyIndexedByteLimit")
+          ? { monthlyIndexedByteLimit: body.monthlyIndexedByteLimit ?? null }
+          : {}),
+        ...(Object.prototype.hasOwnProperty.call(body, "monthlyConversationLimit")
+          ? { monthlyConversationLimit: body.monthlyConversationLimit }
+          : {}),
+        ...(Object.prototype.hasOwnProperty.call(body, "repliesPerConversation")
+          ? { repliesPerConversation: body.repliesPerConversation }
+          : {}),
       });
       res.status(200).json({ profile });
     } catch (error) {
@@ -159,6 +181,38 @@ export const createUsageLimitRoutes = (input: RouteDependencies | UsageLimitData
       const body = parseRequest(assignmentBodySchema, req.body, "Invalid assignment payload");
       const usage = await service.assignProfile(accountId, body.profileKey);
       res.status(200).json(usage);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Prepaid top-up. The Stripe webhook and the operator console both land here.
+  // `reference` (a Stripe event id or any caller-unique string) makes the grant
+  // idempotent: replaying the same reference returns `applied: false` instead
+  // of crediting the account twice.
+  router.post("/accounts/:accountId/credits", async (req, res, next) => {
+    try {
+      const accountId = parseRequest(accountIdSchema, req.params.accountId, "Invalid account id");
+      const body = parseRequest(creditsBodySchema, req.body, "Invalid credits payload");
+      const result = await service.addCredits({
+        accountId,
+        conversations: body.conversations,
+        reference: body.reference,
+      });
+      await auditService?.record({
+        accountId,
+        workspaceId: null,
+        eventType: "usage_limits.credits_added",
+        eventStatus: "success",
+        metadata: {
+          conversations: body.conversations,
+          reference: body.reference,
+          applied: result.applied,
+          credits: result.credits,
+        },
+      });
+      const usage = await service.getAccountUsage(accountId);
+      res.status(200).json({ ...result, usage });
     } catch (error) {
       next(error);
     }

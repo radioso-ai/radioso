@@ -9,6 +9,23 @@ import {
   createAuditService,
 } from "../support/fakes.js";
 
+const createUsageLimitPolicy = () => {
+  const commit = vi.fn(async () => undefined);
+  const release = vi.fn(async () => undefined);
+  const reserveAnswer = vi.fn(async () => ({ commit, release }));
+  return {
+    commit,
+    release,
+    reserveAnswer,
+    policy: {
+      reserveAnswer,
+      reserveDocument: vi.fn(),
+      reserveIndexedStorage: vi.fn(),
+      reserveMonthlyIndexedContent: vi.fn(),
+    },
+  };
+};
+
 const createProductAnalyticsService = () => ({
   track: vi.fn(async () => null),
 });
@@ -177,6 +194,49 @@ describe("chat bootstrap service", () => {
       bootstrapGreetingId: firstEmbedGreeting?.bootstrapGreetingId,
     });
     expect(chatGateway.answer).toHaveBeenCalledTimes(1);
+  });
+
+  it("reserves usage under the free greeting kind even when a real source channel is provided", async () => {
+    const workspaceRepository = new InMemoryWorkspaceRepository();
+    const workspace = await workspaceRepository.create("account-1", "Workspace");
+    await workspaceRepository.updateAssistantBootstrapSettings(workspace.id, {
+      assistantName: "Marta",
+      greetingInstruction: "Warm and concise",
+      assistantDefaultLocale: "en",
+      proactiveGreetingEnabled: true,
+    });
+
+    const bootstrapGreetingCacheRepository = new InMemoryBootstrapGreetingCacheRepository();
+    const chatGateway = {
+      answer: vi.fn(async () => "Hello from the model."),
+      streamAnswer: vi.fn(),
+    };
+    const usage = createUsageLimitPolicy();
+    const service = new ChatBootstrapService(
+      workspaceRepository,
+      bootstrapGreetingCacheRepository,
+      chatGateway,
+      createAuditService(),
+      usage.policy,
+      createProductAnalyticsService(),
+      createAgentService(workspaceRepository),
+    );
+
+    await service.startConversation({
+      workspaceId: workspace.id,
+      accountId: "account-1",
+      sourceChannel: "website_embed",
+      userExpectedLocale: "en",
+    });
+
+    // A cache miss for the widget greeting must still be billed as the free
+    // "greeting" usage kind, not as a full paid conversation on whatever real
+    // channel asked for it. `surface` carries the real channel for
+    // attribution only; it never drives pricing.
+    expect(usage.reserveAnswer).toHaveBeenCalledWith(expect.objectContaining({
+      surface: "website_embed",
+      usage: "greeting",
+    }));
   });
 
   it("generates through the bootstrap guard for a neutral named pinned test override", async () => {

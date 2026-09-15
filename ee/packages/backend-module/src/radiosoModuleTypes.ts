@@ -242,11 +242,29 @@ export interface MonthlyIndexedContentReservationInput {
   externalDocumentId?: string | null;
 }
 
+/**
+ * Mirrors OSS's `AnswerUsageKind` (in `backend/src/shared/domain/usageLimitPolicy.ts`). Kept
+ * structurally compatible so EE can price a reservation without importing OSS types directly, the
+ * same arrangement the rest of this file uses.
+ */
+export type AnswerUsageKind =
+  | "conversation_reply"
+  | "standalone_answer"
+  | "greeting"
+  | "copilot_turn"
+  | "test_run"
+  | "pulse_report";
+
 export interface UsageLimitPolicy {
   reserveAnswer(input: {
     accountId?: string | null;
     workspaceId: string;
+    /** Attribution only (logs/audit). Pricing comes from `usage`. */
     surface: string;
+    usage: AnswerUsageKind;
+    /** Customer conversations are metered in blocks of replies; pass the id so
+     *  the second reply of a conversation is not charged like the first. */
+    conversationId?: string | null;
   }): Promise<UsageLimitReservation>;
   reserveDocument(input: {
     accountId?: string | null;

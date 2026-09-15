@@ -269,6 +269,8 @@ const sampleUsageSummary: AccountUsageSummary = {
     storedDocumentLimit: 20,
     storedIndexedByteLimit: null,
     monthlyIndexedByteLimit: 1_000_000,
+    monthlyConversationLimit: null,
+    repliesPerConversation: 10,
     createdAt: "2026-06-01T00:00:00.000Z",
     updatedAt: "2026-06-01T00:00:00.000Z",
   },
@@ -286,6 +288,7 @@ const sampleUsageSummary: AccountUsageSummary = {
     used: 500,
     limit: 1_000_000,
   },
+monthlyConversations: null,
 };
 
 const sampleProfiles: UsageLimitProfile[] = [
@@ -296,6 +299,8 @@ const sampleProfiles: UsageLimitProfile[] = [
     storedDocumentLimit: 20,
     storedIndexedByteLimit: null,
     monthlyIndexedByteLimit: 1_000_000,
+    monthlyConversationLimit: null,
+    repliesPerConversation: 10,
     createdAt: "2026-06-01T00:00:00.000Z",
     updatedAt: "2026-06-01T00:00:00.000Z",
   },
@@ -308,6 +313,8 @@ const sampleGrowthProfile: UsageLimitProfile = {
   storedDocumentLimit: 200,
   storedIndexedByteLimit: 10_000_000,
   monthlyIndexedByteLimit: null,
+  monthlyConversationLimit: null,
+  repliesPerConversation: 10,
   createdAt: "2026-06-01T00:00:00.000Z",
   updatedAt: "2026-06-01T00:00:00.000Z",
 };
@@ -331,6 +338,7 @@ const sampleGrowthUsageSummary: AccountUsageSummary = {
     ...sampleUsageSummary.monthlyIndexedBytes,
     limit: null,
   },
+monthlyConversations: null,
 };
 
 const sampleUnassignedUsageSummary: AccountUsageSummary = {
@@ -352,6 +360,7 @@ const sampleUnassignedUsageSummary: AccountUsageSummary = {
     ...sampleUsageSummary.monthlyIndexedBytes,
     limit: null,
   },
+monthlyConversations: null,
 };
 
 const createReadServiceMocks = () => ({
@@ -801,6 +810,39 @@ describe("staff console routes and guards", () => {
       storedIndexedByteLimit: 10_000_000,
       monthlyIndexedByteLimit: null,
     });
+
+    await request(billingApp)
+      .put("/api/v1/ee/operator-console/tiers/growth")
+      .set("Cookie", billingLogin.headers["set-cookie"][0])
+      .send({
+        displayName: "Growth",
+        monthlyAnswerLimit: 100,
+        storedDocumentLimit: null,
+        monthlyConversationLimit: 500,
+        repliesPerConversation: 20,
+      })
+      .expect(200);
+    // storedIndexedByteLimit/monthlyIndexedByteLimit are absent from the request body, so they
+    // are absent from the upsertProfile call too (preserve semantics) — not coerced to null.
+    expect(upsertProfile).toHaveBeenLastCalledWith({
+      key: "growth",
+      displayName: "Growth",
+      monthlyAnswerLimit: 100,
+      storedDocumentLimit: null,
+      monthlyConversationLimit: 500,
+      repliesPerConversation: 20,
+    });
+
+    await request(billingApp)
+      .put("/api/v1/ee/operator-console/tiers/growth")
+      .set("Cookie", billingLogin.headers["set-cookie"][0])
+      .send({
+        displayName: "Growth",
+        monthlyAnswerLimit: 100,
+        storedDocumentLimit: null,
+        repliesPerConversation: 1001,
+      })
+      .expect(400);
 
     await request(billingApp)
       .put("/api/v1/ee/operator-console/tiers/NOPE")

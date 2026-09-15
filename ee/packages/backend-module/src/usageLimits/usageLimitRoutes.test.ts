@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import express from "express";
 import pg from "pg";
 import request from "supertest";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import type { ApplicationRouteMount, UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
 import { HttpError } from "../shared/httpError.js";
@@ -62,7 +62,10 @@ const createApp = () => {
 
 type RouteDependencies = Parameters<ApplicationRouteMount["createRouter"]>[0];
 
-const createDependencies = (database: UsageLimitDatabasePort): RouteDependencies => ({
+const createDependencies = (
+  database: UsageLimitDatabasePort,
+  options: { auditRecord?: ReturnType<typeof vi.fn> } = {},
+): RouteDependencies => ({
   connectorDb: database,
   env: {
     SESSION_COOKIE_NAME: "radioso_session",
@@ -74,6 +77,9 @@ const createDependencies = (database: UsageLimitDatabasePort): RouteDependencies
     markRouteMount(router) {
       return router;
     },
+  },
+  auditService: {
+    record: options.auditRecord ?? vi.fn(async () => undefined),
   },
   authService: {
     async authenticateSession(token: string) {
@@ -111,7 +117,10 @@ const createDependencies = (database: UsageLimitDatabasePort): RouteDependencies
   },
 } as unknown as RouteDependencies);
 
-const createSessionApp = (database: UsageLimitDatabasePort) => {
+const createSessionApp = (
+  database: UsageLimitDatabasePort,
+  options: { auditRecord?: ReturnType<typeof vi.fn> } = {},
+) => {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
@@ -124,7 +133,7 @@ const createSessionApp = (database: UsageLimitDatabasePort) => {
     );
     next();
   });
-  app.use("/api/v1/ee/usage-limits", createUsageLimitRoutes(createDependencies(database)));
+  app.use("/api/v1/ee/usage-limits", createUsageLimitRoutes(createDependencies(database, options)));
   app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     const payload = error as { statusCode?: number; code?: string; message?: string };
     res.status(payload.statusCode ?? 500).json({
@@ -164,6 +173,22 @@ describe("usage limit admin route auth", () => {
     await request(createApp())
       .get("/api/v1/ee/usage-limits/profiles")
       .expect(401);
+  });
+
+  it("rejects an invalid credits payload", async () => {
+    process.env.EE_USAGE_ADMIN_TOKEN = "secret-admin-token";
+
+    await request(createApp())
+      .post(`/api/v1/ee/usage-limits/accounts/${randomUUID()}/credits`)
+      .set("Authorization", "Bearer secret-admin-token")
+      .send({ conversations: 0, reference: "" })
+      .expect(400);
+
+    await request(createApp())
+      .post(`/api/v1/ee/usage-limits/accounts/${randomUUID()}/credits`)
+      .set("Authorization", "Bearer secret-admin-token")
+      .send({ conversations: 3, reference: "x".repeat(201) })
+      .expect(400);
   });
 
   it("requires a signed-in account session", async () => {
@@ -379,5 +404,60 @@ describeIfDatabase("usage limit routes (database-backed)", () => {
       [sessionUserId],
     );
     expect(rows[0].count).toBe("0");
+  });
+
+  it("grants prepaid credits once per reference and audits the grant", async () => {
+    process.env.EE_USAGE_ADMIN_TOKEN = "secret-admin-token";
+    const auditRecord = vi.fn(async () => undefined);
+    const reference = `stripe-evt-${randomUUID()}`;
+
+    const first = await request(createSessionApp(database, { auditRecord }))
+      .post(`/api/v1/ee/usage-limits/accounts/${sessionAccountId}/credits`)
+      .set("Authorization", "Bearer secret-admin-token")
+      .send({ conversations: 5, reference })
+      .expect(200);
+    expect(first.body).toEqual(expect.objectContaining({ applied: true }));
+    expect(first.body.credits).toBeGreaterThan(0);
+    expect(auditRecord).toHaveBeenCalledWith({
+      accountId: sessionAccountId,
+      workspaceId: null,
+      eventType: "usage_limits.credits_added",
+      eventStatus: "success",
+      metadata: {
+        conversations: 5,
+        reference,
+        applied: true,
+        credits: first.body.credits,
+      },
+    });
+
+    const replay = await request(createSessionApp(database, { auditRecord }))
+      .post(`/api/v1/ee/usage-limits/accounts/${sessionAccountId}/credits`)
+      .set("Authorization", "Bearer secret-admin-token")
+      .send({ conversations: 5, reference })
+      .expect(200);
+    expect(replay.body).toEqual(expect.objectContaining({ applied: false, credits: first.body.credits }));
+    expect(auditRecord).toHaveBeenLastCalledWith({
+      accountId: sessionAccountId,
+      workspaceId: null,
+      eventType: "usage_limits.credits_added",
+      eventStatus: "success",
+      metadata: {
+        conversations: 5,
+        reference,
+        applied: false,
+        credits: first.body.credits,
+      },
+    });
+  });
+
+  it("returns 404 for a credits grant on an unknown account", async () => {
+    process.env.EE_USAGE_ADMIN_TOKEN = "secret-admin-token";
+
+    await request(createSessionApp(database))
+      .post(`/api/v1/ee/usage-limits/accounts/${randomUUID()}/credits`)
+      .set("Authorization", "Bearer secret-admin-token")
+      .send({ conversations: 3, reference: `stripe-evt-${randomUUID()}` })
+      .expect(404);
   });
 });

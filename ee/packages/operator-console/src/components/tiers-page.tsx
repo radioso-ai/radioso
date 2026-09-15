@@ -13,6 +13,8 @@ const emptyForm = {
   key: "",
   displayName: "",
   monthlyAnswerLimit: "",
+  monthlyConversationLimit: "",
+  repliesPerConversation: "10",
   storedDocumentLimit: "",
   storedIndexedByteLimit: "",
   monthlyIndexedByteLimit: "",
@@ -42,6 +44,8 @@ export function TiersPage() {
       key: tier.key,
       displayName: tier.displayName,
       monthlyAnswerLimit: tier.monthlyAnswerLimit === null ? "" : String(tier.monthlyAnswerLimit),
+      monthlyConversationLimit: tier.monthlyConversationLimit === null ? "" : String(tier.monthlyConversationLimit),
+      repliesPerConversation: String(tier.repliesPerConversation ?? 10),
       storedDocumentLimit: tier.storedDocumentLimit === null ? "" : String(tier.storedDocumentLimit),
       storedIndexedByteLimit: formatNullableByteInput(tier.storedIndexedByteLimit),
       monthlyIndexedByteLimit: formatNullableByteInput(tier.monthlyIndexedByteLimit),
@@ -57,6 +61,8 @@ export function TiersPage() {
       await staffAuthApi.upsertTier(key, {
         displayName: form.displayName.trim(),
         monthlyAnswerLimit: form.monthlyAnswerLimit.trim() === "" ? null : Number(form.monthlyAnswerLimit),
+        monthlyConversationLimit: form.monthlyConversationLimit.trim() === "" ? null : Number(form.monthlyConversationLimit),
+        repliesPerConversation: form.repliesPerConversation.trim() === "" ? 10 : Number(form.repliesPerConversation),
         storedDocumentLimit: form.storedDocumentLimit.trim() === "" ? null : Number(form.storedDocumentLimit),
         storedIndexedByteLimit: parseNullableHumanBytes(form.storedIndexedByteLimit),
         monthlyIndexedByteLimit: parseNullableHumanBytes(form.monthlyIndexedByteLimit),
@@ -86,7 +92,7 @@ export function TiersPage() {
             <thead className="bg-zinc-900 text-left text-xs uppercase tracking-normal text-zinc-500">
               <tr>
                 <th className="px-4 py-3 font-medium">Tier</th>
-                <th className="px-4 py-3 font-medium">Answers</th>
+                <th className="px-4 py-3 font-medium">Usage</th>
                 <th className="px-4 py-3 font-medium">Documents</th>
                 <th className="px-4 py-3 font-medium">Stored bytes</th>
                 <th className="px-4 py-3 font-medium">Monthly bytes</th>
@@ -100,7 +106,11 @@ export function TiersPage() {
                     <div className="font-medium text-zinc-100">{tier.displayName}</div>
                     <div className="text-xs text-zinc-500">{tier.key}</div>
                   </td>
-                  <td className="px-4 py-3 text-zinc-300">{limitText(tier.monthlyAnswerLimit)}</td>
+                  <td className="px-4 py-3 text-zinc-300">
+                    {tier.monthlyConversationLimit === null
+                      ? limitText(tier.monthlyAnswerLimit)
+                      : `${limitText(tier.monthlyConversationLimit)} conv · ${tier.repliesPerConversation}/conv`}
+                  </td>
                   <td className="px-4 py-3 text-zinc-300">{limitText(tier.storedDocumentLimit)}</td>
                   <td className="px-4 py-3 text-zinc-300">{formatHumanBytes(tier.storedIndexedByteLimit)}</td>
                   <td className="px-4 py-3 text-zinc-300">{formatHumanBytes(tier.monthlyIndexedByteLimit)}</td>
@@ -132,6 +142,16 @@ export function TiersPage() {
               <label className="block text-sm font-medium text-zinc-200">
                 Monthly answer limit
                 <Input className="mt-2 border-zinc-700 bg-zinc-950 text-zinc-100" type="number" min="0" value={form.monthlyAnswerLimit} placeholder="unlimited" onChange={(event) => setForm({ ...form, monthlyAnswerLimit: event.target.value })} />
+                <span className="mt-1 block text-xs font-normal text-zinc-500">Legacy. Ignored when a conversation limit is set.</span>
+              </label>
+              <label className="block text-sm font-medium text-zinc-200">
+                Monthly conversation limit
+                <Input className="mt-2 border-zinc-700 bg-zinc-950 text-zinc-100" type="number" min="0" value={form.monthlyConversationLimit} placeholder="unlimited" onChange={(event) => setForm({ ...form, monthlyConversationLimit: event.target.value })} />
+                <span className="mt-1 block text-xs font-normal text-zinc-500">One unit for everything: a Ray message is 1, two test runs are 1, an on-demand Pulse report is 10.</span>
+              </label>
+              <label className="block text-sm font-medium text-zinc-200">
+                Replies per conversation
+                <Input className="mt-2 border-zinc-700 bg-zinc-950 text-zinc-100" type="number" min="1" value={form.repliesPerConversation} onChange={(event) => setForm({ ...form, repliesPerConversation: event.target.value })} />
               </label>
               <label className="block text-sm font-medium text-zinc-200">
                 Stored document limit

@@ -58,6 +58,8 @@ const tierProfileBodySchema = z.object({
   storedDocumentLimit: nullableLimitSchema,
   storedIndexedByteLimit: nullableByteLimitSchema,
   monthlyIndexedByteLimit: nullableByteLimitSchema,
+  monthlyConversationLimit: nullableLimitSchema.optional(),
+  repliesPerConversation: z.number().int().min(1).max(1000).optional(),
 });
 
 const staffIdParamsSchema = z.object({
@@ -369,23 +371,31 @@ export const createStaffConsoleRoutes = (
       try {
         const { profileKey } = parseRequest(tierProfileParamsSchema, req.params, "Invalid tier profile key");
         const body = parseRequest(tierProfileBodySchema, req.body, "Invalid tier profile payload");
+        const hasStoredIndexedByteLimit = Object.prototype.hasOwnProperty.call(body, "storedIndexedByteLimit");
+        const hasMonthlyIndexedByteLimit = Object.prototype.hasOwnProperty.call(body, "monthlyIndexedByteLimit");
+        const hasMonthlyConversationLimit = Object.prototype.hasOwnProperty.call(body, "monthlyConversationLimit");
+        const hasRepliesPerConversation = Object.prototype.hasOwnProperty.call(body, "repliesPerConversation");
+        // The service treats a key's mere presence on this object as "the caller named this
+        // field" (omitted = preserve, explicit null = clear). A key set to `undefined` still
+        // counts as present in JS, so each optional field is spread in only when the request
+        // body actually carried it — never assigned unconditionally with a `?? null` fallback.
         const profile = await usageLimitService.upsertProfile({
           key: profileKey,
           displayName: body.displayName,
           monthlyAnswerLimit: body.monthlyAnswerLimit,
           storedDocumentLimit: body.storedDocumentLimit,
-          storedIndexedByteLimit: body.storedIndexedByteLimit ?? null,
-          monthlyIndexedByteLimit: body.monthlyIndexedByteLimit ?? null,
+          ...(hasStoredIndexedByteLimit ? { storedIndexedByteLimit: body.storedIndexedByteLimit ?? null } : {}),
+          ...(hasMonthlyIndexedByteLimit ? { monthlyIndexedByteLimit: body.monthlyIndexedByteLimit ?? null } : {}),
+          ...(hasMonthlyConversationLimit ? { monthlyConversationLimit: body.monthlyConversationLimit } : {}),
+          ...(hasRepliesPerConversation ? { repliesPerConversation: body.repliesPerConversation } : {}),
         });
         const fields = [
           "monthlyAnswerLimit",
           "storedDocumentLimit",
-          ...(Object.prototype.hasOwnProperty.call(body, "storedIndexedByteLimit")
-            ? ["storedIndexedByteLimit"]
-            : []),
-          ...(Object.prototype.hasOwnProperty.call(body, "monthlyIndexedByteLimit")
-            ? ["monthlyIndexedByteLimit"]
-            : []),
+          ...(hasStoredIndexedByteLimit ? ["storedIndexedByteLimit"] : []),
+          ...(hasMonthlyIndexedByteLimit ? ["monthlyIndexedByteLimit"] : []),
+          ...(hasMonthlyConversationLimit ? ["monthlyConversationLimit"] : []),
+          ...(hasRepliesPerConversation ? ["repliesPerConversation"] : []),
         ];
         await dependencies.auditService.record({
           accountId: null,

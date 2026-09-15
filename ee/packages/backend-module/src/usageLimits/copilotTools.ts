@@ -16,6 +16,15 @@ const usageWindowSchema = z.object({
   resetAt: z.string().nullable(),
 });
 
+// Conversation metering counts in tenths (ten test runs make one conversation), so used/limit/remaining
+// can land on a fractional value like 0.5; every other window counts whole units.
+const fractionalUsageWindowSchema = z.object({
+  used: z.number().nonnegative(),
+  limit: z.number().nonnegative().nullable(),
+  remaining: z.number().nonnegative().nullable(),
+  resetAt: z.string().nullable(),
+});
+
 const outputSchema = z.object({
   planName: z.string().nullable(),
   monthlyAnswers: usageWindowSchema,
@@ -23,7 +32,7 @@ const outputSchema = z.object({
   storedIndexedBytes: usageWindowSchema,
   monthlyIndexedBytes: usageWindowSchema,
   /** Null when the plan meters answers rather than conversations. */
-  monthlyConversations: usageWindowSchema.nullable(),
+  monthlyConversations: fractionalUsageWindowSchema.nullable(),
 });
 
 /** `null` limit means unlimited, so remaining is unknowable rather than zero. */

@@ -104,7 +104,7 @@ const tenthsFor = (kind: UsageKind): number => PLAN_CATALOG.countsAs[kind] * TEN
  * The *weight* each kind costs comes from `PLAN_CATALOG.countsAs`, the single
  * source of truth for the counting table, so the two can never drift apart.
  */
-const usageWeight = (usage: AnswerUsageKind): SurfaceWeight | null => {
+export const usageWeight = (usage: AnswerUsageKind): SurfaceWeight | null => {
   switch (usage) {
     // The widget greeting on open. A visitor who opens the widget and leaves
     // has not had a conversation.

@@ -5,7 +5,7 @@ import type { CopilotToolContribution, CopilotToolDescriptor } from "../radiosoM
 import type { AccountUsageSummary } from "./usageLimitService.js";
 
 /** The one read this contribution needs; the service itself owns reservation and enforcement. */
-export interface CopilotAccountUsagePort {
+interface CopilotAccountUsagePort {
   getAccountUsage(accountId: string): Promise<AccountUsageSummary>;
 }
 

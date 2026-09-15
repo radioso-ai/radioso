@@ -159,7 +159,7 @@ const resolveLogger = (dependencies: RouteDependencies): StaffConsoleLogger => {
   return logger ?? {};
 };
 
-export interface StaffConsoleRouteRepositories {
+interface StaffConsoleRouteRepositories {
   users?: StaffUserRepository;
   sessions?: StaffSessionRepository;
   organizationDirectoryService?: Pick<OrganizationDirectoryService, "listOrganizations" | "getOrganizationName">;

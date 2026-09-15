@@ -27,7 +27,7 @@ import { appendDirectiveSteeringStage } from "../../chat/contracts/index.js";
 
 const RETRIEVAL_DIRECTIVE_ROUTE = "retrieval";
 
-export interface RetrievalAnswerServiceDependencies {
+interface RetrievalAnswerServiceDependencies {
   retrievalPipeline: Pick<RetrievalPipelineService, "interpret" | "runInterpreted">;
   chatGateway: Pick<ChatGateway, "answer">;
   usageLimitPolicy?: UsageLimitPolicy;

@@ -10,6 +10,10 @@ last_updated: 2026-07-27
 When on, a new conversation opens with a greeting from the agent before the visitor has said anything.
 
 ## Details
-Turn this on when a fresh chat should start with a short introduction — useful in an embedded widget, where a first message invites the visitor in. The greeting draws on the agent's name and greeting instruction, plus any language hint the client sends with the request.
+Turn this on when a fresh chat should start with a short introduction — useful in an embedded widget, where a first message invites the visitor in.
+
+When on, choose how the greeting is worded:
+- **Automatic**: The agent generates the greeting using its name, greeting instruction, and any language hint the client sends.
+- **Exact words**: You write the greeting text verbatim, in one or more languages, with optional suggestion chips the visitor can click.
 
 Leave it off when you'd rather the agent stay quiet until the visitor speaks first, which keeps transcripts free of openers no one answered.

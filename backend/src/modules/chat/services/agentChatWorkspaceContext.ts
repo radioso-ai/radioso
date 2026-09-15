@@ -11,10 +11,12 @@ import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/worksp
  * The rule: the override is a *chat-tier* override for the calls that produce
  * the visitor's turn. Two groups deliberately do not receive it:
  *
- * - The staged router, interpreter, and language detector are rewrite-tier
- *   calls, so a chat override is out of scope by definition. The resolver would
- *   honour `capabilityOverride` on any tier, so this is caller discipline: those
- *   callers pass `{ workspaceId }` alone, and a test pins it.
+ * - The staged router, interpreter, and language detector run on the
+ *   deployment's rewrite default: their pipeline pins the env rewrite
+ *   provider/model as its own override and takes only credentials from the
+ *   workspace, and the live router gateway never reads `workspaceContext`. A
+ *   test still pins that those callers pass `{ workspaceId }` alone, for the
+ *   day someone swaps in the workspace-aware router seam.
  * - The staged directive matcher and the no-context decline are chat-tier calls
  *   that stay on the workspace preference because they serve more than planner
  *   failure: the staged path also runs on every bypassed turn (active routine,

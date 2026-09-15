@@ -659,6 +659,31 @@ describe("chat service fused turn planning", () => {
     expect(staged.languageDetect).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps the staged fallback on the workspace tier when the overridden planner fails", async () => {
+    const chatModelOverride = { provider: "openai" as const, model: "gpt-5.4-nano" };
+    const staged = countingStagedPorts();
+    const planner = plannerFactory({ completions: ["<<<not json>>>"] });
+    const service = buildService({
+      planner,
+      pipeline: retrievalPipeline([]),
+      chatGateway: pipelineChatGateway("Grounded [[1]]."),
+      staged,
+      agentService: { resolve: async () => ({ ...baseAgentRecord(), chatModelOverride }) },
+    });
+
+    await service.answer({ workspaceId: "workspace-1", query: "refund window?", stream: false });
+
+    // The override reached the planner; the staged router and language detector
+    // that recover from its failure resolve their own tier from the workspace alone.
+    expect(planner.workspaceContexts()).toEqual([{ workspaceId: "workspace-1", capabilityOverride: chatModelOverride }]);
+    expect(staged.routerClassify).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceContext: { workspaceId: "workspace-1" } }),
+    );
+    expect(staged.languageDetect).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceContext: { workspaceId: "workspace-1" } }),
+    );
+  });
+
   it("rejects the whole plan on an unknown directive name and falls back staged", async () => {
     const staged = countingStagedPorts();
     const planner = plannerFactory({

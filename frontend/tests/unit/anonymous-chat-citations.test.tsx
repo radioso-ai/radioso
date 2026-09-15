@@ -141,9 +141,11 @@ function ChatProbe({
 const renderProvider = ({
   onMessages,
   sendMessage,
+  resolveSignedIdentity,
 }: {
   onMessages: (messages: ChatMessage[]) => void
   sendMessage?: string
+  resolveSignedIdentity?: () => Promise<string | null>
 }) => {
   const container = document.createElement('div')
   document.body.appendChild(container)
@@ -151,7 +153,7 @@ const renderProvider = ({
 
   act(() => {
     root.render(
-      <AnonymousChatProvider token="public-chat-token" sessionChannel={null}>
+      <AnonymousChatProvider token="public-chat-token" sessionChannel={null} resolveSignedIdentity={resolveSignedIdentity}>
         <ChatProbe onMessages={onMessages} sendMessage={sendMessage} />
       </AnonymousChatProvider>,
     )
@@ -211,6 +213,36 @@ describe('anonymous chat citations', () => {
       const assistant = latestMessages.find((message) => message.role === 'assistant' && message.status === 'complete')
       expect(assistant?.citations).toEqual(citedAnswer.citations)
       expect(assistant?.answerSegments).toEqual(citedAnswer.answerSegments)
+    })
+  })
+
+  it('awaits resolveSignedIdentity and sends its result as signedIdentity', async () => {
+    publicChatApiMock.streamMessage.mockImplementation(async (_token, _data, handlers) => {
+      const completion = {
+        conversationId: 'conversation-1',
+        assistantMessageId: 'assistant-1',
+        ...citedAnswer,
+      }
+
+      handlers?.onConversation?.({ conversationId: completion.conversationId })
+      handlers?.onDone?.(completion)
+      return completion
+    })
+    const resolveSignedIdentity = vi.fn().mockResolvedValue('provider-minted-token')
+
+    mounted = renderProvider({
+      sendMessage: 'What does the policy say?',
+      onMessages: () => {},
+      resolveSignedIdentity,
+    })
+
+    await waitFor(() => {
+      expect(publicChatApiMock.streamMessage).toHaveBeenCalledTimes(1)
+    })
+
+    expect(resolveSignedIdentity).toHaveBeenCalledTimes(1)
+    expect(publicChatApiMock.streamMessage.mock.calls[0]?.[1]).toMatchObject({
+      signedIdentity: 'provider-minted-token',
     })
   })
 

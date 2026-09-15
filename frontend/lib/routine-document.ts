@@ -43,15 +43,15 @@ export function instructionToProseParagraphs(segments: RoutineBlockInstructionSe
 // (RoutineBlockInstructionSegment) — a skill is called by a tool step, not by step text. Only
 // a `variable` chip carries a slot the routine has declared, so only that kind becomes a slot
 // reference here; any other chip kind (a skill, handoff, decision, condition, or end chip —
-// e.g. arriving via paste) writes back as its plain label instead of silently turning into an
-// undeclared slot reference.
+// e.g. arriving via paste) writes back as the text its author typed (`#skill`, `@handoff`)
+// instead of silently turning into an undeclared slot reference.
 export function proseParagraphsToInstruction(paragraphs: ProseParagraph[]): RoutineBlockInstructionSegment[] {
   const instruction = paragraphs.flatMap((paragraph, index): RoutineBlockInstructionSegment[] => [
     ...(index > 0 ? [{ kind: 'text' as const, text: '\n' }] : []),
     ...paragraph.segments.map((segment): RoutineBlockInstructionSegment => {
       if (segment.kind === 'text') return segment
       if (segment.chipKind === 'variable') return { kind: 'slotReference', key: segment.refId, source: `{{slot.${segment.refId}}}` }
-      return { kind: 'text', text: segment.label }
+      return { kind: 'text', text: `${segment.chipKind === 'skill' ? '#' : '@'}${segment.refId}` }
     }),
   ])
   return instruction.length > 0 ? instruction : [{ kind: 'text', text: '' }]

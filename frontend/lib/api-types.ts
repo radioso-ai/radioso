@@ -53,6 +53,21 @@ export type DirectiveDraftRequest = ApiSchemas['DirectiveDraftRequest']
 export type DirectiveDraftResponse = ApiSchemas['DirectiveDraftResponse']
 export type DirectiveDraftDirective = ApiSchemas['DirectiveDraftDirective']
 
+export type ExactContentItem = ApiSchemas['ExactContentItem']
+// The generated `exactContent` type is `ExactContentItem & (Record<string, never> | null)` —
+// an openapi-typescript artifact of a `.nullable()`-wrapped registered object schema that
+// collapses to non-nullable under structural assignability. Restated as the actual nullable
+// contract (`ExactContentItem | null`, matching `exactContentItemSchema.nullable()` on the
+// backend) rather than carried through with the quirk, mirroring `ChatSuggestion` above.
+export type AgentGreetingDraft = Omit<ApiSchemas['AgentGreetingDraft'], 'exactContent'> & {
+  exactContent: ExactContentItem | null
+}
+export type AgentGreetingValidation = ApiSchemas['AgentGreetingValidation']
+export type AgentGreetingValidationIssue = NonNullable<AgentGreetingValidation['issues']>[number]
+export type AgentGreetingDraftResponse = Omit<ApiSchemas['AgentGreetingDraftResponse'], 'greeting'> & {
+  greeting: AgentGreetingDraft
+}
+
 export type ContextVariable = ApiSchemas['ContextVariable']
 export type ContextVariableCreateRequest = ApiSchemas['ContextVariableCreateRequest']
 export type ContextVariableUpdateRequest = ApiSchemas['ContextVariableUpdateRequest']

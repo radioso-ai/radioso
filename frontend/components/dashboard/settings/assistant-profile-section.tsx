@@ -5,6 +5,7 @@ import { UserRound } from 'lucide-react'
 
 import { AssistantLocaleCombobox } from '@/components/dashboard/settings/assistant-locale-combobox'
 import { BlockHeading } from '@/components/dashboard/settings/block-heading'
+import { ExactGreetingEditor } from '@/components/dashboard/settings/exact-greeting-editor'
 import { ModelPicker } from '@/components/dashboard/settings/model-picker'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { Button } from '@/components/ui/button'
@@ -183,9 +184,13 @@ interface AssistantProfileSectionProps {
   assistantLocaleInput: string
   // Operator-only internal label is per-agent; hidden in workspace general settings.
   showInternalName?: boolean
+  // Exact greeting content is agent-scoped (spec 1150 Slice A); absent in workspace-level
+  // general settings, where the wording choice stays Automatic-only.
+  agentId?: string
   onAssistantSettingChange: <K extends keyof GeneralSettings>(key: K, value: GeneralSettings[K]) => void
   onAssistantLocaleInputChange: (value: string) => void
   onAssistantBehaviorDraft: (updater: (current: AssistantBehaviorSettings) => AssistantBehaviorSettings) => void
+  onGreetingSaveStateChange?: (input: { state: 'idle' | 'saved' | 'saving' | 'error'; message?: string | null }) => void
   isAnonSaving: boolean
 }
 
@@ -194,9 +199,11 @@ export function AssistantProfileSection({
   assistantBehaviorSettings,
   assistantLocaleInput,
   showInternalName = false,
+  agentId,
   onAssistantSettingChange,
   onAssistantLocaleInputChange,
   onAssistantBehaviorDraft,
+  onGreetingSaveStateChange,
   isAnonSaving,
 }: AssistantProfileSectionProps) {
   const [pendingPreset, setPendingPreset] = useState<InstructionPreset | null>(null)
@@ -405,6 +412,19 @@ export function AssistantProfileSection({
                   <p className="text-xs text-muted-foreground">
                     Used only when we can&apos;t detect the visitor&apos;s language. Replies still follow the visitor&apos;s message.
                   </p>
+                </div>
+              ) : null}
+              {anonSettings.proactiveGreetingEnabled && agentId ? (
+                <div className="space-y-2 border-t border-border pt-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <Label className="text-foreground">Greeting wording</Label>
+                    <Badge variant="outline">Saved to draft</Badge>
+                  </div>
+                  <ExactGreetingEditor
+                    agentId={agentId}
+                    agentDefaultLocale={anonSettings.assistantDefaultLocale ?? 'en'}
+                    onSaveStateChange={onGreetingSaveStateChange}
+                  />
                 </div>
               ) : null}
             </div>

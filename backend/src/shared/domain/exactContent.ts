@@ -12,9 +12,7 @@ import { normalizeLocaleTag } from "./locale.js";
  */
 
 const EXACT_CONTENT_MAX_CHIPS = 5;
-const EXACT_CONTENT_BODY_MIN_CODE_POINTS = 1;
 export const EXACT_CONTENT_BODY_MAX_CODE_POINTS = 8000;
-const EXACT_CONTENT_CHIP_LABEL_MIN_CODE_POINTS = 1;
 export const EXACT_CONTENT_CHIP_LABEL_MAX_CODE_POINTS = 80;
 
 /** Counts Unicode code points, not UTF-16 units, so a single emoji counts once (FR-009). */

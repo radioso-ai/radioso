@@ -1438,9 +1438,9 @@ Primary paths:
 - `ee/`
 - `backend/src/app/composition/`
 - relevant `backend/src/modules/*/composition.ts` files
-- `packages/plan-catalog/` — the source of truth for Radioso Cloud plan numbers
+- `ee/packages/plan-catalog/` — the source of truth for Radioso Cloud plan numbers
   (prices, quotas, default plan, self-serve ceiling, usage-counting weights,
-  top-up, managed service). Entry point `src/index.ts`
+  top-up, managed service, the managed-plan model set). Entry point `src/index.ts`
   (`PLAN_CATALOG`, `findPlan`, `formatPrice`); data in `src/plans.json`; focused
   test `tests/planCatalog.test.ts`.
 - `ee/packages/backend-module/src/billing/` — publishes the plan catalog over
@@ -1450,19 +1450,26 @@ Primary paths:
   `plansRoutes.test.ts`. `ee/packages/backend-module/src/usageLimits/planCatalogSeed.ts`
   maps a catalog plan onto `ee_usage_limit_profiles` columns for the migrator
   in `usageLimitMigrator.ts`; focused test `planCatalogSeed.test.ts`.
+- `ee/packages/backend-module/src/managedModels/` — the Enterprise
+  `ManagedModelPolicy`: workspace → account → assigned plan → the catalog's
+  `managedModels`. Entry point `managedModelPolicy.ts`
+  (`EnterpriseManagedModelPolicy`), registered by `billing/applicationModule.ts`;
+  focused test `managedModelPolicy.test.ts`. The OSS port it implements is
+  `backend/src/shared/domain/managedModelPolicy.ts`, consumed by
+  `backend/src/app/composition/workspaceLlmCapabilityResolver.ts`.
 
 Useful searches:
 
 - `rg "Enterprise|edition|license|capability" ee backend/src frontend`
 - `rg "extension|capability policy|composition" ee backend/src/app/composition backend/src/modules`
-- `rg "PLAN_CATALOG|plan-catalog" ee packages/plan-catalog`
+- `rg "PLAN_CATALOG|plan-catalog" ee`
 
 Focused checks:
 
 - `./run-ee-dev.sh` for local Enterprise runtime
 - `cd ee && pnpm run build`
 - `cd ee && pnpm test`
-- `pnpm --dir packages/plan-catalog test`
+- `pnpm --dir ee/packages/plan-catalog test`
 - `pnpm --dir ee/packages/backend-module exec vitest run src/billing src/usageLimits`
 
 Related docs and specs:

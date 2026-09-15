@@ -387,12 +387,28 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
     }).nullable(),
   );
 
+  const WorkspaceLlmManagedModelSchema = registry.register(
+    "WorkspaceLlmManagedModel",
+    z.object({
+      provider: z.enum(workspaceLlmProviderNames),
+      model: z.string(),
+    }).nullable().openapi({
+      description:
+        "The model the workspace's plan runs for this capability instead of the stored preference. Null when the workspace's own preference (or the deployment default) applies.",
+    }),
+  );
+
   const WorkspaceLlmModelsResponseSchema = registry.register(
     "WorkspaceLlmModelsResponse",
     z.object({
       chat: WorkspaceLlmCapabilityPreferenceSchema,
       rewrite: WorkspaceLlmCapabilityPreferenceSchema,
       rerank: WorkspaceLlmCapabilityPreferenceSchema,
+      managed: z.object({
+        chat: WorkspaceLlmManagedModelSchema,
+        rewrite: WorkspaceLlmManagedModelSchema,
+        rerank: WorkspaceLlmManagedModelSchema,
+      }),
       knownModelsByProvider: z.object({
         openai: z.array(z.string()),
         "openai-compatible": z.array(z.string()),
@@ -510,6 +526,7 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
     WebhookDestinationRequestSchema,
     WebhookDestinationParamsSchema,
     WorkspaceLlmCapabilityPreferenceSchema,
+    WorkspaceLlmManagedModelSchema,
     WorkspaceLlmModelsResponseSchema,
     UpdateWorkspaceLlmModelsRequestSchema,
   });

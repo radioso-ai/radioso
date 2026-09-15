@@ -249,6 +249,20 @@ describe("WorkspaceProviderCredentialsService", () => {
       ).rejects.toThrow(/CONNECTOR_ENCRYPTION_KEY/);
     });
 
+    it("answers hasCredentials from row presence without needing the master key", async () => {
+      repo.rows.set(`${WORKSPACE_ID}:claude`, {
+        workspaceId: WORKSPACE_ID,
+        provider: "claude",
+        ciphertext: "opaque",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      await expect(service.hasCredentials(WORKSPACE_ID, "claude")).resolves.toBe(true);
+      await expect(service.hasCredentials(WORKSPACE_ID, "openai")).resolves.toBe(false);
+      await expect(service.hasCredentials("ws-other", "claude")).resolves.toBe(false);
+    });
+
     it("still allows listing configured providers (read-only inventory)", async () => {
       const list = await service.listConfigured(WORKSPACE_ID);
       expect(list).toEqual([]);

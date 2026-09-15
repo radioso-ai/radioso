@@ -1,8 +1,8 @@
-import type { LlmCapabilityResolver, LlmCapabilityResolveInput } from "./capabilityResolver.js";
+import type { LlmCapabilityConfigResolver, LlmCapabilityResolveInput } from "./capabilityResolver.js";
 import { ModelDirectiveMatchGateway, type DirectiveMatchGateway } from "@radioso/conversation-defaults";
 import type { LlmCapabilityConfig, TextGenerationClient } from "./providerTypes.js";
 import { ModelInferencePipelineService, type ModelInferencePipeline } from "./modelInferencePipeline.js";
-import { TextGenerationClientCache, createTextGenerationClient } from "./textClientFactory.js";
+import { TextGenerationClientCache } from "./textClientFactory.js";
 import {
   ModelChatGateway,
   ModelFallbackReplyComposer,
@@ -34,7 +34,7 @@ import type { TurnPlanGatewayFactory, TurnPlanInferenceClient } from "./turnPlan
 import { loadPromptTemplate } from "../prompts/promptLoader.js";
 
 interface ContextualGatewayDependencies {
-  resolver: LlmCapabilityResolver;
+  resolver: LlmCapabilityConfigResolver;
   clientCache?: TextGenerationClientCache;
 }
 
@@ -46,7 +46,7 @@ type TextGenerationCapability = "chat" | "rewrite" | "rerank";
 
 const resolveClient = async (
   cache: TextGenerationClientCache,
-  resolver: LlmCapabilityResolver,
+  resolver: LlmCapabilityConfigResolver,
   capability: TextGenerationCapability,
   context: LlmCapabilityResolveInput,
 ): Promise<TextGenerationClient> => {
@@ -73,7 +73,7 @@ export interface DirectiveMatchGatewayFactory {
  * configured tier and binds that attribution to every execution. It intentionally
  * knows no product operation.
  */
-export interface ContextualInferenceFactory {
+interface ContextualInferenceFactory {
   create(input: {
     workspaceContext: LlmCapabilityResolveInput;
     modelCallContext: ModelCallUsageContext;
@@ -321,4 +321,3 @@ export class ContextualRerankGateway implements RerankGateway {
 }
 
 // Re-export the standalone helper so external composition code can use the cache.
-export { createTextGenerationClient };

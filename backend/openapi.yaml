@@ -1726,6 +1726,20 @@ components:
       required:
         - provider
         - model
+    WorkspaceLlmManagedModel:
+      type:
+        - object
+        - "null"
+      properties:
+        provider:
+          type: string
+          enum: *a12
+        model:
+          type: string
+      required:
+        - provider
+        - model
+      description: The model the workspace's plan runs for this capability instead of the stored preference. Null when the workspace's own preference (or the deployment default) applies.
     WorkspaceLlmModelsResponse:
       type: object
       properties:
@@ -1735,6 +1749,19 @@ components:
           $ref: "#/components/schemas/WorkspaceLlmCapabilityPreference"
         rerank:
           $ref: "#/components/schemas/WorkspaceLlmCapabilityPreference"
+        managed:
+          type: object
+          properties:
+            chat:
+              $ref: "#/components/schemas/WorkspaceLlmManagedModel"
+            rewrite:
+              $ref: "#/components/schemas/WorkspaceLlmManagedModel"
+            rerank:
+              $ref: "#/components/schemas/WorkspaceLlmManagedModel"
+          required:
+            - chat
+            - rewrite
+            - rerank
         knownModelsByProvider:
           type: object
           properties:
@@ -1763,6 +1790,7 @@ components:
         - chat
         - rewrite
         - rerank
+        - managed
         - knownModelsByProvider
     UpdateWorkspaceLlmModelsRequest:
       type: object

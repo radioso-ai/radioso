@@ -2565,6 +2565,31 @@
           "model"
         ]
       },
+      "WorkspaceLlmManagedModel": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "openai",
+              "openai-compatible",
+              "gemini",
+              "claude"
+            ]
+          },
+          "model": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "model"
+        ],
+        "description": "The model the workspace's plan runs for this capability instead of the stored preference. Null when the workspace's own preference (or the deployment default) applies."
+      },
       "WorkspaceLlmModelsResponse": {
         "type": "object",
         "properties": {
@@ -2576,6 +2601,25 @@
           },
           "rerank": {
             "$ref": "#/components/schemas/WorkspaceLlmCapabilityPreference"
+          },
+          "managed": {
+            "type": "object",
+            "properties": {
+              "chat": {
+                "$ref": "#/components/schemas/WorkspaceLlmManagedModel"
+              },
+              "rewrite": {
+                "$ref": "#/components/schemas/WorkspaceLlmManagedModel"
+              },
+              "rerank": {
+                "$ref": "#/components/schemas/WorkspaceLlmManagedModel"
+              }
+            },
+            "required": [
+              "chat",
+              "rewrite",
+              "rerank"
+            ]
           },
           "knownModelsByProvider": {
             "type": "object",
@@ -2617,6 +2661,7 @@
           "chat",
           "rewrite",
           "rerank",
+          "managed",
           "knownModelsByProvider"
         ]
       },

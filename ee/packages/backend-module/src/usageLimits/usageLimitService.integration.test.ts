@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { PLAN_CATALOG } from "@radioso/plan-catalog";
+
 import { EnterpriseUsageLimitService } from "./usageLimitService.js";
 import { UsageLimitExceededError } from "./errors.js";
 import { usageLimitMigrator } from "./usageLimitMigrator.js";
@@ -507,5 +509,46 @@ describeIfDatabase("EE usage limit service integration", () => {
     await expect(service.reserveAnswer({ accountId, workspaceId, surface: "website_embed", conversationId: randomUUID() }))
       .rejects.toBeInstanceOf(UsageLimitExceededError);
     expect((await service.getAccountUsage(accountId)).monthlyConversations).toBeNull();
+  });
+
+  it("seeds a profile per @radioso/plan-catalog plan with the catalog's own values", async () => {
+    const service = new EnterpriseUsageLimitService(database);
+    const profiles = await service.listProfiles();
+
+    for (const plan of PLAN_CATALOG.plans) {
+      const profile = profiles.find((candidate) => candidate.key === plan.id);
+      expect(profile).toMatchObject({
+        key: plan.id,
+        displayName: plan.name,
+        monthlyAnswerLimit: null,
+        storedDocumentLimit: plan.documents,
+        storedIndexedByteLimit: plan.storedBytes,
+        monthlyIndexedByteLimit: plan.monthlyIndexedBytes,
+        monthlyConversationLimit: plan.monthlyConversations,
+        repliesPerConversation: PLAN_CATALOG.repliesPerConversation,
+      });
+    }
+  });
+
+  it("keeps a console edit to a seeded profile when the migrator runs again", async () => {
+    const service = new EnterpriseUsageLimitService(database);
+    const satellite = PLAN_CATALOG.plans.find((plan) => plan.id === "satellite")!;
+    const edited = await service.upsertProfile({
+      key: "satellite",
+      displayName: satellite.name,
+      monthlyAnswerLimit: null,
+      storedDocumentLimit: satellite.documents,
+      storedIndexedByteLimit: satellite.storedBytes,
+      monthlyIndexedByteLimit: satellite.monthlyIndexedBytes,
+      monthlyConversationLimit: 42,
+      repliesPerConversation: PLAN_CATALOG.repliesPerConversation,
+    });
+    expect(edited.monthlyConversationLimit).toBe(42);
+
+    await usageLimitMigrator.migrate(database);
+
+    const profiles = await service.listProfiles();
+    const reread = profiles.find((candidate) => candidate.key === "satellite");
+    expect(reread?.monthlyConversationLimit).toBe(42);
   });
 });

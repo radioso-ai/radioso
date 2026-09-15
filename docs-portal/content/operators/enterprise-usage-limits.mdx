@@ -1,7 +1,7 @@
 ---
 title: "Enterprise usage limits"
 description: "How Enterprise Edition meters and caps indexed storage, monthly indexed content, and monthly answers per account, and enforces the caps before work begins."
-last_updated: 2026-08-07
+last_updated: 2026-09-15
 ---
 
 # Enterprise usage limits
@@ -58,6 +58,18 @@ curl -X PUT https://radioso.example.com/api/v1/ee/usage-limits/profiles/growth \
 ```
 
 Byte limits are persisted and accepted in bytes. The dashboard renders them in KB, MB, or GB for readability, but the API contract is always integer bytes.
+
+## Seeded profiles
+
+Radioso seeds three profiles from the `@radioso/plan-catalog` package — `comet`, `satellite`, and `planet` — each carrying that plan's conversation, document, and storage limits. A new account is assigned the catalog's default plan, `comet`, on creation.
+
+The seed only inserts a profile that is missing; it never overwrites one that already exists. Edit `comet`, `satellite`, or `planet` through the admin API above, and the edit stays — a later deploy that re-runs the seed leaves it alone.
+
+`GET /api/v1/plans` serves the same catalog, public and unauthenticated, so a pricing page or signup flow can read current plan numbers without a session or admin token:
+
+```bash
+curl https://radioso.example.com/api/v1/plans
+```
 
 ## Reading account usage
 

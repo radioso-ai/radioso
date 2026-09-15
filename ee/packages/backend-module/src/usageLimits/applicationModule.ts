@@ -1,3 +1,5 @@
+import { PLAN_CATALOG } from "@radioso/plan-catalog";
+
 import type { ApplicationModule } from "../radiosoModuleTypes.js";
 
 import { usageLimitMigrator } from "./usageLimitMigrator.js";
@@ -6,7 +8,8 @@ import { EnterpriseUsageLimitService } from "./usageLimitService.js";
 import { EnterpriseOrganizationCreationGuard } from "../orgCreation/organizationCreationGuard.js";
 import { createUsageLimitCopilotToolContribution } from "./copilotTools.js";
 
-const STARTER_PROFILE_KEY = "starter_100";
+// The free plan in @radioso/plan-catalog: every new account starts here.
+const DEFAULT_PROFILE_KEY = PLAN_CATALOG.defaultPlanId;
 
 export const createUsageLimitsApplicationModule = (): ApplicationModule => ({
   id: "radioso-enterprise-usage-limits",
@@ -24,7 +27,7 @@ export const createUsageLimitsApplicationModule = (): ApplicationModule => ({
     // ledger path; it continues to own usage-LIMIT enforcement above.
     context.registerAccountCreatedHandler(async ({ accountId, database }) => {
       const resolvedService = new EnterpriseUsageLimitService(database);
-      await resolvedService.assignProfile(accountId, STARTER_PROFILE_KEY);
+      await resolvedService.assignProfile(accountId, DEFAULT_PROFILE_KEY);
     });
     context.registerRouteMount({
       path: "/api/v1/ee/usage-limits",

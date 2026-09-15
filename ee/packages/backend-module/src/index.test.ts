@@ -69,6 +69,7 @@ describe("Enterprise backend module aggregation", () => {
       "/api/v1/ee/auth/google",
       "/api/v1/ee/operator-console",
       "/api/v1/ee/usage-limits",
+      "/api/v1/plans",
     ]);
     expect(capture.accountCreatedHandlers).toHaveLength(1);
     expect(capture.usageLimitPolicy).toBeTypeOf("function");

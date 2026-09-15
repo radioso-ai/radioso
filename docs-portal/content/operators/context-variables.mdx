@@ -1,7 +1,7 @@
 ---
 title: Context variables
 description: How operators configure page, identity, and host-defined context for agent turns.
-last_updated: 2026-08-24
+last_updated: 2026-09-16
 ---
 
 # Context variables
@@ -136,11 +136,43 @@ signature = base64url(HMAC_SHA256(signingKeyBytes, payload))
 token = payload + "." + signature
 ```
 
-Then pass it to the launcher:
+Pass the token to the launcher with a provider function, or with a string:
+
+```js
+window.Radioso.identify(async ({ sessionId, origin }) => {
+  const response = await fetch(`/identity?session=${sessionId}`, {
+    credentials: 'same-origin',
+  })
+  const { token } = await response.json()
+  return token
+})
+```
 
 ```js
 window.Radioso.identify(token)
 ```
+
+A provider is the form a website backend should use. The token has to carry
+the public chat `sessionId`, and only the embed knows it — the session begins
+when the visitor opens the widget, not when the page loads. Verification also
+checks a single-use nonce and a five-minute `issuedAt` window on every
+message, so the token that always verifies is the one minted at the moment of
+use. Minting per message keeps the built-in `visitor_identity` context value,
+with the token's `attributes`, present on every turn. A same-origin endpoint
+such as `/identity?session=<sessionId>`, called with `credentials:
+'same-origin'`, is the typical provider: it reads the host's session cookie,
+checks the logged-in visitor, and signs the payload above.
+
+### When the provider runs
+
+Radioso calls the provider right before it sends each visitor message,
+passing the chat's current `sessionId` and the host page's `origin`
+(`window.location.origin`). The provider returns the token as a string, or as
+a `Promise` that resolves to one.
+
+If the provider returns anything else, throws, or takes longer than five
+seconds, that message goes out without identity and the turn continues as
+anonymous.
 
 Radioso verifies the token on each message. Verification is strict:
 
@@ -164,6 +196,12 @@ session -> customer -> agent -> workspace
 It also exposes a sensitive built-in `visitor_identity` context value with
 verified trust. Unsigned browser identity never gets verified trust and never
 unlocks customer-scoped data.
+
+Token `attributes` are a per-turn hint — good for something true only in this
+session, such as the plan the visitor is currently comparing. For a durable
+customer fact such as a name, an email address, or order history, push a
+`customer`-scoped context variable from the host backend instead: it persists
+for that customer across sessions, where `attributes` do not.
 
 ## Surfacing
 

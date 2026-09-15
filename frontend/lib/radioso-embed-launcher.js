@@ -9,6 +9,7 @@
   const SESSION_MESSAGE = 'radioso:embed:session'
   const PREPARE_MESSAGE = 'radioso:embed:preparing'
   const IDENTITY_MESSAGE = 'radioso:embed:identity'
+  const IDENTITY_REQUEST_MESSAGE = 'radioso:embed:identity-request'
   const ERROR_MESSAGE = 'radioso:embed:error'
   const COLLAPSE_MESSAGE = 'radioso:embed:collapse'
   const FULLSCREEN_MESSAGE = 'radioso:embed:fullscreen'
@@ -42,7 +43,6 @@
   const LAUNCHER_RESTING_TRANSITION = `box-shadow 200ms ease, opacity 140ms ease, padding 200ms ease, border-radius 200ms ease, gap 200ms ease, ${LAUNCHER_RETURN_TRANSITION}`
   const LAUNCHER_TRAIL_COLORS = ['#FFC720', '#FFE08A', '#F4B400']
   const LAUNCHER_RELEASE_COLORS = ['#FFC720', '#FFE08A', '#22C55E', '#38BDF8', '#A78BFA', '#FB7185', '#F97316']
-  let signedIdentityToken = null
   const defaultCopy = {
     launcherDefaultLabel: 'Chat with us',
     iframeTitle: 'Radioso embedded chat',
@@ -1523,15 +1523,67 @@
     // widget — so there is no eager per-pageview session or greeting LLM call.
     let iframeReady = false
     let openRequested = false
+    // Either a static signed-identity string, a provider function called fresh
+    // per message, or null (no identity configured). The active session id is
+    // tracked separately so an in-flight provider call can be dropped if the
+    // session resets before it resolves.
+    let identitySetting = null
+    let activeSessionId = null
+    const isIdentityProviderMode = () => typeof identitySetting === 'function'
     const postIdentityToIframe = () => {
       if (iframe && iframe.contentWindow) {
-        iframe.contentWindow.postMessage({ type: IDENTITY_MESSAGE, signedIdentity: signedIdentityToken }, scriptUrl.origin)
+        const identityProvider = isIdentityProviderMode()
+        iframe.contentWindow.postMessage({
+          type: IDENTITY_MESSAGE,
+          signedIdentity: identityProvider ? null : identitySetting,
+          identityProvider,
+        }, scriptUrl.origin)
       }
     }
     window.Radioso = window.Radioso || {}
-    window.Radioso.identify = (identityToken) => {
-      signedIdentityToken = typeof identityToken === 'string' && identityToken.trim() ? identityToken.trim() : null
+    window.Radioso.identify = (identityValue) => {
+      if (typeof identityValue === 'function') {
+        identitySetting = identityValue
+      } else if (typeof identityValue === 'string') {
+        identitySetting = identityValue.trim() ? identityValue.trim() : null
+      } else {
+        identitySetting = null
+      }
       postIdentityToIframe()
+    }
+    const replyToIdentityRequest = (requestId, signedIdentity) => {
+      if (iframe && iframe.contentWindow) {
+        iframe.contentWindow.postMessage({ type: IDENTITY_MESSAGE, requestId, signedIdentity }, scriptUrl.origin)
+      }
+    }
+    // Invoked when the frame needs a fresh token for one outgoing message. In
+    // static-token mode this would be redundant (the frame already has the
+    // token from the session/identity message), so only provider mode calls
+    // out here; everything else replies with null right away.
+    const handleIdentityRequest = (requestId) => {
+      const provider = identitySetting
+      const requestSessionId = activeSessionId
+      if (typeof provider !== 'function' || !requestSessionId) {
+        replyToIdentityRequest(requestId, null)
+        return
+      }
+
+      const requestIframe = iframe
+      Promise.resolve()
+        .then(() => provider({ sessionId: requestSessionId, origin: window.location.origin }))
+        .then((value) => (typeof value === 'string' && value.trim() ? value.trim() : null))
+        .catch((error) => {
+          console.warn('Radioso identity provider threw; treating identity as absent for this message.', error)
+          return null
+        })
+        .then((signedIdentity) => {
+          // Stale guard: drop the reply if the session reset or the iframe was
+          // replaced while the provider call was in flight.
+          if (iframe !== requestIframe || activeSessionId !== requestSessionId) {
+            return
+          }
+          replyToIdentityRequest(requestId, signedIdentity)
+        })
     }
 
     const applyResponsiveLayout = () => {
@@ -1681,17 +1733,20 @@
           }
 
           storeResumeToken(resumeStorageKey, session)
+          activeSessionId = session.publicSessionId
           const sessionAvatarUrl = resolveAvatarUrl(session.assistantAvatarUrl, scriptUrl)
           const iconContainer = button.querySelector('[data-radioso-launcher-avatar="true"]')
           if (sessionAvatarUrl && iconContainer) {
             setLauncherAvatarMarkup(iconContainer, icon, sessionAvatarUrl)
           }
+          const identityProvider = isIdentityProviderMode()
           activeContentWindow.postMessage({
             type: SESSION_MESSAGE,
             session,
             pageContext,
             clientContextCapabilities,
-            signedIdentity: signedIdentityToken,
+            signedIdentity: identityProvider ? null : identitySetting,
+            identityProvider,
             resumed,
           }, scriptUrl.origin)
         })
@@ -1744,6 +1799,14 @@
       if (event.data.type === RESET_SESSION_MESSAGE) {
         safeStorage.remove(resumeStorageKey)
         bootstrapPromise = null
+        activeSessionId = null
+        return
+      }
+
+      if (event.data.type === IDENTITY_REQUEST_MESSAGE) {
+        if (typeof event.data.requestId === 'string') {
+          handleIdentityRequest(event.data.requestId)
+        }
         return
       }
 

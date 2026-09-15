@@ -2,7 +2,7 @@ import type { LlmCapabilityResolver, LlmCapabilityResolveInput } from "./capabil
 import { ModelDirectiveMatchGateway, type DirectiveMatchGateway } from "@radioso/conversation-defaults";
 import type { LlmCapabilityConfig, TextGenerationClient } from "./providerTypes.js";
 import { ModelInferencePipelineService, type ModelInferencePipeline } from "./modelInferencePipeline.js";
-import { TextGenerationClientCache, createTextGenerationClient } from "./textClientFactory.js";
+import { TextGenerationClientCache } from "./textClientFactory.js";
 import {
   ModelChatGateway,
   ModelFallbackReplyComposer,
@@ -73,7 +73,7 @@ export interface DirectiveMatchGatewayFactory {
  * configured tier and binds that attribution to every execution. It intentionally
  * knows no product operation.
  */
-export interface ContextualInferenceFactory {
+interface ContextualInferenceFactory {
   create(input: {
     workspaceContext: LlmCapabilityResolveInput;
     modelCallContext: ModelCallUsageContext;
@@ -129,8 +129,9 @@ export const createRewriteTierStructuredInferenceFactory = (
 ): ContextualInferenceFactory => new ContextualStructuredInferenceFactory(deps, usageEventRecorder, "rewrite");
 
 /**
- * Resolves the workspace chat-tier model for the fused turn-planning call and
- * binds the `turn_planning` usage operation, mirroring
+ * Resolves the chat-tier model for the fused turn-planning call — the agent's
+ * chat model override when the caller threads one, else the workspace
+ * preference — and binds the `turn_planning` usage operation, mirroring
  * {@link ContextualDirectiveMatchGatewayFactory}. The `TurnPlanService` owns the
  * prompt, parsing, and validation; this factory owns only per-workspace client
  * resolution and usage attribution.
@@ -319,6 +320,3 @@ export class ContextualRerankGateway implements RerankGateway {
     return new ModelRerankGateway(toInferencePipeline(client, this.usageEventRecorder), this.logger).rerank(input);
   }
 }
-
-// Re-export the standalone helper so external composition code can use the cache.
-export { createTextGenerationClient };

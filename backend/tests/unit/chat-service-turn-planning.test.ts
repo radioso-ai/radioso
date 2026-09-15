@@ -4,6 +4,7 @@ import { createConversationEngine } from "@radioso/conversation-engine";
 import { RoutineRegistry, type RoutineRegistration } from "@radioso/conversation-defaults";
 import type { ConversationRoutineRunner, Routine, StagedContext } from "@radioso/conversation-contract";
 import type { AgentRecord } from "../../src/modules/agents/domain.js";
+import type { LlmCapabilityResolveInput } from "../../src/shared/infra/llm/workspaceContext.js";
 import type { AgentRevision } from "../../src/modules/agents/agentRevision.js";
 import { AgentRevisionRuntimeResolver } from "../../src/modules/agents/runtime/agentRevisionRuntimeResolver.js";
 
@@ -109,8 +110,13 @@ const plannerFactory = (input: {
   completions: string[];
   recorder?: UsageEventRecorder;
   neverComplete?: boolean;
-}): TurnPlanGatewayFactory & { completeCalls: () => number; prompts: () => string[] } => {
+}): TurnPlanGatewayFactory & {
+  completeCalls: () => number;
+  prompts: () => string[];
+  workspaceContexts: () => LlmCapabilityResolveInput[];
+} => {
   const prompts: string[] = [];
+  const workspaceContexts: LlmCapabilityResolveInput[] = [];
   const complete = vi.fn(async (request: { prompt: string; signal?: AbortSignal }) => {
     prompts.push(request.prompt);
     if (input.neverComplete) {
@@ -136,7 +142,9 @@ const plannerFactory = (input: {
   return {
     completeCalls: () => complete.mock.calls.length,
     prompts: () => prompts,
+    workspaceContexts: () => workspaceContexts,
     async create(createInput) {
+      workspaceContexts.push(createInput.workspaceContext);
       return {
         complete: (request) => inference.complete({ ...request, operation: createInput.usageContext }),
       };
@@ -288,6 +296,48 @@ const publishedRuntimeResolver = (
     findRevision: async () => revision,
   });
 };
+
+/** A published agent with no override or authored behavior; spread and override per test. */
+const baseAgentRecord = (): AgentRecord => ({
+  id: "agent-1",
+  workspaceId: "workspace-1",
+  name: "Support",
+  createdAt: new Date(0),
+  updatedAt: new Date(0),
+  customInstruction: "",
+  suggestedQuestionsEnabled: true,
+  assistantLinkUtmEnabled: true,
+  citationDisplayEnabled: true,
+  contactRequestsEnabled: false,
+  webhookExportsEnabled: false,
+  contactRequestDelivery: { recipientEmails: [], webhook: null },
+  retrievalEnabled: true,
+  sourceScope: { mode: "all" },
+  skillSettings: {},
+  logo: null,
+  theme: { brand: "#000000", brandText: "#ffffff", surface: "#ffffff", text: "#000000" },
+  branding: { hidePoweredBy: false, privacyPolicyUrl: null },
+  greetingInstruction: "",
+  assistantDefaultLocale: null,
+  proactiveGreetingEnabled: false,
+  chatModelOverride: null,
+  surfaceSettings: {
+    authenticatedChat: { enabled: true },
+    anonymousChat: { enabled: false, token: null },
+    websiteEmbed: {
+      enabled: false,
+      token: null,
+      allowedOrigins: [],
+      launcherLabel: "Chat",
+      launcherPosition: "bottom-right",
+      theme: { brand: "#000000", brandText: "#ffffff", surface: "#ffffff", text: "#000000" },
+      copy: {},
+      expertOverrides: {},
+    },
+    extensions: {},
+  },
+  authoredDirectives: [],
+});
 
 const buildService = (input: {
   planner?: TurnPlanGatewayFactory;
@@ -607,6 +657,31 @@ describe("chat service fused turn planning", () => {
     // All-or-nothing: every staged classification call is restored.
     expect(staged.routerClassify).toHaveBeenCalledTimes(1);
     expect(staged.languageDetect).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the staged fallback on the workspace tier when the overridden planner fails", async () => {
+    const chatModelOverride = { provider: "openai" as const, model: "gpt-5.4-nano" };
+    const staged = countingStagedPorts();
+    const planner = plannerFactory({ completions: ["<<<not json>>>"] });
+    const service = buildService({
+      planner,
+      pipeline: retrievalPipeline([]),
+      chatGateway: pipelineChatGateway("Grounded [[1]]."),
+      staged,
+      agentService: { resolve: async () => ({ ...baseAgentRecord(), chatModelOverride }) },
+    });
+
+    await service.answer({ workspaceId: "workspace-1", query: "refund window?", stream: false });
+
+    // The override reached the planner; the staged router and language detector
+    // that recover from its failure resolve their own tier from the workspace alone.
+    expect(planner.workspaceContexts()).toEqual([{ workspaceId: "workspace-1", capabilityOverride: chatModelOverride }]);
+    expect(staged.routerClassify).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceContext: { workspaceId: "workspace-1" } }),
+    );
+    expect(staged.languageDetect).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceContext: { workspaceId: "workspace-1" } }),
+    );
   });
 
   it("rejects the whole plan on an unknown directive name and falls back staged", async () => {
@@ -986,43 +1061,7 @@ describe("chat service fused turn planning", () => {
 
   it("excludes a disabled authored directive from the turn plan's directive candidates (#1111)", async () => {
     const agentRecord: AgentRecord = {
-      id: "agent-1",
-      workspaceId: "workspace-1",
-      name: "Support",
-      createdAt: new Date(0),
-      updatedAt: new Date(0),
-      customInstruction: "",
-      suggestedQuestionsEnabled: true,
-      assistantLinkUtmEnabled: true,
-      citationDisplayEnabled: true,
-      contactRequestsEnabled: false,
-      webhookExportsEnabled: false,
-      contactRequestDelivery: { recipientEmails: [], webhook: null },
-      retrievalEnabled: true,
-      sourceScope: { mode: "all" },
-      skillSettings: {},
-      logo: null,
-      theme: { brand: "#000000", brandText: "#ffffff", surface: "#ffffff", text: "#000000" },
-      branding: { hidePoweredBy: false, privacyPolicyUrl: null },
-      greetingInstruction: "",
-      assistantDefaultLocale: null,
-      proactiveGreetingEnabled: false,
-      chatModelOverride: null,
-      surfaceSettings: {
-        authenticatedChat: { enabled: true },
-        anonymousChat: { enabled: false, token: null },
-        websiteEmbed: {
-          enabled: false,
-          token: null,
-          allowedOrigins: [],
-          launcherLabel: "Chat",
-          launcherPosition: "bottom-right",
-          theme: { brand: "#000000", brandText: "#ffffff", surface: "#ffffff", text: "#000000" },
-          copy: {},
-          expertOverrides: {},
-        },
-        extensions: {},
-      },
+      ...baseAgentRecord(),
       authoredDirectives: [
         {
           id: "directive-live",
@@ -1097,6 +1136,24 @@ describe("chat service fused turn planning", () => {
     const prompt = planner.prompts()[0] ?? "";
     expect(prompt).toContain('"name": "live-tone"');
     expect(prompt).not.toContain("disabled-tone");
+  });
+
+  it("resolves the planner through the agent's chat model override, matching the answer call", async () => {
+    const chatModelOverride = { provider: "openai" as const, model: "gpt-5.4-nano" };
+    const planner = plannerFactory({ completions: [planJson({ route: "direct" })] });
+    const service = buildService({
+      planner,
+      pipeline: directPipeline("thanks!"),
+      chatGateway: pipelineChatGateway("You're welcome!"),
+      staged: countingStagedPorts(),
+      agentService: { resolve: async () => ({ ...baseAgentRecord(), chatModelOverride }) },
+    });
+
+    await service.answer({ workspaceId: "workspace-1", query: "thanks", stream: false });
+
+    expect(planner.workspaceContexts()).toEqual([
+      { workspaceId: "workspace-1", capabilityOverride: chatModelOverride },
+    ]);
   });
 
   it("feeds the turn's resolved visitor context into the planner's directive classification", async () => {

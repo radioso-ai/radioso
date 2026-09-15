@@ -17,6 +17,8 @@ instruction asks for, in plain conversational language.
 
 {{response_language_instruction}}
 
+{{unresolved_request_context}}
+
 Stay strictly within your scope above. Follow only the step instruction(s). If the user
 also asks for anything outside that scope — general knowledge, math, code, or other
 unrelated tasks — do not answer or perform it. Briefly say it is outside what you can

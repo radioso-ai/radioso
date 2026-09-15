@@ -427,6 +427,51 @@ describe("routine defaults", () => {
     expect(systemPrompt).toContain("Never produce off-scope content");
   });
 
+  it("tells a coverage-activated step reply which request went unresolved before it follows the step", async () => {
+    const gw = gateway("ok");
+    const unresolvedTurn: TurnContext = {
+      ...turn,
+      inputEvent: { id: "i1", kind: "message", content: "Who is Nikola Tesla?" },
+      metadata: {
+        answerCoverage: {
+          availability: "assessed",
+          coverage: "unanswered",
+          reason: "insufficient_evidence",
+          unresolvedRequest: "Who is Nikola Tesla?",
+          schemaVersion: 1,
+        },
+      },
+    };
+    await new RoutineStepRenderer(gw).render({
+      step: currentStep,
+      steering: [{ action: "Offer a call back from reception.", source: "routine", lifespan: "response" }],
+      turn: unresolvedTurn,
+    });
+
+    const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "";
+    expect(systemPrompt).toContain("<unresolved_request>\nWho is Nikola Tesla?\n</unresolved_request>");
+    expect(systemPrompt).toContain("could not resolve");
+    expect(systemPrompt.indexOf("<unresolved_request>")).toBeLessThan(systemPrompt.indexOf("Offer a call back from reception."));
+  });
+
+  it("adds no unresolved-request context when coverage is answered, partial, unclear, or absent", async () => {
+    for (const metadata of [
+      undefined,
+      { answerCoverage: { availability: "assessed", coverage: "answered", reason: "sufficient_evidence", schemaVersion: 1 } },
+      { answerCoverage: { availability: "assessed", coverage: "partial", reason: "conflicting_evidence", schemaVersion: 1 } },
+      { answerCoverage: { availability: "assessed", coverage: "unclear", reason: "ambiguous_request", schemaVersion: 1 } },
+      { answerCoverage: { availability: "not_recorded" } },
+    ]) {
+      const gw = gateway("ok");
+      await new RoutineStepRenderer(gw).render({
+        step: currentStep,
+        steering: [{ action: "Ask the user for their email address.", source: "routine", lifespan: "response" }],
+        turn: metadata ? { ...turn, metadata } : turn,
+      });
+      expect(vi.mocked(gw.complete).mock.calls[0][0].systemPrompt).not.toContain("unresolved_request");
+    }
+  });
+
   it("keeps only declared slots when a routine declares a slot schema", async () => {
     const slotted: Routine = {
       ...routine,

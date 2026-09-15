@@ -5638,6 +5638,7 @@ export interface components {
                     [key: string]: {
                         description?: string;
                         slotBinding?: string;
+                        required?: boolean;
                     };
                 };
                 declaredOutcomes: string[] | null;
@@ -16609,6 +16610,7 @@ export interface operations {
                         [key: string]: {
                             slotBinding?: string;
                             description?: string;
+                            required?: boolean;
                         };
                     };
                     declaredOutcomes?: string[];
@@ -16803,6 +16805,7 @@ export interface operations {
                         [key: string]: {
                             slotBinding?: string;
                             description?: string;
+                            required?: boolean;
                         };
                     };
                     declaredOutcomes?: string[];
@@ -17847,6 +17850,7 @@ export interface operations {
                                 [key: string]: {
                                     description?: string;
                                     slotBinding?: string;
+                                    required?: boolean;
                                 };
                             };
                             enabled: boolean;
@@ -17915,6 +17919,7 @@ export interface operations {
                         [key: string]: {
                             description?: string;
                             slotBinding?: string;
+                            required?: boolean;
                         };
                     };
                     /** @default true */
@@ -17949,6 +17954,7 @@ export interface operations {
                                 [key: string]: {
                                     description?: string;
                                     slotBinding?: string;
+                                    required?: boolean;
                                 };
                             };
                             enabled: boolean;
@@ -18044,6 +18050,7 @@ export interface operations {
                                 [key: string]: {
                                     description?: string;
                                     slotBinding?: string;
+                                    required?: boolean;
                                 };
                             };
                             enabled: boolean;
@@ -18153,6 +18160,7 @@ export interface operations {
                         [key: string]: {
                             description?: string;
                             slotBinding?: string;
+                            required?: boolean;
                         };
                     };
                     enabled?: boolean;
@@ -18186,6 +18194,7 @@ export interface operations {
                                 [key: string]: {
                                     description?: string;
                                     slotBinding?: string;
+                                    required?: boolean;
                                 };
                             };
                             enabled: boolean;

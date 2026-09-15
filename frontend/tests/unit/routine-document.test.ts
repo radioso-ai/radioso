@@ -191,6 +191,28 @@ describe('step instruction prose mapping', () => {
     ])
   })
 
+  it('turns a variable chip into a slot reference but leaves any other chip kind as plain text', () => {
+    expect(proseParagraphsToInstruction([
+      { segments: [
+        { kind: 'text', text: 'Ask via ' },
+        { kind: 'chip', chipKind: 'variable', refId: 'order_total', label: 'order_total' },
+        { kind: 'text', text: ' or ' },
+        { kind: 'chip', chipKind: 'skill', refId: 'ananda_edizioni_mcp', label: 'ananda_edizioni_mcp' },
+        { kind: 'text', text: ', then ' },
+        { kind: 'chip', chipKind: 'handoff', refId: 'billing', label: 'billing' },
+        { kind: 'text', text: '.' },
+      ] },
+    ])).toEqual([
+      { kind: 'text', text: 'Ask via ' },
+      { kind: 'slotReference', key: 'order_total', source: '{{slot.order_total}}' },
+      { kind: 'text', text: ' or ' },
+      { kind: 'text', text: 'ananda_edizioni_mcp' },
+      { kind: 'text', text: ', then ' },
+      { kind: 'text', text: 'billing' },
+      { kind: 'text', text: '.' },
+    ])
+  })
+
   it('keeps a blank line the author left between two lines', () => {
     const paragraphs = proseParagraphsToInstruction([
       { segments: [{ kind: 'text', text: 'First.' }] },

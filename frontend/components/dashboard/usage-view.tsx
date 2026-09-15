@@ -155,12 +155,21 @@ export function UsageView({ accountId }: { accountId: string }) {
           ) : usageLimitsEnabled && usage ? (
             <div className="space-y-6">
               <div className="grid gap-6 lg:grid-cols-2">
-                <UsageMeter
-                  label="Monthly answers"
-                  used={usage.monthlyAnswers.used}
-                  limit={usage.monthlyAnswers.limit}
-                  caption="Assistant and retrieval answers used this month."
-                />
+                {usage.monthlyConversations ? (
+                  <UsageMeter
+                    label="Monthly conversations"
+                    used={usage.monthlyConversations.used}
+                    limit={usage.monthlyConversations.limit}
+                    caption={`Customer conversations this month, plus ${formatCount(usage.monthlyConversations.credits)} prepaid credits.`}
+                  />
+                ) : (
+                  <UsageMeter
+                    label="Monthly answers"
+                    used={usage.monthlyAnswers.used}
+                    limit={usage.monthlyAnswers.limit}
+                    caption="Assistant and retrieval answers used this month."
+                  />
+                )}
                 <UsageMeter
                   label="Indexed storage"
                   unit="bytes"
@@ -188,14 +197,21 @@ export function UsageView({ accountId }: { accountId: string }) {
                   <CardHeader>
                     <CardTitle>{usage.profile.displayName}</CardTitle>
                     <CardDescription>
-                      Limits: {formatUsageLimit(usage.monthlyAnswers.limit)} monthly answers,{' '}
+                      Limits: {usage.monthlyConversations
+                        ? `${formatUsageLimit(usage.monthlyConversations.limit)} monthly conversations`
+                        : `${formatUsageLimit(usage.monthlyAnswers.limit)} monthly answers`},{' '}
                       {formatByteLimit(usage.storedIndexedBytes.limit)} indexed storage,{' '}
                       {formatByteLimit(usage.monthlyIndexedBytes.limit)} monthly indexed content,{' '}
                       {formatUsageLimit(usage.storedDocuments.limit)} stored documents
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="grid gap-4 text-sm text-muted-foreground sm:grid-cols-2">
-                    {usage.monthlyAnswers.limit === null ? null : (
+                    {usage.monthlyConversations ? (
+                      <div>
+                        <div className="font-medium text-foreground">Monthly conversation reset</div>
+                        <div>{formatDate(usage.monthlyConversations.resetAt)}</div>
+                      </div>
+                    ) : usage.monthlyAnswers.limit === null ? null : (
                       <div>
                         <div className="font-medium text-foreground">Monthly answer reset</div>
                         <div>{formatDate(usage.monthlyAnswers.resetAt)}</div>

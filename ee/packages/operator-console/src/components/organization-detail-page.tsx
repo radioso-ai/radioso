@@ -120,21 +120,39 @@ export function OrganizationDetailPage({ accountId }: { accountId: string }) {
       {!usage ? <div className="py-10 text-sm text-zinc-400">Loading usage</div> : (
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
           <section className="grid gap-4 md:grid-cols-2">
-            {resourceKeys.map((key) => {
-              const item = usage[key];
-              const overLimit = item.limit !== null && item.used > item.limit;
-              return (
-                <div key={key} className="rounded-md border border-zinc-800 bg-zinc-900 p-5">
-                  <div className="flex items-center justify-between gap-3">
-                    <h2 className="text-base font-medium tracking-normal">{resourceLabels[key]}</h2>
-                    {overLimit ? <AlertTriangle className="size-5 text-amber-300" /> : <CheckCircle2 className="size-5 text-emerald-300" />}
-                  </div>
-                  <div className="mt-4 text-2xl font-semibold">{resourceUsedText(key, item.used)}</div>
-                  <div className="mt-1 text-sm text-zinc-400">Limit {resourceLimitText(key, item.limit)}</div>
-                  {overLimit ? <div className="mt-3 text-sm text-amber-200">Warn only: current usage is over this limit.</div> : null}
+            {usage.monthlyConversations ? (
+              <div className="rounded-md border border-zinc-800 bg-zinc-900 p-5">
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="text-base font-medium tracking-normal">Monthly conversations</h2>
+                  {usage.monthlyConversations.used > usage.monthlyConversations.limit
+                    ? <AlertTriangle className="size-5 text-amber-300" />
+                    : <CheckCircle2 className="size-5 text-emerald-300" />}
                 </div>
-              );
-            })}
+                <div className="mt-4 text-2xl font-semibold">{usage.monthlyConversations.used.toLocaleString()}</div>
+                <div className="mt-1 text-sm text-zinc-400">Limit {limitText(usage.monthlyConversations.limit)}</div>
+                <div className="mt-1 text-sm text-zinc-400">{usage.monthlyConversations.credits.toLocaleString()} prepaid credits</div>
+                {usage.monthlyConversations.used > usage.monthlyConversations.limit
+                  ? <div className="mt-3 text-sm text-amber-200">Warn only: current usage is over this limit.</div>
+                  : null}
+              </div>
+            ) : null}
+            {resourceKeys
+              .filter((key) => key !== "monthlyAnswers" || !usage.monthlyConversations)
+              .map((key) => {
+                const item = usage[key];
+                const overLimit = item.limit !== null && item.used > item.limit;
+                return (
+                  <div key={key} className="rounded-md border border-zinc-800 bg-zinc-900 p-5">
+                    <div className="flex items-center justify-between gap-3">
+                      <h2 className="text-base font-medium tracking-normal">{resourceLabels[key]}</h2>
+                      {overLimit ? <AlertTriangle className="size-5 text-amber-300" /> : <CheckCircle2 className="size-5 text-emerald-300" />}
+                    </div>
+                    <div className="mt-4 text-2xl font-semibold">{resourceUsedText(key, item.used)}</div>
+                    <div className="mt-1 text-sm text-zinc-400">Limit {resourceLimitText(key, item.limit)}</div>
+                    {overLimit ? <div className="mt-3 text-sm text-amber-200">Warn only: current usage is over this limit.</div> : null}
+                  </div>
+                );
+              })}
           </section>
           <aside className="rounded-md border border-zinc-800 bg-zinc-900 p-5">
             <h2 className="text-base font-medium tracking-normal">Tier assignment</h2>

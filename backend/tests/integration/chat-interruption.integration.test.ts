@@ -619,7 +619,7 @@ describe("chat interruption", () => {
       type: "cancelled",
       conversationId: conversation.id,
       reason: "superseded",
-      stage: "waiting",
+      stage: "preparing",
     }]);
     await expect(latest).resolves.toMatchObject({ answer: expect.any(String) });
     expect(reservations).toBe(2);

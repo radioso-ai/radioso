@@ -74,7 +74,15 @@ The Enterprise backend module adds hosted usage limit profiles. Accounts without
 an assigned profile remain unlimited. The module seeds two starter profiles,
 `starter_100` and `starter_250`, with 100 and 250 customer-facing answer calls
 per UTC month and an equal number of stored documents across all workspaces in
-the account. New accounts are assigned `starter_100` by default.
+the account.
+
+The module seeds one profile per plan in `@radioso/plan-catalog`
+(`comet`, `satellite`, `planet`) with that plan's conversation, document, and
+storage limits. Console edits to a seeded profile always win: the seed only
+ever inserts, never overwrites. New accounts are assigned the catalog's
+`defaultPlanId` (`comet`) by default. `GET /api/v1/plans` serves the same
+catalog publicly, unauthenticated, for the website pricing page and signup
+flows.
 
 Set `EE_USAGE_ADMIN_TOKEN` to enable the operator API:
 

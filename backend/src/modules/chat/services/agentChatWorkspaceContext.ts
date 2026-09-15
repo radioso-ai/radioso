@@ -8,14 +8,22 @@ import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/worksp
  * the operator chose for this agent — a lower-latency override that only
  * reached the answer left the planner, the longest stage, on the default tier.
  *
- * The rule: the override governs the calls that produce the turn the visitor
- * asked for. Calls that exist to recover from or refuse that turn — the staged
- * router and interpreter (rewrite tier), the staged directive matcher and the
- * no-context decline (workspace chat tier) — keep their own tiers, because they
- * run precisely when the chosen model has already failed a contract. An override
- * that cannot return a valid plan therefore makes every turn pay the planner
- * attempt and then the staged path; the `turn_planning` model-call trace and
- * usage event carry the model, which is where to look when that happens.
+ * The rule: the override is a *chat-tier* override for the calls that produce
+ * the visitor's turn. Two groups deliberately do not receive it:
+ *
+ * - The staged router, interpreter, and language detector are rewrite-tier
+ *   calls, so a chat override is out of scope by definition. The resolver would
+ *   honour `capabilityOverride` on any tier, so this is caller discipline: those
+ *   callers pass `{ workspaceId }` alone, and a test pins it.
+ * - The staged directive matcher and the no-context decline are chat-tier calls
+ *   that stay on the workspace preference because they serve more than planner
+ *   failure: the staged path also runs on every bypassed turn (active routine,
+ *   routine claim, over-bound candidates, pending clarification), and the
+ *   decline fires on a retrieval miss.
+ *
+ * An override that cannot return a valid plan makes every eligible turn pay the
+ * planner attempt and then the staged path; the `turn_planning` model-call trace
+ * and usage event carry the model, which is where to look when that happens.
  */
 export const buildAgentChatWorkspaceContext = (
   agent: Pick<AgentRecord, "workspaceId" | "chatModelOverride">,

@@ -113,6 +113,13 @@ describe("SkillCapabilityRegistry", () => {
       exposedInputs: {},
     }).success).toBe(false);
 
+    expect(registry.get("mcp_tool")?.validateConfig({
+      toolName: "ask_agent",
+      boundParams: {},
+      exposedParams: { message: { description: "Message", slotBinding: "message", required: true } },
+      declaredOutcomes: ["completed", "failed"],
+    }).success).toBe(true);
+
     expect(registry.get("webhook_call")?.validateConfig({
       boundPayload: { source: "routine" },
       exposedPayload: { email: { required: true } },

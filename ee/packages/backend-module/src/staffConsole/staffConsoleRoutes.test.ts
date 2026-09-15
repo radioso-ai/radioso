@@ -812,6 +812,39 @@ describe("staff console routes and guards", () => {
     });
 
     await request(billingApp)
+      .put("/api/v1/ee/operator-console/tiers/growth")
+      .set("Cookie", billingLogin.headers["set-cookie"][0])
+      .send({
+        displayName: "Growth",
+        monthlyAnswerLimit: 100,
+        storedDocumentLimit: null,
+        monthlyConversationLimit: 500,
+        repliesPerConversation: 20,
+      })
+      .expect(200);
+    // storedIndexedByteLimit/monthlyIndexedByteLimit are absent from the request body, so they
+    // are absent from the upsertProfile call too (preserve semantics) — not coerced to null.
+    expect(upsertProfile).toHaveBeenLastCalledWith({
+      key: "growth",
+      displayName: "Growth",
+      monthlyAnswerLimit: 100,
+      storedDocumentLimit: null,
+      monthlyConversationLimit: 500,
+      repliesPerConversation: 20,
+    });
+
+    await request(billingApp)
+      .put("/api/v1/ee/operator-console/tiers/growth")
+      .set("Cookie", billingLogin.headers["set-cookie"][0])
+      .send({
+        displayName: "Growth",
+        monthlyAnswerLimit: 100,
+        storedDocumentLimit: null,
+        repliesPerConversation: 1001,
+      })
+      .expect(400);
+
+    await request(billingApp)
       .put("/api/v1/ee/operator-console/tiers/NOPE")
       .set("Cookie", billingLogin.headers["set-cookie"][0])
       .send({

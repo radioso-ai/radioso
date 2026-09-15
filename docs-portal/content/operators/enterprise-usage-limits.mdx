@@ -1,18 +1,18 @@
 ---
 title: "Enterprise usage limits"
-description: "How Enterprise Edition meters and caps indexed storage, monthly indexed content, and monthly answers per account, and enforces the caps before work begins."
+description: "How Enterprise Edition meters and caps indexed storage, monthly indexed content, and monthly answers or conversations per account, and enforces the caps before work begins."
 last_updated: 2026-09-15
 ---
 
 # Enterprise usage limits
 
-Radioso Enterprise tracks three customer-facing usage dimensions and lets operators cap them per account.
+Radioso Enterprise tracks customer-facing usage dimensions and lets operators cap them per account.
 
 ## The customer-facing meters
 
 - **Indexed storage bytes.** The current size of content Radioso keeps searchable for an account. This is the primary storage meter. It increases when new content is ingested and decreases when content is removed.
 - **Monthly indexed content bytes.** New or changed content embedded during the current calendar month. Resets at the start of each month. Recrawls of pages whose normalized content has not changed do not increment this meter.
-- **Monthly answers.** Generated assistant or retrieval answers in the current calendar month. Resets at the start of each month.
+- **Monthly answers.** Generated assistant or retrieval answers in the current calendar month. Resets at the start of each month. A profile that meters conversations instead (see [Conversation metering](#conversation-metering)) does not enforce this meter.
 - **Stored document count.** Kept as a secondary guardrail against accounts that create extremely large numbers of tiny documents. It is not the primary storage meter and should not be used for plan sizing.
 
 ## How indexed storage is measured
@@ -41,8 +41,10 @@ Profiles are managed through the admin API. Each profile can set:
 - `storedDocumentLimit` (integer, nullable)
 - `storedIndexedByteLimit` (integer bytes, nullable)
 - `monthlyIndexedByteLimit` (integer bytes, nullable)
+- `monthlyConversationLimit` (integer, nullable) — set this to meter the account in conversations instead of answers
+- `repliesPerConversation` (integer, 1–1000, defaults to 10) — how many replies in one customer conversation count as a single unit against `monthlyConversationLimit`
 
-A `null` value means unlimited for that meter.
+A `null` value means unlimited for that meter. `displayName`, `monthlyAnswerLimit`, and `storedDocumentLimit` are required on every PUT. The other four fields are each independent: omit one and it keeps its stored value; send it explicitly (including `null`) and it takes the new value.
 
 ```bash
 curl -X PUT https://radioso.example.com/api/v1/ee/usage-limits/profiles/growth \
@@ -73,7 +75,7 @@ curl https://radioso.example.com/api/v1/plans
 
 ## Reading account usage
 
-The account usage endpoint returns current usage and limits for the three meters:
+The account usage endpoint returns current usage and limits for each meter:
 
 ```json
 {
@@ -86,17 +88,75 @@ The account usage endpoint returns current usage and limits for the three meters
 }
 ```
 
-When a meter has no configured limit, `limit` is `null`. The `used` value is always reported.
+When a meter has no configured limit, `limit` is `null`. The `used` value is always reported. On an account whose profile meters conversations, the response also carries a `monthlyConversations` object — see [Conversation metering](#conversation-metering).
+
+## Conversation metering
+
+A profile with `monthlyConversationLimit` set meters and caps customer conversations directly, instead of individual answers. `monthlyAnswerLimit` on that profile stops being enforced; the account's usage response reports it with `limit: null`.
+
+Every kind of work that reserves against the account counts toward the conversation meter at a fixed weight:
+
+| What happened | Counts as |
+|---|---|
+| A conversation reaching a block of `repliesPerConversation` replies | 1 |
+| A standalone answer over the API or MCP | 1 |
+| A Ray turn | 1 |
+| A test run (dashboard test chat, Workbench replay, eval run, or test execution) | 0.5 |
+| An Audience Pulse report | 10 |
+| The widget greeting on open | 0 |
+
+The account usage response breaks this down under `monthlyConversations`:
+
+```json
+{
+  "accountId": "…",
+  "profile": { "monthlyConversationLimit": 500, "repliesPerConversation": 10, … },
+  "monthlyAnswers": { "used": 84, "limit": null, "periodStart": "2026-05-01", "resetAt": "2026-06-01T00:00:00.000Z" },
+  "monthlyConversations": {
+    "used": 42.5,
+    "limit": 500,
+    "credits": 12,
+    "periodStart": "2026-05-01",
+    "resetAt": "2026-06-01T00:00:00.000Z",
+    "byKind": { "conversation": 40, "copilot": 2, "test_run": 0.5, "pulse_report": 0 }
+  }
+}
+```
+
+`used` and the `byKind` breakdown can land on a half, since a test run counts as 0.5. `credits` is the account's prepaid balance on top of `monthlyConversationLimit` — see [Prepaid credits](#prepaid-credits). `monthlyConversations` is absent (`null`) on an account whose profile meters answers instead.
+
+## Prepaid credits
+
+Prepaid credits add conversations to an account's balance on top of its plan limit. Credits never expire and only apply to a conversation-metered profile.
+
+```bash
+curl -X POST https://radioso.example.com/api/v1/ee/usage-limits/accounts/00000000-0000-0000-0000-000000000001/credits \
+  -H "Authorization: Bearer $EE_USAGE_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"conversations": 100, "reference": "evt_1Pxxxxxxxxxxxxxxxx"}'
+```
+
+`reference` identifies the grant — a Stripe event ID or any string unique to the top-up — and makes the call safe to retry. The first call with a given `reference` credits the account and returns `"applied": true`. A later call with the same `reference` grants nothing and returns `"applied": false` with the same `credits` balance as the first call. The response also carries the account's current usage:
+
+```json
+{
+  "credits": 112,
+  "applied": true,
+  "usage": { … }
+}
+```
+
+An `accountId` that does not exist returns `404`.
 
 ## Enforcement
 
 Limits are enforced before expensive work begins, so customers cannot race past a cap with concurrent uploads or chat traffic.
 
 - Inline document creation and file imports reserve indexed storage bytes before the document is persisted.
-- Assistant and retrieval answers reserve a monthly answer slot before the model is called.
+- Assistant and retrieval answers reserve a monthly answer slot before the model is called, or a conversation-meter reservation on a conversation-metered account.
 - The reservation is released if the work fails before commit.
 
-Requests that exceed a cap receive a `429` response with `code: "usage_limit_exceeded"` and a `details.resource` of `stored_indexed_bytes`, `monthly_indexed_bytes`, `stored_documents`, or `monthly_answers`.
+Requests that exceed a cap receive a `429` response with `code: "usage_limit_exceeded"` and a `details.resource` of `stored_indexed_bytes`, `monthly_indexed_bytes`, `stored_documents`, `monthly_answers`, or `monthly_conversations`.
 
 ## Organization creation cap
 

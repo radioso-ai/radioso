@@ -25,7 +25,12 @@ const summary = (overrides: Partial<AccountUsageSummary> = {}): AccountUsageSumm
   ...overrides,
 });
 
-const toolContext = { workspaceId: "workspace-1", accountId: "account-1", operatorUserId: "operator-1" };
+const toolContext = {
+  workspaceId: "workspace-1",
+  accountId: "account-1",
+  operatorUserId: "operator-1",
+  surface: "dashboard" as const,
+};
 const invocation = { signal: new AbortController().signal, stepIndex: 0, callId: "call-1" };
 
 describe("usage limit copilot contribution", () => {
@@ -85,5 +90,30 @@ describe("usage limit copilot contribution", () => {
     const tool = descriptor.createTool(toolContext);
 
     expect(tool.outputSchema.safeParse(await tool.invoke({}, invocation)).success).toBe(true);
+  });
+
+  it("accepts fractional monthly-conversation metering, since ten test runs make one conversation", async () => {
+    const getAccountUsage = vi.fn(async () => summary({
+      monthlyConversations: {
+        periodStart: "2026-08-01",
+        resetAt: "2026-09-01",
+        used: 0.5,
+        limit: 100,
+        credits: 0,
+        byKind: { conversation: 0, copilot: 0, test_run: 0.5, pulse_report: 0 },
+      },
+    }));
+    const [descriptor] = createUsageLimitCopilotToolContribution({ usage: { getAccountUsage } }).descriptors;
+    const tool = descriptor.createTool(toolContext);
+
+    const result = await tool.invoke({}, invocation);
+
+    expect(tool.outputSchema.safeParse(result).success).toBe(true);
+    expect((result as { monthlyConversations: unknown }).monthlyConversations).toEqual({
+      used: 0.5,
+      limit: 100,
+      remaining: 99.5,
+      resetAt: "2026-09-01",
+    });
   });
 });

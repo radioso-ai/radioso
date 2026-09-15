@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  exposedParamsSchema,
   mcpConnectionInputSchema,
   skillDefinitionInputSchema,
   validateParamCoverage,
@@ -102,6 +103,30 @@ describe("skillDefinitionInputSchema", () => {
 
   it("rejects bound params with prototype-polluting keys", () => {
     expect(() => skillDefinitionInputSchema.parse({ ...base, boundParams: { constructor: "x" } })).toThrow();
+  });
+});
+
+describe("exposedParamsSchema (exposed param spec)", () => {
+  it("accepts an exposed param spec with required: true", () => {
+    const parsed = exposedParamsSchema.parse({
+      message: { description: "Message", slotBinding: "message", required: true },
+    });
+    expect(parsed.message?.required).toBe(true);
+  });
+
+  it("accepts an exposed param spec with required: false", () => {
+    const parsed = exposedParamsSchema.parse({
+      message: { description: "Message", slotBinding: "message", required: false },
+    });
+    expect(parsed.message?.required).toBe(false);
+  });
+
+  it("rejects a non-boolean required", () => {
+    expect(() => exposedParamsSchema.parse({ message: { required: "yes" } })).toThrow();
+  });
+
+  it("rejects unknown keys (strict)", () => {
+    expect(() => exposedParamsSchema.parse({ message: { required: true, surprise: 1 } })).toThrow();
   });
 });
 

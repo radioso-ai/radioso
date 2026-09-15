@@ -61,6 +61,7 @@ const EmailSkillBoundInputsSchema = z.record(z.unknown());
 const EmailSkillExposedInputsSchema = z.record(z.object({
   description: z.string().optional(),
   slotBinding: z.string().optional(),
+  required: z.boolean().optional(),
 }));
 const EmailSkillModeSchema = z.enum(["draft", "send"]);
 const EmailSkillOutcomesSchema = z.enum([

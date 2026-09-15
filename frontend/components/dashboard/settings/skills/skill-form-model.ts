@@ -31,7 +31,7 @@ export type SkillFormDraft = {
   extraConfigJson: string
 }
 
-export type DerivedSkillField = ToolInputField
+type DerivedSkillField = ToolInputField
 export type SkillSettingDraftValue = string | number | boolean | string[] | AgentSourceScope | RetrievalMetadataRule[] | undefined
 
 const DEFAULT_OUTCOMES = ['completed', 'failed']
@@ -136,7 +136,7 @@ export const createInitialSkillDraft = (
   }
 }
 
-export const createSettingDrafts = (
+const createSettingDrafts = (
   settingsFields: readonly SkillCapabilitySettingsField[],
   existingConfig?: Record<string, unknown>,
 ): Record<string, SkillSettingDraftValue> =>
@@ -202,7 +202,7 @@ export const formatCapabilityLabel = (value: string): string =>
 export const formatInvocationMode = (value: AgentSkillInvocationMode): string =>
   ({
     default_answer: 'Answer the user automatically',
-    routine_named: 'Only when a routine calls it (@name)',
+    routine_named: 'Only when a routine step calls it',
     agent_selectable: 'Agent decides when to use it',
   })[value]
 

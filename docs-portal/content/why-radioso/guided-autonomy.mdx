@@ -34,7 +34,7 @@ Each match is recorded in the turn trace with the reason it applied, and so is e
 
 A **routine** is a multi-step flow the agent runs across turns. It collects the values it needs, calls a skill, branches on what happened, and finishes or hands off to a person.
 
-You write it in plain language. Where a step needs structure, you drop in a chip: type `@` for a value to collect (`@email`, `@order_id`), `#` for a skill to call. Chips also cover conditions, outcomes, approvals, handoffs, endings, and bounded jumps. Values use `@`, capabilities use `#`, and you never type curly braces or arrows.
+You write each step in plain language. Type `@` to drop in a value the routine collects (`@email`, `@order_id`). A skill call, an approval, a condition, a hand-off, or an ending is its own step or branch, added from the step menu. You never type curly braces or arrows.
 
 The platform compiles that draft into the graph the engine runs and resumes turn to turn. You author the routine; the graph is derived from it.
 

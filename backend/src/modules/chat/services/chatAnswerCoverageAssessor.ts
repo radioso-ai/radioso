@@ -14,6 +14,7 @@ import {
 import type { ChatGateway } from "../contracts/chatGateway.js";
 import type { PreparedSession } from "./chatSessionPreparer.js";
 import { setTraceAttributes } from "../../../shared/observability/tracing/operations.js";
+import { buildAgentChatWorkspaceContext } from "./agentChatWorkspaceContext.js";
 
 // Retrieval's FinalPromptContext list is already the exact token-bounded set that
 // answer composition receives. Do not independently shorten it here: assessing a
@@ -93,10 +94,7 @@ export class ChatAnswerCoverageAssessorFactory {
               query: "",
               history: [],
               prompt: request.prompt,
-              workspaceContext: {
-                workspaceId: session.agent.workspaceId,
-                capabilityOverride: session.agent.chatModelOverride ?? undefined,
-              },
+              workspaceContext: buildAgentChatWorkspaceContext(session.agent),
               usageContext: request.operation,
               generation: {
                 maxOutputTokens: request.maxOutputTokens,

@@ -84,7 +84,8 @@ function OnParagraphChangePlugin({ onParagraphChange }: { onParagraphChange: (pa
 }
 
 // The routine instruction editor for one document row: plain language plus `@` variable
-// chips and `#` skill chips.
+// chips. A skill runs through a tool step (`+ Step → Tool steps`), never through step text,
+// so this surface offers no `#` skill menu.
 export function RoutineInstructionEditor({
   initialContent,
   variables,
@@ -158,7 +159,7 @@ export function RoutineInstructionEditor({
           </div>
           <HistoryPlugin />
           <OnParagraphChangePlugin onParagraphChange={onChange} />
-          <ChipTypeaheadPlugin variables={variables} reservedRefKinds={reservedRefKinds} onCreateVariable={onCreateVariable} />
+          <ChipTypeaheadPlugin variables={variables} reservedRefKinds={reservedRefKinds} onCreateVariable={onCreateVariable} variablesOnly />
         </div>
       </RoutineVariablesProvider>
     </LexicalComposer>

@@ -337,7 +337,7 @@ Here the workspace has asked for `claude-sonnet-4-5` for chat, but its plan runs
 
 The `openai-compatible` provider also requires `OPENAI_COMPATIBLE_BASE_URL` to be configured on the backend. Selecting it for a workspace without a base URL fails at resolve time with a clear error instead of silently calling the default OpenAI endpoint.
 
-For per-agent chat model overrides, set `chatModelOverride` on the agent through `PUT /api/v1/agents/<agentId>`. `null` clears the override; `{ "provider": "...", "model": "..." }` sets it.
+For per-agent chat model overrides, set `chatModelOverride` on the agent through `PUT /api/v1/agents/<agentId>`. `null` clears the override; `{ "provider": "...", "model": "..." }` sets it. The override covers every model call the agent makes on its own turn — planning the turn, assessing how well the retrieved sources cover the question, and composing the answer — so switching an agent to a smaller model cuts the whole turn's latency, not just the answer's. Recovery and refusal calls keep their own tiers: the staged router and interpreter that take over when a plan fails to parse run on the deployment's rewrite default (`LLM_REWRITE_PROVIDER` / `LLM_REWRITE_MODEL`, with this workspace's credentials), and the staged directive matcher and the no-context decline stay on the workspace `chat` model. Pick a model that can return the plan's JSON schema: on the `openai-compatible` provider Radioso does not send that schema to the endpoint, and a model too small to follow it from the prompt alone fails the same way, so every turn pays the planner attempt and then the slower staged path.
 
 ## Endpoint reference
 

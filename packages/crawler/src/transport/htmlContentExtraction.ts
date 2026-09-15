@@ -47,6 +47,15 @@ const LINK_DENSE_MIN_RATIO = 0.75;
 const PRIMARY_CONTENT_SELECTOR = "main, article, [role='main']";
 const PRIMARY_CONTENT_SUBTREE_SELECTOR = "main, [role='main']";
 const MIN_CONTENT_QUALITY_SCORE = 65;
+// Brevity alone must not fail a page: short pages with clean extraction (contact
+// details, a glossary entry, a policy notice) are exactly what an agent gets asked
+// about. Length only tips a page under the threshold together with another
+// junk signal (link density, template markup, repetitive words).
+const SHORT_CONTENT_PENALTY = 30;
+const MEDIUM_CONTENT_PENALTY = 20;
+// A single byline or "read more" link in a short page inflates link density
+// without saying anything about quality; density needs a few links to mean it.
+const LINK_DENSITY_MIN_LINKS = 2;
 
 type ExtractionDiagnostics = {
   pageType: NonNullable<FetchedPage["pageType"]>;
@@ -93,9 +102,11 @@ const scoreExtractedContent = (text: string): number => {
   const words = text.match(/\p{L}[\p{L}\p{N}'-]*/gu) ?? [];
   const uniqueWords = new Set(words.map((word) => word.toLowerCase()));
   let score = 100;
-  if (length < 300) score -= 45;
-  else if (length < 800) score -= 20;
-  const linkDensity = linkMatches.join(" ").length / Math.max(length, 1);
+  if (length < 300) score -= SHORT_CONTENT_PENALTY;
+  else if (length < 800) score -= MEDIUM_CONTENT_PENALTY;
+  const linkDensity = linkMatches.length >= LINK_DENSITY_MIN_LINKS
+    ? linkMatches.join(" ").length / Math.max(length, 1)
+    : 0;
   if (linkDensity > 0.35) score -= 35;
   else if (linkDensity > 0.2) score -= 20;
   const templateDensity = templateMatches.join(" ").length / Math.max(length, 1);
@@ -220,7 +231,7 @@ const isStructurallyLinkDensePage = ($: CheerioAPI): boolean => {
   return normalizeText(anchors.text()).length / Math.max(text.length, 1) >= LINK_DENSE_MIN_RATIO;
 };
 
-export const extractLinks = ($: CheerioAPI, loadedUrl: string): string[] =>
+const extractLinks = ($: CheerioAPI, loadedUrl: string): string[] =>
   $("a[href]")
     .toArray()
     .map((anchor) => {

@@ -83,6 +83,7 @@ export function ChipTypeaheadPlugin({
   onCreateVariable,
   onCreateSkill,
   skillsOnly = false,
+  variablesOnly = false,
   skillMenuNotice = null,
   skillMenuEmptyMessage = null,
 }: {
@@ -93,6 +94,11 @@ export function ChipTypeaheadPlugin({
   onCreateVariable?: (variable: RoutineEditorVariable) => void
   // Bind one capability and nothing else: `#` behaves as usual, `@` never opens the menu.
   skillsOnly?: boolean
+  // The inverse bind: `@` offers existing variables plus "Create variable" and nothing else,
+  // `#` never opens the menu. A step instruction stores text plus slot references only
+  // (`RoutineBlockInstructionSegment`) — a skill runs through a tool step, not step prose, so
+  // this surface must not offer to turn typed text into a skill, flow target, or gate.
+  variablesOnly?: boolean
   // Shown instead of the skill choices when the host has already bound the one skill it can
   // hold, so the menu explains itself rather than looking broken.
   skillMenuNotice?: string | null
@@ -142,7 +148,9 @@ export function ChipTypeaheadPlugin({
   const triggerFn = useCallback((text: string) => {
     const match = skillsOnly
       ? /(^|\s|\()(#)([A-Za-z0-9_-]*)$/.exec(text)
-      : /(^|\s|\()([@#])([A-Za-z0-9_-]*)$/.exec(text)
+      : variablesOnly
+        ? /(^|\s|\()(@)([A-Za-z0-9_-]*)$/.exec(text)
+        : /(^|\s|\()([@#])([A-Za-z0-9_-]*)$/.exec(text)
     if (match === null) return null
     const leading = match[1] ?? ''
     const prefix = (match[2] ?? '@') as '@' | '#'
@@ -153,7 +161,7 @@ export function ChipTypeaheadPlugin({
       matchingString,
       replaceableString: `${prefix}${matchingString}`,
     }
-  }, [skillsOnly])
+  }, [skillsOnly, variablesOnly])
 
   const options = useMemo<ChipMenuOption[]>(() => {
     const raw = (query ?? '').trim()
@@ -165,7 +173,7 @@ export function ChipTypeaheadPlugin({
     }
     // `#` opens a skills-only menu (a capability); `@` opens variables + flow targets (a value
     // or a branch). Splitting them keeps skills from crowding the variable menu.
-    if (skillsOnly || trigger === '#') {
+    if (!variablesOnly && (skillsOnly || trigger === '#')) {
       if (skillMenuNotice) {
         return [new ChipMenuOption('skill-notice', {
           display: skillMenuNotice,
@@ -253,7 +261,7 @@ export function ChipTypeaheadPlugin({
           name: raw,
         }))
       }
-      if (canCreate('handoff')) {
+      if (!variablesOnly && canCreate('handoff')) {
         result.push(new ChipMenuOption(`new-handoff-${lowered}`, {
           display: `Handoff: ${raw}`,
           kind: 'handoff',
@@ -263,6 +271,11 @@ export function ChipTypeaheadPlugin({
         }))
       }
     }
+
+    // `variablesOnly` stops here: existing variables plus "Create variable" is the whole menu.
+    // Everything below builds flow targets, gates, and skills — structure that belongs to the
+    // Document row's own controls, not to typed step prose.
+    if (variablesOnly) return result.slice(0, 8)
 
     // Decision authoring by typing: read the decisions already declared in the document so a
     // branch line can be typed as `@<decision> is <choice>`, plus `@end`/`@handoff` targets and
@@ -317,7 +330,7 @@ export function ChipTypeaheadPlugin({
       }))
     }
     return result.slice(0, 8)
-  }, [editor, skillCatalog.skills, variables, reservedRefKinds, query, trigger, skillsOnly, skillMenuNotice, skillMenuEmptyMessage, onCreateSkill])
+  }, [editor, skillCatalog.skills, variables, reservedRefKinds, query, trigger, skillsOnly, variablesOnly, skillMenuNotice, skillMenuEmptyMessage, onCreateSkill])
 
   const onSelectOption = useCallback(
     (option: ChipMenuOption, nodeToReplace: TextNode | null, closeMenu: () => void) => {
@@ -394,7 +407,7 @@ export function ChipTypeaheadPlugin({
                 // load-bearing: z-index only applies to a positioned element.
                 className="pointer-events-auto relative z-[60] max-h-60 min-w-52 overflow-auto rounded-md border border-border bg-popover p-1 text-sm text-popover-foreground shadow-md"
                 role="listbox"
-                aria-label={skillsOnly ? 'Insert a skill' : 'Insert a chip'}
+                aria-label={skillsOnly ? 'Insert a skill' : variablesOnly ? 'Insert a variable' : 'Insert a chip'}
               >
                 {options.map((option, index) => (
                   <li

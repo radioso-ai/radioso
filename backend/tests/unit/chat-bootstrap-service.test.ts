@@ -196,7 +196,7 @@ describe("chat bootstrap service", () => {
     expect(chatGateway.answer).toHaveBeenCalledTimes(1);
   });
 
-  it("reserves usage under the bootstrap surface even when a real source channel is provided", async () => {
+  it("reserves usage under the free greeting kind even when a real source channel is provided", async () => {
     const workspaceRepository = new InMemoryWorkspaceRepository();
     const workspace = await workspaceRepository.create("account-1", "Workspace");
     await workspaceRepository.updateAssistantBootstrapSettings(workspace.id, {
@@ -230,10 +230,12 @@ describe("chat bootstrap service", () => {
     });
 
     // A cache miss for the widget greeting must still be billed as the free
-    // bootstrap surface, not as a full paid conversation on whatever real
-    // channel asked for it.
+    // "greeting" usage kind, not as a full paid conversation on whatever real
+    // channel asked for it. `surface` carries the real channel for
+    // attribution only; it never drives pricing.
     expect(usage.reserveAnswer).toHaveBeenCalledWith(expect.objectContaining({
-      surface: "chat.bootstrap",
+      surface: "website_embed",
+      usage: "greeting",
     }));
   });
 

@@ -152,6 +152,20 @@ export const usageLimitMigrator: ApplicationDatabaseMigrator = {
       )
     `);
 
+    // Prepaid top-up grants, one row per idempotency reference (a Stripe event
+    // id or any other caller-supplied unique string). `addCredits` inserts here
+    // ON CONFLICT DO NOTHING and only bumps ee_usage_limit_credits when a row
+    // was actually inserted, so replaying the same reference is a no-op.
+    await database.query(`
+      CREATE TABLE IF NOT EXISTS ee_usage_limit_credit_grants (
+        account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        reference TEXT NOT NULL,
+        conversations INTEGER NOT NULL CHECK (conversations > 0),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (account_id, reference)
+      )
+    `);
+
     await database.query(`
       CREATE TABLE IF NOT EXISTS ee_usage_limit_storage_reservations (
         id UUID PRIMARY KEY,

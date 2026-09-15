@@ -370,6 +370,7 @@ export class EvalRunService {
         accountId: input.accountId,
         workspaceId: input.workspaceId,
         surface: "eval_replay",
+        usage: "test_run",
       });
     };
     try {

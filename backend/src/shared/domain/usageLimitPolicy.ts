@@ -3,17 +3,14 @@ export interface UsageLimitReservation {
   release(): Promise<void>;
 }
 
-export interface AnswerUsageReservation extends UsageLimitReservation {
-  /**
-   * Present when this reservation charged a per-conversation-block surface
-   * without yet knowing the conversation id — turn 1 of a brand-new
-   * conversation, reserved before `chatSessionPreparer.prepare()` has created
-   * the conversation row. Call once the real id is known so the next reply's
-   * block bookkeeping continues from this charge instead of re-opening (and
-   * re-charging) block 1.
-   */
-  confirmConversationId?(conversationId: string): Promise<void>;
-}
+/** What an answer reservation is, for metering. Callers declare it; the EE policy prices it. */
+export type AnswerUsageKind =
+  | "conversation_reply" // a reply in a customer conversation; metered per block of replies
+  | "standalone_answer" // one-shot retrieval/MCP answer; each call is its own conversation
+  | "greeting" // widget greeting on open; free on the conversation meter
+  | "copilot_turn" // Ray turn or Ray probe
+  | "test_run" // dashboard test chat, workbench replay, eval replay, test execution
+  | "pulse_report"; // Audience Pulse report
 
 export interface IndexedStorageReservationInput {
   accountId?: string | null;
@@ -35,11 +32,13 @@ export interface UsageLimitPolicy {
   reserveAnswer(input: {
     accountId?: string | null;
     workspaceId: string;
+    /** Attribution only (logs/audit). Pricing comes from `usage`. */
     surface: string;
+    usage: AnswerUsageKind;
     /** Customer conversations are metered in blocks of replies; pass the id so
      *  the second reply of a conversation is not charged like the first. */
     conversationId?: string | null;
-  }): Promise<AnswerUsageReservation>;
+  }): Promise<UsageLimitReservation>;
   reserveDocument(input: {
     accountId?: string | null;
     workspaceId: string;

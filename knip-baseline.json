@@ -721,8 +721,6 @@
   "types|backend/src/shared/domain/cursorPagination.ts|CursorPayload",
   "types|backend/src/shared/domain/cursorPagination.ts|RequiredCursorPayload",
   "types|backend/src/shared/domain/llmClassifierFields.ts|LlmClassifierLabelOptions",
-  "types|backend/src/shared/domain/steeringRule.ts|SteeringLifespan",
-  "types|backend/src/shared/domain/steeringRule.ts|SteeringSource",
   "types|backend/src/shared/domain/usageEventRecorder.ts|UsageEventKind",
   "types|backend/src/shared/domain/usageEventRecorder.ts|UsageEventQuality",
   "types|backend/src/shared/infra/crypto/fieldEncryption.ts|FieldEncryptionOptions",

@@ -269,7 +269,7 @@ const getLatestAssistantMessage = (
 
 const INITIAL_MESSAGE_WINDOW_SIZE = 10
 const MESSAGE_WINDOW_SIZE = 50
-export const PUBLIC_CHAT_EVENT_RECONNECT_DELAY_MS = 2_500
+const PUBLIC_CHAT_EVENT_RECONNECT_DELAY_MS = 2_500
 const isValidLocaleHint = (value: string | null | undefined): value is string => {
   if (!value) {
     return false
@@ -279,7 +279,7 @@ const isValidLocaleHint = (value: string | null | undefined): value is string =>
   return trimmed.length > 0 && trimmed.length <= 35 && normalizeWebsiteEmbedLocale(trimmed) !== null
 }
 
-export const resolveAnonymousChatBootstrapLocale = ({
+const resolveAnonymousChatBootstrapLocale = ({
   localeOverride,
   pageContext,
 }: {
@@ -309,7 +309,7 @@ export function AnonymousChatProvider({
   localeOverride,
   pageContext,
   clientContextCapabilities,
-  signedIdentity,
+  resolveSignedIdentity,
   onAnalyticsEvent,
   children,
 }: {
@@ -319,7 +319,7 @@ export function AnonymousChatProvider({
   localeOverride?: string | null
   pageContext?: WebsiteEmbedPageContext | null
   clientContextCapabilities?: ClientContextCapabilities
-  signedIdentity?: string | null
+  resolveSignedIdentity?: () => Promise<string | null>
   onAnalyticsEvent?: (event: WebsiteEmbedAnalyticsInput) => void
   children: ReactNode
 }) {
@@ -884,8 +884,9 @@ export function AnonymousChatProvider({
           let didCancel = false
           let activeRequestToken = publicChatTokenRef.current
 
-          const completion = await withPublicSessionRetry((activeToken) => {
+          const completion = await withPublicSessionRetry(async (activeToken) => {
             activeRequestToken = activeToken
+            const signedIdentity = await resolveSignedIdentity?.()
             return publicChatApi.streamMessage(
               activeToken,
               {
@@ -1148,7 +1149,7 @@ export function AnonymousChatProvider({
         sendInFlightRef.current = false
       }
     },
-    [applyCompletion, bootstrapGreetingId, clientContextCapabilities, conversationId, isHydrating, isLoading, isUnavailable, localeOverride, messages, onAnalyticsEvent, pageContext, recoverAssistantMessage, signedIdentity, withPublicSessionRetry],
+    [applyCompletion, bootstrapGreetingId, clientContextCapabilities, conversationId, isHydrating, isLoading, isUnavailable, localeOverride, messages, onAnalyticsEvent, pageContext, recoverAssistantMessage, resolveSignedIdentity, withPublicSessionRetry],
   )
 
   const loadOlderMessages = useCallback(async () => {

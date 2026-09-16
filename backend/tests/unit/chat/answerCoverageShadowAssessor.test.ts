@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { AnswerCoverageShadowAssessor } from "../../../src/modules/chat/services/answerCoverageShadowAssessor.js";
+import { buildAgentChatWorkspaceContext } from "../../../src/modules/chat/services/agentChatWorkspaceContext.js";
 import type { PreparedSession } from "../../../src/modules/chat/services/chatSessionPreparer.js";
 import type { RetrievalCoverageVerdictSink } from "../../../src/modules/chat/contracts/answerCoverage.js";
 import type { AnswerCoverageAssessment } from "../../../src/modules/answerCoverage/public.js";
+import type { ChatGatewayInput } from "../../../src/modules/chat/contracts/chatGateway.js";
 
 const session = (overrides: Partial<PreparedSession> = {}): PreparedSession => ({
   agent: { id: "agent-1", workspaceId: "workspace-1", name: "Agent", chatModelOverride: null },
@@ -30,7 +32,8 @@ const fakeSink = (decision: "proceed" | "yield_turn" = "proceed"): RetrievalCove
 });
 
 const gatewayReturning = (classification: string) => ({
-  answer: vi.fn(async () => JSON.stringify({ classification, requestFocus: "One-day attendance permission" })),
+  answer: vi.fn(async (_input: ChatGatewayInput) =>
+    JSON.stringify({ classification, requestFocus: "One-day attendance permission" })),
 });
 
 const metrics = () => ({ incrementCounter: vi.fn() });
@@ -49,6 +52,24 @@ describe("AnswerCoverageShadowAssessor", () => {
 
     expect(gateway.answer).toHaveBeenCalledOnce();
     expect(inner.report).not.toHaveBeenCalled();
+  });
+
+  // R4 (review round 2): the shadow's gateway call must resolve its workspace
+  // context through the same shared helper (#1258) every other agent-turn model
+  // call uses, rather than a hand-inlined `{ workspaceId, capabilityOverride }`
+  // that can silently drift from it (e.g. `buildAgentChatWorkspaceContext` gains
+  // a new field or a different override rule and the shadow does not follow).
+  it("resolves the shadow call's workspace context through buildAgentChatWorkspaceContext", () => {
+    const gateway = gatewayReturning("unanswered_insufficient_evidence");
+    const assessor = new AnswerCoverageShadowAssessor(gateway, true, metrics());
+    const agentSession = session({
+      agent: { id: "agent-1", workspaceId: "workspace-1", name: "Agent", chatModelOverride: "gpt-fast" },
+    } as never);
+
+    assessor.wrapVerdictSink({ getSession: () => agentSession }, fakeSink());
+
+    const call = gateway.answer.mock.calls[0]?.[0];
+    expect(call?.workspaceContext).toEqual(buildAgentChatWorkspaceContext(agentSession.agent));
   });
 
   it("records agreement when the shadow classifies the same as the head, and never changes the turn's decision", async () => {

@@ -80,6 +80,40 @@ describe("route-scoped directive steering", () => {
     expect(social.matches.map((match) => match.directive.name)).toEqual(["global", "social-only"]);
   });
 
+  // R1 (review round 2): the chat matcher adapter calls the matcher twice per
+  // retrieval turn with coverage directives (legacy group, then coverage group) and
+  // must resolve the union once — not resolve each group independently — so
+  // relationships and the steering bound see every candidate together. This proves
+  // the runtime primitive the adapter now composes: `matchCandidates` returns raw,
+  // unresolved matches; accumulating them across calls and resolving once yields
+  // every directive, unlike two independent `resolveMatches` calls concatenated.
+  it("matchCandidates plus one resolveMatches over the accumulated union keeps every group's matches", async () => {
+    const alwaysDirective = directive("always-on", "Always apply.");
+    const excluder = { ...directive("excluder", "Cancel always-on."), excludes: ["always-on"] };
+    const runtime = createRouteScopedDirectiveSteering({
+      capabilityPolicy: allowAllCapabilities,
+      registrations: [
+        { directive: alwaysDirective },
+        { directive: excluder },
+      ],
+    });
+    const steerInput = { workspaceId: "w1", turnContext: { route: "retrieval" } };
+
+    const firstGroupCandidates = await runtime.matchCandidates(steerInput, [alwaysDirective]);
+    const secondGroupCandidates = await runtime.matchCandidates(steerInput, [excluder]);
+    const union = await runtime.resolveMatches(steerInput, [...firstGroupCandidates, ...secondGroupCandidates]);
+
+    // Resolved together, the excluder (registered second) cancels always-on — a
+    // relationship two independent per-group resolves would each miss, since
+    // neither group's own resolve ever saw the other group's directive.
+    expect(union.matches.map((match) => match.directive.name)).toEqual(["excluder"]);
+
+    const separateFirst = await runtime.resolveMatches(steerInput, firstGroupCandidates);
+    const separateSecond = await runtime.resolveMatches(steerInput, secondGroupCandidates);
+    expect([...separateFirst.matches, ...separateSecond.matches].map((match) => match.directive.name).sort())
+      .toEqual(["always-on", "excluder"]);
+  });
+
   it("keeps built-in answer directive route policy in the chat engine layer", async () => {
     const steering = createRouteScopedDirectiveSteering({
       capabilityPolicy: allowAllCapabilities,

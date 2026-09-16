@@ -409,8 +409,6 @@
   "types|backend/src/modules/chat/services/replyDraftRunner.ts|ChatReplyDraftInput",
   "types|backend/src/modules/chat/services/replyDraftRunner.ts|ChatReplyDraftResult",
   "types|backend/src/modules/chat/services/retrievalTurnDispatch.ts|RetrievalTurnDispatchPort",
-  "types|backend/src/modules/chat/services/routeScopedDirectiveSteering.ts|DirectiveRoutePolicy",
-  "types|backend/src/modules/chat/services/routeScopedDirectiveSteering.ts|RouteScopedDirectiveRegistration",
   "types|backend/src/modules/chat/services/routines/routineChatModelGateway.ts|RoutineModelTurnContext",
   "types|backend/src/modules/chat/services/streamPerformanceMetrics.ts|FirstAnswerChunkLabels",
   "types|backend/src/modules/chat/services/summary/conversationSummaryService.ts|ConversationEarlyTitleGenerationConfig",

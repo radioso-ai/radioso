@@ -7,6 +7,7 @@ import {
   type AnswerCoverageInferencePort,
 } from "../../answerCoverage/public.js";
 import { buildContextualizedRequest } from "./contextualizedRequest.js";
+import { buildAgentChatWorkspaceContext } from "./agentChatWorkspaceContext.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import { setTraceAttributes } from "../../../shared/observability/tracing/operations.js";
 
@@ -79,10 +80,7 @@ export class AnswerCoverageShadowAssessor {
           query: "",
           history: [],
           prompt: request.prompt,
-          workspaceContext: {
-            workspaceId: session.agent.workspaceId,
-            capabilityOverride: session.agent.chatModelOverride ?? undefined,
-          },
+          workspaceContext: buildAgentChatWorkspaceContext(session.agent),
           usageContext: request.operation,
           generation: {
             maxOutputTokens: request.maxOutputTokens,

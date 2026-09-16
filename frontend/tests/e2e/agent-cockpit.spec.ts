@@ -53,6 +53,7 @@ const turnFlowTrace: TurnTraceEnvelope = {
       { id: 'message', kind: 'message', status: 'applied', outputs: { kind: 'user.chat', eventId: 'user-message', contentLength: 12 } },
       { id: 'gather', kind: 'gather', status: 'applied', outputs: { historyCount: 0 } },
       { id: 'selection', kind: 'skill_selection', status: 'applied', outputs: { selectedSkills: ['retrieval.answer'] } },
+      { id: 'answer_coverage_head', kind: 'answer_coverage_head', status: 'applied', outputs: { availability: 'assessed', coverage: 'answered', reason: 'sufficient_evidence', producer: 'answer_head' } },
       { id: 'compose', kind: 'compose', status: 'applied', outputs: { outcome: 'answered' } },
     ],
   },
@@ -1083,6 +1084,9 @@ test('opens a trace-backed Test Chat reply in debug before opening its flow', as
   await page.getByText('A fenced answer.', { exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Turn debug', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Flow', exact: true })).toBeVisible()
+  // The draft Test Chat never persists an answer_coverage_assessments row (FR-023),
+  // so this reads the verdict off the turn's own trace instead of showing "Not assessed".
+  await expect(page.getByTestId('answer-coverage-diagnostics')).toContainText('Answered')
   await expect(page.getByText('Turn flow', { exact: true })).toHaveCount(0)
   await expect(page.getByText('Direct reply', { exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: 'Flow', exact: true }).click()

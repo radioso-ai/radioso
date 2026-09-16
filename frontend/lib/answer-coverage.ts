@@ -19,12 +19,16 @@ export interface AnswerCoverageReaction {
   targetMessageId: string
 }
 
+/** Which classifier produced an assessed verdict. Only the turn's own trace carries this today. */
+export type AnswerCoverageProducer = 'answer_head' | 'deterministic' | 'assessor'
+
 export interface AnswerCoverageAssessment {
   availability: AnswerCoverageAvailability
   coverage?: AnswerCoverageValue
   reason?: AnswerCoverageReason
   unresolvedRequest?: string
   contextualizedRequest?: string
+  producer?: AnswerCoverageProducer
   originatingTurnId: string
   originatingRequestId: string
   schemaVersion?: number
@@ -56,7 +60,17 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const oneOf = <T extends string>(value: unknown, values: readonly T[]): T | undefined =>
   typeof value === 'string' && values.includes(value as T) ? value as T : undefined
 
-export const normalizeAnswerCoverage = (value: unknown): AnswerCoverageAssessment | undefined => {
+/** Shape shared by every source of a coverage verdict, before a caller attributes it to a turn/request id. */
+type AnswerCoverageCore = Omit<AnswerCoverageAssessment, 'originatingTurnId' | 'originatingRequestId'>
+
+/**
+ * Parses the availability/coverage/reason/producer fields common to both the
+ * persisted wire payload and the turn spine's `answer_coverage_head` stage
+ * outputs. Neither source is trusted input, so an assessed verdict missing its
+ * coverage or reason (or carrying a malformed schema version) normalizes to
+ * the explicit `invalid` availability rather than a half-populated object.
+ */
+export const normalizeAnswerCoverageCore = (value: unknown): AnswerCoverageCore | undefined => {
   if (!isRecord(value)) return undefined
   const availability = oneOf(value.availability, ['assessed', 'not_recorded', 'failed', 'invalid'] as const)
   if (!availability) return undefined
@@ -65,13 +79,11 @@ export const normalizeAnswerCoverage = (value: unknown): AnswerCoverageAssessmen
     'sufficient_evidence', 'insufficient_evidence', 'conflicting_evidence',
     'ambiguous_request', 'intentional_scope_boundary',
   ] as const)
-  const originatingTurnId = typeof value.originatingTurnId === 'string' ? value.originatingTurnId : ''
-  const originatingRequestId = typeof value.originatingRequestId === 'string' ? value.originatingRequestId : ''
-  if (!originatingTurnId || !originatingRequestId) return undefined
+  const producer = oneOf(value.producer, ['answer_head', 'deterministic', 'assessor'] as const)
   const hasInvalidSchemaVersion = value.schemaVersion !== undefined
     && (typeof value.schemaVersion !== 'number' || !Number.isInteger(value.schemaVersion) || value.schemaVersion <= 0)
   if (availability === 'assessed' && (!coverage || !reason || hasInvalidSchemaVersion)) {
-    return { availability: 'invalid', originatingTurnId, originatingRequestId }
+    return { availability: 'invalid' }
   }
   return {
     availability,
@@ -79,11 +91,20 @@ export const normalizeAnswerCoverage = (value: unknown): AnswerCoverageAssessmen
     reason,
     unresolvedRequest: typeof value.unresolvedRequest === 'string' ? value.unresolvedRequest : undefined,
     contextualizedRequest: typeof value.contextualizedRequest === 'string' ? value.contextualizedRequest : undefined,
-    originatingTurnId,
-    originatingRequestId,
+    ...(producer ? { producer } : {}),
     schemaVersion: typeof value.schemaVersion === 'number' ? value.schemaVersion : undefined,
     assessedAt: typeof value.assessedAt === 'string' ? value.assessedAt : undefined,
   }
+}
+
+export const normalizeAnswerCoverage = (value: unknown): AnswerCoverageAssessment | undefined => {
+  if (!isRecord(value)) return undefined
+  const core = normalizeAnswerCoverageCore(value)
+  if (!core) return undefined
+  const originatingTurnId = typeof value.originatingTurnId === 'string' ? value.originatingTurnId : ''
+  const originatingRequestId = typeof value.originatingRequestId === 'string' ? value.originatingRequestId : ''
+  if (!originatingTurnId || !originatingRequestId) return undefined
+  return { ...core, originatingTurnId, originatingRequestId }
 }
 
 export const normalizeAnswerCoverageInteractionTrace = (value: unknown): AnswerCoverageInteractionTrace | undefined => {

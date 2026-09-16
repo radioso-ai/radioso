@@ -28582,8 +28582,18 @@
               }
             }
           },
+          "403": {
+            "description": "Authenticated user has no access to the workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "404": {
-            "description": "Workspace not found or inaccessible",
+            "description": "Workspace not found",
             "content": {
               "application/json": {
                 "schema": {

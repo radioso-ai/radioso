@@ -12534,7 +12534,16 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Workspace not found or inaccessible */
+            /** @description Authenticated user has no access to the workspace */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace not found */
             404: {
                 headers: {
                     [name: string]: unknown;

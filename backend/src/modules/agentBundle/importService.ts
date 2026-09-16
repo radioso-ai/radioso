@@ -222,6 +222,16 @@ export class AgentBundleImportService {
     const imported = new Set<string>();
 
     for (const skill of skills) {
+      if (skill.invocationMode === "default_answer") {
+        // Not a portable per-skill entry: `this.options.agents.create()` (called before this
+        // loop runs) already derived and inserted the agent's default-answer skill from
+        // `projection.input`'s retrievalEnabled/sourceScope/skillSettings - the same source
+        // this bundle serialized it from - so creating it again here would collide with
+        // `agent_skills_agent_id_skill_name_key`. Still counted as imported so a context
+        // variable resolver naming it resolves against the row the agent already has.
+        imported.add(skill.name);
+        continue;
+      }
       if (!this.options.skills.hasCapability(skill.capability)) {
         // Not a failure of the bundle: a deployment may simply not register this
         // capability. Skipping it and saying so beats failing the whole import.

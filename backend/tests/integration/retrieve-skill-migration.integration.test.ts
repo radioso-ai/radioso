@@ -96,6 +96,10 @@ describeIfDatabase("retrieve skills spine migration", () => {
       },
     });
     createdAgentIds.add(agent.id);
+    // AgentRepository.create() now seeds this agent's own retrieve/"answer" skill; clear it so
+    // this test starts from the pre-migration-110 shape it actually means to exercise (an agent
+    // with only `agents`-column/skill_settings retrieval state and no agent_skills row yet).
+    await database.execute(`DELETE FROM agent_skills WHERE agent_id = $1`, [agent.id]);
 
     await database.pool.query(migrationSql);
     await database.pool.query(migrationSql);
@@ -140,6 +144,10 @@ describeIfDatabase("retrieve skills spine migration", () => {
       name: "Conflicting Agent",
     });
     createdAgentIds.add(agent.id);
+    // AgentRepository.create() now seeds its own retrieve/"answer" skill (the very row this
+    // migration used to be the sole source of); clear it so the fixture below can simulate the
+    // pre-migration case this test targets - a name collision from some *other*, unrelated skill.
+    await database.execute(`DELETE FROM agent_skills WHERE agent_id = $1`, [agent.id]);
     const destinationId = randomUUID();
     await database.execute(
       `INSERT INTO workspace_webhook_destinations (

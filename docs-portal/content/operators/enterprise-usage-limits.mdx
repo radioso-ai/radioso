@@ -67,6 +67,8 @@ Radioso seeds three profiles from the `@radioso/plan-catalog` package — `comet
 
 The seed only inserts a profile that is missing; it never overwrites one that already exists. Edit `comet`, `satellite`, or `planet` through the admin API above, and the edit stays — a later deploy that re-runs the seed leaves it alone.
 
+`comet` and `satellite` are managed plans: a workspace on one of them runs the catalog's managed model set (`gpt-5.4-mini` on OpenAI for chat, query rewrite, and rerank) whenever it holds no provider credential of its own for the provider it would otherwise use. The lock is served from the deployment's `OPENAI_API_KEY`, so set it on every Enterprise deployment that assigns managed plans; a managed workspace with neither its own OpenAI key nor a deployment key gets a `provider_misconfigured` error on its first model call. The [Settings API](/api/settings#llm-model-selection) reports the lock per capability under `managed`.
+
 `GET /api/v1/plans` serves the same catalog, public and unauthenticated, so a pricing page or signup flow can read current plan numbers without a session or admin token:
 
 ```bash

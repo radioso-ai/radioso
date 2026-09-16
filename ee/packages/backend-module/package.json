@@ -16,7 +16,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json && node scripts/copy-prompts.mjs",
-    "pretest": "pnpm --dir ../../../packages/plan-catalog run build",
+    "pretest": "pnpm --dir ../plan-catalog run build",
     "test": "vitest run --passWithNoTests --testTimeout 20000"
   },
   "files": [

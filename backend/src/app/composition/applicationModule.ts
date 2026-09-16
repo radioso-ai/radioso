@@ -18,6 +18,7 @@ import type { Db } from "../../shared/infra/kysely/types.js";
 import type { JobConsumerPort } from "../../shared/domain/jobConsumer.js";
 import type { OrganizationCreationGuard } from "../../shared/domain/organizationCreationGuard.js";
 import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
+import type { ManagedModelPolicy } from "../../shared/domain/managedModelPolicy.js";
 import type { UsageEventRecorder } from "../../shared/domain/usageEventRecorder.js";
 import type { WebsiteEmbedIntegrationProvider } from "../../modules/settings/contracts/websiteEmbedIntegration.js";
 import type { FacetExtractionPort } from "../../modules/facets/contracts.js";
@@ -56,7 +57,7 @@ import type { Env } from "../config/env.js";
 import type { OauthProviderDefinition } from "../../modules/integrationOauth/public.js";
 import type { CopilotToolContribution } from "../../modules/operatorCopilot/public.js";
 
-export type ApplicationChatActionSuggestionProviderRegistration =
+type ApplicationChatActionSuggestionProviderRegistration =
   | ChatActionSuggestionProvider
   | ((context: {
       database: ApplicationDatabasePort;
@@ -65,11 +66,11 @@ export type ApplicationChatActionSuggestionProviderRegistration =
       auditService: AuditService;
     }) => ChatActionSuggestionProvider);
 
-export interface ApplicationDatabasePort {
+interface ApplicationDatabasePort {
   query<T extends QueryResultRow = QueryResultRow>(text: string, params?: unknown[]): Promise<T[]>;
 }
 
-export interface ApplicationDatabaseMigrator {
+interface ApplicationDatabaseMigrator {
   id: string;
   migrate(database: ApplicationDatabasePort): Promise<void>;
 }
@@ -79,14 +80,21 @@ export interface ApplicationRouteMount {
   createRouter(dependencies: AppDependencies): Router;
 }
 
-export type ApplicationUsageLimitPolicyRegistration =
+type ApplicationUsageLimitPolicyRegistration =
   | UsageLimitPolicy
   | ((context: {
       database: ApplicationDatabasePort;
       logger: AppLogger;
     }) => UsageLimitPolicy);
 
-export type ApplicationOrganizationCreationGuardRegistration =
+type ApplicationManagedModelPolicyRegistration =
+  | ManagedModelPolicy
+  | ((context: {
+      database: ApplicationDatabasePort;
+      logger: AppLogger;
+    }) => ManagedModelPolicy);
+
+type ApplicationOrganizationCreationGuardRegistration =
   | OrganizationCreationGuard
   | ((context: {
       auditService: AuditService;
@@ -94,14 +102,14 @@ export type ApplicationOrganizationCreationGuardRegistration =
       logger: AppLogger;
     }) => OrganizationCreationGuard);
 
-export type ApplicationUsageEventRecorderRegistration =
+type ApplicationUsageEventRecorderRegistration =
   | UsageEventRecorder
   | ((context: {
       database: ApplicationDatabasePort;
       logger: AppLogger;
     }) => UsageEventRecorder);
 
-export interface WorkspaceContactInfoRepositoryPort {
+interface WorkspaceContactInfoRepositoryPort {
   findById(workspaceId: string): Promise<{
     id: string;
     name: string;
@@ -127,7 +135,7 @@ export interface MailTransportPort {
   }>;
 }
 
-export type ApplicationPublicChatActionAdvertiserRegistration =
+type ApplicationPublicChatActionAdvertiserRegistration =
   | PublicChatActionAdvertiserPort
   | ((context: {
       database: ApplicationDatabasePort;
@@ -145,14 +153,14 @@ export type ApplicationPublicChatActionAdvertiserRegistration =
       agentService: Pick<AgentService, "resolve">;
     }) => PublicChatActionAdvertiserPort);
 
-export type ApplicationContactHistoryProviderRegistration =
+type ApplicationContactHistoryProviderRegistration =
   | ContactHistoryProviderPort
   | ((context: {
       database: ApplicationDatabasePort;
       logger: AppLogger;
     }) => ContactHistoryProviderPort);
 
-export type ApplicationAnswerFeedbackHistoryProviderRegistration =
+type ApplicationAnswerFeedbackHistoryProviderRegistration =
   | AnswerFeedbackHistoryProviderPort
   | ((context: {
       database: Db;
@@ -171,7 +179,7 @@ export interface ApplicationDirectiveRegistration {
  * may be supplied directly or as a factory resolved at dependency-build time with a
  * minimal context, mirroring the other host-supplied provider registrations.
  */
-export interface ApplicationActionHandlerRegistration {
+interface ApplicationActionHandlerRegistration {
   type: string;
   requiredCapabilities?: string[];
   handler:
@@ -194,7 +202,7 @@ export interface ApplicationActionHandlerRegistration {
       }) => ActionHandler);
 }
 
-export type ApplicationAccountCreatedHook = (context: {
+type ApplicationAccountCreatedHook = (context: {
   accountId: string;
   database: ApplicationDatabasePort;
   logger: AppLogger;
@@ -206,17 +214,17 @@ export type ApplicationAccountCreatedHook = (context: {
  * through the per-call {@link CopilotToolInvocationContext}, so it needs no application services
  * beyond persistence, logging, and the audit sink its own effects write to.
  */
-export interface ApplicationCopilotRegistrationContext {
+interface ApplicationCopilotRegistrationContext {
   database: Database;
   logger: AppLogger;
   auditService: AuditService;
 }
 
-export type ApplicationCopilotToolRegistration =
+type ApplicationCopilotToolRegistration =
   | CopilotToolContribution
   | ((context: ApplicationCopilotRegistrationContext) => CopilotToolContribution);
 
-export interface ApplicationExtensionRegistry {
+interface ApplicationExtensionRegistry {
   connectors: ConnectorPlugin[];
   telemetrySinks: TelemetrySink[];
   productAnalyticsSinks: ProductAnalyticsSink[];
@@ -226,6 +234,7 @@ export interface ApplicationExtensionRegistry {
   accountCreatedHooks: ApplicationAccountCreatedHook[];
   capabilityPolicy?: CapabilityPolicy;
   usageLimitPolicyRegistration?: ApplicationUsageLimitPolicyRegistration;
+  managedModelPolicyRegistration?: ApplicationManagedModelPolicyRegistration;
   organizationCreationGuardRegistration?: ApplicationOrganizationCreationGuardRegistration;
   usageEventRecorderRegistration?: ApplicationUsageEventRecorderRegistration;
   documentStorage?: DocumentStoragePort;
@@ -273,6 +282,7 @@ export interface ApplicationModuleRegistrationContext {
   registerAccountCreatedHandler(handler: ApplicationAccountCreatedHook): void;
   registerCapabilityPolicy(policy: CapabilityPolicy): void;
   registerUsageLimitPolicy(policy: ApplicationUsageLimitPolicyRegistration): void;
+  registerManagedModelPolicy(policy: ApplicationManagedModelPolicyRegistration): void;
   registerOrganizationCreationGuard(guard: ApplicationOrganizationCreationGuardRegistration): void;
   registerUsageEventRecorder(recorder: ApplicationUsageEventRecorderRegistration): void;
   registerDocumentStorage(storage: DocumentStoragePort): void;
@@ -362,6 +372,9 @@ const createRegistrationContext = (registry: ApplicationExtensionRegistry): Appl
   },
   registerUsageLimitPolicy(policy) {
     registry.usageLimitPolicyRegistration = policy;
+  },
+  registerManagedModelPolicy(policy) {
+    registry.managedModelPolicyRegistration = policy;
   },
   registerOrganizationCreationGuard(guard) {
     registry.organizationCreationGuardRegistration = guard;

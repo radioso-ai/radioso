@@ -1,4 +1,4 @@
-import type { LlmCapabilityResolver, LlmCapabilityResolveInput } from "./capabilityResolver.js";
+import type { LlmCapabilityConfigResolver, LlmCapabilityResolveInput } from "./capabilityResolver.js";
 import { ModelDirectiveMatchGateway, type DirectiveMatchGateway } from "@radioso/conversation-defaults";
 import type { LlmCapabilityConfig, TextGenerationClient } from "./providerTypes.js";
 import { ModelInferencePipelineService, type ModelInferencePipeline } from "./modelInferencePipeline.js";
@@ -34,7 +34,7 @@ import type { TurnPlanGatewayFactory, TurnPlanInferenceClient } from "./turnPlan
 import { loadPromptTemplate } from "../prompts/promptLoader.js";
 
 interface ContextualGatewayDependencies {
-  resolver: LlmCapabilityResolver;
+  resolver: LlmCapabilityConfigResolver;
   clientCache?: TextGenerationClientCache;
 }
 
@@ -46,7 +46,7 @@ type TextGenerationCapability = "chat" | "rewrite" | "rerank";
 
 const resolveClient = async (
   cache: TextGenerationClientCache,
-  resolver: LlmCapabilityResolver,
+  resolver: LlmCapabilityConfigResolver,
   capability: TextGenerationCapability,
   context: LlmCapabilityResolveInput,
 ): Promise<TextGenerationClient> => {

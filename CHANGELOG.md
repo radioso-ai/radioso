@@ -9,6 +9,14 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.1.1] - 2026-09-16
+
+### Fixed
+
+- **infra:** build the plan catalog into the enterprise backend image ([#1269](https://github.com/radioso-ai/radioso/pull/1269))
+
+[1.1.1]: https://github.com/radioso-ai/radioso/compare/v1.1.0...v1.1.1
+
 ## [1.1.0] - 2026-09-16
 
 ### Added

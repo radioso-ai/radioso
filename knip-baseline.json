@@ -789,8 +789,6 @@
   "types|frontend/components/dashboard/settings/routine-variables-context.tsx|RoutineVariablesContextValue",
   "types|frontend/components/dashboard/settings/settings-docs.ts|SettingDoc",
   "types|frontend/components/dashboard/settings/settings-row-list.tsx|SettingsRowStatus",
-  "types|frontend/components/dashboard/settings/use-settings-save-status.ts|SettingsSaveState",
-  "types|frontend/components/dashboard/settings/use-settings-save-status.ts|SettingsSaveStatus",
   "types|frontend/components/dashboard/shared/metadata-key-value-rows.ts|MetadataRowsValidation",
   "types|frontend/components/dashboard/shared/save-state-indicator.tsx|SaveStateIndicatorState",
   "types|frontend/components/dashboard/spine-stage-detail.tsx|ClarificationCandidateDetail",

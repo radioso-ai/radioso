@@ -512,7 +512,7 @@ function PublicChatCenteredIntro({
               .map((suggestion, suggestionIndex) => {
                 return (
                   <Button
-                    key={`centered-suggestion-${suggestionIndex}`}
+                    key={suggestion.id ?? `centered-suggestion-${suggestionIndex}`}
                     type="button"
                     variant="outline"
                     size="sm"

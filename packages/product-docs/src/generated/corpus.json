@@ -1,7 +1,7 @@
 {
   "generatedFrom": "docs-portal/content",
   "citationBase": "https://docs.radioso.ai",
-  "pageCount": 45,
+  "pageCount": 46,
   "pages": [
     {
       "slug": "api",
@@ -415,6 +415,11 @@
           "body": "Use this route before sending chat messages:\n\n```text\nPOST /api/v1/public/chat/{token}/sessions\n```\n\nFor a public link:\n\n```json\n{\n  \"channel\": \"anonymous_link\"\n}\n```\n\nFor an Enterprise website embed, call the route from an origin admitted by the website embed origin setting:\n\n```json\n{\n  \"channel\": \"website_embed\"\n}\n```\n\nBrowser clients must keep using that same origin on later chat, history, and\nfeedback requests. Radioso checks the signed public session against the current\nwebsite embed origin setting each time. Removing an origin from the list stops\nexisting browser sessions from sending new messages. If the list contains `*`,\nany origin is admitted. If the list is empty, no origin is admitted.\n\nTo resume an existing visitor session, include the previous response's `resumeToken`:\n\n```json\n{\n  \"channel\": \"website_embed\",\n  \"resumeToken\": \"previous-resume-token\"\n}\n```\n\nThe response includes `publicChatToken`, `publicSessionId`, `publicSessionToken`, `resumeToken`, `workspaceName`, `assistantBootstrapActive`, `expiresAt`, and `resumeExpiresAt`. Internally, `publicSessionId` is the chat session boundary for conversation continuity.\n\n`chatSessionId` and `anonymousSessionId` are accepted as client hints but are not trusted as resume credentials. Use `resumeToken` to resume and the returned `publicSessionToken` for chat requests."
         },
         {
+          "id": "bootstrap-greeting-response",
+          "heading": "Bootstrap greeting response",
+          "body": "When you request a new conversation with `startConversation: true`, a bootstrap greeting is returned if the agent has one configured. The greeting text is in `answer`; `suggestions` carries the authored chips when the greeting uses Exact words. Each suggestion has a stable `id`, and a click submits its `text` as a normal user message.\n\n```json\n{\n  \"bootstrapGreetingId\": \"5f2c1c2e-8d0a-4d0e-9d61-7c7a4b3a1f10\",\n  \"answer\": \"Welcome to our support team! How can we help?\",\n  \"suggestions\": [\n    { \"id\": \"chip-faq\", \"text\": \"Browse FAQs\", \"kind\": \"authored\", \"action\": { \"kind\": \"ask_followup\" } },\n    { \"id\": \"chip-schedule\", \"text\": \"Schedule a call\", \"kind\": \"authored\", \"action\": { \"kind\": \"ask_followup\" } }\n  ]\n}\n```\n\nAn Exact words greeting is delivered verbatim with no model call; its chips use `kind: \"authored\"`."
+        },
+        {
           "id": "send-a-public-chat-message",
           "heading": "Send a public chat message",
           "body": "```json\n{\n  \"message\": \"What can this workspace answer?\",\n  \"stream\": false,\n  \"conversationId\": \"optional-conversation-id\",\n  \"bootstrapGreetingId\": \"optional-bootstrap-greeting-id\"\n}\n```\n\nThe public chat request also supports `startConversation: true` for bootstrap greeting requests, `userExpectedLocale`, and `inputMetadata`.\n\nBootstrap greetings are not saved as conversations by themselves. A `startConversation: true` response can omit `conversationId` and include `bootstrapGreetingId`. If the visitor replies, send that `bootstrapGreetingId` with the first normal message and no `conversationId`; Radioso will save the displayed greeting before the user's message. Use the `conversationId` returned by that first normal message for history and follow-up continuity.\n\n### Sending a newer message while a turn is running\n\nIf a newer message arrives for the same conversation before the current assistant\nreply starts, Radioso cancels the current reply and answers from the latest\nhistory. A non-streaming superseded request returns HTTP `409` with error code\n`chat_turn_superseded`.\n\nFor a streaming request, the superseded stream ends with this terminal event:\n\n```text\nevent: cancelled\ndata: {\"conversationId\":\"...\",\"reason\":\"superseded\",\"stage\":\"rendering\"}\n```\n\nTreat `cancelled` as terminal and clear the pending reply state. It contains no\nassistant copy. Before an answer or cancellation, the stream can emit `status`\nwith stage `interpreting`, `searching`, or `composing`. Status is transient UI\nstate and does not prevent cancellation. If the first assistant chunk has already streamed, the first turn\nfinishes and the newer message runs next.\n\nAnswer chunks are incremental delivery. Guarded or durability-sensitive replies\nmay be validated or committed before their first chunk, then replayed in bounded\nchunks. Clients should not assume every chunk is a live provider token.\n\nIf the assistant cannot produce a public response body, the route returns a\nJSON error instead of an empty `204` response:\n\n```json\n{\n  \"error\": {\n    \"code\": \"service_unavailable\",\n    \"message\": \"Public chat response is unavailable.\",\n    \"details\": {\n      \"code\": \"public_chat_empty_response\"\n    }\n  }\n}\n```"
@@ -422,7 +427,7 @@
         {
           "id": "chat-suggestions",
           "heading": "Chat suggestions",
-          "body": "A chat response can include `suggestions`. Each suggestion has `text`, a\nprovider-defined `kind` string, and an optional `action`.\n\nTwo kinds of chips can appear together:\n\n* **Follow-up question chips** have no `action` (or `action.kind` is\n  `\"ask_followup\"`). They are pure text prompts: render `suggestion.text` and,\n  when the visitor selects one, send it as a new user message with\n  `inputMetadata.method = \"suggestion_click\"` and\n  `suggestionSourceMessageId = <assistant message id>`.\n* **Action chips** carry `action.kind === \"start_intent\"` with an\n  `intent.skillName` (and an optional `intent.intentName`). They route to a\n  specific assistant skill instead of asking a follow-up question. When the\n  visitor activates one, send `inputMetadata.method = \"intent_click\"` together\n  with the `intent` object verbatim, plus `suggestionSourceMessageId`. Sending\n  `suggestion_click` for an action chip will work as a plain text turn but will\n  bypass the structured skill handoff the chip was meant to trigger.\n\nAt most one action chip is returned per assistant turn. Action chips are\nin addition to the up-to-two follow-up question chips.\n\nExample response fragment:\n\n```json\n{\n  \"suggestions\": [\n    {\n      \"text\": \"Contact us\",\n      \"kind\": \"contact_human\",\n      \"action\": {\n        \"kind\": \"start_intent\",\n        \"intent\": {\n          \"skillName\": \"human_contact.request\",\n          \"intentName\": \"no_context_refusal\"\n        }\n      }\n    },\n    { \"text\": \"What's covered here?\", \"kind\": \"deeper\" }\n  ]\n}\n```\n\nThe set of action `kind` values is open: new modules can register additional\nproviders, so clients should treat `kind` as an opaque string and decide\nbehavior from `action` rather than from `kind`."
+          "body": "A chat response can include `suggestions`. Each suggestion has `text`, a\nprovider-defined `kind` string, and an optional `action`. `id` appears only on\nthe authored exact-content chips described in [Bootstrap greeting\nresponse](#bootstrap-greeting-response); the follow-up and action chips below\ncarry no `id`.\n\nTwo kinds of chips can appear together:\n\n* **Follow-up question chips** have no `action` (or `action.kind` is\n  `\"ask_followup\"`). They are pure text prompts: render `suggestion.text` and,\n  when the visitor selects one, send it as a new user message with\n  `inputMetadata.method = \"suggestion_click\"` and\n  `suggestionSourceMessageId = <assistant message id>`.\n* **Action chips** carry `action.kind === \"start_intent\"` with an\n  `intent.skillName` (and an optional `intent.intentName`). They route to a\n  specific assistant skill instead of asking a follow-up question. When the\n  visitor activates one, send `inputMetadata.method = \"intent_click\"` together\n  with the `intent` object verbatim, plus `suggestionSourceMessageId`. Sending\n  `suggestion_click` for an action chip will work as a plain text turn but will\n  bypass the structured skill handoff the chip was meant to trigger.\n\nAt most one action chip is returned per assistant turn. Action chips are\nin addition to the up-to-two follow-up question chips.\n\nExample response fragment:\n\n```json\n{\n  \"suggestions\": [\n    {\n      \"text\": \"Contact us\",\n      \"kind\": \"contact_human\",\n      \"action\": {\n        \"kind\": \"start_intent\",\n        \"intent\": {\n          \"skillName\": \"human_contact.request\",\n          \"intentName\": \"no_context_refusal\"\n        }\n      }\n    },\n    { \"text\": \"What's covered here?\", \"kind\": \"deeper\" }\n  ]\n}\n```\n\nThe set of action `kind` values is open: new modules can register additional\nproviders, so clients should treat `kind` as an opaque string and decide\nbehavior from `action` rather than from `kind`."
         },
         {
           "id": "history-in-the-anonymous-flow",
@@ -1107,6 +1112,52 @@
           "id": "read-next",
           "heading": "Read next",
           "body": "* [Test your agent in the workbench](https://docs.radioso.ai/guides/workbench) — where you capture a turn as a case.\n* [Author a routine](https://docs.radioso.ai/guides/authoring-routines) — behavior you may want an eval to pin down.\n* [Documents and search](https://docs.radioso.ai/api/documents-and-search) — the corpus a run replays against."
+        }
+      ]
+    },
+    {
+      "slug": "guides/exact-words",
+      "url": "https://docs.radioso.ai/guides/exact-words",
+      "title": "Exact words",
+      "description": "Author greeting text verbatim with multilingual support and suggestion chips.",
+      "section": "Guides",
+      "lastUpdated": null,
+      "intro": "Write your greeting text exactly as you want visitors to see it, without the agent generating or rewriting it. The text, punctuation, capitalization, and line breaks all stay as you author them.",
+      "sections": [
+        {
+          "id": "when-to-use-it",
+          "heading": "When to use it",
+          "body": "Choose Exact words when you want full control over the opening — to match a marketing tone, preserve a specific phrase, or deliver a scripted welcome. The agent still answers subsequent questions using its full capabilities; Exact words controls only the opening message."
+        },
+        {
+          "id": "set-up-exact-words",
+          "heading": "Set up exact words",
+          "body": "In your agent settings, turn on **Proactive Greeting** and choose **Exact words** as the wording. The editor takes your greeting text per language and optional suggestion chips. Edits land on the agent's draft; visitors see them after you publish."
+        },
+        {
+          "id": "languages",
+          "heading": "Languages",
+          "body": "You must provide the greeting text in your agent's default language. Optionally, add translations in other languages. A visitor's language is chosen in this order:\n\n1. Their explicit language selection\n2. The page or embed locale\n3. Their browser locale\n4. Your agent's default locale\n\nRadioso matches the exact language first, then falls back to the base language (`pt-BR` → `pt`), then to your agent's default locale. It does not translate on its own and never mixes languages in a single greeting.\n\nYour agent's default-locale variant is always required, so a visitor always receives a greeting; when no closer match exists, they receive that default variant."
+        },
+        {
+          "id": "suggestion-chips",
+          "heading": "Suggestion chips",
+          "body": "Add zero to five optional suggestion chips below your greeting text. Chips are ordered and labeled — a visitor can click one to send its text as a normal message, which triggers your agent's full conversation flow. Use chips to guide the opening (\"Browse FAQs\", \"Schedule a call\") without conflating exact wording with direct actions.\n\nEvery language variant carries a label for every chip, so a visitor never sees mixed languages. Add a translation only when you can translate its chips too."
+        },
+        {
+          "id": "publishing",
+          "heading": "Publishing",
+          "body": "Exact word greetings publish through your agent's ordinary Review & Publish workflow. Changing your agent's default language blocks publishing until you author a greeting variant in the new language."
+        },
+        {
+          "id": "limits",
+          "heading": "Limits",
+          "body": "* Greeting body: 1 to 8,000 characters per language variant\n* Suggestion labels: 1 to 80 characters per language variant\n* Maximum 5 suggestion chips\n* Whitespace-only text is rejected"
+        },
+        {
+          "id": "preview",
+          "heading": "Preview",
+          "body": "Open the agent workbench's Test Chat to see your greeting before you publish. Test Chat has no language switcher, so it always opens in your agent's default locale, and it shows the greeting text only, without suggestion chips. To check a translation or the chips a visitor would see, publish and open the agent's website embed, or another chat surface, set to that language."
         }
       ]
     },

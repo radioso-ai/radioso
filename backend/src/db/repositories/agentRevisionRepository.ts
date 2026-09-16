@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { Transaction } from "kysely";
 
-import { assertCandidateSnapshotIsRunnable, equalScopedAuthoringSnapshots, parseAgentRevisionSnapshot, type AgentDraft, type AgentRevision, type AgentRevisionRepositoryPort, type AgentRevisionSnapshot, type AgentRevisionState, type PublicationResult } from "../../modules/agents/public.js";
+import { assertCandidateSnapshotIsRunnable, DEFAULT_AGENT_LOCALE_FALLBACK, equalScopedAuthoringSnapshots, parseAgentRevisionSnapshot, type AgentDraft, type AgentRevision, type AgentRevisionRepositoryPort, type AgentRevisionSnapshot, type AgentRevisionState, type PublicationResult } from "../../modules/agents/public.js";
 import { AgentSkillRepository } from "../../modules/agentSkills/repository.js";
 import { currentTimestamp, toSanitizedJsonb, transactionAdvisoryLock } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db, DB } from "../../shared/infra/kysely/types.js";
@@ -25,6 +25,26 @@ const mapRevision = (row: {
   publishedAt: row.published_at ? new Date(row.published_at) : null,
   publishedVersion: row.published_version,
 });
+
+/**
+ * Live-reads the agent's current default locale on the same transaction a candidate/publish
+ * check is already running on. FR-005 requires re-checking exact greeting content against
+ * *today's* `assistantDefaultLocale`, not the one in effect when the content was authored,
+ * so this cannot be read from (or cached on) the frozen snapshot itself — see
+ * `assertCandidateSnapshotIsRunnable` in agentRevision.ts.
+ */
+const liveAgentDefaultLocale = async (
+  trx: Transaction<DB>,
+  workspaceId: string,
+  agentId: string,
+): Promise<string> => {
+  const row = await trx.selectFrom("agents").select("greeting_settings").where("workspace_id", "=", workspaceId).where("id", "=", agentId).executeTakeFirst();
+  const settings = row?.greeting_settings;
+  const locale = settings && typeof settings === "object" && !Array.isArray(settings)
+    ? (settings as Record<string, unknown>).assistantDefaultLocale
+    : undefined;
+  return typeof locale === "string" && locale.trim().length > 0 ? locale : DEFAULT_AGENT_LOCALE_FALLBACK;
+};
 
 /** Live-reads agent_skills on the same transaction a draft/candidate write is already
  * running on, for the writers below that must reconstruct `snapshot.agentSkills` the
@@ -107,7 +127,7 @@ export class AgentRevisionRepository implements AgentRevisionRepositoryPort {
       const parsedSnapshot: AgentRevisionSnapshot = draftSnapshot.agentSkills !== undefined
         ? draftSnapshot
         : { ...draftSnapshot, agentSkills: await liveAgentSkillsSnapshot(trx, workspaceId, agentId) };
-      assertCandidateSnapshotIsRunnable(parsedSnapshot);
+      assertCandidateSnapshotIsRunnable(parsedSnapshot, { agentDefaultLocale: await liveAgentDefaultLocale(trx, workspaceId, agentId) });
       let existingQuery = trx.selectFrom("agent_revisions")
         .select(["id", "snapshot", "source_draft_generation", "source_base_published_revision_id", "created_at", "published_at", "published_version"])
         .where("workspace_id", "=", workspaceId)
@@ -135,7 +155,7 @@ export class AgentRevisionRepository implements AgentRevisionRepositoryPort {
         trx.selectFrom("agent_revisions").select(["id", "snapshot", "source_draft_generation", "source_base_published_revision_id", "published_at"]).where("id", "=", input.revisionId).where("agent_id", "=", input.agentId).where("workspace_id", "=", input.workspaceId).executeTakeFirst(),
       ]);
       if (!agent || !draft || !revision || revision.published_at !== null || draft.generation !== input.expectedDraftGeneration || agent.published_revision_id !== input.expectedPublishedRevisionId || revision.source_draft_generation !== draft.generation || revision.source_base_published_revision_id !== draft.base_published_revision_id) return "conflict";
-      assertCandidateSnapshotIsRunnable(parseAgentRevisionSnapshot(revision.snapshot));
+      assertCandidateSnapshotIsRunnable(parseAgentRevisionSnapshot(revision.snapshot), { agentDefaultLocale: await liveAgentDefaultLocale(trx, input.workspaceId, input.agentId) });
       const publicationId = randomUUID(); const publishedAt = currentTimestamp();
       const latest = await trx.selectFrom("agent_revisions").select("published_version").where("workspace_id", "=", input.workspaceId).where("agent_id", "=", input.agentId).where("published_version", "is not", null).orderBy("published_version", "desc").executeTakeFirst();
       const publishedVersion = (latest?.published_version ?? 0) + 1;

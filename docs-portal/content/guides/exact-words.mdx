@@ -1,0 +1,50 @@
+---
+title: "Exact words"
+description: "Author greeting text verbatim with multilingual support and suggestion chips."
+---
+
+# Exact words
+
+Write your greeting text exactly as you want visitors to see it, without the agent generating or rewriting it. The text, punctuation, capitalization, and line breaks all stay as you author them.
+
+## When to use it
+
+Choose Exact words when you want full control over the opening — to match a marketing tone, preserve a specific phrase, or deliver a scripted welcome. The agent still answers subsequent questions using its full capabilities; Exact words controls only the opening message.
+
+## Set up exact words
+
+In your agent settings, turn on **Proactive Greeting** and choose **Exact words** as the wording. The editor takes your greeting text per language and optional suggestion chips. Edits land on the agent's draft; visitors see them after you publish.
+
+## Languages
+
+You must provide the greeting text in your agent's default language. Optionally, add translations in other languages. A visitor's language is chosen in this order:
+
+1. Their explicit language selection
+2. The page or embed locale
+3. Their browser locale
+4. Your agent's default locale
+
+Radioso matches the exact language first, then falls back to the base language (`pt-BR` → `pt`), then to your agent's default locale. It does not translate on its own and never mixes languages in a single greeting.
+
+Your agent's default-locale variant is always required, so a visitor always receives a greeting; when no closer match exists, they receive that default variant.
+
+## Suggestion chips
+
+Add zero to five optional suggestion chips below your greeting text. Chips are ordered and labeled — a visitor can click one to send its text as a normal message, which triggers your agent's full conversation flow. Use chips to guide the opening ("Browse FAQs", "Schedule a call") without conflating exact wording with direct actions.
+
+Every language variant carries a label for every chip, so a visitor never sees mixed languages. Add a translation only when you can translate its chips too.
+
+## Publishing
+
+Exact word greetings publish through your agent's ordinary Review & Publish workflow. Changing your agent's default language blocks publishing until you author a greeting variant in the new language.
+
+## Limits
+
+- Greeting body: 1 to 8,000 characters per language variant
+- Suggestion labels: 1 to 80 characters per language variant
+- Maximum 5 suggestion chips
+- Whitespace-only text is rejected
+
+## Preview
+
+Open the agent workbench's Test Chat to see your greeting before you publish. Test Chat has no language switcher, so it always opens in your agent's default locale, and it shows the greeting text only, without suggestion chips. To check a translation or the chips a visitor would see, publish and open the agent's website embed, or another chat surface, set to that language.

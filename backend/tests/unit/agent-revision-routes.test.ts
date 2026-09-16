@@ -112,6 +112,33 @@ describe("agent revision presenters", () => {
       .toMatchObject({ label: "v3", versionNumber: 3 });
     expect(presentRevisionDetail(revision(), null)).toMatchObject({ label: "Draft · 2026-09-08T10:00:00.000Z", versionNumber: null });
   });
+
+  it("diffs exact greeting content between the base and candidate revisions", () => {
+    const exactContent = { chips: [], variants: [{ locale: "en", body: "Welcome!", chipLabels: {} }] };
+    const base = revision({ id: baselineId, sourceDraftGeneration: 6, sourceBasePublishedRevisionId: null, publishedAt: new Date("2026-09-07T10:00:00.000Z"), publishedVersion: 2 });
+    const candidate = revision({
+      snapshot: snapshot({ greeting: { exactWordsEnabled: true, exactContent } }),
+    });
+
+    const detail = presentRevisionDetail(candidate, base);
+    expect(detail.scope.greeting).toBe(true);
+    expect(detail.scopedChanges.greeting).toEqual({
+      before: { exactWordsEnabled: false, exactContent: null },
+      after: { exactWordsEnabled: true, exactContent },
+      changed: true,
+    });
+  });
+
+  it("reports no greeting change when neither revision authored one", () => {
+    const base = revision({ id: baselineId, sourceDraftGeneration: 6, sourceBasePublishedRevisionId: null });
+    const candidate = revision();
+
+    expect(presentRevisionDetail(candidate, base).scopedChanges.greeting).toEqual({
+      before: { exactWordsEnabled: false, exactContent: null },
+      after: { exactWordsEnabled: false, exactContent: null },
+      changed: false,
+    });
+  });
 });
 
 const createDependencies = (overrides: Record<string, unknown> = {}) => {
@@ -140,6 +167,12 @@ const createDependencies = (overrides: Record<string, unknown> = {}) => {
     accountAccessService: { requirePermission: vi.fn(async () => undefined), hasPermission: vi.fn(async () => true) },
     agentRepository: { findByIdAndWorkspaceId: vi.fn(async () => ({ proactiveGreetingEnabled: false })) },
     agentRevisionService: service,
+    agentService: {
+      updateDraftGreeting: vi.fn(async (_workspaceId: string, _agentId: string, input: { exactWordsEnabled: boolean; exactContent: unknown }) => ({
+        greeting: input,
+        validation: { ok: true },
+      })),
+    },
     ...overrides,
   };
 };
@@ -149,9 +182,9 @@ const createApp = (dependencies = createDependencies()) => {
   app.use(express.json());
   app.use("/api/v1/agents", createAgentRevisionRoutes(dependencies as never));
   app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-    const known = error as { statusCode?: number; code?: string };
+    const known = error as { statusCode?: number; code?: string; details?: unknown };
     res.status(known.statusCode ?? 500).json({
-      error: { code: known.code ?? "internal_error", message: error instanceof Error ? error.message : "Internal server error" },
+      error: { code: known.code ?? "internal_error", message: error instanceof Error ? error.message : "Internal server error", details: known.details },
     });
   });
   return app;
@@ -203,5 +236,82 @@ describe("agent revision HTTP routes", () => {
     expect(response.body.publication).toMatchObject({ revisionId: baselineId, idempotentReplay: true, revision: { versionNumber: 1, label: "v1" } });
     expect(response.body.state.publishedRevision).toMatchObject({ id: candidateId, versionNumber: 2 });
     expect(response.body.state.proactiveGreetingEnabled).toBe(true);
+  });
+});
+
+describe("agent greeting draft route", () => {
+  const exactContent = { chips: [], variants: [{ locale: "en", body: "Welcome!", chipLabels: {} }] };
+
+  it("saves exact greeting content on the draft and returns the clean validation result", async () => {
+    const dependencies = createDependencies();
+
+    const response = await request(createApp(dependencies))
+      .put(`/api/v1/agents/${agentId}/greeting/draft`)
+      .set("Authorization", "Bearer token")
+      .send({ exactWordsEnabled: true, exactContent })
+      .expect(200);
+
+    expect(response.body).toEqual({
+      greeting: { exactWordsEnabled: true, exactContent },
+      validation: { ok: true },
+    });
+    expect(dependencies.agentService.updateDraftGreeting).toHaveBeenCalledWith(
+      workspaceId,
+      agentId,
+      { exactWordsEnabled: true, exactContent },
+    );
+  });
+
+  it("rejects a malformed body before it reaches the service", async () => {
+    await request(createApp())
+      .put(`/api/v1/agents/${agentId}/greeting/draft`)
+      .set("Authorization", "Bearer token")
+      .send({ exactWordsEnabled: "yes", exactContent: null })
+      .expect(400);
+  });
+
+  it("surfaces the service's validation-failure response without moving validation into the route", async () => {
+    const dependencies = createDependencies({
+      agentService: {
+        updateDraftGreeting: vi.fn(async () => {
+          const error = new Error("Exact greeting content is invalid") as Error & { statusCode: number; code: string; details: unknown };
+          error.statusCode = 400;
+          error.code = "bad_request";
+          error.details = { issues: [{ path: "variants[0].body", code: "blank_body", message: "Body must not be blank" }] };
+          throw error;
+        }),
+      },
+    });
+
+    const response = await request(createApp(dependencies))
+      .put(`/api/v1/agents/${agentId}/greeting/draft`)
+      .set("Authorization", "Bearer token")
+      .send({ exactWordsEnabled: true, exactContent: { chips: [], variants: [{ locale: "en", body: "  ", chipLabels: {} }] } })
+      .expect(400);
+
+    expect(response.body.error).toMatchObject({
+      code: "bad_request",
+      details: { issues: [expect.objectContaining({ code: "blank_body" })] },
+    });
+  });
+
+  it("keeps the draft greeting write behind the same manage permission as other draft edits", async () => {
+    const forbidden = createDependencies({
+      accountAccessService: {
+        requirePermission: vi.fn(async () => {
+          const error = new Error("forbidden") as Error & { statusCode: number; code: string };
+          error.statusCode = 403;
+          error.code = "forbidden";
+          throw error;
+        }),
+        hasPermission: vi.fn(),
+      },
+    });
+
+    await request(createApp(forbidden))
+      .put(`/api/v1/agents/${agentId}/greeting/draft`)
+      .set("Authorization", "Bearer token")
+      .send({ exactWordsEnabled: false, exactContent: null })
+      .expect(403);
   });
 });

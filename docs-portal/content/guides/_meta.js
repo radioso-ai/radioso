@@ -5,6 +5,7 @@ const meta = {
   'document-metadata': 'Extract document metadata',
   'authoring-directives': 'Author a directive',
   'authoring-routines': 'Author a routine',
+  'exact-words': 'Exact words',
   workbench: 'Test in the workbench',
   evals: 'Evaluate answer quality',
 }

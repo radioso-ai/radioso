@@ -159,6 +159,11 @@ export const useWorkspaceOnboarding = (
       setWebsiteCrawlerEnabled(summary.websiteCrawlerEnabled)
       setIsOnboardingCompleted(nextCompleted)
       setIsOnboardingActive(nextActive)
+    } catch {
+      // The summary only enriches onboarding state. It fails legitimately while the
+      // stored workspace and the session cookie disagree during an account switch
+      // (the route page redirects on its own), so a rejection here has nothing to
+      // surface and must not escape as an unhandled promise.
     } finally {
       setIsLoading(false)
     }

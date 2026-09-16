@@ -31,6 +31,7 @@ export interface RetrievalSettingsSnapshot {
   metadataRules: RetrievalMetadataRule[];
   customInstruction: string;
   retrievalStrategy?: RetrievalStrategyPreference;
+  citationHoldEnabled: boolean;
 }
 
 export const freezeRetrievalSettings = (
@@ -51,4 +52,5 @@ export const freezeRetrievalSettings = (
   metadataRules: record.metadataRules,
   customInstruction: record.customInstruction,
   retrievalStrategy: record.retrievalStrategy,
+  citationHoldEnabled: record.citationHoldEnabled ?? true,
 });

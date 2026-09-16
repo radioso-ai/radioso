@@ -41,6 +41,7 @@ export class AnswerCoverageRepository implements AnswerCoverageRepositoryPort, A
           reason: input.assessment.reason,
           unresolved_request: input.assessment.unresolvedRequest ?? null,
           schema_version: input.assessment.schemaVersion,
+          producer: input.assessment.producer,
         }
       : {
           id: randomUUID(),
@@ -54,6 +55,7 @@ export class AnswerCoverageRepository implements AnswerCoverageRepositoryPort, A
           reason: null,
           unresolved_request: null,
           schema_version: 1,
+          producer: input.assessment.producer ?? null,
         };
     const inserted = await this.db
       .insertInto("answer_coverage_assessments")

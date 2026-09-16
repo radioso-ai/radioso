@@ -149,7 +149,8 @@ import {
   type ConversationTurnRegistry,
   type ConversationTurnStage,
 } from "./conversationTurnRegistry.js";
-import { ChatAnswerCoverageAssessorFactory } from "./chatAnswerCoverageAssessor.js";
+import { AnswerCoverageHeadRecorder } from "./answerCoverageHeadRecorder.js";
+import type { AnswerCoverageShadowAssessor } from "./answerCoverageShadowAssessor.js";
 import { buildAgentChatWorkspaceContext } from "./agentChatWorkspaceContext.js";
 
 export type { ChatGateway } from "../contracts/chatGateway.js";
@@ -253,7 +254,9 @@ export interface ChatServiceOptions {
   conversationTurnRegistry?: ConversationTurnRegistry;
   workspaceInvalidationPublisher?: WorkspaceInvalidationPublisher;
   /** Optional durable semantic assessment store; absent leaves legacy turns unchanged. */
-  coverageAssessorFactory?: ChatAnswerCoverageAssessorFactory;
+  coverageHeadRecorder?: AnswerCoverageHeadRecorder;
+  /** Optional #1260 shadow; absent (or the flag disabled) never calls the old assessor. */
+  coverageShadowAssessor?: AnswerCoverageShadowAssessor;
 }
 
 interface TurnCoordinationState {
@@ -382,7 +385,8 @@ export class ChatService {
       turnPlanInterpretationContextSettings,
       conversationTurnRegistry = new InMemoryConversationTurnRegistry(),
       workspaceInvalidationPublisher,
-      coverageAssessorFactory,
+      coverageHeadRecorder,
+      coverageShadowAssessor,
     } = options;
     this.conversationRepository = conversationRepository;
     this.messageRepository = messageRepository;
@@ -448,7 +452,8 @@ export class ChatService {
       chatSessionPreparer: this.chatSessionPreparer,
       directiveStateStore,
       routineStore,
-      coverageAssessorFactory,
+      coverageHeadRecorder,
+      coverageShadowAssessor,
     }) ?? new ChatTurnAssembly({
       chatGateway,
       chatAnswerPresenter: this.chatAnswerPresenter,
@@ -468,7 +473,8 @@ export class ChatService {
       retrievalSenseClarificationPolicy: effectiveRetrievalSenseClarificationPolicy,
       agentSkillTurnSkillProvider,
       logger,
-      coverageAssessorFactory,
+      coverageHeadRecorder,
+      coverageShadowAssessor,
     });
     this.approvalResumeTurn = new ApprovalResumeTurn({
       conversationRepository,

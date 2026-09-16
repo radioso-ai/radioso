@@ -181,6 +181,34 @@ describe("directive defaults", () => {
     });
   });
 
+  // Coverage directives (#1260) are matched before the coverage verdict exists; the
+  // rule carries the directive's gate so the rendering surface can layer it as a
+  // condition on the classification the model is about to emit
+  // (`renderSteeringRules`/`steeringForKnownVerdict` both branch on
+  // `rule.coverageCriteria`). Without this the host's own steering resolution
+  // (`DirectiveSteeringService.resolveMatches`, which maps through this function)
+  // would render every coverage directive unconditionally.
+  it("carries a directive's coverageCriteria onto its steering rule", () => {
+    const coverageGated = directive({
+      name: "offer-form",
+      action: "offer the form",
+      coverageCriteria: { coverage: ["unanswered"] },
+    });
+
+    expect(directiveToSteeringRule(match(coverageGated))).toMatchObject({
+      action: "offer the form",
+      coverageCriteria: { coverage: ["unanswered"] },
+    });
+  });
+
+  it("carries the directive's own id onto its steering rule when it has one (#1260 R5)", () => {
+    const idAssigned = directive({ id: "directive_1", name: "offer-form", action: "offer the form" });
+    const idLess = directive({ name: "be-concise", action: "be concise" });
+
+    expect(directiveToSteeringRule(match(idAssigned))).toMatchObject({ id: "directive_1" });
+    expect(directiveToSteeringRule(match(idLess))).not.toHaveProperty("id");
+  });
+
   it("builds and parses routine and step scope tags", () => {
     expect(scopeTag.routine("routine_1")).toBe("routine:routine_1");
     expect(scopeTag.step("routine_1", "step_1")).toBe("step:routine_1:step_1");

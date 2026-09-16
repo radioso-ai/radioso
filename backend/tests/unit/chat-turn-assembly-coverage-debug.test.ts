@@ -21,6 +21,7 @@ describe("coverage live debug projection", () => {
         reason: "insufficient_evidence",
         unresolvedRequest: "One-day attendance permission",
         schemaVersion: 1,
+        producer: "answer_head",
       },
       record: {
         availability: "assessed",

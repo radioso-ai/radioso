@@ -17,7 +17,8 @@ import { ConversationOwnershipRepository } from "../../../db/repositories/conver
 import { HistoryItemsRepository } from "../../../db/repositories/historyItemsRepository.js";
 import { MessageRepository } from "../../../db/repositories/messageRepository.js";
 import { AnswerCoverageRepository } from "../../../db/repositories/answerCoverageRepository.js";
-import { ChatAnswerCoverageAssessorFactory } from "../../../modules/chat/services/chatAnswerCoverageAssessor.js";
+import { AnswerCoverageHeadRecorder } from "../../../modules/chat/services/answerCoverageHeadRecorder.js";
+import { AnswerCoverageShadowAssessor } from "../../../modules/chat/services/answerCoverageShadowAssessor.js";
 import { WorkspaceRepository } from "../../../db/repositories/workspaceRepository.js";
 import { LlmResponseLanguageDetector } from "../../../shared/services/responseLanguageDetector.js";
 import { LlmHandoffWaitingMessageGenerator } from "../../../shared/services/handoffWaitingMessageGenerator.js";
@@ -801,9 +802,13 @@ export const buildChatServices = (input: {
     agentSkillTurnSkillProvider,
     recordClarificationDecision: clarificationDecisionRecorder,
     workspaceInvalidationPublisher: input.workspaceInvalidationPublisher,
-    coverageAssessorFactory: new ChatAnswerCoverageAssessorFactory(
-      chatGateway,
+    coverageHeadRecorder: new AnswerCoverageHeadRecorder(
       new AnswerCoverageRepository(input.database.kysely),
+    ),
+    coverageShadowAssessor: new AnswerCoverageShadowAssessor(
+      chatGateway,
+      input.env.ANSWER_COVERAGE_SHADOW_ASSESSOR_ENABLED,
+      input.metricsRegistry,
     ),
   });
   const chatBootstrapService = new ChatBootstrapService(
@@ -888,7 +893,7 @@ export const buildChatServices = (input: {
     // Same post-evidence coverage assessment as live chat, minus the repository: a
     // replayed turn (draft test chat, evals) must let coverage-gated directives and
     // routines fire, but it writes no assessment or reaction rows.
-    coverageAssessorFactory: new ChatAnswerCoverageAssessorFactory(chatGateway),
+    coverageHeadRecorder: new AnswerCoverageHeadRecorder(),
     logger: input.logger,
   });
   const approvalDecisionService = new ApprovalDecisionService(

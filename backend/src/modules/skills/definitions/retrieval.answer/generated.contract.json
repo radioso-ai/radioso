@@ -108,6 +108,9 @@
         "temporalDeterministicSortEnabled": {
           "type": "boolean"
         },
+        "citationHoldEnabled": {
+          "type": "boolean"
+        },
         "semanticRewriteInstructions": {
           "type": "string",
           "maxLength": 2000

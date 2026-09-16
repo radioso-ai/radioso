@@ -23,12 +23,12 @@ import { DIRECTIVES_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { DirectiveMatchGatewayFactory } from "../../../shared/infra/llm/contextualGateways.js";
 import { defaultAnswerDirectiveRoutes } from "./answerDirectiveRoutePolicy.js";
 
-export interface RouteScopedDirectiveRegistration {
+interface RouteScopedDirectiveRegistration {
   directive: Directive;
   routes?: string[];
 }
 
-export type DirectiveRoutePolicy = (directive: Directive) => string[] | undefined;
+type DirectiveRoutePolicy = (directive: Directive) => string[] | undefined;
 
 export interface RouteScopedDirectiveRuntime extends DirectiveSteeringPort {
   matcher: DirectiveMatcherPort;
@@ -44,6 +44,22 @@ export interface RouteScopedDirectiveRuntime extends DirectiveSteeringPort {
     directives: Directive[],
     classifications: DirectiveClassification[],
   ): Promise<DirectiveSteeringResult>;
+  /**
+   * Raw match candidates for one directive group — matched, but before
+   * capability denial, excludes/dependsOn resolution, or the steering bound.
+   * A turn that matches more than one directive group in sequence (chat's
+   * legacy directives, then its coverage directives on a retrieval turn) must
+   * accumulate these across groups and pass the union to one
+   * {@link resolveMatches} call: `resolveMatches` applies capability denial,
+   * relationships, and the steering bound over its whole input, so resolving
+   * each group separately and keeping only the last result drops cross-group
+   * exclusion/dependency interactions and understates the bound.
+   */
+  matchCandidates(
+    input: DirectiveSteerInput,
+    directives: Directive[],
+    classifications?: DirectiveClassification[],
+  ): Promise<DirectiveMatch[]>;
   resolveMatches(input: DirectiveSteerInput, matches: DirectiveMatch[]): Promise<DirectiveSteeringResult>;
 }
 
@@ -146,16 +162,16 @@ export const createRouteScopedDirectiveSteering = (input: {
       workspaceId: steerInput.workspaceId,
     });
 
-  // Single resolution body shared by both entry points. The contextual gateway is
-  // an injectable classification source: when `precomputedClassifications` is
-  // supplied the fused planner already ran the classification, so no gateway is
-  // built and no model call is made; otherwise the per-turn gateway is created and
-  // called exactly as before. The runtime remains the sole owner of resolution.
-  const matchAndResolveInternal = async (
+  // Raw-candidate step shared by both entry points and exposed separately as
+  // `matchCandidates`. The contextual gateway is an injectable classification
+  // source: when `precomputedClassifications` is supplied the fused planner
+  // already ran the classification, so no gateway is built and no model call is
+  // made; otherwise the per-turn gateway is created and called exactly as before.
+  const matchCandidatesInternal = async (
     steerInput: DirectiveSteerInput,
     directives: Directive[],
     precomputedClassifications?: DirectiveClassification[],
-  ): Promise<DirectiveSteeringResult> => {
+  ): Promise<DirectiveMatch[]> => {
     warnOnLargeCandidateSet(steerInput, directives.length);
     const turnContext = steerInput.turnContext ?? {};
     const hasContextual = directives.some((directive) => directive.condition.kind === "contextual");
@@ -201,10 +217,18 @@ export const createRouteScopedDirectiveSteering = (input: {
         ]);
       }
     }
-    const matches = await turnMatcher.match({
+    return turnMatcher.match({
       turnContext,
       directives,
     });
+  };
+
+  const matchAndResolveInternal = async (
+    steerInput: DirectiveSteerInput,
+    directives: Directive[],
+    precomputedClassifications?: DirectiveClassification[],
+  ): Promise<DirectiveSteeringResult> => {
+    const matches = await matchCandidatesInternal(steerInput, directives, precomputedClassifications);
     return serviceFor(steerInput).resolveMatches(steerInput, matches);
   };
 
@@ -229,6 +253,13 @@ export const createRouteScopedDirectiveSteering = (input: {
       classifications: DirectiveClassification[],
     ): Promise<DirectiveSteeringResult> {
       return matchAndResolveInternal(steerInput, directives, classifications);
+    },
+    matchCandidates(
+      steerInput: DirectiveSteerInput,
+      directives: Directive[],
+      classifications?: DirectiveClassification[],
+    ): Promise<DirectiveMatch[]> {
+      return matchCandidatesInternal(steerInput, directives, classifications);
     },
     resolveMatches(
       steerInput: DirectiveSteerInput,
@@ -262,6 +293,9 @@ export const noopRouteScopedDirectiveRuntime: RouteScopedDirectiveRuntime = {
   },
   async matchAndResolveWithClassifications(): Promise<DirectiveSteeringResult> {
     return { rules: [], matches: [], omissions: [] };
+  },
+  async matchCandidates(): Promise<DirectiveMatch[]> {
+    return [];
   },
   async resolveMatches(): Promise<DirectiveSteeringResult> {
     return { rules: [], matches: [], omissions: [] };

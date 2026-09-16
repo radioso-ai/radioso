@@ -100,6 +100,8 @@ describe("grounding assertions", () => {
   it("allows matching unsourced assertions on no-support copy", () => {
     const raw = formatV2Envelope("Contact our team[[?]].", {
       v: 2,
+      coverage: "unanswered_insufficient_evidence",
+      requestFocus: "the contact request",
       outcome: "no_support",
       claims: [[]],
       suggestions: [],
@@ -128,6 +130,8 @@ describe("grounding assertions", () => {
   ])("degrades on %s mismatch", (_name, body, claims, expectedMismatch) => {
     const raw = formatV2Envelope(body, {
       v: 2,
+      coverage: "answered_sufficient_evidence",
+      requestFocus: "the mismatched assertion",
       outcome: "answer",
       claims,
       suggestions: [],
@@ -139,6 +143,8 @@ describe("grounding assertions", () => {
   it("accepts numeric strings, duplicate indices, extra keys, and v as a string", () => {
     const raw = formatV2Envelope("One[[1]][[1]][[2]].", {
       v: "2",
+      coverage: "answered_sufficient_evidence",
+      requestFocus: "the numeric indices",
       outcome: "answer",
       claims: [["1", 1, "2"]],
       suggestions: [],

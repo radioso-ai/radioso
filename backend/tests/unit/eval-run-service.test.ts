@@ -98,6 +98,7 @@ const retrievalSettingsSnapshot = (
   metadataRules: [],
   customInstruction: "captured retrieval instruction",
   retrievalStrategy: "fixed",
+  citationHoldEnabled: true,
   ...overrides,
 });
 

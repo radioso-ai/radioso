@@ -12,7 +12,7 @@ describe("coverage routine assembly effects", () => {
     const original = { conversation: { id: "old", workspaceId: "w" }, agent: { id: "a", workspaceId: "w" }, userMessage: { id: "old-request" } };
     const final = { conversation: { id: "new", workspaceId: "w" }, agent: { id: "a", workspaceId: "w" }, userMessage: { id: "new-request" }, answerCoverageInteractionTrace: undefined };
     const assembly = new ChatTurnAssembly({
-      coverageAssessorFactory: {
+      coverageHeadRecorder: {
         createReactionRecorder: ({ onRecorded }: { onRecorded?: (reaction: unknown) => void }) => ({ record: async (reaction: unknown) => { await persistedReaction(); onRecorded?.(reaction); } }),
       },
       routineStore: durableStore,
@@ -36,7 +36,7 @@ it("projects coverage handoff and suspended approval effects without committing 
   const durableStore = { loadActive: vi.fn(async () => null), save: vi.fn(async () => {}), clear: vi.fn(async () => {}) };
   const session = { conversation: { id: "conversation", workspaceId: "workspace" }, agent: { id: "agent", workspaceId: "workspace" }, userMessage: { id: "request" } };
   const assembly = new ChatTurnAssembly({
-    coverageAssessorFactory: { createReactionRecorder: () => ({ record: async () => {} }) },
+    coverageHeadRecorder: { createReactionRecorder: () => ({ record: async () => {} }) },
     routineStore: durableStore,
     routineProvider: { forTurn: async () => ({ coverageActivator: { evaluateCandidates: () => [], activate: async () => null }, activator: { activate: async () => null }, runner: { resume: async () => ({ response: { answer: "" }, nextState: null }) } }) },
   } as never);
@@ -63,7 +63,7 @@ it("carries coverage activation clarification through the existing deferred clar
   const clarificationStore = new DeferredClarificationStore(persistedClarifications);
   const session = { conversation: { id: "conversation", workspaceId: "workspace" }, agent: { id: "agent", workspaceId: "workspace" }, userMessage: { id: "request" } };
   const assembly = new ChatTurnAssembly({
-    coverageAssessorFactory: { createReactionRecorder: () => ({ record: async () => {} }) },
+    coverageHeadRecorder: { createReactionRecorder: () => ({ record: async () => {} }) },
     routineStore: durableStore,
     routineProvider: { forTurn: async () => ({ coverageActivator: {
       evaluateCandidates: () => [],

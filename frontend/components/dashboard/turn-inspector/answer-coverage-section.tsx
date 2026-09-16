@@ -1,5 +1,6 @@
 import {
   answerCoverageLabel,
+  answerCoverageProducerLabel,
   answerCoverageReasonLabel,
   type AnswerCoverageAssessment,
   type AnswerCoverageInteractionTrace,
@@ -16,21 +17,29 @@ export function AnswerCoverageSection({
   assessment,
   interaction,
   isLegacy,
+  isFromTrace,
   onOpenTargetMessage,
 }: {
   assessment: AnswerCoverageAssessment
   interaction?: AnswerCoverageInteractionTrace
   isLegacy?: boolean
+  /** Read from this turn's own trace because no persisted assessment exists (draft surfaces, FR-023). */
+  isFromTrace?: boolean
   onOpenTargetMessage?: (messageId: string) => void
 }) {
   const assessed = assessment.availability === 'assessed'
+  const producerLabel = assessed ? answerCoverageProducerLabel(assessment.producer) : undefined
   return (
     <section className="rounded-lg border border-border/70 bg-background/60 p-3" data-testid="answer-coverage-diagnostics">
       <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Answer coverage</p>
       <p className="mt-1 text-base font-medium text-foreground">
         {assessed ? answerCoverageLabel(assessment.coverage) : 'Not assessed'}
+        {producerLabel ? (
+          <span className="ml-2 text-xs font-normal text-muted-foreground">{producerLabel}</span>
+        ) : null}
       </p>
       {isLegacy ? <p className="mt-1 text-xs text-muted-foreground">Legacy evidence: this turn retains its recorded grounding diagnostics, but semantic coverage was not measured.</p> : null}
+      {isFromTrace ? <p className="mt-1 text-xs text-muted-foreground">From this turn’s trace — not persisted.</p> : null}
       <dl className="mt-3 grid gap-x-4 gap-y-2 sm:grid-cols-2">
         <div><dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Availability</dt><dd className="mt-0.5 text-sm text-foreground">{availabilityLabel[assessment.availability]}</dd></div>
         {assessed && assessment.reason ? <div><dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Reason</dt><dd className="mt-0.5 text-sm text-foreground">{answerCoverageReasonLabel(assessment.reason)}</dd></div> : null}

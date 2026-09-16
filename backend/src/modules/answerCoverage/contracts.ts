@@ -1,5 +1,11 @@
 import { z } from "zod";
 
+import {
+  ANSWER_COVERAGE_CLASSIFICATIONS,
+  ANSWER_COVERAGE_CLASSIFICATION_VALUES,
+  answerCoverageClassificationKeyFor,
+  type AnswerCoverageClassification,
+} from "@radioso/conversation-defaults";
 import type {
   AnswerCoverage,
   AnswerCoverageAssessment,
@@ -13,6 +19,7 @@ export type {
   AnswerCoverage,
   AnswerCoverageAssessment,
   AnswerCoverageCriteria,
+  AnswerCoverageProducer,
 } from "@radioso/conversation-contract";
 
 const answerCoverageSchema = z.enum(["answered", "partial", "unanswered", "unclear"]);
@@ -24,6 +31,34 @@ const answerCoverageReasonSchema = z.enum([
   "ambiguous_request",
   "intentional_scope_boundary",
 ]);
+
+/**
+ * The eight-value classification a coverage judge (the answer envelope head,
+ * or its shadow assessor) emits. Re-exported from `@radioso/conversation-defaults`
+ * (the shared, backend-importable home for this table — see that module's
+ * doc comment for why it is not in `@radioso/conversation-contract`) so a
+ * producer, the envelope schema/head reader, and the steering-prompt renderer
+ * all classify against exactly one table.
+ */
+export const classifications = ANSWER_COVERAGE_CLASSIFICATIONS;
+
+export type { AnswerCoverageClassification };
+
+export const classificationValues = ANSWER_COVERAGE_CLASSIFICATION_VALUES;
+
+/**
+ * Inverts {@link classifications} back to its eight-value key from a
+ * `coverage`/`reason` pair. Used to label the shadow agreement observation
+ * (#1260, FR-020) with the same bounded enum the head and the assessor both
+ * classify against, rather than re-deriving a coarser signal.
+ */
+export const classificationKeyFor = answerCoverageClassificationKeyFor;
+
+/** Classification taxonomy version, carried on every assessed record. */
+export const ANSWER_COVERAGE_SCHEMA_VERSION = 1;
+
+/** Bound shared by the assessor's `requestFocus` field and the envelope head's. */
+export const REQUEST_FOCUS_MAX_LENGTH = 600;
 
 
 const compatibleReasonsByCoverage: Record<AnswerCoverage, readonly AnswerCoverageReason[]> = {

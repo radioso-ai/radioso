@@ -3,10 +3,13 @@ import type {
   SteeringRule,
 } from "@radioso/conversation-contract";
 
-import { resolveRenderSurfaces } from "@radioso/conversation-engine";
-
 export {
   addressesSurface,
+  // Sets `SteeringRule.id` from the matched directive's own `id` whenever the
+  // directive carries one, so a rule stays traceable back to its authored
+  // directive across a turn's steering pipeline; absent only for directives
+  // that never had an id assigned.
+  directiveMatchToSteering as directiveToSteeringRule,
   effectiveSurfaces,
   resolveRenderSurfaces,
   steeringForSurface,
@@ -26,20 +29,6 @@ export interface DirectiveOmission {
   directiveName: string;
   reason: string;
 }
-
-/** Maps a matched Directive into a directive-sourced, response-lifespan SteeringRule. */
-export const directiveToSteeringRule = (match: DirectiveMatch): SteeringRule => ({
-  directiveName: match.directive.name,
-  action: match.directive.action,
-  condition: match.directive.condition.kind === "contextual"
-    ? match.directive.condition.description
-    : undefined,
-  priority: match.directive.priority,
-  description: match.directive.description,
-  source: "directive",
-  lifespan: "response",
-  ...(resolveRenderSurfaces(match) ? { surfaces: resolveRenderSurfaces(match) } : {}),
-});
 
 /**
  * Resolves directive relationships over the matched set to keep the injected set

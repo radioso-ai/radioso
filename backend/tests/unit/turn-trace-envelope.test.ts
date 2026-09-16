@@ -18,6 +18,11 @@ import type {
   PageReadDecision,
   PageReadGateOutcome,
 } from "../../src/modules/chat/services/pageRead/pageReadDecision.js";
+import {
+  createModelCallTraceCollector,
+  recordModelCallTrace,
+  runWithModelCallTrace,
+} from "../../src/shared/observability/tracing/modelCallTraceContext.js";
 
 const spine = (): ConversationTrace => ({
   traceId: "conversation-turn-1",
@@ -393,6 +398,46 @@ describe("buildTurnTraceEnvelope", () => {
       droppedCallCount: 0,
     });
     expect(envelope.openTelemetry).toBeUndefined();
+  });
+
+  it("excludes a shadow coverage call that settled before the snapshot from the turn-level summary totals (#1260 F5)", () => {
+    const collector = createModelCallTraceCollector();
+    runWithModelCallTrace(collector, () => {
+      recordModelCallTrace({
+        operation: "answer_coverage_shadow_assessment",
+        attemptKey: "shadow-1",
+        provider: "openai",
+        model: "gpt-shadow",
+        startedAt: new Date(0).toISOString(),
+        completedAt: new Date(20).toISOString(),
+        durationMs: 20,
+        inputTokens: 10,
+        outputTokens: 2,
+        totalTokens: 12,
+        status: "succeeded",
+      });
+      recordModelCallTrace({
+        operation: "answer",
+        attemptKey: "answer-1",
+        provider: "openai",
+        model: "gpt-answer",
+        startedAt: new Date(0).toISOString(),
+        completedAt: new Date(80).toISOString(),
+        durationMs: 80,
+        inputTokens: 40,
+        outputTokens: 20,
+        totalTokens: 60,
+        status: "succeeded",
+      });
+    });
+
+    const envelope = buildTurnTraceEnvelope({ spine: spine(), modelCallTrace: collector });
+
+    expect(envelope.summary).toMatchObject({
+      totalLlmCalls: 1,
+      serialLlmDepth: 1,
+      totalModelTimeMs: 80,
+    });
   });
 
   it("leaves the summary absent for a synthesized legacy envelope", () => {

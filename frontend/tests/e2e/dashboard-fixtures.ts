@@ -303,6 +303,7 @@ export const baseRetrievalDefaults = (): ApiSchemas["RetrievalDefaultsResponse"]
   vectorTopK: 20,
   rerankTopK: 5,
   retrievalStrategy: "fixed",
+  citationHoldEnabled: true,
   customInstruction: "Keep answers concise.",
   metadataFieldSuggestions: [
     { field: "region", inferredType: "string" },
@@ -679,6 +680,7 @@ export const baseSkillCapabilities = (): SkillCapabilityFixture[] => [
       { key: "rerankEnabled", label: "Rerank results", type: "boolean", help: "Re-score the fetched chunks with a reranker model to improve ordering.", defaultValue: false, group: "Retrieval tuning", advanced: true },
       { key: "rerankTopK", label: "Rerank top K", type: "number", help: "How many chunks survive reranking and are passed to the answer.", defaultValue: 5, dependsOnKey: "rerankEnabled", min: 1, max: 100, group: "Retrieval tuning", advanced: true },
       { key: "metadataRules", label: "Metadata rules", type: "metadata_rules", group: "Retrieval tuning", advanced: true },
+      { key: "citationHoldEnabled", label: "Hold the answer until it cites a source", type: "boolean", help: "Answers stream immediately when off; an answer with no citations is still shown and flagged in Quality.", defaultValue: true, group: "Grounded evidence", advanced: true },
       { key: "temporalStructuredLookupEnabled", label: "Temporal structured lookup", type: "boolean", help: "When someone asks for upcoming events without naming one, also fetch documents by their extracted event dates instead of relying on text similarity alone. Needs metadata extraction enabled on the knowledge base.", defaultValue: true, group: "Temporal retrieval", advanced: true },
       { key: "temporalBoostUpcomingEnabled", label: "Upcoming event boost", type: "boolean", help: "Rank documents about ongoing or upcoming events above past ones when the question is about event dates.", defaultValue: true, group: "Temporal retrieval", advanced: true },
       { key: "temporalDeterministicSortEnabled", label: "Deterministic temporal sort", type: "boolean", help: "Present event evidence in date order (soonest first) for event-date questions, instead of relying on the model to order them.", defaultValue: true, group: "Temporal retrieval", advanced: true },

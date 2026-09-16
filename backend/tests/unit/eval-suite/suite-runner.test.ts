@@ -5,6 +5,15 @@ import { WorkbenchReplayRunner } from "../../../src/modules/chat/services/workbe
 import type { RetrievalTurnPort } from "../../../src/modules/chat/services/retrievalTurnDispatch.js";
 import type { TurnRouter } from "../../../src/modules/chat/services/turnRouter.js";
 import type { TurnSkill } from "../../../src/modules/chat/services/turnOutcome.js";
+import type { ChatGateway } from "../../../src/modules/chat/contracts/chatGateway.js";
+import { ChatAnswerSupport } from "../../../src/modules/chat/services/chatAnswerSupport.js";
+import { ChatAnswerPresenter } from "../../../src/modules/chat/services/chatAnswerPresenter.js";
+import { AssistantSuggestionExpansionService } from "../../../src/modules/chat/services/assistantSuggestionExpansionService.js";
+import {
+  createRetrievalTurnSkill,
+  RetrievalAnswerComposer,
+  RETRIEVAL_TURN_SKILL,
+} from "../../../src/modules/chat/services/retrievalTurnSkill.js";
 import type {
   TurnPlanCoordinator,
   TurnPlanInputs,
@@ -230,6 +239,80 @@ describe("conversation-quality suite over the real engine", () => {
 
     const { reports } = await runConversationQualitySuite([evalCase], port, { workspaceId: CQ_WORKSPACE_ID });
 
+    if (reports[0]?.status !== "pass") {
+      throw new Error(`expected pass, got ${reports[0]?.status}: ${JSON.stringify(reports[0]?.verdicts, null, 2)}`);
+    }
+    expect(reports[0]?.status).toBe("pass");
+  });
+
+  it("runs a case through the real retrieval skill so the answer envelope head is on the eval path (#1260 review F10b, FR-022/FR-023)", async () => {
+    // Every other case in this file dispatches to `answerSkill()`, a hand-rolled
+    // TurnSkill that returns a fixed answer and never touches an envelope. That
+    // means the deterministic suite has never actually parsed a head or reported
+    // a verdict to the coverage sink — the exact path a coverage-gated directive
+    // or routine needs to be testable on a draft (FR-023).
+    const canonicalGateway: ChatGateway = {
+      async answer() {
+        return JSON.stringify({
+          coverage: "answered_sufficient_evidence",
+          requestFocus: "the refund window",
+          outcome: "answer",
+          answer: "Refunds are available within 30 days[[1]].",
+          v: 2,
+          claims: [[1]],
+          suggestions: [],
+          grounding: "grounded",
+        });
+      },
+      async *streamAnswer() {
+        throw new Error("this case runs WorkbenchReplayRunner's non-streaming render path");
+      },
+    };
+    const composer = new RetrievalAnswerComposer(
+      new ChatAnswerSupport(),
+      canonicalGateway,
+      new ChatAnswerPresenter(new AssistantSuggestionExpansionService(), undefined, { supportsGroundedAnswer: () => true }),
+      { async composeNoContext() { throw new Error("zero-context fallback should not run for this case"); } },
+    );
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn(),
+      auditService: createAuditService(),
+      turnSkills: [createRetrievalTurnSkill(composer)],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: stubTurnRouter(),
+    });
+    const port = createWorkbenchReplayRunnerPort(runner, {
+      workspaceId: CQ_WORKSPACE_ID,
+      agentId: CQ_AGENT_ID,
+      baselineAgentConfig: conversationQualityAgentConfig,
+    });
+
+    const evalCase: ConversationQualityCase = {
+      id: "refund-window-real-skill",
+      name: "refund window through the real retrieval skill",
+      query: "How long do I have to get a refund?",
+      assertions: [
+        { type: "turn_route", route: "retrieval" },
+        { type: "turn_uses_skill", skillName: RETRIEVAL_TURN_SKILL },
+        { type: "turn_grounding_verdict", verdict: "grounded" },
+        { type: "answer_cites_document", documentId: REFUND_POLICY_DOC_ID },
+        { type: "answer_contains", pattern: "30 days", matchMode: "substring" },
+      ],
+    };
+
+    const observed = await port.run(evalCase);
+    const headStage = observed.turnTrace?.spine.stages.find((stage) => stage.kind === "answer_coverage_head");
+    expect(headStage).toMatchObject({
+      status: "applied",
+      outputs: {
+        availability: "assessed",
+        coverage: "answered",
+        reason: "sufficient_evidence",
+        producer: "answer_head",
+      },
+    });
+
+    const { reports } = await runConversationQualitySuite([evalCase], port, { workspaceId: CQ_WORKSPACE_ID });
     if (reports[0]?.status !== "pass") {
       throw new Error(`expected pass, got ${reports[0]?.status}: ${JSON.stringify(reports[0]?.verdicts, null, 2)}`);
     }

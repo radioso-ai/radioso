@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { ConversationEngine } from "@radioso/conversation-contract";
+import type {
+  AnswerCoverageAssessment,
+  ConversationCoverageReactionRecorder,
+  ConversationEngine,
+} from "@radioso/conversation-contract";
 import { DefaultConversationEngine } from "@radioso/conversation-engine";
 import type { ConversationRecord } from "../../src/db/repositories/conversationRepository.js";
 import type { MessageRecord } from "../../src/db/repositories/messageRepository.js";
@@ -29,13 +33,22 @@ import {
   toPreparedStagedContext,
 } from "../../src/modules/chat/services/conversationContractMappers.js";
 import { ChatTurnSkillSelector } from "../../src/modules/chat/services/turnSkillSelector.js";
-import type { RouteScopedDirectiveRuntime } from "../../src/modules/chat/services/routeScopedDirectiveSteering.js";
+import {
+  createRouteScopedDirectiveSteering,
+  type RouteScopedDirectiveRuntime,
+} from "../../src/modules/chat/services/routeScopedDirectiveSteering.js";
+import { DefaultAllowCapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
 import type {
   Directive,
   DirectiveSteerInput,
   DirectiveSteeringResult,
 } from "../../src/modules/directives/public.js";
-import type { RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
+import type { ActivityTrace, RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
+import { appendDirectiveSteeringStage } from "../../src/modules/chat/contracts/index.js";
+import {
+  attestableSteering,
+  composeGroundedAnswerSystemPrompt,
+} from "../../src/modules/chat/services/groundedAnswerPromptComposer.js";
 import { ModelInferencePipelineService } from "../../src/shared/infra/llm/modelInferencePipeline.js";
 import {
   createModelCallTraceCollector,
@@ -300,6 +313,115 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
       type: "final",
       presentation: expect.objectContaining({ answer: "Would you like a consultation or a callback?" }),
     }));
+  });
+
+  // A skill standing in for the retrieval skill's real behavior (#1260): it
+  // reports a fixed coverage verdict to the engine's sink, from inside its own
+  // render/stream, before producing anything. Exercises the real engine so the
+  // sink is genuinely constructed and forwarded end to end, not faked.
+  const coverageReportingSkill = (assessment: AnswerCoverageAssessment): TurnSkill => ({
+    definition: { name: "answer", outcomeKinds: ["generic"] },
+    selects: () => true,
+    dispatch: () => ({
+      kind: "generic",
+      skillName: "answer",
+      outcome: { status: "completed", answer: "The skill's own answer." },
+      stagedContext: [],
+      steering: [],
+      trace: { traceId: "skill", startedAt: new Date(0).toISOString(), stages: [] },
+    }),
+    renderer: {
+      supports: (outcome) => outcome.kind === "generic",
+      async render(outcome, ctx) {
+        const decision = await ctx.coverageVerdict?.report({ assessment });
+        return decision?.decision === "yield_turn"
+          ? { answer: "", yielded: true, skillName: "answer", skillOutcome: "yielded", skillStatus: "completed" }
+          : { answer: outcome.outcome.answer ?? "", skillName: "answer", skillOutcome: "completed", skillStatus: "completed" };
+      },
+      async *stream(outcome, ctx) {
+        const decision = await ctx.coverageVerdict?.report({ assessment });
+        if (decision?.decision === "yield_turn") {
+          return {
+            finalPresentation: { answer: "", yielded: true, skillName: "answer", skillOutcome: "yielded", skillStatus: "completed" },
+            suggestions: { mode: "presentation" as const },
+            hasStreamedAnswer: false,
+            streamedAnswer: "",
+            yielded: true,
+          };
+        }
+        yield outcome.outcome.answer ?? "";
+        return {
+          finalPresentation: { answer: outcome.outcome.answer ?? "", skillName: "answer", skillOutcome: "completed", skillStatus: "completed" },
+          suggestions: { mode: "presentation" as const },
+          hasStreamedAnswer: true,
+          streamedAnswer: outcome.outcome.answer ?? "",
+        };
+      },
+    },
+  });
+
+  const unansweredAssessment: AnswerCoverageAssessment = {
+    availability: "assessed",
+    coverage: "unanswered",
+    reason: "insufficient_evidence",
+    schemaVersion: 1,
+    producer: "answer_head",
+  };
+
+  const coverageRoutinePorts = {
+    coverageRoutineActivator: {
+      evaluateCandidates: () => [{ routineId: "support", decision: "candidate" as const, reasonCode: "coverage_criteria_candidate" }],
+      activate: async () => ({ kind: "activate" as const, routineId: "support" }),
+    },
+    routineStore: { loadActive: async () => null, save: async () => {}, clear: async () => {} },
+    routineRunner: { resume: async () => ({ response: { answer: "I can connect you with support." }, nextState: null }) },
+  };
+
+  it("presents the post-evidence routine's answer, not the skill's, when the reported coverage verdict yields the turn", async () => {
+    const turnSkills = [coverageReportingSkill(unansweredAssessment)];
+    const { presentation, result } = await runPreparedChatTurnWithConversationEngine({
+      engine: new DefaultConversationEngine(),
+      session: session(),
+      chatAnswerPresenter: { presentRoutineAnswer: (answer: string) => ({ answer, skillName: "routine", skillOutcome: "completed", skillStatus: "completed" }) } as unknown as ChatAnswerPresenter,
+      turnSkillSelector: new ChatTurnSkillSelector(turnSkills, new DefaultTurnSelectionStrategy()),
+      turnSkills,
+      query: "Where is my order?",
+      ...coverageRoutinePorts,
+    });
+
+    expect(presentation.answer).toBe("I can connect you with support.");
+    expect(result.trace.stages.find((stage) => stage.kind === "compose")).toMatchObject({
+      outputs: expect.objectContaining({ yielded: true }),
+    });
+  });
+
+  it("streams nothing from the skill and presents the routine's committed answer when the reported coverage verdict yields the turn", async () => {
+    const turnSkills = [coverageReportingSkill(unansweredAssessment)];
+    const events: RunPreparedChatTurnStreamWithConversationEngineEvent[] = [];
+    for await (const event of runPreparedChatTurnStreamWithConversationEngine({
+      engine: new DefaultConversationEngine(),
+      session: session(),
+      chatAnswerPresenter: { presentRoutineAnswer: (answer: string) => ({ answer, skillName: "routine", skillOutcome: "completed", skillStatus: "completed" }) } as unknown as ChatAnswerPresenter,
+      turnSkillSelector: new ChatTurnSkillSelector(turnSkills, new DefaultTurnSelectionStrategy()),
+      turnSkills,
+      query: "Where is my order?",
+      ...coverageRoutinePorts,
+    })) {
+      events.push(event);
+    }
+
+    const chunks = events.filter((event) => event.type === "chunk");
+    // The one delta that streams is the routine's committed answer, not the
+    // skill's own text — the skill's stream released nothing before yielding.
+    expect(chunks.map((event) => event.text)).toEqual(["I can connect you with support."]);
+    const final = events.find((event) => event.type === "final");
+    if (!final || final.type !== "final") {
+      throw new Error("expected a final event");
+    }
+    expect(final.presentation.answer).toBe("I can connect you with support.");
+    expect(final.engineTrace.stages.find((stage) => stage.kind === "compose")).toMatchObject({
+      outputs: expect.objectContaining({ yielded: true }),
+    });
   });
 
   it("yields mapped, deduplicated progress while the engine remains blocked", async () => {
@@ -824,26 +946,19 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
           omissions: [],
         };
       },
-      async matchAndResolve(input: DirectiveSteerInput, directives): Promise<DirectiveSteeringResult> {
+      async matchCandidates(input: DirectiveSteerInput, directives) {
         matched.push({
           turnContext: input.turnContext ?? {},
           directives: directives.map((candidate) => candidate.name),
         });
-        const matches = directives.map((candidate) => ({
+        return directives.map((candidate) => ({
           directive: candidate,
           selectionMode: "deterministic" as const,
           selectionReason: "Directive condition is unconditional (always).",
         }));
-        return {
-          rules: matches.map((match) => ({
-            action: match.directive.action,
-            priority: match.directive.priority,
-            source: "directive",
-            lifespan: "response",
-          })),
-          matches,
-          omissions: [],
-        };
+      },
+      async matchAndResolve(): Promise<DirectiveSteeringResult> {
+        throw new Error("matchAndResolve not used in this test");
       },
       async matchAndResolveWithClassifications(): Promise<DirectiveSteeringResult> {
         throw new Error("matchAndResolveWithClassifications not used in this test");
@@ -903,6 +1018,364 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
       "skill_dispatch",
       "compose",
     ]);
+  });
+
+  // F1: `buildDirectiveTurnWiring`'s matcher adapter (`conversationProcessTurnInput.ts`)
+  // overwrites `session.directiveSteering` as a side effect on every `match()` call. The
+  // engine calls the matcher twice per retrieval turn with a coverage directive present
+  // (legacy directives, then coverage directives), so the side effect from the second
+  // call alone would leave the first call's rules unrendered. A REAL directive runtime
+  // (not a hand-rolled matcher) exercises the actual two-call sequence.
+  it("renders steering from both the legacy and the coverage matcher call (F1)", async () => {
+    const warmthDirective: Directive = {
+      name: "warmth",
+      condition: { kind: "always" },
+      action: "Be warm.",
+      priority: 10,
+    };
+    const offerFormDirective: Directive = {
+      name: "offer-form",
+      condition: { kind: "always" },
+      action: "Offer the form.",
+      priority: 10,
+      coverageCriteria: { coverage: ["unanswered"] },
+    };
+    const directiveRuntime = createRouteScopedDirectiveSteering({
+      capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+      registrations: [
+        { directive: warmthDirective },
+        { directive: offerFormDirective },
+      ],
+    });
+    const retrievalSkill: TurnSkill = {
+      definition: { name: RETRIEVAL_TURN_SKILL, outcomeKinds: [RETRIEVAL_OUTCOME_KIND] },
+      selects: () => true,
+      dispatch: (s) => buildRetrievalTurnOutcome(s),
+      renderer: {
+        supports: (outcome) => outcome.kind === RETRIEVAL_OUTCOME_KIND,
+        render: async (_outcome, ctx) => ({
+          answer: (ctx.session.directiveSteering?.rules ?? []).map((rule) => rule.action).join(" "),
+          skillName: RETRIEVAL_TURN_SKILL,
+          skillOutcome: "completed",
+          skillStatus: "completed",
+        }),
+      },
+    };
+    const prepared = session();
+    prepared.turnRoute = "retrieval";
+
+    const { presentation } = await runPreparedChatTurnWithConversationEngine({
+      engine: new DefaultConversationEngine(),
+      session: prepared,
+      chatAnswerPresenter,
+      directiveRuntime,
+      turnInterpreter: { interpret: async () => ({ route: "retrieval" }) },
+      turnSkillSelector: new ChatTurnSkillSelector([retrievalSkill], new DefaultTurnSelectionStrategy()),
+      turnSkills: [retrievalSkill],
+      query: "Where is my order?",
+    });
+
+    expect(presentation.answer).toBe("Be warm. Offer the form.");
+  });
+
+  // R1 (review round 2): the matcher adapter used to overwrite `session.directiveSteering`
+  // on every `match()` call instead of resolving over the accumulated union. By the time
+  // skill selection and the Activity trace read the session after a retrieval turn's
+  // second (coverage) match call, only the coverage directive's match survived — a legacy
+  // directive bound to a skill lost its vote in binding and disappeared from the trace,
+  // even though `rules` (round 1's own fix) still rendered it. This proves the real fix:
+  // `session.directiveSteering.matches` — read by directive-to-skill binding and the
+  // Activity trace, independently of prompt rendering — carries every match from both
+  // calls, and the legacy directive's binding still wins the turn.
+  it("keeps every matched directive's binding and trace visibility across both matcher calls, and reports exactly one coverage reaction for the coverage-only directive (F1/R1, round 3 Q1)", async () => {
+    const bookDemoDirective: Directive = {
+      name: "book-demo",
+      condition: { kind: "always" },
+      action: "Offer to book a demo.",
+      priority: 10,
+      binding: { kind: "skill", skillName: "book-demo" },
+    };
+    const coverageDirective: Directive = {
+      name: "offer-form",
+      condition: { kind: "always" },
+      action: "Offer the contact form.",
+      priority: 5,
+      coverageCriteria: { coverage: ["unanswered"] },
+    };
+    const directiveRuntime = createRouteScopedDirectiveSteering({
+      capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+      registrations: [
+        { directive: bookDemoDirective },
+        { directive: coverageDirective },
+      ],
+    });
+    const unansweredAssessment: AnswerCoverageAssessment = {
+      availability: "assessed",
+      coverage: "unanswered",
+      reason: "insufficient_evidence",
+      schemaVersion: 1,
+      producer: "answer_head",
+    };
+    const bookDemoSkill: TurnSkill = {
+      definition: { name: "book-demo", outcomeKinds: ["book_demo"] },
+      // Never wins by default selection — only the directive binding should route here.
+      selects: () => false,
+      dispatch: () => ({
+        kind: "book_demo",
+        skillName: "book-demo",
+        outcome: { status: "completed", answer: "Booked!" },
+        stagedContext: [],
+        steering: [],
+        trace: { traceId: "t", startedAt: "2026-01-01T00:00:00.000Z", stages: [] },
+      }),
+      renderer: {
+        supports: (outcome) => outcome.kind === "book_demo",
+        // The bound skill still reports the turn's coverage verdict — coverage
+        // reporting does not depend on which terminal skill won directive binding.
+        render: async (outcome, ctx) => {
+          await ctx.coverageVerdict?.report({ assessment: unansweredAssessment });
+          return {
+            answer: outcome.outcome.answer ?? "",
+            skillName: outcome.skillName,
+            skillOutcome: outcome.outcome.status,
+            skillStatus: outcome.outcome.status,
+          };
+        },
+      },
+    };
+    const retrievalSkill: TurnSkill = {
+      definition: { name: RETRIEVAL_TURN_SKILL, outcomeKinds: [RETRIEVAL_OUTCOME_KIND] },
+      selects: () => true,
+      dispatch: (s) => buildRetrievalTurnOutcome(s),
+      renderer: {
+        supports: (outcome) => outcome.kind === RETRIEVAL_OUTCOME_KIND,
+        render: async () => ({
+          answer: "Grounded answer.",
+          skillName: RETRIEVAL_TURN_SKILL,
+          skillOutcome: "completed",
+          skillStatus: "completed",
+        }),
+      },
+    };
+    const prepared = session();
+    prepared.turnRoute = "retrieval";
+    const recordedReactions: Array<{ reactionKey: string; decision: string; reasonCode: string }> = [];
+    const coverageReactionRecorder: ConversationCoverageReactionRecorder = {
+      async record({ reactions }) {
+        recordedReactions.push(...reactions);
+      },
+    };
+
+    const { presentation, result } = await runPreparedChatTurnWithConversationEngine({
+      engine: new DefaultConversationEngine(),
+      session: prepared,
+      chatAnswerPresenter,
+      directiveRuntime,
+      turnInterpreter: { interpret: async () => ({ route: "retrieval" }) },
+      turnSkillSelector: new ChatTurnSkillSelector(
+        [retrievalSkill, bookDemoSkill],
+        new DefaultTurnSelectionStrategy(),
+      ),
+      turnSkills: [retrievalSkill, bookDemoSkill],
+      query: "Where is my order?",
+      coverageReactionRecorder,
+    });
+
+    expect(presentation).toMatchObject({ answer: "Booked!", skillName: "book-demo" });
+
+    const matchedNames = (prepared.directiveSteering?.matches ?? [])
+      .map((match) => match.directive.name)
+      .sort();
+    expect(matchedNames).toEqual(["book-demo", "offer-form"]);
+
+    const trace: ActivityTrace = { traceId: "t", startedAt: "2026-01-01T00:00:00.000Z", stages: [], links: [] };
+    const traced = appendDirectiveSteeringStage(trace, prepared.directiveSteering);
+    const tracedMatches = traced.stages[0]?.outputs?.matched as Array<{ name: string }> | undefined;
+    expect(tracedMatches?.map((entry) => entry.name).sort()).toEqual(["book-demo", "offer-form"]);
+
+    // Round 3, Q1: the coverage matcher call's `match()` return used to be the
+    // whole turn's accumulated union, so the legacy `book-demo` directive (never
+    // coverage-gated) rode along into `coverageDirectiveMatches` and got recorded
+    // as a second, spurious "applied" coverage reaction.
+    const directiveReactions = recordedReactions.filter((reaction) => reaction.reactionKey.startsWith("directive:"));
+    expect(directiveReactions).toHaveLength(1);
+    expect(directiveReactions[0]).toMatchObject({ decision: "applied", reasonCode: "coverage_criteria_applied" });
+
+    const coverageStage = result.trace.stages.find((stage) => stage.kind === "coverage_directive_match");
+    expect(coverageStage?.outputs).toMatchObject({ matchCount: 1, candidateCount: 1 });
+  });
+
+  // R2 (review round 2): round 1's `syncSessionSteeringForRender` patch copied the
+  // engine's own `turn.steering` — ids only where a directive carries an authored
+  // `directive.id` — over the host's `d1..dN` ids that `DirectiveSteeringService.
+  // resolveMatches` assigns once per turn across every rendered rule, including a
+  // built-in directive with no authored id. Removing that patch and fixing the
+  // match-call accumulation at the adapter (R1) restores those ids with no separate
+  // mechanism: the answer prompt and `attestableSteering` must agree on them.
+  it("assigns d-prefixed host ids across both matcher calls, including a built-in directive (R2)", async () => {
+    const builtInDirective: Directive = {
+      name: "builtin-persona",
+      condition: { kind: "always" },
+      action: "Speak as the brand voice.",
+      priority: 20,
+    };
+    const coverageDirective: Directive = {
+      name: "offer-form",
+      condition: { kind: "always" },
+      action: "Offer the contact form.",
+      priority: 10,
+      coverageCriteria: { coverage: ["unanswered"] },
+    };
+    const directiveRuntime = createRouteScopedDirectiveSteering({
+      capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+      registrations: [
+        { directive: builtInDirective },
+        { directive: coverageDirective },
+      ],
+    });
+    const retrievalSkill: TurnSkill = {
+      definition: { name: RETRIEVAL_TURN_SKILL, outcomeKinds: [RETRIEVAL_OUTCOME_KIND] },
+      selects: () => true,
+      dispatch: (s) => buildRetrievalTurnOutcome(s),
+      renderer: {
+        supports: (outcome) => outcome.kind === RETRIEVAL_OUTCOME_KIND,
+        render: async (_outcome, ctx) => {
+          const composed = composeGroundedAnswerSystemPrompt({
+            baseSystemPrompt: "Base instructions.",
+            suggestedQuestionsEnabled: false,
+            suggestedQuestionsCount: 0,
+            hasRetrievedContexts: true,
+            conversationIntentSnapshot: { recentTurns: [] },
+            steering: ctx.session.directiveSteering?.rules ?? [],
+          });
+          return {
+            answer: composed.systemPrompt,
+            skillName: RETRIEVAL_TURN_SKILL,
+            skillOutcome: "completed",
+            skillStatus: "completed",
+          };
+        },
+      },
+    };
+    const prepared = session();
+    prepared.turnRoute = "retrieval";
+
+    const { presentation } = await runPreparedChatTurnWithConversationEngine({
+      engine: new DefaultConversationEngine(),
+      session: prepared,
+      chatAnswerPresenter,
+      directiveRuntime,
+      turnInterpreter: { interpret: async () => ({ route: "retrieval" }) },
+      turnSkillSelector: new ChatTurnSkillSelector([retrievalSkill], new DefaultTurnSelectionStrategy()),
+      turnSkills: [retrievalSkill],
+      query: "Where is my order?",
+    });
+
+    const rules = prepared.directiveSteering?.rules ?? [];
+    expect(rules.map((rule) => ({ directiveName: rule.directiveName, id: rule.id }))).toEqual([
+      { directiveName: "builtin-persona", id: "d1" },
+      { directiveName: "offer-form", id: "d2" },
+    ]);
+    // Every rendered rule carries its host id in the prompt, including the
+    // id-less "built-in" directive — not just directives with an authored id.
+    expect(presentation.answer).toContain("[d1] Speak as the brand voice.");
+    expect(presentation.answer).toContain("[d2] Only when your coverage verdict is one of");
+
+    const attestable = attestableSteering(rules);
+    expect(attestable.map((rule) => rule.id)).toEqual(["d1", "d2"]);
+  });
+
+  // Round 3, Q2: ranked activation returning an offer/clarification makes
+  // `routineActivation.ts`'s `clarify` branch call `buildResolvedSteering`
+  // again with the same turn-scoped matcher — a third `match()` call sharing
+  // the adapter's per-turn accumulator with the legacy and coverage calls
+  // above it. Before the fix, every directive got re-pushed and re-resolved,
+  // so the session's final steering doubled every directive.
+  it("dedupes the accumulated match candidates so a coverage-offer clarification does not double every directive (round 3, Q2)", async () => {
+    const warmthDirective: Directive = {
+      name: "warmth",
+      condition: { kind: "always" },
+      action: "Be warm.",
+      priority: 10,
+    };
+    const offerFormDirective: Directive = {
+      name: "offer-form",
+      condition: { kind: "always" },
+      action: "Offer the form.",
+      priority: 5,
+      coverageCriteria: { coverage: ["unanswered"] },
+    };
+    const directiveRuntime = createRouteScopedDirectiveSteering({
+      capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+      registrations: [
+        { directive: warmthDirective },
+        { directive: offerFormDirective },
+      ],
+    });
+    const unansweredAssessment: AnswerCoverageAssessment = {
+      availability: "assessed",
+      coverage: "unanswered",
+      reason: "insufficient_evidence",
+      schemaVersion: 1,
+      producer: "answer_head",
+    };
+    const retrievalSkill: TurnSkill = {
+      definition: { name: RETRIEVAL_TURN_SKILL, outcomeKinds: [RETRIEVAL_OUTCOME_KIND] },
+      selects: () => true,
+      dispatch: (s) => buildRetrievalTurnOutcome(s),
+      renderer: {
+        supports: (outcome) => outcome.kind === RETRIEVAL_OUTCOME_KIND,
+        render: async (_outcome, ctx) => {
+          const decision = await ctx.coverageVerdict?.report({ assessment: unansweredAssessment });
+          return decision?.decision === "yield_turn"
+            ? { answer: "", yielded: true, skillName: RETRIEVAL_TURN_SKILL, skillOutcome: "yielded", skillStatus: "completed" }
+            : { answer: "Grounded answer.", skillName: RETRIEVAL_TURN_SKILL, skillOutcome: "completed", skillStatus: "completed" };
+        },
+      },
+    };
+    const prepared = session();
+    prepared.turnRoute = "retrieval";
+
+    const { presentation } = await runPreparedChatTurnWithConversationEngine({
+      engine: new DefaultConversationEngine(),
+      session: prepared,
+      chatAnswerPresenter: {
+        presentRoutineAnswer: (answer: string) => ({ answer, skillName: "routine", skillOutcome: "completed", skillStatus: "completed" }),
+      } as unknown as ChatAnswerPresenter,
+      directiveRuntime,
+      turnInterpreter: { interpret: async () => ({ route: "retrieval" }) },
+      turnSkillSelector: new ChatTurnSkillSelector([retrievalSkill], new DefaultTurnSelectionStrategy()),
+      turnSkills: [retrievalSkill],
+      query: "Where is my order?",
+      // Ranked activation offers a routine rather than activating one — the
+      // `clarify` branch that re-invokes the turn's directive matcher.
+      coverageRoutineActivator: {
+        evaluateCandidates: () => [],
+        activate: async () => ({
+          kind: "clarify" as const,
+          candidates: [{ id: "support", label: "Talk to support", confidence: 1, payload: { routineId: "support" } }],
+        }),
+      },
+      routineStore: {
+        loadActive: async () => null,
+        loadCompleted: async () => [],
+        save: async () => {},
+        clear: async () => {},
+      },
+      routineRunner: { resume: async () => ({ response: { answer: "unused" }, nextState: null }) },
+      clarifier: {
+        phraseQuestion: async () => "Would you like to talk to support?",
+        mapReply: async () => ({ kind: "unrelated" }),
+      },
+      clarificationStore: { loadPending: async () => null, save: async () => {}, clear: async () => {} },
+    });
+
+    expect(presentation.answer).toBe("Would you like to talk to support?");
+
+    const rules = prepared.directiveSteering?.rules ?? [];
+    expect(rules.map((rule) => rule.directiveName).sort()).toEqual(["offer-form", "warmth"]);
+    const matches = prepared.directiveSteering?.matches ?? [];
+    expect(matches.map((match) => match.directive.name).sort()).toEqual(["offer-form", "warmth"]);
   });
 
   it("lets the engine drive streamed turn selection and emits any final unstreamed remainder", async () => {

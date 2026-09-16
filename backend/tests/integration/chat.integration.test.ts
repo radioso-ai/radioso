@@ -1502,6 +1502,8 @@ describe("chat integration", () => {
         const answer = "The page explains testing and parsing content for users[[1]]. It also offers 24/7 phone support[[1]].";
         return formatV2Envelope(answer, {
           v: 2,
+          coverage: "answered_sufficient_evidence",
+          requestFocus: "the testing and support content",
           outcome: "answer",
           claims: [[1], [1]],
           suggestions: [],
@@ -2039,6 +2041,8 @@ describe("chat integration", () => {
       async answer() {
         return formatV2Envelope("The next retreat is the Spring Retreat[[1]].", {
           v: 2,
+          coverage: "answered_sufficient_evidence",
+          requestFocus: "the next retreat date",
           outcome: "answer",
           claims: [[1]],
           suggestions: [],
@@ -2114,6 +2118,8 @@ describe("chat integration", () => {
       async answer() {
         return formatV2Envelope("The next retreat is the Spring Retreat[[1]].", {
           v: 2,
+          coverage: "answered_sufficient_evidence",
+          requestFocus: "the next retreat date",
           outcome: "answer",
           claims: [[1]],
           suggestions: [],

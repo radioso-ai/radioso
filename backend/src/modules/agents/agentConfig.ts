@@ -481,6 +481,7 @@ const RETRIEVE_ANSWER_SKILL_CONFIG_FIELD_LOCATIONS: {
   semanticRewriteInstructions: { kind: "settings", canonicalKey: "semanticRewriteInstructions" },
   lexicalRewriteInstructions: { kind: "settings", canonicalKey: "lexicalRewriteInstructions" },
   metadataRules: { kind: "settings", canonicalKey: "metadataRules" },
+  citationHoldEnabled: { kind: "settings", canonicalKey: "citationHoldEnabled" },
 };
 
 /**

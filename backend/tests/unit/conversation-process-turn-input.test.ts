@@ -210,27 +210,19 @@ const routeScopedDirectiveRuntime = (directives: Directive[]): {
           omissions: [],
         };
       },
-      async matchAndResolve(input: DirectiveSteerInput, directives: Directive[]): Promise<DirectiveSteeringResult> {
+      async matchAndResolve(): Promise<DirectiveSteeringResult> {
+        throw new Error("chat turn adapter should use matchCandidates");
+      },
+      async matchAndResolveWithClassifications(): Promise<DirectiveSteeringResult> {
+        throw new Error("matchAndResolveWithClassifications not used in this test");
+      },
+      async matchCandidates(input: DirectiveSteerInput, directives: Directive[]): Promise<DirectiveMatch[]> {
         matchedTurnContexts.push(input.turnContext ?? {});
-        const matches = directives.map((directive) => ({
+        return directives.map((directive) => ({
           directive,
           selectionMode: "deterministic" as const,
           selectionReason: "test matcher",
         }));
-        return {
-          rules: matches.map((match) => ({
-            directiveName: match.directive.name,
-            action: match.directive.action,
-            source: "directive",
-            lifespan: "response",
-            ...(match.directive.surfaces?.length ? { surfaces: match.directive.surfaces } : {}),
-          })),
-          matches,
-          omissions: [],
-        };
-      },
-      async matchAndResolveWithClassifications(): Promise<DirectiveSteeringResult> {
-        throw new Error("matchAndResolveWithClassifications not used in this test");
       },
       async steer(): Promise<DirectiveSteeringResult> {
         throw new Error("steer should not pre-resolve chat engine directives");
@@ -409,34 +401,37 @@ describe("createChatProcessTurnInput", () => {
     const runtime: RouteScopedDirectiveRuntime = {
       matcher: {
         async match(): Promise<DirectiveMatch[]> {
-          throw new Error("chat turn adapter should use matchAndResolve");
+          throw new Error("chat turn adapter should use matchCandidates");
         },
       },
       directivesFor(input) {
         directiveInputs.push(input);
         return [directive];
       },
-      async resolveMatches(): Promise<DirectiveSteeringResult> {
-        throw new Error("chat turn adapter should use matchAndResolve");
-      },
-      async matchAndResolve(input, directives): Promise<DirectiveSteeringResult> {
-        directiveInputs.push(input);
+      async resolveMatches(_input, matches): Promise<DirectiveSteeringResult> {
         return {
-          rules: directives.map((candidate) => ({
-            action: candidate.action,
+          rules: matches.map((match) => ({
+            action: match.directive.action,
             source: "directive",
             lifespan: "response",
           })),
-          matches: directives.map((candidate) => ({
-            directive: candidate,
-            selectionMode: "deterministic",
-            selectionReason: "test matcher",
-          })),
+          matches,
           omissions: [],
         };
       },
+      async matchAndResolve(): Promise<DirectiveSteeringResult> {
+        throw new Error("chat turn adapter should use matchCandidates");
+      },
       async matchAndResolveWithClassifications(): Promise<DirectiveSteeringResult> {
         throw new Error("matchAndResolveWithClassifications not used in this test");
+      },
+      async matchCandidates(input, directives): Promise<DirectiveMatch[]> {
+        directiveInputs.push(input);
+        return directives.map((candidate) => ({
+          directive: candidate,
+          selectionMode: "deterministic",
+          selectionReason: "test matcher",
+        }));
       },
       async steer(): Promise<DirectiveSteeringResult> {
         throw new Error("steer should not pre-resolve chat engine directives");
@@ -501,19 +496,10 @@ describe("createChatProcessTurnInput", () => {
       },
       matcher: {
         async match(): Promise<DirectiveMatch[]> {
-          throw new Error("chat turn adapter should use matchAndResolve");
+          throw new Error("chat turn adapter should use matchCandidates");
         },
       },
-      async resolveMatches(): Promise<DirectiveSteeringResult> {
-        throw new Error("chat turn adapter should use matchAndResolve");
-      },
-      async matchAndResolve(_input, directives): Promise<DirectiveSteeringResult> {
-        matchedDirectiveNames.push(directives.map((directive) => directive.name));
-        const matches = directives.map((directive) => ({
-          directive,
-          selectionMode: "deterministic" as const,
-          selectionReason: "test matcher",
-        }));
+      async resolveMatches(_input, matches): Promise<DirectiveSteeringResult> {
         return {
           rules: matches.map((match) => ({
             action: match.directive.action,
@@ -524,8 +510,19 @@ describe("createChatProcessTurnInput", () => {
           omissions: [],
         };
       },
+      async matchAndResolve(): Promise<DirectiveSteeringResult> {
+        throw new Error("chat turn adapter should use matchCandidates");
+      },
       async matchAndResolveWithClassifications(): Promise<DirectiveSteeringResult> {
         throw new Error("matchAndResolveWithClassifications not used in this test");
+      },
+      async matchCandidates(_input, directives): Promise<DirectiveMatch[]> {
+        matchedDirectiveNames.push(directives.map((directive) => directive.name));
+        return directives.map((directive) => ({
+          directive,
+          selectionMode: "deterministic" as const,
+          selectionReason: "test matcher",
+        }));
       },
       async steer(): Promise<DirectiveSteeringResult> {
         throw new Error("steer should not pre-resolve chat engine directives");
@@ -587,19 +584,10 @@ describe("createChatProcessTurnInput", () => {
       },
       matcher: {
         async match(): Promise<DirectiveMatch[]> {
-          throw new Error("chat turn adapter should use matchAndResolve");
+          throw new Error("chat turn adapter should use matchCandidates");
         },
       },
-      async resolveMatches(): Promise<DirectiveSteeringResult> {
-        throw new Error("chat turn adapter should use matchAndResolve");
-      },
-      async matchAndResolve(_input, directives): Promise<DirectiveSteeringResult> {
-        await matchingStarted;
-        const matches = directives.map((candidate) => ({
-          directive: candidate,
-          selectionMode: "deterministic" as const,
-          selectionReason: "test matcher",
-        }));
+      async resolveMatches(_input, matches): Promise<DirectiveSteeringResult> {
         return {
           rules: matches.map((match) => ({
             action: match.directive.action,
@@ -610,8 +598,19 @@ describe("createChatProcessTurnInput", () => {
           omissions: [],
         };
       },
+      async matchAndResolve(): Promise<DirectiveSteeringResult> {
+        throw new Error("chat turn adapter should use matchCandidates");
+      },
       async matchAndResolveWithClassifications(): Promise<DirectiveSteeringResult> {
         throw new Error("matchAndResolveWithClassifications not used in this test");
+      },
+      async matchCandidates(_input, directives): Promise<DirectiveMatch[]> {
+        await matchingStarted;
+        return directives.map((candidate) => ({
+          directive: candidate,
+          selectionMode: "deterministic" as const,
+          selectionReason: "test matcher",
+        }));
       },
       async steer(): Promise<DirectiveSteeringResult> {
         throw new Error("steer should not pre-resolve chat engine directives");

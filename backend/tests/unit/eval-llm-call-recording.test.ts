@@ -268,6 +268,8 @@ describe("eval LLM-call usage recording end-to-end", () => {
     };
     const chat = buildChatGateway(formatV2Envelope("Refunds are available within 30 days[[1]].", {
       v: 2,
+      coverage: "answered_sufficient_evidence",
+      requestFocus: "the refund window",
       outcome: "answer",
       claims: [[1]],
       suggestions: [],

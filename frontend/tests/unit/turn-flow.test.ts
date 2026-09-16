@@ -131,6 +131,60 @@ describe('envelopeToFlowGraph', () => {
     expect(edge(graph, 'spine:model_calls', 'outcome')).toBeDefined()
   })
 
+  it('places the coverage verdict head between the skill path and the outcome (#1260 F6)', () => {
+    const base = envelope()
+    const composeIndex = base.spine.stages.findIndex((stage) => stage.kind === 'compose')
+    base.spine.stages.splice(composeIndex, 0, {
+      id: 'answer_coverage_head',
+      kind: 'answer_coverage_head',
+      status: 'applied',
+      outputs: { availability: 'assessed', coverage: 'partial', reason: 'insufficient_evidence', producer: 'answer_head' },
+    })
+
+    const graph = envelopeToFlowGraph(base)
+    const node = graph.nodes.find((candidate) => candidate.id === 'spine:answer_coverage_head')
+
+    expect(node).toMatchObject({
+      label: 'Coverage verdict',
+      status: 'applied',
+      detail: { kind: 'spine', spineStageId: 'answer_coverage_head' },
+    })
+    expect(edge(graph, 'stage:answer', 'spine:answer_coverage_head')).toBeDefined()
+    expect(edge(graph, 'spine:answer_coverage_head', 'outcome')).toBeDefined()
+  })
+
+  it('sequences the coverage verdict head before the model-call collection', () => {
+    const base = envelope()
+    const composeIndex = base.spine.stages.findIndex((stage) => stage.kind === 'compose')
+    base.spine.stages.splice(composeIndex, 0, {
+      id: 'answer_coverage_head',
+      kind: 'answer_coverage_head',
+      status: 'applied',
+      outputs: { availability: 'assessed', coverage: 'answered', reason: 'sufficient_evidence', producer: 'answer_head' },
+    })
+    base.spine.stages.push({
+      id: 'model_calls',
+      kind: 'model_calls',
+      status: 'applied',
+      outputs: { modelCalls: [] },
+      metrics: { llmCallCount: 2 },
+    })
+
+    const graph = envelopeToFlowGraph(base)
+
+    expect(edge(graph, 'stage:answer', 'spine:answer_coverage_head')).toBeDefined()
+    expect(edge(graph, 'spine:answer_coverage_head', 'spine:model_calls')).toBeDefined()
+    expect(edge(graph, 'spine:model_calls', 'outcome')).toBeDefined()
+  })
+
+  it('omits the coverage verdict node and flows the tail straight to outcome when the stage is absent (#1260 R4)', () => {
+    const graph = envelopeToFlowGraph(envelope())
+
+    expect(graph.nodes.find((candidate) => candidate.id === 'spine:answer_coverage_head')).toBeUndefined()
+    expect(edge(graph, 'stage:answer', 'spine:answer_coverage_head')).toBeUndefined()
+    expect(edge(graph, 'stage:answer', 'outcome')).toBeDefined()
+  })
+
   it('connects skill straight to outcome when there is no capability leaf', () => {
     const base = envelope()
     const dispatch = base.spine.stages.find((s) => s.kind === 'skill_dispatch')!

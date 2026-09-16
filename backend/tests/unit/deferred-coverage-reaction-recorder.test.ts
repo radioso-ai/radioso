@@ -4,7 +4,7 @@ import { DeferredCoverageReactionRecorder } from "../../src/modules/chat/service
 
 describe("DeferredCoverageReactionRecorder", () => {
   const reaction = {
-    assessment: { availability: "assessed" as const, coverage: "unanswered" as const, reason: "insufficient_evidence" as const, schemaVersion: 1 },
+    assessment: { availability: "assessed" as const, coverage: "unanswered" as const, reason: "insufficient_evidence" as const, schemaVersion: 1, producer: "answer_head" as const },
     evaluationState: "evaluated" as const,
     reactions: [{ reactionKey: "routine:r_1:eligible", routineId: "r_1", routineExecutionId: "run_1", decision: "activated" as const, reasonCode: "coverage_criteria_activated" }],
   };

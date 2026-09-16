@@ -33,6 +33,8 @@ import {
 const unsupportedAnswerEnvelope = (body: string): string =>
   formatV2Envelope(body, {
     v: 2,
+    coverage: "answered_sufficient_evidence",
+    requestFocus: "the unsupported draft",
     outcome: "answer",
     claims: [],
     suggestions: [],
@@ -364,6 +366,8 @@ describe("retrieval answer envelope v2", () => {
 
   it("keeps provider-enforced suggestions out of visible answer text", async () => {
     const raw = JSON.stringify({
+      coverage: "answered_sufficient_evidence",
+      requestFocus: "when the workshop begins",
       answer: "The workshop begins in June[[1]].",
       v: 2,
       outcome: "answer",
@@ -387,6 +391,8 @@ describe("retrieval answer envelope v2", () => {
 
   it("streams only a structured answer and returns its suggestions separately", async () => {
     const raw = JSON.stringify({
+      coverage: "answered_sufficient_evidence",
+      requestFocus: "when the workshop begins",
       answer: "The workshop begins in June[[1]].",
       v: 2,
       outcome: "answer",
@@ -425,19 +431,21 @@ describe("retrieval answer envelope v2", () => {
       omissions: [],
     };
     const { composer, responseFormats } = buildComposer(JSON.stringify({
+      coverage: "answered_sufficient_evidence",
+      requestFocus: "when the workshop begins",
       answer: "The workshop begins in June[[1]].",
       v: 2,
       outcome: "answer",
       claims: [[1]],
       suggestions: [],
       grounding: "degraded",
-      adherence: [{ rule: "d1", satisfied: true, note: "kept the answer concise" }],
+      adherence: [{ rule: "d1", satisfied: true, applicable: true, note: "kept the answer concise" }],
     }));
 
     const presented = await composer.composeAnswer(session, "Question?", undefined, undefined);
 
     expect(presented.metadata?.directiveAdherence).toEqual([
-      { directive: "Be concise", ruleId: "d1", satisfied: true, note: "kept the answer concise" },
+      { directive: "Be concise", ruleId: "d1", satisfied: true, applicable: true, note: "kept the answer concise" },
     ]);
     expect(responseFormats()).toEqual([
       buildGroundedAnswerResponseFormat(
@@ -465,7 +473,7 @@ describe("retrieval answer envelope v2", () => {
     { name: "partial", raw: degradedV2Envelope(), answer: DEGRADED_V2_VISIBLE, verdict: "degraded", outcome: "grounded_degraded", citations: 1 },
     { name: "no support", raw: noSupportV2Envelope(), answer: NO_SUPPORT_V2_BODY, verdict: "no_support", outcome: "no_context", citations: 0 },
     { name: "malformed", raw: `Visible malformed answer.\n${SUGGESTIONS_SENTINEL}\n{bad`, answer: "Visible malformed answer.", verdict: "degraded", outcome: "grounded_degraded", citations: 0 },
-    { name: "anchor free", raw: `Visible anchor-free answer.\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify({ v: 2, outcome: "answer", claims: [[1]], suggestions: [], grounding: "degraded" })}`, answer: "FOCUSED GROUNDED MISS", verdict: "no_support", outcome: "no_context", citations: 0 },
+    { name: "anchor free", raw: `Visible anchor-free answer.\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify({ v: 2, coverage: "answered_sufficient_evidence", requestFocus: "the anchor-free answer", outcome: "answer", claims: [[1]], suggestions: [], grounding: "degraded" })}`, answer: "FOCUSED GROUNDED MISS", verdict: "no_support", outcome: "no_context", citations: 0 },
   ] as const;
 
   for (const testCase of cases) {
@@ -504,7 +512,14 @@ describe("retrieval answer envelope v2", () => {
 
   it("opens the stream gate only for a complete in-range sourced assertion", async () => {
     for (const marker of ["[[?]]", "[[0]]", "[[999]]", "[[bad]]"]) {
-      const raw = `Held${marker}.\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify({ v: 2, outcome: "answer", claims: [[]], suggestions: [] })}`;
+      const raw = `Held${marker}.\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify({
+        v: 2,
+        coverage: "answered_sufficient_evidence",
+        requestFocus: "the held marker",
+        outcome: "answer",
+        claims: [[]],
+        suggestions: [],
+      })}`;
       const { composer } = buildComposer(raw);
       const { chunks } = await drain(composer.streamAnswer(baseSession(), "Question?", undefined, undefined));
       expect(chunks, marker).toEqual([]);
@@ -520,6 +535,8 @@ describe("retrieval answer envelope v2", () => {
     const body = `${"x".repeat(RETRIEVAL_BEHAVIOR.groundingStreamGateMaxRetainedCodePoints - assertion.length)}${assertion}`;
     const raw = `${body}\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify({
       v: 2,
+      coverage: "answered_sufficient_evidence",
+      requestFocus: "the boundary assertion",
       outcome: "answer",
       claims: [[1]],
       suggestions: [],
@@ -634,6 +651,8 @@ describe("retrieval answer envelope v2", () => {
   it("records unsupported_answer while suppressing the anchor-free presentation", async () => {
     const raw = `Unsupported draft.\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify({
       v: 2,
+      coverage: "answered_sufficient_evidence",
+      requestFocus: "the unsupported draft",
       outcome: "answer",
       claims: [],
       suggestions: [],
@@ -655,6 +674,8 @@ describe("retrieval answer envelope v2", () => {
   it("uses the grounded-miss static asset when focused decline composition returns it", async () => {
     const raw = `Unsupported draft.\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify({
       v: 2,
+      coverage: "answered_sufficient_evidence",
+      requestFocus: "the unsupported draft",
       outcome: "answer",
       claims: [],
       suggestions: [],

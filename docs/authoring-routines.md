@@ -38,8 +38,8 @@ gives the agent useful context.
 ### Optional conditions
 
 Most routines need only **Starts when**. Open that line, then choose **Add
-condition** and **Answer coverage** when a flow should begin only after a
-grounded answer has left a particular kind of gap. Select the coverage values and, if useful, reasons
+condition** and **Answer coverage** when a flow should begin only for a
+particular kind of coverage gap. Select the coverage values and, if useful, reasons
 that must also match. Both the semantic trigger and this condition must match;
 for example, a lodging follow-up can require **Unanswered** with **Insufficient
 evidence** without affecting an unrelated unanswered question.

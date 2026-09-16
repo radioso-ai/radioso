@@ -3,9 +3,9 @@ import type {
   ConversationProgressPhase,
   ConversationProgressPort,
   ConversationClarificationStore,
-  ConversationCoverageAssessor,
   ConversationCoverageRoutineActivator,
   ConversationCoverageReactionRecorder,
+  ConversationCoverageVerdictSink,
   ConversationClarifier,
   Directive,
   DirectiveAdherenceEntry,
@@ -62,9 +62,15 @@ interface RunPreparedChatTurnWithConversationEngineInput {
   getSession?: () => PreparedSession;
   beforeRender?: () => Promise<void>;
   signal?: AbortSignal;
-  coverageAssessor?: ConversationCoverageAssessor;
   coverageReactionRecorder?: ConversationCoverageReactionRecorder;
   coverageRoutineActivator?: ConversationCoverageRoutineActivator;
+  /**
+   * Decorates the engine's coverage verdict sink with host-owned persistence
+   * and/or the #1260 shadow assessor before it reaches the skill. The engine
+   * builds and owns the sink's decision (proceed/yield); this wrapper only
+   * observes `report()` calls around that decision — it never replaces it.
+   */
+  coverageVerdictWrapper?: (sink: ConversationCoverageVerdictSink) => ConversationCoverageVerdictSink;
   routineStore?: ConversationRoutineStore;
   routineRunner?: ConversationRoutineRunner;
   clarifier?: ConversationClarifier;
@@ -133,7 +139,19 @@ const toRenderableTurn = (
       : {}),
     ...(traceMetrics ? { traceMetrics } : {}),
   },
+  ...(presentation.yielded ? { yielded: true as const } : {}),
 });
+
+/**
+ * Reads `.yielded` through a plain function boundary rather than directly off
+ * the mutable `rendered` binding. TypeScript's flow analysis cannot see that
+ * `engine.processTurn` invokes the `compose` callback that assigns `rendered`
+ * (that happens inside an opaque call), so it treats `rendered` as still `null`
+ * at the read site and narrows the property access to `never`. A function
+ * parameter gets its own, unnarrowed type instead of inheriting that stale flow.
+ */
+const wasYieldedBySkill = (presentation: ChatPresentedAnswer | null): boolean =>
+  presentation?.yielded === true;
 
 /**
  * Runs a prepared Radioso chat turn through a conversation-engine implementation
@@ -162,7 +180,6 @@ export const runPreparedChatTurnWithConversationEngine = async (
     directiveStateStore: input.directiveStateStore,
     turnInterpreter: input.turnInterpreter,
     retrievalWork: input.retrievalWork,
-    coverageAssessor: input.coverageAssessor,
     coverageReactionRecorder: input.coverageReactionRecorder,
     coverageRoutineActivator: input.coverageRoutineActivator,
     routineStore: input.routineStore,
@@ -185,7 +202,7 @@ export const runPreparedChatTurnWithConversationEngine = async (
       },
     },
     composer: {
-      async compose({ outcomes }) {
+      async compose({ outcomes, coverageVerdict }) {
         const outcome = outcomes[0];
         if (!outcome) {
           throw new Error("conversation_engine_dispatched_no_outcome");
@@ -196,6 +213,9 @@ export const runPreparedChatTurnWithConversationEngine = async (
           query: input.query,
           userExpectedLocale: input.userExpectedLocale,
           accountId: input.accountId,
+          coverageVerdict: input.coverageVerdictWrapper && coverageVerdict
+            ? input.coverageVerdictWrapper(coverageVerdict)
+            : coverageVerdict,
         });
         return toRenderableTurn(rendered);
       },
@@ -203,6 +223,12 @@ export const runPreparedChatTurnWithConversationEngine = async (
   });
 
   const result = await input.engine.processTurn(processTurnInput);
+  // A coverage verdict sink yielded the turn before any answer text was released:
+  // the skill's own (empty) presentation is not what the visitor sees — the
+  // post-evidence routine result the engine substituted for `result.response` is.
+  if (wasYieldedBySkill(rendered)) {
+    rendered = null;
+  }
   if (!rendered && (result.routineExecution || result.routineClarificationRoutineIds)) {
     rendered = presentRoutineRenderableAnswer(
       input.chatAnswerPresenter,
@@ -245,7 +271,6 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
     directiveStateStore: input.directiveStateStore,
     turnInterpreter: input.turnInterpreter,
     retrievalWork: input.retrievalWork,
-    coverageAssessor: input.coverageAssessor,
     coverageReactionRecorder: input.coverageReactionRecorder,
     coverageRoutineActivator: input.coverageRoutineActivator,
     routineStore: input.routineStore,
@@ -287,7 +312,7 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
       streamCommitted(response) {
         return committedAnswerChunks(response.answer);
       },
-      async *stream({ outcomes }) {
+      async *stream({ outcomes, coverageVerdict }) {
         const outcome = outcomes[0];
         if (!outcome) {
           throw new Error("conversation_engine_dispatched_no_outcome");
@@ -299,6 +324,9 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
           userExpectedLocale: input.userExpectedLocale,
           accountId: input.accountId,
           signal: input.signal,
+          coverageVerdict: input.coverageVerdictWrapper && coverageVerdict
+            ? input.coverageVerdictWrapper(coverageVerdict)
+            : coverageVerdict,
         });
         const hasLiveRenderer = Boolean(renderers.resolve(outcome).stream);
         let streamStep = await answerStream.next();
@@ -370,7 +398,11 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
         }
         const result = event.result;
         const streamResult = streamState.result;
-        const presentation = streamResult?.finalPresentation ?? (result.routineExecution || result.routineClarificationRoutineIds
+        // A coverage verdict sink yielded the turn before any answer text streamed:
+        // the skill's own (empty) presentation is not what the visitor sees — the
+        // post-evidence routine result the engine substituted for `result.response` is.
+        const skillPresentation = streamResult && !streamResult.yielded ? streamResult.finalPresentation : null;
+        const presentation = skillPresentation ?? (result.routineExecution || result.routineClarificationRoutineIds
           ? presentRoutineRenderableAnswer(
               input.chatAnswerPresenter,
               result.response,
@@ -382,7 +414,8 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
         enqueue({
           type: "final",
           presentation,
-          suggestions: streamResult?.suggestions ?? { mode: "presentation" },
+          suggestions: (streamResult && !streamResult.yielded ? streamResult.suggestions : undefined)
+            ?? { mode: "presentation" },
           result,
           engineTrace: result.trace,
         });

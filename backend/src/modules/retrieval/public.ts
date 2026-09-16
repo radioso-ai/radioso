@@ -150,6 +150,7 @@ export interface RetrievalPipelineResult {
     customInstruction?: string;
     responseLanguagePolicy?: ResponseLanguagePolicy;
     responseLanguage?: string;
+    citationHoldEnabled?: boolean;
   };
   diagnostics: RetrievalExecutionDiagnostics;
   trace: ActivityTrace;

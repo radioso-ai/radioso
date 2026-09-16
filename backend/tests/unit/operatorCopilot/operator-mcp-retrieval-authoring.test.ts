@@ -69,6 +69,43 @@ describe("Operator MCP retrieval authoring", () => {
     expect(recovered).toMatchObject({ status: "recovered", output: { reviewDigest: "d".repeat(43), expiresAt: "2026-09-13T00:15:00.000Z", ...snapshot } });
     expect(createProposal).not.toHaveBeenCalled();
   });
+  it("accepts citationHoldEnabled in the MCP-facing patch schema (#1260 review F6)", async () => {
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+    const skillId = randomUUID();
+    const preparePatch = vi.fn(async (input: { patch: Record<string, unknown> }) => ({
+      workspaceId,
+      agentId,
+      skillId,
+      skill: { name: "answer_with_sources" },
+      config: { citationHoldEnabled: input.patch.citationHoldEnabled },
+      before: { citationHoldEnabled: true },
+      after: { citationHoldEnabled: input.patch.citationHoldEnabled },
+      settingsVersion: "2026-09-13T00:00:00.000Z",
+    }));
+    const createProposal = vi.fn(async () => ({ id: randomUUID() }) as never);
+    const [, prepare] = createRetrievalAuthoringCopilotTools({
+      retrievalAuthoring: { preparePatch } as never,
+      proposalRepository: { createProposal },
+      proposalAdapters: [],
+      auditService: { record: vi.fn() },
+      proposalRecovery: { recoverOperatorMcpProposal: vi.fn() },
+    });
+    const context = {
+      workspaceId,
+      operatorUserId: "operator-1",
+      copilotConversationId: randomUUID(),
+      currentAuthorization: { hasAllPermissions: vi.fn(async () => true) },
+    };
+
+    // Before the fix, `settingsPatch` is `.strict()` and does not list
+    // `citationHoldEnabled`, so `prepareInput.parse` throws "Unrecognized
+    // key(s)" here — Ray cannot even submit the patch, let alone have it applied.
+    await prepare.createTool(context as never).invoke({ agentId, patch: { citationHoldEnabled: false } }, {} as never);
+
+    expect(preparePatch).toHaveBeenCalledWith({ workspaceId, agentId, patch: { citationHoldEnabled: false } });
+  });
+
   it("presents code-owned defaults separately from the existing agent retrieval override", async () => {
     const { authoring, workspaceId, agentId, skill } = await setup();
 

@@ -1,7 +1,28 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildClarificationStageDetail, buildRoutineRunTrace } from '@/components/dashboard/spine-stage-detail'
+import {
+  buildClarificationStageDetail,
+  buildRoutineRunTrace,
+  directiveAdherenceStatus,
+} from '@/components/dashboard/spine-stage-detail'
 import type { ConversationTraceStage } from '@/lib/api'
+
+describe('directiveAdherenceStatus', () => {
+  it('reports not-applicable when the rule condition never held, regardless of satisfied', () => {
+    expect(directiveAdherenceStatus({ satisfied: true, applicable: false })).toBe('not-applicable')
+    expect(directiveAdherenceStatus({ satisfied: false, applicable: false })).toBe('not-applicable')
+  })
+
+  it('reports honored or not-honored from satisfied when applicable', () => {
+    expect(directiveAdherenceStatus({ satisfied: true, applicable: true })).toBe('honored')
+    expect(directiveAdherenceStatus({ satisfied: false, applicable: true })).toBe('not-honored')
+  })
+
+  it('treats a missing applicable field (pre-#1260 records) as applicable', () => {
+    expect(directiveAdherenceStatus({ satisfied: true })).toBe('honored')
+    expect(directiveAdherenceStatus({ satisfied: false })).toBe('not-honored')
+  })
+})
 
 describe('buildClarificationStageDetail', () => {
   it('extracts metadata-safe clarification fields and ignores candidate payloads', () => {

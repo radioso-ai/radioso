@@ -1,7 +1,9 @@
 'use client'
 
 import type { ConversationTraceStage } from '@/lib/api'
-import { spineStageLabel, spineStageTelemetry, type CapabilityLeafView } from '@/lib/turn-trace'
+import { normalizeAnswerCoverageCore, normalizeAnswerCoverageHeadStageFields } from '@/lib/answer-coverage'
+import { spineStageLabel, spineStageTelemetry } from '@/lib/turn-trace'
+import { AnswerCoverageSection } from './turn-inspector/answer-coverage-section'
 
 /**
  * Minimal shape the detail renderers need from a conversation message record
@@ -55,22 +57,74 @@ const asArray = (value: unknown): unknown[] => (Array.isArray(value) ? value : [
 const asStringArray = (value: unknown): string[] =>
   asArray(value).filter((entry): entry is string => typeof entry === 'string')
 
-interface DirectiveAdherenceDetail {
+export interface DirectiveAdherenceDetail {
   directive: string
   ruleId: string
   satisfied: boolean
+  /**
+   * Whether the rule's own condition (an authored `when:` clause, or a
+   * coverage verdict criteria, #1260) held this turn. Absent on records
+   * written before that field existed — treated as applicable so older
+   * turns keep reading as honored/not-honored rather than turning neutral.
+   */
+  applicable?: boolean
   note: string
 }
 
-const readDirectiveAdherence = (value: unknown): DirectiveAdherenceDetail[] =>
+export const readDirectiveAdherence = (value: unknown): DirectiveAdherenceDetail[] =>
   asArray(value).flatMap((entry) => {
     if (!isRecord(entry)) return []
     const directive = asString(entry.directive)
     const ruleId = asString(entry.ruleId)
     const note = asString(entry.note)
     if (!directive || !ruleId || !note || typeof entry.satisfied !== 'boolean') return []
-    return [{ directive, ruleId, satisfied: entry.satisfied, note }]
+    return [{
+      directive,
+      ruleId,
+      satisfied: entry.satisfied,
+      ...(typeof entry.applicable === 'boolean' ? { applicable: entry.applicable } : {}),
+      note,
+    }]
   })
+
+type DirectiveAdherenceStatus = 'honored' | 'not-honored' | 'not-applicable'
+
+/**
+ * Maps an attestation to the tri-state UI reads: a rule whose condition never
+ * held this turn is neutral, not a violation — `satisfied` carries no meaning
+ * for it. A record with no `applicable` field predates #1260 and is treated
+ * as applicable, preserving its historical honored/not-honored reading.
+ */
+export const directiveAdherenceStatus = (
+  entry: Pick<DirectiveAdherenceDetail, 'satisfied' | 'applicable'>,
+): DirectiveAdherenceStatus => {
+  if (entry.applicable === false) return 'not-applicable'
+  return entry.satisfied ? 'honored' : 'not-honored'
+}
+
+const ADHERENCE_BADGE_TONE: Record<DirectiveAdherenceStatus, string> = {
+  honored: 'bg-emerald-500/10 text-emerald-600',
+  'not-honored': 'bg-rose-500/10 text-rose-600',
+  'not-applicable': 'bg-muted text-muted-foreground',
+}
+
+const ADHERENCE_BADGE_LABEL: Record<DirectiveAdherenceStatus, string> = {
+  honored: 'honored',
+  'not-honored': 'not honored',
+  'not-applicable': 'not applicable',
+}
+
+const ADHERENCE_GLYPH: Record<DirectiveAdherenceStatus, string> = {
+  honored: '✓',
+  'not-honored': '✗',
+  'not-applicable': '–',
+}
+
+const ADHERENCE_TEXT_TONE: Record<DirectiveAdherenceStatus, string> = {
+  honored: 'text-emerald-600',
+  'not-honored': 'text-rose-600',
+  'not-applicable': 'text-muted-foreground',
+}
 
 function StageHeader({ stage }: { stage: ConversationTraceStage }) {
   const telemetry = spineStageTelemetry(stage)
@@ -397,19 +451,22 @@ function DirectiveMatchStageDetail({
                       {directive.selectionMode}
                     </span>
                   ) : null}
-                  {directive.name && adherenceByDirective.has(directive.name) ? (
-                    <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide ${
-                      adherenceByDirective.get(directive.name)?.satisfied
-                        ? 'bg-emerald-500/10 text-emerald-600'
-                        : 'bg-rose-500/10 text-rose-600'
-                    }`}>
-                      {adherenceByDirective.get(directive.name)?.satisfied ? 'honored' : 'not honored'}
-                    </span>
-                  ) : (
-                    <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                      —
-                    </span>
-                  )}
+                  {(() => {
+                    const attestation = directive.name ? adherenceByDirective.get(directive.name) : undefined
+                    if (!attestation) {
+                      return (
+                        <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                          —
+                        </span>
+                      )
+                    }
+                    const status = directiveAdherenceStatus(attestation)
+                    return (
+                      <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide ${ADHERENCE_BADGE_TONE[status]}`}>
+                        {ADHERENCE_BADGE_LABEL[status]}
+                      </span>
+                    )
+                  })()}
                 </div>
                 {directive.action ? (
                   <p className="whitespace-pre-wrap break-words text-xs text-foreground">{directive.action}</p>
@@ -448,13 +505,13 @@ interface ConsideredCandidate {
   reason?: string
 }
 
-export interface ClarificationCandidateDetail {
+interface ClarificationCandidateDetail {
   id?: string
   label: string
   confidence?: number
 }
 
-export interface ClarificationStageDetailView {
+interface ClarificationStageDetailView {
   surface?: string
   decision?: string
   reason?: string
@@ -741,17 +798,23 @@ function ComposeStageDetail({
       {adherence.length > 0 ? (
         <Section label={`Adherence (${adherence.length})`}>
           <ul className="space-y-1.5">
-            {adherence.map((entry) => (
-              <li key={entry.ruleId} className="rounded-md border border-border/60 bg-muted/20 p-2.5">
-                <div className="flex flex-wrap items-center gap-2 text-sm">
-                  <span className="font-medium text-foreground">{entry.directive}</span>
-                  <span className={entry.satisfied ? 'text-emerald-600' : 'text-rose-600'}>
-                    {entry.satisfied ? '✓' : '✗'}
-                  </span>
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">{entry.note}</p>
-              </li>
-            ))}
+            {adherence.map((entry) => {
+              const status = directiveAdherenceStatus(entry)
+              return (
+                <li key={entry.ruleId} className="rounded-md border border-border/60 bg-muted/20 p-2.5">
+                  <div className="flex flex-wrap items-center gap-2 text-sm">
+                    <span className="font-medium text-foreground">{entry.directive}</span>
+                    <span className={ADHERENCE_TEXT_TONE[status]}>
+                      {ADHERENCE_GLYPH[status]}
+                    </span>
+                    {status === 'not-applicable' ? (
+                      <span className="text-xs text-muted-foreground">(condition not met)</span>
+                    ) : null}
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">{entry.note}</p>
+                </li>
+              )
+            })}
           </ul>
         </Section>
       ) : null}
@@ -794,7 +857,7 @@ function ComposeStageDetail({
 }
 
 /** One step's outcome as the runner walked the routine graph this turn. */
-export interface RoutineTraceStepView {
+interface RoutineTraceStepView {
   stepId: string
   kind: string
   event: string
@@ -804,7 +867,7 @@ export interface RoutineTraceStepView {
   skillStatus?: string
 }
 
-export interface RoutineRunTraceView {
+interface RoutineRunTraceView {
   startStepId?: string
   landedStepId?: string
   terminalKind?: string
@@ -1015,6 +1078,42 @@ function RoutineStageDetail({
   )
 }
 
+/**
+ * The turn's own coverage verdict (#1260), read directly off this stage — the
+ * same `availability`/`coverage`/`reason`/`producer` shape the persisted
+ * assessment record carries, normalized through the same parser so this view
+ * and the persisted-record view never drift. A sink that reports twice in one
+ * turn pushes a second, minimal stage with no availability (`already_reported`);
+ * that one has no verdict to show.
+ */
+function AnswerCoverageHeadStageDetail({ stage }: { stage: ConversationTraceStage }) {
+  const core = normalizeAnswerCoverageCore(stage.outputs)
+  const { parseOutcome, hostDecision } = normalizeAnswerCoverageHeadStageFields(stage.outputs)
+  return (
+    <div className="space-y-4">
+      <StageHeader stage={stage} />
+      {core ? (
+        <AnswerCoverageSection
+          assessment={{ ...core, originatingTurnId: '', originatingRequestId: '' }}
+          isFromTrace
+        />
+      ) : (
+        <p className="text-sm text-muted-foreground">This head reported no verdict for this turn.</p>
+      )}
+      {parseOutcome || hostDecision ? (
+        <Section label="Head resolution">
+          <KeyValueGrid
+            record={{
+              ...(parseOutcome ? { 'Parse outcome': parseOutcome } : {}),
+              ...(hostDecision ? { 'Host decision': hostDecision } : {}),
+            }}
+          />
+        </Section>
+      ) : null}
+    </div>
+  )
+}
+
 function GenericStageDetail({ stage }: { stage: ConversationTraceStage }) {
   const inputs = (stage.inputs ?? {}) as Record<string, unknown>
   const outputs = (stage.outputs ?? {}) as Record<string, unknown>
@@ -1052,7 +1151,7 @@ function GenericStageDetail({ stage }: { stage: ConversationTraceStage }) {
 /**
  * Detail for a conversation spine stage. Dispatches on `stage.kind` so each
  * first-class step (message, gather, directive_match, skill_selection,
- * compose, routine) gets a dedicated renderer.
+ * compose, answer_coverage_head, routine) gets a dedicated renderer.
  *
  * Conversation text never lives in the trace itself — that envelope lands in
  * audit/debug metadata where raw prompts/completions are disallowed. Instead,
@@ -1088,6 +1187,8 @@ export function SpineStageDetail({
       return <ClarificationStageDetail stage={stage} />
     case 'compose':
       return <ComposeStageDetail stage={stage} ctx={ctx} />
+    case 'answer_coverage_head':
+      return <AnswerCoverageHeadStageDetail stage={stage} />
     case 'routine_resume':
     case 'routine_activate':
       return <RoutineStageDetail stage={stage} ctx={ctx} />
@@ -1096,24 +1197,3 @@ export function SpineStageDetail({
   }
 }
 
-/**
- * Fallback detail for a capability leaf whose namespace has no dedicated
- * renderer yet — shows the namespace, version, and raw payload so new capability
- * traces are inspectable before they earn a bespoke view.
- */
-export function RawCapabilityDetail({ leaf }: { leaf: Extract<CapabilityLeafView, { kind: 'raw' }> }) {
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <p className="text-base font-medium text-foreground">{leaf.namespace}</p>
-        <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-          sub-trace
-        </span>
-      </div>
-      <p className="text-sm text-muted-foreground">
-        No dedicated renderer for the “{leaf.namespace}” capability yet.
-      </p>
-      <RawJson label="Raw payload" value={leaf.payload} />
-    </div>
-  )
-}

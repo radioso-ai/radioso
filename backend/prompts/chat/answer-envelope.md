@@ -10,17 +10,19 @@ The ordered `claims` array must repeat every inline assertion group from `answer
 `suggestions` must be empty when disabled or the outcome is a decline.
 
 When steering ids are rendered, return one `adherence` entry per id: `rule`,
-boolean `satisfied`, and a short operator-only `note`. Never restate, quote, or
-summarize retrieved Result/document text in notes.
+`satisfied`, `applicable`, and a short operator-only `note`. `applicable` is
+false when the rule's own condition was not met this turn (an authored
+`when:` clause, or a coverage criteria); `satisfied` is then ignored. Never
+restate, quote, or summarize retrieved Result/document text in notes.
 
 Grounded example:
-{"answer":"The advanced workshop runs in June[[1]]. Returning students can register online[[2]][[3]].","v":2,"outcome":"answer","claims":[[1],[2,3]],"suggestions":[],"grounding":"degraded"}
+{"coverage":"answered_sufficient_evidence","requestFocus":"the June workshop dates and registration","outcome":"answer","answer":"The advanced workshop runs in June[[1]]. Returning students can register online[[2]][[3]].","v":2,"claims":[[1],[2,3]],"suggestions":[],"grounding":"degraded"}
 
 Partial example:
-{"answer":"The workshop runs in June[[1]], but I can't confirm the accommodation fee[[?]].","v":2,"outcome":"answer","claims":[[1],[]],"suggestions":[],"grounding":"degraded"}
+{"coverage":"partial_insufficient_evidence","requestFocus":"the accommodation fee","outcome":"answer","answer":"The workshop runs in June[[1]], but I can't confirm the accommodation fee[[?]].","v":2,"claims":[[1],[]],"suggestions":[],"grounding":"degraded"}
 
 Miss example:
-{"answer":"I can't confirm that one, but I can help with our workshop schedule.","v":2,"outcome":"no_support","claims":[],"suggestions":[],"grounding":"degraded"}
+{"coverage":"unanswered_insufficient_evidence","requestFocus":"the requested topic","outcome":"no_support","answer":"I can't confirm that one, but I can help with our workshop schedule.","v":2,"claims":[],"suggestions":[],"grounding":"degraded"}
 
 Out-of-scope example:
-{"answer":"That's outside what I can help with, but I can help with our workshop schedule.","v":2,"outcome":"out_of_scope","claims":[],"suggestions":[],"grounding":"degraded"}
+{"coverage":"unanswered_intentional_scope_boundary","requestFocus":"the out-of-scope request","outcome":"out_of_scope","answer":"That's outside what I can help with, but I can help with our workshop schedule.","v":2,"claims":[],"suggestions":[],"grounding":"degraded"}

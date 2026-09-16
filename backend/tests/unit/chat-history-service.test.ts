@@ -733,6 +733,7 @@ describe("chat history service", () => {
       reason: "insufficient_evidence",
       unresolvedRequest: "The policy exception.",
       schemaVersion: 1,
+      producer: "answer_head",
       interactionEvaluationState: "evaluated",
       assessedAt: new Date("2026-09-08T10:00:00.000Z"),
       createdAt: new Date("2026-09-08T10:00:00.000Z"),
@@ -802,7 +803,7 @@ describe("chat history service", () => {
       id: "assessment-2", workspaceId: "workspace-1", conversationId: conversation.id,
       requestMessageId: user.id, originatingTurnId: user.id, contextualizedRequest: "Question",
       assistantMessageId: assistant.id,
-      availability: "assessed", coverage: "answered", reason: "sufficient_evidence", schemaVersion: 1,
+      availability: "assessed", coverage: "answered", reason: "sufficient_evidence", schemaVersion: 1, producer: "answer_head",
       interactionEvaluationState: "evaluated",
       assessedAt: new Date("2026-09-08T10:00:00.000Z"), createdAt: new Date("2026-09-08T10:00:00.000Z"),
     });

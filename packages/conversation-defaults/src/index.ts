@@ -23,6 +23,14 @@ export {
   renderSteeringRules,
   type RenderSteeringRulesOptions,
 } from "./steeringPrompt.js";
+export {
+  ANSWER_COVERAGE_CLASSIFICATIONS,
+  ANSWER_COVERAGE_CLASSIFICATION_VALUES,
+  answerCoverageClassificationKeyFor,
+  answerCoverageCriteriaMatches,
+  expandAnswerCoverageCriteria,
+  type AnswerCoverageClassification,
+} from "./answerCoverageClassification.js";
 export { DirectiveCatalogRegistry } from "./directiveCatalogRegistry.js";
 export {
   DEFAULT_DIRECTIVE_PRIORITY,

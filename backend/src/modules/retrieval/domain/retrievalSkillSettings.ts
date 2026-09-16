@@ -10,7 +10,6 @@ import {
   normalizeMetadataRules,
   validateRetrievalSettings,
   retrievalStrategyPreferences,
-  type RetrievalSettingsRecord,
 } from "../../settings/contracts/retrieval.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 
@@ -51,16 +50,17 @@ const retrievalSkillSettingsOverrideShape = {
   retrievalStrategy: z.enum(retrievalStrategyPreferences).optional(),
   metadataRules: z.array(retrievalMetadataRuleOverrideSchema).optional(),
   customInstruction: z.string().max(2000).optional(),
+  citationHoldEnabled: z.boolean().optional(),
 };
 
-export const retrieveSkillSourceScopeSchema = z.union([
+const retrieveSkillSourceScopeSchema = z.union([
   z.literal("all"),
   z.object({
     sourceIds: z.array(z.string().uuid()).max(200),
   }).strict(),
 ]);
 
-export const retrieveSkillExposedInputsSchema = z.object({
+const retrieveSkillExposedInputsSchema = z.object({
   query: z.literal(true).default(true),
 }).strict();
 
@@ -80,6 +80,7 @@ export const retrieveSkillConfigSchema = z.object({
   suggestedQuestionsEnabled: retrievalSkillSettingsOverrideShape.suggestedQuestionsEnabled,
   suggestedQuestionsCount: retrievalSkillSettingsOverrideShape.suggestedQuestionsCount,
   metadataRules: retrievalSkillSettingsOverrideShape.metadataRules,
+  citationHoldEnabled: retrievalSkillSettingsOverrideShape.citationHoldEnabled,
   exposedInputs: retrieveSkillExposedInputsSchema.default({ query: true }),
 }).strict();
 
@@ -89,8 +90,7 @@ export type RetrieveSkillConfig = z.infer<typeof retrieveSkillConfigSchema>;
 // Per-agent policy intentionally excludes similarityThreshold because it is model-coupled.
 export const retrievalSkillSettingsOverrideSchema = z.object(retrievalSkillSettingsOverrideShape).strict();
 
-export type RetrievalSkillSettingsOverride = z.infer<typeof retrievalSkillSettingsOverrideSchema>;
-export type EffectiveRetrievalSkillSettings = RetrievalSettingsRecord;
+type RetrievalSkillSettingsOverride = z.infer<typeof retrievalSkillSettingsOverrideSchema>;
 
 export const normalizeRetrievalSkillSettingsOverride = (input: unknown): RetrievalSkillSettingsOverride => {
   const parsed = retrievalSkillSettingsOverrideSchema.parse(input);

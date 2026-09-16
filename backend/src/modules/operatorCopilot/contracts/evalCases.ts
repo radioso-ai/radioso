@@ -147,6 +147,7 @@ export interface CopilotEvalCaseReplayOverrides {
   retrievalSettingsOverride?: {
     queryRewriteEnabled?: boolean;
     rerankEnabled?: boolean;
+    citationHoldEnabled?: boolean;
     vectorTopK?: number;
     similarityThreshold?: number;
     rerankTopK?: number;

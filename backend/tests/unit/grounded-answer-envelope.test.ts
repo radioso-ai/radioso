@@ -14,6 +14,8 @@ import {
 describe("parseGroundedAnswerEnvelope", () => {
   it("passes through model-returned fields the envelope does not interpret as opaque extras", () => {
     const parsed = parseGroundedAnswerEnvelope(JSON.stringify({
+      coverage: "answered_sufficient_evidence",
+      requestFocus: "when the practice begins",
       answer: "The practice begins gently[[1]].",
       v: 2,
       outcome: "answer",
@@ -51,6 +53,8 @@ describe("parseGroundedAnswerEnvelope", () => {
 
   it("parses a provider-enforced structured envelope", () => {
     expect(parseGroundedAnswerEnvelope(JSON.stringify({
+      coverage: "answered_sufficient_evidence",
+      requestFocus: "how the practice begins",
       answer: "The practice begins gently[[1]].",
       v: 2,
       outcome: "answer",
@@ -60,6 +64,8 @@ describe("parseGroundedAnswerEnvelope", () => {
       ],
       grounding: "degraded",
     }))).toEqual({
+      coverage: "answered_sufficient_evidence",
+      requestFocus: "how the practice begins",
       answer: "The practice begins gently[[1]].",
       protocolVersion: 2,
       parseStatus: "valid_v2",
@@ -73,6 +79,8 @@ describe("parseGroundedAnswerEnvelope", () => {
 
   it("parses the v2 protocol without trusting the compatibility grounding field", () => {
     expect(parseGroundedAnswerEnvelope(groundedV2Envelope())).toEqual({
+      coverage: "answered_sufficient_evidence",
+      requestFocus: "the advanced workshop schedule",
       answer: GROUNDED_V2_BODY,
       protocolVersion: 2,
       parseStatus: "valid_v2",
@@ -82,6 +90,42 @@ describe("parseGroundedAnswerEnvelope", () => {
         { text: "What does registration require?", kind: "deeper", contextIndex: 2 },
       ],
     });
+  });
+
+  it("requires coverage and requestFocus for a v2 tail to validate", () => {
+    const missingCoverage = parseGroundedAnswerEnvelope(JSON.stringify({
+      requestFocus: "something",
+      answer: "Answer[[1]].",
+      v: 2,
+      outcome: "answer",
+      claims: [[1]],
+      suggestions: [],
+    }));
+    expect(missingCoverage.parseStatus).toBe("invalid_v2");
+    expect(missingCoverage.coverage).toBeNull();
+
+    const missingRequestFocus = parseGroundedAnswerEnvelope(JSON.stringify({
+      coverage: "answered_sufficient_evidence",
+      answer: "Answer[[1]].",
+      v: 2,
+      outcome: "answer",
+      claims: [[1]],
+      suggestions: [],
+    }));
+    expect(missingRequestFocus.parseStatus).toBe("invalid_v2");
+    expect(missingRequestFocus.requestFocus).toBeNull();
+
+    const badCoverage = parseGroundedAnswerEnvelope(JSON.stringify({
+      coverage: "not_a_real_classification",
+      requestFocus: "something",
+      answer: "Answer[[1]].",
+      v: 2,
+      outcome: "answer",
+      claims: [[1]],
+      suggestions: [],
+    }));
+    expect(badCoverage.parseStatus).toBe("invalid_v2");
+    expect(badCoverage.coverage).toBeNull();
   });
 
   it("retains valid suggestions from legacy object and array envelopes but marks them v1", () => {
@@ -126,6 +170,8 @@ describe("GroundedAnswerEnvelopeReader", () => {
   it("streams only the decoded answer field from structured JSON at every chunk boundary", () => {
     const answer = "Line one.\nA quoted \"detail\" and snowman ☃[[1]].";
     const raw = JSON.stringify({
+      coverage: "answered_sufficient_evidence",
+      requestFocus: "what comes after line one",
       answer,
       v: 2,
       outcome: "answer",
@@ -167,7 +213,14 @@ describe("GroundedAnswerEnvelopeReader", () => {
   });
 
   it("never leaks a sentinel split at any boundary", () => {
-    const tail = JSON.stringify({ v: 2, outcome: "answer", claims: [[1]], suggestions: [] });
+    const tail = JSON.stringify({
+      v: 2,
+      coverage: "answered_sufficient_evidence",
+      requestFocus: "the sentinel-split answer",
+      outcome: "answer",
+      claims: [[1]],
+      suggestions: [],
+    });
     for (let split = 1; split < SUGGESTIONS_SENTINEL.length; split += 1) {
       const reader = new GroundedAnswerEnvelopeReader();
       const chunks = [
@@ -205,8 +258,8 @@ describe("GroundedAnswerEnvelopeReader", () => {
     const yielded = [
       reader.push("Answer[[1]]."),
       reader.push(`\n${SUGGESTIONS_SENTINEL}\n`),
-      reader.push('{"v":2,"outcome":"answer",'),
-      reader.push('"claims":[[1]],"suggestions":[]}'),
+      reader.push('{"v":2,"coverage":"answered_sufficient_evidence","requestFocus":"buffered tail",'),
+      reader.push('"outcome":"answer","claims":[[1]],"suggestions":[]}'),
     ];
     const finalized = reader.finalize();
     expect(yielded.join("")).toBe("Answer[[1]].");
@@ -217,6 +270,8 @@ describe("GroundedAnswerEnvelopeReader", () => {
   it("buffers structured extras until finalization without emitting them", () => {
     const reader = new GroundedAnswerEnvelopeReader();
     const raw = JSON.stringify({
+      coverage: "answered_sufficient_evidence",
+      requestFocus: "structured extras",
       answer: "Answer[[1]].",
       v: 2,
       outcome: "answer",

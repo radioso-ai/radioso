@@ -35,13 +35,15 @@ describeIntegration("Operator MCP retrieval authoring (Postgres)", () => {
     const workspace = await workspaceRepository.create(account.id, "MCP retrieval authoring");
     workspaceId = workspace.id;
     agentId = (await agentRepository.create(workspace.id, { name: "MCP retrieval authoring agent" })).id;
-    await skills.create(workspaceId, agentId, {
-      name: "answer_with_sources",
-      capability: "retrieve",
-      target: { kind: "source_scope", id: null },
-      config: { sourceScope: "all", vectorTopK: 12, rerankEnabled: true, rerankTopK: 8, exposedInputs: { query: true } },
-      invocationMode: "default_answer",
-      enabled: true,
+    // AgentRepository.create() already seeded this agent's default-answer retrieve skill
+    // (named "answer"); configure that one instead of creating a second - the schema allows
+    // exactly one default-answer skill per agent.
+    const defaultAnswerSkill = await repository.findDefaultAnswer(workspaceId, agentId);
+    if (!defaultAnswerSkill) {
+      throw new Error("expected AgentRepository.create() to seed a default-answer retrieve skill");
+    }
+    await skills.update(workspaceId, agentId, defaultAnswerSkill.id, {
+      replaceConfig: { sourceScope: "all", vectorTopK: 12, rerankEnabled: true, rerankTopK: 8, exposedInputs: { query: true } },
     });
   });
 

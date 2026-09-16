@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest'
 
 import type { ConversationTrace, TurnTraceEnvelope } from '@/lib/api'
 import {
+  answerCoverageFromTurnTrace,
   clarificationDecisionFromSpine,
   getPrimaryLeaf,
   getPrimaryLeafTrace,
+  resolveAnswerCoverage,
   resolveCapabilityLeaf,
   routineTurnSignalFromSpine,
   spineStageLabel,
@@ -12,6 +14,7 @@ import {
   stageLeafView,
   turnTraceRollup,
 } from '@/lib/turn-trace'
+import type { AnswerCoverageAssessment } from '@/lib/answer-coverage'
 
 const activityTrace = { traceId: 'trace-1', startedAt: '2026-01-01T00:00:00.000Z', stages: [], links: [] }
 
@@ -31,6 +34,8 @@ const spine = (): ConversationTrace => ({
     { id: 'compose', kind: 'compose', status: 'applied' },
   ],
 })
+
+const spineEnvelope = (): TurnTraceEnvelope => ({ version: 1, spine: spine() })
 
 describe('spineStageLabel', () => {
   it('maps known spine kinds to friendly labels and humanizes unknowns', () => {
@@ -245,5 +250,100 @@ describe('clarificationDecisionFromSpine', () => {
     expect(clarificationDecisionFromSpine(spine())).toBeUndefined()
     expect(clarificationDecisionFromSpine(withClarification(undefined))).toBeUndefined()
     expect(clarificationDecisionFromSpine(undefined)).toBeUndefined()
+  })
+})
+
+describe('answerCoverageFromTurnTrace', () => {
+  const withHeadOutputs = (outputs: Record<string, unknown>): TurnTraceEnvelope => ({
+    version: 1,
+    spine: {
+      traceId: 'conversation-turn-ac',
+      startedAt: '2026-01-01T00:00:00.000Z',
+      stages: [
+        { id: 'message', kind: 'message', status: 'applied' },
+        { id: 'answer_coverage_head', kind: 'answer_coverage_head', status: 'applied', outputs },
+      ],
+    },
+  })
+
+  it('reads an assessed/answered verdict off the stage', () => {
+    expect(answerCoverageFromTurnTrace(withHeadOutputs({
+      availability: 'assessed', coverage: 'answered', reason: 'sufficient_evidence', producer: 'answer_head',
+    }))).toEqual({
+      availability: 'assessed', coverage: 'answered', reason: 'sufficient_evidence', producer: 'answer_head',
+      originatingTurnId: '', originatingRequestId: '',
+    })
+  })
+
+  it('reads an assessed/partial verdict with its reason', () => {
+    expect(answerCoverageFromTurnTrace(withHeadOutputs({
+      availability: 'assessed', coverage: 'partial', reason: 'insufficient_evidence', producer: 'answer_head',
+    }))).toMatchObject({ coverage: 'partial', reason: 'insufficient_evidence' })
+  })
+
+  it('carries the deterministic producer for a zero-evidence fallback verdict', () => {
+    const result = answerCoverageFromTurnTrace(withHeadOutputs({
+      availability: 'assessed', coverage: 'unanswered', reason: 'insufficient_evidence', producer: 'deterministic',
+    }))
+    expect(result?.producer).toBe('deterministic')
+    expect(result?.coverage).toBe('unanswered')
+  })
+
+  it('normalizes an assessed stage missing its coverage/reason to invalid, never leaking requestFocus', () => {
+    const result = answerCoverageFromTurnTrace(withHeadOutputs({ availability: 'assessed', producer: 'answer_head' }))
+    expect(result?.availability).toBe('invalid')
+    expect((result as unknown as Record<string, unknown>).requestFocus).toBeUndefined()
+    expect(result?.unresolvedRequest).toBeUndefined()
+  })
+
+  it('returns undefined when the turn has no answer_coverage_head stage', () => {
+    expect(answerCoverageFromTurnTrace(spineEnvelope())).toBeUndefined()
+    expect(answerCoverageFromTurnTrace(undefined)).toBeUndefined()
+  })
+
+  it('ignores a repeat-report stage that carries no availability', () => {
+    const envelope: TurnTraceEnvelope = {
+      version: 1,
+      spine: {
+        traceId: 'conversation-turn-ac-repeat',
+        startedAt: '2026-01-01T00:00:00.000Z',
+        stages: [
+          { id: 'answer_coverage_head_repeat', kind: 'answer_coverage_head', status: 'fallback', outputs: { reason: 'already_reported' } },
+        ],
+      },
+    }
+    expect(answerCoverageFromTurnTrace(envelope)).toBeUndefined()
+  })
+})
+
+describe('resolveAnswerCoverage', () => {
+  const recorded: AnswerCoverageAssessment = {
+    availability: 'assessed', coverage: 'answered', reason: 'sufficient_evidence',
+    originatingTurnId: 'turn-1', originatingRequestId: 'request-1',
+  }
+  const tracedEnvelope: TurnTraceEnvelope = {
+    version: 1,
+    spine: {
+      traceId: 'conversation-turn-resolve',
+      startedAt: '2026-01-01T00:00:00.000Z',
+      stages: [
+        { id: 'answer_coverage_head', kind: 'answer_coverage_head', status: 'applied', outputs: { availability: 'assessed', coverage: 'partial', reason: 'insufficient_evidence' } },
+      ],
+    },
+  }
+
+  it('prefers a persisted record over the trace when both are present', () => {
+    expect(resolveAnswerCoverage(recorded, tracedEnvelope)).toEqual({ assessment: recorded, source: 'recorded' })
+  })
+
+  it('falls back to the trace when no persisted record is supplied', () => {
+    const result = resolveAnswerCoverage(undefined, tracedEnvelope)
+    expect(result.source).toBe('trace')
+    expect(result.assessment?.coverage).toBe('partial')
+  })
+
+  it('resolves to nothing when neither a record nor a trace verdict exists', () => {
+    expect(resolveAnswerCoverage(undefined, spineEnvelope())).toEqual({ assessment: undefined, source: undefined })
+    expect(resolveAnswerCoverage(undefined, undefined)).toEqual({ assessment: undefined, source: undefined })
   })
 })

@@ -111,6 +111,34 @@ describe("trace assertions", () => {
     expect(evaluateTraceAssertion({ type: "turn_grounding_verdict", verdict: "no_support" }, output).status).toBe("pass");
     expect(evaluateTraceAssertion({ type: "turn_grounding_verdict", verdict: "grounded" }, output).status).toBe("fail");
   });
+
+  it("reads the coverage verdict from the answer_coverage_head stage (#1260 F8)", () => {
+    const output = observed({
+      turnTrace: trace([{
+        id: "answer_coverage_head",
+        kind: "answer_coverage_head",
+        status: "applied",
+        outputs: { availability: "assessed", coverage: "partial", reason: "insufficient_evidence" },
+      }]),
+    });
+    expect(evaluateTraceAssertion({ type: "turn_answer_coverage", coverage: "partial" }, output).status).toBe("pass");
+    expect(evaluateTraceAssertion({ type: "turn_answer_coverage", coverage: "answered" }, output).status).toBe("fail");
+  });
+
+  it("fails turn_answer_coverage when the head reported no verdict", () => {
+    const notAssessed = observed({
+      turnTrace: trace([{
+        id: "answer_coverage_head",
+        kind: "answer_coverage_head",
+        status: "fallback",
+        outputs: { availability: "invalid" },
+      }]),
+    });
+    expect(evaluateTraceAssertion({ type: "turn_answer_coverage", coverage: "unanswered" }, notAssessed).status).toBe("fail");
+
+    const noStage = observed({ turnTrace: trace([]) });
+    expect(evaluateTraceAssertion({ type: "turn_answer_coverage", coverage: "unanswered" }, noStage).status).toBe("fail");
+  });
 });
 
 const passJudge: EvalLlmJudgePort = {
@@ -527,8 +555,9 @@ describe("seed fixtures", () => {
     }
   });
 
-  it("attaches the three seed directives to the agent config", () => {
+  it("attaches the four seed directives to the agent config", () => {
     expect(conversationQualityAgentConfig.authoredDirectives.map((directive) => directive.name).sort()).toEqual([
+      "maximally-helpful",
       "pricing-precision",
       "refund-empathy",
       "security-precision",

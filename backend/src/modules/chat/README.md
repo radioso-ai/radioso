@@ -114,6 +114,44 @@ imports from `services/`.
   verdict, while partial answers with at least one valid assertion remain visible
   and degraded.
   Raw envelope JSON is never emitted or persisted.
+- Coverage verdict head (#1260): the grounded envelope's `coverage`,
+  `requestFocus`, and `outcome` fields precede `answer` in schema order, so the
+  model commits to its coverage verdict before writing any answer text.
+  `groundedAnswerHeadReader.ts` resolves that head from partial JSON chunks —
+  `pending` while streaming, `parsed` once all three fields are complete and
+  valid, `invalid` the moment `answer` opens without them or the response is
+  not a JSON object at all (the free-text sentinel-parser path).
+  `retrievalTurnSkill.ts` calls the engine's coverage verdict sink exactly
+  once, with either the parsed head or the zero-evidence branch's
+  deterministic `unanswered / insufficient_evidence` verdict, and waits for
+  `proceed` or `yield_turn` before releasing any text; on `yield_turn` the
+  stream aborts through the same mechanism the grounding gate's `bound`
+  decision uses, with nothing released. `answerCoverageFromHead.ts` maps a
+  parsed head, an invalid head, or the deterministic branch to the assessment
+  shape `llmAnswerCoverageProducer.ts` also produces, tagged with a `producer`
+  (`answer_head`, `deterministic`, or `assessor`). `answerCoverageHeadRecorder.ts`
+  persists that assessment and its reaction trace with the same
+  `findByRequestMessageId` idempotency; draft test chat and eval replay get
+  the unwrapped sink, so the head still gates directive and routine behavior
+  but nothing is written. `answerCoverageShadowAssessor.ts` runs
+  `llmAnswerCoverageProducer.ts` concurrently with compose, off the critical
+  path, for a measurement window
+  (`ANSWER_COVERAGE_SHADOW_ASSESSOR_ENABLED`, default on); it never
+  influences the turn and only records agreement between the head and shadow
+  classifications. The engine side of the port — directive applicability from
+  the head, coverage routine candidate evaluation and ranked activation,
+  reaction recording — lives in
+  `packages/conversation-engine/src/coverageVerdictSink.ts`, invoked from
+  inside the skill's stream rather than before it. The citation gate
+  (`requiresIndexedSourceGate`) reads the resolved `citationHoldEnabled`
+  setting: off, an `answer` commitment releases as soon as the head parses
+  instead of waiting for a citation, while a `no_support` or `out_of_scope`
+  commitment always bypasses the gate regardless of the setting. Tests:
+  `tests/unit/grounded-answer-head-reader.test.ts`,
+  `tests/unit/retrieval-answer-coverage-verdict.test.ts`,
+  `tests/unit/chat/answerCoverageHeadRecorder.test.ts`,
+  `tests/unit/chat/answerCoverageShadowAssessor.test.ts`. See
+  `specs/1260-coverage-verdict-in-answer-head/`.
 - Citations: `citationAnchorParser.ts`, `citationAnchorSanitizer.ts`,
   `answerPresentationService.ts`, and `chatAnswerPresenter.ts`. Citations come
   only from explicit valid `[[n]]` assertions. `implicitCitationDiagnostics.ts`

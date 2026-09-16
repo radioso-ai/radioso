@@ -61,6 +61,7 @@ Retrieval behavior is configured per agent through the `retrieval.answer` skill.
 - `vectorTopK` controls how many chunks are fetched from the vector index before filtering and reranking.
 - `rerankEnabled` controls whether fetched chunks are re-scored with the reranker model. It is off by default.
 - `rerankTopK` controls how many chunks survive reranking and are passed to the answer.
+- `citationHoldEnabled` controls whether the answer is held until it earns its first citation before it streams. It is on by default; when off, an answer that ends with zero sourced claims still reaches the visitor and is flagged degraded in Quality.
 - `queryRewriteEnabled` controls whether the user message is rewritten into search queries before retrieval.
 - `semanticRewriteInstructions` replaces the default instructions for rewriting the semantic vector search query. Empty means the default applies.
 - `lexicalRewriteInstructions` replaces the default instructions for rewriting the lexical keyword search query. Empty means the default applies.

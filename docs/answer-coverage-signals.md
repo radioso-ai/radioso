@@ -33,3 +33,7 @@ retrieval answer path actually declined the request.
 Expanded topic details show exclusive semantic buckets for answered, partly answered, unanswered, needs clarification, and not assessed questions. Grounding counts remain a separate diagnostic. Pulse evidence carries the recorded assessment; unresolved request text and routine reaction details stay in authorized turn diagnostics.
 
 Reports preserve records created before answer coverage was measured. Those records appear as legacy evidence and remain readable without manufacturing a new assessment.
+
+## Shadow assessor
+
+A retrieval turn with admitted evidence can also run a second, off-path coverage call purely to compare its verdict against the recorded one; that comparison never changes an answer, a directive, a routine, or the reaction trace, and it never runs against a draft test chat or an eval replay. Set `ANSWER_COVERAGE_SHADOW_ASSESSOR_ENABLED=false` in the backend environment to turn it off.

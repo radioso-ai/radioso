@@ -5,6 +5,7 @@ import type {
   ConversationClarificationStore,
   ConversationCoverageRoutineActivator,
   ConversationCoverageReactionRecorder,
+  ConversationCoverageVerdictSink,
   ConversationClarifier,
   Directive,
   DirectiveAdherenceEntry,
@@ -63,6 +64,13 @@ interface RunPreparedChatTurnWithConversationEngineInput {
   signal?: AbortSignal;
   coverageReactionRecorder?: ConversationCoverageReactionRecorder;
   coverageRoutineActivator?: ConversationCoverageRoutineActivator;
+  /**
+   * Decorates the engine's coverage verdict sink with host-owned persistence
+   * and/or the #1260 shadow assessor before it reaches the skill. The engine
+   * builds and owns the sink's decision (proceed/yield); this wrapper only
+   * observes `report()` calls around that decision — it never replaces it.
+   */
+  coverageVerdictWrapper?: (sink: ConversationCoverageVerdictSink) => ConversationCoverageVerdictSink;
   routineStore?: ConversationRoutineStore;
   routineRunner?: ConversationRoutineRunner;
   clarifier?: ConversationClarifier;
@@ -205,7 +213,9 @@ export const runPreparedChatTurnWithConversationEngine = async (
           query: input.query,
           userExpectedLocale: input.userExpectedLocale,
           accountId: input.accountId,
-          coverageVerdict,
+          coverageVerdict: input.coverageVerdictWrapper && coverageVerdict
+            ? input.coverageVerdictWrapper(coverageVerdict)
+            : coverageVerdict,
         });
         return toRenderableTurn(rendered);
       },
@@ -314,7 +324,9 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
           userExpectedLocale: input.userExpectedLocale,
           accountId: input.accountId,
           signal: input.signal,
-          coverageVerdict,
+          coverageVerdict: input.coverageVerdictWrapper && coverageVerdict
+            ? input.coverageVerdictWrapper(coverageVerdict)
+            : coverageVerdict,
         });
         const hasLiveRenderer = Boolean(renderers.resolve(outcome).stream);
         let streamStep = await answerStream.next();

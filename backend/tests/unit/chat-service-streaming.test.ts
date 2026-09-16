@@ -235,7 +235,7 @@ const makeChatService = (
     clarifier: NonNullable<ChatServiceOptions["clarifier"]>;
     clarificationStore: NonNullable<ChatServiceOptions["clarificationStore"]>;
   },
-  coverageAssessorFactory?: ChatServiceOptions["coverageAssessorFactory"],
+  coverageHeadRecorder?: ChatServiceOptions["coverageHeadRecorder"],
 ): ChatService => {
   if (conversationRepository instanceof InMemoryConversationRepository) {
     pinExistingConversationsToPublishedRevisions(conversationRepository);
@@ -273,7 +273,7 @@ const makeChatService = (
     clarificationStore: clarification?.clarificationStore,
     actionOutbox: routine?.actionOutbox,
     assistantTurnPersistence: routine?.assistantTurnPersistence,
-    coverageAssessorFactory,
+    coverageHeadRecorder,
   });
 };
 
@@ -2470,7 +2470,22 @@ describe("chat service streaming", () => {
   } = {}) => {
     const persistedReactions: Parameters<ConversationCoverageReactionRecorder["record"]>[0][] = [];
     const pendingClarifications: unknown[] = [];
-    const coverageAssessorFactory = {
+    const coverageHeadRecorder = {
+      // Mirrors the real recorder (#1260, FR-016/017): persist, hand the saved
+      // record to `onAssessment` so the live session seeds a truthful
+      // `not_evaluated` baseline, then delegate to the engine's own sink.
+      wrapVerdictSink: (
+        { onAssessment }: { onAssessment?: (input: { assessment: unknown; record?: unknown }) => void },
+        inner: { report: (input: { assessment: unknown }) => Promise<{ decision: "proceed" | "yield_turn" }> },
+      ) => ({
+        report: async ({ assessment }: { assessment: unknown }) => {
+          onAssessment?.({
+            assessment,
+            record: { ...(assessment as object), id: "assessment-1", assessedAt: new Date(), createdAt: new Date() },
+          });
+          return inner.report({ assessment });
+        },
+      }),
       createReactionRecorder: ({ onRecorded }: { onRecorded?: (reaction: Parameters<ConversationCoverageReactionRecorder["record"]>[0]) => void }) => ({
         record: async (reaction: Parameters<ConversationCoverageReactionRecorder["record"]>[0]) => {
           if (input.failReactionRecord) {
@@ -2480,7 +2495,7 @@ describe("chat service streaming", () => {
           onRecorded?.(reaction);
         },
       }),
-    } as unknown as NonNullable<ChatServiceOptions["coverageAssessorFactory"]>;
+    } as unknown as NonNullable<ChatServiceOptions["coverageHeadRecorder"]>;
     let answerCalls = 0;
     // The coverage verdict is the answer envelope's own head now (#1260): the fake
     // gateway reports "unanswered" from a valid_v2 head instead of a separate
@@ -2595,7 +2610,7 @@ describe("chat service streaming", () => {
           clear: async () => {},
         },
       } : undefined,
-      coverageAssessorFactory,
+      coverageHeadRecorder,
     );
     return { service, persistedReactions, routineStore, pendingClarifications };
   };
@@ -2865,15 +2880,17 @@ describe("chat service streaming", () => {
         })()
       : await coverage.service.answer(request);
 
-    // The `not_evaluated` baseline used to seed from the persisted assessment
-    // record the pre-compose assessor wrote before the reaction pass ran
-    // (`applyCoverageAssessment`). The answer-head path (#1260) reports the
-    // verdict straight to the sink with no persisted record yet — writing one
-    // is FR-016/017, a later slice — so there is nothing to seed a truthful
-    // `not_evaluated` baseline from, and `interactionTrace` stays absent when
-    // the reaction commit itself fails.
-    expect(response).toMatchObject({ answer: "I can arrange a consultation." });
-    expect((response as { interactionTrace?: unknown }).interactionTrace).toBeUndefined();
+    // The head recorder persists the verdict from the sink `report()` call and
+    // seeds `not_evaluated` before the reaction pass ever runs (#1260,
+    // FR-016/017), so a reaction-commit failure still leaves a truthful
+    // baseline rather than no record at all.
+    expect(response).toMatchObject({
+      answer: "I can arrange a consultation.",
+      interactionTrace: {
+        state: "not_evaluated",
+        decisions: [],
+      },
+    });
     expect(coverage.routineStore.save).toHaveBeenCalledOnce();
     expect(coverage.persistedReactions).toEqual([]);
   });

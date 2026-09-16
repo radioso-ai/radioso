@@ -13,6 +13,7 @@ export type {
   AnswerCoverage,
   AnswerCoverageAssessment,
   AnswerCoverageCriteria,
+  AnswerCoverageProducer,
 } from "@radioso/conversation-contract";
 
 const answerCoverageSchema = z.enum(["answered", "partial", "unanswered", "unclear"]);
@@ -47,6 +48,22 @@ export const classificationValues = Object.keys(classifications) as [
   AnswerCoverageClassification,
   ...AnswerCoverageClassification[],
 ];
+
+/**
+ * Inverts {@link classifications} back to its eight-value key from a
+ * `coverage`/`reason` pair. Used to label the shadow agreement observation
+ * (#1260, FR-020) with the same bounded enum the head and the assessor both
+ * classify against, rather than re-deriving a coarser signal.
+ */
+export const classificationKeyFor = (
+  signal: { coverage: AnswerCoverage; reason: AnswerCoverageReason },
+): AnswerCoverageClassification | undefined => {
+  const entry = (Object.entries(classifications) as [
+    AnswerCoverageClassification,
+    { coverage: AnswerCoverage; reason: AnswerCoverageReason },
+  ][]).find(([, value]) => value.coverage === signal.coverage && value.reason === signal.reason);
+  return entry?.[0];
+};
 
 /** Classification taxonomy version, carried on every assessed record. */
 export const ANSWER_COVERAGE_SCHEMA_VERSION = 1;

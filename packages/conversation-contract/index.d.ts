@@ -30,7 +30,8 @@ export type AnswerCoverageAssessment =
       reason: AnswerCoverageReason;
       unresolvedRequest?: string;
       schemaVersion: number;
-      producer?: AnswerCoverageProducer;
+      /** Persistence carries this on every written row now (#1260, FR-017); an assessed verdict always names its producer. */
+      producer: AnswerCoverageProducer;
     }
   | { availability: Exclude<AnswerCoverageAvailability, "assessed">; producer?: AnswerCoverageProducer };
 
@@ -1403,10 +1404,6 @@ export interface ProcessTurnInput {
   coverageRoutineActivator?: ConversationCoverageRoutineActivator;
   /** Records bounded post-evidence decisions without exposing request/evidence text. */
   coverageReactionRecorder?: ConversationCoverageReactionRecorder;
-}
-
-export interface ConversationCoverageAssessor {
-  assess(input: { turn: TurnContext }): Promise<AnswerCoverageAssessment>;
 }
 
 export interface ConversationCoverageReactionRecorder {

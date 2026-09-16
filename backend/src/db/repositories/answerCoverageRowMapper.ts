@@ -1,5 +1,6 @@
 import type {
   AnswerCoverageAssessment,
+  AnswerCoverageProducer,
   AnswerCoverageReactionTrace,
   AnswerCoverageRecord,
 } from "../../modules/answerCoverage/public.js";
@@ -17,13 +18,14 @@ export interface AnswerCoverageRow {
   reason: "sufficient_evidence" | "insufficient_evidence" | "conflicting_evidence" | "ambiguous_request" | "intentional_scope_boundary" | null;
   unresolved_request: string | null;
   schema_version: number;
+  producer: AnswerCoverageProducer | null;
   interaction_evaluation_state: "evaluated" | null;
   assessed_at: Date;
   created_at: Date;
 }
 
 export const answerCoverageColumns = [
-  "id", "workspace_id", "conversation_id", "request_message_id", "originating_turn_id", "contextualized_request", "assistant_message_id", "availability", "coverage", "reason", "unresolved_request", "schema_version", "interaction_evaluation_state", "assessed_at", "created_at",
+  "id", "workspace_id", "conversation_id", "request_message_id", "originating_turn_id", "contextualized_request", "assistant_message_id", "availability", "coverage", "reason", "unresolved_request", "schema_version", "producer", "interaction_evaluation_state", "assessed_at", "created_at",
 ] as const;
 
 export const mapAnswerCoverageRow = (row: AnswerCoverageRow): AnswerCoverageRecord => {
@@ -52,6 +54,9 @@ export const mapAnswerCoverageRow = (row: AnswerCoverageRow): AnswerCoverageReco
     coverage: row.coverage,
     reason: row.reason,
     ...(row.unresolved_request === null ? {} : { unresolvedRequest: row.unresolved_request }),
+    // Every row written before migration 188 predates the producer column and
+    // was, without exception, written by the pre-compose assessor (#1260).
+    producer: row.producer ?? "assessor",
   };
 };
 

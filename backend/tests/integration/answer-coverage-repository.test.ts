@@ -41,11 +41,13 @@ describeIntegration("AnswerCoverageRepository", () => {
         reason: "insufficient_evidence" as const,
         unresolvedRequest: "One-day attendance permission",
         schemaVersion: 1,
+        producer: "answer_head" as const,
       },
     };
     const [first, retry] = await Promise.all([repository.saveAssessment(input), repository.saveAssessment(input)]);
     expect(retry.id).toBe(first.id);
     expect(first.contextualizedRequest).toContain("visiting teacher");
+    expect(first.availability === "assessed" && first.producer).toBe("answer_head");
 
     await repository.recordReaction({
       assessmentId: first.id, workspaceId, conversationId, reactionKey: "directive:1", directiveId: randomUUID(),

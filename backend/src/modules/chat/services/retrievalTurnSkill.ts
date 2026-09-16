@@ -227,6 +227,32 @@ export class RetrievalAnswerComposer {
     });
   }
 
+  /**
+   * Bounded-label counters for the answer-head parse outcome and the host's
+   * proceed/yield decision (#1260). Records nothing when `decision` is
+   * absent — the coverage verdict sink was never wired for this turn, so
+   * there is no host decision to attribute an outcome to.
+   */
+  private recordCoverageHeadOutcome(
+    assessment: AnswerCoverageAssessment,
+    decision: "proceed" | "yield_turn" | undefined,
+  ): void {
+    if (!decision) {
+      return;
+    }
+    const parseOutcome = assessment.producer === "deterministic"
+      ? "deterministic"
+      : assessment.availability === "assessed" ? "parsed" : "invalid";
+    this.metrics?.incrementCounter("chat_answer_coverage_head_parse_total", {
+      help: "Answer envelope head parse outcome before the host decides",
+      labels: { outcome: parseOutcome },
+    });
+    this.metrics?.incrementCounter("chat_answer_coverage_head_decision_total", {
+      help: "Host decision (proceed or yield the turn) after the answer coverage head verdict",
+      labels: { decision },
+    });
+  }
+
   private composeGroundedAnswerPrompt(session: PreparedSession) {
     const conversationIntentSnapshot = buildConversationIntentSnapshot({
       history: session.history,
@@ -356,9 +382,9 @@ export class RetrievalAnswerComposer {
     let declineReason: TurnDeclineReason | undefined;
 
     if (session.retrieval.contexts.length === 0) {
-      const zeroEvidenceVerdict = await coverageVerdict?.report({
-        assessment: buildDeterministicZeroEvidenceAssessment(buildContextualizedRequest(session, query)),
-      });
+      const zeroEvidenceAssessment = buildDeterministicZeroEvidenceAssessment(buildContextualizedRequest(session, query));
+      const zeroEvidenceVerdict = await coverageVerdict?.report({ assessment: zeroEvidenceAssessment });
+      this.recordCoverageHeadOutcome(zeroEvidenceAssessment, zeroEvidenceVerdict?.decision);
       if (zeroEvidenceVerdict?.decision === "yield_turn") {
         return this.yieldedPresentedAnswer();
       }
@@ -393,7 +419,9 @@ export class RetrievalAnswerComposer {
         accountId,
         "grounded",
       );
-      const headVerdict = await coverageVerdict?.report({ assessment: this.assessmentFromEnvelope(envelope) });
+      const envelopeAssessment = this.assessmentFromEnvelope(envelope);
+      const headVerdict = await coverageVerdict?.report({ assessment: envelopeAssessment });
+      this.recordCoverageHeadOutcome(envelopeAssessment, headVerdict?.decision);
       if (headVerdict?.decision === "yield_turn") {
         return this.yieldedPresentedAnswer();
       }
@@ -493,9 +521,9 @@ export class RetrievalAnswerComposer {
     let coverageHeadMs: number | undefined;
 
     if (session.retrieval.contexts.length === 0) {
-      const zeroEvidenceVerdict = await coverageVerdict?.report({
-        assessment: buildDeterministicZeroEvidenceAssessment(buildContextualizedRequest(session, query)),
-      });
+      const zeroEvidenceAssessment = buildDeterministicZeroEvidenceAssessment(buildContextualizedRequest(session, query));
+      const zeroEvidenceVerdict = await coverageVerdict?.report({ assessment: zeroEvidenceAssessment });
+      this.recordCoverageHeadOutcome(zeroEvidenceAssessment, zeroEvidenceVerdict?.decision);
       if (zeroEvidenceVerdict?.decision === "yield_turn") {
         return this.yieldedStreamResult();
       }
@@ -573,6 +601,7 @@ export class RetrievalAnswerComposer {
             ? buildAnswerCoverageAssessmentFromHead(headStatus.head)
             : buildInvalidHeadAssessment();
           const verdict = await coverageVerdict?.report({ assessment });
+          this.recordCoverageHeadOutcome(assessment, verdict?.decision);
           if (verdict?.decision === "yield_turn") {
             yieldedTurn = true;
             gateController.abort(new CoverageVerdictYieldedError());

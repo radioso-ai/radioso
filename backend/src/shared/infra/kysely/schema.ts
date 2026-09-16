@@ -306,6 +306,7 @@ export interface AnswerCoverageAssessments {
   id: string;
   interaction_evaluation_state: string | null;
   originating_turn_id: string;
+  producer: string | null;
   reason: string | null;
   request_message_id: string;
   schema_version: number;

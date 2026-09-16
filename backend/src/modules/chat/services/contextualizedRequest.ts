@@ -1,8 +1,8 @@
 import type { PreparedSession } from "./chatSessionPreparer.js";
 
 /**
- * The same bounded recent-history framing the pre-compose coverage assessor uses
- * (`chatAnswerCoverageAssessor.ts`), shared so the envelope head's deterministic
+ * The same bounded recent-history framing the coverage head recorder uses
+ * (`answerCoverageHeadRecorder.ts`), shared so the envelope head's deterministic
  * zero-evidence assessment (#1260) judges the same "what is this turn actually
  * asking" framing rather than restating its own.
  */

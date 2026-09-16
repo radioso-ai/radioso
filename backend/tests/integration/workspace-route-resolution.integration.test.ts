@@ -45,7 +45,7 @@ describe("workspace route resolution", () => {
     expect(allows).toHaveBeenCalledWith({ accountId: workspace.accountId });
   });
 
-  it("returns 404 when the signed-in user cannot access the workspace key", async () => {
+  it("returns 403 when the signed-in user has no membership on the workspace's account", async () => {
     const { app } = createTestApp();
     const ownerSession = await issueTestSession(app, `owner-${Date.now()}@example.com`);
     const outsiderSession = await issueTestSession(app, `outsider-${Date.now()}@example.com`);
@@ -55,6 +55,17 @@ describe("workspace route resolution", () => {
     const response = await request(app)
       .get(`/api/v1/workspace/resolve/${workspace.publicRouteKey}`)
       .set("Cookie", outsiderSession.cookie);
+
+    expect(response.status).toBe(403);
+  });
+
+  it("returns 404 when the workspace route key does not exist", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, `unknown-key-${Date.now()}@example.com`);
+
+    const response = await request(app)
+      .get("/api/v1/workspace/resolve/0000000000")
+      .set("Cookie", session.cookie);
 
     expect(response.status).toBe(404);
   });

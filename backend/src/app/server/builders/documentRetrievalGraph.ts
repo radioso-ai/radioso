@@ -244,6 +244,7 @@ export const buildDocumentRetrievalGraph = (input: {
     workspaceRepository: repositories.workspaceRepository,
     personalCredentialTermination: input.personalCredentialTermination,
     personalCredentialLifecycle: input.personalCredentialLifecycle,
+    metricsRegistry: infrastructure.metricsRegistry,
   });
   return {
     agentRetrievalScope,

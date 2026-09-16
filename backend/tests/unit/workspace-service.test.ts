@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { WorkspaceService } from "../../src/modules/workspace/services/workspaceService.js";
 import {
@@ -56,15 +56,46 @@ describe("workspace service", () => {
     });
   });
 
-  it("rejects inaccessible public route keys with a not found error", async () => {
+  it("rejects a route key the user cannot access with a forbidden error and counts the denial", async () => {
     const repository = new InMemoryWorkspaceRepository();
     const membershipRepository = new InMemoryAccountMembershipRepository();
-    const service = new WorkspaceService(repository, createAuditService(), membershipRepository);
+    const incrementCounter = vi.fn();
+    const service = new WorkspaceService(
+      repository,
+      createAuditService(),
+      membershipRepository,
+      undefined,
+      undefined,
+      { incrementCounter },
+    );
     const workspace = await service.create("account-1", "Private Space");
 
     await expect(service.resolveAccessibleByPublicRouteKey("user-2", workspace.publicRouteKey)).rejects.toMatchObject({
+      code: "forbidden",
+    });
+    expect(incrementCounter).toHaveBeenCalledWith(
+      "workspace_route_resolution_access_denied_total",
+      expect.objectContaining({ labels: {} }),
+    );
+  });
+
+  it("rejects an unknown route key with a not found error and does not count a denial", async () => {
+    const repository = new InMemoryWorkspaceRepository();
+    const membershipRepository = new InMemoryAccountMembershipRepository();
+    const incrementCounter = vi.fn();
+    const service = new WorkspaceService(
+      repository,
+      createAuditService(),
+      membershipRepository,
+      undefined,
+      undefined,
+      { incrementCounter },
+    );
+
+    await expect(service.resolveAccessibleByPublicRouteKey("user-1", "0000000000")).rejects.toMatchObject({
       code: "not_found",
     });
+    expect(incrementCounter).not.toHaveBeenCalled();
   });
 
   it("rename refuses to mutate a workspace belonging to a different account", async () => {

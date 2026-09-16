@@ -88,8 +88,16 @@ export const registerWorkspacePaths = (
           },
         },
       },
+      403: {
+        description: "Authenticated user has no access to the workspace",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
       404: {
-        description: "Workspace not found or inaccessible",
+        description: "Workspace not found",
         content: {
           "application/json": {
             schema: schemas.ErrorResponseSchema,

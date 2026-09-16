@@ -1,7 +1,8 @@
 import type { AccountMembershipRepositoryPort } from "../../../db/repositories/accountMembershipRepository.js";
 import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { AuditService } from "../../audit/contracts/index.js";
-import { badRequest, notFound } from "../../../shared/domain/errors.js";
+import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
+import { badRequest, forbidden, notFound } from "../../../shared/domain/errors.js";
 import { createWorkspacePublicRouteKey } from "../domain/publicRouteKey.js";
 import {
   transactionalLifecycleAuditEvent,
@@ -20,6 +21,7 @@ export class WorkspaceService {
     private readonly accountMembershipRepository?: AccountMembershipRepositoryPort,
     private readonly personalCredentialTermination?: WorkspacePersonalCredentialTerminationPort,
     private readonly personalCredentialLifecycle?: Pick<PersonalCredentialLifecyclePort, "deleteWorkspace">,
+    private readonly metricsRegistry?: Pick<MetricsRegistry, "incrementCounter"> | null,
   ) {}
 
   private async createWorkspaceWithPublicRouteKey(accountId: string, name: string): Promise<WorkspaceRecord> {
@@ -92,13 +94,17 @@ export class WorkspaceService {
 
   async resolveAccessibleByPublicRouteKey(userId: string, publicRouteKey: string): Promise<WorkspaceRecord> {
     const workspace = await this.findByPublicRouteKey(publicRouteKey);
-    if (!workspace || !this.accountMembershipRepository) {
+    if (!workspace) {
       throw notFound("Workspace not found");
     }
 
-    const membership = await this.accountMembershipRepository.findActiveByAccountAndUser(workspace.accountId, userId);
+    const membership = await this.accountMembershipRepository?.findActiveByAccountAndUser(workspace.accountId, userId);
     if (!membership) {
-      throw notFound("Workspace not found");
+      this.metricsRegistry?.incrementCounter("workspace_route_resolution_access_denied_total", {
+        help: "Workspace public route key resolutions denied for lack of an active account membership",
+        labels: {},
+      });
+      throw forbidden("You do not have access to this workspace");
     }
 
     return workspace;

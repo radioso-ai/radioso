@@ -199,6 +199,7 @@ export const buildWorkspaceServices = (input: {
   personalCredentialTermination?: import("../../../modules/workspace/services/workspaceService.js").WorkspacePersonalCredentialTerminationPort;
   personalCredentialLifecycle?: import("../../../modules/machineAccess/public.js").PersonalCredentialLifecyclePort;
   workspaceRepository: WorkspaceRepository;
+  metricsRegistry?: Pick<MetricsRegistry, "incrementCounter"> | null;
 }) => {
   const workspaceService = new WorkspaceService(
     input.workspaceRepository,
@@ -206,6 +207,7 @@ export const buildWorkspaceServices = (input: {
     input.accountMembershipRepository,
     input.personalCredentialTermination,
     input.personalCredentialLifecycle,
+    input.metricsRegistry,
   );
   return {
     workspaceService,

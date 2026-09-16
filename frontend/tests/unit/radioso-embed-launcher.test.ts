@@ -1052,7 +1052,10 @@ describe('radioso embed launcher', () => {
   })
 
   describe('identity provider mode', () => {
-    const mountLauncher = async () => {
+    // sessionIds lets a test observe a second, distinct publicSessionId on a
+    // re-bootstrap (each call to the session endpoint consumes the next
+    // entry, repeating the last one once exhausted).
+    const mountLauncher = async ({ sessionIds = ['public-session-id'] }: { sessionIds?: string[] } = {}) => {
       const launcherSource = await readFile(join(process.cwd(), 'lib/radioso-embed-launcher.js'), 'utf8')
       const script = new FakeElement('script')
       script.src = 'https://app.example.com/radioso-embed.js'
@@ -1074,14 +1077,17 @@ describe('radioso embed launcher', () => {
       }
       const sessionStorage = { getItem: vi.fn(() => null), setItem: vi.fn(), removeItem: vi.fn() }
       const sessionUrl = (url: unknown) => String(url).includes('/api/embed/session/')
+      let sessionCallCount = 0
       const fetch = vi.fn(async (url: unknown) => {
         if (sessionUrl(url)) {
+          const publicSessionId = sessionIds[Math.min(sessionCallCount, sessionIds.length - 1)]
+          sessionCallCount += 1
           return {
             ok: true,
             json: async () => ({
               publicChatToken: 'public-chat-token',
               publicSessionToken: 'public-session-token',
-              publicSessionId: 'public-session-id',
+              publicSessionId,
               resumeToken: 'resume-token',
               resumeExpiresAt: new Date(Date.now() + 60_000).toISOString(),
               workspaceName: 'Acme',
@@ -1238,6 +1244,76 @@ describe('radioso embed launcher', () => {
         { type: 'radioso:embed:identity', requestId: 'req-3', signedIdentity: null },
         'https://app.example.com',
       )
+    })
+
+    it('drops a stale provider reply if the session resets before the provider resolves', async () => {
+      const { window, postMessage, dispatchFromFrame, openWidget } = await mountLauncher()
+      let resolveProvider: (token: string) => void = () => {}
+      const provider = vi.fn(() => new Promise<string>((resolve) => { resolveProvider = resolve }))
+      window.Radioso.identify(provider)
+
+      await openWidget()
+
+      postMessage.mockClear()
+      dispatchFromFrame({ type: 'radioso:embed:identity-request', requestId: 'req-stale-reset' })
+      for (let index = 0; index < 20; index += 1) {
+        await Promise.resolve()
+      }
+      expect(provider).toHaveBeenCalledTimes(1)
+
+      // The session resets (e.g. the visitor started a new chat) while the
+      // provider call is still in flight.
+      dispatchFromFrame({ type: 'radioso:embed:reset-session' })
+
+      resolveProvider('late-token')
+      for (let index = 0; index < 20; index += 1) {
+        await Promise.resolve()
+      }
+
+      const staleReplies = postMessage.mock.calls.filter(
+        ([message]) => message.type === 'radioso:embed:identity' && message.requestId === 'req-stale-reset',
+      )
+      expect(staleReplies).toHaveLength(0)
+    })
+
+    it('drops a stale provider reply if the session is re-bootstrapped before the provider resolves', async () => {
+      const { window, postMessage, dispatchFromFrame, openWidget } = await mountLauncher({
+        sessionIds: ['public-session-id', 'public-session-id-2'],
+      })
+      let resolveProvider: (token: string) => void = () => {}
+      const provider = vi.fn(() => new Promise<string>((resolve) => { resolveProvider = resolve }))
+      window.Radioso.identify(provider)
+
+      await openWidget()
+
+      postMessage.mockClear()
+      dispatchFromFrame({ type: 'radioso:embed:identity-request', requestId: 'req-stale-rebootstrap' })
+      for (let index = 0; index < 20; index += 1) {
+        await Promise.resolve()
+      }
+      expect(provider).toHaveBeenCalledTimes(1)
+
+      // A fresh READY (bootstrapPromise already settled from openWidget) mints
+      // a new session id before the provider call from the old session settles.
+      dispatchFromFrame({ type: 'radioso:embed:ready' })
+      for (let index = 0; index < 20; index += 1) {
+        await Promise.resolve()
+      }
+
+      const sessionMessages = postMessage.mock.calls
+        .map(([message]) => message)
+        .filter((message) => message.type === 'radioso:embed:session')
+      expect(sessionMessages.at(-1)?.session).toMatchObject({ publicSessionId: 'public-session-id-2' })
+
+      resolveProvider('late-token')
+      for (let index = 0; index < 20; index += 1) {
+        await Promise.resolve()
+      }
+
+      const staleReplies = postMessage.mock.calls.filter(
+        ([message]) => message.type === 'radioso:embed:identity' && message.requestId === 'req-stale-rebootstrap',
+      )
+      expect(staleReplies).toHaveLength(0)
     })
   })
 

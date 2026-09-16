@@ -58,12 +58,6 @@ export interface ChatWorkbenchProps {
   agentId?: string
   assistantName?: string | null
   assistantLinkUtmEnabled?: boolean
-  /**
-   * Which chrome to render around the same chat body: `page` (default) wraps it in
-   * the full-screen {@link DashboardPage}; `drawer` renders a header/body/footer column
-   * meant to fill a {@link SheetContent} (see {@link ChatWorkbenchDrawer}).
-   */
-  shell?: 'page' | 'drawer'
   /** Opens a cited document. Optional so the workbench can run in hosts without a document surface. */
   onOpenDocument?: (documentId: string) => void
   /** Drives the empty-state copy. Optional; defaults to a neutral "ready" state. */
@@ -101,24 +95,22 @@ function resolveDiagnosticsAssistant(messages: ChatMessage[], selectedId: string
 /**
  * Self-contained chat workbench: the live test chat plus a copyable conversation
  * id and a selectable turn inspector that slides out with the same diagnostics
- * the activity history drawer shows. Owns its own layout so it can render as the
- * dashboard page (default) or inside a drawer/sheet elsewhere.
+ * the activity history drawer shows.
  */
 export function ChatWorkbench({
   accountId,
   agentId,
   assistantName,
   assistantLinkUtmEnabled,
-  shell = 'page',
   onOpenDocument,
   onboarding,
   adoptConversationId,
   previewRoutineIds,
 }: ChatWorkbenchProps) {
   const router = useRouter()
-  // Page-context props are optional so the workbench can be hosted in a drawer without
-  // a document surface or onboarding data. Missing onboarding reads as a neutral "ready"
-  // workspace (no loading gate, no upload prompt).
+  // Page-context props are optional so the workbench can be hosted without a document
+  // surface or onboarding data. Missing onboarding reads as a neutral "ready" workspace
+  // (no loading gate, no upload prompt).
   const onboardingIsLoading = onboarding?.isLoading ?? false
   const hasPendingDocuments = onboarding?.hasPendingDocuments ?? false
   const hasReadyDocuments = onboarding?.hasReadyDocuments ?? true
@@ -511,31 +503,15 @@ export function ChatWorkbench({
 
   return (
     <>
-      {shell === 'drawer' ? (
-        <div className="flex h-full min-h-0 flex-col">
-          <div className="sticky top-0 z-20 flex min-h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-background/95 px-5 py-2.5 pr-12 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-            <div className="min-w-0">
-              <SheetTitle className="text-base font-medium leading-none">{title}</SheetTitle>
-              <p className="mt-1 text-sm text-muted-foreground">{description}</p>
-            </div>
-            {headerActions}
-          </div>
-          <div className="relative min-h-0 flex-1 overflow-y-auto p-5">{bodyContent}</div>
-          {footerContent ? (
-            <div className="relative z-20 shrink-0 border-t border-border bg-background p-4">{footerContent}</div>
-          ) : null}
-        </div>
-      ) : (
-        <DashboardPage
-          title={title}
-          description={description}
-          actions={headerActions}
-          footerClassName="relative"
-          footer={footerContent}
-        >
-          {bodyContent}
-        </DashboardPage>
-      )}
+      <DashboardPage
+        title={title}
+        description={description}
+        actions={headerActions}
+        footerClassName="relative"
+        footer={footerContent}
+      >
+        {bodyContent}
+      </DashboardPage>
 
       <Sheet open={inspectorOpen} onOpenChange={(open) => { if (!open) closeInspector() }}>
         <SheetContent side="right" className="w-[95vw] gap-0 p-0 sm:!max-w-[680px]">

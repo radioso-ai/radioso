@@ -24,7 +24,10 @@ import { buildAssistantIdentity } from "@/components/chat/assistant-identity";
 import { TestExecutionHistoryView } from "@/components/dashboard/test-execution-history-view";
 import { TestSessionsView } from "@/components/dashboard/workbench/test-sessions-view";
 import { TurnFlowOverlay } from "@/components/dashboard/turn-flow-overlay";
-import { TurnDiagnosticsPanel } from "@/components/dashboard/turn-inspector/turn-diagnostics-panel";
+import {
+  CompactIdField,
+  TurnDiagnosticsPanel,
+} from "@/components/dashboard/turn-inspector/turn-diagnostics-panel";
 import { getPrimaryLeafTrace } from "@/lib/turn-trace";
 import {
   Dialog,
@@ -77,6 +80,10 @@ import {
 import { evalsApi, type EvalCaseListItem } from "@/lib/api-eval";
 import { contextVariablesApi } from "@/lib/api-context-variables";
 import { validateTestValueInputs } from "@/lib/agent-revision-test-values";
+import {
+  assembleTestableRevisions,
+  candidateIsTestable,
+} from "@/lib/agent-revision-testable-revisions";
 import { isAgentDraftDirty, saveAgentDraft } from "@/lib/agent-draft-save-port";
 import { DEFAULT_WEBSITE_EMBED_COPY } from "@/lib/embed-widget";
 import {
@@ -101,6 +108,9 @@ const revisionDisplayLabel = (revision: AgentRevisionSummary): string => {
     return `Draft · ${new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(revision.createdAt))}`;
   return "Legacy revision";
 };
+
+const errorMessage = (cause: unknown, fallback: string): string =>
+  cause instanceof Error ? cause.message : fallback;
 
 const executionStateLabel: Record<ExecutionState, string> = {
   missing: "Not run",
@@ -459,43 +469,105 @@ export function AgentRevisionTestChat({
     setError(null);
     try {
       const next = await agentRevisionsApi.getState(agentId);
-      const [published, candidate, evalCases, catalog] = await Promise.all([
-        agentRevisionsApi.listPublished(agentId),
-        agentRevisionsApi.createCandidate(agentId, next.draft.generation),
-        evalsApi.listCases(),
-        contextVariablesApi.listCatalog(),
-      ]);
-      const all = [
-        candidate.candidate,
-        ...published.revisions.filter(
-          (revision) => revision.id !== candidate.candidate.id,
-        ),
-      ];
+      // The state and the published list are the floor; without them there is
+      // nothing to test. The candidate, eval cases, and value catalog degrade:
+      // a candidate the backend refuses (a draft routine that cannot be
+      // released, a draft conflict) still leaves the published revisions
+      // testable, with the refusal shown where the operator can act on it.
+      const [published, [candidateResult, casesResult, catalogResult]] =
+        await Promise.all([
+          agentRevisionsApi.listPublished(agentId),
+          Promise.allSettled([
+            candidateIsTestable(next)
+              ? agentRevisionsApi.createCandidate(agentId, next.draft.generation)
+              : Promise.resolve(null),
+            evalsApi.listCases(),
+            contextVariablesApi.listCatalog(),
+          ]),
+        ]);
       if (loadRequestGeneration.current !== requestGeneration) return;
+      const assembled = assembleTestableRevisions({
+        state: next,
+        published: published.revisions,
+        candidate:
+          candidateResult.status === "fulfilled"
+            ? (candidateResult.value?.candidate ?? null)
+            : null,
+      });
+      if (!assembled.defaultSelectedId)
+        throw candidateResult.status === "rejected"
+          ? candidateResult.reason
+          : new Error("No revision is available to test.");
+      const degraded = [
+        candidateResult.status === "rejected"
+          ? errorMessage(candidateResult.reason, "The draft candidate is unavailable.")
+          : null,
+        casesResult.status === "rejected"
+          ? errorMessage(casesResult.reason, "Eval cases are unavailable.")
+          : null,
+        catalogResult.status === "rejected"
+          ? errorMessage(catalogResult.reason, "Context values are unavailable.")
+          : null,
+      ].filter((message): message is string => message !== null);
       setState(next);
-      setRevisions(all);
-      setSelected([candidate.candidate.id]);
-      setCases(evalCases.cases);
-      setContextVariables(catalog.contextVariables);
+      setRevisions(assembled.revisions);
+      setSelected([assembled.defaultSelectedId]);
+      setCases(casesResult.status === "fulfilled" ? casesResult.value.cases : []);
+      setContextVariables(
+        catalogResult.status === "fulfilled" ? catalogResult.value.contextVariables : [],
+      );
+      setError(degraded.length ? degraded.join("; ") : null);
     } catch (cause) {
-      if (loadRequestGeneration.current === requestGeneration)
-        setError(
-          cause instanceof Error
-            ? cause.message
-            : "Revision testing is unavailable.",
-        );
+      if (loadRequestGeneration.current === requestGeneration) {
+        // Do not clear `state` here. This catch fires for the first, explicit load same as
+        // for a background refresh the operator never asked for (stale-draft check on mount,
+        // the `radioso:agent-draft-saved` listener) — and this component remounts fresh per
+        // agent (see the `key={selectedAgentId}` at the call site), so `state` starts at null
+        // and only this call's own success below ever populates it. Leaving it alone therefore
+        // already does the right thing either way: a first-load failure stays failed closed
+        // (`state` was never set), while a failed background refresh keeps the working session
+        // on screen instead of discarding it for an inline error banner.
+        setError(errorMessage(cause, "Revision testing is unavailable."));
+      }
     } finally {
       if (loadRequestGeneration.current === requestGeneration)
         setLoading(false);
     }
   }, [agentId, clearActiveTest]);
+  const refreshForSavedDraft = useCallback(() => {
+    clearActiveTest(
+      "Saved draft selected. Start a fresh private test for this revision.",
+    );
+    void load();
+  }, [clearActiveTest, load]);
   useEffect(() => {
-    if (readAgentRevisionTestChatSession(sessionKey)?.state) return;
-    const timeout = window.setTimeout(() => {
-      void load();
-    }, 0);
-    return () => window.clearTimeout(timeout);
-  }, [load, sessionKey]);
+    const cachedState = readAgentRevisionTestChatSession(sessionKey)?.state;
+    if (!cachedState) {
+      const timeout = window.setTimeout(() => {
+        void load();
+      }, 0);
+      return () => window.clearTimeout(timeout);
+    }
+    // A cached session can predate a draft save that happened while this tab
+    // was unmounted (routine autosaves announce themselves only to a mounted
+    // chat), and the test-execution route does not check the draft generation.
+    // One GET at mount catches a stale candidate before the operator sends to it.
+    let active = true;
+    const loadGeneration = loadRequestGeneration.current;
+    void agentRevisionsApi
+      .getState(agentId)
+      .then((next) => {
+        if (!active || loadRequestGeneration.current !== loadGeneration) return;
+        if (next.draft.generation !== cachedState.draft.generation)
+          refreshForSavedDraft();
+      })
+      .catch(() => {
+        // The cached session stays usable; the next draft-save event reloads it.
+      });
+    return () => {
+      active = false;
+    };
+  }, [agentId, load, refreshForSavedDraft, sessionKey]);
   useEffect(() => {
     let active = true;
     if (!selected.length)
@@ -534,22 +606,15 @@ export function AgentRevisionTestChat({
     };
   }, [agentId, selected]);
   useEffect(() => {
-    const refreshForSavedDraft = (event: Event) => {
+    const onDraftSaved = (event: Event) => {
       const detail = (event as CustomEvent<{ agentId?: string }>).detail;
-      if (detail?.agentId === agentId && !savingDraftForSend.current) {
-        clearActiveTest(
-          "Saved draft selected. Start a fresh private test for this revision.",
-        );
-        void load();
-      }
+      if (detail?.agentId === agentId && !savingDraftForSend.current)
+        refreshForSavedDraft();
     };
-    window.addEventListener("radioso:agent-draft-saved", refreshForSavedDraft);
+    window.addEventListener("radioso:agent-draft-saved", onDraftSaved);
     return () =>
-      window.removeEventListener(
-        "radioso:agent-draft-saved",
-        refreshForSavedDraft,
-      );
-  }, [agentId, load, clearActiveTest]);
+      window.removeEventListener("radioso:agent-draft-saved", onDraftSaved);
+  }, [agentId, refreshForSavedDraft]);
   useEffect(() => {
     Object.entries(threadScrollContainers.current).forEach(([key, container]) => {
       if (container && followLatestMessage.current[key] !== false) {
@@ -692,22 +757,28 @@ export function AgentRevisionTestChat({
     const next = await agentRevisionsApi.getState(agentId);
     const [published, candidate] = await Promise.all([
       agentRevisionsApi.listPublished(agentId),
-      agentRevisionsApi.createCandidate(agentId, next.draft.generation),
+      candidateIsTestable(next)
+        ? agentRevisionsApi.createCandidate(agentId, next.draft.generation)
+        : Promise.resolve(null),
     ]);
     if (testRequestGeneration.current !== requestGeneration) return null;
+    const assembled = assembleTestableRevisions({
+      state: next,
+      published: published.revisions,
+      candidate: candidate?.candidate ?? null,
+    });
     const oldCandidateId = revisions.find(
       (revision) => revision.kind === "candidate",
     )?.id;
+    // A candidate selected before the save follows the draft: onto the new
+    // candidate, or onto the live revision when the saved draft has no changes.
     const nextSelected = previousSelection.map((revisionId) =>
-      revisionId === oldCandidateId ? candidate.candidate.id : revisionId,
+      revisionId === oldCandidateId
+        ? (assembled.candidateId ?? assembled.defaultSelectedId ?? revisionId)
+        : revisionId,
     );
     setState(next);
-    setRevisions([
-      candidate.candidate,
-      ...published.revisions.filter(
-        (revision) => revision.id !== candidate.candidate.id,
-      ),
-    ]);
+    setRevisions(assembled.revisions);
     setSelected(nextSelected);
     setRevisionDetails({});
     return { state: next, selected: nextSelected };
@@ -1157,7 +1228,7 @@ export function AgentRevisionTestChat({
     return (
       <div className="m-6 rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm">
         <AlertCircle className="mr-2 inline h-4 w-4" />
-        Private revision testing is unavailable. No live chat is started.{" "}
+        Test Chat is unavailable{error ? `: ${error}` : "."}{" "}
         <Button variant="link" onClick={() => void load()}>
           Retry
         </Button>
@@ -1174,6 +1245,22 @@ export function AgentRevisionTestChat({
   };
   const revisionTriggerLabel = (revision: AgentRevisionSummary | undefined) =>
     revision?.kind === "candidate" ? "Draft" : revision ? revisionDisplayLabel(revision) : "Choose revision";
+  const sideForIndex = (index: number) =>
+    execution
+      ? Object.values(execution.sides).find(
+          (candidate) => candidate.revisionId === selected[index],
+        )
+      : undefined;
+  // The side's conversation exists from the moment the execution starts, so the
+  // id is copyable before the first reply lands.
+  const conversationIdChip = (index: number) => {
+    const conversationId = sideForIndex(index)?.conversationId;
+    return conversationId ? (
+      <div className="min-w-0">
+        <CompactIdField label="Conversation" value={conversationId} />
+      </div>
+    ) : null;
+  };
   const revisionSelector = (index: number, className?: string) => {
     const selectedRevision = revisions.find((revision) => revision.id === selected[index]);
     return (
@@ -1383,6 +1470,7 @@ export function AgentRevisionTestChat({
                     <Label className="sr-only" htmlFor={`revision-selector-${index}`}>
                       Select version for {revisionTriggerLabel(revisions.find((revision) => revision.id === selected[index]))} test results
                     </Label>
+                    {conversationIdChip(index)}
                     <div className={mode === "single" ? "ml-auto flex items-center gap-2" : "flex items-center gap-2"}>
                       {revisionSelector(index, "h-8 border-border/70 bg-background/70 px-2 text-sm shadow-none")}
                       {mode === "single" ? (
@@ -1403,7 +1491,7 @@ export function AgentRevisionTestChat({
                           className="h-8 w-8 shrink-0"
                           aria-label={`Close ${revisionTriggerLabel(revisions.find((revision) => revision.id === selected[index]))}`}
                           title={isSending || isStarting || execution?.activeTurnId ? "Wait for the current response before closing this version." : "Close this version"}
-                          disabled={isSending || isStarting || Boolean(execution?.activeTurnId) || Boolean(Object.values(execution?.sides ?? {}).find((candidate) => candidate.revisionId === selected[index])?.state === "failed")}
+                          disabled={isSending || isStarting || Boolean(execution?.activeTurnId) || sideForIndex(index)?.state === "failed"}
                           onClick={() => void closeComparisonSide(index)}
                         >
                           <X className="h-4 w-4" aria-hidden="true" />
@@ -1412,11 +1500,7 @@ export function AgentRevisionTestChat({
                     </div>
                   </div>
                   {(() => {
-                    const side =
-                      execution &&
-                      Object.values(execution.sides).find(
-                        (candidate) => candidate.revisionId === selected[index],
-                      );
+                    const side = sideForIndex(index);
                     const messages: ChatThreadMessage[] =
                       side?.messages.map((item) => ({
                         id: item.id,

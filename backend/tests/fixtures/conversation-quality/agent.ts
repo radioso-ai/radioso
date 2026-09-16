@@ -7,7 +7,7 @@ export const CQ_WORKSPACE_ID = "cq-workspace";
 
 /**
  * The single seed agent every case runs against: retrieval enabled over the whole
- * corpus, carrying the three seed directives. Its persona is deliberately plain so that
+ * corpus, carrying the four seed directives. Its persona is deliberately plain so that
  * observed tone/precision comes from the directives (and grounding from the corpus),
  * which is what the cases are measuring.
  */

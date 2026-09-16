@@ -476,6 +476,15 @@ export class DefaultConversationEngine implements ConversationEngine {
       if (routineResult) {
         return mergePostEvidenceRoutineResult(input, prepared, routineResult);
       }
+      // The composer claims it yielded the turn, but the sink never approved a
+      // yield — a composer contract violation. Record it rather than silently
+      // falling through to a normal turn with whatever response the composer gave.
+      prepared.stages.push(stage({
+        id: "answer_coverage_yield_without_routine",
+        kind: "answer_coverage_yield_without_routine",
+        status: "fallback",
+        outputs: { reason: "composer_yielded_without_routine_result" },
+      }));
     }
 
     const responseEvent = createResponseEvent(input.sessionId, response);
@@ -560,6 +569,15 @@ export class DefaultConversationEngine implements ConversationEngine {
         yield { type: "final", result };
         return;
       }
+      // The composer claims it yielded the turn, but the sink never approved a
+      // yield — a composer contract violation. Record it rather than silently
+      // falling through to a normal turn with whatever response the composer gave.
+      prepared.stages.push(stage({
+        id: "answer_coverage_yield_without_routine",
+        kind: "answer_coverage_yield_without_routine",
+        status: "fallback",
+        outputs: { reason: "composer_yielded_without_routine_result" },
+      }));
     }
 
     const responseEvent = createResponseEvent(input.sessionId, response);
@@ -589,6 +607,7 @@ export { resumeAwaitingDecision } from "./awaitingDecision.js";
 export {
   coverageCriteriaMatches,
   DefaultSteeringResolver,
+  directiveMatchToSteering,
   isDirectiveEligibleForTurn,
   steeringForKnownVerdict,
 } from "./steering.js";

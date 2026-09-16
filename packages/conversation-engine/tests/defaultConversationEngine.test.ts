@@ -1363,6 +1363,47 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
     }));
   });
 
+  it("falls back to proceed with a fallback stage when the post-evidence routine store rejects outside the activation try/catch (#1260 F2)", async () => {
+    const input = withRoutine({
+      resume: vi.fn(async () => ({ response: { answer: "unused" }, nextState: activeState })),
+    }, null);
+    input.routineStore = {
+      // First call is the pre-evidence pass in `attemptRoutine`; the second is the
+      // sink's own post-evidence `loadActive`, which must not escape uncaught.
+      loadActive: vi.fn()
+        .mockResolvedValueOnce(null)
+        .mockRejectedValueOnce(new Error("routine store unavailable")),
+      save: vi.fn(async () => {}),
+      clear: vi.fn(async () => {}),
+    };
+    const record = vi.fn(async () => undefined);
+    input.composer = composerReporting({
+      availability: "assessed",
+      coverage: "unanswered",
+      reason: "insufficient_evidence",
+      unresolvedRequest: "Delivery date",
+      schemaVersion: 1,
+      producer: "answer_head",
+    });
+    input.coverageRoutineActivator = {
+      evaluateCandidates: () => [{ routineId: "support", decision: "candidate", reasonCode: "coverage_criteria_candidate" }],
+      activate: vi.fn(async () => ({ kind: "activate", routineId: "support" })),
+    };
+    input.coverageReactionRecorder = { record };
+
+    const result = await new DefaultConversationEngine().processTurn(input);
+
+    expect(result.response.answer).toBe("Grounded answer.");
+    expect(input.routineRunner?.resume).not.toHaveBeenCalled();
+    expect(record).not.toHaveBeenCalled();
+    expect(result.trace.stages).toContainEqual(expect.objectContaining({
+      id: "answer_coverage_routine_activation",
+      kind: "answer_coverage_routine_activation",
+      status: "fallback",
+      outputs: expect.objectContaining({ availability: "failed" }),
+    }));
+  });
+
   it("records an evaluated skipped coverage routine instead of fabricating a no-match", async () => {
     const input = withRoutine({
       resume: vi.fn(async () => ({ response: { answer: "unused" }, nextState: activeState })),
@@ -1959,5 +2000,50 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
     const result = await new DefaultConversationEngine().processTurn(input);
 
     expect(result.actions).toEqual([{ type: "contact.send", payload: { email: "a@b.c", message: "hi" } }]);
+  });
+
+  it("emits a fallback stage instead of silently falling through when compose reports yielded without a sink-produced routine result (#1260 F12)", async () => {
+    const input = withRoutine({ resume: vi.fn() }, null);
+    input.composer = {
+      async compose({ coverageVerdict }) {
+        // The sink never approves a yield here (`invalid` availability always
+        // proceeds), yet the composer claims `yielded: true` anyway — a composer
+        // contract violation the engine must not silently paper over.
+        await coverageVerdict?.report({ assessment: { availability: "invalid" } });
+        return { answer: "", yielded: true };
+      },
+    };
+
+    const result = await new DefaultConversationEngine().processTurn(input);
+
+    expect(result.trace.stages).toContainEqual(expect.objectContaining({
+      id: "answer_coverage_yield_without_routine",
+      status: "fallback",
+    }));
+  });
+
+  it("emits a fallback stage instead of silently falling through on the streamed path when compose reports yielded without a sink-produced routine result (#1260 F12)", async () => {
+    const base = withRoutine({ resume: vi.fn() }, null);
+    const input: ProcessTurnStreamInput = {
+      ...base,
+      composer: {
+        async compose() { throw new Error("stream expected"); },
+        async *stream({ coverageVerdict }) {
+          await coverageVerdict?.report({ assessment: { availability: "invalid" } });
+          yield { type: "final", response: { answer: "", yielded: true } };
+        },
+      },
+    };
+
+    const events: ProcessTurnStreamEvent[] = [];
+    for await (const event of new DefaultConversationEngine().processTurnStream(input)) {
+      events.push(event);
+    }
+    const final = events.find((event): event is Extract<ProcessTurnStreamEvent, { type: "final" }> => event.type === "final");
+
+    expect(final?.result.trace.stages).toContainEqual(expect.objectContaining({
+      id: "answer_coverage_yield_without_routine",
+      status: "fallback",
+    }));
   });
 });

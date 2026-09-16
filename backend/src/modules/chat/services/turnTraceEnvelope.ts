@@ -57,7 +57,7 @@ export interface TurnTraceOpenTelemetryCorrelation {
   sampled: boolean;
 }
 
-export interface TurnTraceOpenTelemetryCorrelationReader {
+interface TurnTraceOpenTelemetryCorrelationReader {
   getActiveOpenTelemetryCorrelation(): TurnTraceOpenTelemetryCorrelation | undefined;
 }
 
@@ -284,9 +284,6 @@ export const buildTurnTraceEnvelope = (input: {
         ...(input.summary ?? {}),
         ...buildTurnTraceSummary(spine, input.modelCallTrace
           ? {
-              totalLlmCalls: input.modelCallTrace.totalCallCount,
-              serialLlmDepth: input.modelCallTrace.serialLlmDepth,
-              totalModelTimeMs: input.modelCallTrace.totalModelTimeMs,
               totalTurnWallClockMs: Math.max(
                 0,
                 (input.completedAtMs ?? Date.now()) - input.modelCallTrace.startedAtMs,

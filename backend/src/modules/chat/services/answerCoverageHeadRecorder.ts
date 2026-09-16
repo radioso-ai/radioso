@@ -91,16 +91,17 @@ export class AnswerCoverageHeadRecorder {
     onRecorded?: (reaction: Parameters<ConversationCoverageReactionRecorder["record"]>[0]) => void;
   }): ConversationCoverageReactionRecorder | undefined {
     if (!this.repository) return undefined;
+    const repository = this.repository;
     return {
       record: async (reaction) => {
         const session = input.getSession();
-        const assessment = await this.repository!.findByRequestMessageId({
+        const assessment = await repository.findByRequestMessageId({
           workspaceId: session.agent.workspaceId,
           requestMessageId: session.userMessage.id,
         });
         if (!assessment) return;
         for (const [index, entry] of reaction.reactions.entries()) {
-          await this.repository!.recordReaction({
+          await repository.recordReaction({
             assessmentId: assessment.id,
             workspaceId: session.agent.workspaceId,
             conversationId: session.conversation.id,
@@ -115,7 +116,7 @@ export class AnswerCoverageHeadRecorder {
             reasonCode: entry.reasonCode,
           });
         }
-        await this.repository!.markInteractionEvaluated({
+        await repository.markInteractionEvaluated({
           workspaceId: session.agent.workspaceId,
           assessmentId: assessment.id,
         });

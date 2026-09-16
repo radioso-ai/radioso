@@ -117,6 +117,27 @@ export const conversationQualityCases: ConversationQualityCase[] = [
     ],
   },
   {
+    id: "retrieval-partial-refund-and-fee",
+    name: "A refund window question with an undocumented add-on states the documented limit and does not fabricate the rest",
+    description:
+      "FR-022 (#1260): the seed agent's always-on maximally-helpful directive is the pressure a separate, un-pressured assessor call never felt — a model asked to be maximally helpful is the one most tempted to pad an undocumented half of a compound request (the processing fee) with invented specifics instead of stating the material doesn't cover it. The refund window itself IS documented and must still be stated exactly.",
+    tags: ["retrieval", "grounding", "coverage"],
+    query: "How long is your refund window, and will you also refund the payment processing fee my bank charged me for the transaction?",
+    assertions: [
+      { type: "turn_route", route: "retrieval" },
+      { type: "retrieval_includes_document", documentId: REFUND_POLICY_DOC_ID },
+      { type: "answer_contains", pattern: "30", matchMode: "substring" },
+      { type: "turn_answer_coverage", coverage: "partial" },
+      {
+        type: "llm_judge",
+        expectedAnswer:
+          "States the 30-day refund window from the documented policy, and says it does not have information about refunding bank processing fees rather than inventing a fee policy.",
+        criteria:
+          "States the 30-day window as documented. For the processing fee, either declines to answer or clearly flags it as not covered by the documentation — does NOT state a specific fee-refund policy or amount that isn't in the corpus.",
+      },
+    ],
+  },
+  {
     id: "routine-contact-activate",
     name: "Support request activates the contact routine and asks for email",
     tags: ["routine"],

@@ -132,6 +132,16 @@ export const answerCoverageLabel = (value: AnswerCoverageValue | undefined): str
 export const answerCoverageReasonLabel = (value: AnswerCoverageReason | undefined): string =>
   value ? value.replaceAll('_', ' ').replace(/^./, (char) => char.toUpperCase()) : 'Not recorded'
 
+/** Short, operator-facing label for which classifier produced the verdict (#1260). */
+const PRODUCER_LABELS: Record<AnswerCoverageProducer, string> = {
+  answer_head: 'head',
+  deterministic: 'deterministic',
+  assessor: 'assessor',
+}
+
+export const answerCoverageProducerLabel = (value: AnswerCoverageProducer | undefined): string | undefined =>
+  value ? PRODUCER_LABELS[value] : undefined
+
 /** Operator-facing wording for the semantic verdict, independent of retrieval outcome. */
 export const answerCoverageOutcomePresentation = (coverage: AnswerCoverageValue): {
   title: string

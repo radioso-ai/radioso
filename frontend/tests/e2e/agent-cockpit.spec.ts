@@ -1091,6 +1091,14 @@ test('opens a trace-backed Test Chat reply in debug before opening its flow', as
   await expect(page.getByText('Direct reply', { exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: 'Flow', exact: true }).click()
   await expect(page.getByText('Turn flow', { exact: true })).toBeVisible()
+
+  // The coverage verdict head (#1260) is its own Flow node, sequenced ahead of
+  // the outcome. A positional click can miss under the minimap overlay, so
+  // dispatch directly on the node element (React Flow's onNodeClick listener).
+  await page.getByTestId('rf__node-spine:answer_coverage_head').dispatchEvent('click')
+  const stageDetail = page.getByTestId('turn-flow-stage-detail')
+  await expect(stageDetail.getByText('Coverage verdict', { exact: true })).toBeVisible()
+  await expect(stageDetail.getByTestId('answer-coverage-diagnostics')).toContainText('Answered')
 })
 
 test('captures the populated comparison cockpit at desktop and mobile widths', async ({ page }) => {

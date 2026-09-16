@@ -43,7 +43,7 @@ export const mapAnswerCoverageRow = (row: AnswerCoverageRow): AnswerCoverageReco
     createdAt: new Date(row.created_at),
   };
   if (row.availability !== "assessed") {
-    return { ...base, availability: row.availability };
+    return { ...base, availability: row.availability, ...(row.producer ? { producer: row.producer } : {}) };
   }
   if (!row.coverage || !row.reason) {
     throw new Error("answer_coverage_assessment_invalid_assessed_row");

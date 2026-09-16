@@ -6,6 +6,12 @@ import type { PreparedSession } from "../../../src/modules/chat/services/chatSes
 import type { RetrievalCoverageVerdictSink } from "../../../src/modules/chat/contracts/answerCoverage.js";
 import type { AnswerCoverageAssessment } from "../../../src/modules/answerCoverage/public.js";
 import type { ChatGatewayInput } from "../../../src/modules/chat/contracts/chatGateway.js";
+import { setTraceAttributes } from "../../../src/shared/observability/tracing/operations.js";
+
+vi.mock("../../../src/shared/observability/tracing/operations.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../src/shared/observability/tracing/operations.js")>();
+  return { ...actual, setTraceAttributes: vi.fn() };
+});
 
 const session = (overrides: Partial<PreparedSession> = {}): PreparedSession => ({
   agent: { id: "agent-1", workspaceId: "workspace-1", name: "Agent", chatModelOverride: null },
@@ -117,6 +123,25 @@ describe("AnswerCoverageShadowAssessor", () => {
     expect(registry.incrementCounter).toHaveBeenCalledWith("answer_coverage_shadow_agreement_total", expect.objectContaining({
       labels: { head_classification: "unanswered_insufficient_evidence", shadow_classification: "shadow_failed" },
     }));
+  });
+
+  it("swallows a failure recording agreement and flags it in the trace, instead of an unhandled rejection (#1260 F11)", async () => {
+    const gateway = gatewayReturning("unanswered_insufficient_evidence");
+    const registry = { incrementCounter: vi.fn(() => { throw new Error("metrics backend unavailable"); }) };
+    const assessor = new AnswerCoverageShadowAssessor(gateway, true, registry);
+    const inner = fakeSink("proceed");
+
+    const wrapped = assessor.wrapVerdictSink({ getSession: () => session() }, inner);
+    // The rejection this provokes is on a detached (`void`-called) promise; if it
+    // were unhandled, Node would raise it asynchronously rather than through this
+    // await, which is exactly the defect under test.
+    const result = await wrapped.report({ assessment: headVerdict });
+    await flush();
+
+    expect(result).toEqual({ decision: "proceed" });
+    expect(vi.mocked(setTraceAttributes)).toHaveBeenCalledWith(
+      expect.objectContaining({ "answer_coverage.shadow.recording_failed": true }),
+    );
   });
 
   it("never calls the gateway when disabled by configuration", async () => {

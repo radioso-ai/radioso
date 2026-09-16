@@ -65,7 +65,12 @@ export class AnswerCoverageShadowAssessor {
     return {
       report: async ({ assessment }) => {
         const decision = await inner.report({ assessment });
-        void this.recordAgreement(assessment, shadowRun);
+        // Detached: the agreement observation must never hold up or fail the turn.
+        // A failure here (e.g. the metrics backend) is itself only observational —
+        // swallow it and flag it, rather than leaving an unhandled rejection.
+        void this.recordAgreement(assessment, shadowRun).catch(() => {
+          setTraceAttributes({ "answer_coverage.shadow.recording_failed": true });
+        });
         return decision;
       },
     };

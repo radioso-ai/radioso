@@ -38,6 +38,20 @@ export const coverageCriteriaMatches = (
  * model can never evaluate. Rules without `coverageCriteria` pass through
  * unchanged.
  */
+/**
+ * The coverage verdict sink stashes the turn's assessed head under this metadata
+ * key once it exists (`assessedComposeTurn` in coverageVerdictSink.ts). A turn
+ * with no verdict yet — a pre-retrieval clarification, or a fresh non-coverage
+ * turn context — reads back `undefined` here, which is exactly the "no verdict"
+ * case {@link steeringForKnownVerdict} already handles.
+ */
+export const knownAnswerCoverage = (turn: TurnContext): AnswerCoverageAssessment | undefined => {
+  const value = turn.metadata?.answerCoverage;
+  return typeof value === "object" && value !== null && typeof (value as { availability?: unknown }).availability === "string"
+    ? (value as AnswerCoverageAssessment)
+    : undefined;
+};
+
 export const steeringForKnownVerdict = (
   rules: readonly SteeringRule[],
   assessment: AnswerCoverageAssessment | undefined,
@@ -56,7 +70,14 @@ export const steeringForKnownVerdict = (
     return [plainRule];
   });
 
-const directiveMatchToSteering = (match: DirectiveMatch): SteeringRule => ({
+/**
+ * Maps a matched Directive into a directive-sourced, response-lifespan SteeringRule.
+ * `@radioso/conversation-defaults` re-exports this as `directiveToSteeringRule` rather
+ * than duplicating it — defaults already depends on the engine (for
+ * `resolveRenderSurfaces`), and the engine cannot depend back on defaults without a
+ * cycle, so the engine is the lower package and owns this mapper.
+ */
+export const directiveMatchToSteering = (match: DirectiveMatch): SteeringRule => ({
   ...(match.directive.id ? { id: match.directive.id } : {}),
   directiveName: match.directive.name,
   action: match.directive.action,

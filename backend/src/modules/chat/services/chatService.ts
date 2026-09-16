@@ -151,6 +151,7 @@ import {
 } from "./conversationTurnRegistry.js";
 import { AnswerCoverageHeadRecorder } from "./answerCoverageHeadRecorder.js";
 import type { AnswerCoverageShadowAssessor } from "./answerCoverageShadowAssessor.js";
+import { buildAgentChatWorkspaceContext } from "./agentChatWorkspaceContext.js";
 
 export type { ChatGateway } from "../contracts/chatGateway.js";
 export type { ChatStreamEvent } from "../contracts/streamEvents.js";
@@ -743,7 +744,7 @@ export class ChatService {
         pageReadCapability: session.pageReadCapability,
         directiveCandidates: this.buildTurnPlanDirectiveCandidates(session, input.accountId),
         visitorContext: this.planVisitorContext(session),
-        workspaceContext: { workspaceId: session.agent.workspaceId },
+        workspaceContext: buildAgentChatWorkspaceContext(session.agent),
         usageContext: {
           accountId: input.accountId,
           workspaceId: session.agent.workspaceId,

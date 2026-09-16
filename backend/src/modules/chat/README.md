@@ -276,9 +276,9 @@ imports from `services/`.
   while the lifecycle suppresses external actions, ownership handoffs, customer
   analytics, and summary regeneration. Chat does not own the caller's identity,
   provenance, or authorization policy; application composition supplies those.
-- Fused turn planning: `turnPlanService.ts` (one chat-tier `turn_planning` call
-  + prompt `backend/prompts/chat/turn-planning.md`, strict parse and semantic
-  validation) and `turnPlanCoordinator.ts` (gate, eligibility bounds from
+- Fused turn planning: `turnPlanService.ts` (one `turn_planning` call on the
+  agent's chat model + prompt `backend/prompts/chat/turn-planning.md`, strict
+  parse and semantic validation) and `turnPlanCoordinator.ts` (gate, eligibility bounds from
   `behaviorConfig.turnPlanning`, the lazy memoized `session.turnPlan` handle,
   and the four plan-aware adapters). On eligible fresh turns the one plan
   replaces the staged routine-activation, turn-interpretation,
@@ -335,7 +335,10 @@ imports from `services/`.
   chat loop never mints its own skill names. The `TurnSkill` here is the chat-side
   render binding, not a second skill registry. Shared answer plumbing:
   `chatAnswerSupport.ts` (neutral prompt/context builders),
-  `preparedTurnOutcome.ts`, `chatAnswerErrors.ts`.
+  `agentChatWorkspaceContext.ts` (the one LLM resolve input for every model call
+  on the agent's turn — planner, answer, coverage assessment — so the agent's
+  `chatModelOverride` reaches all of them), `preparedTurnOutcome.ts`,
+  `chatAnswerErrors.ts`.
 
 ## Tests
 

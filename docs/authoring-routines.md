@@ -1,7 +1,7 @@
 ---
 title: "Authoring Routines"
 description: "Create and edit dashboard routines in the Document view, read the Map, connect skills, and try a change in a test chat before it ships."
-last_updated: 2026-09-10
+last_updated: 2026-09-16
 ---
 
 # Authoring Routines
@@ -201,13 +201,16 @@ conversation.
 
 ## Try a routine before it ships
 
-Choose **Test draft** to open a live test chat over the editor. The routine can
-activate and run turn by turn in that conversation, then returns to normal
-answering when it finishes.
+Choose **Test draft** to open the agent's **Test Chat** with the draft selected.
+The routine can activate and run turn by turn in that conversation, then returns
+to normal answering when it finishes.
 
-- The test chat runs the agent's draft, so it exercises the edit you just made
-  alongside the rest of the agent's unpublished work.
-- The test conversation stays separate from your other test chats.
+- The draft holds the edit you just made alongside the rest of the agent's
+  unpublished work, so the test exercises the routine exactly as a publish would
+  ship it.
+- The routine has to be enabled: a disabled routine sits outside the draft's
+  activation set, so **Test draft** is disabled until you turn the routine on.
+- Each test conversation is private to you and keeps the revision it started on.
 
 Use the test to check the trigger, information collection, skill bindings,
 branches, endings, and handoffs before you publish the agent.

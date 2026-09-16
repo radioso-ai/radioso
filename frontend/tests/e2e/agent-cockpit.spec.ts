@@ -8,6 +8,7 @@ import {
   nowIso,
   seedDashboardStorage,
   type RoutineFixture,
+  type RoutineMutationFixture,
   workspaceKey,
 } from './dashboard-fixtures'
 import type { AgentRevisionState, TestExecution } from '@/lib/api-agent-revisions'
@@ -86,13 +87,17 @@ type CockpitMockOptions = {
   turnTrace?: TurnTraceEnvelope
   revisionState?: typeof revisionState
   routines?: RoutineFixture[]
+  routineUpdates?: RoutineMutationFixture[]
+  /** Refuse candidate creation with this message (the 422 an unreleasable draft routine produces). */
+  candidateFailureMessage?: string
+  candidateRequests?: unknown[]
 }
 
 async function installCockpitMocks(page: Page, options: CockpitMockOptions = {}) {
   await seedDashboardStorage(page)
   const platformSettings = basePlatformSettings()
   if (options.assistantDefaultLocale) platformSettings.assistant.assistantDefaultLocale = options.assistantDefaultLocale
-  await installDashboardApiMocks(page, { platformSettings, agentUpdates: options.agentUpdates, routines: options.routines })
+  await installDashboardApiMocks(page, { platformSettings, agentUpdates: options.agentUpdates, routines: options.routines, routineUpdates: options.routineUpdates })
   let executionNumber = 0
   let publicationAttempts = 0
   const sideCountByGeneration = new Map<number, number>()
@@ -122,6 +127,11 @@ async function installCockpitMocks(page: Page, options: CockpitMockOptions = {})
   })
   await page.route(`**/backend/api/v1/agents/${defaultAgentId}/revisions/candidates`, async (route) => {
     options.requestBodies?.push(route.request().postDataJSON())
+    options.candidateRequests?.push(route.request().postDataJSON())
+    if (options.candidateFailureMessage) {
+      await route.fulfill({ status: 422, json: { error: { message: options.candidateFailureMessage } } })
+      return
+    }
     await route.fulfill({ status: 201, json: { candidate } })
   })
   await page.route('**/backend/api/v1/evals/cases', async (route) => {
@@ -723,8 +733,22 @@ test('fails closed when revision state is unavailable', async ({ page }) => {
   await installCockpitMocks(page, { unavailable: true })
   await page.goto(testUrl)
 
-  await expect(page.getByText('Private revision testing is unavailable. No live chat is started.')).toBeVisible()
+  await expect(page.getByText('Test Chat is unavailable: Revision service unavailable')).toBeVisible()
   await expect(testChatComposer(page)).toHaveCount(0)
+})
+
+test('keeps published revisions testable when the draft candidate is refused', async ({ page }) => {
+  const candidateFailureMessage = 'The draft contains a routine that cannot be released.'
+  await installCockpitMocks(page, { candidateFailureMessage })
+  await page.goto(testUrl)
+
+  await expect(page.getByRole('alert').filter({ hasText: candidateFailureMessage })).toBeVisible()
+  await expect(testChatComposer(page)).toBeVisible()
+  const selector = page.getByRole('combobox', { name: 'Revision 1' })
+  await expect(selector).toHaveText('v4')
+  await selector.click()
+  await expect(page.getByRole('option', { name: 'v4', exact: true })).toBeVisible()
+  await expect(page.getByRole('option', { name: /Draft/ })).toHaveCount(0)
 })
 
 test('renders a failed side and retries only that side', async ({ page }) => {
@@ -826,14 +850,24 @@ test('reviews full scoped changes and publishes the selected candidate with a fr
   })
 })
 
-test('offers no publication for a clean saved draft that already matches the published revision', async ({ page }) => {
+test('offers no publication and no draft to test for a clean saved draft', async ({ page }) => {
+  const candidateRequests: unknown[] = []
   await installCockpitMocks(page, {
     revisionState: { ...revisionState, status: 'draft_clean' },
+    candidateRequests,
   })
   await page.goto(testUrl)
 
-  await expect(page.getByText('Draft matches published')).toBeVisible()
+  await expect(page.getByText('No draft changes')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Review & publish', exact: true })).toBeDisabled()
+
+  const selector = page.getByRole('combobox', { name: 'Revision 1' })
+  await expect(selector).toHaveText('v4')
+  await expect(testChatComposer(page)).toBeEnabled()
+  await selector.click()
+  await expect(page.getByRole('option', { name: 'v4', exact: true })).toBeVisible()
+  await expect(page.getByRole('option', { name: /Draft/ })).toHaveCount(0)
+  expect(candidateRequests).toEqual([])
 })
 
 test('shows the enabled Italian fallback greeting before the first message', async ({ page }) => {
@@ -944,30 +978,32 @@ test('keeps channels outside the cockpit tab roster while preserving deep links'
   await expect(page.getByTestId('create-agent-import-option')).toBeVisible()
 })
 
+const pricingRoutineId = '55555555-5555-4555-8555-000000000001'
+const pricingRoutineUrl = `/w/${workspaceKey}/agents/${defaultAgentId}/routines/${pricingRoutineId}`
+const pricingRoutine = (enabled = true): RoutineFixture => ({
+  id: pricingRoutineId,
+  lineageId: pricingRoutineId,
+  agentId: defaultAgentId,
+  name: 'Collect pricing intake',
+  enabled,
+  version: 1,
+  activation: {
+    triggerDescription: 'Visitor asks about pricing.',
+    gateRef: null,
+    priority: 20,
+    reentryMode: 'once_per_conversation',
+  },
+  slots: [],
+  steps: [{ stableStepId: 'ask', kind: 'chat', instruction: 'Ask for the visitor email.', toolRef: null, actionType: null, ordinal: 0, metadata: {} }],
+  transitions: [{ fromStep: 'ask', toRef: 'done', guardKind: 'default', guardText: null, outcomeStatus: null, counterLimit: null, ordinal: 0 }],
+  terminals: [{ stableStepId: 'done', kind: 'complete', instruction: 'Done.', ordinal: 0 }],
+  createdAt: nowIso,
+  updatedAt: nowIso,
+})
+
 test('leaves a routine detail when navigating to cockpit and channel sections', async ({ page }) => {
-  const routineId = '55555555-5555-4555-8555-000000000001'
-  const routine: RoutineFixture = {
-    id: routineId,
-    lineageId: routineId,
-    agentId: defaultAgentId,
-    name: 'Collect pricing intake',
-    enabled: true,
-    version: 1,
-    activation: {
-      triggerDescription: 'Visitor asks about pricing.',
-      gateRef: null,
-      priority: 20,
-      reentryMode: 'once_per_conversation',
-    },
-    slots: [],
-    steps: [{ stableStepId: 'ask', kind: 'chat', instruction: 'Ask for the visitor email.', toolRef: null, actionType: null, ordinal: 0, metadata: {} }],
-    transitions: [{ fromStep: 'ask', toRef: 'done', guardKind: 'default', guardText: null, outcomeStatus: null, counterLimit: null, ordinal: 0 }],
-    terminals: [{ stableStepId: 'done', kind: 'complete', instruction: 'Done.', ordinal: 0 }],
-    createdAt: nowIso,
-    updatedAt: nowIso,
-  }
-  await installCockpitMocks(page, { routines: [routine] })
-  const routineUrl = `/w/${workspaceKey}/agents/${defaultAgentId}/routines/${routineId}`
+  await installCockpitMocks(page, { routines: [pricingRoutine()] })
+  const routineUrl = pricingRoutineUrl
 
   await page.goto(routineUrl)
   const expectRoutineDetail = async () => {
@@ -991,6 +1027,56 @@ test('leaves a routine detail when navigating to cockpit and channel sections', 
   await sidebar.getByText('Manage channels', { exact: true }).click()
   await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}\\?tab=channels$`))
   await expect(page.getByRole('heading', { name: 'Channels', level: 1, exact: true })).toBeVisible()
+})
+
+test('tests a routine draft in the agent Test Chat', async ({ page }) => {
+  await installCockpitMocks(page, { routines: [pricingRoutine()] })
+  await page.goto(pricingRoutineUrl)
+  await expect(page.getByRole('heading', { name: 'Collect pricing intake', level: 2, exact: true })).toBeVisible()
+
+  const testDraft = page.getByRole('button', { name: 'Test draft', exact: true })
+  await expect(testDraft).toBeEnabled()
+  await testDraft.click()
+  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}$`))
+  await expect(testChatComposer(page)).toBeVisible()
+  await expect(page.getByRole('combobox', { name: 'Revision 1' })).toHaveText('Draft')
+})
+
+test('flushes a pending autosave before Test draft navigates away', async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = []
+  await installCockpitMocks(page, { routines: [pricingRoutine()], routineUpdates })
+  await page.goto(pricingRoutineUrl)
+  await expect(page.getByRole('heading', { name: 'Collect pricing intake', level: 2, exact: true })).toBeVisible()
+
+  const editor = page.getByRole('article', { name: 'Routine document editor' })
+  await editor.getByRole('button', { name: 'Starts when', exact: true }).click()
+  await editor.getByLabel('Activation trigger', { exact: true }).fill('Visitor asks about pricing or wants a demo.')
+  await editor.getByRole('button', { name: 'Done', exact: true }).click()
+
+  // Click well inside the 1500ms autosave debounce: without a flush, this edit would still
+  // be sitting on the timer when navigation unmounts the section and cancels it.
+  const testDraft = page.getByRole('button', { name: 'Test draft', exact: true })
+  await expect(testDraft).toBeEnabled()
+  await testDraft.click()
+
+  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}$`))
+  await expect(testChatComposer(page)).toBeVisible()
+
+  await expect.poll(() => routineUpdates.filter((update) => update.method === 'PATCH').at(-1))
+    .toMatchObject({
+      routineId: pricingRoutineId,
+      body: { activation: { triggerDescription: 'Visitor asks about pricing or wants a demo.' } },
+    })
+})
+
+test('withholds the routine draft test while the routine is disabled', async ({ page }) => {
+  await installCockpitMocks(page, { routines: [pricingRoutine(false)] })
+  await page.goto(pricingRoutineUrl)
+  await expect(page.getByRole('heading', { name: 'Collect pricing intake', level: 2, exact: true })).toBeVisible()
+
+  const testDraft = page.getByRole('button', { name: 'Test draft', exact: true })
+  await expect(testDraft).toBeDisabled()
+  await expect(testDraft).toHaveAttribute('title', 'Enable this routine to test it.')
 })
 
 test('opens published agent versions from the Test Chat overflow menu', async ({ page }) => {
@@ -1076,8 +1162,10 @@ test('opens a trace-backed Test Chat reply in debug before opening its flow', as
   await installCockpitMocks(page, { turnTrace: turnFlowTrace })
   await page.goto(testUrl)
 
+  await expect(page.getByTitle(/^Copy Conversation ID: /)).toHaveCount(0)
   await testChatComposer(page).fill('Show the test turn flow')
   await page.getByRole('button', { name: 'Send', exact: true }).click()
+  await expect(page.getByTitle('Copy Conversation ID: conversation-1-0')).toBeVisible()
   await expect(page.getByText('A fenced answer.', { exact: true })).toBeVisible()
 
   await page.getByText('A fenced answer.', { exact: true }).click()
@@ -1087,6 +1175,18 @@ test('opens a trace-backed Test Chat reply in debug before opening its flow', as
   await expect(page.getByText('Direct reply', { exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: 'Flow', exact: true }).click()
   await expect(page.getByText('Turn flow', { exact: true })).toBeVisible()
+
+  // Selecting a node is an interaction inside the flow, not a click outside the
+  // debug sheet beneath it: both stay open (the sheet is aria-hidden under the
+  // modal flow, so it is looked up with hidden elements included).
+  await page.getByText('Engine', { exact: true }).first().click()
+  await expect(page.getByText('Select skill', { exact: true }).first()).toBeVisible()
+  await expect(page.getByText('Turn flow', { exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Turn debug', exact: true, includeHidden: true })).toBeAttached()
+
+  await page.getByRole('button', { name: 'Close turn flow' }).click()
+  await expect(page.getByText('Turn flow', { exact: true })).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: 'Turn debug', exact: true })).toBeVisible()
 })
 
 test('captures the populated comparison cockpit at desktop and mobile widths', async ({ page }) => {

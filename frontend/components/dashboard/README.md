@@ -58,18 +58,26 @@ services.
   the agent chat tab with `agentChatConversationId` (a `dashboard-routes` param). The
   workbench adopts it via `useChatSession().adoptConversation` (`lib/chat-context.tsx`),
   loading the forked thread and continuing live. Original conversation is untouched.
-- `ChatWorkbench` is a reusable component with a `shell: 'page' | 'drawer'` prop — the
-  same live chat body renders inside the full-page `DashboardPage` or, via
-  `workbench/chat-workbench-drawer.tsx`, inside a right-side `Sheet`. Page-context props
-  (`onOpenDocument`, `onboarding`) are optional so it drops into either host.
+- `ChatWorkbench` renders the live chat body inside the full-page `DashboardPage`.
+  Page-context props (`onOpenDocument`, `onboarding`) are optional.
 - Test an unpublished routine: **Test draft** on a saved draft in
-  `settings/assistant-routines-section.tsx` opens `ChatWorkbenchDrawer` in place (no
-  navigation) with `previewRoutineIds={[draftId]}`. `ChatWorkbench` passes them into
-  `useChatSession(..., { previewRoutineIds })`, which rides every send to `/assistant/chat`;
-  the backend makes those draft definitions eligible for the turn (operator-only — public
-  chat has no such field). The draft-test session uses a distinct session key so its turns
-  never mix into the normal test chat. A deep link `?tab=chat&chatPreviewRoutine=<id>`
-  (`dashboard-routes` param `agentChatPreviewRoutineId`) does the same test full-page.
+  `settings/assistant-routines-section.tsx` navigates to the agent's Test Chat tab
+  (`agent-revision-test-chat.tsx`), whose Draft candidate is built from the agent draft
+  snapshot and so already carries the routine draft; the button is disabled while the
+  routine is disabled because the snapshot's activation set leaves it out. Separately, a
+  deep link `?tab=chat&chatPreviewRoutine=<id>` (`dashboard-routes` param
+  `agentChatPreviewRoutineId`) runs the live workbench with `previewRoutineIds`, which
+  `ChatWorkbench` passes into `useChatSession(..., { previewRoutineIds })` on every send to
+  `/assistant/chat` so the backend makes those draft definitions eligible for the turn
+  (operator-only — public chat has no such field); that session uses a distinct key so
+  its turns never mix into the normal test chat.
+- `agent-revision-test-chat.tsx` loads its revision list through `assembleTestableRevisions`:
+  revision state and the published list are required, the Draft candidate is best-effort
+  (a refused candidate leaves published revisions testable and shows the refusal in the
+  error banner), and a `draft_clean` state lists published revisions only. A cached
+  session is checked against the current draft generation on mount. `TurnFlowOverlay`
+  (`turn-flow-overlay.tsx`) is a modal Radix `Dialog` layer so the Turn debug sheet under
+  it survives clicks on the graph.
 - Settings UI: `settings-view.tsx`, `settings/`, and settings docs sources.
 - Documents UI: `documents-view.tsx`, `document-sources-view.tsx`, `documents/`.
 - Audience Pulse: `audience-pulse-view.tsx`, `frontend/lib/api-audience-pulse.ts`,

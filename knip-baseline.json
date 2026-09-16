@@ -795,7 +795,6 @@
   "types|frontend/components/dashboard/spine-stage-detail.tsx|ClarificationStageDetailView",
   "types|frontend/components/dashboard/spine-stage-detail.tsx|RoutineRunTraceView",
   "types|frontend/components/dashboard/spine-stage-detail.tsx|RoutineTraceStepView",
-  "types|frontend/components/dashboard/workbench/chat-workbench-drawer.tsx|ChatWorkbenchDrawerProps",
   "types|frontend/components/dashboard/workbench/use-coach-state.ts|CoachPreview",
   "types|frontend/components/dashboard/workbench/use-coach-state.ts|CoachState",
   "types|frontend/components/dashboard/workbench/use-coach-state.ts|CoachStatus",

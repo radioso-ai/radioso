@@ -326,7 +326,7 @@ On Radioso Cloud, a workspace on a managed plan (Comet or Satellite) runs the pl
 
 Here the workspace has asked for `claude-sonnet-4-5` for chat, but its plan runs `gpt-5.4-mini` because the workspace holds no Claude key of its own. The dashboard shows the same picture: the picker is read-only with the managed model and a line explaining why. A stored preference stays stored, so it applies as soon as the workspace adds its own key or moves to Planet.
 
-`PUT /api/v1/settings/llm-models` is a merge-update. Send only the jobs you want to change. Pass `null` to clear one and fall back to the env default. The response echoes the full stored preferences; read `GET` for the plan's `managed` view.
+`PUT /api/v1/settings/llm-models` is a merge-update. Send only the jobs you want to change. Pass `null` to clear one and fall back to the env default. The response is the same shape as `GET`: the full stored preferences plus the plan's `managed` view and `knownModelsByProvider`, refreshed for the change just applied.
 
 ```json
 {

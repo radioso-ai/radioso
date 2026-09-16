@@ -84,6 +84,13 @@ describe("settings llm-models contract", () => {
     expect(put.body.chat).toEqual({ provider: "claude", model: "claude-sonnet-4-5" });
     expect(put.body.rewrite).toBeNull();
     expect(put.body.rerank).toBeNull();
+    expect(put.body).toMatchObject({
+      managed: { chat: null, rewrite: null, rerank: null },
+    });
+    expect(put.body.knownModelsByProvider).toMatchObject({
+      openai: expect.arrayContaining(["gpt-5-mini"]),
+      claude: expect.arrayContaining(["claude-sonnet-5"]),
+    });
   });
 
   it("clears a preference when null is passed", async () => {

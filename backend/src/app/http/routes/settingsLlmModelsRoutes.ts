@@ -31,6 +31,37 @@ export const updateWorkspaceLlmModelsSchema = z.object({
 type SettingsLlmRouteDependencies = WorkspaceSessionDependencies &
   Pick<AppDependencies, "workspaceLlmCapabilitySettingsService" | "accountAccessService" | "llmCapabilityResolver">;
 
+type WorkspaceLlmPreference = { provider: string; model: string };
+
+/**
+ * Assembles the full workspace LLM models response shape shared by GET and PUT,
+ * so the two handlers cannot drift on which fields they return.
+ */
+const buildWorkspaceLlmModelsResponse = async (
+  dependencies: Pick<SettingsLlmRouteDependencies, "workspaceLlmCapabilitySettingsService" | "llmCapabilityResolver">,
+  workspaceId: string,
+) => {
+  const [preferences, managed] = await Promise.all([
+    dependencies.workspaceLlmCapabilitySettingsService.listForWorkspace(workspaceId),
+    resolveWorkspaceManagedLlmModels(dependencies.llmCapabilityResolver, workspaceId),
+  ]);
+  const indexed = Object.fromEntries(
+    preferences.map((entry) => [entry.capability, { provider: entry.provider, model: entry.model }]),
+  ) as Record<WorkspaceLlmCapability, WorkspaceLlmPreference>;
+  return {
+    chat: indexed.chat ?? null,
+    rewrite: indexed.rewrite ?? null,
+    rerank: indexed.rerank ?? null,
+    managed,
+    knownModelsByProvider: {
+      openai: [...knownModelsByProvider.openai],
+      "openai-compatible": [...knownModelsByProvider["openai-compatible"]],
+      gemini: [...knownModelsByProvider.gemini],
+      claude: [...knownModelsByProvider.claude],
+    },
+  };
+};
+
 export const createSettingsLlmModelsRoutes = (
   dependencies: SettingsLlmRouteDependencies,
 ): Router => {
@@ -42,25 +73,7 @@ export const createSettingsLlmModelsRoutes = (
   router.get("/", workspaceSession, settingsRead, async (_req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
-      const [preferences, managed] = await Promise.all([
-        dependencies.workspaceLlmCapabilitySettingsService.listForWorkspace(workspaceId),
-        resolveWorkspaceManagedLlmModels(dependencies.llmCapabilityResolver, workspaceId),
-      ]);
-      const indexed = Object.fromEntries(
-        preferences.map((entry) => [entry.capability, { provider: entry.provider, model: entry.model }]),
-      ) as Record<WorkspaceLlmCapability, { provider: string; model: string }>;
-      res.status(200).json({
-        chat: indexed.chat ?? null,
-        rewrite: indexed.rewrite ?? null,
-        rerank: indexed.rerank ?? null,
-        managed,
-        knownModelsByProvider: {
-          openai: [...knownModelsByProvider.openai],
-          "openai-compatible": [...knownModelsByProvider["openai-compatible"]],
-          gemini: [...knownModelsByProvider.gemini],
-          claude: [...knownModelsByProvider.claude],
-        },
-      });
+      res.status(200).json(await buildWorkspaceLlmModelsResponse(dependencies, workspaceId));
     } catch (error) {
       next(error);
     }
@@ -98,15 +111,7 @@ export const createSettingsLlmModelsRoutes = (
           }
         }
 
-        const preferences = await dependencies.workspaceLlmCapabilitySettingsService.listForWorkspace(workspaceId);
-        const indexed = Object.fromEntries(
-          preferences.map((entry) => [entry.capability, { provider: entry.provider, model: entry.model }]),
-        ) as Record<WorkspaceLlmCapability, { provider: string; model: string }>;
-        res.status(200).json({
-          chat: indexed.chat ?? null,
-          rewrite: indexed.rewrite ?? null,
-          rerank: indexed.rerank ?? null,
-        });
+        res.status(200).json(await buildWorkspaceLlmModelsResponse(dependencies, workspaceId));
       } catch (error) {
         if (error instanceof z.ZodError) {
           next(badRequest(error.message));

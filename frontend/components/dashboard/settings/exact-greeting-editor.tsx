@@ -21,6 +21,7 @@ import {
   EXACT_GREETING_MAX_CHIPS,
   addChip,
   addVariant,
+  applyEditedItem,
   codePointLength,
   createEmptyExactContent,
   extractValidationIssuesFromError,
@@ -246,7 +247,9 @@ export function ExactGreetingEditor({
 
   const applyItem = (next: ExactContentItem) => {
     contentTouchedRef.current = true
-    setItem(next)
+    const applied = applyEditedItem(next)
+    setItem(applied.item)
+    setIssues(applied.issues)
     resetSaveState()
   }
 

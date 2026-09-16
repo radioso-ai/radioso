@@ -4,6 +4,7 @@ import {
   EXACT_GREETING_MAX_CHIPS,
   addChip,
   addVariant,
+  applyEditedItem,
   codePointLength,
   createEmptyExactContent,
   extractValidationIssuesFromError,
@@ -170,6 +171,17 @@ describe('validation-issue path mapping', () => {
   it('finds top-level chips and variants issues', () => {
     expect(issuesForChips(issues)).toEqual([issues[3]])
     expect(issuesForVariants(issues)).toEqual([issues[4]])
+  })
+})
+
+describe('applyEditedItem', () => {
+  it('pairs the edited item with a cleared issues array, so a caller applying it drops every stale diagnostic, not just the fixed field', () => {
+    const edited: ExactContentItem = { chips: [], variants: [{ locale: 'en', body: 'Hi there', chipLabels: {} }] }
+
+    const result = applyEditedItem(edited)
+
+    expect(result.item).toBe(edited)
+    expect(result.issues).toEqual([])
   })
 })
 

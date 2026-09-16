@@ -67,8 +67,9 @@ describe("RetrievalAnswerComposer coverage composition", () => {
     // the model commits its own verdict in the envelope head instead of receiving one.
     expect(call.prompt).not.toContain("coverage");
     expect(call.prompt).not.toContain("Whether one-day attendance is permitted");
-    // The assessor still runs in this slice and still drives the turn's coverage
-    // outcome; only the prompt injection is gone.
+    // Whatever populates `session.answerCoverage` (the head recorder's callback
+    // in production; the fixture directly here) still drives the turn's
+    // answerOutcome; only the prompt injection is gone.
     expect(result.answerOutcome).toBe("coverage_unanswered");
   });
 });

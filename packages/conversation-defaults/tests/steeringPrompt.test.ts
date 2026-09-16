@@ -5,7 +5,6 @@ import {
   appendSteeringRules,
   renderSteeringRules,
 } from "../src/steeringPrompt.js";
-import type { CoverageConditionalSteeringRule } from "../src/steeringPrompt.js";
 import type { SteeringRule } from "../src/domain.js";
 
 const rule = (action: string, priority: number, extra: Partial<SteeringRule> = {}): SteeringRule => ({
@@ -40,10 +39,8 @@ describe("renderSteeringRules", () => {
     expect(block).toContain("Keep it short. (when: the user seems rushed)");
   });
 
-  it("renders a coverage-conditional rule as a condition on the verdict the model is about to emit (#1260)", () => {
-    // The engine does not produce coverageCriteria-bearing rules until slice 2;
-    // this is dead-but-tested rendering ahead of that wiring.
-    const conditional: CoverageConditionalSteeringRule = {
+  it("renders a coverage-conditional rule against the exact classifications the model can emit (#1260)", () => {
+    const conditional: SteeringRule = {
       ...rule("Offer the contact form.", 10),
       coverageCriteria: { coverage: ["partial", "unanswered"] },
     };
@@ -51,20 +48,37 @@ describe("renderSteeringRules", () => {
     const block = renderSteeringRules([conditional]);
 
     expect(block).toContain(
-      "Only when your coverage verdict is one of [partial, unanswered]: Offer the contact form.",
+      "Only when your coverage verdict is one of "
+        + "[partial_insufficient_evidence, partial_conflicting_evidence, partial_intentional_scope_boundary, "
+        + "unanswered_insufficient_evidence, unanswered_conflicting_evidence, unanswered_intentional_scope_boundary]"
+        + ": Offer the contact form.",
     );
   });
 
-  it("layers a coverage condition with an authored condition clause", () => {
-    const conditional: CoverageConditionalSteeringRule = {
-      ...rule("Offer the contact form.", 10, { condition: "the visitor seems frustrated" }),
-      coverageCriteria: { coverage: ["unanswered"] },
+  it("narrows the rendered classifications to the criteria's reasons when given", () => {
+    const conditional: SteeringRule = {
+      ...rule("Offer the contact form.", 10),
+      coverageCriteria: { coverage: ["partial"], reasons: ["conflicting_evidence"] },
     };
 
     const block = renderSteeringRules([conditional]);
 
     expect(block).toContain(
-      "Only when your coverage verdict is one of [unanswered]: Offer the contact form. (when: the visitor seems frustrated)",
+      "Only when your coverage verdict is one of [partial_conflicting_evidence]: Offer the contact form.",
+    );
+  });
+
+  it("layers a coverage condition with an authored condition clause", () => {
+    const conditional: SteeringRule = {
+      ...rule("Offer the contact form.", 10, { condition: "the visitor seems frustrated" }),
+      coverageCriteria: { coverage: ["unanswered"], reasons: ["insufficient_evidence"] },
+    };
+
+    const block = renderSteeringRules([conditional]);
+
+    expect(block).toContain(
+      "Only when your coverage verdict is one of [unanswered_insufficient_evidence]: "
+        + "Offer the contact form. (when: the visitor seems frustrated)",
     );
   });
 

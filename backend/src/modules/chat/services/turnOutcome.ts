@@ -27,9 +27,9 @@ export interface TurnRenderContext {
   signal?: AbortSignal;
   /**
    * Where a retrieval-style skill reports its coverage verdict before releasing
-   * any answer text (#1260). Absent until composition wires the engine's sink
-   * (a later slice); a skill that receives none proceeds exactly as it does
-   * today, so this stays optional rather than forcing every renderer to supply one.
+   * any answer text (#1260). Optional because a coverage-agnostic renderer (e.g.
+   * the assistant reply) never receives one and proceeds exactly as it always
+   * has; only a retrieval-style skill's render context carries it.
    */
   coverageVerdict?: RetrievalCoverageVerdictSink;
 }

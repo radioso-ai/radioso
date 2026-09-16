@@ -22,6 +22,7 @@ const workspaceSettingsPort = () => ({
     suggestedQuestionsEnabled: true,
     suggestedQuestionsCount: 3,
     rerankEnabled: true,
+    citationHoldEnabled: false,
     vectorTopK: 20,
     similarityThreshold: 0.42,
     rerankTopK: 8,
@@ -134,6 +135,7 @@ describe("workspace settings copilot reader", () => {
         vectorTopK: 20,
         similarityThreshold: 0.42,
         rerankTopK: 8,
+        citationHoldEnabled: false,
         metadataRules: [{ field: "region", operator: "equals", effect: "filter" }],
       },
       ingestion: {

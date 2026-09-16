@@ -183,6 +183,18 @@ describe("grounded answer prompt contract", () => {
     expect(result.systemPrompt).toContain("Citation and grounding rules remain authoritative");
   });
 
+  it("explains what `applicable` means for an adherence attestation (#1260 review F4)", () => {
+    // The schema has required `applicable` on every adherence entry since #1260
+    // slice 1, but the instruction never told the model what it means or that
+    // `satisfied` is meaningless when it is false — it just started asking for a
+    // boolean the model had no guidance on.
+    const prompt = loadPromptTemplate("chat/answer-envelope.md");
+
+    expect(prompt).toMatch(/applicable[\s\S]*false/i);
+    expect(prompt).toMatch(/condition|criteria/i);
+    expect(prompt).toMatch(/satisfied[\s\S]*ignored/i);
+  });
+
   it("scopes decline rules by turn type: compact inline guard on grounded, full rules on focused miss", () => {
     const main = new PromptBuilder().build({
       query: "What?",
@@ -254,7 +266,9 @@ describe("grounded answer prompt contract", () => {
     expect(countWords(loadPromptTemplate("chat/answer-envelope.md"))).toBeGreaterThanOrEqual(200);
     // Widened in #946: the envelope now distinguishes the two declines and carries an
     // out-of-scope example alongside the miss example.
-    expect(countWords(loadPromptTemplate("chat/answer-envelope.md"))).toBeLessThanOrEqual(290);
+    // Widened in #1260 (review F4): `applicable` was already a required adherence
+    // field with no instruction explaining it; documenting it costs a sentence.
+    expect(countWords(loadPromptTemplate("chat/answer-envelope.md"))).toBeLessThanOrEqual(315);
     expect(countWords(loadPromptTemplate("chat/answer-suggestions.md"))).toBeGreaterThanOrEqual(560);
     // Tightened in #863: the strict provider schema hard-enforces the item field
     // set (additionalProperties:false + required) and JSON-only output, so the

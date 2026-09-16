@@ -14,6 +14,7 @@ const settingsPatch = z.object({
   vectorTopK: z.number().int().min(1).max(300).optional(),
   rerankEnabled: z.boolean().optional(),
   rerankTopK: z.number().int().min(1).max(100).optional(),
+  citationHoldEnabled: z.boolean().optional(),
   queryRewriteEnabled: z.boolean().optional(),
   temporalStructuredLookupEnabled: z.boolean().optional(),
   temporalBoostUpcomingEnabled: z.boolean().optional(),

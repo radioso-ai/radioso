@@ -44,6 +44,7 @@ const overridesSchema = z
         suggestedQuestionsEnabled: z.boolean().optional(),
         suggestedQuestionsCount: z.number().int().optional(),
         rerankEnabled: z.boolean().optional(),
+        citationHoldEnabled: z.boolean().optional(),
         vectorTopK: z.number().int().min(1).max(200).optional(),
         similarityThreshold: z.number().min(0).max(1).optional(),
         rerankTopK: z.number().int().min(1).max(50).optional(),

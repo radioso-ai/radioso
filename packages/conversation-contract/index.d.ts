@@ -570,6 +570,13 @@ export interface DirectiveAdherenceEntry {
   directive: string;
   ruleId: string;
   satisfied: boolean;
+  /**
+   * Whether the rule's own condition (an authored `when:` clause, or a
+   * coverage verdict criteria, #1260) actually held this turn. `false` means
+   * the rule rendered but never applied, so `satisfied` carries no meaning —
+   * report it as not-applicable, never as a violation.
+   */
+  applicable: boolean;
   /** Short operator-facing rationale; never source-document content. */
   note: string;
 }

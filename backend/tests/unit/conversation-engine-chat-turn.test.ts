@@ -29,7 +29,11 @@ import {
   toPreparedStagedContext,
 } from "../../src/modules/chat/services/conversationContractMappers.js";
 import { ChatTurnSkillSelector } from "../../src/modules/chat/services/turnSkillSelector.js";
-import type { RouteScopedDirectiveRuntime } from "../../src/modules/chat/services/routeScopedDirectiveSteering.js";
+import {
+  createRouteScopedDirectiveSteering,
+  type RouteScopedDirectiveRuntime,
+} from "../../src/modules/chat/services/routeScopedDirectiveSteering.js";
+import { DefaultAllowCapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
 import type {
   Directive,
   DirectiveSteerInput,
@@ -1012,6 +1016,64 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
       "skill_dispatch",
       "compose",
     ]);
+  });
+
+  // F1: `buildDirectiveTurnWiring`'s matcher adapter (`conversationProcessTurnInput.ts`)
+  // overwrites `session.directiveSteering` as a side effect on every `match()` call. The
+  // engine calls the matcher twice per retrieval turn with a coverage directive present
+  // (legacy directives, then coverage directives), so the side effect from the second
+  // call alone would leave the first call's rules unrendered. A REAL directive runtime
+  // (not a hand-rolled matcher) exercises the actual two-call sequence.
+  it("renders steering from both the legacy and the coverage matcher call (F1)", async () => {
+    const warmthDirective: Directive = {
+      name: "warmth",
+      condition: { kind: "always" },
+      action: "Be warm.",
+      priority: 10,
+    };
+    const offerFormDirective: Directive = {
+      name: "offer-form",
+      condition: { kind: "always" },
+      action: "Offer the form.",
+      priority: 10,
+      coverageCriteria: { coverage: ["unanswered"] },
+    };
+    const directiveRuntime = createRouteScopedDirectiveSteering({
+      capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+      registrations: [
+        { directive: warmthDirective },
+        { directive: offerFormDirective },
+      ],
+    });
+    const retrievalSkill: TurnSkill = {
+      definition: { name: RETRIEVAL_TURN_SKILL, outcomeKinds: [RETRIEVAL_OUTCOME_KIND] },
+      selects: () => true,
+      dispatch: (s) => buildRetrievalTurnOutcome(s),
+      renderer: {
+        supports: (outcome) => outcome.kind === RETRIEVAL_OUTCOME_KIND,
+        render: async (_outcome, ctx) => ({
+          answer: (ctx.session.directiveSteering?.rules ?? []).map((rule) => rule.action).join(" "),
+          skillName: RETRIEVAL_TURN_SKILL,
+          skillOutcome: "completed",
+          skillStatus: "completed",
+        }),
+      },
+    };
+    const prepared = session();
+    prepared.turnRoute = "retrieval";
+
+    const { presentation } = await runPreparedChatTurnWithConversationEngine({
+      engine: new DefaultConversationEngine(),
+      session: prepared,
+      chatAnswerPresenter,
+      directiveRuntime,
+      turnInterpreter: { interpret: async () => ({ route: "retrieval" }) },
+      turnSkillSelector: new ChatTurnSkillSelector([retrievalSkill], new DefaultTurnSelectionStrategy()),
+      turnSkills: [retrievalSkill],
+      query: "Where is my order?",
+    });
+
+    expect(presentation.answer).toBe("Be warm. Offer the form.");
   });
 
   it("lets the engine drive streamed turn selection and emits any final unstreamed remainder", async () => {

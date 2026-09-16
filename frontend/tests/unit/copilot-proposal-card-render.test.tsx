@@ -205,6 +205,31 @@ describe('CopilotProposalCard', () => {
     expect(targetReference(proposal, null, null)).toBeNull()
   })
 
+  it('resolves an agent-greeting proposal to its agent, the same way an agent setting proposal does', () => {
+    // The greeting is singleton per agent (spec 1150 Slice A) — there is no separate greeting
+    // id, only the agentId the target/applied refs carry.
+    const proposal: CopilotProposalSummary = {
+      id: 'proposal-agent-greeting',
+      targetType: 'agent_greeting',
+      targetLabel: 'Greeting',
+      summary: 'Enable Exact words on the greeting',
+      status: 'pending',
+    }
+
+    expect(targetReference(proposal, { targetRef: { agentId: 'agent-1' } } as CopilotProposalDetail, null)).toEqual({
+      entity: { type: 'agent_greeting', id: 'agent-1' },
+      agentId: 'agent-1',
+    })
+
+    // Live-apply path: no detail ever loaded, apply response alone carries the agent id.
+    expect(targetReference(proposal, null, { agentId: 'agent-9' })).toEqual({
+      entity: { type: 'agent_greeting', id: 'agent-9' },
+      agentId: 'agent-9',
+    })
+
+    expect(targetReference(proposal, null, null)).toBeNull()
+  })
+
   it('picks the irreversible-removal confirmation only for a proposal the card marks removal: true', () => {
     // Finding 1 (issue triage, next-ray-epic-issue): Apply is reachable straight from the summary
     // card, without ever expanding "Show changes" - so this decision has to work off the card's

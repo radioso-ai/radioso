@@ -62,12 +62,28 @@ type BootstrapState =
       workspaceName?: string | null
       pageContext?: WebsiteEmbedPageContext | null
       clientContextCapabilities?: ClientContextCapabilities
-      signedIdentity?: string | null
     }
+
+// The host page's identity, mirrored from the launcher: either a static token
+// captured once (from the session/identity message) or a marker that the host
+// provides a fresh token per message on request. Held in a ref rather than
+// state — resolveSignedIdentity reads it at call time, so an identity update
+// does not need to re-render the chat tree.
+type EmbedIdentity = { mode: 'static'; token: string | null } | { mode: 'provider' }
+
+// Tracks one in-flight identity-request round trip: the promise resolver for
+// resolveSignedIdentity's caller, and the timeout that resolves it with null
+// if the launcher never replies.
+type PendingIdentityRequest = {
+  resolve: (signedIdentity: string | null) => void
+  timeoutId: number
+}
 
 const READY_MESSAGE = 'radioso:embed:ready'
 const SESSION_MESSAGE = 'radioso:embed:session'
 const IDENTITY_MESSAGE = 'radioso:embed:identity'
+const IDENTITY_REQUEST_MESSAGE = 'radioso:embed:identity-request'
+const IDENTITY_REQUEST_TIMEOUT_MS = 5000
 const ERROR_MESSAGE = 'radioso:embed:error'
 // Sent by the launcher when it starts the session bootstrap (on open). The
 // verification timeout is armed from this point rather than from mount, so a
@@ -132,6 +148,13 @@ const sanitizeClientContextCapabilities = (value: unknown): ClientContextCapabil
   }
 }
 
+const parseEmbedIdentity = (data: Record<string, unknown>): EmbedIdentity => {
+  if (data.identityProvider === true) {
+    return { mode: 'provider' }
+  }
+  return { mode: 'static', token: typeof data.signedIdentity === 'string' ? data.signedIdentity : null }
+}
+
 export function EmbeddedChatFrame({
   token,
   localeOverride,
@@ -154,7 +177,51 @@ export function EmbeddedChatFrame({
   // Reading here causes a server/client text mismatch on the bootstrapping screen.
   const [state, setState] = useState<BootstrapState>({ status: 'bootstrapping', workspaceName: null })
   const isBootstrappedRef = useRef(false)
+  const isReadyRef = useRef(false)
+  const identityRef = useRef<EmbedIdentity>({ mode: 'static', token: null })
+  // Keyed by requestId. Each entry carries its own timeoutId alongside the
+  // resolver so the unmount cleanup below can clear every pending timer
+  // instead of leaving them to fire (and touch state) after teardown.
+  const pendingIdentityRequestsRef = useRef(new Map<string, PendingIdentityRequest>())
   const publicSessionId = state.status === 'ready' ? state.publicSessionId : null
+  // Stable across renders: reads identityRef at call time rather than closing
+  // over state, so the send path always gets the latest identity without this
+  // function (and anything memoized against it) changing identity every time
+  // identify() runs or a session bootstraps.
+  const resolveSignedIdentity = useCallback((): Promise<string | null> => {
+    if (typeof window === 'undefined' || window.parent === window || !isReadyRef.current) {
+      return Promise.resolve(null)
+    }
+
+    const identity = identityRef.current
+    if (identity.mode === 'static') {
+      return Promise.resolve(identity.token)
+    }
+
+    const requestId =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `identity-${Date.now()}-${Math.random().toString(36).slice(2)}`
+
+    return new Promise<string | null>((resolve) => {
+      const pending = pendingIdentityRequestsRef.current
+      const timeoutId = window.setTimeout(() => {
+        pending.delete(requestId)
+        resolve(null)
+      }, IDENTITY_REQUEST_TIMEOUT_MS)
+
+      pending.set(requestId, {
+        resolve: (signedIdentity) => {
+          window.clearTimeout(timeoutId)
+          pending.delete(requestId)
+          resolve(signedIdentity)
+        },
+        timeoutId,
+      })
+
+      window.parent.postMessage({ type: IDENTITY_REQUEST_MESSAGE, requestId }, '*')
+    })
+  }, [])
   const handleAnalyticsEvent = useCallback((event: WebsiteEmbedAnalyticsInput) => {
     if (!publicSessionId) {
       return
@@ -181,6 +248,10 @@ export function EmbeddedChatFrame({
     let handshakeInterval: number | null = null
     let handshakeTimeout: number | null = null
     let storedWorkspaceNameTimer: number | null = null
+    // Captured once per effect run so cleanup clears the map this effect's
+    // listener actually populated, not whatever pendingIdentityRequestsRef
+    // holds by the time cleanup runs.
+    const pendingIdentityRequests = pendingIdentityRequestsRef.current
     const storedSession = token ? readStoredEmbedBootstrapSession(token) : null
 
     if (storedSession?.workspaceName) {
@@ -242,8 +313,14 @@ export function EmbeddedChatFrame({
       }
 
       if (event.data.type === IDENTITY_MESSAGE && !isDisposed) {
-        const signedIdentity = typeof event.data.signedIdentity === 'string' ? event.data.signedIdentity : null
-        setState((current) => current.status === 'ready' ? { ...current, signedIdentity } : current)
+        const requestId = typeof event.data.requestId === 'string' ? event.data.requestId : null
+        if (requestId) {
+          const signedIdentity = typeof event.data.signedIdentity === 'string' ? event.data.signedIdentity : null
+          pendingIdentityRequests.get(requestId)?.resolve(signedIdentity)
+          return
+        }
+
+        identityRef.current = parseEmbedIdentity(event.data)
         return
       }
 
@@ -284,7 +361,8 @@ export function EmbeddedChatFrame({
         })
         const pageContext = sanitizePageContext(event.data.pageContext)
         const clientContextCapabilities = sanitizeClientContextCapabilities(event.data.clientContextCapabilities)
-        const signedIdentity = typeof event.data.signedIdentity === 'string' ? event.data.signedIdentity : null
+        identityRef.current = parseEmbedIdentity(event.data)
+        isReadyRef.current = true
         setState({
           status: 'ready',
           publicChatToken: session.publicChatToken,
@@ -294,7 +372,6 @@ export function EmbeddedChatFrame({
           workspaceName: session.workspaceName,
           pageContext,
           clientContextCapabilities,
-          signedIdentity,
         })
         postWebsiteEmbedAnalyticsEvent({
           event: 'website_embed.loaded',
@@ -342,6 +419,11 @@ export function EmbeddedChatFrame({
       isDisposed = true
       stopHandshake()
       window.removeEventListener('message', handleMessage)
+      // Resolve rather than drop: a send awaiting identity across teardown
+      // proceeds anonymous instead of hanging. Each resolver clears its own
+      // timer and map entry.
+      Array.from(pendingIdentityRequests.values()).forEach(({ resolve }) => resolve(null))
+      pendingIdentityRequests.clear()
     }
   }, [copy.embeddedChatLauncherRequiredMessage, resetNonce, token])
 
@@ -391,6 +473,8 @@ export function EmbeddedChatFrame({
       window.parent.postMessage({ type: RESET_SESSION_MESSAGE }, '*')
     }
     isBootstrappedRef.current = false
+    isReadyRef.current = false
+    identityRef.current = { mode: 'static', token: null }
     setState({ status: 'bootstrapping', workspaceName: state.workspaceName ?? null })
     setResetNonce((current) => current + 1)
   }
@@ -435,7 +519,7 @@ export function EmbeddedChatFrame({
       surface="embed"
       pageContext={state.pageContext}
       clientContextCapabilities={state.clientContextCapabilities}
-      signedIdentity={state.signedIdentity}
+      resolveSignedIdentity={resolveSignedIdentity}
       onAnalyticsEvent={handleAnalyticsEvent}
     />
   )

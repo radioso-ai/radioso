@@ -114,9 +114,27 @@ export interface EmbeddingClient {
   embedTexts(texts: string[], options?: EmbeddingClientOptions): Promise<EmbeddingResult>;
 }
 
+/**
+ * Which step of the resolution path chose the provider and model. Surfaced in
+ * settings and logs so "why is it not using the model I picked" has an answer.
+ */
+export type LlmCapabilityResolvedBy =
+  | "managed_plan"
+  | "agent_override"
+  | "workspace_preference"
+  | "environment_default";
+
+/** Provider and model as resolved for a workspace, before any key is attached. */
+export interface LlmCapabilitySelection {
+  provider: LlmProviderName;
+  model: string;
+  resolvedBy: LlmCapabilityResolvedBy;
+}
+
 export interface LlmCapabilityConfig extends LlmProviderMetadata {
   apiKey: string;
   baseUrl?: string;
+  resolvedBy?: LlmCapabilityResolvedBy;
 }
 
 /** Boot-safe provider/model defaults. Credentials are attached only when a call starts. */

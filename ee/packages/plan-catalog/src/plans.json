@@ -10,5 +10,9 @@
   "repliesPerConversation": 10,
   "countsAs": { "conversation": 1, "copilot": 1, "test_run": 0.5, "pulse_report": 10, "other": 0 },
   "topUp":   { "conversations": 300, "priceCents": 5000, "stripeLookupKey": "topup_300" },
-  "managedService": { "priceCents": 9900, "interval": "month", "stripeLookupKey": "managed_month" }
+  "managedService": { "priceCents": 9900, "interval": "month", "stripeLookupKey": "managed_month" },
+  "managedModels": {
+    "chat":    { "provider": "openai", "model": "gpt-5.4-mini" },
+    "default": { "provider": "openai", "model": "gpt-5.4-mini" }
+  }
 }

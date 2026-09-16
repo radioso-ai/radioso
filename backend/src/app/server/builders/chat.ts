@@ -708,6 +708,9 @@ export const buildChatServices = (input: {
     agentSkillTurnSkillProvider,
     logger: input.logger,
   });
+  const agentRevisionRuntimeResolver = new AgentRevisionRuntimeResolver(
+    new AgentRevisionRuntimeRepository(input.database.kysely),
+  );
   const chatService = new ChatService({
     conversationRepository: input.conversationRepository,
     messageRepository: input.messageRepository,
@@ -724,9 +727,7 @@ export const buildChatServices = (input: {
     bootstrapGreetingCacheRepository: input.bootstrapGreetingCacheRepository,
     usageLimitPolicy: input.usageLimitPolicy,
     agentService: input.agentService,
-    agentRevisionRuntimeResolver: new AgentRevisionRuntimeResolver(
-      new AgentRevisionRuntimeRepository(input.database.kysely),
-    ),
+    agentRevisionRuntimeResolver,
     contextVariableRepository: contextVariableResolver,
     // 067: behavioral steering. The standing set is supplied by application
     // composition; default answer behavior is registered by a built-in module.
@@ -818,6 +819,7 @@ export const buildChatServices = (input: {
     input.usageLimitPolicy,
     input.productAnalyticsService,
     input.agentService,
+    agentRevisionRuntimeResolver,
   );
   const chatHistoryService = new ChatHistoryService(
     input.conversationRepository,

@@ -236,6 +236,7 @@ const buildRevisionDetail = (
       directives: true,
       routines: true,
       contextVariableEnablements: true,
+      greeting: true,
     },
     dependencyWarnings: [],
     enabledContextVariableIds: [],
@@ -244,6 +245,11 @@ const buildRevisionDetail = (
       directives: [],
       routines: [],
       contextVariableEnablements: [],
+      greeting: {
+        before: { exactWordsEnabled: false, exactContent: null },
+        after: { exactWordsEnabled: false, exactContent: null },
+        changed: false,
+      },
     },
   },
 });
@@ -910,6 +916,8 @@ export const installDashboardApiMocks = async (
     providerEncryptionConfigured?: boolean;
     providerCredentialUpdates?: Array<{ method: "PUT" | "DELETE"; provider: string; body?: unknown }>;
     llmModelUpdates?: Array<unknown>;
+    /** Per capability, the model the plan runs instead of the preference. Defaults to none. */
+    llmManagedModels?: Partial<Record<"chat" | "rewrite" | "rerank", { provider: string; model: string } | null>>;
     ingestionSettings?: IngestionSettingsFixture;
     ingestionSettingsUpdates?: unknown[];
     ingestionSettingsUpdateError?: string;
@@ -982,6 +990,11 @@ export const installDashboardApiMocks = async (
     rerank: { provider: string; model: string } | null;
   } = { chat: null, rewrite: null, rerank: null };
   const llmModelUpdates = options.llmModelUpdates;
+  const llmManagedModels = {
+    chat: options.llmManagedModels?.chat ?? null,
+    rewrite: options.llmManagedModels?.rewrite ?? null,
+    rerank: options.llmManagedModels?.rerank ?? null,
+  };
   const documents = options.documentList ?? documentListResponse;
   const settingsUpdates = options.settingsUpdates;
   const ingestionSettingsUpdates = options.ingestionSettingsUpdates;
@@ -2376,7 +2389,7 @@ export const installDashboardApiMocks = async (
     }
 
     if (request.method() === "GET" && path === "/settings/llm-models") {
-      await json(route, { ...llmModels, knownModelsByProvider });
+      await json(route, { ...llmModels, managed: llmManagedModels, knownModelsByProvider });
       return;
     }
 
@@ -2388,7 +2401,7 @@ export const installDashboardApiMocks = async (
         rewrite: 'rewrite' in body ? body.rewrite ?? null : llmModels.rewrite,
         rerank: 'rerank' in body ? body.rerank ?? null : llmModels.rerank,
       };
-      await json(route, { ...llmModels, knownModelsByProvider });
+      await json(route, { ...llmModels, managed: llmManagedModels, knownModelsByProvider });
       return;
     }
 

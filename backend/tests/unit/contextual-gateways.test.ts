@@ -32,7 +32,7 @@ import type {
 import type { RerankGateway, RerankGatewayInput } from "../../src/modules/retrieval/services/rerankService.js";
 import type {
   LlmCapabilityResolveInput,
-  LlmCapabilityResolver,
+  LlmCapabilityConfigResolver,
 } from "../../src/shared/infra/llm/capabilityResolver.js";
 import type {
   LlmCapabilityConfig,
@@ -55,7 +55,7 @@ const usageContext = {
 
 const buildResolver = (
   configs: Partial<Record<LlmCapabilityName, LlmCapabilityConfig>>,
-): LlmCapabilityResolver => ({
+): LlmCapabilityConfigResolver => ({
   async resolve(capability, _input: LlmCapabilityResolveInput) {
     const config = configs[capability];
     if (!config) {
@@ -177,7 +177,7 @@ describe("ContextualStructuredInferenceFactory", () => {
   // Tracks which capability each factory actually asked the resolver for,
   // independent of what config the stub resolver happens to return.
   const buildCapabilityTrackingResolver = (): {
-    resolver: LlmCapabilityResolver;
+    resolver: LlmCapabilityConfigResolver;
     capabilities: LlmCapabilityName[];
   } => {
     const capabilities: LlmCapabilityName[] = [];

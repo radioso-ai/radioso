@@ -432,6 +432,7 @@ export interface BootstrapGreetingCache {
   greeting_text: string;
   id: string;
   locale_used: string | null;
+  suggestions: Json | null;
   updated_at: Generated<Timestamp>;
   workspace_id: string;
 }

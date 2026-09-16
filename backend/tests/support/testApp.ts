@@ -195,7 +195,7 @@ import {
   TextRoutedToolCallingGateway,
 } from "../../src/shared/agent-runtime/index.js";
 import { createCopilotToolCatalog, createCopilotWorkspaceRouteKeyResolver } from "../../src/app/composition/copilotToolCatalog.js";
-import { createAgentSettingCopilotProposalAdapter, createAgentSkillCopilotProposalAdapter, createContextVariableCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../../src/modules/operatorCopilot/proposalAdapters.js";
+import { createAgentGreetingCopilotProposalAdapter, createAgentSettingCopilotProposalAdapter, createAgentSkillCopilotProposalAdapter, createContextVariableCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../../src/modules/operatorCopilot/proposalAdapters.js";
 import { createDocumentCopilotProposalAdapter } from "../../src/modules/operatorCopilot/documentProposalAdapter.js";
 import { createIngestionSettingsCopilotProposalAdapter } from "../../src/modules/operatorCopilot/ingestionSettingsProposalAdapter.js";
 import { createWorkspaceSettingCopilotProposalAdapter } from "../../src/modules/operatorCopilot/workspaceSettingProposalAdapter.js";
@@ -210,7 +210,7 @@ import { buildTelemetrySinks } from "../../src/shared/observability/telemetry/bu
 import { TelemetryService } from "../../src/shared/observability/telemetry/telemetryService.js";
 import type { AppDependencies } from "../../src/app/server/types.js";
 import type { RealtimeRolloutPolicy } from "../../src/modules/realtime/domain/realtimeRolloutPolicy.js";
-import { badRequest, conflict } from "../../src/shared/domain/errors.js";
+import { badRequest, conflict, notFound } from "../../src/shared/domain/errors.js";
 import { apiPrincipalRouteInventory } from "../../src/app/http/apiPrincipalRoutePolicy.js";
 import type {
   AgentContextVariableEnablement,
@@ -243,6 +243,10 @@ import {
 } from "../../src/app/composition/index.js";
 import { DefaultAllowCapabilityPolicy, registeredCapabilityNames } from "../../src/shared/domain/capabilityPolicy.js";
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../src/shared/domain/usageLimitPolicy.js";
+import { NoopManagedModelPolicy, type ManagedModelPolicy } from "../../src/shared/domain/managedModelPolicy.js";
+import { WorkspaceLlmCapabilityResolver } from "../../src/app/composition/workspaceLlmCapabilityResolver.js";
+import { resolveLlmConfig } from "../../src/shared/infra/llm/providerConfig.js";
+import { resolveWorkspaceManagedLlmModels } from "../../src/shared/infra/llm/workspaceManagedModels.js";
 import { NoopUsageEventRecorder } from "../../src/shared/domain/usageEventRecorder.js";
 import {
   noopOrganizationCreationGuard,
@@ -761,6 +765,7 @@ export const createTestDependencies = (overrides: {
   abuseControlRepository?: AbuseControlRepositoryPort;
   fallbackReplyComposer?: FallbackReplyComposer;
   usageLimitPolicy?: UsageLimitPolicy;
+  managedModelPolicy?: ManagedModelPolicy;
   organizationCreationGuard?: OrganizationCreationGuard;
   answerFeedbackHistoryProvider?: AnswerFeedbackHistoryProviderPort;
   contactHistoryProvider?: ContactHistoryProviderPort;
@@ -1458,6 +1463,13 @@ export const createTestDependencies = (overrides: {
     retrievalSettingsRepository,
     auditService,
   );
+  const llmSelectionResolver = new WorkspaceLlmCapabilityResolver({
+    defaults: resolveLlmConfig(env),
+    settings: workspaceLlmCapabilitySettingsService,
+    credentials: workspaceProviderCredentialsService,
+    envKeys: { resolveEnvApiKey: () => undefined },
+    managedModelPolicy: overrides.managedModelPolicy ?? new NoopManagedModelPolicy(),
+  });
   const connectorRegistry = new ConnectorRegistry();
   connectorRegistry.setEncryptionKey(env.CONNECTOR_ENCRYPTION_KEY!);
   const connectorDb = new InMemoryConnectorDatabase();
@@ -1480,6 +1492,15 @@ export const createTestDependencies = (overrides: {
         invocationMode: "default_answer",
         enabled: agent.retrievalEnabled,
       });
+    },
+    async (workspaceId, agentId, input, options) => {
+      const draft = await agentRevisionRepository.readDraft(workspaceId, agentId);
+      if (!draft) throw notFound("Agent draft not found");
+      if (options.expectedDraftGeneration !== undefined && draft.generation !== options.expectedDraftGeneration) {
+        throw conflict("Agent draft changed before the greeting proposal was applied; reload before saving again");
+      }
+      await agentRevisionRepository.mutateDraft(workspaceId, agentId, (snapshot) => ({ ...snapshot, greeting: input }));
+      return input;
     },
   );
   const contextVariableRepository = new InMemoryContextVariableRepository(agentSkillRepository);
@@ -2018,6 +2039,7 @@ export const createTestDependencies = (overrides: {
   const copilotProposalAdapters = [
     createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService }),
     createAgentSettingCopilotProposalAdapter({ agentService }),
+    createAgentGreetingCopilotProposalAdapter({ agentService, agentRevisions: agentRevisionService }),
     createRoutineCopilotProposalAdapter({ agentService, routineDraftAssistService, routineDefinitionService }),
     createAgentSkillCopilotProposalAdapter({ agentService, agentSkillsService, skillCapabilityRegistry }),
     createContextVariableCopilotProposalAdapter({ contextVariables: contextVariableService }),
@@ -2148,6 +2170,9 @@ export const createTestDependencies = (overrides: {
       },
       async listLlmModels(workspaceId) {
         return workspaceLlmCapabilitySettingsService.listForWorkspace(workspaceId);
+      },
+      async getManagedLlmModels(workspaceId) {
+        return resolveWorkspaceManagedLlmModels(llmSelectionResolver, workspaceId);
       },
       async getProviderCredentialHealth(workspaceId) {
         return {
@@ -2308,6 +2333,10 @@ export const createTestDependencies = (overrides: {
       async resolve() {
         throw new Error("Workspace LLM capability resolution is not configured in the in-memory test app");
       },
+      // Selection needs no keys, so the real decision runs against the in-memory
+      // preference and credential stores; `resolve` stays unconfigured because a
+      // credentialed config would let tests reach a live provider.
+      resolveSelection: (capability, input) => llmSelectionResolver.resolveSelection(capability, input),
     },
     authService,
     apiPrincipalAuthenticator,
@@ -2497,6 +2526,7 @@ export const createTestApp = (overrides: {
   abuseControlRepository?: AbuseControlRepositoryPort;
   fallbackReplyComposer?: FallbackReplyComposer;
   usageLimitPolicy?: UsageLimitPolicy;
+  managedModelPolicy?: ManagedModelPolicy;
   organizationCreationGuard?: OrganizationCreationGuard;
   answerFeedbackHistoryProvider?: AnswerFeedbackHistoryProviderPort;
   contactHistoryProvider?: ContactHistoryProviderPort;

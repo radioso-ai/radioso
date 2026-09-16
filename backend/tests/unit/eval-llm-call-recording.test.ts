@@ -4,7 +4,7 @@ import { ChatGatewayLlmJudge } from "../../src/modules/eval/services/evalJudge.j
 import { RetrievalPipelineEvalRunner } from "../../src/modules/eval/services/retrievalPipelineEvalRunner.js";
 import { AnswerPresentationService } from "../../src/modules/chat/services/answerPresentationService.js";
 import { createRetrievalSkillSettingsResolver } from "../../src/app/composition/skillSettingsResolver.js";
-import type { LlmCapabilityResolver } from "../../src/shared/infra/llm/capabilityResolver.js";
+import type { LlmCapabilityConfigResolver } from "../../src/shared/infra/llm/capabilityResolver.js";
 import type { ChatGateway } from "../../src/modules/chat/contracts/index.js";
 import type { ChatGatewayInput } from "../../src/modules/chat/contracts/chatGateway.js";
 import type { AgentSnapshot } from "../../src/modules/agents/public.js";
@@ -69,7 +69,7 @@ const buildChatGateway = (answerText: string): { gateway: ChatGateway; calls: Ch
   };
 };
 
-const buildResolver = (): LlmCapabilityResolver => ({
+const buildResolver = (): LlmCapabilityConfigResolver => ({
   async resolve() {
     return { provider: "openai", model: "gpt-4o-mini", apiKey: "k", baseUrl: undefined } as any;
   },

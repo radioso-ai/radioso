@@ -56,6 +56,11 @@ const workspaceSettingsPort = () => ({
     { capability: "chat" as const, provider: "openai", model: "gpt-5-mini", token: "llm-token" },
     { capability: "rerank" as const, provider: "claude", model: "claude-sonnet-4-5", token: "llm-token" },
   ]),
+  getManagedLlmModels: vi.fn(async () => ({
+    chat: { provider: "claude", model: "claude-sonnet-5", apiKey: "sk-managed-secret" },
+    rewrite: null,
+    rerank: null,
+  })),
   getEmbeddingCoverage: vi.fn(async () => ({
     eligibleChunks: 1200,
     coveredChunks: 900,
@@ -128,6 +133,7 @@ describe("workspace settings copilot reader", () => {
     expect(workspaceSettings.getIngestionSettings).toHaveBeenCalledWith("workspace-1");
     expect(workspaceSettings.getEmbeddingCoverage).toHaveBeenCalledWith("workspace-1");
     expect(workspaceSettings.listLlmModels).toHaveBeenCalledWith("workspace-1");
+    expect(workspaceSettings.getManagedLlmModels).toHaveBeenCalledWith("workspace-1");
     expect(workspaceSettings.getProviderCredentialHealth).toHaveBeenCalledWith("workspace-1");
     expect(workspaceSettings.getGeneralSettings).toHaveBeenCalledWith("workspace-1");
     expect(result).toMatchObject({
@@ -156,6 +162,13 @@ describe("workspace settings copilot reader", () => {
         chat: { provider: "openai", model: "gpt-5-mini" },
         rewrite: null,
         rerank: { provider: "claude", model: "claude-sonnet-4-5" },
+        // What the plan runs instead of the stored preference, so Ray can explain
+        // why a picked model is not the one answering.
+        managed: {
+          chat: { provider: "claude", model: "claude-sonnet-5" },
+          rewrite: null,
+          rerank: null,
+        },
       },
       credentials: {
         encryptionConfigured: true,
@@ -179,6 +192,7 @@ describe("workspace settings copilot reader", () => {
       "sk-ingestion-secret",
       "llm-token",
       "sk-credential-secret",
+      "sk-managed-secret",
       "credential-value-secret",
       "anonymous-chat-token",
       "website-embed-token",

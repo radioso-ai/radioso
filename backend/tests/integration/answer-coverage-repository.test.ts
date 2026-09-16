@@ -125,6 +125,54 @@ describeIntegration("AnswerCoverageRepository", () => {
     })).rejects.toThrow();
   });
 
+  it("defaults a legacy row's producer to the assessor when the column is NULL", async () => {
+    const legacyRequestMessageId = randomUUID();
+    await database.query(
+      "INSERT INTO messages (id, conversation_id, workspace_id, role, content) VALUES ($1, $2, $3, 'user', $4)",
+      [legacyRequestMessageId, conversationId, workspaceId, "A legacy request"],
+    );
+    const saved = await repository.saveAssessment({
+      workspaceId,
+      conversationId,
+      requestMessageId: legacyRequestMessageId,
+      originatingTurnId: legacyRequestMessageId,
+      contextualizedRequest: "Legacy pre-#1260 row",
+      assessment: {
+        availability: "assessed",
+        coverage: "answered",
+        reason: "sufficient_evidence",
+        schemaVersion: 1,
+        producer: "assessor",
+      },
+    });
+    // Every row written before migration 188 has no producer column at all;
+    // simulate that by nulling it out directly, bypassing the repository.
+    await database.query("UPDATE answer_coverage_assessments SET producer = NULL WHERE id = $1", [saved.id]);
+
+    const record = await repository.findByRequestMessageId({ workspaceId, requestMessageId: legacyRequestMessageId });
+    expect(record?.availability === "assessed" && record.producer).toBe("assessor");
+  });
+
+  it("round-trips a non-assessed row's producer instead of defaulting it", async () => {
+    const invalidHeadRequestMessageId = randomUUID();
+    await database.query(
+      "INSERT INTO messages (id, conversation_id, workspace_id, role, content) VALUES ($1, $2, $3, 'user', $4)",
+      [invalidHeadRequestMessageId, conversationId, workspaceId, "A request whose head failed to parse"],
+    );
+    const saved = await repository.saveAssessment({
+      workspaceId,
+      conversationId,
+      requestMessageId: invalidHeadRequestMessageId,
+      originatingTurnId: invalidHeadRequestMessageId,
+      contextualizedRequest: "Head failed to parse",
+      assessment: { availability: "invalid", producer: "answer_head" },
+    });
+    expect(saved.availability === "invalid" && saved.producer).toBe("answer_head");
+
+    const record = await repository.findByRequestMessageId({ workspaceId, requestMessageId: invalidHeadRequestMessageId });
+    expect(record?.availability === "invalid" && record.producer).toBe("answer_head");
+  });
+
   it("rejects a reaction whose target conversation differs from its assessment", async () => {
     const assessmentRequestId = randomUUID();
     const targetConversationId = randomUUID();

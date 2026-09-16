@@ -5,6 +5,10 @@ import type {
 
 export {
   addressesSurface,
+  // Sets `SteeringRule.id` from the matched directive's own `id` whenever the
+  // directive carries one, so a rule stays traceable back to its authored
+  // directive across a turn's steering pipeline; absent only for directives
+  // that never had an id assigned.
   directiveMatchToSteering as directiveToSteeringRule,
   effectiveSurfaces,
   resolveRenderSurfaces,

@@ -5,6 +5,7 @@ import {
   answerCoverageLabel,
   answerCoverageOutcomePresentation,
   normalizeAnswerCoverage,
+  normalizeAnswerCoverageHeadStageFields,
   normalizeAnswerCoverageInteractionTrace,
   compatibleAnswerCoverageReasons,
 } from '@/lib/answer-coverage'
@@ -67,6 +68,19 @@ describe('answer coverage wire normalization', () => {
   it('keeps failed and historical assessments explicitly unassessed', () => {
     expect(normalizeAnswerCoverage({ availability: 'failed', originatingTurnId: 't', originatingRequestId: 'r' })?.coverage).toBeUndefined()
     expect(normalizeAnswerCoverage({ availability: 'not_recorded', originatingTurnId: 't', originatingRequestId: 'r' })?.availability).toBe('not_recorded')
+  })
+
+  it('reads the head stage parse outcome and host decision', () => {
+    expect(normalizeAnswerCoverageHeadStageFields({ availability: 'assessed', parseOutcome: 'parsed', hostDecision: 'proceed' }))
+      .toEqual({ parseOutcome: 'parsed', hostDecision: 'proceed' })
+    expect(normalizeAnswerCoverageHeadStageFields({ availability: 'assessed', parseOutcome: 'deterministic', hostDecision: 'yield_turn' }))
+      .toEqual({ parseOutcome: 'deterministic', hostDecision: 'yield_turn' })
+  })
+
+  it('drops an unrecognized or absent parse outcome and host decision', () => {
+    expect(normalizeAnswerCoverageHeadStageFields({ reason: 'already_reported' })).toEqual({ parseOutcome: undefined, hostDecision: undefined })
+    expect(normalizeAnswerCoverageHeadStageFields({ parseOutcome: 'made_up', hostDecision: 'made_up' })).toEqual({ parseOutcome: undefined, hostDecision: undefined })
+    expect(normalizeAnswerCoverageHeadStageFields(undefined)).toEqual({})
   })
 })
 

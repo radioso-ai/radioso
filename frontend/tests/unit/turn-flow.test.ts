@@ -177,6 +177,14 @@ describe('envelopeToFlowGraph', () => {
     expect(edge(graph, 'spine:model_calls', 'outcome')).toBeDefined()
   })
 
+  it('omits the coverage verdict node and flows the tail straight to outcome when the stage is absent (#1260 R4)', () => {
+    const graph = envelopeToFlowGraph(envelope())
+
+    expect(graph.nodes.find((candidate) => candidate.id === 'spine:answer_coverage_head')).toBeUndefined()
+    expect(edge(graph, 'stage:answer', 'spine:answer_coverage_head')).toBeUndefined()
+    expect(edge(graph, 'stage:answer', 'outcome')).toBeDefined()
+  })
+
   it('connects skill straight to outcome when there is no capability leaf', () => {
     const base = envelope()
     const dispatch = base.spine.stages.find((s) => s.kind === 'skill_dispatch')!

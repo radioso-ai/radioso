@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-09-15
+last_updated: 2026-09-16
 ---
 
 # Code Map
@@ -659,6 +659,14 @@ Public surfaces and contracts:
   pending-resolution helper, and trace-stage builder; no routine or retrieval
   payload interpretation)
 
+Primary internals:
+
+- `packages/conversation-engine/src/coverageVerdictSink.ts` (the compose-time
+  port a retrieval-style skill calls to hand the engine its parsed answer-head
+  coverage verdict: directive applicability from the head, coverage routine
+  candidate evaluation and ranked activation, and reaction recording all run
+  from here, returning `proceed` or `yield_turn` — #1260)
+
 Useful searches:
 
 - `rg "DefaultConversationEngine|createConversationEngine|processTurn|processTurnStream|clarification" packages/conversation-engine backend/src`
@@ -673,6 +681,7 @@ Focused checks:
 Related docs and specs:
 
 - `specs/068-capability-neutral-turn-spine/`
+- `specs/1260-coverage-verdict-in-answer-head/`
 - Issue `#482`
 
 ## Documents And Ingestion
@@ -832,6 +841,18 @@ Primary internals:
 - `backend/src/modules/chat/services/groundedAnswerPromptComposer.ts`
 - `backend/src/modules/answerCoverage/` (validated assessment producer,
   immutable assessment/reaction storage, and history/Pulse read ports)
+- `backend/src/modules/chat/services/groundedAnswerHeadReader.ts` (parses the
+  envelope's `coverage`/`requestFocus`/`outcome` head from streaming JSON
+  before any answer text is safe to release — #1260)
+- `backend/src/modules/chat/services/answerCoverageFromHead.ts` (maps a parsed
+  head, an invalid head, or the zero-evidence branch to the assessment shape
+  `llmAnswerCoverageProducer.ts` also produces)
+- `backend/src/modules/chat/services/answerCoverageHeadRecorder.ts` (persists
+  the head-produced assessment and reaction trace; a no-op wrapper in draft
+  test chat and eval replay)
+- `backend/src/modules/chat/services/answerCoverageShadowAssessor.ts` (runs
+  `llmAnswerCoverageProducer.ts` concurrently with compose for a measurement
+  window and records head/shadow agreement; never on the turn's critical path)
 - `backend/src/modules/chat/services/summary/conversationSummaryService.ts` (rolling
   per-conversation summary #866: regenerated post-turn, injected into interpretation
   and answer prompts; state in `conversation_summaries`. The same regeneration call
@@ -849,6 +870,7 @@ Useful searches:
 Focused checks:
 
 - `cd backend && pnpm test -- tests/unit/chat-service-streaming.test.ts tests/unit/chat-history-service.test.ts tests/unit/chat-presenter.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/grounded-answer-head-reader.test.ts tests/unit/retrieval-answer-coverage-verdict.test.ts tests/unit/chat/answerCoverageHeadRecorder.test.ts tests/unit/chat/answerCoverageShadowAssessor.test.ts`
 - `cd frontend && pnpm test -- tests/unit/chat-message-thread.test.tsx tests/unit/chat-citations.test.tsx`
 - `cd frontend && pnpm run test:e2e -- assistant-history.spec.ts assistant-retrieval-settings.spec.ts`
 
@@ -862,6 +884,7 @@ Related docs and specs:
 - `specs/040-website-embed-widget/`
 - `specs/050-social-turn-intent/`
 - `specs/1149-answer-coverage-signals/`
+- `specs/1260-coverage-verdict-in-answer-head/`
 
 ## Directives
 

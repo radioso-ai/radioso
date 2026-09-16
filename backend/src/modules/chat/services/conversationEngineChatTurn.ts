@@ -19,6 +19,7 @@ import type {
   ConversationTurnInterpreter,
   ProcessTurnResult,
   RenderableTurn,
+  TurnContext,
 } from "@radioso/conversation-contract";
 
 import type { ChatAnswerPresenter, ChatPresentedAnswer } from "./chatAnswerPresenter.js";
@@ -154,6 +155,32 @@ const wasYieldedBySkill = (presentation: ChatPresentedAnswer | null): boolean =>
   presentation?.yielded === true;
 
 /**
+ * Host generators (`retrievalTurnSkill.ts`, `assistantReplyComposer.ts`,
+ * `fallbackReplyComposer.ts`, the directive-adherence side channel) render from
+ * `session.directiveSteering.rules`, not from the engine's compose input. That
+ * session field is a side effect of the directive-matcher adapter
+ * (`buildDirectiveTurnWiring` in `conversationProcessTurnInput.ts`), which the
+ * engine calls once per directive group it resolves before compose — legacy
+ * directives, then (on a retrieval turn with coverage directives) coverage
+ * directives again. Each call overwrites the field, so by compose time it holds
+ * only the last group's rules, silently dropping every directive matched by an
+ * earlier call from every generator's prompt.
+ *
+ * The engine's compose-input `turn.steering` has already merged and resolved
+ * every group (see `packages/conversation-engine/src/index.ts`), so it is the
+ * turn's real steering set. This copies it onto the session immediately before
+ * rendering so generators see the same rules the engine decided on, without
+ * touching the matcher adapter's side effect itself — that side effect still
+ * backs directive-to-skill binding and the pre-compose trace, both of which run
+ * before this point and are unaffected by what happens here.
+ */
+const syncSessionSteeringForRender = (session: PreparedSession, turn: TurnContext): void => {
+  session.directiveSteering = session.directiveSteering
+    ? { ...session.directiveSteering, rules: turn.steering }
+    : { rules: turn.steering, matches: [], omissions: [] };
+};
+
+/**
  * Runs a prepared Radioso chat turn through a conversation-engine implementation
  * while preserving Radioso-owned rendering. The engine selects (via the existing
  * TurnSelectionStrategy) and dispatches a terminal answer skill from the injected
@@ -202,12 +229,13 @@ export const runPreparedChatTurnWithConversationEngine = async (
       },
     },
     composer: {
-      async compose({ outcomes, coverageVerdict }) {
+      async compose({ turn, outcomes, coverageVerdict }) {
         const outcome = outcomes[0];
         if (!outcome) {
           throw new Error("conversation_engine_dispatched_no_outcome");
         }
         await input.beforeRender?.();
+        syncSessionSteeringForRender(readSession(), turn);
         rendered = await renderers.resolve(outcome).render(outcome, {
           session: readSession(),
           query: input.query,
@@ -312,12 +340,13 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
       streamCommitted(response) {
         return committedAnswerChunks(response.answer);
       },
-      async *stream({ outcomes, coverageVerdict }) {
+      async *stream({ turn, outcomes, coverageVerdict }) {
         const outcome = outcomes[0];
         if (!outcome) {
           throw new Error("conversation_engine_dispatched_no_outcome");
         }
         await input.beforeRender?.();
+        syncSessionSteeringForRender(readSession(), turn);
         const answerStream = renderers.stream(outcome, {
           session: readSession(),
           query: input.query,

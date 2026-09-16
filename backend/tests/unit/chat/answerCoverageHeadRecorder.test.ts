@@ -94,6 +94,35 @@ describe("AnswerCoverageHeadRecorder.wrapVerdictSink", () => {
     expect(onAssessment).toHaveBeenNthCalledWith(2, expect.objectContaining({ record: savedRecord }));
   });
 
+  it("forwards the stored verdict to the engine, not a second report's fresh one, when saveAssessment upserts onto an existing row (#1260 review F8)", async () => {
+    // `saveAssessment` is insert-or-return-existing: a second report for the same
+    // request message id (a retry/regenerate) always gets `savedRecord` back,
+    // whatever assessment it was actually called with. The engine must decide on
+    // the verdict the row carries, or the persisted record and the turn's actual
+    // directive/routine reactions disagree about what was assessed.
+    const divergentAssessment: AnswerCoverageAssessment = {
+      availability: "assessed",
+      coverage: "answered",
+      reason: "sufficient_evidence",
+      schemaVersion: 1,
+      producer: "answer_head",
+    };
+    const repository = fakeRepository({ saveAssessment: async () => savedRecord });
+    const recorder = new AnswerCoverageHeadRecorder(repository);
+    const inner = fakeSink();
+    const current = session();
+    const wrapped = recorder.wrapVerdictSink({ getSession: () => current }, inner);
+
+    await wrapped.report({ assessment: assessedVerdict });
+    await wrapped.report({ assessment: divergentAssessment });
+
+    expect(inner.report).toHaveBeenNthCalledWith(2, { assessment: expect.objectContaining({
+      coverage: savedRecord.coverage,
+      reason: savedRecord.reason,
+    }) });
+    expect(inner.report).not.toHaveBeenNthCalledWith(2, { assessment: divergentAssessment });
+  });
+
   it("never throws when persistence fails, and still delegates to the inner sink's decision", async () => {
     const repository = fakeRepository({ saveAssessment: async () => { throw new Error("db unavailable"); } });
     const recorder = new AnswerCoverageHeadRecorder(repository);

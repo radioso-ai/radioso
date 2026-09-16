@@ -32,7 +32,7 @@ const SPINE_STAGE_LABELS: Record<string, string> = {
 export const spineStageLabel = (stage: ConversationTraceStage): string =>
   SPINE_STAGE_LABELS[stage.kind] ?? stage.kind.replaceAll('_', ' ')
 
-export interface SpineStageTelemetry {
+interface SpineStageTelemetry {
   durationMs?: number
   models: string[]
   operations: string[]
@@ -126,7 +126,7 @@ export const spineStageTelemetry = (stage: ConversationTraceStage): SpineStageTe
   }
 }
 
-export interface TurnTraceRollup {
+interface TurnTraceRollup {
   totalLlmCalls: number
   serialLlmDepth: number
   longestStage: { name: string; durationMs: number }
@@ -173,7 +173,7 @@ export const turnTraceRollup = (
  */
 const ACTIVITY_TRACE_NAMESPACES = new Set(['retrieval', 'skill-intake'])
 
-export type CapabilityLeafView =
+type CapabilityLeafView =
   | { kind: 'activity-trace'; namespace: string; trace: ActivityTrace }
   | { kind: 'raw'; namespace: string; payload: unknown }
 

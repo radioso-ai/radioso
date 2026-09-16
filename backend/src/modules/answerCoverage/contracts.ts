@@ -1,5 +1,11 @@
 import { z } from "zod";
 
+import {
+  ANSWER_COVERAGE_CLASSIFICATIONS,
+  ANSWER_COVERAGE_CLASSIFICATION_VALUES,
+  answerCoverageClassificationKeyFor,
+  type AnswerCoverageClassification,
+} from "@radioso/conversation-defaults";
 import type {
   AnswerCoverage,
   AnswerCoverageAssessment,
@@ -27,27 +33,18 @@ const answerCoverageReasonSchema = z.enum([
 ]);
 
 /**
- * The eight-value classification a coverage judge (the pre-compose assessor today,
- * the answer envelope head after #1260) emits. Shared here so both a producer and
- * the envelope schema/head reader classify against exactly one table.
+ * The eight-value classification a coverage judge (the answer envelope head,
+ * or its shadow assessor) emits. Re-exported from `@radioso/conversation-defaults`
+ * (the shared, backend-importable home for this table — see that module's
+ * doc comment for why it is not in `@radioso/conversation-contract`) so a
+ * producer, the envelope schema/head reader, and the steering-prompt renderer
+ * all classify against exactly one table.
  */
-export const classifications = {
-  answered_sufficient_evidence: { coverage: "answered", reason: "sufficient_evidence" },
-  partial_insufficient_evidence: { coverage: "partial", reason: "insufficient_evidence" },
-  partial_conflicting_evidence: { coverage: "partial", reason: "conflicting_evidence" },
-  partial_intentional_scope_boundary: { coverage: "partial", reason: "intentional_scope_boundary" },
-  unanswered_insufficient_evidence: { coverage: "unanswered", reason: "insufficient_evidence" },
-  unanswered_conflicting_evidence: { coverage: "unanswered", reason: "conflicting_evidence" },
-  unanswered_intentional_scope_boundary: { coverage: "unanswered", reason: "intentional_scope_boundary" },
-  unclear_ambiguous_request: { coverage: "unclear", reason: "ambiguous_request" },
-} as const satisfies Record<string, { coverage: AnswerCoverage; reason: AnswerCoverageReason }>;
+export const classifications = ANSWER_COVERAGE_CLASSIFICATIONS;
 
-export type AnswerCoverageClassification = keyof typeof classifications;
+export type { AnswerCoverageClassification };
 
-export const classificationValues = Object.keys(classifications) as [
-  AnswerCoverageClassification,
-  ...AnswerCoverageClassification[],
-];
+export const classificationValues = ANSWER_COVERAGE_CLASSIFICATION_VALUES;
 
 /**
  * Inverts {@link classifications} back to its eight-value key from a
@@ -55,15 +52,7 @@ export const classificationValues = Object.keys(classifications) as [
  * (#1260, FR-020) with the same bounded enum the head and the assessor both
  * classify against, rather than re-deriving a coarser signal.
  */
-export const classificationKeyFor = (
-  signal: { coverage: AnswerCoverage; reason: AnswerCoverageReason },
-): AnswerCoverageClassification | undefined => {
-  const entry = (Object.entries(classifications) as [
-    AnswerCoverageClassification,
-    { coverage: AnswerCoverage; reason: AnswerCoverageReason },
-  ][]).find(([, value]) => value.coverage === signal.coverage && value.reason === signal.reason);
-  return entry?.[0];
-};
+export const classificationKeyFor = answerCoverageClassificationKeyFor;
 
 /** Classification taxonomy version, carried on every assessed record. */
 export const ANSWER_COVERAGE_SCHEMA_VERSION = 1;

@@ -67,7 +67,14 @@ export class AnswerCoverageHeadRecorder {
             contextualizedRequest: buildContextualizedRequest(session, session.effectiveQuery ?? session.userMessage.content),
             assessment,
           });
-          input.onAssessment?.({ assessment: assessmentFromRecord(saved), record: saved });
+          const recordedAssessment = assessmentFromRecord(saved);
+          input.onAssessment?.({ assessment: recordedAssessment, record: saved });
+          // `saveAssessment` is insert-or-return-existing: a retried report for the
+          // same request message id gets back whichever verdict the row already
+          // carries, which need not be this call's own `assessment` (#1260 review
+          // F8). Forward the row's verdict so the engine's directive/routine
+          // reactions and the persisted record always agree on what was assessed.
+          return inner.report({ assessment: recordedAssessment });
         } catch {
           // Durable diagnostics are additive. The signal remains valid for this
           // turn, but a retry will safely converge through the idempotency key

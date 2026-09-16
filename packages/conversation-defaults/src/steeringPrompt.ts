@@ -1,20 +1,10 @@
 import { orderSteeringRules, type SteeringRule } from "./domain.js";
 import { renderPromptTemplate } from "./promptTemplate.js";
+import { expandAnswerCoverageCriteria } from "./answerCoverageClassification.js";
 import {
   DEFAULT_CLARIFICATION_STEERING_PROMPT,
   DEFAULT_STEERING_PROMPT,
 } from "./generated/defaultPrompts.js";
-
-/**
- * A steering rule conditioned on the coverage verdict the answer model is about
- * to emit (#1260). The engine matches coverage directives before compose,
- * without the verdict, and tags each resulting rule with its `coverageCriteria`
- * so this renderer can layer it as a condition — see
- * `packages/conversation-engine/src/steering.ts`. Kept as a named alias for
- * callers that want to be explicit about rendering a conditional rule; it is
- * exactly `SteeringRule`, which already carries `coverageCriteria`.
- */
-export type CoverageConditionalSteeringRule = SteeringRule;
 
 export {
   DEFAULT_CLARIFICATION_STEERING_PROMPT,
@@ -37,17 +27,20 @@ export interface RenderSteeringRulesOptions {
 /**
  * A rule carrying `coverageCriteria` renders as a condition on the classification
  * the model is about to emit, layered the same way an authored `condition`
- * clause is (FR-010). Both can be present on the same rule.
+ * clause is (FR-010). Both can be present on the same rule. The condition lists
+ * the exact eight-value classifications the model can emit that satisfy the
+ * criteria — not the coarser `coverage` word, which is not itself a value the
+ * model ever returns.
  */
-const withCoverageCondition = (rule: CoverageConditionalSteeringRule, action: string): string => {
+const withCoverageCondition = (rule: SteeringRule, action: string): string => {
   if (!rule.coverageCriteria) {
     return action;
   }
-  const criteria = rule.coverageCriteria.coverage.join(", ");
+  const criteria = expandAnswerCoverageCriteria(rule.coverageCriteria).join(", ");
   return `Only when your coverage verdict is one of [${criteria}]: ${action}`;
 };
 
-const formatRule = (rule: CoverageConditionalSteeringRule, includeRuleIds: boolean): string => {
+const formatRule = (rule: SteeringRule, includeRuleIds: boolean): string => {
   const prefix = includeRuleIds && rule.id ? `- [${rule.id}] ` : "- ";
   const action = withCoverageCondition(rule, rule.action);
   return rule.condition ? `${prefix}${action} (when: ${rule.condition})` : `${prefix}${action}`;

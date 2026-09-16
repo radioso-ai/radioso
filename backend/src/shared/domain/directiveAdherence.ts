@@ -2,14 +2,13 @@ import type { DirectiveAdherenceEntry, SteeringRule } from "@radioso/conversatio
 import type { AnswerSchemaExtension, AnswerSideChannel } from "./answerSideChannel.js";
 
 /**
- * Widens the shared attestation entry with whether the rule's own criteria
- * applied this turn (#1260): a conditional rule (e.g. gated on a coverage
- * verdict) that never met its criteria attests `applicable: false` instead of
- * `satisfied: false`, so it is not read as a violation. Belongs on
- * `@radioso/conversation-contract`'s `DirectiveAdherenceEntry` from the slice
- * that teaches the engine to read it; until then this is what `resolve` returns.
+ * Whether the rule's own criteria applied this turn (#1260): a conditional
+ * rule (e.g. gated on a coverage verdict) that never met its criteria attests
+ * `applicable: false` instead of `satisfied: false`, so it is not read as a
+ * violation. `applicable` lives directly on `@radioso/conversation-contract`'s
+ * `DirectiveAdherenceEntry`; this alias just names what `resolve` returns.
  */
-type DirectiveAdherenceAttestation = DirectiveAdherenceEntry & { applicable: boolean };
+type DirectiveAdherenceAttestation = DirectiveAdherenceEntry;
 
 /**
  * Directive adherence is a steering-domain concern, not a retrieval one: the model

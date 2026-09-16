@@ -14,6 +14,8 @@ export interface CopilotWorkspaceSettingsPort {
     suggestedQuestionsEnabled: boolean;
     suggestedQuestionsCount: number;
     rerankEnabled: boolean;
+    /** Absent reads as on (FR-025), matching the retrieval settings domain default. */
+    citationHoldEnabled?: boolean;
     vectorTopK: number;
     similarityThreshold: number;
     rerankTopK: number;
@@ -102,6 +104,7 @@ const workspaceSettingsOutputSchema = z.object({
     suggestedQuestionsEnabled: z.boolean(),
     suggestedQuestionsCount: z.number().int().nonnegative(),
     rerankEnabled: z.boolean(),
+    citationHoldEnabled: z.boolean(),
     vectorTopK: z.number().int().nonnegative(),
     similarityThreshold: z.number(),
     rerankTopK: z.number().int().nonnegative(),
@@ -222,6 +225,7 @@ export const createWorkspaceSettingsCopilotTools = (deps: {
             suggestedQuestionsEnabled: retrieval.suggestedQuestionsEnabled,
             suggestedQuestionsCount: retrieval.suggestedQuestionsCount,
             rerankEnabled: retrieval.rerankEnabled,
+            citationHoldEnabled: retrieval.citationHoldEnabled ?? true,
             vectorTopK: retrieval.vectorTopK,
             similarityThreshold: retrieval.similarityThreshold,
             rerankTopK: retrieval.rerankTopK,

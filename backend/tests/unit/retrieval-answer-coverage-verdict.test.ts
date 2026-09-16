@@ -13,6 +13,7 @@ import type {
   RetrievalCoverageVerdictSink,
 } from "../../src/modules/chat/contracts/answerCoverage.js";
 import type { RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
+import { REQUEST_FOCUS_MAX_LENGTH } from "../../src/modules/answerCoverage/public.js";
 
 const context = (index: number) => ({
   documentId: `doc-${index}`,
@@ -67,6 +68,18 @@ const missingFallback: FallbackReplyComposer = {
   },
 };
 
+/** Captures the `steering` a decline prompt actually rendered with, for F2's known-verdict filtering. */
+const capturingFallback = () => {
+  const steeringCalls: Array<import("../../src/shared/domain/steeringRule.js").SteeringRule[]> = [];
+  const fallback: FallbackReplyComposer = {
+    async composeNoContext(input) {
+      steeringCalls.push(input.steering ?? []);
+      return { text: "I can't help with that here.", declineReason: "content_gap" };
+    },
+  };
+  return { fallback, steeringCalls };
+};
+
 /** A structured (head-first) envelope: coverage/requestFocus/outcome precede answer, as the real schema orders them. */
 const structuredEnvelope = (input: {
   coverage: string;
@@ -93,6 +106,16 @@ const gatewayFor = (raw: string): ChatGateway => ({
     for (let offset = 0; offset < raw.length; offset += 6) {
       yield raw.slice(offset, offset + 6);
     }
+  },
+});
+
+/** Yields the whole envelope as one chunk, so the head-completing chunk also carries the full body. */
+const singleChunkGatewayFor = (raw: string): ChatGateway => ({
+  async answer() {
+    return raw;
+  },
+  async *streamAnswer() {
+    yield raw;
   },
 });
 
@@ -315,6 +338,206 @@ describe("RetrievalAnswerComposer coverage verdict sink — non-streaming", () =
         producer: "deterministic",
       },
     }]);
+  });
+});
+
+describe("RetrievalAnswerComposer decline prompts render coverage rules against the known verdict (#1260 review F2)", () => {
+  const withDirectiveSteering = (session: PreparedSession): PreparedSession => {
+    session.directiveSteering = {
+      rules: [
+        { action: "Be warm.", source: "directive", lifespan: "response" },
+        {
+          action: "Offer the form.",
+          source: "directive",
+          lifespan: "response",
+          coverageCriteria: { coverage: ["unanswered"] },
+        },
+        {
+          action: "Never applies to an unanswered verdict.",
+          source: "directive",
+          lifespan: "response",
+          coverageCriteria: { coverage: ["answered"] },
+        },
+      ],
+      matches: [],
+      omissions: [],
+    };
+    return session;
+  };
+
+  it("renders a matching coverage directive unconditionally in the streaming zero-evidence decline prompt", async () => {
+    const { sink } = fakeSink("proceed");
+    const { fallback, steeringCalls } = capturingFallback();
+    const composer = buildComposer(gatewayFor("unused"), fallback);
+
+    await drain(composer.streamAnswer(
+      withDirectiveSteering(zeroContextSession()),
+      "What is the capital of Mars?",
+      undefined,
+      undefined,
+      undefined,
+      sink,
+    ));
+
+    expect(steeringCalls).toEqual([[
+      { action: "Be warm.", source: "directive", lifespan: "response" },
+      { action: "Offer the form.", source: "directive", lifespan: "response" },
+    ]]);
+  });
+
+  it("renders a matching coverage directive unconditionally in the non-streaming zero-evidence decline prompt", async () => {
+    const { sink } = fakeSink("proceed");
+    const { fallback, steeringCalls } = capturingFallback();
+    const composer = buildComposer(gatewayFor("unused"), fallback);
+
+    await composer.composeAnswer(
+      withDirectiveSteering(zeroContextSession()),
+      "What is the capital of Mars?",
+      undefined,
+      undefined,
+      sink,
+    );
+
+    expect(steeringCalls).toEqual([[
+      { action: "Be warm.", source: "directive", lifespan: "response" },
+      { action: "Offer the form.", source: "directive", lifespan: "response" },
+    ]]);
+  });
+
+  it("renders nothing for the zero-evidence decline when only an answered-gated directive is present", async () => {
+    const { sink } = fakeSink("proceed");
+    const { fallback, steeringCalls } = capturingFallback();
+    const composer = buildComposer(gatewayFor("unused"), fallback);
+    const session = zeroContextSession();
+    session.directiveSteering = {
+      rules: [{
+        action: "Never applies to an unanswered verdict.",
+        source: "directive",
+        lifespan: "response",
+        coverageCriteria: { coverage: ["answered"] },
+      }],
+      matches: [],
+      omissions: [],
+    };
+
+    await composer.composeAnswer(session, "What is the capital of Mars?", undefined, undefined, sink);
+
+    expect(steeringCalls).toEqual([[]]);
+  });
+
+  it("renders a matching coverage directive unconditionally in the unsupported-draft decline prompt", async () => {
+    const raw = structuredEnvelope({
+      coverage: "answered_sufficient_evidence",
+      requestFocus: "the workshop schedule",
+      outcome: "answer",
+      answer: "An uncited draft with no sourced assertion at all.",
+      claims: [],
+    });
+    const { sink } = fakeSink("proceed");
+    const { fallback, steeringCalls } = capturingFallback();
+    const composer = buildComposer(gatewayFor(raw), fallback);
+    const session = withDirectiveSteering(groundedSession());
+    session.directiveSteering!.rules[1] = {
+      action: "Offer the form.",
+      source: "directive",
+      lifespan: "response",
+      coverageCriteria: { coverage: ["answered"] },
+    };
+    session.directiveSteering!.rules[2] = {
+      action: "Never applies to an answered verdict.",
+      source: "directive",
+      lifespan: "response",
+      coverageCriteria: { coverage: ["unanswered"] },
+    };
+
+    const presented = await composer.composeAnswer(session, "Tell me about the workshop.", undefined, undefined, sink);
+
+    expect(presented.grounding).toBe("no_support");
+    expect(steeringCalls).toEqual([[
+      { action: "Be warm.", source: "directive", lifespan: "response" },
+      { action: "Offer the form.", source: "directive", lifespan: "response" },
+    ]]);
+  });
+});
+
+describe("RetrievalAnswerComposer deterministic zero-evidence requestFocus bound (#1260 review F7)", () => {
+  it("does not leak conversation history into the deterministic zero-evidence unresolvedRequest (non-streaming)", async () => {
+    const { sink, calls } = fakeSink("proceed");
+    const composer = buildComposer(gatewayFor("unused"));
+    const session = zeroContextSession();
+    session.history = [
+      { role: "user", content: "What is your refund window?" },
+      { role: "assistant", content: "Thirty days from purchase." },
+    ] as never;
+
+    await composer.composeAnswer(session, "What is the capital of Mars?", undefined, undefined, sink);
+
+    const assessment = calls[0]?.assessment as Extract<AnswerCoverageAssessment, { availability: "assessed" }>;
+    expect(assessment.unresolvedRequest).toBe("What is the capital of Mars?");
+    expect(assessment.unresolvedRequest).not.toContain("refund window");
+    expect(assessment.unresolvedRequest).not.toContain("user:");
+  });
+
+  it("bounds the deterministic zero-evidence unresolvedRequest to REQUEST_FOCUS_MAX_LENGTH (streaming)", async () => {
+    const { sink, calls } = fakeSink("proceed");
+    const composer = buildComposer(gatewayFor("unused"));
+    const session = zeroContextSession();
+    const longQuery = "x".repeat(REQUEST_FOCUS_MAX_LENGTH + 200);
+
+    await drain(composer.streamAnswer(session, longQuery, undefined, undefined, undefined, sink));
+
+    const assessment = calls[0]?.assessment as Extract<AnswerCoverageAssessment, { availability: "assessed" }>;
+    expect(assessment.unresolvedRequest?.length).toBeLessThanOrEqual(REQUEST_FOCUS_MAX_LENGTH);
+  });
+});
+
+describe("RetrievalAnswerComposer aborts while a coverage report is pending (#1260 review F10a)", () => {
+  it("releases no answer text and never reports twice when the client aborts while report() is pending", async () => {
+    // The whole envelope arrives in one chunk, so the same iteration that completes
+    // the head also has the full decline body ready to release. `report()`'s own
+    // promise represents the host's routine-activation work; the client aborts
+    // while that is still pending, before the sink resolves.
+    const raw = structuredEnvelope({
+      coverage: "unanswered_insufficient_evidence",
+      requestFocus: "the refund policy",
+      outcome: "no_support",
+      answer: "I can't confirm that one, but I can help with our workshop schedule.",
+      claims: [],
+    });
+    const controller = new AbortController();
+    const calls: Array<{ assessment: AnswerCoverageAssessment }> = [];
+    const sink: RetrievalCoverageVerdictSink = {
+      async report(input) {
+        calls.push(input);
+        controller.abort(new Error("client_disconnected"));
+        return { decision: "proceed" };
+      },
+    };
+    const composer = buildComposer(singleChunkGatewayFor(raw));
+
+    const generator = composer.streamAnswer(
+      groundedSession(),
+      "Refund policy?",
+      undefined,
+      undefined,
+      controller.signal,
+      sink,
+    );
+    const releasedChunks: string[] = [];
+    let thrown: unknown;
+    try {
+      let step = await generator.next();
+      while (!step.done) {
+        releasedChunks.push(step.value);
+        step = await generator.next();
+      }
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeDefined();
+    expect(releasedChunks).toEqual([]);
+    expect(calls).toHaveLength(1);
   });
 });
 

@@ -181,6 +181,49 @@ describe("DefaultConversationEngine", () => {
     }));
   });
 
+  // F2 (review): a coverage directive is matched contextually before any verdict
+  // exists (see the test above), but only on a retrieval turn — a coverage
+  // classification only ever exists after retrieval ran. On a direct-route turn
+  // (e.g. a greeting) there is no verdict coming, so matching and rendering the
+  // conditional phrasing would be dead weight the model can never resolve.
+  it("does not match coverage directives on a non-retrieval-route turn", async () => {
+    const matchedDirectiveSets: string[][] = [];
+    let capturedSteering: import("@radioso/conversation-contract").SteeringRule[] = [];
+    const input = createInput({
+      directives: [
+        { name: "legacy", condition: { kind: "always" }, action: "Be warm." },
+        {
+          name: "offer-form",
+          condition: { kind: "always" },
+          action: "Offer the form.",
+          coverageCriteria: { coverage: ["unanswered"] },
+        },
+      ],
+      turnInterpreter: {
+        interpret: vi.fn(async () => ({ route: "direct" as const })),
+      },
+      directiveMatcher: {
+        match: vi.fn(async ({ directives }) => {
+          matchedDirectiveSets.push(directives.map((directive) => directive.name));
+          return directives.map((directive) => ({
+            directive, selectionMode: "deterministic" as const, selectionReason: "always",
+          }));
+        }),
+      },
+      composer: {
+        compose: vi.fn(async ({ turn }) => {
+          capturedSteering = turn.steering;
+          return { answer: "Hi there." };
+        }),
+      },
+    });
+
+    await new DefaultConversationEngine().processTurn(input);
+
+    expect(matchedDirectiveSets).toEqual([["legacy"]]);
+    expect(capturedSteering.map((rule) => rule.action)).not.toContain("Offer the form.");
+  });
+
   it("tags a coverage directive's steering rule with its criteria for conditional rendering ahead of any verdict", async () => {
     let capturedSteering: import("@radioso/conversation-contract").SteeringRule[] = [];
     const input = createInput({
@@ -193,6 +236,9 @@ describe("DefaultConversationEngine", () => {
           coverageCriteria: { coverage: ["partial", "unanswered"] },
         },
       ],
+      turnInterpreter: {
+        interpret: vi.fn(async () => ({ route: "retrieval" as const })),
+      },
       directiveMatcher: {
         match: vi.fn(async ({ directives }) => directives.map((directive) => ({
           directive, selectionMode: "deterministic" as const, selectionReason: "always",
@@ -225,6 +271,9 @@ describe("DefaultConversationEngine", () => {
           coverageCriteria: { coverage: ["unanswered"] },
         },
       ],
+      turnInterpreter: {
+        interpret: vi.fn(async () => ({ route: "retrieval" as const })),
+      },
       directiveMatcher: {
         match: vi.fn(async ({ directives }) => directives.map((directive) => ({
           directive, selectionMode: "deterministic" as const, selectionReason: "test",
@@ -264,6 +313,9 @@ describe("DefaultConversationEngine", () => {
         name: "coverage", condition: { kind: "always" }, action: "Never applies without a verdict",
         coverageCriteria: { coverage: ["unanswered"] },
       }],
+      turnInterpreter: {
+        interpret: vi.fn(async () => ({ route: "retrieval" as const })),
+      },
       directiveMatcher: { match: vi.fn(async () => []) },
       coverageReactionRecorder: { record },
       composer: composerReporting({ availability: "invalid", producer: "answer_head" }),

@@ -236,7 +236,11 @@ export class DefaultConversationEngine implements ConversationEngine {
     // criteria, and each resulting rule renders conditionally on the classification
     // the answer model is about to emit. Applicability against the actual verdict
     // is judged once it arrives, at compose time (see `coverageVerdictSink.ts`).
-    const coverageResolved = coverageDirectives.length > 0
+    // Gated on the retrieval route (review F2): a coverage classification only
+    // ever exists after retrieval ran, so matching and rendering the conditional
+    // phrasing on any other route would be a condition the turn can never resolve.
+    const coverageEligibleRoute = interpretation?.route === "retrieval";
+    const coverageResolved = coverageDirectives.length > 0 && coverageEligibleRoute
       ? await buildResolvedSteering({
           turn: retrievedTurn,
           directives: coverageDirectives,

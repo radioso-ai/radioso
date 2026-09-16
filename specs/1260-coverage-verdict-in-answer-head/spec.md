@@ -505,7 +505,10 @@ when no citation appears; with the hold on, behaviour is unchanged.
   unchanged against head-produced records.
 - **SC-008**: With the hold off, first-token release on an `answer` commitment
   trails head arrival by no more than one stream chunk; with the hold on,
-  `groundingGateWaitMs` behaviour is unchanged.
+  `groundingGateWaitMs` behaviour is unchanged. The gate's own clock starts on
+  the first chunk it receives, which is the first chunk after the head
+  resolves, not the turn's first raw provider chunk — so `groundingGateWaitMs`
+  measures from head resolution, not stream start.
 - **SC-007**: Among shadowed turns the shadow classifies `partial` or
   `unanswered`, the head classifies `answered` on no more than 5%. This is the
   disagreement direction that lets a partially supported answer be padded with

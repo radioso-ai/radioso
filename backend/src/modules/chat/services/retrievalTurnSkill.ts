@@ -38,12 +38,13 @@ import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { BoundedGroundingStreamGate } from "./boundedGroundingStreamGate.js";
 import { recordDirectiveSurfaceRendered } from "./directives/directiveSurfaceRendering.js";
 import { GroundedAnswerHeadReader } from "./groundedAnswerHeadReader.js";
+import { steeringRulesForKnownVerdict } from "./knownVerdictCoverageSteering.js";
 import {
   buildAnswerCoverageAssessmentFromHead,
   buildDeterministicZeroEvidenceAssessment,
   buildInvalidHeadAssessment,
 } from "./answerCoverageFromHead.js";
-import { buildContextualizedRequest } from "./contextualizedRequest.js";
+import { REQUEST_FOCUS_MAX_LENGTH } from "../../answerCoverage/public.js";
 import type { AnswerCoverageAssessment, RetrievalCoverageVerdictSink } from "../contracts/answerCoverage.js";
 
 class GroundingStreamGateBoundError extends Error {
@@ -126,6 +127,18 @@ export class RetrievalAnswerComposer {
       requestFocus: envelope.requestFocus,
       outcome: envelope.outcome,
     });
+  }
+
+  /**
+   * The zero-evidence branch's `unresolvedRequest` (#1260 review F7): a short
+   * noun phrase naming the request, matching what the model-produced head
+   * would emit for `requestFocus` (FR-002). `buildContextualizedRequest`
+   * prefixes up to six turns of role-labeled history — the right framing for
+   * the persisted `contextualizedRequest` field, but a whole transcript is
+   * not a short focus phrase.
+   */
+  private zeroEvidenceRequestFocus(session: PreparedSession, query: string): string {
+    return (session.effectiveQuery || query).slice(0, REQUEST_FOCUS_MAX_LENGTH);
   }
 
   /** The presentation for a turn a coverage verdict sink yielded before any text was composed. */
@@ -382,7 +395,7 @@ export class RetrievalAnswerComposer {
     let declineReason: TurnDeclineReason | undefined;
 
     if (session.retrieval.contexts.length === 0) {
-      const zeroEvidenceAssessment = buildDeterministicZeroEvidenceAssessment(buildContextualizedRequest(session, query));
+      const zeroEvidenceAssessment = buildDeterministicZeroEvidenceAssessment(this.zeroEvidenceRequestFocus(session, query));
       const zeroEvidenceVerdict = await coverageVerdict?.report({ assessment: zeroEvidenceAssessment });
       this.recordCoverageHeadOutcome(zeroEvidenceAssessment, zeroEvidenceVerdict?.decision);
       if (zeroEvidenceVerdict?.decision === "yield_turn") {
@@ -404,7 +417,7 @@ export class RetrievalAnswerComposer {
           query,
           userExpectedLocale,
           answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
-          steering: session.directiveSteering?.rules ?? [],
+          steering: steeringRulesForKnownVerdict(session.directiveSteering?.rules ?? [], zeroEvidenceAssessment),
           workspaceContext: this.support.buildChatWorkspaceContext(session),
           usageContext: this.support.buildChatUsageContext(session, accountId, "grounded_miss"),
         });
@@ -437,6 +450,7 @@ export class RetrievalAnswerComposer {
           userExpectedLocale,
           accountId,
           "unsupported_answer",
+          envelopeAssessment,
         );
         this.recordUnsupportedAnswerDecline(decline.declineReason, false);
         answer = decline.text;
@@ -470,20 +484,24 @@ export class RetrievalAnswerComposer {
 
   /** Compose a focused decline through the grounded-miss path. Its narrow prompt
    * declines and redirects without the grounded answer model's pull to continue an
-   * unsupported draft. */
+   * unsupported draft. `knownAssessment` is the verdict already reported to the
+   * coverage sink for this turn: this model is never asked to emit one of its own,
+   * so a coverage-gated steering rule renders unconditionally when it matches and
+   * is dropped otherwise, rather than as a condition this call cannot evaluate. */
   private async composeFocusedDecline(
     session: PreparedSession,
     query: string,
     userExpectedLocale: string | null | undefined,
     accountId: string | undefined,
     attemptKey: string,
+    knownAssessment: AnswerCoverageAssessment,
     signal?: AbortSignal,
   ): Promise<ComposedDecline> {
     return this.fallbackReplyComposer.composeNoContext({
       query,
       userExpectedLocale,
       answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
-      steering: session.directiveSteering?.rules ?? [],
+      steering: steeringRulesForKnownVerdict(session.directiveSteering?.rules ?? [], knownAssessment),
       // This is a model-authored scope-policy response, not an ordinary answer.
       // It is the refusal path, so it stays on the workspace chat tier rather
       // than the agent override that governs the turn's own calls — see the rule
@@ -522,7 +540,7 @@ export class RetrievalAnswerComposer {
     let coverageHeadMs: number | undefined;
 
     if (session.retrieval.contexts.length === 0) {
-      const zeroEvidenceAssessment = buildDeterministicZeroEvidenceAssessment(buildContextualizedRequest(session, query));
+      const zeroEvidenceAssessment = buildDeterministicZeroEvidenceAssessment(this.zeroEvidenceRequestFocus(session, query));
       const zeroEvidenceVerdict = await coverageVerdict?.report({ assessment: zeroEvidenceAssessment });
       this.recordCoverageHeadOutcome(zeroEvidenceAssessment, zeroEvidenceVerdict?.decision);
       if (zeroEvidenceVerdict?.decision === "yield_turn") {
@@ -536,7 +554,7 @@ export class RetrievalAnswerComposer {
           query,
           userExpectedLocale,
           answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
-          steering: session.directiveSteering?.rules ?? [],
+          steering: steeringRulesForKnownVerdict(session.directiveSteering?.rules ?? [], zeroEvidenceAssessment),
           workspaceContext: this.support.buildChatWorkspaceContext(session),
           usageContext: this.support.buildChatUsageContext(session, accountId, "stream_grounded_miss"),
           ...(signal ? { signal } : {}),
@@ -577,6 +595,11 @@ export class RetrievalAnswerComposer {
       const composeStartedAt = performance.now();
       let bypassCitationGate = false;
       let yieldedTurn = false;
+      // Retained so a later decline (gate-bound, unsupported draft) can render its
+      // coverage-gated steering against the verdict already reported to the sink,
+      // rather than re-deriving it or rendering the conditional phrasing a decline
+      // model — never asked to emit a verdict — cannot evaluate.
+      let headAssessment: AnswerCoverageAssessment | undefined;
       const candidateStream = this.chatGateway.streamAnswer({
         query,
         history: session.history,
@@ -611,7 +634,15 @@ export class RetrievalAnswerComposer {
           const assessment = headStatus.kind === "parsed"
             ? buildAnswerCoverageAssessmentFromHead(headStatus.head)
             : buildInvalidHeadAssessment();
+          headAssessment = assessment;
           const verdict = await coverageVerdict?.report({ assessment });
+          // The sink's own work (routine ranked activation) can outlast the client:
+          // a turn signal that aborted while `report()` was pending must end the
+          // turn here, before any text from this chunk's already-decoded body is
+          // released and before the verdict is acted on again (#1260 review F10a).
+          if (signal?.aborted) {
+            throw signal.reason ?? new Error("chat_turn_aborted");
+          }
           this.recordCoverageHeadOutcome(assessment, verdict?.decision);
           if (verdict?.decision === "yield_turn") {
             yieldedTurn = true;
@@ -668,6 +699,7 @@ export class RetrievalAnswerComposer {
           userExpectedLocale,
           accountId,
           "stream_grounding_gate_bound",
+          headAssessment ?? buildInvalidHeadAssessment(),
           signal,
         );
         if (signal?.aborted) {
@@ -718,6 +750,7 @@ export class RetrievalAnswerComposer {
           userExpectedLocale,
           accountId,
           "stream_unsupported_answer",
+          headAssessment ?? buildInvalidHeadAssessment(),
           signal,
         );
         if (signal?.aborted) {

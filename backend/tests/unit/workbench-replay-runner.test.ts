@@ -1428,7 +1428,7 @@ describe("WorkbenchReplayRunner", () => {
       },
       async processTurn(input: ProcessTurnInput): Promise<ProcessTurnResult> {
         const outcome = await input.dispatcher.dispatch({ skill: { name: "replay.answer" } } as never);
-        await input.composer.compose({ outcomes: [outcome] } as never);
+        await input.composer.compose({ outcomes: [outcome], turn: { steering: [] } } as never);
         return { trace: emptyTrace(), decision: { reason: "answered" }, actions: [] } as unknown as ProcessTurnResult;
       },
     } as unknown as ConversationEngine;

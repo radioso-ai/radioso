@@ -760,7 +760,6 @@
   "types|frontend/components/dashboard/settings/settings-row-list.tsx|SettingsRowStatus",
   "types|frontend/components/dashboard/shared/metadata-key-value-rows.ts|MetadataRowsValidation",
   "types|frontend/components/dashboard/shared/save-state-indicator.tsx|SaveStateIndicatorState",
-  "types|frontend/components/dashboard/workbench/chat-workbench-drawer.tsx|ChatWorkbenchDrawerProps",
   "types|frontend/components/dashboard/workbench/use-coach-state.ts|CoachPreview",
   "types|frontend/components/dashboard/workbench/use-coach-state.ts|CoachState",
   "types|frontend/components/dashboard/workbench/use-coach-state.ts|CoachStatus",

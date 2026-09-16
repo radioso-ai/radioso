@@ -72,6 +72,8 @@ export class LlmAnswerCoverageProducer {
           ...classifications[parsed.classification],
           ...(classifications[parsed.classification].coverage === "answered" ? {} : { unresolvedRequest: parsed.requestFocus }),
           schemaVersion: ANSWER_COVERAGE_SCHEMA_VERSION,
+          // The only remaining caller of this producer is the #1260 shadow window.
+          producer: "assessor",
         };
       } catch {
         return { availability: "invalid" };

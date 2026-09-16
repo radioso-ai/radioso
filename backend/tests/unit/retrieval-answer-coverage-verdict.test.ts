@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { ChatAnswerPresenter } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import { AssistantSuggestionExpansionService } from "../../src/modules/chat/services/assistantSuggestionExpansionService.js";
@@ -96,8 +96,11 @@ const gatewayFor = (raw: string): ChatGateway => ({
   },
 });
 
-const buildComposer = (gateway: ChatGateway, fallback: FallbackReplyComposer = missingFallback) =>
-  new RetrievalAnswerComposer(fakeSupport(), gateway, presenter(), fallback);
+const buildComposer = (
+  gateway: ChatGateway,
+  fallback: FallbackReplyComposer = missingFallback,
+  metrics?: { incrementCounter: (name: string, options: { help: string; labels?: Record<string, string> }) => void },
+) => new RetrievalAnswerComposer(fakeSupport(), gateway, presenter(), fallback, metrics);
 
 const fakeSink = (decision: "proceed" | "yield_turn") => {
   const calls: Array<{ assessment: AnswerCoverageAssessment }> = [];
@@ -312,5 +315,74 @@ describe("RetrievalAnswerComposer coverage verdict sink — non-streaming", () =
         producer: "deterministic",
       },
     }]);
+  });
+});
+
+describe("RetrievalAnswerComposer coverage head metrics", () => {
+  it("counts a parsed head and a proceed decision on the non-streaming grounded path", async () => {
+    const raw = structuredEnvelope({
+      coverage: "answered_sufficient_evidence",
+      requestFocus: "the workshop schedule",
+      outcome: "answer",
+      answer: "The workshop runs in June[[1]].",
+      claims: [[1]],
+    });
+    const { sink } = fakeSink("proceed");
+    const metrics = { incrementCounter: vi.fn() };
+    const composer = buildComposer(gatewayFor(raw), missingFallback, metrics);
+
+    await composer.composeAnswer(groundedSession(), "Tell me about the workshop.", undefined, undefined, sink);
+
+    expect(metrics.incrementCounter).toHaveBeenCalledWith("chat_answer_coverage_head_parse_total", expect.objectContaining({
+      labels: { outcome: "parsed" },
+    }));
+    expect(metrics.incrementCounter).toHaveBeenCalledWith("chat_answer_coverage_head_decision_total", expect.objectContaining({
+      labels: { decision: "proceed" },
+    }));
+  });
+
+  it("counts an invalid head and a yield_turn decision when the sink yields", async () => {
+    const { sink } = fakeSink("yield_turn");
+    const metrics = { incrementCounter: vi.fn() };
+    // Legacy (non-JSON) text never carries a head, so it parses as invalid.
+    const composer = buildComposer(gatewayFor("Free-text legacy answer."), missingFallback, metrics);
+
+    await composer.composeAnswer(groundedSession(), "Tell me about the workshop.", undefined, undefined, sink);
+
+    expect(metrics.incrementCounter).toHaveBeenCalledWith("chat_answer_coverage_head_parse_total", expect.objectContaining({
+      labels: { outcome: "invalid" },
+    }));
+    expect(metrics.incrementCounter).toHaveBeenCalledWith("chat_answer_coverage_head_decision_total", expect.objectContaining({
+      labels: { decision: "yield_turn" },
+    }));
+  });
+
+  it("counts a deterministic outcome for the zero-context branch", async () => {
+    const { sink } = fakeSink("proceed");
+    const metrics = { incrementCounter: vi.fn() };
+    const composer = buildComposer(gatewayFor("unused"), missingFallback, metrics);
+
+    await composer.composeAnswer(zeroContextSession(), "What is the capital of Mars?", undefined, undefined, sink);
+
+    expect(metrics.incrementCounter).toHaveBeenCalledWith("chat_answer_coverage_head_parse_total", expect.objectContaining({
+      labels: { outcome: "deterministic" },
+    }));
+  });
+
+  it("records nothing when no coverage verdict sink is wired", async () => {
+    const raw = structuredEnvelope({
+      coverage: "answered_sufficient_evidence",
+      requestFocus: "the workshop schedule",
+      outcome: "answer",
+      answer: "The workshop runs in June[[1]].",
+      claims: [[1]],
+    });
+    const metrics = { incrementCounter: vi.fn() };
+    const composer = buildComposer(gatewayFor(raw), missingFallback, metrics);
+
+    await composer.composeAnswer(groundedSession(), "Tell me about the workshop.", undefined, undefined, undefined);
+
+    const coverageHeadCalls = metrics.incrementCounter.mock.calls.filter(([name]) => name.startsWith("chat_answer_coverage_head_"));
+    expect(coverageHeadCalls).toEqual([]);
   });
 });

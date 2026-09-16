@@ -873,10 +873,12 @@ CREATE TABLE public.answer_coverage_assessments (
     assessed_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
     created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
     assistant_message_id uuid,
+    producer text,
     CONSTRAINT answer_coverage_assessments_availability_check CHECK ((availability = ANY (ARRAY['assessed'::text, 'not_recorded'::text, 'failed'::text, 'invalid'::text]))),
     CONSTRAINT answer_coverage_assessments_check CHECK ((((availability = 'assessed'::text) AND (coverage IS NOT NULL) AND (reason IS NOT NULL)) OR ((availability <> 'assessed'::text) AND (coverage IS NULL) AND (reason IS NULL) AND (unresolved_request IS NULL)))),
     CONSTRAINT answer_coverage_assessments_coverage_check CHECK ((coverage = ANY (ARRAY['answered'::text, 'partial'::text, 'unanswered'::text, 'unclear'::text]))),
     CONSTRAINT answer_coverage_assessments_interaction_evaluation_state_check CHECK ((interaction_evaluation_state = 'evaluated'::text)),
+    CONSTRAINT answer_coverage_assessments_producer_check CHECK ((producer = ANY (ARRAY['answer_head'::text, 'deterministic'::text, 'assessor'::text]))),
     CONSTRAINT answer_coverage_assessments_reason_check CHECK ((reason = ANY (ARRAY['sufficient_evidence'::text, 'insufficient_evidence'::text, 'conflicting_evidence'::text, 'ambiguous_request'::text, 'intentional_scope_boundary'::text])))
 );
 

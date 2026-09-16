@@ -145,6 +145,7 @@ describe("ChatAnswerPresenter.presentWithoutSuggestions", () => {
       reason: "insufficient_evidence",
       unresolvedRequest: "Attendance permission",
       schemaVersion: 1,
+      producer: "answer_head",
     };
 
     const result = await presenter.presentWithoutSuggestions(
@@ -186,6 +187,7 @@ describe("ChatAnswerPresenter.presentWithoutSuggestions", () => {
       reason: "insufficient_evidence",
       unresolvedRequest: "Attendance permission",
       schemaVersion: 1,
+      producer: "answer_head",
     };
 
     const result = await presenter.presentWithoutSuggestions(session, "The course runs Saturday[[1]].", "Can I attend?");
@@ -203,6 +205,7 @@ describe("ChatAnswerPresenter.presentWithoutSuggestions", () => {
       reason: "ambiguous_request",
       unresolvedRequest: "Which course?",
       schemaVersion: 1,
+      producer: "answer_head",
     };
 
     const result = await presenter.presentWithoutSuggestions(session, "Which course do you mean?[[?]]", "Can I attend?");

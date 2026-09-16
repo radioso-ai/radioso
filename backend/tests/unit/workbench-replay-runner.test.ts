@@ -11,7 +11,7 @@ import type {
 import type { ConversationAgent } from "../../src/modules/agents/domain.js";
 import { projectInternalAgentConfig } from "../../src/modules/agents/agentConfig.js";
 import { WorkbenchReplayRunner } from "../../src/modules/chat/services/workbenchReplayRunner.js";
-import { ChatAnswerCoverageAssessorFactory } from "../../src/modules/chat/services/chatAnswerCoverageAssessor.js";
+import { AnswerCoverageHeadRecorder } from "../../src/modules/chat/services/answerCoverageHeadRecorder.js";
 import type { ChatRoutineProvider } from "../../src/modules/chat/services/chatService.js";
 import type { ChatAnswerPresenter } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import type { MessageRecord } from "../../src/db/repositories/messageRepository.js";
@@ -1268,9 +1268,9 @@ describe("WorkbenchReplayRunner", () => {
       routineProvider,
       chatGateway: gateway,
       chatAnswerPresenter: presenterStub(),
-      // Replay is ephemeral: kept constructed (a later slice repurposes it as
-      // the shadow), but its `.assess()` no longer sits on the engine path.
-      coverageAssessorFactory: new ChatAnswerCoverageAssessorFactory(gateway as never),
+      // Replay is ephemeral: no repository, so coverage-gated directives and
+      // routines still fire from the reported verdict, but nothing persists.
+      coverageHeadRecorder: new AnswerCoverageHeadRecorder(),
     });
 
     const result = await runner.run({

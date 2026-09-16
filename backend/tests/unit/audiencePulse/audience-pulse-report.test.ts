@@ -72,6 +72,7 @@ describe("Audience Pulse report domain", () => {
         coverage: "answered",
         reason: "sufficient_evidence",
         schemaVersion: 1,
+        producer: "answer_head",
       },
     }));
 

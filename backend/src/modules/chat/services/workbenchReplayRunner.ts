@@ -185,7 +185,7 @@ interface WorkbenchReplayRunnerOptions {
    * repository-less variant, so the assessment runs (and coverage-gated directives and
    * routines can fire, exactly as in a live turn) without any durable write.
    */
-  coverageAssessorFactory?: ChatTurnAssemblyOptions["coverageAssessorFactory"];
+  coverageHeadRecorder?: ChatTurnAssemblyOptions["coverageHeadRecorder"];
   logger?: Pick<AppLogger, "warn">;
 }
 
@@ -317,7 +317,7 @@ export class WorkbenchReplayRunner {
       chatSessionPreparer: preparer,
       directiveStateStore: effects.directiveStateStore,
       routineStore,
-      coverageAssessorFactory: this.options.coverageAssessorFactory,
+      coverageHeadRecorder: this.options.coverageHeadRecorder,
     }) ?? new ChatTurnAssembly({
       chatGateway: this.options.chatGateway ?? unavailableRoutineGateway,
       chatAnswerPresenter: presenter,
@@ -338,7 +338,7 @@ export class WorkbenchReplayRunner {
         this.options.retrievalSenseClarificationPolicy
         ?? DEFAULT_RETRIEVAL_SENSE_CLARIFICATION_POLICY,
       agentSkillTurnSkillProvider: this.options.agentSkillTurnSkillProvider,
-      coverageAssessorFactory: this.options.coverageAssessorFactory,
+      coverageHeadRecorder: this.options.coverageHeadRecorder,
       logger: this.options.logger,
     });
     const responseLanguagePromise = this.replayResponseLanguagePromise(input, session);

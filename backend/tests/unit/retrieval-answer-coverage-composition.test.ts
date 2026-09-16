@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ChatAnswerPresenter } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import { RetrievalAnswerComposer } from "../../src/modules/chat/services/retrievalTurnSkill.js";
+import { createDirectiveAdherenceSideChannel } from "../../src/shared/domain/directiveAdherence.js";
 import type { AssistantSuggestionExpansionService } from "../../src/modules/chat/services/assistantSuggestionExpansionService.js";
 import type { ChatAnswerSupport } from "../../src/modules/chat/services/chatAnswerSupport.js";
 import type { ChatGateway } from "../../src/modules/chat/contracts/chatGateway.js";
@@ -125,5 +126,75 @@ describe("RetrievalAnswerComposer coverage composition", () => {
     // reads it; the host already committed to the deterministic verdict.
     expect(call.systemPrompt).toContain("Offer the contact form.");
     expect(call.systemPrompt).not.toContain("Only when your coverage verdict is one of");
+  });
+
+  it("builds the directive-adherence schema enum from the same known-verdict-filtered rules as the prompt on the page-context fallback (round 3, Q4)", async () => {
+    const gateway = {
+      answer: vi.fn(async () => JSON.stringify({
+        coverage: "unanswered_insufficient_evidence",
+        requestFocus: "the workshop dates",
+        outcome: "answer",
+        answer: "The page says the workshop runs monthly.",
+        v: 2,
+        claims: [],
+        suggestions: [],
+        grounding: "degraded",
+      })),
+    } as unknown as ChatGateway;
+    const zeroContextSession = {
+      ...session(),
+      retrieval: { ...session().retrieval, contexts: [] },
+      directiveSteering: {
+        rules: [
+          {
+            id: "d1",
+            directiveName: "offer-form",
+            action: "Offer the contact form.",
+            source: "directive",
+            lifespan: "response",
+            // Matches the deterministic zero-evidence verdict (`unanswered`).
+            coverageCriteria: { coverage: ["unanswered"] },
+          },
+          {
+            id: "d2",
+            directiveName: "book-demo",
+            action: "Offer to book a demo.",
+            source: "directive",
+            lifespan: "response",
+            // Never matches the zero-evidence verdict, so it never renders here.
+            coverageCriteria: { coverage: ["answered"] },
+          },
+        ],
+        matches: [],
+        omissions: [],
+      },
+    } as unknown as PreparedSession;
+    const composer = new RetrievalAnswerComposer(
+      {
+        buildChatWorkspaceContext: () => ({ workspaceId: "workspace-1" }),
+        buildChatUsageContext: () => ({ surface: "assistant", operation: "answer" }),
+        buildPromptWithContext: () => "Page: The workshop runs monthly.",
+      } as unknown as ChatAnswerSupport,
+      gateway,
+      new ChatAnswerPresenter({ apply: () => ({ suggestions: [] }) } as unknown as AssistantSuggestionExpansionService),
+      {} as never,
+      undefined,
+      { forSteeringRules: (rules) => createDirectiveAdherenceSideChannel(rules) },
+    );
+
+    await composer.composeAnswer(zeroContextSession, "When is the workshop?", undefined, undefined);
+
+    const call = (gateway.answer as unknown as {
+      mock: { calls: Array<[{ systemPrompt: string; generation: { responseFormat: { schema: { properties: Record<string, unknown> } } } }]> };
+    }).mock.calls[0][0];
+    expect(call.systemPrompt).toContain("Offer the contact form.");
+    expect(call.systemPrompt).not.toContain("Offer to book a demo.");
+    // Q4: the side channel used to build its attestable rule enum from the
+    // unfiltered steering rules, so a rule the known-verdict filter dropped from
+    // the prompt still showed up as an id the model could (and had to) attest to.
+    const adherenceSchema = call.generation.responseFormat.schema.properties.adherence as {
+      items: { properties: { rule: { enum: string[] } } };
+    };
+    expect(adherenceSchema.items.properties.rule.enum).toEqual(["d1"]);
   });
 });

@@ -1,4 +1,5 @@
 import type {
+  AnswerCoverageAssessment,
   AttemptRoutineInput,
   ConversationTraceStage,
   ProcessTurnResult,
@@ -8,7 +9,7 @@ import type {
 } from "@radioso/conversation-contract";
 import { clarificationStage } from "./clarification.js";
 import { verifySlotCorrection } from "./slotCorrection.js";
-import { buildResolvedSteering } from "./steering.js";
+import { buildResolvedSteering, steeringForKnownVerdict } from "./steering.js";
 import { resumeRoutine } from "./routineResume.js";
 import {
   createInputEvent,
@@ -26,6 +27,20 @@ const routineIdFromClarificationCandidate = (candidate: { payload: unknown }): s
     return undefined;
   }
   return typeof payload.routineId === "string" ? payload.routineId : undefined;
+};
+
+/**
+ * The coverage verdict sink stashes the turn's assessed head under this metadata
+ * key once it exists (`assessedComposeTurn` in coverageVerdictSink.ts). A
+ * pre-retrieval clarification's `baseTurn` never carries it — no verdict can
+ * exist yet — so this reads back `undefined` there, which is exactly the "no
+ * verdict" case {@link steeringForKnownVerdict} already handles.
+ */
+const knownAnswerCoverage = (turn: TurnContext): AnswerCoverageAssessment | undefined => {
+  const value = turn.metadata?.answerCoverage;
+  return typeof value === "object" && value !== null && typeof (value as { availability?: unknown }).availability === "string"
+    ? (value as AnswerCoverageAssessment)
+    : undefined;
 };
 
 /**
@@ -242,9 +257,17 @@ const attemptRoutineWithMode = async (
         traceKind: "directive_steering",
       });
       reportProgress(input, "routine");
+      // A coverage-gated rule renders as a condition on a `coverage` field
+      // ("Only when your coverage verdict is one of [...]") that this clarifying
+      // question's model is never asked to emit — it commits no verdict of its
+      // own. Reduce to the known verdict already on the turn (or none, on the
+      // pre-retrieval path where no verdict can exist yet) before rendering.
       const answer = await input.clarifier.phraseQuestion({
         candidates: activation.candidates,
-        turn: { ...baseTurn, steering: clarifySteering.steering },
+        turn: {
+          ...baseTurn,
+          steering: steeringForKnownVerdict(clarifySteering.steering, knownAnswerCoverage(baseTurn)),
+        },
       });
       const response: RenderableTurn = { answer };
       const events = [] as Awaited<ReturnType<typeof createInputEvent>>[];

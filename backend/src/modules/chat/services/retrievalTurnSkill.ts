@@ -38,7 +38,7 @@ import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { BoundedGroundingStreamGate } from "./boundedGroundingStreamGate.js";
 import { recordDirectiveSurfaceRendered } from "./directives/directiveSurfaceRendering.js";
 import { GroundedAnswerHeadReader } from "./groundedAnswerHeadReader.js";
-import { steeringRulesForKnownVerdict } from "./knownVerdictCoverageSteering.js";
+import { steeringForKnownVerdict } from "@radioso/conversation-engine";
 import {
   buildAnswerCoverageAssessmentFromHead,
   buildDeterministicZeroEvidenceAssessment,
@@ -209,9 +209,16 @@ export class RetrievalAnswerComposer {
    * to it for an opaque metadata patch — it never learns what the side channel means
    * (directive adherence today). Built from the steering rules the answer prompt
    * renders with ids, so the model is never asked to attest to a rule it cannot see.
+   *
+   * `knownAssessment`, when supplied, must be the same verdict `composeGroundedAnswerPrompt`
+   * rendered the prompt against (round 3 review, Q4): a coverage-gated rule that
+   * verdict drops from the prompt must also drop from the attestable enum, or the
+   * model is asked to attest to a rule id it never saw rendered.
    */
-  private sideChannel(session: PreparedSession): AnswerSideChannel | undefined {
-    return this.answerSideChannel?.forSteeringRules(attestableSteering(session.directiveSteering?.rules ?? []));
+  private sideChannel(session: PreparedSession, knownAssessment?: AnswerCoverageAssessment): AnswerSideChannel | undefined {
+    const rules = session.directiveSteering?.rules ?? [];
+    const knownVerdictRules = knownAssessment ? steeringForKnownVerdict(rules, knownAssessment) : rules;
+    return this.answerSideChannel?.forSteeringRules(attestableSteering(knownVerdictRules));
   }
 
   private recordGroundingGateBound(declineReason: TurnDeclineReason): void {
@@ -271,7 +278,7 @@ export class RetrievalAnswerComposer {
    * committed (today only the zero-evidence branch's deterministic assessment,
    * already reported to the coverage sink before this prompt is built) rather than
    * something this call's own model is being asked to judge fresh. A coverage-gated
-   * rule then renders like `steeringRulesForKnownVerdict`'s other callers: plain and
+   * rule then renders like `steeringForKnownVerdict`'s other callers: plain and
    * unconditional when it matches, dropped when it does not — never as a condition
    * on a verdict this call's envelope schema happens to also ask for but that
    * nothing reads.
@@ -292,7 +299,7 @@ export class RetrievalAnswerComposer {
       hasRetrievedContexts: session.retrieval.contexts.length > 0,
       conversationIntentSnapshot,
       conversationSummary: session.conversationSummary,
-      steering: knownAssessment ? steeringRulesForKnownVerdict(steering, knownAssessment) : steering,
+      steering: knownAssessment ? steeringForKnownVerdict(steering, knownAssessment) : steering,
       retrievalSenseOfferAlternatives: session.retrievalSenseOfferAlternatives,
     });
     if (session.directiveSteering) {
@@ -364,7 +371,7 @@ export class RetrievalAnswerComposer {
       workspaceContext: this.support.buildChatWorkspaceContext(session),
       usageContext: this.support.buildChatUsageContext(session, accountId, attemptKey),
       generation: {
-        responseFormat: buildGroundedAnswerResponseFormat(this.sideChannel(session)?.schemaExtension() ?? null),
+        responseFormat: buildGroundedAnswerResponseFormat(this.sideChannel(session, knownAssessment)?.schemaExtension() ?? null),
       },
       ...(signal ? { signal } : {}),
     });
@@ -420,7 +427,7 @@ export class RetrievalAnswerComposer {
       // an *earlier* attempt's stored verdict (`assessmentFromRecord(saved)`), so
       // `zeroEvidenceVerdict.decision` may have been decided against a different
       // assessment than this one. That only changes what the engine acts on for
-      // proceed/yield; this turn's own rendering (`steeringRulesForKnownVerdict` below)
+      // proceed/yield; this turn's own rendering (`steeringForKnownVerdict` below)
       // and head metrics always use this fresh `zeroEvidenceAssessment` — main's
       // regenerate behavior, where a re-run shows and measures its own attempt.
       this.recordCoverageHeadOutcome(zeroEvidenceAssessment, zeroEvidenceVerdict?.decision);
@@ -437,7 +444,7 @@ export class RetrievalAnswerComposer {
       if (fallback) {
         answer = fallback.answer;
         plannedSuggestions = fallback.suggestions;
-        metadataPatch = this.sideChannel(session)?.resolve(fallback.extras);
+        metadataPatch = this.sideChannel(session, zeroEvidenceAssessment)?.resolve(fallback.extras);
         grounding = computeGroundingSummary({
           body: fallback.answer,
           envelope: fallback,
@@ -449,7 +456,7 @@ export class RetrievalAnswerComposer {
           query,
           userExpectedLocale,
           answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
-          steering: steeringRulesForKnownVerdict(session.directiveSteering?.rules ?? [], zeroEvidenceAssessment),
+          steering: steeringForKnownVerdict(session.directiveSteering?.rules ?? [], zeroEvidenceAssessment),
           workspaceContext: this.support.buildChatWorkspaceContext(session),
           usageContext: this.support.buildChatUsageContext(session, accountId, "grounded_miss"),
         });
@@ -537,7 +544,7 @@ export class RetrievalAnswerComposer {
       query,
       userExpectedLocale,
       answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
-      steering: steeringRulesForKnownVerdict(session.directiveSteering?.rules ?? [], knownAssessment),
+      steering: steeringForKnownVerdict(session.directiveSteering?.rules ?? [], knownAssessment),
       // This is a model-authored scope-policy response, not an ordinary answer.
       // It is the refusal path, so it stays on the workspace chat tier rather
       // than the agent override that governs the turn's own calls — see the rule
@@ -600,7 +607,7 @@ export class RetrievalAnswerComposer {
           query,
           userExpectedLocale,
           answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
-          steering: steeringRulesForKnownVerdict(session.directiveSteering?.rules ?? [], zeroEvidenceAssessment),
+          steering: steeringForKnownVerdict(session.directiveSteering?.rules ?? [], zeroEvidenceAssessment),
           workspaceContext: this.support.buildChatWorkspaceContext(session),
           usageContext: this.support.buildChatUsageContext(session, accountId, "stream_grounded_miss"),
           ...(signal ? { signal } : {}),
@@ -609,7 +616,7 @@ export class RetrievalAnswerComposer {
         declineReason = decline.declineReason;
       }
       plannedSuggestions = fallbackEnvelope?.suggestions ?? [];
-      metadataPatch = this.sideChannel(session)?.resolve(fallbackEnvelope?.extras);
+      metadataPatch = this.sideChannel(session, zeroEvidenceAssessment)?.resolve(fallbackEnvelope?.extras);
       if (fallbackEnvelope) {
         grounding = computeGroundingSummary({ body: fallbackEnvelope.answer, envelope: fallbackEnvelope, contextCount: 0 });
         this.recordGroundingOutcome(grounding, fallbackEnvelope, true);

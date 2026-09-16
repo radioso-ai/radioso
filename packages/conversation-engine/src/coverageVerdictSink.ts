@@ -12,6 +12,7 @@ import type {
 } from "@radioso/conversation-contract";
 
 import { attemptRoutineActivation, RoutineActivationFailure } from "./routineActivation.js";
+import { coverageCriteriaMatches } from "./steering.js";
 import { stage, timedStage } from "./traceStages.js";
 
 type AssessedCoverage = Extract<AnswerCoverageAssessment, { availability: "assessed" }>;
@@ -36,9 +37,7 @@ const coverageRoutineFailureCauseType = (error: unknown): string => {
 const criteriaMatches = (
   criteria: NonNullable<Directive["coverageCriteria"]>,
   assessment: AssessedCoverage,
-): boolean =>
-  criteria.coverage.includes(assessment.coverage)
-  && (criteria.reasons === undefined || criteria.reasons.includes(assessment.reason));
+): boolean => coverageCriteriaMatches(criteria, assessment);
 
 export interface CoverageVerdictSinkDeps {
   /**

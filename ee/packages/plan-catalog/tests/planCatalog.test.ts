@@ -95,4 +95,30 @@ describe("catalog invariants", () => {
       expect(plan.monthlyIndexedBytes).toBeGreaterThanOrEqual(plan.storedBytes);
     }
   });
+
+  it("has at least one managed plan and one byok plan", () => {
+    const models = new Set(PLAN_CATALOG.plans.map((plan) => plan.models));
+    expect(models.has("managed")).toBe(true);
+    expect(models.has("byok")).toBe(true);
+  });
+});
+
+describe("managed models", () => {
+  it("names a chat selection and a default selection, each with a provider and a model", () => {
+    for (const slot of ["chat", "default"] as const) {
+      const selection = PLAN_CATALOG.managedModels[slot];
+      expect(selection.provider.length).toBeGreaterThan(0);
+      expect(selection.model.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("runs both managed slots on the same provider, so one deployment key covers a managed workspace", () => {
+    expect(PLAN_CATALOG.managedModels.chat.provider).toBe(PLAN_CATALOG.managedModels.default.provider);
+  });
+
+  it("keeps the managed provider inside the set of providers the backend can resolve (the JSON import is cast, not checked)", () => {
+    const providers = new Set<string>(["openai", "openai-compatible", "gemini", "claude"]);
+    expect(providers.has(PLAN_CATALOG.managedModels.chat.provider)).toBe(true);
+    expect(providers.has(PLAN_CATALOG.managedModels.default.provider)).toBe(true);
+  });
 });

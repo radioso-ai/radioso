@@ -13,10 +13,13 @@ export interface LlmCapabilityPreference {
 
 export type KnownModelsByProvider = Record<LlmProviderName, string[]>
 
-export interface WorkspaceLlmModels {
-  chat: LlmCapabilityPreference | null
-  rewrite: LlmCapabilityPreference | null
-  rerank: LlmCapabilityPreference | null
+/** What the plan runs for a capability instead of the stored preference; null when the workspace chooses. */
+export type LlmManagedModel = LlmCapabilityPreference
+
+type WorkspaceLlmPreferences = Record<LlmCapabilityName, LlmCapabilityPreference | null>
+
+export interface WorkspaceLlmModels extends WorkspaceLlmPreferences {
+  managed: Record<LlmCapabilityName, LlmManagedModel | null>
   knownModelsByProvider: KnownModelsByProvider
 }
 
@@ -27,7 +30,7 @@ export interface ProviderCredentialSummary {
 
 export type EnvProviderAvailability = Record<LlmProviderName, boolean>
 
-export interface ProviderCredentialsList {
+interface ProviderCredentialsList {
   encryptionConfigured: boolean
   credentials: ProviderCredentialSummary[]
   envProviderAvailability: EnvProviderAvailability
@@ -67,7 +70,7 @@ export const llmProvidersApi = {
     return request<WorkspaceLlmModels>('/settings/llm-models', { method: 'GET' }, sessionOnly)
   },
 
-  async updateModels(payload: Partial<WorkspaceLlmModels>): Promise<WorkspaceLlmModels> {
+  async updateModels(payload: Partial<WorkspaceLlmPreferences>): Promise<WorkspaceLlmModels> {
     return request<WorkspaceLlmModels>(
       '/settings/llm-models',
       { method: 'PUT', body: JSON.stringify(payload) },

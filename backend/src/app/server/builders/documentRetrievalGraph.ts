@@ -182,6 +182,8 @@ export const buildDocumentRetrievalGraph = (input: {
     defaults: resolveLlmConfig(env),
     settings: workspaceLlmCapabilitySettingsService,
     credentials: input.workspaceProviderCredentialsService,
+    managedModelPolicy: infrastructure.managedModelPolicy,
+    logger,
   });
   llmRegistry.setResolver(llmCapabilityResolver);
   const documents = buildDocumentServices({

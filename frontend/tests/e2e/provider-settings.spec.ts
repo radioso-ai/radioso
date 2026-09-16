@@ -66,6 +66,49 @@ test("workspace operator stores a Claude key and picks Claude as the chat model"
   await expect(page.locator('#model-chat')).toContainText("claude-sonnet-4-6");
 });
 
+test("a managed plan shows the plan's model read-only and says how to choose", async ({ page }) => {
+  const llmModelUpdates: Array<unknown> = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    platformSettings: basePlatformSettings(),
+    llmModelUpdates,
+    llmManagedModels: {
+      chat: { provider: "claude", model: "claude-sonnet-5" },
+      rewrite: { provider: "claude", model: "claude-haiku-4-5" },
+    },
+  });
+
+  await page.goto(`/w/${workspaceKey}/settings?tab=providers`);
+  await expect(page.getByRole("heading", { name: "Models" })).toBeVisible();
+
+  // Chat is locked: both pickers are disabled and show the plan's choice, with
+  // the one line that says why and what to do about it.
+  const chatRow = page.getByTestId("llm-model-row-chat");
+  await expect(chatRow.getByText("Managed plan", { exact: true })).toBeVisible();
+  await expect(chatRow.getByTestId("llm-model-managed-chat")).toContainText("claude-sonnet-5");
+  await expect(page.locator("#provider-chat")).toBeDisabled();
+  await expect(page.locator("#provider-chat")).toContainText("Anthropic Claude");
+  await expect(page.locator("#model-chat")).toBeDisabled();
+  await expect(page.locator("#model-chat")).toContainText("claude-sonnet-5");
+  await expect(chatRow.getByRole("button", { name: "Reset" })).toHaveCount(0);
+
+  // Rewrite is locked to the plan's default model.
+  await expect(page.locator("#model-rewrite")).toBeDisabled();
+  await expect(page.locator("#model-rewrite")).toContainText("claude-haiku-4-5");
+
+  // Rerank is not managed, so it still opens and saves as usual.
+  const rerankRow = page.getByTestId("llm-model-row-rerank");
+  await expect(rerankRow.getByText("Default", { exact: true })).toBeVisible();
+  await expect(page.locator("#provider-rerank")).toBeEnabled();
+  await page.locator("#provider-rerank").click();
+  await page.getByRole("option", { name: /^OpenAI \(/ }).click();
+  await page.locator("#model-rerank").click();
+  await page.getByRole("option", { name: "gpt-5-mini" }).click();
+  await expect.poll(() => llmModelUpdates.length).toBeGreaterThanOrEqual(1);
+  expect(llmModelUpdates.at(-1)).toMatchObject({ rerank: { provider: "openai", model: "gpt-5-mini" } });
+});
+
 test("provider settings keep exactly the existing four embedding choices and no advanced vector controls", async ({ page }) => {
   const ingestionSettingsUpdates: unknown[] = [];
 

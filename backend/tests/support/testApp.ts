@@ -242,6 +242,10 @@ import {
 } from "../../src/app/composition/index.js";
 import { DefaultAllowCapabilityPolicy, registeredCapabilityNames } from "../../src/shared/domain/capabilityPolicy.js";
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../src/shared/domain/usageLimitPolicy.js";
+import { NoopManagedModelPolicy, type ManagedModelPolicy } from "../../src/shared/domain/managedModelPolicy.js";
+import { WorkspaceLlmCapabilityResolver } from "../../src/app/composition/workspaceLlmCapabilityResolver.js";
+import { resolveLlmConfig } from "../../src/shared/infra/llm/providerConfig.js";
+import { resolveWorkspaceManagedLlmModels } from "../../src/shared/infra/llm/workspaceManagedModels.js";
 import { NoopUsageEventRecorder } from "../../src/shared/domain/usageEventRecorder.js";
 import {
   noopOrganizationCreationGuard,
@@ -760,6 +764,7 @@ export const createTestDependencies = (overrides: {
   abuseControlRepository?: AbuseControlRepositoryPort;
   fallbackReplyComposer?: FallbackReplyComposer;
   usageLimitPolicy?: UsageLimitPolicy;
+  managedModelPolicy?: ManagedModelPolicy;
   organizationCreationGuard?: OrganizationCreationGuard;
   answerFeedbackHistoryProvider?: AnswerFeedbackHistoryProviderPort;
   contactHistoryProvider?: ContactHistoryProviderPort;
@@ -1457,6 +1462,13 @@ export const createTestDependencies = (overrides: {
     retrievalSettingsRepository,
     auditService,
   );
+  const llmSelectionResolver = new WorkspaceLlmCapabilityResolver({
+    defaults: resolveLlmConfig(env),
+    settings: workspaceLlmCapabilitySettingsService,
+    credentials: workspaceProviderCredentialsService,
+    envKeys: { resolveEnvApiKey: () => undefined },
+    managedModelPolicy: overrides.managedModelPolicy ?? new NoopManagedModelPolicy(),
+  });
   const connectorRegistry = new ConnectorRegistry();
   connectorRegistry.setEncryptionKey(env.CONNECTOR_ENCRYPTION_KEY!);
   const connectorDb = new InMemoryConnectorDatabase();
@@ -2132,6 +2144,9 @@ export const createTestDependencies = (overrides: {
       async listLlmModels(workspaceId) {
         return workspaceLlmCapabilitySettingsService.listForWorkspace(workspaceId);
       },
+      async getManagedLlmModels(workspaceId) {
+        return resolveWorkspaceManagedLlmModels(llmSelectionResolver, workspaceId);
+      },
       async getProviderCredentialHealth(workspaceId) {
         return {
           encryptionConfigured: workspaceProviderCredentialsService.isEncryptionConfigured(),
@@ -2291,6 +2306,10 @@ export const createTestDependencies = (overrides: {
       async resolve() {
         throw new Error("Workspace LLM capability resolution is not configured in the in-memory test app");
       },
+      // Selection needs no keys, so the real decision runs against the in-memory
+      // preference and credential stores; `resolve` stays unconfigured because a
+      // credentialed config would let tests reach a live provider.
+      resolveSelection: (capability, input) => llmSelectionResolver.resolveSelection(capability, input),
     },
     authService,
     apiPrincipalAuthenticator,
@@ -2480,6 +2499,7 @@ export const createTestApp = (overrides: {
   abuseControlRepository?: AbuseControlRepositoryPort;
   fallbackReplyComposer?: FallbackReplyComposer;
   usageLimitPolicy?: UsageLimitPolicy;
+  managedModelPolicy?: ManagedModelPolicy;
   organizationCreationGuard?: OrganizationCreationGuard;
   answerFeedbackHistoryProvider?: AnswerFeedbackHistoryProviderPort;
   contactHistoryProvider?: ContactHistoryProviderPort;

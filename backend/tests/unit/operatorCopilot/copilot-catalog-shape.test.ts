@@ -90,7 +90,7 @@ const realCatalogDependencies = () => {
     skillCapabilityTargets: { list: stub() },
     contextVariables: { listByWorkspace: stub(), listByAgent: stub() },
     workspaceSettings: {
-      getRetrievalDefaults: stub(), getIngestionSettings: stub(), listLlmModels: stub(),
+      getRetrievalDefaults: stub(), getIngestionSettings: stub(), listLlmModels: stub(), getManagedLlmModels: stub(),
       getProviderCredentialHealth: stub(), getGeneralSettings: stub(),
     },
     proposalRepository: { createProposal: stub() },

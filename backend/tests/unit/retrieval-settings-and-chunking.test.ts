@@ -217,6 +217,66 @@ describe("settings and chunking", () => {
     ).toThrow("suggestedQuestionsEnabled must be a boolean");
   });
 
+  it("defaults citationHoldEnabled to true", () => {
+    expect(defaultRetrievalSettings("workspace-1").citationHoldEnabled).toBe(true);
+  });
+
+  it("reads a stored settings object without citationHoldEnabled as true", () => {
+    const validated = validateRetrievalSettings({
+      queryRewriteEnabled: false,
+      semanticRewriteInstructions: "",
+      lexicalRewriteInstructions: "",
+      suggestedQuestionsEnabled: true,
+      suggestedQuestionsCount: 3,
+      rerankEnabled: false,
+      vectorTopK: 15,
+      similarityThreshold: 0.2,
+      rerankTopK: 5,
+      metadataRules: [],
+      customInstruction: "",
+    });
+
+    expect(validated.citationHoldEnabled).toBe(true);
+  });
+
+  it("preserves an explicit citationHoldEnabled: false", () => {
+    const validated = validateRetrievalSettings({
+      queryRewriteEnabled: false,
+      semanticRewriteInstructions: "",
+      lexicalRewriteInstructions: "",
+      suggestedQuestionsEnabled: true,
+      suggestedQuestionsCount: 3,
+      rerankEnabled: false,
+      vectorTopK: 15,
+      similarityThreshold: 0.2,
+      rerankTopK: 5,
+      metadataRules: [],
+      customInstruction: "",
+      citationHoldEnabled: false,
+    });
+
+    expect(validated.citationHoldEnabled).toBe(false);
+  });
+
+  it("rejects a non-boolean citationHoldEnabled", () => {
+    expect(() =>
+      validateRetrievalSettings({
+        queryRewriteEnabled: false,
+        semanticRewriteInstructions: "",
+        lexicalRewriteInstructions: "",
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 3,
+        rerankEnabled: false,
+        vectorTopK: 15,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        metadataRules: [],
+        customInstruction: "",
+        citationHoldEnabled: "yes" as unknown as boolean,
+      }),
+    ).toThrow("citationHoldEnabled must be a boolean");
+  });
+
   it("uses the current chunking defaults for ingestion settings", () => {
     const defaults = defaultIngestionSettings("workspace-1");
 

@@ -110,6 +110,17 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       showValueToCopilot: true,
     },
     {
+      key: "citationHoldEnabled",
+      label: "Hold the answer until it cites a source",
+      type: "boolean",
+      help: "Answers stream immediately when off; an answer with no citations is still shown and flagged in Quality.",
+      defaultValue: retrieveSettingsDefaults.citationHoldEnabled,
+      group: "Grounded evidence",
+      advanced: true,
+      showValueToCopilot: true,
+      portable: true,
+    },
+    {
       key: "queryRewriteEnabled",
       label: "Query rewrite",
       type: "boolean",

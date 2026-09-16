@@ -72,6 +72,7 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
       temporalStructuredLookupEnabled: z.boolean(),
       temporalBoostUpcomingEnabled: z.boolean(),
       temporalDeterministicSortEnabled: z.boolean(),
+      citationHoldEnabled: z.boolean(),
       semanticRewriteInstructions: z.string(),
       lexicalRewriteInstructions: z.string(),
       suggestedQuestionsEnabled: z.boolean(),

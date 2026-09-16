@@ -685,6 +685,8 @@ components:
           type: boolean
         temporalDeterministicSortEnabled:
           type: boolean
+        citationHoldEnabled:
+          type: boolean
         semanticRewriteInstructions:
           type: string
         lexicalRewriteInstructions:
@@ -808,6 +810,7 @@ components:
         - temporalStructuredLookupEnabled
         - temporalBoostUpcomingEnabled
         - temporalDeterministicSortEnabled
+        - citationHoldEnabled
         - semanticRewriteInstructions
         - lexicalRewriteInstructions
         - suggestedQuestionsEnabled
@@ -828,6 +831,8 @@ components:
         temporalBoostUpcomingEnabled:
           type: boolean
         temporalDeterministicSortEnabled:
+          type: boolean
+        citationHoldEnabled:
           type: boolean
         semanticRewriteInstructions:
           type: string

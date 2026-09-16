@@ -131,6 +131,7 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
   await expect(page.getByLabel("Rerank top K")).toHaveCount(0);
   await page.getByRole("switch", { name: "Rerank results" }).click();
   await page.getByLabel("Rerank top K").fill("6");
+  await page.getByRole("switch", { name: "Hold the answer until it cites a source" }).click();
   await expect(page.getByLabel("Semantic rewrite instructions", { exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "Override Semantic rewrite instructions" }).click();
   await page.getByLabel("Semantic rewrite instructions", { exact: true }).fill("Prefer event names and dates.");
@@ -208,6 +209,7 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
       vectorTopK: 12,
       rerankEnabled: true,
       rerankTopK: 6,
+      citationHoldEnabled: false,
       semanticRewriteInstructions: "Prefer event names and dates.",
       lexicalRewriteInstructions: "Include exact venue terms.",
       suggestedQuestionsCount: 3,

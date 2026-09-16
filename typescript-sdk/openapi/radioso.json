@@ -1001,6 +1001,9 @@
           "temporalDeterministicSortEnabled": {
             "type": "boolean"
           },
+          "citationHoldEnabled": {
+            "type": "boolean"
+          },
           "semanticRewriteInstructions": {
             "type": "string"
           },
@@ -1188,6 +1191,7 @@
           "temporalStructuredLookupEnabled",
           "temporalBoostUpcomingEnabled",
           "temporalDeterministicSortEnabled",
+          "citationHoldEnabled",
           "semanticRewriteInstructions",
           "lexicalRewriteInstructions",
           "suggestedQuestionsEnabled",
@@ -1213,6 +1217,9 @@
             "type": "boolean"
           },
           "temporalDeterministicSortEnabled": {
+            "type": "boolean"
+          },
+          "citationHoldEnabled": {
             "type": "boolean"
           },
           "semanticRewriteInstructions": {

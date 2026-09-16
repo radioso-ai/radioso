@@ -435,6 +435,28 @@ export function WorkbenchOverridePanel({
                 onChange={(event) => setRetrieval({ ...state.values.retrievalSkillSettings, similarityThreshold: Number(event.target.value) })}
               />
             </div>
+
+            <div className="grid gap-2">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm text-foreground">Citation hold</span>
+                <OverrideToggle
+                  checked={state.touched.retrievalSkillSettings && Object.prototype.hasOwnProperty.call(state.values.retrievalSkillSettings, 'citationHoldEnabled')}
+                  label="Override citation hold"
+                  onCheckedChange={(checked) =>
+                    toggleRetrievalField('citationHoldEnabled', checked, retrieval.citationHoldEnabled ?? true)
+                  }
+                />
+              </div>
+              <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-muted/20 px-3 py-2">
+                <span className="text-sm text-foreground">Hold the answer until it cites a source</span>
+                <Switch
+                  aria-label="Hold the answer until it cites a source"
+                  checked={retrieval.citationHoldEnabled ?? true}
+                  disabled={!(state.touched.retrievalSkillSettings && Object.prototype.hasOwnProperty.call(state.values.retrievalSkillSettings, 'citationHoldEnabled'))}
+                  onCheckedChange={(checked) => setRetrieval({ ...state.values.retrievalSkillSettings, citationHoldEnabled: checked })}
+                />
+              </div>
+            </div>
           </div>
         </section>
 

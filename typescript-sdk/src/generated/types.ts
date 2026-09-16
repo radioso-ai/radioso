@@ -4068,6 +4068,7 @@ export interface components {
             temporalStructuredLookupEnabled: boolean;
             temporalBoostUpcomingEnabled: boolean;
             temporalDeterministicSortEnabled: boolean;
+            citationHoldEnabled: boolean;
             semanticRewriteInstructions: string;
             lexicalRewriteInstructions: string;
             suggestedQuestionsEnabled: boolean;
@@ -4120,6 +4121,7 @@ export interface components {
             temporalStructuredLookupEnabled?: boolean;
             temporalBoostUpcomingEnabled?: boolean;
             temporalDeterministicSortEnabled?: boolean;
+            citationHoldEnabled?: boolean;
             semanticRewriteInstructions?: string;
             lexicalRewriteInstructions?: string;
             suggestedQuestionsEnabled?: boolean;

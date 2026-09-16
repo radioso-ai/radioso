@@ -33,6 +33,7 @@ export class PromptAssemblyStageService implements PromptAssemblyStageContract {
         customInstruction: includeResponseBehavior ? customInstruction : undefined,
         responseLanguagePolicy: input.rewrittenQuery.responseLanguagePolicy ?? "match_user_question",
         responseLanguage: input.request.responseLanguage,
+        citationHoldEnabled: input.settings.citationHoldEnabled,
       },
     };
   }

@@ -336,6 +336,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   ...coverage([
     "createAgent",
     "updateAgent",
+    "updateAgentGreetingDraft",
     "getAgentChannelsLifecycle",
     "createAgentDirective",
     "draftAgentDirective",
@@ -421,6 +422,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   updateAgentDirective: "propose_directive",
   deleteAgentDirective: "propose_directive_removal",
   updateAgent: "propose_agent_setting",
+  updateAgentGreetingDraft: "propose_greeting",
   // Revision lifecycle is intentionally dashboard-owned until Ray has explicit
   // candidate selection, candidate-pinned test/eval, and publish capabilities.
   getAgentRevisionState: agentRevisionLifecycle,

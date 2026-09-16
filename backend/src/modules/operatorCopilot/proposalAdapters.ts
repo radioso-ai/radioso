@@ -4,13 +4,16 @@ import {
   AuthoredDirectiveService,
   DirectiveAuthorService,
   AgentService,
+  AgentRevisionService,
   agentInputFieldSchemas,
   mergeAgentSurfaceSettings,
   validateAgentInput,
+  DEFAULT_AGENT_LOCALE_FALLBACK,
   type AgentInput,
   type AuthoredDirective,
   type AuthoredDirectiveInput,
 } from "../agents/public.js";
+import { exactContentItemSchema, validateExactContentItem } from "../../shared/domain/exactContent.js";
 import {
   applyRoutineFieldPatch,
   describeRoutineFieldPatch,
@@ -32,12 +35,14 @@ import {
   type AgentSkillView,
 } from "../agentSkills/public.js";
 import { skillCapabilityIds, type SkillCapabilityDescriptor, type SkillCapabilityId, type SkillCapabilityRegistry } from "../skills/public.js";
-import type {
-  CopilotAgentSettingProposalAdapter,
-  CopilotAgentSkillProposalAdapter,
-  CopilotContextVariableProposalAdapter,
-  CopilotDirectiveProposalAdapter,
-  CopilotRoutineProposalAdapter,
+import {
+  MAX_COPILOT_PROPOSAL_SUMMARY,
+  type CopilotAgentGreetingProposalAdapter,
+  type CopilotAgentSettingProposalAdapter,
+  type CopilotAgentSkillProposalAdapter,
+  type CopilotContextVariableProposalAdapter,
+  type CopilotDirectiveProposalAdapter,
+  type CopilotRoutineProposalAdapter,
 } from "./contracts.js";
 import type { ContextVariable, AgentContextVariableEnablement } from "../context-variables/public.js";
 import type { ContextVariableService } from "../context-variables/public.js";
@@ -345,6 +350,95 @@ export const createAgentSettingCopilotProposalAdapter = (deps: {
     const normalized = validateAgentInput(merged);
     if (!Object.hasOwn(normalized, targetRef.settingKey)) throw new Error("Unknown agent setting");
     return { targetRef, payload: { ...payload, value: settingValue(normalized, targetRef.settingKey) }, versionToken: versionToken(current.updatedAt) };
+  },
+});
+
+const greetingTargetRefSchema = z.object({ agentId: z.string().uuid() }).strict();
+const greetingPayloadSchema = z.object({
+  exactWordsEnabled: z.boolean(),
+  exactContent: exactContentItemSchema.nullable(),
+  rationale: z.string().trim().min(1).max(1_000).optional(),
+  summary: z.string().min(1).max(MAX_COPILOT_PROPOSAL_SUMMARY).optional(),
+}).strict();
+
+/** Encodes/decodes `agent_drafts.generation` as the greeting proposal's version token. Not the
+ * `versionToken`/`versionDate` pair above: those anchor to a row's `updated_at`, but the
+ * greeting has no row of its own, and anchoring to the *agent's* `updatedAt` is what let a
+ * dashboard greeting edit go undetected (that write only ever bumps `agent_drafts`). */
+const draftGenerationToken = (generation: number): string => `draft-generation:${generation}`;
+const parseDraftGenerationToken = (token: string): number | null => {
+  const match = /^draft-generation:(\d+)$/.exec(token);
+  return match ? Number(match[1]) : null;
+};
+
+/**
+ * Composition adapter: writes exact greeting content through `AgentService.updateDraftGreeting`
+ * only — never the live `agents` row `agent_setting` writes through (see
+ * `CopilotAgentGreetingProposalAdapter`'s doc comment for why that adapter is not reused here).
+ * Staleness is checked against `agent_drafts.generation` — the same fence every other draft
+ * writer (a directive create, a routine field patch, `AgentRevisionService.createCandidate`)
+ * already serializes on — because that is the column the greeting write actually bumps. The
+ * comparison itself happens inside `AgentRepository#updateDraftGreeting`'s own
+ * `withAgentDraftMutation` transaction, not here: reading the generation and writing the
+ * greeting as two separate steps would reopen the same race this fixes.
+ */
+export const createAgentGreetingCopilotProposalAdapter = (deps: {
+  readonly agentService: Pick<AgentService, "get" | "updateDraftGreeting">;
+  readonly agentRevisions: Pick<AgentRevisionService, "state">;
+}): CopilotAgentGreetingProposalAdapter => ({
+  targetType: "agent_greeting",
+  async readVersionToken(workspaceId, rawTargetRef) {
+    const targetRef = greetingTargetRefSchema.parse(rawTargetRef);
+    const state = await deps.agentRevisions.state(workspaceId, targetRef.agentId);
+    return draftGenerationToken(state.draft.generation);
+  },
+  async preview(_workspaceId, rawTargetRef, rawPayload) {
+    greetingTargetRefSchema.parse(rawTargetRef);
+    const payload = greetingPayloadSchema.parse(rawPayload);
+    const { rationale: _rationale, summary: _summary, ...proposed } = payload;
+    // No cheap read of the current draft's greeting exists (AgentService exposes only the live
+    // agent, which never carries it — see the class doc comment above); stating "current: null" is
+    // honest rather than a stand-in for a diff this adapter cannot produce without new plumbing.
+    return { targetLabel: "Greeting", current: null, proposed };
+  },
+  async applyIfVersionMatches(workspaceId, rawTargetRef, rawPayload, token) {
+    const targetRef = greetingTargetRefSchema.parse(rawTargetRef);
+    const payload = greetingPayloadSchema.parse(rawPayload);
+    const expectedDraftGeneration = parseDraftGenerationToken(token);
+    if (expectedDraftGeneration === null) return { outcome: "stale" as const };
+    const agent = await deps.agentService.get(workspaceId, targetRef.agentId).catch(() => null);
+    if (!agent) return { outcome: "failed" as const, reason: "Agent not found" };
+    try {
+      await deps.agentService.updateDraftGreeting(workspaceId, targetRef.agentId, {
+        exactWordsEnabled: payload.exactWordsEnabled,
+        exactContent: payload.exactContent,
+      }, { expectedDraftGeneration });
+      return { outcome: "applied" as const, appliedRef: { agentId: targetRef.agentId } };
+    } catch (error) {
+      if (isStale(error)) return { outcome: "stale" as const };
+      return { outcome: "failed" as const, reason: error instanceof Error ? error.message : "Greeting draft save failed" };
+    }
+  },
+  async validatePayload(workspaceId, rawTargetRef, rawPayload) {
+    const targetRef = greetingTargetRefSchema.parse(rawTargetRef);
+    const payload = greetingPayloadSchema.parse(rawPayload);
+    const agent = await deps.agentService.get(workspaceId, targetRef.agentId);
+    // Mirrors `AgentService.updateDraftGreeting` exactly (same locale fallback, same empty
+    // reference set — bootstrap supplies no context variables and the greeting has no routine
+    // slots) so a proposal can never validate content the draft route itself would refuse.
+    const validation = payload.exactContent
+      ? validateExactContentItem(payload.exactContent, {
+          agentDefaultLocale: agent.assistantDefaultLocale ?? DEFAULT_AGENT_LOCALE_FALLBACK,
+          availableReferenceKeys: new Set(),
+        })
+      : ({ ok: true } as const);
+    if (payload.exactWordsEnabled && !validation.ok) {
+      throw badRequest("Exact greeting content is invalid", { issues: validation.issues });
+    }
+    // Read right before returning, for the same reason `agent_setting`'s validatePayload reads
+    // its token from this same call rather than a follow-up `readVersionToken`.
+    const state = await deps.agentRevisions.state(workspaceId, targetRef.agentId);
+    return { targetRef, payload, versionToken: draftGenerationToken(state.draft.generation) };
   },
 });
 

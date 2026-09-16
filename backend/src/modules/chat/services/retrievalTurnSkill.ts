@@ -38,7 +38,7 @@ import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { BoundedGroundingStreamGate } from "./boundedGroundingStreamGate.js";
 import { recordDirectiveSurfaceRendered } from "./directives/directiveSurfaceRendering.js";
 import { GroundedAnswerHeadReader } from "./groundedAnswerHeadReader.js";
-import { steeringForKnownVerdict } from "@radioso/conversation-engine";
+import { steeringForKnownVerdict } from "../../../shared/domain/steeringRule.js";
 import {
   buildAnswerCoverageAssessmentFromHead,
   buildDeterministicZeroEvidenceAssessment,

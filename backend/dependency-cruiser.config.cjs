@@ -17,6 +17,9 @@ module.exports = {
           "^src/modules/directives/(domain|public)\\.ts$",
           "^src/modules/routines/domain\\.ts$",
           "^src/shared/domain/steeringRule\\.ts$",
+          // The coverage classification table is a runtime value the defaults package
+          // owns; this file is the backend's adapter barrel for it.
+          "^src/modules/answerCoverage/contracts\\.ts$",
           "^src/modules/skills/defaultCatalog\\.ts$",
         ],
       },

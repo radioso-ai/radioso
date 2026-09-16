@@ -1,8 +1,4 @@
-export type {
-  SteeringLifespan,
-  SteeringRule,
-  SteeringSource,
-} from "@radioso/conversation-contract";
+export type { SteeringRule } from "@radioso/conversation-contract";
 export {
   addressesSurface,
   appendSteeringRules,
@@ -15,3 +11,9 @@ export {
   steeringForSurface,
   type RenderSteeringRulesOptions,
 } from "@radioso/conversation-defaults";
+export {
+  // Narrowing a steering set to an already-known coverage verdict is likewise a
+  // steering operation; the engine owns the criteria semantics, the backend only
+  // applies them where a generator runs after the verdict exists.
+  steeringForKnownVerdict,
+} from "@radioso/conversation-engine";

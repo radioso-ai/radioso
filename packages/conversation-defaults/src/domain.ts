@@ -39,6 +39,10 @@ export const directiveToSteeringRule = (match: DirectiveMatch): SteeringRule => 
   source: "directive",
   lifespan: "response",
   ...(resolveRenderSurfaces(match) ? { surfaces: resolveRenderSurfaces(match) } : {}),
+  // Coverage directives are matched contextually before the coverage verdict exists
+  // (#1260): carrying the gate onto the rule lets the rendering surface layer it as a
+  // condition on the classification the model is about to emit.
+  ...(match.directive.coverageCriteria ? { coverageCriteria: match.directive.coverageCriteria } : {}),
 });
 
 /**

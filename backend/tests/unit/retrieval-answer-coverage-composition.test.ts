@@ -72,4 +72,58 @@ describe("RetrievalAnswerComposer coverage composition", () => {
     // answerOutcome; only the prompt injection is gone.
     expect(result.answerOutcome).toBe("coverage_unanswered");
   });
+
+  it("filters coverage-conditional steering by the already-known zero-evidence verdict on the page-context fallback (review round 2, R3)", async () => {
+    const gateway = {
+      answer: vi.fn(async () => JSON.stringify({
+        coverage: "unanswered_insufficient_evidence",
+        requestFocus: "the workshop dates",
+        outcome: "answer",
+        answer: "The page says the workshop runs monthly.",
+        v: 2,
+        claims: [],
+        suggestions: [],
+        grounding: "degraded",
+      })),
+    } as unknown as ChatGateway;
+    const zeroContextSession = {
+      ...session(),
+      retrieval: { ...session().retrieval, contexts: [] },
+      directiveSteering: {
+        rules: [{
+          directiveName: "offer-form",
+          action: "Offer the contact form.",
+          source: "directive",
+          lifespan: "response",
+          coverageCriteria: { coverage: ["unanswered"] },
+        }],
+        matches: [],
+        omissions: [],
+      },
+    } as unknown as PreparedSession;
+    const composer = new RetrievalAnswerComposer(
+      {
+        buildChatWorkspaceContext: () => ({ workspaceId: "workspace-1" }),
+        buildChatUsageContext: () => ({ surface: "assistant", operation: "answer" }),
+        // Different from `session.retrieval.prompt`, so the page-context fallback
+        // actually runs instead of `generateAnswerWithPageContext` bailing to null.
+        buildPromptWithContext: () => "Page: The workshop runs monthly.",
+      } as unknown as ChatAnswerSupport,
+      gateway,
+      new ChatAnswerPresenter({ apply: () => ({ suggestions: [] }) } as unknown as AssistantSuggestionExpansionService),
+      {} as never,
+    );
+
+    await composer.composeAnswer(zeroContextSession, "When is the workshop?", undefined, undefined);
+
+    const call = (gateway.answer as unknown as { mock: { calls: Array<[{ systemPrompt: string }]> } }).mock.calls[0][0];
+    // The deterministic zero-evidence verdict (`unanswered`/`insufficient_evidence`)
+    // is already known and already reported to the coverage sink before this
+    // page-context call composes its prompt. A coverage-gated rule that matches it
+    // must render as a plain instruction, not as an unresolved condition on a fresh
+    // verdict — this call's own envelope schema still asks for one, but nothing
+    // reads it; the host already committed to the deterministic verdict.
+    expect(call.systemPrompt).toContain("Offer the contact form.");
+    expect(call.systemPrompt).not.toContain("Only when your coverage verdict is one of");
+  });
 });

@@ -176,6 +176,19 @@ const buildDirectiveTurnWiring = (options: {
     }
     return [...byName.values()];
   };
+  // Raw match candidates accumulated across every `match()` call this turn. The
+  // engine calls the matcher once per directive group on a retrieval turn — legacy
+  // directives, then coverage directives (packages/conversation-engine/src/index.ts)
+  // — and each call must resolve against everything matched so far, not just its own
+  // group: DirectiveSteeringService.resolveMatches applies capability denial,
+  // excludes/dependsOn, and the steering bound over its whole input, so resolving each
+  // group independently and keeping only the last result would drop the earlier
+  // call's directives from `session.directiveSteering.matches` (read by
+  // directive-to-skill binding and the Activity trace) and would bound each group
+  // against its own budget instead of the one shared budget. This closure is rebuilt
+  // per turn by createChatProcessTurnInput/createChatProcessTurnStreamInput/
+  // createAttemptRoutineInput, so the accumulator resets with it.
+  const turnMatchCandidates: DirectiveMatch[] = [];
   return {
     directives: options.directives ?? directivesForRoutes(),
     directiveMatcher: {
@@ -210,9 +223,16 @@ const buildDirectiveTurnWiring = (options: {
           () => session.turnPlan?.resolve(null),
           session.turnRoute,
         );
-        const steering = plannedClassifications
-          ? await runtime.matchAndResolveWithClassifications(steerInput, currentRouteDirectives, plannedClassifications)
-          : await runtime.matchAndResolve(steerInput, currentRouteDirectives);
+        const candidates = await runtime.matchCandidates(
+          steerInput,
+          currentRouteDirectives,
+          plannedClassifications ?? undefined,
+        );
+        turnMatchCandidates.push(...candidates);
+        // Resolve over every candidate matched so far this turn (see the accumulator
+        // comment above) rather than just this call's — the single source of truth
+        // for `session.directiveSteering` from here on is this union resolve.
+        const steering = await runtime.resolveMatches(steerInput, turnMatchCandidates);
         // Every turn that reaches an answer renders the answering voice. The
         // follow-up question generator is added later, and only if one shows.
         steering.renderedSurfaces = [GENERATION_SURFACE.ANSWER];

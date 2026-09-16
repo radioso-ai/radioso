@@ -260,6 +260,10 @@ const captureDirectiveRuntime = (inputs: DirectiveSteerInput[]): RouteScopedDire
     inputs.push(input);
     return { rules: [], matches: [], omissions: [] };
   },
+  async matchCandidates(input) {
+    inputs.push(input);
+    return [];
+  },
   async resolveMatches(input) {
     inputs.push(input);
     return { rules: [], matches: [], omissions: [] };
@@ -487,6 +491,13 @@ describe("retrieval sense clarification", () => {
             selectionReason: "always",
           }],
         };
+      },
+      async matchCandidates(_input, directives) {
+        return [{
+          directive: directives[0],
+          selectionMode: "deterministic" as const,
+          selectionReason: "always",
+        }];
       },
       async resolveMatches(_input, matches) {
         return { rules: [], omissions: [], matches };

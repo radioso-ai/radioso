@@ -266,13 +266,24 @@ export class RetrievalAnswerComposer {
     });
   }
 
-  private composeGroundedAnswerPrompt(session: PreparedSession) {
+  /**
+   * `knownAssessment`, when supplied, means the turn's coverage verdict is already
+   * committed (today only the zero-evidence branch's deterministic assessment,
+   * already reported to the coverage sink before this prompt is built) rather than
+   * something this call's own model is being asked to judge fresh. A coverage-gated
+   * rule then renders like `steeringRulesForKnownVerdict`'s other callers: plain and
+   * unconditional when it matches, dropped when it does not — never as a condition
+   * on a verdict this call's envelope schema happens to also ask for but that
+   * nothing reads.
+   */
+  private composeGroundedAnswerPrompt(session: PreparedSession, knownAssessment?: AnswerCoverageAssessment) {
     const conversationIntentSnapshot = buildConversationIntentSnapshot({
       history: session.history,
       latestQuery: session.effectiveQuery ?? session.userMessage.content,
       priorRewriteContinuityState: session.priorRewriteContinuityState,
       rewriteProposal: session.retrieval.diagnostics.rewriteProposal,
     });
+    const steering = session.directiveSteering?.rules ?? [];
     const composed = composeGroundedAnswerSystemPrompt({
       baseSystemPrompt: session.retrieval.systemPrompt,
       suggestedQuestionsEnabled: session.retrieval.responseSettings?.suggestedQuestionsEnabled ?? true,
@@ -281,7 +292,7 @@ export class RetrievalAnswerComposer {
       hasRetrievedContexts: session.retrieval.contexts.length > 0,
       conversationIntentSnapshot,
       conversationSummary: session.conversationSummary,
-      steering: session.directiveSteering?.rules ?? [],
+      steering: knownAssessment ? steeringRulesForKnownVerdict(steering, knownAssessment) : steering,
       retrievalSenseOfferAlternatives: session.retrievalSenseOfferAlternatives,
     });
     if (session.directiveSteering) {
@@ -297,8 +308,12 @@ export class RetrievalAnswerComposer {
     return this.composeGroundedAnswerPrompt(session).systemPrompt;
   }
 
-  private promptWithConversationContext(prompt: string, session: PreparedSession) {
-    const groundedPrompt = this.composeGroundedAnswerPrompt(session);
+  private promptWithConversationContext(
+    prompt: string,
+    session: PreparedSession,
+    knownAssessment?: AnswerCoverageAssessment,
+  ) {
+    const groundedPrompt = this.composeGroundedAnswerPrompt(session, knownAssessment);
     return {
       systemPrompt: groundedPrompt.systemPrompt,
       prompt: groundedPrompt.conversationContextPrompt
@@ -338,8 +353,9 @@ export class RetrievalAnswerComposer {
     accountId: string | undefined,
     attemptKey: string,
     signal?: AbortSignal,
+    knownAssessment?: AnswerCoverageAssessment,
   ): Promise<GroundedAnswerEnvelope> {
-    const groundedPrompt = this.promptWithConversationContext(prompt, session);
+    const groundedPrompt = this.promptWithConversationContext(prompt, session, knownAssessment);
     const raw = await this.chatGateway.answer({
       query,
       history: session.history,
@@ -364,6 +380,7 @@ export class RetrievalAnswerComposer {
     query: string,
     accountId: string | undefined,
     signal?: AbortSignal,
+    knownAssessment?: AnswerCoverageAssessment,
   ): Promise<GroundedAnswerEnvelope | null> {
     const prompt = this.support.buildPromptWithContext(session.retrieval.prompt, session);
     if (prompt === session.retrieval.prompt) {
@@ -377,6 +394,7 @@ export class RetrievalAnswerComposer {
       accountId,
       "page_context",
       signal,
+      knownAssessment,
     );
     return { ...envelope, answer: envelope.answer.trim() };
   }
@@ -397,11 +415,25 @@ export class RetrievalAnswerComposer {
     if (session.retrieval.contexts.length === 0) {
       const zeroEvidenceAssessment = buildDeterministicZeroEvidenceAssessment(this.zeroEvidenceRequestFocus(session, query));
       const zeroEvidenceVerdict = await coverageVerdict?.report({ assessment: zeroEvidenceAssessment });
+      // `report()`'s wrapper (`AnswerCoverageHeadRecorder.wrapVerdictSink`) upserts by
+      // request-message id: a retried report for this same message can hand the engine
+      // an *earlier* attempt's stored verdict (`assessmentFromRecord(saved)`), so
+      // `zeroEvidenceVerdict.decision` may have been decided against a different
+      // assessment than this one. That only changes what the engine acts on for
+      // proceed/yield; this turn's own rendering (`steeringRulesForKnownVerdict` below)
+      // and head metrics always use this fresh `zeroEvidenceAssessment` — main's
+      // regenerate behavior, where a re-run shows and measures its own attempt.
       this.recordCoverageHeadOutcome(zeroEvidenceAssessment, zeroEvidenceVerdict?.decision);
       if (zeroEvidenceVerdict?.decision === "yield_turn") {
         return this.yieldedPresentedAnswer();
       }
-      const fallback = await this.generateAnswerWithPageContext(session, query, accountId);
+      const fallback = await this.generateAnswerWithPageContext(
+        session,
+        query,
+        accountId,
+        undefined,
+        zeroEvidenceAssessment,
+      );
       if (fallback) {
         answer = fallback.answer;
         plannedSuggestions = fallback.suggestions;
@@ -434,6 +466,10 @@ export class RetrievalAnswerComposer {
       );
       const envelopeAssessment = this.assessmentFromEnvelope(envelope);
       const headVerdict = await coverageVerdict?.report({ assessment: envelopeAssessment });
+      // `headVerdict.decision` can be decided against a stored verdict from an earlier
+      // attempt at this request message, not this call's own `envelopeAssessment` — see
+      // the zero-evidence branch above. The composed decline and the head metrics below
+      // still use this fresh `envelopeAssessment`.
       this.recordCoverageHeadOutcome(envelopeAssessment, headVerdict?.decision);
       if (headVerdict?.decision === "yield_turn") {
         return this.yieldedPresentedAnswer();
@@ -542,11 +578,21 @@ export class RetrievalAnswerComposer {
     if (session.retrieval.contexts.length === 0) {
       const zeroEvidenceAssessment = buildDeterministicZeroEvidenceAssessment(this.zeroEvidenceRequestFocus(session, query));
       const zeroEvidenceVerdict = await coverageVerdict?.report({ assessment: zeroEvidenceAssessment });
+      // `zeroEvidenceVerdict.decision` may reflect a stored verdict from an earlier
+      // attempt at this request message rather than this call's own assessment — see
+      // the non-streaming `composeAnswer`'s zero-evidence branch. Rendering and head
+      // metrics below still use this fresh `zeroEvidenceAssessment`.
       this.recordCoverageHeadOutcome(zeroEvidenceAssessment, zeroEvidenceVerdict?.decision);
       if (zeroEvidenceVerdict?.decision === "yield_turn") {
         return this.yieldedStreamResult();
       }
-      const fallbackEnvelope = await this.generateAnswerWithPageContext(session, query, accountId, signal);
+      const fallbackEnvelope = await this.generateAnswerWithPageContext(
+        session,
+        query,
+        accountId,
+        signal,
+        zeroEvidenceAssessment,
+      );
       if (fallbackEnvelope) {
         rawAnswer = fallbackEnvelope.answer;
       } else {
@@ -598,7 +644,11 @@ export class RetrievalAnswerComposer {
       // Retained so a later decline (gate-bound, unsupported draft) can render its
       // coverage-gated steering against the verdict already reported to the sink,
       // rather than re-deriving it or rendering the conditional phrasing a decline
-      // model — never asked to emit a verdict — cannot evaluate.
+      // model — never asked to emit a verdict — cannot evaluate. This is always the
+      // fresh head, not necessarily what the engine acted on: `report()`'s wrapper
+      // (`AnswerCoverageHeadRecorder`) can hand the engine a stored verdict from an
+      // earlier attempt at this same request message instead of this one, but the
+      // skill's own rendering and head metrics stay on the attempt actually running.
       let headAssessment: AnswerCoverageAssessment | undefined;
       const candidateStream = this.chatGateway.streamAnswer({
         query,

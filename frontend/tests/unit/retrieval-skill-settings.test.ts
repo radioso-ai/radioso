@@ -32,6 +32,7 @@ describe('retrieval skill settings adapter', () => {
         retrievalStrategy: 'reasoning',
         similarityThreshold: 0.9,
         vectorTopK: 'many',
+        citationHoldEnabled: false,
       },
       'human_contact.request': { enabled: true },
     })).toEqual({
@@ -54,7 +55,28 @@ describe('retrieval skill settings adapter', () => {
       suggestedQuestionsCount: 4,
       retrievalStrategy: 'reasoning',
       similarityThreshold: 0.9,
+      citationHoldEnabled: false,
     })
+  })
+
+  it('drops a non-boolean citationHoldEnabled', () => {
+    expect(readRetrievalSkillSettingsOverride({
+      [RETRIEVAL_ANSWER_SKILL_NAME]: { citationHoldEnabled: 'off' },
+    })).toEqual({})
+  })
+
+  it('round-trips citationHoldEnabled through write and read', () => {
+    const written = writeRetrievalSkillSettingsOverride({
+      'human_contact.request': { enabled: true },
+    }, {
+      citationHoldEnabled: false,
+    })
+
+    expect(written).toEqual({
+      'human_contact.request': { enabled: true },
+      [RETRIEVAL_ANSWER_SKILL_NAME]: { citationHoldEnabled: false },
+    })
+    expect(readRetrievalSkillSettingsOverride(written)).toEqual({ citationHoldEnabled: false })
   })
 
   it('writes retrieval.answer without disturbing other skill settings', () => {

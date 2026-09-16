@@ -386,3 +386,104 @@ describe("RetrievalAnswerComposer coverage head metrics", () => {
     expect(coverageHeadCalls).toEqual([]);
   });
 });
+
+describe("RetrievalAnswerComposer citation hold setting (FR-025..028)", () => {
+  const withCitationHold = (enabled: boolean): PreparedSession => {
+    const session = groundedSession();
+    const retrieval = session.retrieval as unknown as { responseSettings: Record<string, unknown> };
+    retrieval.responseSettings = { ...retrieval.responseSettings, citationHoldEnabled: enabled };
+    return session;
+  };
+
+  const lateCitationAnswer = "This grounded answer keeps going for quite a while before it finally reaches "
+    + "its one supporting citation near the very end of the response[[1]].";
+
+  it("holds text until the first citation appears and reports the wait when the hold is on (default, unchanged)", async () => {
+    const raw = structuredEnvelope({
+      coverage: "answered_sufficient_evidence",
+      requestFocus: "the workshop schedule",
+      outcome: "answer",
+      answer: lateCitationAnswer,
+      claims: [[1]],
+    });
+    const { sink } = fakeSink("proceed");
+    const composer = buildComposer(gatewayFor(raw));
+
+    const { chunks, result } = await drain(
+      composer.streamAnswer(withCitationHold(true), "Tell me about the workshop.", undefined, undefined, undefined, sink),
+    );
+
+    expect(chunks.join("")).toContain("its one supporting citation");
+    expect(result.traceMetrics?.groundingGateWaitMs).toEqual(expect.any(Number));
+  });
+
+  it("releases text immediately after the head and reports no gate wait when the hold is off", async () => {
+    const raw = structuredEnvelope({
+      coverage: "answered_sufficient_evidence",
+      requestFocus: "the workshop schedule",
+      outcome: "answer",
+      answer: lateCitationAnswer,
+      claims: [[1]],
+    });
+    const { sink } = fakeSink("proceed");
+    const composerOn = buildComposer(gatewayFor(raw));
+    const composerOff = buildComposer(gatewayFor(raw));
+
+    const { chunks: heldChunks } = await drain(
+      composerOn.streamAnswer(withCitationHold(true), "Tell me about the workshop.", undefined, undefined, undefined, sink),
+    );
+    const { chunks: releasedChunks, result } = await drain(
+      composerOff.streamAnswer(withCitationHold(false), "Tell me about the workshop.", undefined, undefined, undefined, sink),
+    );
+
+    // Holding collapses everything up to the citation into one release; turning the
+    // hold off streams every parsed piece of `answer` text as it arrives instead, so
+    // the very first chunk lands well before the citation and there are more of them.
+    expect(releasedChunks.length).toBeGreaterThan(heldChunks.length);
+    expect(releasedChunks[0]).not.toContain("[[1]]");
+    expect(releasedChunks.join("")).toContain("its one supporting citation");
+    expect(result.traceMetrics?.groundingGateWaitMs).toBeUndefined();
+  });
+
+  it("delivers a zero-claim answer as degraded with no decline swap when the hold is off", async () => {
+    const raw = structuredEnvelope({
+      coverage: "answered_sufficient_evidence",
+      requestFocus: "the workshop schedule",
+      outcome: "answer",
+      answer: "Here is a plain answer with no citation at all.",
+      claims: [],
+    });
+    const { sink } = fakeSink("proceed");
+    const composer = buildComposer(gatewayFor(raw));
+
+    const { result } = await drain(
+      composer.streamAnswer(withCitationHold(false), "Tell me about the workshop.", undefined, undefined, undefined, sink),
+    );
+
+    expect(result.hasStreamedAnswer).toBe(true);
+    expect(result.finalPresentation.answer).toContain("Here is a plain answer");
+    expect(result.finalPresentation.grounding).toBe("degraded");
+  });
+
+  it.each([true, false])(
+    "never holds a no_support decline regardless of the setting (citationHoldEnabled=%s)",
+    async (citationHoldEnabled) => {
+      const raw = structuredEnvelope({
+        coverage: "unanswered_insufficient_evidence",
+        requestFocus: "the refund policy",
+        outcome: "no_support",
+        answer: "I don't have anything on that in your workspace.",
+        claims: [],
+      });
+      const { sink } = fakeSink("proceed");
+      const composer = buildComposer(gatewayFor(raw));
+
+      const { chunks, result } = await drain(
+        composer.streamAnswer(withCitationHold(citationHoldEnabled), "Refund policy?", undefined, undefined, undefined, sink),
+      );
+
+      expect(chunks.join("")).toContain("I don't have anything on that");
+      expect(result.hasStreamedAnswer).toBe(true);
+    },
+  );
+});

@@ -90,6 +90,7 @@ const retrievalDefaults = (overrides: Partial<RetrievalDefaults> = {}): Retrieva
   metadataFieldSuggestions: [],
   customInstruction: '',
   retrievalStrategy: 'fixed',
+  citationHoldEnabled: true,
   ...overrides,
 })
 

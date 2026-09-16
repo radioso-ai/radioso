@@ -18,6 +18,7 @@ describe("SkillCapabilityRegistry.portableSettingsFieldKeys", () => {
         "vectorTopK",
         "rerankEnabled",
         "rerankTopK",
+        "citationHoldEnabled",
         "queryRewriteEnabled",
         "temporalStructuredLookupEnabled",
         "temporalBoostUpcomingEnabled",

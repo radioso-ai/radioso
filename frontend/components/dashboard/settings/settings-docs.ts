@@ -7,6 +7,7 @@ import fixedWindowChunkSizeSource from '../../../docs/settings-docs/ingestion/fi
 import reprocessSource from '../../../docs/settings-docs/ingestion/reprocess-existing-documents.md'
 import structuredMaxChunkSizeSource from '../../../docs/settings-docs/ingestion/structured-max-chunk-size.md'
 import structuredMinChunkSizeSource from '../../../docs/settings-docs/ingestion/structured-min-chunk-size.md'
+import citationHoldEnabledSource from '../../../docs/settings-docs/retrieval/citation-hold-enabled.md'
 import customInstructionSource from '../../../docs/settings-docs/retrieval/custom-instruction.md'
 import lexicalRewriteInstructionsSource from '../../../docs/settings-docs/retrieval/lexical-rewrite-instructions.md'
 import metadataEffectSource from '../../../docs/settings-docs/retrieval/metadata-effect.md'
@@ -31,7 +32,7 @@ import similarityThresholdSource from '../../../docs/settings-docs/retrieval/sim
 import temporalStructuredLookupSource from '../../../docs/settings-docs/retrieval/temporal-structured-lookup.md'
 import vectorTopKSource from '../../../docs/settings-docs/retrieval/vector-top-k.md'
 
-export interface SettingDoc {
+interface SettingDoc {
   label: string
   summary: string
   details: string
@@ -96,6 +97,7 @@ export const retrievalSettingDocs = {
   sourceScope: parseSettingDoc(sourceScopeSource),
   rerankEnabled: parseSettingDoc(rerankEnabledSource),
   rerankTopK: parseSettingDoc(rerankTopKSource),
+  citationHoldEnabled: parseSettingDoc(citationHoldEnabledSource),
   suggestedQuestionsEnabled: parseSettingDoc(suggestedQuestionsEnabledSource),
   suggestedQuestionsCount: parseSettingDoc(suggestedQuestionsCountSource),
   customInstruction: parseSettingDoc(customInstructionSource),

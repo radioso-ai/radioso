@@ -556,7 +556,17 @@ export class RetrievalAnswerComposer {
         contextCount: session.retrieval.contexts.length,
         maxRetainedCodePoints: RETRIEVAL_BEHAVIOR.groundingStreamGateMaxRetainedCodePoints,
       });
-      const requiresIndexedSourceGate = session.pageReadOutcome?.gate.kind !== "capture";
+      // Captured page content was never gated by citations (a separate source the
+      // planner's typed gate already admitted) — its delivery stays a single
+      // committed block regardless of this setting. Workspace default true,
+      // agent-overridable (FR-025): with it off, an `answer` commitment against
+      // indexed sources streams from its first token instead of holding for one
+      // (FR-026). `no_support` / `out_of_scope` bypass the gate on their own via
+      // `bypassCitationGate` below, regardless of this setting (FR-027).
+      const pageCaptureBypassesGate = session.pageReadOutcome?.gate.kind === "capture";
+      const citationHoldEnabled = session.retrieval.responseSettings?.citationHoldEnabled ?? true;
+      const requiresIndexedSourceGate = !pageCaptureBypassesGate && citationHoldEnabled;
+      let citationGateEngaged = false;
       const gateController = new AbortController();
       const prompt = this.promptWithConversationContext(
         this.support.buildPromptWithContext(session.retrieval.prompt, session),
@@ -612,6 +622,9 @@ export class RetrievalAnswerComposer {
           bypassCitationGate = headStatus.kind === "parsed" && headStatus.head.outcome !== "answer";
         }
         const appliesCitationGate = requiresIndexedSourceGate && !bypassCitationGate;
+        if (appliesCitationGate) {
+          citationGateEngaged = true;
+        }
         const decision = appliesCitationGate
           ? gate.push(parsedText)
           : undefined;
@@ -620,7 +633,13 @@ export class RetrievalAnswerComposer {
           gateController.abort(new GroundingStreamGateBoundError());
           break;
         }
-        const releaseText = bypassCitationGate
+        // Released immediately when the head's own outcome bypassed the gate
+        // (FR-027), or when the citation hold is off for a non-captured answer
+        // (FR-026); a captured page with the gate off still only ever releases
+        // through the gate decision below (never opens, so nothing streams live —
+        // unchanged from before this setting existed).
+        const releasesImmediately = bypassCitationGate || (!citationHoldEnabled && !pageCaptureBypassesGate);
+        const releaseText = releasesImmediately
           ? parsedText
           : (decision?.kind === "release" ? decision.text : "");
         const cleanChunk = citationSanitizer.push(releaseText);
@@ -631,7 +650,10 @@ export class RetrievalAnswerComposer {
         }
       }
 
-      groundingGateWaitMs = gate.waitDurationMs;
+      // Reported only when the gate actually ran this turn (FR-026); a bypassed or
+      // hold-off turn never engaged it, and 0ms-from-never-engaging would read as a
+      // gate that opened instantly rather than one that never applied.
+      groundingGateWaitMs = citationGateEngaged ? gate.waitDurationMs : undefined;
       if (signal?.aborted) {
         throw signal.reason ?? new Error("chat_turn_aborted");
       }
@@ -663,7 +685,9 @@ export class RetrievalAnswerComposer {
           streamedAnswer: "",
           deliveryMode: "bounded_decline",
           traceMetrics: {
-            groundingGateWaitMs,
+            // A bound decision only ever comes from an engaged gate, so this is
+            // always a real measurement, never the "never ran" case.
+            groundingGateWaitMs: gate.waitDurationMs,
             ...(coverageHeadMs === undefined ? {} : { coverageHeadMs }),
           },
         };
@@ -674,7 +698,7 @@ export class RetrievalAnswerComposer {
       // opening or bounding, the computed #860 verdict and draft suppression below
       // remain final authority, preserving pre-#859 delivery behavior.
       gate.finish();
-      groundingGateWaitMs = gate.waitDurationMs;
+      groundingGateWaitMs = citationGateEngaged ? gate.waitDurationMs : undefined;
       plannedSuggestions = finalized.suggestions;
       metadataPatch = this.sideChannel(session)?.resolve(finalized.extras);
       rawAnswer = finalized.fullAnswer;

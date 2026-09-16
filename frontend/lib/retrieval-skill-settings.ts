@@ -19,6 +19,7 @@ export interface RetrievalSkillSettingsOverride {
   rerankEnabled?: boolean
   rerankTopK?: number
   metadataRules?: RetrievalMetadataRule[]
+  citationHoldEnabled?: boolean
 }
 
 export type AgentSkillSettingsMap = Record<string, unknown>
@@ -38,6 +39,7 @@ const knownRetrievalSkillFields = [
   'rerankEnabled',
   'rerankTopK',
   'metadataRules',
+  'citationHoldEnabled',
 ] as const
 
 const retrievalStrategies = new Set<RetrievalStrategy>(['fixed', 'reasoning', 'auto'])
@@ -80,6 +82,7 @@ export const readRetrievalSkillSettingsOverride = (
   if (typeof raw.rerankEnabled === 'boolean') next.rerankEnabled = raw.rerankEnabled
   if (typeof raw.rerankTopK === 'number' && Number.isInteger(raw.rerankTopK)) next.rerankTopK = raw.rerankTopK
   if (Array.isArray(raw.metadataRules)) next.metadataRules = raw.metadataRules as RetrievalMetadataRule[]
+  if (typeof raw.citationHoldEnabled === 'boolean') next.citationHoldEnabled = raw.citationHoldEnabled
   return next
 }
 

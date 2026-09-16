@@ -658,6 +658,11 @@ describe("retrieve answer skill config canonicalization", () => {
       canonicalKey: "metadataRules",
       replaySettings: { metadataRules: [{ id: "rule-1", effect: "boost", enabled: true }] },
     },
+    citationHoldEnabled: {
+      proposalValue: false,
+      canonicalKey: "citationHoldEnabled",
+      replaySettings: { citationHoldEnabled: false },
+    },
   };
 
   it("covers every field retrieveSkillConfigSchema accepts, so a field added later cannot go unmatched silently", () => {

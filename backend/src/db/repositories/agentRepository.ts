@@ -453,7 +453,18 @@ const toRetrieveSkillSourceScope = (
     ? { sourceIds: sourceScope.sourceIds }
     : "all";
 
-const toDefaultRetrieveSkillConfig = (agent: NormalizedAgentInput): Record<string, unknown> => {
+/**
+ * The default-answer retrieve skill's `agent_skills.config` projection - the same shape
+ * migration 110 backfilled and `syncDefaultRetrieveSkill` keeps in sync. Exported so a
+ * caller building an equivalent skill row outside a real transaction (the in-memory test
+ * fakes in `tests/support/`) projects from this one definition instead of a drifting copy.
+ * Takes only the fields it needs (rather than the full `NormalizedAgentInput`) so a already
+ * persisted `AgentRecord` - whose optional-in-`AgentInput` fields are always present, just
+ * not typed as `Required` - satisfies it too.
+ */
+export const toDefaultRetrieveSkillConfig = (
+  agent: Pick<NormalizedAgentInput, "skillSettings" | "sourceScope" | "suggestedQuestionsEnabled">,
+): Record<string, unknown> => {
   const retrievalSettings = asRecord(agent.skillSettings["retrieval.answer"]);
   const { customInstruction, similarityThreshold: _similarityThreshold, ...settings } = retrievalSettings;
   return {
@@ -627,7 +638,7 @@ export class AgentRepository implements AgentRepositoryPort {
         RETURNING ${agentColumns}
       `.execute(trx);
       await this.replaceSourceScope(trx, agentId, normalized.sourceScope);
-      const syncedDefaultRetrieveSkill = await this.syncDefaultRetrieveSkill(trx, agentId, normalized);
+      const syncedDefaultRetrieveSkill = await this.syncDefaultRetrieveSkill(trx, workspaceId, agentId, normalized);
       const row = result.rows[0];
       if (!row) {
         throw new Error("Expected created agent");
@@ -762,7 +773,7 @@ export class AgentRepository implements AgentRepositoryPort {
     if (replaceSourceScope) {
       await this.replaceSourceScope(trx, agentId, normalized.sourceScope);
     }
-    const syncedDefaultRetrieveSkill = await this.syncDefaultRetrieveSkill(trx, agentId, normalized);
+    const syncedDefaultRetrieveSkill = await this.syncDefaultRetrieveSkill(trx, workspaceId, agentId, normalized);
     return mapAgent({
       ...row,
       source_ids: normalized.sourceScope.mode === "selected" ? normalized.sourceScope.sourceIds : [],
@@ -1077,13 +1088,30 @@ export class AgentRepository implements AgentRepositoryPort {
     `.execute(db);
   }
 
+  /**
+   * Keeps the agent's default-answer retrieve skill (`agent_skills` row named
+   * "answer") aligned with its retrieval settings, creating it when absent.
+   *
+   * Migration 110 backfilled this row only for agents that existed when it ran;
+   * every agent created since the unified skill model (#766) never got one, so
+   * the Skills UI has no retrieve card to show and no skillId an operator could
+   * PATCH. Self-healing here (on both create and update) closes that gap for an
+   * agent as soon as either path touches it, without a separate backfill.
+   *
+   * Tries the update first because it is the common case (a row already exists).
+   * Only inserts when no row was updated *and* the agent has no default-answer
+   * skill of any other kind - `agent_skills_one_default_answer` allows exactly
+   * one, and a differently-kinded one would mean an operator deliberately swapped
+   * retrieval out as the agent's default answer, which this sync must not undo.
+   */
   private async syncDefaultRetrieveSkill(
     db: Db,
+    workspaceId: string,
     agentId: string,
     agent: NormalizedAgentInput,
   ): Promise<boolean> {
     const config = toDefaultRetrieveSkillConfig(agent);
-    const row = await db
+    const updated = await db
       .updateTable("agent_skills")
       .set({
         enabled: agent.retrievalEnabled,
@@ -1097,6 +1125,20 @@ export class AgentRepository implements AgentRepositoryPort {
       .where("invocation_mode", "=", "default_answer")
       .returning("id")
       .executeTakeFirst();
-    return Boolean(row);
+    if (updated) {
+      return true;
+    }
+    const inserted = await sql<{ id: string }>`
+      INSERT INTO agent_skills (
+        id, workspace_id, agent_id, skill_name, kind, target_type, target_id, config, invocation_mode, enabled
+      )
+      SELECT gen_random_uuid(), ${workspaceId}, ${agentId}, 'answer', 'retrieve', 'source_scope', NULL, ${toJsonb(config)}, 'default_answer', ${agent.retrievalEnabled}
+      WHERE NOT EXISTS (
+        SELECT 1 FROM agent_skills WHERE agent_id = ${agentId} AND invocation_mode = 'default_answer'
+      )
+      ON CONFLICT (agent_id, skill_name) DO NOTHING
+      RETURNING id
+    `.execute(db);
+    return inserted.rows.length > 0;
   }
 }

@@ -224,8 +224,11 @@ describe("agent bundle routes", () => {
       name: "knowledge_lookup",
       capability: "retrieve",
     }));
-    // Marked portable by the retrieve capability, so the tuning value travels.
-    expect(exported.body.agentSkills[0].config).toEqual(expect.objectContaining({ vectorTopK: 9 }));
+    // Marked portable by the retrieve capability, so the tuning value travels. Every agent
+    // also carries its own default-answer "answer" retrieve skill, so find this one by name
+    // rather than assuming an index.
+    const knowledgeLookupSkill = exported.body.agentSkills.find((skill: { name: string }) => skill.name === "knowledge_lookup");
+    expect(knowledgeLookupSkill.config).toEqual(expect.objectContaining({ vectorTopK: 9 }));
     expect(exported.body.contextVariables).toEqual([expect.objectContaining({
       variableName: "plan_tier",
       source: "pushed",
@@ -297,10 +300,13 @@ describe("agent bundle routes", () => {
       name: "lookup-first",
       binding: { kind: "skill", skillName: "knowledge_lookup" },
     }));
-    // The tuning value travels; the workspace-bound one is named, not carried.
-    expect(exported.body.agentSkills[0].config).toEqual(expect.objectContaining({ vectorTopK: 7 }));
-    expect(exported.body.agentSkills[0].config).not.toHaveProperty("sourceScope");
-    expect(exported.body.agentSkills[0].omittedConfigKeys).toContain("sourceScope");
+    // The tuning value travels; the workspace-bound one is named, not carried. Every agent
+    // also carries its own default-answer "answer" retrieve skill, so find this one by name
+    // rather than assuming an index.
+    const knowledgeLookupSkill = exported.body.agentSkills.find((skill: { name: string }) => skill.name === "knowledge_lookup");
+    expect(knowledgeLookupSkill.config).toEqual(expect.objectContaining({ vectorTopK: 7 }));
+    expect(knowledgeLookupSkill.config).not.toHaveProperty("sourceScope");
+    expect(knowledgeLookupSkill.omittedConfigKeys).toContain("sourceScope");
 
     const imported = await request(app)
       .post("/api/v1/agents/bundle")
@@ -409,7 +415,7 @@ describe("agent bundle routes", () => {
       .expect(404);
   });
 
-  it("round-trips an agent whose only skill has no portable settings", async () => {
+  it("round-trips an agent whose only non-retrieval skill has no portable settings", async () => {
     // `notify` declares recipient emails and a webhook URL and nothing else, and
     // neither travels. Export therefore hands import a config with every declared
     // value gone, and import creates the skill from exactly that object — so the
@@ -445,7 +451,9 @@ describe("agent bundle routes", () => {
       .set(adminSessionHeaders(session))
       .expect(200);
 
-    const [exportedSkill] = exported.body.agentSkills;
+    // Every agent also carries its own default-answer "answer" retrieve skill, so find
+    // this one by name rather than assuming an index.
+    const exportedSkill = exported.body.agentSkills.find((skill: { name: string }) => skill.name === "notify_ops");
     expect(exportedSkill.name).toBe("notify_ops");
     // The values stayed home; only their key names travelled.
     expect(JSON.stringify(exportedSkill.config)).not.toContain("ops@example.com");

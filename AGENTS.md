@@ -273,4 +273,5 @@ radioso/
 - Keep this file concise and durable. It should describe how to work in the repo, not what happened in a single run.
 - Do not paste generated "Active Technologies" inventories, feature-plan histories, branch notes, logs, benchmark output, or TODO dumps here.
 - When adding a new package or workflow, update the relevant table, command block, or layout entry by hand.
+- A new workspace package (`packages/*` or `ee/packages/*`) must be registered everywhere the build enumerates packages by hand, or only the deploy notices: `infra/backend.Dockerfile` and `infra/frontend.Dockerfile` (every stage that `COPY`s package.json files and the `--from` copies into the runtime stages), and the `build:workspace-deps` / test scripts in `backend/package.json`. PR CI builds the OSS edition and never exercises the enterprise image stages, so an omission there fails staging, not the PR.
 - Put temporary agent coordination notes in `.context/`; it is gitignored and exists for that purpose.

@@ -9,6 +9,35 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.1.0] - 2026-09-16
+
+### Added
+
+- **chat:** emit the coverage verdict in the answer envelope head ([#1267](https://github.com/radioso-ai/radioso/pull/1267))
+- exact words greeting with language variants and authored chips ([#1252](https://github.com/radioso-ai/radioso/pull/1252))
+- **embed:** let the host page mint signed visitor identity per message ([#1262](https://github.com/radioso-ai/radioso/pull/1262))
+- **billing:** lock managed plans to the catalog model set ([#1257](https://github.com/radioso-ai/radioso/pull/1257))
+- **usage-limits:** meter conversations, with one unit for everything ([#1246](https://github.com/radioso-ai/radioso/pull/1246))
+
+### Fixed
+
+- **agents:** repair Test Chat debugging, routine testing, and draft states ([#1268](https://github.com/radioso-ai/radioso/pull/1268))
+- **onboarding:** absorb a rejected workspace summary in the onboarding refresh ([#1266](https://github.com/radioso-ai/radioso/pull/1266))
+- **chat:** run the turn planner on the agent's chat model override ([#1258](https://github.com/radioso-ai/radioso/pull/1258))
+- **skills:** accept required on MCP/email skill inputs; routine step text is values only ([#1256](https://github.com/radioso-ai/radioso/pull/1256))
+- **crawler:** stop skipping short pages with clean extraction ([#1255](https://github.com/radioso-ai/radioso/pull/1255))
+- make a coverage-started routine acknowledge the unanswered request before its first step ([#1251](https://github.com/radioso-ai/radioso/pull/1251))
+
+### Database migrations
+
+This release adds 3 migrations. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `188_bootstrap_greeting_suggestions.sql`
+- `189_copilot_proposal_agent_greeting_target.sql`
+- `190_answer_coverage_assessment_producer.sql`
+
+[1.1.0]: https://github.com/radioso-ai/radioso/compare/v1.0.2...v1.1.0
+
 ## [1.0.2] - 2026-09-14
 
 ### Fixed

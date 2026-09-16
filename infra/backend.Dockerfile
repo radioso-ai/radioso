@@ -11,6 +11,7 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY ee/package.json ./ee/package.json
 COPY ee/packages/backend-module/package.json ./ee/packages/backend-module/package.json
+COPY ee/packages/plan-catalog/package.json ./ee/packages/plan-catalog/package.json
 COPY packages/skill-contract/package.json ./packages/skill-contract/package.json
 COPY packages/skill-contract/*.d.ts ./packages/skill-contract/
 COPY packages/usage-contract/package.json ./packages/usage-contract/package.json
@@ -18,6 +19,10 @@ COPY packages/usage-contract/*.d.ts ./packages/usage-contract/
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm install --frozen-lockfile --filter @radioso/enterprise-backend-module...
 
+# The enterprise module builds against the plan catalog, a workspace package of its
+# own, so the catalog has to be present and built before the module compiles.
+COPY ee/packages/plan-catalog ./ee/packages/plan-catalog
+RUN pnpm --filter @radioso/plan-catalog run build
 COPY ee/packages/backend-module ./ee/packages/backend-module
 RUN pnpm --filter @radioso/enterprise-backend-module run build
 
@@ -53,6 +58,7 @@ COPY packages/conversation-tools/package.json ./packages/conversation-tools/pack
 COPY packages/census/package.json ./packages/census/package.json
 COPY packages/workspace-invalidation-contract/package.json ./packages/workspace-invalidation-contract/package.json
 COPY --from=ee-backend-build /app/ee/packages/backend-module ./ee/packages/backend-module
+COPY --from=ee-backend-build /app/ee/packages/plan-catalog ./ee/packages/plan-catalog
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm install --frozen-lockfile --filter radioso-backend... --filter @radioso/crawler... --filter @radioso/mcp-server... --filter @radioso/routine-definition... --filter @radioso/routine-document... --filter @radioso/conversation-engine... --filter @radioso/conversation-defaults... --filter @radioso/conversation-tools... --filter @radioso/census...
 RUN if [ "$RADIOSO_EDITION" = "enterprise" ]; then \
@@ -128,6 +134,7 @@ COPY packages/conversation-tools/package.json ./packages/conversation-tools/pack
 COPY packages/census/package.json ./packages/census/package.json
 COPY packages/workspace-invalidation-contract/package.json ./packages/workspace-invalidation-contract/package.json
 COPY --from=ee-backend-build /app/ee/packages/backend-module ./ee/packages/backend-module
+COPY --from=ee-backend-build /app/ee/packages/plan-catalog ./ee/packages/plan-catalog
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm install --prod --frozen-lockfile --filter radioso-backend... --filter @radioso/crawler... --filter @radioso/mcp-server... --filter @radioso/routine-definition... --filter @radioso/routine-document... --filter @radioso/conversation-engine... --filter @radioso/conversation-defaults... --filter @radioso/conversation-tools... --filter @radioso/census...
 RUN if [ "$RADIOSO_EDITION" = "enterprise" ]; then \

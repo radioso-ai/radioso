@@ -16,11 +16,14 @@ export function AnswerCoverageSection({
   assessment,
   interaction,
   isLegacy,
+  isFromTrace,
   onOpenTargetMessage,
 }: {
   assessment: AnswerCoverageAssessment
   interaction?: AnswerCoverageInteractionTrace
   isLegacy?: boolean
+  /** Read from this turn's own trace because no persisted assessment exists (draft surfaces, FR-023). */
+  isFromTrace?: boolean
   onOpenTargetMessage?: (messageId: string) => void
 }) {
   const assessed = assessment.availability === 'assessed'
@@ -31,6 +34,7 @@ export function AnswerCoverageSection({
         {assessed ? answerCoverageLabel(assessment.coverage) : 'Not assessed'}
       </p>
       {isLegacy ? <p className="mt-1 text-xs text-muted-foreground">Legacy evidence: this turn retains its recorded grounding diagnostics, but semantic coverage was not measured.</p> : null}
+      {isFromTrace ? <p className="mt-1 text-xs text-muted-foreground">From this turn’s trace — not persisted.</p> : null}
       <dl className="mt-3 grid gap-x-4 gap-y-2 sm:grid-cols-2">
         <div><dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Availability</dt><dd className="mt-0.5 text-sm text-foreground">{availabilityLabel[assessment.availability]}</dd></div>
         {assessed && assessment.reason ? <div><dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Reason</dt><dd className="mt-0.5 text-sm text-foreground">{answerCoverageReasonLabel(assessment.reason)}</dd></div> : null}

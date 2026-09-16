@@ -135,7 +135,10 @@ JSON error instead of an empty `204` response:
 ## Chat suggestions
 
 A chat response can include `suggestions`. Each suggestion has `text`, a
-provider-defined `kind` string, and an optional `action`.
+provider-defined `kind` string, and an optional `action`. `id` appears only on
+the authored exact-content chips described in [Bootstrap greeting
+response](#bootstrap-greeting-response); the follow-up and action chips below
+carry no `id`.
 
 Two kinds of chips can appear together:
 
@@ -161,7 +164,6 @@ Example response fragment:
 {
   "suggestions": [
     {
-      "id": "chip-contact",
       "text": "Contact us",
       "kind": "contact_human",
       "action": {
@@ -172,7 +174,7 @@ Example response fragment:
         }
       }
     },
-    { "id": "chip-faq", "text": "What's covered here?", "kind": "deeper" }
+    { "text": "What's covered here?", "kind": "deeper" }
   ]
 }
 ```

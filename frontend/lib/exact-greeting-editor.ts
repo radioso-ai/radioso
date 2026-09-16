@@ -138,6 +138,20 @@ export const issuesForVariants = (issues: readonly ExactGreetingIssue[]): ExactG
   issuesForPath(issues, 'variants')
 
 /**
+ * `issues` are server diagnostics scoped to the exact content last sent to Save; once the
+ * operator edits any variant or chip, they no longer describe the current draft. This clears
+ * all of them alongside applying the edit rather than trying to keep only the fixed field's
+ * diagnostic around — the same "any draft edit invalidates the last validation result"
+ * policy the routine editor uses (`assistant-routines-section.tsx`'s `isValidationCurrent`),
+ * applied here as an unconditional clear because this editor has no signature to compare
+ * against. A stale diagnostic would otherwise linger on a field the operator already fixed,
+ * until the next Save round-trip.
+ */
+export const applyEditedItem = (
+  next: ExactContentItem,
+): { item: ExactContentItem; issues: ExactGreetingIssue[] } => ({ item: next, issues: [] })
+
+/**
  * `PUT .../greeting/draft` returns 200 with `validation.issues` unless Exact words is
  * enabled and content is invalid, in which case it's a 400 `ApiError` whose
  * `error.details` carries the same `{ issues }` shape (`badRequest("...", { issues })` in

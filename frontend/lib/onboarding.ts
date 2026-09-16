@@ -10,9 +10,7 @@ import {
   markOnboardingCompleted,
 } from '@/lib/onboarding-storage'
 
-export { markOnboardingActive, markOnboardingCompleted } from '@/lib/onboarding-storage'
-
-export const SAMPLE_DOCUMENTS = [
+const SAMPLE_DOCUMENTS = [
   {
     title: 'Getting Started with Radioso',
     slug: 'getting-started',
@@ -50,12 +48,6 @@ Local setup centers on a small set of environment values: \`DATABASE_URL\`, sess
 
 Workspace settings control retrieval behavior such as rewrite, rerank, chunking, citation display, and anonymous chat access. Personal tokens and service-account credentials support SDK or curl usage after the workspace is already working in the UI.`,
   },
-] as const
-
-export const SAMPLE_QUESTIONS = [
-  'How do I get started with Radioso locally?',
-  'How does Radioso use my documents as context?',
-  'Which environment variables matter most for local setup?',
 ] as const
 
 export interface WorkspaceOnboardingState {
@@ -159,6 +151,11 @@ export const useWorkspaceOnboarding = (
       setWebsiteCrawlerEnabled(summary.websiteCrawlerEnabled)
       setIsOnboardingCompleted(nextCompleted)
       setIsOnboardingActive(nextActive)
+    } catch {
+      // The summary only enriches onboarding state. It fails legitimately while the
+      // stored workspace and the session cookie disagree during an account switch
+      // (the route page redirects on its own), so a rejection here has nothing to
+      // surface and must not escape as an unhandled promise.
     } finally {
       setIsLoading(false)
     }

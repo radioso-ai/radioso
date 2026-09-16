@@ -49,6 +49,8 @@ export interface OpenApiSchemaCatalog {
   AgentChannelCredentialParamsSchema: RouteParameterSchema;
   AgentParamsSchema: RouteParameterSchema;
   AgentRevisionStateSchema: z.ZodTypeAny;
+  AgentGreetingDraftSchema: z.ZodTypeAny;
+  AgentGreetingDraftResponseSchema: z.ZodTypeAny;
   AgentRevisionCandidateRequestSchema: z.ZodTypeAny;
   AgentRevisionCandidateResponseSchema: z.ZodTypeAny;
   AgentRevisionListResponseSchema: z.ZodTypeAny;
@@ -328,6 +330,7 @@ export interface OpenApiSchemaCatalog {
   WebhookDestinationRequestSchema: z.ZodTypeAny;
   WebhookDestinationParamsSchema: RouteParameterSchema;
   WorkspaceLlmCapabilityPreferenceSchema: z.ZodTypeAny;
+  WorkspaceLlmManagedModelSchema: z.ZodTypeAny;
   WorkspaceLlmModelsResponseSchema: z.ZodTypeAny;
   UpdateWorkspaceLlmModelsRequestSchema: z.ZodTypeAny;
   workspaceParamsSchema: RouteParameterSchema;

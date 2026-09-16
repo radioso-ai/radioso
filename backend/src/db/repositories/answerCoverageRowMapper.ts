@@ -54,7 +54,7 @@ export const mapAnswerCoverageRow = (row: AnswerCoverageRow): AnswerCoverageReco
     coverage: row.coverage,
     reason: row.reason,
     ...(row.unresolved_request === null ? {} : { unresolvedRequest: row.unresolved_request }),
-    // Every row written before migration 188 predates the producer column and
+    // Every row written before migration 190 predates the producer column and
     // was, without exception, written by the pre-compose assessor (#1260).
     producer: row.producer ?? "assessor",
   };

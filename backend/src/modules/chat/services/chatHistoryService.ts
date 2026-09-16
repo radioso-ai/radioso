@@ -521,6 +521,7 @@ const normalizeChatSuggestion = (value: unknown): ChatSuggestion | null => {
   }
 
   const candidate = value as {
+    id?: unknown;
     text?: unknown;
     kind?: unknown;
     citation?: unknown;
@@ -544,6 +545,9 @@ const normalizeChatSuggestion = (value: unknown): ChatSuggestion | null => {
   const action = normalizeSuggestionAction(candidate.action);
 
   const result: ChatSuggestion = { text, kind };
+  if (typeof candidate.id === "string" && candidate.id.trim().length > 0) {
+    result.id = candidate.id;
+  }
   if (citation) {
     result.citation = citation;
   }
@@ -551,6 +555,25 @@ const normalizeChatSuggestion = (value: unknown): ChatSuggestion | null => {
     result.action = action;
   }
   return result;
+};
+
+/**
+ * A normal turn's suggestions live on its `chat.answer` audit event, keyed by
+ * `assistantMessageId` (`buildArtifactsIndex`); a promoted bootstrap greeting has no
+ * such turn event (spec 1150 Slice A: `chatSessionPreparer.promoteBootstrapGreeting`
+ * writes an ordinary message row, not a turn). Its chips, when present, are on the
+ * message's own metadata instead — this is the fallback read for that one case.
+ */
+const messageMetadataSuggestions = (message: MessageRecord): ChatSuggestion[] | undefined => {
+  const raw = (message.metadata as { suggestions?: unknown } | undefined)?.suggestions;
+  if (!Array.isArray(raw)) {
+    return undefined;
+  }
+  const normalized = raw.flatMap((suggestion) => {
+    const result = normalizeChatSuggestion(suggestion);
+    return result ? [result] : [];
+  });
+  return normalized.length > 0 ? normalized : undefined;
 };
 
 const toIsoString = (value: Date): string => value.toISOString();
@@ -1069,7 +1092,9 @@ export class ChatHistoryService {
         inputMetadata: message.inputMetadata,
         citations: message.role === "assistant" ? artifactsByAssistantMessageId.get(message.id)?.citations : undefined,
         answerSegments: message.role === "assistant" ? artifactsByAssistantMessageId.get(message.id)?.answerSegments : undefined,
-        suggestions: message.role === "assistant" ? artifactsByAssistantMessageId.get(message.id)?.suggestions : undefined,
+        suggestions: message.role === "assistant"
+          ? artifactsByAssistantMessageId.get(message.id)?.suggestions ?? messageMetadataSuggestions(message)
+          : undefined,
         answerFeedbackEntries: message.role === "assistant" ? feedbackByAssistantMessageId.get(message.id) : undefined,
         ...(options.includeLatency ? { latencyMs: message.totalLatencyMs } : {}),
         debug: message.role === "assistant" ? debugByAssistantMessageId.get(message.id) : undefined,
@@ -1144,7 +1169,7 @@ export class ChatHistoryService {
         inputMetadata: message.inputMetadata,
         citations: artifacts?.citations,
         answerSegments: artifacts?.answerSegments,
-        suggestions: artifacts?.suggestions,
+        suggestions: artifacts?.suggestions ?? (isAssistant ? messageMetadataSuggestions(message) : undefined),
         answerFeedbackEntries: feedbackByAssistantMessageId.get(message.id),
         latencyMs: message.totalLatencyMs,
         debug,

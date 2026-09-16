@@ -5,7 +5,7 @@ type ProductionDescriptorName =
   | "agent_configuration" | "agent_skills" | "analyze_website" | "audience_topics" | "context_variables"
   | "conversation_history_search"
   | "conversation_transcript" | "create_eval_case_from_turn" | "draft_reply" | "document_chunks" | "document_search" | "document_status"
-  | "eval_results" | "needs_attention" | "propose_agent" | "propose_agent_setting" | "propose_context_variable" | "propose_directive"
+  | "eval_results" | "needs_attention" | "propose_agent" | "propose_agent_setting" | "propose_context_variable" | "propose_directive" | "propose_greeting"
   | "propose_document" | "propose_document_removal" | "propose_document_retrieval"
   | "product_doc_page" | "product_docs"
   | "propose_ingestion_settings" | "propose_workspace_setting" | "start_crawl"
@@ -46,6 +46,11 @@ export const copilotCapabilityProvenance: Readonly<Record<ProductionDescriptorNa
   needs_attention: { applicationPrimitiveIds: ["operatorCopilot.needs-attention"], ...rayOnly("Ray composes the authorized escalation sources into one operator working list carrying the handles its follow-up acts consume.") },
   product_docs: { applicationPrimitiveIds: ["productDocs.corpus.read"] },
   product_doc_page: { applicationPrimitiveIds: ["productDocs.corpus.read"] },
+  // Coverage-map exclusion (spec 1150 F10): propose_agent's card and apply carry no exact
+  // greeting content. Creation-from-website drafts an agent from `copilotAgentChangeSchema`
+  // (contracts/agentAuthoring.ts), which the wizard's own creation contract also does not accept
+  // for exact content; authoring exact greeting content on an already-created agent's draft is
+  // propose_greeting, the same split propose_agent already draws for the chunking strategy.
   propose_agent: { backingOperationIds: ["createAgentFromWizard"], applicationPrimitiveIds: ["agentWizard.agent.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray persists an operator-reviewable draft before the agent wizard creates an agent and queues its website.") },
   propose_agent_setting: { backingOperationIds: ["updateAgent"], applicationPrimitiveIds: ["agents.setting.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray persists an operator-reviewable draft before the agent service receives a setting mutation.") },
   propose_context_variable: { backingOperationIds: ["createContextVariable", "updateContextVariable", "upsertAgentContextVariable"], applicationPrimitiveIds: ["contextVariables.definition.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray persists an operator-reviewable draft before the context-variable service applies a definition or enablement mutation.") },
@@ -53,6 +58,11 @@ export const copilotCapabilityProvenance: Readonly<Record<ProductionDescriptorNa
   propose_directive_enablement: { backingOperationIds: ["updateAgentDirective"], applicationPrimitiveIds: ["agents.directive.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray presents a reversible directive enablement change as a pending, operator-confirmed proposal.") },
   propose_directive_removal: { backingOperationIds: ["deleteAgentDirective"], applicationPrimitiveIds: ["agents.directive.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray presents directive removal as a pending, operator-confirmed proposal, the same as any other directive change.") },
   propose_document: { backingOperationIds: ["createDocument"], applicationPrimitiveIds: ["documents.authoring.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray drafts a knowledge document as an operator-reviewable proposal rather than writing one into the workspace.") },
+  // Backed by the same public route the dashboard's greeting editor writes through
+  // (updateAgentGreetingDraft), so this is a one-to-one operation like propose_agent_setting
+  // rather than a Ray-only capability; permission parity is enforced against that operation's
+  // own HTTP requirement in operationPermissionRequirements.ts.
+  propose_greeting: { backingOperationIds: ["updateAgentGreetingDraft"] },
   propose_document_removal: { backingOperationIds: ["deleteDocument"], applicationPrimitiveIds: ["documents.deletion.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray presents permanent document removal as a pending, operator-confirmed proposal, the same as any other document change.") },
   propose_document_retrieval: { backingOperationIds: ["updateDocumentRetrieval"], applicationPrimitiveIds: ["documents.authoring.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray persists an operator-reviewable draft before the document service receives a retrieval-eligibility or metadata change.") },
   propose_ingestion_settings: { backingOperationIds: ["updateIngestionSettings"], applicationPrimitiveIds: ["settings.ingestion.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray persists an operator-reviewable draft before the ingestion settings service receives a chunking or enrichment change.") },

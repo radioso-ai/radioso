@@ -86,6 +86,7 @@
       "entry": [
         "feature-manifest.mjs",
         "src/**/*.test.ts",
+        "tests/**/*.test.ts",
         "src/**/__tests__/**/*.ts",
         "*.ts",
         "src/index.ts",

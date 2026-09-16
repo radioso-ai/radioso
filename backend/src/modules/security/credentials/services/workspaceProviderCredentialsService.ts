@@ -21,18 +21,18 @@ export interface WorkspaceCredentialsEncryptionConfig {
   key: string | undefined;
 }
 
-export interface SetApiKeyInput {
+interface SetApiKeyInput {
   workspaceId: string;
   provider: LlmProviderName;
   apiKey: string;
   actor: { accountId: string };
 }
 
-export interface CredentialActor {
+interface CredentialActor {
   accountId: string;
 }
 
-export class EncryptionNotConfiguredError extends AppError {
+class EncryptionNotConfiguredError extends AppError {
   constructor() {
     super(
       503,
@@ -140,6 +140,12 @@ export class WorkspaceProviderCredentialsService {
         },
       );
     }
+  }
+
+  /** Presence only. Reads no plaintext, so it works without the master key. */
+  async hasCredentials(workspaceId: string, provider: LlmProviderName): Promise<boolean> {
+    const record = await this.repository.findByWorkspaceAndProvider(workspaceId, provider);
+    return record !== null;
   }
 
   async removeApiKey(

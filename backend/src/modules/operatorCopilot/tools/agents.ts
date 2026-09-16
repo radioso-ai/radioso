@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { serializeAgentConfig, type AgentConfig, type ConversationAgent } from "../../agents/public.js";
 import { builtInAnswerDirectiveViews, type BuiltInDirectiveView } from "../../directives/public.js";
+import { exactContentItemSchema, type ExactContentItem } from "../../../shared/domain/exactContent.js";
 import type {
   CopilotMcpProposalRecoveryPort,
   CopilotToolDescriptor,
@@ -351,6 +352,113 @@ export const createAgentSettingProposalCopilotTools = (
           });
           await recordProposalCreated(deps.auditService, context, proposal);
           return { proposalId: proposal.id, targetType: "agent_setting" as const, targetLabel: settingKey, summary: rationale ?? settingKey, ...proposalEvidenceOutput(evidence) };
+        },
+      }),
+      describeEntity: (input, context) => {
+        const parsed = input as { agentId?: string; agentName?: string };
+        return parsed.agentName
+          ? describeNamedAgent(parsed, context, deps.agentLookup)
+          : entity("agent", parsed.agentId ?? context?.pageContext.agentId);
+      },
+    },
+  ];
+};
+
+export interface GreetingProposalCopilotToolDependencies extends CopilotProposalToolDependencies {
+  readonly agentLookup?: CopilotAgentLookupPort;
+  readonly proposalRecovery: CopilotMcpProposalRecoveryPort;
+}
+
+/** Mirrors the payload propose_greeting persists (see createAgentGreetingCopilotProposalAdapter in proposalAdapters.ts). */
+const greetingProposalPayloadSchema = z.object({
+  exactWordsEnabled: z.boolean(),
+  exactContent: exactContentItemSchema.nullable(),
+  rationale: z.string().optional(),
+  summary: z.string().optional(),
+}).passthrough();
+
+const summarizeGreeting = (input: { exactWordsEnabled: boolean; exactContent: ExactContentItem | null; rationale?: string }): string => {
+  const base = input.exactWordsEnabled
+    ? `Turn on Exact words for the greeting${input.exactContent ? ` with ${input.exactContent.chips.length} chip${input.exactContent.chips.length === 1 ? "" : "s"}` : ""}.`
+    : "Save greeting content without turning on Exact words.";
+  return input.rationale ? `${base} ${input.rationale}` : base;
+};
+
+export const createGreetingProposalCopilotTools = (
+  deps: GreetingProposalCopilotToolDependencies,
+): ReadonlyArray<CopilotToolDescriptor> => {
+  const greetingAdapter = proposalAdapterFor(deps.proposalAdapters, "agent_greeting");
+  const description = `Draft exact greeting content on the agent draft for the operator to review and apply. Exact words replaces the generated greeting with literal authored text and up to five suggestion chips; content must include a variant for the agent's default locale. This does not change configuration. ${scopedAgentDraftPublicationNote}`;
+  const inputSchema = z.object({
+    agentId: idSchema.optional(),
+    agentName: entityNameSchema.optional(),
+    exactWordsEnabled: z.boolean(),
+    exactContent: exactContentItemSchema.nullable(),
+    rationale: z.string().trim().min(1).max(1_000).optional(),
+  }).strict();
+  return [
+    {
+      name: "propose_greeting", shape: "propose", verificationCost: () => 0, uiLabel: "Drafting greeting content", contributingModule: "agents", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"],
+      description,
+      inputSchema,
+      outputSchema: proposalOutputSchema,
+      reconcileMcpInvocation: async ({ invocation, context, staleBefore, now }) => {
+        if (!invocation.operationId) return { status: "conflict" };
+        const recovery = await deps.proposalRecovery.recoverOperatorMcpProposal({
+          invocationId: invocation.id,
+          grantId: invocation.grantId,
+          workspaceId: context.workspaceId,
+          operatorUserId: context.operatorUserId,
+          operationId: invocation.operationId,
+          descriptorName: "propose_greeting",
+          inputDigest: invocation.inputDigest,
+          staleBefore,
+          now,
+        });
+        if (recovery.status !== "recovered") return recovery;
+        if (recovery.proposal.targetType !== "agent_greeting") return { status: "conflict" };
+        const payload = greetingProposalPayloadSchema.safeParse(recovery.proposal.payload);
+        if (!payload.success) return { status: "conflict" };
+        return {
+          status: "recovered",
+          output: {
+            proposalId: recovery.proposal.id,
+            targetType: "agent_greeting" as const,
+            targetLabel: "Greeting",
+            summary: payload.data.summary ?? payload.data.rationale ?? summarizeGreeting(payload.data),
+            ...proposalEvidenceOutput(recovery.proposal.evidence),
+          },
+        };
+      },
+      createTool: (context) => ({
+        name: "propose_greeting",
+        description,
+        inputSchema,
+        outputSchema: proposalOutputSchema,
+        invoke: async ({ agentId, exactWordsEnabled, exactContent, rationale }) => {
+          const targetRef = { agentId: agentId ?? requiredPageAgent(context.pageContext.agentId) };
+          await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
+          const summary = summarizeGreeting({ exactWordsEnabled, exactContent, rationale });
+          // validatePayload runs the same validateExactContentItem rules the draft route enforces
+          // and is the version-token source, for the reason documented on
+          // propose_agent_setting's own validatePayload call above; it throws a tool error
+          // carrying field-level issues when Exact words is on and content does not validate.
+          const validated = await greetingAdapter.validatePayload(context.workspaceId, targetRef, {
+            exactWordsEnabled, exactContent, rationale, summary,
+          });
+          await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
+          const proposal = await deps.proposalRepository.createProposal({
+            workspaceId: context.workspaceId,
+            operatorUserId: context.operatorUserId,
+            origin: copilotProposalOrigin(context),
+            targetType: "agent_greeting",
+            targetRef: validated.targetRef,
+            payload: validated.payload,
+            versionToken: validated.versionToken,
+            evidence: null,
+          });
+          await recordProposalCreated(deps.auditService, context, proposal);
+          return { proposalId: proposal.id, targetType: "agent_greeting" as const, targetLabel: "Greeting", summary };
         },
       }),
       describeEntity: (input, context) => {

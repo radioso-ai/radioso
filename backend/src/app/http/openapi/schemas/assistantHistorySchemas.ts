@@ -65,6 +65,9 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
   const ChatSuggestionSchema = registry.register(
     "ChatSuggestion",
     z.object({
+      id: z.string().optional().openapi({
+        description: "Stable chip identity. Present for authored exact-content chips; absent for generated follow-up suggestions.",
+      }),
       text: z.string(),
       kind: z.string(),
       citation: schemas.CitationSchema.optional(),

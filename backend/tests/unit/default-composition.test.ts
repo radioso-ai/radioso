@@ -18,6 +18,7 @@ import {
 } from "../../src/modules/chat/composition.js";
 import { CloudTasksActionDrainDispatcher } from "../../src/modules/chat/infra/cloudTasksActionDrainDispatcher.js";
 import type { OrganizationCreationGuard } from "../../src/shared/domain/organizationCreationGuard.js";
+import type { ManagedModelPolicy } from "../../src/shared/domain/managedModelPolicy.js";
 import type { DirectiveMatcherPort } from "../../src/modules/directives/public.js";
 import { capabilityNames } from "../../src/shared/domain/capabilityPolicy.js";
 import { AmqpDocumentJobConsumer, AmqpDocumentJobDispatcher } from "../../src/modules/documents/infra/amqpDocumentJobQueue.js";
@@ -264,6 +265,25 @@ describe("default application composition", () => {
     });
 
     expect(composition.organizationCreationGuardRegistration).toBe(guard);
+  });
+
+  it("collects an optional managed model policy through module registration", () => {
+    const policy: ManagedModelPolicy = {
+      resolveManagedModel: vi.fn(async () => null),
+    };
+    const composition = createDefaultApplicationComposition({
+      logger: createLogger(),
+      modules: [
+        {
+          id: "managed-model-policy-module",
+          register(context) {
+            context.registerManagedModelPolicy(policy);
+          },
+        },
+      ],
+    });
+
+    expect(composition.managedModelPolicyRegistration).toBe(policy);
   });
 
   it("applies optional directive contributions through module registration", () => {

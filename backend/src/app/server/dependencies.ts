@@ -82,7 +82,7 @@ import { createCopilotDocumentAuthoringPort, createCopilotToolCatalog, createCop
 import { ProbeConversationReader, ReplyDraftRunner } from "../../modules/chat/composition.js";
 import { ProbeRoutineReader } from "../../modules/routines/public.js";
 import { AgentRepository } from "../../db/repositories/agentRepository.js";
-import { createAgentSettingCopilotProposalAdapter, createAgentSkillCopilotProposalAdapter, createContextVariableCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../../modules/operatorCopilot/proposalAdapters.js";
+import { createAgentGreetingCopilotProposalAdapter, createAgentSettingCopilotProposalAdapter, createAgentSkillCopilotProposalAdapter, createContextVariableCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../../modules/operatorCopilot/proposalAdapters.js";
 import { createAgentPublicationProposalAdapter } from "../../modules/operatorCopilot/agentPublicationProposalAdapter.js";
 import { createRoutineMcpApplyPort } from "../composition/copilotRoutineAtomicApply.js";
 import { createAgentSkillMcpApplyPort } from "../composition/copilotAgentSkillAtomicApply.js";
@@ -101,6 +101,7 @@ import { ConversationSummaryRepository } from "../../db/repositories/conversatio
 import { RoutineStateRepository } from "../../db/repositories/routineStateRepository.js";
 import { QUALITY_RESOLUTION_REASONS } from "../../modules/quality/domain/resolution.js";
 import { buildOperatorMcpServices } from "./builders/operatorMcp.js";
+import { resolveWorkspaceManagedLlmModels } from "../../shared/infra/llm/workspaceManagedModels.js";
 import type { OperatorMcpClientMetadataSnapshot } from "../../modules/operatorMcpAuthorization/public.js";
 
 interface BuildDependenciesOptions {
@@ -520,6 +521,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const copilotProposalAdapters = [
     createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService }),
     createAgentSettingCopilotProposalAdapter({ agentService }),
+    createAgentGreetingCopilotProposalAdapter({ agentService, agentRevisions: agentRevisionService }),
     createAgentCopilotProposalAdapter({
       agentCreation: { createFromWizard: (input) => agentWizardService.createAgentFromWizard(input) },
       workspaceAccount: createCopilotWorkspaceAccountResolver({ workspaceRepository: repositories.workspaceRepository }),
@@ -794,6 +796,9 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       },
       async listLlmModels(workspaceId) {
         return workspaceLlmCapabilitySettingsService.listForWorkspace(workspaceId);
+      },
+      async getManagedLlmModels(workspaceId) {
+        return resolveWorkspaceManagedLlmModels(llmCapabilityResolver, workspaceId);
       },
       async getProviderCredentialHealth(workspaceId) {
         return {

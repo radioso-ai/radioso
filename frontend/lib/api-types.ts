@@ -53,6 +53,12 @@ export type DirectiveDraftRequest = ApiSchemas['DirectiveDraftRequest']
 export type DirectiveDraftResponse = ApiSchemas['DirectiveDraftResponse']
 export type DirectiveDraftDirective = ApiSchemas['DirectiveDraftDirective']
 
+export type ExactContentItem = ApiSchemas['ExactContentItem']
+export type AgentGreetingDraft = ApiSchemas['AgentGreetingDraft']
+export type AgentGreetingValidation = ApiSchemas['AgentGreetingValidation']
+export type AgentGreetingValidationIssue = NonNullable<AgentGreetingValidation['issues']>[number]
+export type AgentGreetingDraftResponse = ApiSchemas['AgentGreetingDraftResponse']
+
 export type ContextVariable = ApiSchemas['ContextVariable']
 export type ContextVariableCreateRequest = ApiSchemas['ContextVariableCreateRequest']
 export type ContextVariableUpdateRequest = ApiSchemas['ContextVariableUpdateRequest']

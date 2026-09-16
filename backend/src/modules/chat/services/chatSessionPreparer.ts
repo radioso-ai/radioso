@@ -609,6 +609,9 @@ export class ChatSessionPreparer {
         bootstrapGreeting: true,
         bootstrapGreetingId: greeting.id,
         source: "ephemeral_bootstrap",
+        // Only an exact greeting's delivery record carries chips (spec 1150 Slice A);
+        // an automatic greeting's row has none, and this key stays absent for it.
+        ...(greeting.suggestions ? { suggestions: greeting.suggestions } : {}),
       },
     });
   }

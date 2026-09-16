@@ -896,9 +896,11 @@ export function WorkspaceAssistantChannelsTab({
                   assistantBehaviorSettings={assistantBehaviorSettings}
                   assistantLocaleInput={assistantLocaleInput}
                   showInternalName={Boolean(agentId)}
+                  agentId={agentId}
                   onAssistantSettingChange={handleAssistantSettingChange}
                   onAssistantLocaleInputChange={handleAssistantLocaleInputChange}
                   onAssistantBehaviorDraft={updateAssistantBehaviorDraft}
+                  onGreetingSaveStateChange={handleRevisionSaveStateChange}
                   isAnonSaving={isAnonSaving}
                 />
               </div>

@@ -2,6 +2,15 @@ import request from "supertest";
 import { describe, expect, it } from "vitest";
 
 import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
+import type { ManagedModelPolicy } from "../../src/shared/domain/managedModelPolicy.js";
+
+const managedEverywhere: ManagedModelPolicy = {
+  async resolveManagedModel({ capability }) {
+    return capability === "chat"
+      ? { provider: "claude", model: "claude-sonnet-5" }
+      : { provider: "claude", model: "claude-haiku-4-5" };
+  },
+};
 
 describe("settings llm-models contract", () => {
   it("returns null for every capability when no preferences are set", async () => {
@@ -13,7 +22,12 @@ describe("settings llm-models contract", () => {
       .set(adminSessionHeaders(session));
 
     expect(response.status).toBe(200);
-    expect(response.body).toMatchObject({ chat: null, rewrite: null, rerank: null });
+    expect(response.body).toMatchObject({
+      chat: null,
+      rewrite: null,
+      rerank: null,
+      managed: { chat: null, rewrite: null, rerank: null },
+    });
     expect(response.body.knownModelsByProvider).toMatchObject({
       openai: expect.arrayContaining(["gpt-5-mini", "gpt-5.6-luna"]),
       claude: expect.arrayContaining([
@@ -70,6 +84,13 @@ describe("settings llm-models contract", () => {
     expect(put.body.chat).toEqual({ provider: "claude", model: "claude-sonnet-4-5" });
     expect(put.body.rewrite).toBeNull();
     expect(put.body.rerank).toBeNull();
+    expect(put.body).toMatchObject({
+      managed: { chat: null, rewrite: null, rerank: null },
+    });
+    expect(put.body.knownModelsByProvider).toMatchObject({
+      openai: expect.arrayContaining(["gpt-5-mini"]),
+      claude: expect.arrayContaining(["claude-sonnet-5"]),
+    });
   });
 
   it("clears a preference when null is passed", async () => {
@@ -125,6 +146,62 @@ describe("settings llm-models contract", () => {
       .send({ chat: { provider: "bogus", model: "x" } });
 
     expect(response.status).toBe(400);
+  });
+
+  it("reports the managed model per capability and keeps the stored preference visible", async () => {
+    const { app } = createTestApp({ managedModelPolicy: managedEverywhere });
+    const session = await issueTestSession(app, "llm-models-managed@example.com");
+
+    const put = await request(app)
+      .put("/api/v1/settings/llm-models")
+      .set(adminSessionHeaders(session))
+      .send({ chat: { provider: "openai", model: "gpt-5-mini" } });
+    expect(put.status).toBe(200);
+    expect(put.body.chat).toEqual({ provider: "openai", model: "gpt-5-mini" });
+
+    const get = await request(app)
+      .get("/api/v1/settings/llm-models")
+      .set(adminSessionHeaders(session));
+
+    expect(get.status).toBe(200);
+    expect(get.body).toMatchObject({
+      chat: { provider: "openai", model: "gpt-5-mini" },
+      managed: {
+        chat: { provider: "claude", model: "claude-sonnet-5" },
+        rewrite: { provider: "claude", model: "claude-haiku-4-5" },
+        rerank: { provider: "claude", model: "claude-haiku-4-5" },
+      },
+    });
+  });
+
+  it("lifts the managed lock for a capability once the workspace holds its own key for the chosen provider", async () => {
+    const { app } = createTestApp({ managedModelPolicy: managedEverywhere });
+    const session = await issueTestSession(app, "llm-models-managed-byok@example.com");
+
+    // chat and rerank point at providers the workspace holds no key for; rewrite
+    // inherits the deployment default, which is OpenAI in the test env.
+    await request(app)
+      .put("/api/v1/settings/llm-models")
+      .set(adminSessionHeaders(session))
+      .send({
+        chat: { provider: "gemini", model: "gemini-2.5-flash" },
+        rerank: { provider: "claude", model: "claude-sonnet-4-5" },
+      });
+    const credential = await request(app)
+      .put("/api/v1/settings/credentials/openai")
+      .set(adminSessionHeaders(session))
+      .send({ apiKey: "sk-test" });
+    expect(credential.status).toBeLessThan(300);
+
+    const get = await request(app)
+      .get("/api/v1/settings/llm-models")
+      .set(adminSessionHeaders(session));
+
+    expect(get.body.managed).toEqual({
+      chat: { provider: "claude", model: "claude-sonnet-5" },
+      rewrite: null,
+      rerank: { provider: "claude", model: "claude-haiku-4-5" },
+    });
   });
 
   it("requires authentication", async () => {

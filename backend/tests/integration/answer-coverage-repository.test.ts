@@ -145,7 +145,7 @@ describeIntegration("AnswerCoverageRepository", () => {
         producer: "assessor",
       },
     });
-    // Every row written before migration 188 has no producer column at all;
+    // Every row written before migration 190 has no producer column at all;
     // simulate that by nulling it out directly, bypassing the repository.
     await database.query("UPDATE answer_coverage_assessments SET producer = NULL WHERE id = $1", [saved.id]);
 

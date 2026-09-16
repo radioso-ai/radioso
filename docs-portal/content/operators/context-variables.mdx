@@ -152,6 +152,14 @@ window.Radioso.identify(async ({ sessionId, origin }) => {
 window.Radioso.identify(token)
 ```
 
+The string form goes out unchanged with every message, and each message's
+nonce is single-use, so a static token verifies exactly one message — the
+first one that carries it. Radioso records the customer on the conversation
+the moment a turn verifies, so later turns keep the `customer` scope even
+though the built-in `visitor_identity` value and its `attributes` show up only
+on the turn that verified. Use the provider form above for any conversation
+with more than one turn.
+
 A provider is the form a website backend should use. The token has to carry
 the public chat `sessionId`, and only the embed knows it — the session begins
 when the visitor opens the widget, not when the page loads. Verification also

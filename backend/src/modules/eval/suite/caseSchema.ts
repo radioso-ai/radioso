@@ -62,7 +62,7 @@ const clientContextCapabilitiesSchema = z.object({
  * trace assertions). The TS `SuiteAssertion` union is authoritative for authoring; this
  * schema validates loaded/contributed data and catches drift in tests.
  */
-export const suiteAssertionSchema = z.discriminatedUnion("type", [
+const suiteAssertionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("retrieval_includes_document"), documentId: z.string().min(1) }),
   z.object({ type: z.literal("retrieval_excludes_document"), documentId: z.string().min(1) }),
   z.object({ type: z.literal("retrieval_top_k_includes_document"), documentId: z.string().min(1), k: z.number().int().positive() }),
@@ -78,9 +78,10 @@ export const suiteAssertionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("routine_step_reached"), routineId: z.string().min(1), stepId: z.string().min(1) }),
   z.object({ type: z.literal("turn_asks_clarification") }),
   z.object({ type: z.literal("turn_grounding_verdict"), verdict: z.enum(["grounded", "degraded", "no_support"]) }),
+  z.object({ type: z.literal("turn_answer_coverage"), coverage: z.enum(["answered", "partial", "unanswered", "unclear"]) }),
 ]);
 
-export const conversationQualityCaseSchema = z.object({
+const conversationQualityCaseSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   description: z.string().optional(),

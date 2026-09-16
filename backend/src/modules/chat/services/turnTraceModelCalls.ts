@@ -9,6 +9,15 @@ const PRE_ENGINE_MODEL_CALL_STAGE_ID = "pre_engine";
 // it to the enclosing head or compose stage would misstate what the head costs.
 export const SHADOW_MODEL_CALL_STAGE_ID = "shadow";
 
+/**
+ * True for a model call that actually sat on the turn's critical path. The shadow
+ * coverage assessor (#1260) runs concurrently with compose and is never awaited by
+ * the turn, so it must not inflate the turn's own call count, latency, or serial
+ * depth even when it happens to settle before a trace snapshot is taken.
+ */
+export const isCriticalPathModelCall = (operation: string): boolean =>
+  operation !== ANSWER_COVERAGE_SHADOW_USAGE_OPERATION;
+
 interface AttributedModelCallTraceRecord extends ModelCallTraceRecord {
   stageId: string;
 }
@@ -172,6 +181,12 @@ export const attachModelCallsToSpine = (
     };
   });
 
+  // The shadow can settle before this snapshot runs, but it never sat on the
+  // turn's critical path: it must stay out of the turn's own call count,
+  // latency, and token totals even though it is still listed (visible for
+  // debugging) in `modelCalls` above.
+  const criticalPathCalls = calls.filter((call) => isCriticalPathModelCall(call.operation));
+
   return {
     ...spine,
     stages: [
@@ -181,7 +196,7 @@ export const attachModelCallsToSpine = (
         kind: MODEL_CALLS_STAGE_ID,
         status: "applied",
         outputs: { modelCalls: attributed },
-        metrics: aggregate(calls),
+        metrics: aggregate(criticalPathCalls),
       },
     ],
   };

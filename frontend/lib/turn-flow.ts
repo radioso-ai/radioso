@@ -19,7 +19,7 @@ import { getCapabilitySubTrace, resolveCapabilityLeaf, spineStageLabel } from '@
 
 export type FlowNodeKind = 'input' | 'engine' | 'skill' | 'stage' | 'outcome'
 export type FlowStatus = ConversationTraceStage['status']
-export type FlowEdgeKind = 'fan-in' | 'sequence' | 'branch' | 'converge'
+type FlowEdgeKind = 'fan-in' | 'sequence' | 'branch' | 'converge'
 
 /** How to resolve the detail pane when a node is selected. */
 export type TurnFlowNodeDetail =
@@ -119,6 +119,14 @@ const clarificationSummary = (stage: ConversationTraceStage): string | undefined
 const clarificationStatus = (stage: ConversationTraceStage): FlowStatus => {
   const decision = asString((stage.outputs ?? {}).decision)
   return decision === 'offered' ? 'applied' : stage.status
+}
+
+const answerCoverageHeadSummary = (stage: ConversationTraceStage): string | undefined => {
+  const outputs = stage.outputs ?? {}
+  const availability = asString(outputs.availability)
+  if (availability !== 'assessed') return availability ? titleCase(availability) : undefined
+  const coverage = asString(outputs.coverage)
+  return coverage ? titleCase(coverage) : undefined
 }
 
 const deriveOutcome = (
@@ -234,6 +242,7 @@ export const envelopeToFlowGraph = (envelope: TurnTraceEnvelope): TurnFlowGraph 
   const clarification = findStage(spine, 'clarification')
   const dispatch = spine.stages.find((stage) => stage.kind === 'skill_dispatch')
   const compose = findStage(spine, 'compose')
+  const answerCoverageHead = findStage(spine, 'answer_coverage_head')
   const modelCalls = findStage(spine, 'model_calls')
   // Routine turns never run compose; their assistant reply is carried on the
   // routine stage itself, so fall back to it for the Outcome detail.
@@ -327,6 +336,23 @@ export const envelopeToFlowGraph = (envelope: TurnTraceEnvelope): TurnFlowGraph 
       edges.push({ id: `e:skill->${rawId}`, source: skillId, target: rawId, kind: 'sequence' })
       tailId = rawId
     }
+  }
+
+  // The verdict lands before compose releases any answer text (#1260), so it
+  // sits right after the skill's own path and ahead of the outcome/model-calls
+  // nodes that follow it.
+  if (answerCoverageHead) {
+    const coverageId = `spine:${answerCoverageHead.id}`
+    nodes.push({
+      id: coverageId,
+      nodeKind: 'stage',
+      label: spineStageLabel(answerCoverageHead),
+      sublabel: answerCoverageHeadSummary(answerCoverageHead),
+      status: answerCoverageHead.status,
+      detail: { kind: 'spine', spineStageId: answerCoverageHead.id },
+    })
+    edges.push({ id: `e:${tailId}->${coverageId}`, source: tailId, target: coverageId, kind: 'sequence' })
+    tailId = coverageId
   }
 
   if (modelCalls) {

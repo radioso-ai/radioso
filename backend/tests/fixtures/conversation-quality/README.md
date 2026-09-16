@@ -14,9 +14,9 @@ repo-committed regression suite you run from the CLI.
 |------|------------|
 | `corpus.ts` | 4 seed documents with quotable facts (30-day refund, $49 Pro plan, SOC 2 Type II) |
 | `routines.ts` | 2 seed `RoutineDefinition`s: `contact-support`, `book-demo` |
-| `directives.ts` | 3 seed `AuthoredDirective`s: pricing-precision, refund-empathy, security-precision |
+| `directives.ts` | 4 seed `AuthoredDirective`s: pricing-precision, refund-empathy, security-precision, maximally-helpful |
 | `agent.ts` | the single seed agent (retrieval on, directives attached) all cases run against |
-| `cases.ts` | the 19 seed cases |
+| `cases.ts` | the 20 seed cases |
 | `baseline.json` | committed per-case verdicts; the run diffs against this and fails on regression |
 
 ## Assertion vocabulary
@@ -25,8 +25,8 @@ Two layers (see `src/modules/eval/suite/`):
 
 - **Deterministic (no LLM, gate every run):** `turn_route`, `turn_uses_skill`,
   `turn_activates_routine`, `routine_step_reached`, `turn_asks_clarification`,
-  `turn_grounding_verdict`, plus the product `retrieval_*`, `answer_cites_document`,
-  `answer_contains` / `answer_does_not_contain`.
+  `turn_grounding_verdict`, `turn_answer_coverage`, plus the product `retrieval_*`,
+  `answer_cites_document`, `answer_contains` / `answer_does_not_contain`.
 - **Semantic (LLM judge, paid/non-deterministic):** `llm_judge` — reserved for empathy,
   refusal, precision. Run these on-demand/nightly, not on every PR.
 

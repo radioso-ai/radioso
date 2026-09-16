@@ -20,9 +20,8 @@ export type SuiteTraceAssertion =
   | { type: "turn_activates_routine"; routineId: string }
   | { type: "routine_step_reached"; routineId: string; stepId: string }
   | { type: "turn_asks_clarification" }
-  | { type: "turn_grounding_verdict"; verdict: "grounded" | "degraded" | "no_support" };
-
-export type SuiteTraceAssertionType = SuiteTraceAssertion["type"];
+  | { type: "turn_grounding_verdict"; verdict: "grounded" | "degraded" | "no_support" }
+  | { type: "turn_answer_coverage"; coverage: "answered" | "partial" | "unanswered" | "unclear" };
 
 const TRACE_ASSERTION_TYPES = new Set<string>([
   "turn_route",
@@ -31,12 +30,13 @@ const TRACE_ASSERTION_TYPES = new Set<string>([
   "routine_step_reached",
   "turn_asks_clarification",
   "turn_grounding_verdict",
+  "turn_answer_coverage",
 ]);
 
 export const isTraceAssertion = (assertion: { type: string }): assertion is SuiteTraceAssertion =>
   TRACE_ASSERTION_TYPES.has(assertion.type);
 
-export interface SuiteTraceAssertionVerdict {
+interface SuiteTraceAssertionVerdict {
   assertion: SuiteTraceAssertion;
   status: AssertionVerdictStatus;
   reason: string | null;
@@ -82,6 +82,16 @@ const routineStages = (output: EvalRunObservedOutput, routineId: string): TraceS
     (stage) =>
       (stage.kind === "routine_activate" || stage.kind === "routine_resume") &&
       (readString(stage.outputs, "routineId") === routineId || stage.id === `routine:${routineId}`),
+  );
+
+/**
+ * The sink stashes a second, minimal stage (`{ reason: "already_reported" }`,
+ * no `availability`) when a skill reports twice in one turn — skip it, the
+ * same way the debug-view reader (`answerCoverageFromTurnTrace`) does.
+ */
+const answerCoverageHeadStage = (output: EvalRunObservedOutput): TraceStage | undefined =>
+  stages(output).find(
+    (stage) => stage.kind === "answer_coverage_head" && typeof readString(stage.outputs, "availability") === "string",
   );
 
 const routineTrace = (stage: TraceStage): RoutineRunTrace | undefined => {
@@ -210,6 +220,26 @@ export const evaluateTraceAssertion = (
         return pass(assertion, `Grounding verdict was "${verdict}".`);
       }
       return fail(assertion, `Grounding verdict was "${verdict}"; expected "${assertion.verdict}".`);
+    }
+    case "turn_answer_coverage": {
+      if (!output.turnTrace) {
+        return missingTrace(assertion);
+      }
+      const stage = answerCoverageHeadStage(output);
+      const availability = stage ? readString(stage.outputs, "availability") : undefined;
+      const coverage = stage ? readString(stage.outputs, "coverage") : undefined;
+      if (availability !== "assessed" || !coverage) {
+        return fail(
+          assertion,
+          availability
+            ? `Coverage verdict availability was "${availability}"; expected an assessed "${assertion.coverage}" verdict.`
+            : `Turn trace recorded no coverage verdict; expected "${assertion.coverage}".`,
+        );
+      }
+      if (coverage === assertion.coverage) {
+        return pass(assertion, `Coverage verdict was "${coverage}".`);
+      }
+      return fail(assertion, `Coverage verdict was "${coverage}"; expected "${assertion.coverage}".`);
     }
   }
 };

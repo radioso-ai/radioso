@@ -522,4 +522,52 @@ describe("shadow coverage assessment attribution", () => {
       outputs: { modelCallIds: ["model_call_answer"] },
     });
   });
+
+  it("excludes a settled shadow call from the turn-level model-call totals (#1260 F5)", () => {
+    const spine: ConversationTrace = {
+      traceId: "turn-shadow-totals",
+      startedAt: at(0),
+      completedAt: at(100),
+      stages: [
+        { id: "answer_coverage_head", kind: "answer_coverage_head", status: "applied", startedAt: at(10), completedAt: at(30) },
+        { id: "compose", kind: "compose", status: "applied", startedAt: at(10), completedAt: at(90) },
+      ],
+    };
+    const result = attachModelCallsToSpine(spine, [
+      {
+        id: "model_call_shadow",
+        operation: "answer_coverage_shadow_assessment",
+        model: "gpt-shadow",
+        startedAt: at(11),
+        completedAt: at(29),
+        durationMs: 18,
+        inputTokens: 10,
+        outputTokens: 2,
+        totalTokens: 12,
+      },
+      {
+        id: "model_call_answer",
+        operation: "answer",
+        model: "gpt-answer",
+        startedAt: at(11),
+        completedAt: at(89),
+        durationMs: 78,
+        inputTokens: 40,
+        outputTokens: 20,
+        totalTokens: 60,
+      },
+    ]);
+    const modelCalls = result.stages.find((stage) => stage.kind === "model_calls");
+
+    // The shadow settled before the turn's own snapshot, so it is still listed
+    // (visible for debugging) but must not inflate the turn's own call count,
+    // latency, or token totals — it never sat on the critical path.
+    expect(modelCalls?.metrics).toMatchObject({
+      llmCallCount: 1,
+      latencyMs: 78,
+      inputTokens: 40,
+      outputTokens: 20,
+      totalTokens: 60,
+    });
+  });
 });

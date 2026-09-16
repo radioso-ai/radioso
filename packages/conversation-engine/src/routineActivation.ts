@@ -1,5 +1,4 @@
 import type {
-  AnswerCoverageAssessment,
   AttemptRoutineInput,
   ConversationTraceStage,
   ProcessTurnResult,
@@ -9,7 +8,7 @@ import type {
 } from "@radioso/conversation-contract";
 import { clarificationStage } from "./clarification.js";
 import { verifySlotCorrection } from "./slotCorrection.js";
-import { buildResolvedSteering, steeringForKnownVerdict } from "./steering.js";
+import { buildResolvedSteering, knownAnswerCoverage, steeringForKnownVerdict } from "./steering.js";
 import { resumeRoutine } from "./routineResume.js";
 import {
   createInputEvent,
@@ -27,20 +26,6 @@ const routineIdFromClarificationCandidate = (candidate: { payload: unknown }): s
     return undefined;
   }
   return typeof payload.routineId === "string" ? payload.routineId : undefined;
-};
-
-/**
- * The coverage verdict sink stashes the turn's assessed head under this metadata
- * key once it exists (`assessedComposeTurn` in coverageVerdictSink.ts). A
- * pre-retrieval clarification's `baseTurn` never carries it — no verdict can
- * exist yet — so this reads back `undefined` there, which is exactly the "no
- * verdict" case {@link steeringForKnownVerdict} already handles.
- */
-const knownAnswerCoverage = (turn: TurnContext): AnswerCoverageAssessment | undefined => {
-  const value = turn.metadata?.answerCoverage;
-  return typeof value === "object" && value !== null && typeof (value as { availability?: unknown }).availability === "string"
-    ? (value as AnswerCoverageAssessment)
-    : undefined;
 };
 
 /**

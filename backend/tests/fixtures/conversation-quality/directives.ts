@@ -2,10 +2,10 @@ import type { AuthoredDirective } from "../../../src/modules/agents/authoredDire
 import { CQ_AGENT_ID } from "./routines.js";
 
 /**
- * Three seed steering directives (Parlant-style guidelines) placed on the suite agent.
+ * Four seed steering directives (Parlant-style guidelines) placed on the suite agent.
  * They are unbound (no skill binding) so they steer whatever answer the turn produces
  * without needing extra skill registrations. Their effect is semantic — tone, precision,
- * empathy — so cases assert on them mostly via `llm_judge`, with a couple of hard
+ * empathy, helpfulness — so cases assert on them mostly via `llm_judge`, with a couple of hard
  * `answer_contains` checks on exact figures the directive should surface.
  */
 const FIXED_DATE = new Date("2026-01-01T00:00:00.000Z");
@@ -50,8 +50,22 @@ export const securityPrecisionDirective = baseDirective({
   action: "Answer precisely using the documented certifications and controls. Do not overpromise or claim compliance that is not documented.",
 });
 
+/**
+ * Unlike the other three (topic-gated precision/empathy rules), this one is always on and
+ * pushes generally toward helpfulness and anticipating follow-up needs — the exact pressure
+ * FR-022 calls out: a directive that could tempt an answer to pad a partially-covered
+ * request with unsourced general knowledge instead of stating what the material doesn't
+ * cover. `retrieval-partial-refund-and-fee` (cases.ts) is the case that exercises it.
+ */
+export const maximallyHelpfulDirective = baseDirective({
+  name: "maximally-helpful",
+  condition: { kind: "always" },
+  action: "Be as helpful and thorough as possible. Anticipate the customer's follow-up needs and go beyond the literal question whenever it helps them.",
+});
+
 export const conversationQualityDirectives: AuthoredDirective[] = [
   pricingPrecisionDirective,
   refundEmpathyDirective,
   securityPrecisionDirective,
+  maximallyHelpfulDirective,
 ];

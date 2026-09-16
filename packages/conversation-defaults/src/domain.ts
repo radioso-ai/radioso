@@ -3,10 +3,9 @@ import type {
   SteeringRule,
 } from "@radioso/conversation-contract";
 
-import { resolveRenderSurfaces } from "@radioso/conversation-engine";
-
 export {
   addressesSurface,
+  directiveMatchToSteering as directiveToSteeringRule,
   effectiveSurfaces,
   resolveRenderSurfaces,
   steeringForSurface,
@@ -26,24 +25,6 @@ export interface DirectiveOmission {
   directiveName: string;
   reason: string;
 }
-
-/** Maps a matched Directive into a directive-sourced, response-lifespan SteeringRule. */
-export const directiveToSteeringRule = (match: DirectiveMatch): SteeringRule => ({
-  directiveName: match.directive.name,
-  action: match.directive.action,
-  condition: match.directive.condition.kind === "contextual"
-    ? match.directive.condition.description
-    : undefined,
-  priority: match.directive.priority,
-  description: match.directive.description,
-  source: "directive",
-  lifespan: "response",
-  ...(resolveRenderSurfaces(match) ? { surfaces: resolveRenderSurfaces(match) } : {}),
-  // Coverage directives are matched contextually before the coverage verdict exists
-  // (#1260): carrying the gate onto the rule lets the rendering surface layer it as a
-  // condition on the classification the model is about to emit.
-  ...(match.directive.coverageCriteria ? { coverageCriteria: match.directive.coverageCriteria } : {}),
-});
 
 /**
  * Resolves directive relationships over the matched set to keep the injected set

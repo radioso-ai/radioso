@@ -98,6 +98,28 @@ const structuredEnvelope = (input: {
   grounding: "degraded",
 });
 
+/**
+ * A key-order violation (#1260 review round 5, F10a): `answer` opens before the head fields,
+ * as if a provider ignored the schema's declared property order. The head
+ * reader must treat this as `invalid`, never as a failed turn (FR-004).
+ */
+const answerFirstEnvelope = (input: {
+  coverage: string;
+  requestFocus: string;
+  outcome: "answer" | "no_support" | "out_of_scope";
+  answer: string;
+  claims?: number[][];
+}): string => JSON.stringify({
+  answer: input.answer,
+  coverage: input.coverage,
+  requestFocus: input.requestFocus,
+  outcome: input.outcome,
+  v: 2,
+  claims: input.claims ?? [],
+  suggestions: [],
+  grounding: "degraded",
+});
+
 const gatewayFor = (raw: string): ChatGateway => ({
   async answer() {
     return raw;
@@ -238,6 +260,27 @@ describe("RetrievalAnswerComposer coverage verdict sink — streaming", () => {
     expect(result.yielded).toBeFalsy();
   });
 
+  it("reports invalid availability once when answer opens before the head fields in a valid-JSON envelope (#1260 review round 5, F10a)", async () => {
+    const raw = answerFirstEnvelope({
+      coverage: "answered_sufficient_evidence",
+      requestFocus: "the workshop schedule",
+      outcome: "answer",
+      answer: "The workshop runs in June[[1]].",
+      claims: [[1]],
+    });
+    const { sink, calls } = fakeSink("proceed");
+    const composer = buildComposer(gatewayFor(raw));
+
+    const { chunks, result } = await drain(
+      composer.streamAnswer(groundedSession(), "Tell me about the workshop.", undefined, undefined, undefined, sink),
+    );
+
+    expect(calls).toEqual([{ assessment: { availability: "invalid", producer: "answer_head" } }]);
+    expect(chunks.join("")).toContain("The workshop runs in June");
+    expect(result.hasStreamedAnswer).toBe(true);
+    expect(result.yielded).toBeFalsy();
+  });
+
   it("reports a deterministic assessment for the zero-context branch before the existing fallback", async () => {
     const { sink, calls } = fakeSink("proceed");
     const composer = buildComposer(gatewayFor("unused"));
@@ -274,6 +317,60 @@ describe("RetrievalAnswerComposer coverage verdict sink — streaming", () => {
     expect(fallbackCalled).toBe(false);
     expect(chunks).toEqual([]);
     expect(result.yielded).toBe(true);
+  });
+});
+
+describe("RetrievalAnswerComposer coverage verdict sink — page-read capture path (#1260 F10b)", () => {
+  /** Mirrors `capturedPageReadSession` in retrieval-answer-v2-outcomes.test.ts. */
+  const capturedPageReadSession = (): PreparedSession => {
+    const session = groundedSession();
+    const resolvedRequest = "Read the migration access code from this page.";
+    session.pageContext = {
+      pageUrl: "https://example.invalid/migrations/quartz",
+      content: "The migration access code is QZ-7419.",
+    };
+    session.pageReadOutcome = {
+      merged: {
+        decision: { required: true, operation: "lookup", resolvedRequest },
+        contributors: [{ source: { kind: "planner" }, operation: "lookup", resolvedRequest }],
+      },
+      gate: { kind: "capture", operation: "lookup", resolvedRequest },
+    };
+    return session;
+  };
+
+  it("reports the head exactly once, parsed before any release, on the committed capture path", async () => {
+    const pageAnswer = "The migration access code is QZ-7419.";
+    const raw = structuredEnvelope({
+      coverage: "answered_sufficient_evidence",
+      requestFocus: "the migration access code",
+      outcome: "answer",
+      answer: pageAnswer,
+      claims: [],
+    });
+    const { sink, calls } = fakeSink("proceed");
+    const composer = buildComposer(gatewayFor(raw));
+
+    const { chunks, result } = await drain(
+      composer.streamAnswer(
+        capturedPageReadSession(),
+        "What is the migration access code?",
+        undefined,
+        undefined,
+        undefined,
+        sink,
+      ),
+    );
+
+    // The capture path skips the citation gate but not the head (spec edge case):
+    // nothing streams live either way, so this only proves the report happened
+    // exactly once and the delivered text is the head-gated body, not raw chunks
+    // released before the head resolved.
+    expect(calls).toHaveLength(1);
+    expect(calls[0].assessment).toMatchObject({ availability: "assessed", coverage: "answered" });
+    expect(chunks).toEqual([]);
+    expect(result.hasStreamedAnswer).toBe(false);
+    expect(result.finalPresentation.answer).toBe(pageAnswer);
   });
 });
 

@@ -1,5 +1,6 @@
 import {
   answerCoverageLabel,
+  answerCoverageProducerLabel,
   answerCoverageReasonLabel,
   type AnswerCoverageAssessment,
   type AnswerCoverageInteractionTrace,
@@ -27,11 +28,15 @@ export function AnswerCoverageSection({
   onOpenTargetMessage?: (messageId: string) => void
 }) {
   const assessed = assessment.availability === 'assessed'
+  const producerLabel = assessed ? answerCoverageProducerLabel(assessment.producer) : undefined
   return (
     <section className="rounded-lg border border-border/70 bg-background/60 p-3" data-testid="answer-coverage-diagnostics">
       <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Answer coverage</p>
       <p className="mt-1 text-base font-medium text-foreground">
         {assessed ? answerCoverageLabel(assessment.coverage) : 'Not assessed'}
+        {producerLabel ? (
+          <span className="ml-2 text-xs font-normal text-muted-foreground">{producerLabel}</span>
+        ) : null}
       </p>
       {isLegacy ? <p className="mt-1 text-xs text-muted-foreground">Legacy evidence: this turn retains its recorded grounding diagnostics, but semantic coverage was not measured.</p> : null}
       {isFromTrace ? <p className="mt-1 text-xs text-muted-foreground">From this turn’s trace — not persisted.</p> : null}

@@ -1,7 +1,9 @@
 'use client'
 
 import type { ConversationTraceStage } from '@/lib/api'
+import { normalizeAnswerCoverageCore } from '@/lib/answer-coverage'
 import { spineStageLabel, spineStageTelemetry } from '@/lib/turn-trace'
+import { AnswerCoverageSection } from './turn-inspector/answer-coverage-section'
 
 /**
  * Minimal shape the detail renderers need from a conversation message record
@@ -1076,6 +1078,31 @@ function RoutineStageDetail({
   )
 }
 
+/**
+ * The turn's own coverage verdict (#1260), read directly off this stage — the
+ * same `availability`/`coverage`/`reason`/`producer` shape the persisted
+ * assessment record carries, normalized through the same parser so this view
+ * and the persisted-record view never drift. A sink that reports twice in one
+ * turn pushes a second, minimal stage with no availability (`already_reported`);
+ * that one has no verdict to show.
+ */
+function AnswerCoverageHeadStageDetail({ stage }: { stage: ConversationTraceStage }) {
+  const core = normalizeAnswerCoverageCore(stage.outputs)
+  return (
+    <div className="space-y-4">
+      <StageHeader stage={stage} />
+      {core ? (
+        <AnswerCoverageSection
+          assessment={{ ...core, originatingTurnId: '', originatingRequestId: '' }}
+          isFromTrace
+        />
+      ) : (
+        <p className="text-sm text-muted-foreground">This head reported no verdict for this turn.</p>
+      )}
+    </div>
+  )
+}
+
 function GenericStageDetail({ stage }: { stage: ConversationTraceStage }) {
   const inputs = (stage.inputs ?? {}) as Record<string, unknown>
   const outputs = (stage.outputs ?? {}) as Record<string, unknown>
@@ -1113,7 +1140,7 @@ function GenericStageDetail({ stage }: { stage: ConversationTraceStage }) {
 /**
  * Detail for a conversation spine stage. Dispatches on `stage.kind` so each
  * first-class step (message, gather, directive_match, skill_selection,
- * compose, routine) gets a dedicated renderer.
+ * compose, answer_coverage_head, routine) gets a dedicated renderer.
  *
  * Conversation text never lives in the trace itself — that envelope lands in
  * audit/debug metadata where raw prompts/completions are disallowed. Instead,
@@ -1149,6 +1176,8 @@ export function SpineStageDetail({
       return <ClarificationStageDetail stage={stage} />
     case 'compose':
       return <ComposeStageDetail stage={stage} ctx={ctx} />
+    case 'answer_coverage_head':
+      return <AnswerCoverageHeadStageDetail stage={stage} />
     case 'routine_resume':
     case 'routine_activate':
       return <RoutineStageDetail stage={stage} ctx={ctx} />

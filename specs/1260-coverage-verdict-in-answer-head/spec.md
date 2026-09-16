@@ -443,9 +443,10 @@ when no citation appears; with the hold on, behaviour is unchanged.
   routine ranking, yield — and never sees an envelope. Composition wires the
   port implementation and the shadow.
 - **Ports.** One new port in `packages/conversation-contract`: the coverage
-  verdict sink the skill calls at head time. The existing
-  `ConversationCoverageAssessor` port survives only as the shadow producer and
-  is removed with it.
+  verdict sink the skill calls at head time. The pre-#1260
+  `ConversationCoverageAssessor` port is removed outright; nothing implements
+  it. The shadow assessor (`AnswerCoverageShadowAssessor`) wraps the same
+  coverage verdict sink rather than using a separate port.
 - **Dependency direction.** Engine → contract ← skill; composition assembles.
   The engine's post-evidence stage (`packages/conversation-engine/src/index.ts`,
   coverage assessment through reaction recording) moves from before skill

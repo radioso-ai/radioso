@@ -111,124 +111,142 @@ export const createCoverageVerdictSink = (deps: CoverageVerdictSinkDeps): Covera
         return { decision: "proceed" };
       }
 
-      const assessedComposeTurn: TurnContext = {
-        ...deps.composeTurn,
-        metadata: { ...(deps.composeTurn.metadata ?? {}), answerCoverage: assessment },
-      };
+      // Everything below reads routine/activation ports the host wired in. A
+      // rejection anywhere in this branch — not just inside `attemptRoutineActivation`
+      // — must degrade to a normal answer, never propagate out of `report()` and
+      // turn a fully generated good answer into a failed turn.
+      try {
+        const assessedComposeTurn: TurnContext = {
+          ...deps.composeTurn,
+          metadata: { ...(deps.composeTurn.metadata ?? {}), answerCoverage: assessment },
+        };
 
-      const coverageEligibleMatches = deps.coverageDirectiveMatches.filter((match) =>
-        match.directive.coverageCriteria !== undefined
-        && criteriaMatches(match.directive.coverageCriteria, assessment));
-      const coverageEligibleDirectives = coverageEligibleMatches.map((match) => match.directive);
+        const coverageEligibleMatches = deps.coverageDirectiveMatches.filter((match) =>
+          match.directive.coverageCriteria !== undefined
+          && criteriaMatches(match.directive.coverageCriteria, assessment));
+        const coverageEligibleDirectives = coverageEligibleMatches.map((match) => match.directive);
 
-      const activator = deps.attemptRoutineInput.coverageRoutineActivator;
-      const routineStore = deps.attemptRoutineInput.routineStore;
-      const completedCoverageRoutineIds = routineStore?.loadCompleted
-        ? (await routineStore.loadCompleted({ sessionId: deps.attemptRoutineInput.sessionId })).map((state) => state.routineId)
-        : [];
-      const coverageRoutineCandidates = activator
-        ? activator.evaluateCandidates({ turn: assessedComposeTurn, suppressedRoutineIds: completedCoverageRoutineIds })
-        : [];
-      // The pre-retrieval routine pass can yield an active routine so grounding
-      // answers the current message. This pass must not resume or replace that
-      // active state a second time.
-      const activeRoutine = routineStore
-        ? await routineStore.loadActive({ sessionId: deps.attemptRoutineInput.sessionId })
-        : null;
+        const activator = deps.attemptRoutineInput.coverageRoutineActivator;
+        const routineStore = deps.attemptRoutineInput.routineStore;
+        const completedCoverageRoutineIds = routineStore?.loadCompleted
+          ? (await routineStore.loadCompleted({ sessionId: deps.attemptRoutineInput.sessionId })).map((state) => state.routineId)
+          : [];
+        const coverageRoutineCandidates = activator
+          ? activator.evaluateCandidates({ turn: assessedComposeTurn, suppressedRoutineIds: completedCoverageRoutineIds })
+          : [];
+        // The pre-retrieval routine pass can yield an active routine so grounding
+        // answers the current message. This pass must not resume or replace that
+        // active state a second time.
+        const activeRoutine = routineStore
+          ? await routineStore.loadActive({ sessionId: deps.attemptRoutineInput.sessionId })
+          : null;
 
-      let postEvidenceRoutine: ProcessTurnResult | null = null;
-      let evaluationFailed = false;
-      if (activator && activeRoutine?.status !== "active") {
-        try {
-          postEvidenceRoutine = await attemptRoutineActivation({
-            ...deps.attemptRoutineInput,
-            // Coverage-gated activation receives only the directives whose criteria
-            // have been evaluated for this signal. It must not reintroduce an
-            // ineligible authored rule through the routine resume path.
-            directives: [...deps.legacyDirectives, ...coverageEligibleDirectives],
-            routineActivator: activator,
-            ...(activator.reentryGate ? { routineReentryGate: activator.reentryGate } : {}),
-            turnContext: assessedComposeTurn,
-            inputEventAlreadyAppended: true,
-          });
-        } catch (error) {
-          evaluationFailed = true;
-          deps.stages.push(stage({
-            id: "answer_coverage_routine_activation",
-            kind: "answer_coverage_routine_activation",
-            status: "fallback",
-            outputs: {
-              availability: "failed",
-              failureKind: coverageRoutineFailureKind(error),
-              causeType: coverageRoutineFailureCauseType(error),
-            },
-          }));
+        let postEvidenceRoutine: ProcessTurnResult | null = null;
+        let evaluationFailed = false;
+        if (activator && activeRoutine?.status !== "active") {
+          try {
+            postEvidenceRoutine = await attemptRoutineActivation({
+              ...deps.attemptRoutineInput,
+              // Coverage-gated activation receives only the directives whose criteria
+              // have been evaluated for this signal. It must not reintroduce an
+              // ineligible authored rule through the routine resume path.
+              directives: [...deps.legacyDirectives, ...coverageEligibleDirectives],
+              routineActivator: activator,
+              ...(activator.reentryGate ? { routineReentryGate: activator.reentryGate } : {}),
+              turnContext: assessedComposeTurn,
+              inputEventAlreadyAppended: true,
+            });
+          } catch (error) {
+            evaluationFailed = true;
+            deps.stages.push(stage({
+              id: "answer_coverage_routine_activation",
+              kind: "answer_coverage_routine_activation",
+              status: "fallback",
+              outputs: {
+                availability: "failed",
+                failureKind: coverageRoutineFailureKind(error),
+                causeType: coverageRoutineFailureCauseType(error),
+              },
+            }));
+          }
         }
-      }
 
-      if (deps.attemptRoutineInput.coverageReactionRecorder && !evaluationFailed) {
-        try {
-          const directiveReactions = deps.coverageDirectiveMatches.map((match, index) => {
-            const renderedInSteering = match.directive.id
-              ? deps.appliedCoverageDirectiveIds.has(match.directive.id)
-              : match.renderInSteering !== false && deps.directiveSteering.some((rule) =>
-                rule.source === "directive" && rule.action === match.directive.action,
-              );
-            const criteriaMet = match.directive.coverageCriteria === undefined
-              || criteriaMatches(match.directive.coverageCriteria, assessment);
-            const applied = renderedInSteering && criteriaMet;
-            return {
-              reactionKey: `directive:${match.directive.id ?? match.directive.name}:${index}`,
-              ...(match.directive.id ? { directiveId: match.directive.id } : {}),
-              decision: applied ? "applied" as const : "suppressed" as const,
-              reasonCode: applied
-                ? "coverage_criteria_applied"
-                : !renderedInSteering
-                  ? "coverage_steering_conflict"
-                  : "coverage_criteria_not_met",
-            };
-          });
-          const routineExecution = postEvidenceRoutine?.routineExecution;
-          const offeredRoutineIds = new Set(postEvidenceRoutine?.routineClarificationRoutineIds ?? []);
-          const activeRoutineKeepsControl = activeRoutine?.status === "active";
-          const routineReactions = coverageRoutineCandidates.map((candidate) => {
-            const activated = routineExecution?.routineId === candidate.routineId;
-            const offered = offeredRoutineIds.has(candidate.routineId);
-            return {
-              reactionKey: `routine:${candidate.routineId}:${candidate.decision}`,
-              routineId: candidate.routineId,
-              ...(activated && routineExecution?.executionId ? { routineExecutionId: routineExecution.executionId } : {}),
-              decision: activated ? "activated" as const
-                : activeRoutineKeepsControl ? "suppressed" as const
-                : candidate.decision === "suppressed" ? "suppressed" as const
-                : offered ? "offered" as const : "skipped" as const,
-              reasonCode: activated ? "coverage_criteria_activated"
-                : activeRoutineKeepsControl ? "active_routine_keeps_control"
-                : candidate.decision === "suppressed" ? candidate.reasonCode
-                : offered ? "coverage_activation_offered" : "coverage_activation_not_selected",
-            };
-          });
-          await deps.attemptRoutineInput.coverageReactionRecorder.record({
-            assessment,
-            evaluationState: "evaluated",
-            reactions: [...directiveReactions, ...routineReactions],
-          });
-        } catch {
-          // Trace/persistence extensions remain observational and cannot fail a turn.
-          deps.stages.push(stage({
-            id: "answer_coverage_reaction_recording",
-            kind: "answer_coverage_reaction_recording",
-            status: "fallback",
-            outputs: { availability: "failed" },
-          }));
+        if (deps.attemptRoutineInput.coverageReactionRecorder && !evaluationFailed) {
+          try {
+            const directiveReactions = deps.coverageDirectiveMatches.map((match, index) => {
+              const renderedInSteering = match.directive.id
+                ? deps.appliedCoverageDirectiveIds.has(match.directive.id)
+                : match.renderInSteering !== false && deps.directiveSteering.some((rule) =>
+                  rule.source === "directive" && rule.action === match.directive.action,
+                );
+              const criteriaMet = match.directive.coverageCriteria === undefined
+                || criteriaMatches(match.directive.coverageCriteria, assessment);
+              const applied = renderedInSteering && criteriaMet;
+              return {
+                reactionKey: `directive:${match.directive.id ?? match.directive.name}:${index}`,
+                ...(match.directive.id ? { directiveId: match.directive.id } : {}),
+                decision: applied ? "applied" as const : "suppressed" as const,
+                reasonCode: applied
+                  ? "coverage_criteria_applied"
+                  : !renderedInSteering
+                    ? "coverage_steering_conflict"
+                    : "coverage_criteria_not_met",
+              };
+            });
+            const routineExecution = postEvidenceRoutine?.routineExecution;
+            const offeredRoutineIds = new Set(postEvidenceRoutine?.routineClarificationRoutineIds ?? []);
+            const activeRoutineKeepsControl = activeRoutine?.status === "active";
+            const routineReactions = coverageRoutineCandidates.map((candidate) => {
+              const activated = routineExecution?.routineId === candidate.routineId;
+              const offered = offeredRoutineIds.has(candidate.routineId);
+              return {
+                reactionKey: `routine:${candidate.routineId}:${candidate.decision}`,
+                routineId: candidate.routineId,
+                ...(activated && routineExecution?.executionId ? { routineExecutionId: routineExecution.executionId } : {}),
+                decision: activated ? "activated" as const
+                  : activeRoutineKeepsControl ? "suppressed" as const
+                  : candidate.decision === "suppressed" ? "suppressed" as const
+                  : offered ? "offered" as const : "skipped" as const,
+                reasonCode: activated ? "coverage_criteria_activated"
+                  : activeRoutineKeepsControl ? "active_routine_keeps_control"
+                  : candidate.decision === "suppressed" ? candidate.reasonCode
+                  : offered ? "coverage_activation_offered" : "coverage_activation_not_selected",
+              };
+            });
+            await deps.attemptRoutineInput.coverageReactionRecorder.record({
+              assessment,
+              evaluationState: "evaluated",
+              reactions: [...directiveReactions, ...routineReactions],
+            });
+          } catch {
+            // Trace/persistence extensions remain observational and cannot fail a turn.
+            deps.stages.push(stage({
+              id: "answer_coverage_reaction_recording",
+              kind: "answer_coverage_reaction_recording",
+              status: "fallback",
+              outputs: { availability: "failed" },
+            }));
+          }
         }
-      }
 
-      if (postEvidenceRoutine) {
-        routineResult = postEvidenceRoutine;
-        return { decision: "yield_turn" };
+        if (postEvidenceRoutine) {
+          routineResult = postEvidenceRoutine;
+          return { decision: "yield_turn" };
+        }
+        return { decision: "proceed" };
+      } catch (error) {
+        deps.stages.push(stage({
+          id: "answer_coverage_routine_activation",
+          kind: "answer_coverage_routine_activation",
+          status: "fallback",
+          outputs: {
+            availability: "failed",
+            failureKind: coverageRoutineFailureKind(error),
+            causeType: coverageRoutineFailureCauseType(error),
+          },
+        }));
+        return { decision: "proceed" };
       }
-      return { decision: "proceed" };
     },
   };
 

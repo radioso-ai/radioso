@@ -20,6 +20,7 @@ const makeRecord = (overrides: Partial<AnswerCoverageRecord> = {}): AnswerCovera
   coverage: "unanswered",
   reason: "insufficient_evidence",
   schemaVersion: 1,
+  producer: "answer_head",
   assessedAt: new Date("2026-09-09T10:00:00.000Z"),
   createdAt: new Date("2026-09-09T10:00:00.000Z"),
   ...overrides,

@@ -164,59 +164,35 @@ describe("grounded answer prompt contract", () => {
     expect(result.conversationContextPrompt).toContain("untrusted data");
   });
 
-  it("gives final answer composition the assessed coverage without treating it as source evidence", () => {
+  it("always wires the coverage head verdict instructions and response guidance (#1260)", () => {
+    // The model now commits its own coverage verdict as the envelope head instead
+    // of receiving one from a separate pre-compose assessment, so both blocks
+    // render unconditionally rather than depending on an assessed input.
     const result = composeGroundedAnswerSystemPrompt({
       baseSystemPrompt: "BASE",
       suggestedQuestionsEnabled: false,
       suggestedQuestionsCount: 0,
       hasRetrievedContexts: true,
       conversationIntentSnapshot,
-      answerCoverage: {
-        availability: "assessed",
-        coverage: "unanswered",
-        reason: "insufficient_evidence",
-        unresolvedRequest: "Whether one-day attendance is allowed",
-        schemaVersion: 1,
-      },
     });
 
+    expect(result.systemPrompt).toContain("Coverage verdict");
+    expect(result.systemPrompt).toContain("Judge `coverage` against the admitted Results only");
     expect(result.systemPrompt).toContain("Coverage-aware response");
-    expect(result.systemPrompt).toContain("Citation and grounding rules remain authoritative");
-    expect(result.conversationContextPrompt).toContain('"coverage":"unanswered"');
-    expect(result.conversationContextPrompt).toContain("untrusted diagnostic data");
-    expect(result.systemPrompt).not.toContain("Whether one-day attendance is allowed");
-  });
-
-  it.each(["failed", "invalid", "not_recorded"] as const)("does not steer answer composition for %s coverage diagnostics", (availability) => {
-    const result = composeGroundedAnswerSystemPrompt({
-      baseSystemPrompt: "BASE",
-      suggestedQuestionsEnabled: false,
-      suggestedQuestionsCount: 0,
-      hasRetrievedContexts: true,
-      conversationIntentSnapshot,
-      answerCoverage: { availability },
-    });
-
-    expect(result.systemPrompt).not.toContain("Coverage-aware response");
-    expect(result.conversationContextPrompt).not.toContain("untrusted diagnostic data");
-  });
-
-  it("requires a direct response when the assessment says the request is resolved", () => {
-    const result = composeGroundedAnswerSystemPrompt({
-      baseSystemPrompt: "BASE",
-      suggestedQuestionsEnabled: false,
-      suggestedQuestionsCount: 0,
-      hasRetrievedContexts: true,
-      conversationIntentSnapshot,
-      answerCoverage: {
-        availability: "assessed",
-        coverage: "answered",
-        reason: "sufficient_evidence",
-        schemaVersion: 1,
-      },
-    });
-
     expect(result.systemPrompt).toContain("answer the resolved request directly");
+    expect(result.systemPrompt).toContain("Citation and grounding rules remain authoritative");
+  });
+
+  it("explains what `applicable` means for an adherence attestation (#1260 review F4)", () => {
+    // The schema has required `applicable` on every adherence entry since #1260
+    // slice 1, but the instruction never told the model what it means or that
+    // `satisfied` is meaningless when it is false — it just started asking for a
+    // boolean the model had no guidance on.
+    const prompt = loadPromptTemplate("chat/answer-envelope.md");
+
+    expect(prompt).toMatch(/applicable[\s\S]*false/i);
+    expect(prompt).toMatch(/condition|criteria/i);
+    expect(prompt).toMatch(/satisfied[\s\S]*ignored/i);
   });
 
   it("scopes decline rules by turn type: compact inline guard on grounded, full rules on focused miss", () => {
@@ -290,7 +266,9 @@ describe("grounded answer prompt contract", () => {
     expect(countWords(loadPromptTemplate("chat/answer-envelope.md"))).toBeGreaterThanOrEqual(200);
     // Widened in #946: the envelope now distinguishes the two declines and carries an
     // out-of-scope example alongside the miss example.
-    expect(countWords(loadPromptTemplate("chat/answer-envelope.md"))).toBeLessThanOrEqual(290);
+    // Widened in #1260 (review F4): `applicable` was already a required adherence
+    // field with no instruction explaining it; documenting it costs a sentence.
+    expect(countWords(loadPromptTemplate("chat/answer-envelope.md"))).toBeLessThanOrEqual(315);
     expect(countWords(loadPromptTemplate("chat/answer-suggestions.md"))).toBeGreaterThanOrEqual(560);
     // Tightened in #863: the strict provider schema hard-enforces the item field
     // set (additionalProperties:false + required) and JSON-only output, so the
@@ -315,23 +293,30 @@ describe("grounded answer prompt contract", () => {
 
     // Grounded answer, suggestions enabled — the hottest and heaviest sheet. It folds
     // in the compact inline-decline guard (#863), not the full focused-miss ruleset.
+    // Widened in #1260: the coverage verdict the model now commits to before
+    // `answer` (`answer-coverage-head.md`) and its response guidance render on
+    // every grounded call, where a separate pre-compose assessment used to.
     const groundedWithSuggestions = stack(
       "retrieval/answer.md",
       "chat/grounded-inline-decline.md",
       "chat/answer-envelope.md",
+      "chat/answer-coverage-head.md",
+      "chat/answer-coverage-response-guidance.md",
       "chat/answer-suggestions.md",
     );
-    expect(groundedWithSuggestions).toBeGreaterThanOrEqual(1450);
-    expect(groundedWithSuggestions).toBeLessThanOrEqual(1650);
+    expect(groundedWithSuggestions).toBeGreaterThanOrEqual(1900);
+    expect(groundedWithSuggestions).toBeLessThanOrEqual(2050);
 
     // Grounded answer, suggestions disabled.
     const groundedNoSuggestions = stack(
       "retrieval/answer.md",
       "chat/grounded-inline-decline.md",
       "chat/answer-envelope.md",
+      "chat/answer-coverage-head.md",
+      "chat/answer-coverage-response-guidance.md",
     );
-    expect(groundedNoSuggestions).toBeGreaterThanOrEqual(900);
-    expect(groundedNoSuggestions).toBeLessThanOrEqual(1020);
+    expect(groundedNoSuggestions).toBeGreaterThanOrEqual(1280);
+    expect(groundedNoSuggestions).toBeLessThanOrEqual(1420);
 
     // Focused decline / grounded-miss owns the full decline ruleset.
     const focusedDecline = stack("chat/grounded-miss.md", "chat/grounded-decline-rules.md");

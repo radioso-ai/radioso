@@ -54,6 +54,7 @@ import {
 import type { TestExecutionService } from "../../src/modules/test-execution/testExecution.js";
 import { ProbeRoutineReader, RoutineDefinitionService, RoutineDraftAssistService, selectCanonicalRoutineDefinitions } from "../../src/modules/routines/public.js";
 import { InMemoryAgentRevisionRepository } from "./agentRevisionFakes.js";
+import { toDefaultRetrieveSkillConfig } from "../../src/db/repositories/agentRepository.js";
 import {
   type ComposedDecline,
   type FallbackReplyComposer,
@@ -1475,7 +1476,23 @@ export const createTestDependencies = (overrides: {
   const agentRevisionRepository = new InMemoryAgentRevisionRepository();
   const agentRepository = new InMemoryAgentRepository(
     createDefaultAgentSkillSettingsRegistry(),
-    (agent) => agentRevisionRepository.initializeDraft(agent.workspaceId, agent.id, agent.customInstruction),
+    async (agent) => {
+      await agentRevisionRepository.initializeDraft(agent.workspaceId, agent.id, agent.customInstruction);
+      // Mirrors AgentRepository.create()'s self-healing insert (backend/src/db/repositories/
+      // agentRepository.ts): every agent gets a default-answer retrieve skill row, so a fresh
+      // agent's Skills UI has a retrieve card the way a real-Postgres-backed one would.
+      await agentSkillRepository.create({
+        workspaceId: agent.workspaceId,
+        agentId: agent.id,
+        skillName: "answer",
+        kind: "retrieve",
+        targetType: "source_scope",
+        targetId: null,
+        config: toDefaultRetrieveSkillConfig(agent),
+        invocationMode: "default_answer",
+        enabled: agent.retrievalEnabled,
+      });
+    },
     async (workspaceId, agentId, input, options) => {
       const draft = await agentRevisionRepository.readDraft(workspaceId, agentId);
       if (!draft) throw notFound("Agent draft not found");

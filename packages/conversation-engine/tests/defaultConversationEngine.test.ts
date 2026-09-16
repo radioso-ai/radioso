@@ -3,9 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 import { DefaultConversationEngine } from "../src/index.js";
 import { DefaultRoutineRunner } from "../src/routineRunner.js";
 import type {
+  AnswerCoverageAssessment,
   ClarificationCandidate,
   ConversationEvent,
   ConversationSkillInputResolver,
+  ConversationTurnStreamComposer,
   ProcessTurnStreamEvent,
   ProcessTurnStreamInput,
   ProcessTurnInput,
@@ -13,6 +15,29 @@ import type {
   RoutineState,
   TurnOutcome,
 } from "@radioso/conversation-contract";
+
+/**
+ * A minimal composer standing in for a retrieval-style skill (#1260): it reports
+ * the given coverage verdict to the sink exactly once, from inside compose,
+ * before producing an answer — mirroring what `RetrievalAnswerComposer` really
+ * does. Works for both `processTurn` (compose) and `processTurnStream` (stream).
+ */
+const composerReporting = (
+  assessment: AnswerCoverageAssessment,
+  answer = "Grounded answer.",
+): ConversationTurnStreamComposer => ({
+  async compose({ coverageVerdict }) {
+    const decision = await coverageVerdict?.report({ assessment });
+    return decision?.decision === "yield_turn" ? { answer: "", yielded: true } : { answer };
+  },
+  async *stream({ coverageVerdict }) {
+    const decision = await coverageVerdict?.report({ assessment });
+    yield {
+      type: "final",
+      response: decision?.decision === "yield_turn" ? { answer: "", yielded: true } : { answer },
+    };
+  },
+});
 
 const createInput = (overrides: Partial<ProcessTurnInput> = {}): ProcessTurnInput => {
   const events: ConversationEvent[] = [];
@@ -88,7 +113,7 @@ const createInput = (overrides: Partial<ProcessTurnInput> = {}): ProcessTurnInpu
 };
 
 describe("DefaultConversationEngine", () => {
-  it("assesses admitted evidence before coverage directives influence composition", async () => {
+  it("matches coverage directives contextually before compose and records their applicability from the reported verdict", async () => {
     const order: string[] = [];
     const record = vi.fn(async () => { order.push("record-reaction"); });
     const input = createInput({
@@ -110,18 +135,6 @@ describe("DefaultConversationEngine", () => {
           return { stagedContext: [{ kind: "retrieval", data: { evidence: "admitted" } }] };
         }),
       },
-      coverageAssessor: {
-        assess: vi.fn(async ({ turn }) => {
-          order.push(`assessment:${turn.stagedContext.length}`);
-          return {
-            availability: "assessed" as const,
-            coverage: "unanswered" as const,
-            reason: "insufficient_evidence" as const,
-            unresolvedRequest: "Delivery date",
-            schemaVersion: 1,
-          };
-        }),
-      },
       coverageReactionRecorder: { record },
       directiveMatcher: {
         match: vi.fn(async ({ directives }) => {
@@ -134,10 +147,22 @@ describe("DefaultConversationEngine", () => {
         }),
       },
       composer: {
-        compose: vi.fn(async ({ turn, outcomes }) => {
+        async compose({ turn, outcomes, coverageVerdict }) {
           order.push(`compose:${turn.steering.map((rule) => rule.action).join("|")}`);
-          return { answer: outcomes[0]?.outcome.answer ?? "" };
-        }),
+          const decision = await coverageVerdict?.report({
+            assessment: {
+              availability: "assessed",
+              coverage: "unanswered",
+              reason: "insufficient_evidence",
+              unresolvedRequest: "Delivery date",
+              schemaVersion: 1,
+              producer: "answer_head",
+            },
+          });
+          return decision?.decision === "yield_turn"
+            ? { answer: "", yielded: true }
+            : { answer: outcomes[0]?.outcome.answer ?? "" };
+        },
       },
     });
 
@@ -146,14 +171,92 @@ describe("DefaultConversationEngine", () => {
     expect(order).toEqual([
       "directives:legacy",
       "retrieval",
-      "assessment:1",
       "directives:evidence-gap",
-      "record-reaction",
       "compose:Use the regular policy.|Explain the evidence limit.|Mention shipment timing.",
+      "record-reaction",
     ]);
     expect(record).toHaveBeenCalledWith(expect.objectContaining({
       evaluationState: "evaluated",
       reactions: [expect.objectContaining({ decision: "applied", reasonCode: "coverage_criteria_applied" })],
+    }));
+  });
+
+  // F2 (review): a coverage directive is matched contextually before any verdict
+  // exists (see the test above), but only on a retrieval turn — a coverage
+  // classification only ever exists after retrieval ran. On a direct-route turn
+  // (e.g. a greeting) there is no verdict coming, so matching and rendering the
+  // conditional phrasing would be dead weight the model can never resolve.
+  it("does not match coverage directives on a non-retrieval-route turn", async () => {
+    const matchedDirectiveSets: string[][] = [];
+    let capturedSteering: import("@radioso/conversation-contract").SteeringRule[] = [];
+    const input = createInput({
+      directives: [
+        { name: "legacy", condition: { kind: "always" }, action: "Be warm." },
+        {
+          name: "offer-form",
+          condition: { kind: "always" },
+          action: "Offer the form.",
+          coverageCriteria: { coverage: ["unanswered"] },
+        },
+      ],
+      turnInterpreter: {
+        interpret: vi.fn(async () => ({ route: "direct" as const })),
+      },
+      directiveMatcher: {
+        match: vi.fn(async ({ directives }) => {
+          matchedDirectiveSets.push(directives.map((directive) => directive.name));
+          return directives.map((directive) => ({
+            directive, selectionMode: "deterministic" as const, selectionReason: "always",
+          }));
+        }),
+      },
+      composer: {
+        compose: vi.fn(async ({ turn }) => {
+          capturedSteering = turn.steering;
+          return { answer: "Hi there." };
+        }),
+      },
+    });
+
+    await new DefaultConversationEngine().processTurn(input);
+
+    expect(matchedDirectiveSets).toEqual([["legacy"]]);
+    expect(capturedSteering.map((rule) => rule.action)).not.toContain("Offer the form.");
+  });
+
+  it("tags a coverage directive's steering rule with its criteria for conditional rendering ahead of any verdict", async () => {
+    let capturedSteering: import("@radioso/conversation-contract").SteeringRule[] = [];
+    const input = createInput({
+      directives: [
+        {
+          id: "d1",
+          name: "coverage",
+          condition: { kind: "always" },
+          action: "Offer the contact form.",
+          coverageCriteria: { coverage: ["partial", "unanswered"] },
+        },
+      ],
+      turnInterpreter: {
+        interpret: vi.fn(async () => ({ route: "retrieval" as const })),
+      },
+      directiveMatcher: {
+        match: vi.fn(async ({ directives }) => directives.map((directive) => ({
+          directive, selectionMode: "deterministic" as const, selectionReason: "always",
+        }))),
+      },
+      composer: {
+        compose: vi.fn(async ({ turn }) => {
+          capturedSteering = turn.steering;
+          return { answer: "unused" };
+        }),
+      },
+    });
+
+    await new DefaultConversationEngine().processTurn(input);
+
+    expect(capturedSteering).toContainEqual(expect.objectContaining({
+      action: "Offer the contact form.",
+      coverageCriteria: { coverage: ["partial", "unanswered"] },
     }));
   });
 
@@ -168,14 +271,8 @@ describe("DefaultConversationEngine", () => {
           coverageCriteria: { coverage: ["unanswered"] },
         },
       ],
-      coverageAssessor: {
-        assess: vi.fn(async () => ({
-          availability: "assessed" as const,
-          coverage: "unanswered" as const,
-          reason: "insufficient_evidence" as const,
-          unresolvedRequest: "The requested policy",
-          schemaVersion: 1,
-        })),
+      turnInterpreter: {
+        interpret: vi.fn(async () => ({ route: "retrieval" as const })),
       },
       directiveMatcher: {
         match: vi.fn(async ({ directives }) => directives.map((directive) => ({
@@ -184,6 +281,14 @@ describe("DefaultConversationEngine", () => {
       },
       steeringResolver: { resolve: resolver },
       coverageReactionRecorder: { record },
+      composer: composerReporting({
+        availability: "assessed",
+        coverage: "unanswered",
+        reason: "insufficient_evidence",
+        unresolvedRequest: "The requested policy",
+        schemaVersion: 1,
+        producer: "answer_head",
+      }),
     });
 
     const result = await new DefaultConversationEngine().processTurn(input);
@@ -201,52 +306,90 @@ describe("DefaultConversationEngine", () => {
     }));
   });
 
-  it("keeps the safe answer path when a host assessor throws", async () => {
+  it("proceeds with no directive or routine reaction when the reported head is invalid", async () => {
+    const record = vi.fn(async () => undefined);
     const input = createInput({
       directives: [{
-        name: "coverage", condition: { kind: "always" }, action: "Never applies after failure",
+        name: "coverage", condition: { kind: "always" }, action: "Never applies without a verdict",
         coverageCriteria: { coverage: ["unanswered"] },
       }],
-      coverageAssessor: { assess: vi.fn(async () => { throw new Error("assessment unavailable"); }) },
+      turnInterpreter: {
+        interpret: vi.fn(async () => ({ route: "retrieval" as const })),
+      },
       directiveMatcher: { match: vi.fn(async () => []) },
+      coverageReactionRecorder: { record },
+      composer: composerReporting({ availability: "invalid", producer: "answer_head" }),
     });
 
     await expect(new DefaultConversationEngine().processTurn(input)).resolves.toMatchObject({
-      response: { answer: "Your order ships tomorrow." },
+      response: { answer: "Grounded answer." },
     });
+    expect(record).not.toHaveBeenCalled();
   });
 
-  it("finishes post-evidence assessment before emitting the first stream delta", async () => {
+  it("answers a repeated report call in the same turn with proceed and a fallback stage, never a throw", async () => {
+    const input = createInput({
+      directiveMatcher: { match: vi.fn(async () => []) },
+      composer: {
+        async compose({ coverageVerdict }) {
+          const first = await coverageVerdict?.report({
+            assessment: {
+              availability: "assessed", coverage: "answered", reason: "sufficient_evidence",
+              schemaVersion: 1, producer: "answer_head",
+            },
+          });
+          const second = await coverageVerdict?.report({
+            assessment: {
+              availability: "assessed", coverage: "unanswered", reason: "insufficient_evidence",
+              schemaVersion: 1, producer: "answer_head",
+            },
+          });
+          expect(first?.decision).toBe("proceed");
+          expect(second?.decision).toBe("proceed");
+          return { answer: "Grounded answer." };
+        },
+      },
+    });
+
+    const result = await new DefaultConversationEngine().processTurn(input);
+
+    expect(result.response.answer).toBe("Grounded answer.");
+    const headStages = result.trace.stages.filter((stage) => stage.kind === "answer_coverage_head");
+    expect(headStages).toHaveLength(2);
+    expect(headStages[1]).toMatchObject({ status: "fallback", outputs: { reason: "already_reported" } });
+  });
+
+  it("forwards the coverage verdict sink into the stream composer before any delta is released", async () => {
     const order: string[] = [];
     const base = createInput({
-      coverageAssessor: { assess: vi.fn(async () => {
-        order.push("assess");
-        return {
-          availability: "assessed" as const,
-          coverage: "answered" as const,
-          reason: "sufficient_evidence" as const,
-          schemaVersion: 1,
-        };
-      }) },
       directiveMatcher: { match: vi.fn(async () => []) },
     });
     const input: ProcessTurnStreamInput = {
       ...base,
       composer: {
         async compose() { throw new Error("stream expected"); },
-        async *stream() {
-          order.push("compose");
+        async *stream({ coverageVerdict }) {
+          await coverageVerdict?.report({
+            assessment: {
+              availability: "assessed", coverage: "answered", reason: "sufficient_evidence",
+              schemaVersion: 1, producer: "answer_head",
+            },
+          });
+          order.push("report");
           yield { type: "delta", text: "First" };
+          order.push("delta");
           yield { type: "final", response: { answer: "First" } };
         },
       },
     };
 
     for await (const event of new DefaultConversationEngine().processTurnStream(input)) {
-      if (event.type === "delta") order.push("delta");
+      if (event.type === "delta") order.push("received-delta");
     }
 
-    expect(order).toEqual(["assess", "compose", "delta"]);
+    // Yielding suspends the composer generator: the consumer observes the delta
+    // before control returns to the composer to run its own post-yield code.
+    expect(order).toEqual(["report", "received-delta", "delta"]);
   });
 
   it("resolves every declared selection from one immutable snapshot before preserving staged dispatch sequencing", async () => {
@@ -561,6 +704,7 @@ describe("DefaultConversationEngine", () => {
           expect.objectContaining({ source: "skill" }),
         ],
       }),
+      coverageVerdict: expect.objectContaining({ report: expect.any(Function) }),
     });
     expect(input.stores.appendEvent).toHaveBeenCalledTimes(2);
     expect(result.response.answer).toBe("Your order ships tomorrow.");
@@ -955,15 +1099,14 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
     const input = withRoutine({
       resume: vi.fn(async () => ({ response: { answer: "I can connect you with support." }, nextState: activeState })),
     }, null);
-    input.coverageAssessor = {
-      assess: vi.fn(async () => ({
-        availability: "assessed",
-        coverage: "unanswered",
-        reason: "insufficient_evidence",
-        unresolvedRequest: "One-day attendance permission",
-        schemaVersion: 1,
-      })),
-    };
+    input.composer = composerReporting({
+      availability: "assessed",
+      coverage: "unanswered",
+      reason: "insufficient_evidence",
+      unresolvedRequest: "One-day attendance permission",
+      schemaVersion: 1,
+      producer: "answer_head",
+    });
     input.coverageRoutineActivator = {
       evaluateCandidates: vi.fn(() => [{ routineId: "support", decision: "candidate", reasonCode: "coverage_criteria_candidate" }]),
       activate: vi.fn(async () => ({ kind: "activate", routineId: "support" })),
@@ -973,7 +1116,6 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
 
     expect(input.coverageRoutineActivator.activate).toHaveBeenCalledOnce();
     expect(input.routineRunner?.resume).toHaveBeenCalledWith(expect.objectContaining({ activationTurn: true }));
-    expect(input.selector.select).not.toHaveBeenCalled();
     expect(result.response.answer).toBe("I can connect you with support.");
     expect(vi.mocked(input.stores.appendEvent).mock.calls.map(([event]) => event.id)).toEqual([
       "input_1",
@@ -985,15 +1127,14 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
     const input = withRoutine({
       resume: vi.fn(async () => ({ response: { answer: "I can connect you with support." }, nextState: activeState })),
     }, null);
-    input.coverageAssessor = {
-      assess: vi.fn(async () => ({
-        availability: "assessed",
-        coverage: "unanswered",
-        reason: "insufficient_evidence",
-        unresolvedRequest: "One-day attendance permission",
-        schemaVersion: 1,
-      })),
-    };
+    input.composer = composerReporting({
+      availability: "assessed",
+      coverage: "unanswered",
+      reason: "insufficient_evidence",
+      unresolvedRequest: "One-day attendance permission",
+      schemaVersion: 1,
+      producer: "answer_head",
+    });
     input.coverageRoutineActivator = {
       evaluateCandidates: () => [{ routineId: "support", decision: "candidate", reasonCode: "coverage_criteria_candidate" }],
       activate: vi.fn(async () => ({ kind: "activate", routineId: "support" })),
@@ -1003,11 +1144,19 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
     const result = await new DefaultConversationEngine().processTurn(input);
     const stageIds = result.trace.stages.map((entry) => entry.id);
 
-    expect(stageIds).toContain("answer_coverage_assessment");
+    expect(stageIds).toContain("answer_coverage_head");
     expect(stageIds).toContain("answer_coverage_reaction_recording");
     expect(stageIds).toContain("routine:support");
-    expect(stageIds.indexOf("answer_coverage_assessment")).toBeLessThan(stageIds.indexOf("routine:support"));
-    expect(stageIds.indexOf("routine:support")).toBeLessThan(stageIds.indexOf("answer_coverage_reaction_recording"));
+    expect(stageIds).toContain("compose");
+    // The verdict is recorded, and the reaction-recording failure is caught, before
+    // compose returns; the routine's own trace is stitched in only once compose has
+    // fully unwound (#1260 — the routine now activates from inside compose).
+    expect(stageIds.indexOf("answer_coverage_head")).toBeLessThan(stageIds.indexOf("answer_coverage_reaction_recording"));
+    expect(stageIds.indexOf("answer_coverage_reaction_recording")).toBeLessThan(stageIds.indexOf("compose"));
+    expect(stageIds.indexOf("compose")).toBeLessThan(stageIds.indexOf("routine:support"));
+    expect(result.trace.stages.find((entry) => entry.id === "compose")).toMatchObject({
+      outputs: expect.objectContaining({ yielded: true }),
+    });
     expect(stageIds.filter((id) => id === "message")).toHaveLength(1);
     expect(stageIds.filter((id) => id === "gather")).toHaveLength(1);
     expect(new Set(stageIds).size).toBe(stageIds.length);
@@ -1019,27 +1168,34 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
     const input = withRoutine({
       resume: vi.fn(async () => ({ response: { answer: "I can connect you with support." }, nextState: activeState })),
     }, null);
-    input.coverageAssessor = {
-      assess: vi.fn(async () => ({
-        availability: "assessed",
-        coverage: "unanswered",
-        reason: "insufficient_evidence",
-        schemaVersion: 1,
-      })),
-    };
     input.coverageRoutineActivator = {
       evaluateCandidates: () => [{ routineId: "support", decision: "candidate", reasonCode: "coverage_criteria_candidate" }],
       activate: vi.fn(async () => ({ kind: "activate", routineId: "support" })),
     };
-    const streamed = { ...input, composer: { stream: async function* () { yield { type: "final" as const, response: { answer: "unused" } }; } } } as ProcessTurnStreamInput;
+    const streamed = {
+      ...input,
+      composer: composerReporting({
+        availability: "assessed",
+        coverage: "unanswered",
+        reason: "insufficient_evidence",
+        schemaVersion: 1,
+        producer: "answer_head",
+      }),
+    } as ProcessTurnStreamInput;
     const events: ProcessTurnStreamEvent[] = [];
     for await (const event of new DefaultConversationEngine().processTurnStream(streamed)) events.push(event);
     const result = events.at(-1);
 
     expect(result).toMatchObject({ type: "final" });
     if (!result || result.type !== "final") throw new Error("expected streamed final result");
+    // The skill's own stream released nothing (it yielded before any text); the
+    // routine's committed answer is what actually streams, as a single chunk.
+    expect(events.filter((event) => event.type === "delta")).toEqual([
+      { type: "delta", sessionId: "session_1", text: "I can connect you with support." },
+    ]);
+    expect(result.result.response.answer).toBe("I can connect you with support.");
     const stageIds = result.result.trace.stages.map((entry) => entry.id);
-    expect(stageIds).toContain("answer_coverage_assessment");
+    expect(stageIds).toContain("answer_coverage_head");
     expect(stageIds).toContain("routine:support");
     expect(new Set(stageIds).size).toBe(stageIds.length);
     expect(vi.mocked(input.stores.appendEvent).mock.calls.map(([event]) => event.id)).toEqual([
@@ -1062,23 +1218,18 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
     const input = createInput({
       routineStore,
       routineRunner: runner,
-      coverageAssessor: {
-        assess: vi.fn(async () => ({
-          availability: "assessed" as const,
-          coverage: "unanswered" as const,
-          reason: "insufficient_evidence" as const,
-          schemaVersion: 1,
-        })),
-      },
       coverageRoutineActivator: {
         evaluateCandidates: vi.fn(() => [{ routineId: "coverage-follow-up", decision: "candidate" as const, reasonCode: "coverage_criteria_candidate" }]),
         activate: vi.fn(async () => ({ kind: "activate" as const, routineId: "coverage-follow-up" })),
       },
       coverageReactionRecorder: { record },
-      composer: {
-        compose: vi.fn(async () => ({ answer: "Grounded answer." })),
-        async *stream() { yield { type: "final" as const, response: { answer: "Grounded answer." } }; },
-      },
+      composer: composerReporting({
+        availability: "assessed",
+        coverage: "unanswered",
+        reason: "insufficient_evidence",
+        schemaVersion: 1,
+        producer: "answer_head",
+      }),
     });
 
     if (stream) {
@@ -1122,14 +1273,13 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
       return { kind: "start_new" as const };
     });
     input.routineReentryGate = { decide: preEvidenceDecide };
-    input.coverageAssessor = {
-      assess: vi.fn(async () => ({
-        availability: "assessed",
-        coverage: "unanswered",
-        reason: "insufficient_evidence",
-        schemaVersion: 1,
-      })),
-    };
+    input.composer = composerReporting({
+      availability: "assessed",
+      coverage: "unanswered",
+      reason: "insufficient_evidence",
+      schemaVersion: 1,
+      producer: "answer_head",
+    });
     input.coverageRoutineActivator = {
       evaluateCandidates: () => [{ routineId: "contact", decision: "candidate", reasonCode: "coverage_criteria_candidate" }],
       activate: vi.fn(async () => null),
@@ -1183,15 +1333,14 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
       resume: vi.fn(async () => ({ response: { answer: "unused" }, nextState: activeState })),
     }, null);
     const record = vi.fn(async () => undefined);
-    input.coverageAssessor = {
-      assess: vi.fn(async () => ({
-        availability: "assessed",
-        coverage: "unanswered",
-        reason: "insufficient_evidence",
-        unresolvedRequest: "Delivery date",
-        schemaVersion: 1,
-      })),
-    };
+    input.composer = composerReporting({
+      availability: "assessed",
+      coverage: "unanswered",
+      reason: "insufficient_evidence",
+      unresolvedRequest: "Delivery date",
+      schemaVersion: 1,
+      producer: "answer_head",
+    });
     input.coverageRoutineActivator = {
       evaluateCandidates: () => [{ routineId: "support", decision: "candidate", reasonCode: "coverage_criteria_candidate" }],
       activate: vi.fn(async () => { throw new TypeError("internal routine adapter detail"); }),
@@ -1200,6 +1349,7 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
 
     const result = await new DefaultConversationEngine().processTurn(input);
 
+    expect(result.response.answer).toBe("Grounded answer.");
     expect(record).not.toHaveBeenCalled();
     expect(result.trace.stages).toContainEqual(expect.objectContaining({
       id: "answer_coverage_routine_activation",
@@ -1213,28 +1363,146 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
     }));
   });
 
+  it("falls back to proceed with a fallback stage when the post-evidence routine store rejects outside the activation try/catch (#1260 F2)", async () => {
+    const input = withRoutine({
+      resume: vi.fn(async () => ({ response: { answer: "unused" }, nextState: activeState })),
+    }, null);
+    input.routineStore = {
+      // First call is the pre-evidence pass in `attemptRoutine`; the second is the
+      // sink's own post-evidence `loadActive`, which must not escape uncaught.
+      loadActive: vi.fn()
+        .mockResolvedValueOnce(null)
+        .mockRejectedValueOnce(new Error("routine store unavailable")),
+      save: vi.fn(async () => {}),
+      clear: vi.fn(async () => {}),
+    };
+    const record = vi.fn(async () => undefined);
+    input.composer = composerReporting({
+      availability: "assessed",
+      coverage: "unanswered",
+      reason: "insufficient_evidence",
+      unresolvedRequest: "Delivery date",
+      schemaVersion: 1,
+      producer: "answer_head",
+    });
+    input.coverageRoutineActivator = {
+      evaluateCandidates: () => [{ routineId: "support", decision: "candidate", reasonCode: "coverage_criteria_candidate" }],
+      activate: vi.fn(async () => ({ kind: "activate", routineId: "support" })),
+    };
+    input.coverageReactionRecorder = { record };
+
+    const result = await new DefaultConversationEngine().processTurn(input);
+
+    expect(result.response.answer).toBe("Grounded answer.");
+    expect(input.routineRunner?.resume).not.toHaveBeenCalled();
+    expect(record).not.toHaveBeenCalled();
+    expect(result.trace.stages).toContainEqual(expect.objectContaining({
+      id: "answer_coverage_routine_activation",
+      kind: "answer_coverage_routine_activation",
+      status: "fallback",
+      outputs: expect.objectContaining({ availability: "failed" }),
+    }));
+  });
+
+  it("stamps parse outcome and host decision on the head stage when the turn proceeds (#1260 R2)", async () => {
+    const input = withRoutine({
+      resume: vi.fn(async () => ({ response: { answer: "unused" }, nextState: activeState })),
+    }, null);
+    input.composer = composerReporting({
+      availability: "assessed",
+      coverage: "answered",
+      reason: "sufficient_evidence",
+      schemaVersion: 1,
+      producer: "answer_head",
+    });
+
+    const result = await new DefaultConversationEngine().processTurn(input);
+
+    expect(result.trace.stages).toContainEqual(expect.objectContaining({
+      id: "answer_coverage_head",
+      outputs: expect.objectContaining({ parseOutcome: "parsed", hostDecision: "proceed" }),
+    }));
+  });
+
+  it("stamps parse outcome and host decision on the head stage when a coverage routine yields the turn (#1260 R2)", async () => {
+    const input = withRoutine({
+      resume: vi.fn(async () => ({ response: { answer: "I can connect you with support." }, nextState: activeState })),
+    }, null);
+    input.composer = composerReporting({
+      availability: "assessed",
+      coverage: "unanswered",
+      reason: "insufficient_evidence",
+      schemaVersion: 1,
+      producer: "answer_head",
+    });
+    input.coverageRoutineActivator = {
+      evaluateCandidates: () => [{ routineId: "support", decision: "candidate", reasonCode: "coverage_criteria_candidate" }],
+      activate: vi.fn(async () => ({ kind: "activate", routineId: "support" })),
+    };
+
+    const result = await new DefaultConversationEngine().processTurn(input);
+
+    expect(result.trace.stages).toContainEqual(expect.objectContaining({
+      id: "answer_coverage_head",
+      outputs: expect.objectContaining({ parseOutcome: "parsed", hostDecision: "yield_turn" }),
+    }));
+  });
+
+  it("pushes only one routine-activation fallback stage when a second failure reaches the outer catch (#1260 R3)", async () => {
+    const input = withRoutine({
+      resume: vi.fn(async () => ({ response: { answer: "unused" }, nextState: activeState })),
+    }, null);
+    input.composer = composerReporting({
+      availability: "assessed",
+      coverage: "unanswered",
+      reason: "insufficient_evidence",
+      schemaVersion: 1,
+      producer: "answer_head",
+    });
+    input.coverageRoutineActivator = {
+      evaluateCandidates: () => [{ routineId: "support", decision: "candidate", reasonCode: "coverage_criteria_candidate" }],
+      activate: vi.fn(async () => { throw new TypeError("internal routine adapter detail"); }),
+    };
+    // Read only after the inner activation catch already ran (and already pushed its
+    // own fallback stage) — proving a second failure reaching the outer catch does
+    // not duplicate the "answer_coverage_routine_activation" stage.
+    Object.defineProperty(input, "coverageReactionRecorder", {
+      configurable: true,
+      get(): never {
+        throw new Error("host port access failed");
+      },
+    });
+
+    const result = await new DefaultConversationEngine().processTurn(input);
+
+    expect(result.response.answer).toBe("Grounded answer.");
+    const fallbackStages = result.trace.stages.filter((entry) => entry.id === "answer_coverage_routine_activation");
+    expect(fallbackStages).toHaveLength(1);
+    expect(fallbackStages[0]).toMatchObject({ outputs: { failureKind: "routine_selection_failed", causeType: "TypeError" } });
+  });
+
   it("records an evaluated skipped coverage routine instead of fabricating a no-match", async () => {
     const input = withRoutine({
       resume: vi.fn(async () => ({ response: { answer: "unused" }, nextState: activeState })),
     }, null);
     const record = vi.fn(async () => undefined);
-    input.coverageAssessor = {
-      assess: vi.fn(async () => ({
-        availability: "assessed",
-        coverage: "unanswered",
-        reason: "insufficient_evidence",
-        unresolvedRequest: "Delivery date",
-        schemaVersion: 1,
-      })),
-    };
+    input.composer = composerReporting({
+      availability: "assessed",
+      coverage: "unanswered",
+      reason: "insufficient_evidence",
+      unresolvedRequest: "Delivery date",
+      schemaVersion: 1,
+      producer: "answer_head",
+    });
     input.coverageRoutineActivator = {
       evaluateCandidates: () => [{ routineId: "support", decision: "candidate", reasonCode: "coverage_criteria_candidate" }],
       activate: vi.fn(async () => null),
     };
     input.coverageReactionRecorder = { record };
 
-    await new DefaultConversationEngine().processTurn(input);
+    const result = await new DefaultConversationEngine().processTurn(input);
 
+    expect(result.response.answer).toBe("Grounded answer.");
     expect(record).toHaveBeenCalledWith(expect.objectContaining({
       evaluationState: "evaluated",
       reactions: [expect.objectContaining({
@@ -1252,14 +1520,13 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
       { id: "choice-a", label: "Consultation", confidence: 0.9, payload: { routineId: "consultation" } },
       { id: "choice-b", label: "Callback", confidence: 0.8, payload: { routineId: "callback" } },
     ];
-    input.coverageAssessor = {
-      assess: vi.fn(async () => ({
-        availability: "assessed",
-        coverage: "unanswered",
-        reason: "insufficient_evidence",
-        schemaVersion: 1,
-      })),
-    };
+    input.composer = composerReporting({
+      availability: "assessed",
+      coverage: "unanswered",
+      reason: "insufficient_evidence",
+      schemaVersion: 1,
+      producer: "answer_head",
+    });
     input.coverageRoutineActivator = {
       evaluateCandidates: () => [
         { routineId: "consultation", decision: "candidate", reasonCode: "coverage_criteria_candidate" },
@@ -1272,8 +1539,11 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
     input.clarificationStore = { save: vi.fn(async () => {}) };
     input.coverageReactionRecorder = { record };
 
-    await new DefaultConversationEngine().processTurn(input);
+    const result = await new DefaultConversationEngine().processTurn(input);
 
+    // An offer yields the turn exactly like an activation (FR-014): the visitor
+    // sees only the clarification question, never the composer's own answer.
+    expect(result.response.answer).toBe("Which would help?");
     expect(record).toHaveBeenCalledWith(expect.objectContaining({
       reactions: expect.arrayContaining([
         expect.objectContaining({ routineId: "consultation", decision: "offered" }),
@@ -1807,5 +2077,50 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
     const result = await new DefaultConversationEngine().processTurn(input);
 
     expect(result.actions).toEqual([{ type: "contact.send", payload: { email: "a@b.c", message: "hi" } }]);
+  });
+
+  it("emits a fallback stage instead of silently falling through when compose reports yielded without a sink-produced routine result (#1260 F12)", async () => {
+    const input = withRoutine({ resume: vi.fn() }, null);
+    input.composer = {
+      async compose({ coverageVerdict }) {
+        // The sink never approves a yield here (`invalid` availability always
+        // proceeds), yet the composer claims `yielded: true` anyway — a composer
+        // contract violation the engine must not silently paper over.
+        await coverageVerdict?.report({ assessment: { availability: "invalid" } });
+        return { answer: "", yielded: true };
+      },
+    };
+
+    const result = await new DefaultConversationEngine().processTurn(input);
+
+    expect(result.trace.stages).toContainEqual(expect.objectContaining({
+      id: "answer_coverage_yield_without_routine",
+      status: "fallback",
+    }));
+  });
+
+  it("emits a fallback stage instead of silently falling through on the streamed path when compose reports yielded without a sink-produced routine result (#1260 F12)", async () => {
+    const base = withRoutine({ resume: vi.fn() }, null);
+    const input: ProcessTurnStreamInput = {
+      ...base,
+      composer: {
+        async compose() { throw new Error("stream expected"); },
+        async *stream({ coverageVerdict }) {
+          await coverageVerdict?.report({ assessment: { availability: "invalid" } });
+          yield { type: "final", response: { answer: "", yielded: true } };
+        },
+      },
+    };
+
+    const events: ProcessTurnStreamEvent[] = [];
+    for await (const event of new DefaultConversationEngine().processTurnStream(input)) {
+      events.push(event);
+    }
+    const final = events.find((event): event is Extract<ProcessTurnStreamEvent, { type: "final" }> => event.type === "final");
+
+    expect(final?.result.trace.stages).toContainEqual(expect.objectContaining({
+      id: "answer_coverage_yield_without_routine",
+      status: "fallback",
+    }));
   });
 });

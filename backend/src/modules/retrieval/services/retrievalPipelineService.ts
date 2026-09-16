@@ -78,6 +78,7 @@ export interface RetrievalPipelineResult {
     customInstruction?: string;
     responseLanguagePolicy?: import("../domain/retrievalPipelineTypes.js").ResponseLanguagePolicy;
     responseLanguage?: string;
+    citationHoldEnabled?: boolean;
   };
   diagnostics: RetrievalExecutionDiagnostics;
   trace: import("../domain/retrievalPipelineTypes.js").ActivityTrace;
@@ -316,6 +317,7 @@ export class RetrievalPipelineService implements RetrievalPipelinePort {
           responseLanguagePolicy: input.interpretation.result.rewrittenQuery.responseLanguagePolicy ??
             "match_user_question",
           responseLanguage: input.interpretation.result.request.responseLanguage,
+          citationHoldEnabled: input.context.result.settings.citationHoldEnabled,
         };
         const diagnostics: RetrievalExecutionDiagnostics = {
           execution: input.request.execution,

@@ -6,29 +6,19 @@ import type { JsonSchemaResponseFormat } from "../../shared/infra/llm/providerTy
 import type { AnswerCoverageEvidence } from "@radioso/conversation-contract";
 
 import {
+  ANSWER_COVERAGE_SCHEMA_VERSION,
+  classifications,
+  classificationValues,
+  REQUEST_FOCUS_MAX_LENGTH,
   type AnswerCoverageAssessment,
   type AnswerCoverageInferencePort,
 } from "./contracts.js";
-
-const schemaVersion = 1;
-const classifications = {
-  answered_sufficient_evidence: { coverage: "answered", reason: "sufficient_evidence" },
-  partial_insufficient_evidence: { coverage: "partial", reason: "insufficient_evidence" },
-  partial_conflicting_evidence: { coverage: "partial", reason: "conflicting_evidence" },
-  partial_intentional_scope_boundary: { coverage: "partial", reason: "intentional_scope_boundary" },
-  unanswered_insufficient_evidence: { coverage: "unanswered", reason: "insufficient_evidence" },
-  unanswered_conflicting_evidence: { coverage: "unanswered", reason: "conflicting_evidence" },
-  unanswered_intentional_scope_boundary: { coverage: "unanswered", reason: "intentional_scope_boundary" },
-  unclear_ambiguous_request: { coverage: "unclear", reason: "ambiguous_request" },
-} as const;
-
-const classificationValues = Object.keys(classifications) as [keyof typeof classifications, ...(keyof typeof classifications)[]];
 
 const modelOutputSchema = z.object({
   classification: z.enum(classificationValues),
   // Strict providers reject conditional null schemas. The focus is required for
   // every classification; only unresolved classifications persist it.
-  requestFocus: z.string().trim().min(1).max(600),
+  requestFocus: z.string().trim().min(1).max(REQUEST_FOCUS_MAX_LENGTH),
 }).strict();
 
 const responseFormat: JsonSchemaResponseFormat = {
@@ -40,7 +30,7 @@ const responseFormat: JsonSchemaResponseFormat = {
     additionalProperties: false,
     properties: {
       classification: { type: "string", enum: classificationValues },
-      requestFocus: { type: "string", minLength: 1, maxLength: 600 },
+      requestFocus: { type: "string", minLength: 1, maxLength: REQUEST_FOCUS_MAX_LENGTH },
     },
     required: ["classification", "requestFocus"],
   },
@@ -81,7 +71,9 @@ export class LlmAnswerCoverageProducer {
           availability: "assessed",
           ...classifications[parsed.classification],
           ...(classifications[parsed.classification].coverage === "answered" ? {} : { unresolvedRequest: parsed.requestFocus }),
-          schemaVersion,
+          schemaVersion: ANSWER_COVERAGE_SCHEMA_VERSION,
+          // The only remaining caller of this producer is the #1260 shadow window.
+          producer: "assessor",
         };
       } catch {
         return { availability: "invalid" };

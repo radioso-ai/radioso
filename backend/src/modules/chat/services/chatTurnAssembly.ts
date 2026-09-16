@@ -94,8 +94,10 @@ import type { TurnRouter, TurnRouting } from "./turnRouter.js";
 import { APPROVAL_REQUEST_ACTION_TYPE } from "./actions/approvalRequestActionHandler.js";
 import type { ChatTurnPlanHandle } from "./turnPlanCoordinator.js";
 import type { TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
-import type { ChatAnswerCoverageAssessorFactory } from "./chatAnswerCoverageAssessor.js";
+import type { AnswerCoverageHeadRecorder } from "./answerCoverageHeadRecorder.js";
+import type { AnswerCoverageShadowAssessor } from "./answerCoverageShadowAssessor.js";
 import type { AnswerCoverageRecord } from "../../answerCoverage/public.js";
+import type { RetrievalCoverageVerdictSink } from "../contracts/answerCoverage.js";
 import { pageReadRoutineCandidates } from "./pageRead/pageReadRoutineCandidates.js";
 import { freezePageReadOutcome } from "./pageRead/pageReadSessionOutcome.js";
 
@@ -387,7 +389,9 @@ export interface ChatTurnAssemblyOptions {
   agentSkillTurnSkillProvider?: AgentSkillTurnSkillProvider;
   logger?: Pick<AppLogger, "warn">;
   /** Host-owned post-evidence semantic assessment; absent preserves every legacy turn. */
-  coverageAssessorFactory?: ChatAnswerCoverageAssessorFactory;
+  coverageHeadRecorder?: AnswerCoverageHeadRecorder;
+  /** Off-critical-path #1260 shadow; absent (replay/draft, or the flag disabled) never calls the old assessor. */
+  coverageShadowAssessor?: AnswerCoverageShadowAssessor;
 }
 
 type ChatTurnAssemblySharedOptions = Omit<
@@ -399,7 +403,8 @@ interface ChatTurnAssemblyEffectPorts {
   chatSessionPreparer: ChatSessionPreparer;
   directiveStateStore: DirectiveStateStore;
   routineStore?: ConversationRoutineStore;
-  coverageAssessorFactory?: ChatAnswerCoverageAssessorFactory;
+  coverageHeadRecorder?: AnswerCoverageHeadRecorder;
+  coverageShadowAssessor?: AnswerCoverageShadowAssessor;
 }
 
 /**
@@ -581,6 +586,36 @@ export class ChatTurnAssembly {
   }
 
   /**
+   * Composes the host-side decorators around the engine's coverage verdict
+   * sink (#1260): the shadow assessor observes first (innermost, closest to
+   * the engine's own decision), the head recorder persists and attaches the
+   * saved record for `onAssessment` (outermost, so persistence happens before
+   * the engine's directive/routine reaction pass reads it back). Absent both,
+   * returns `undefined` and the skill gets the engine's sink unwrapped.
+   */
+  private buildCoverageVerdictWrapper(
+    getSession: () => PreparedSession,
+    accountId: string | undefined,
+    signal: AbortSignal | undefined,
+  ): ((sink: RetrievalCoverageVerdictSink) => RetrievalCoverageVerdictSink) | undefined {
+    const { coverageHeadRecorder, coverageShadowAssessor } = this.options;
+    if (!coverageHeadRecorder && !coverageShadowAssessor) {
+      return undefined;
+    }
+    return (sink) => {
+      const shadowed = coverageShadowAssessor
+        ? coverageShadowAssessor.wrapVerdictSink({ getSession, accountId, signal }, sink)
+        : sink;
+      return coverageHeadRecorder
+        ? coverageHeadRecorder.wrapVerdictSink(
+            { getSession, onAssessment: (assessment) => { applyCoverageAssessment(getSession(), assessment); } },
+            shadowed,
+          )
+        : shadowed;
+    };
+  }
+
+  /**
    * Builds the separate, coverage-only activation port for the engine's
    * post-evidence pass. The routine provider excludes these registrations from
    * the normal activator, so creating this port cannot make a coverage routine
@@ -602,13 +637,15 @@ export class ChatTurnAssembly {
     clarifier?: ConversationClarifier;
     clarificationStore?: DeferredClarificationStore;
     coverageReactionRecorder?: ConversationCoverageReactionRecorder;
+    coverageVerdictWrapper?: (sink: RetrievalCoverageVerdictSink) => RetrievalCoverageVerdictSink;
     effects?: (result: ProcessTurnResult) => CoverageRoutineEffects;
   }> {
-    if (!this.options.coverageAssessorFactory) {
-      return {};
-    }
     const getSession = input.getSession ?? (() => session);
-    const reactionRecorder = this.options.coverageAssessorFactory.createReactionRecorder({
+    const coverageVerdictWrapper = this.buildCoverageVerdictWrapper(getSession, input.accountId, input.coordination?.signal);
+    if (!this.options.coverageHeadRecorder) {
+      return { coverageVerdictWrapper };
+    }
+    const reactionRecorder = this.options.coverageHeadRecorder.createReactionRecorder({
       getSession,
       onRecorded: (reaction) => { applyCoverageInteractionTrace(getSession(), reaction); },
     });
@@ -624,6 +661,7 @@ export class ChatTurnAssembly {
     if (!this.options.routineStore || !this.options.routineProvider) {
       return {
         coverageReactionRecorder: deferredReactionRecorder,
+        coverageVerdictWrapper,
         effects: reactionEffects,
       };
     }
@@ -656,6 +694,7 @@ export class ChatTurnAssembly {
     if (!routineTurnPorts?.coverageActivator) {
       return {
         coverageReactionRecorder: deferredReactionRecorder,
+        coverageVerdictWrapper,
         effects: reactionEffects,
       };
     }
@@ -668,6 +707,7 @@ export class ChatTurnAssembly {
       clarifier: input.clarification?.clarifier ?? this.options.clarifier,
       clarificationStore: deferredClarificationStore,
       coverageReactionRecorder: deferredReactionRecorder,
+      coverageVerdictWrapper,
       effects: (result) => {
         const routineStateTransition = deferredStore.getTransition();
         const pendingDecisionTransition = buildRoutinePendingDecisionTransition({
@@ -742,12 +782,6 @@ export class ChatTurnAssembly {
       query: input.query,
       userExpectedLocale: input.userExpectedLocale,
       accountId: input.accountId,
-      coverageAssessor: this.options.coverageAssessorFactory?.create({
-        getSession: () => session,
-        accountId: input.accountId,
-        signal: input.coordination?.signal,
-        onAssessment: (assessment) => { applyCoverageAssessment(session, assessment); },
-      }),
       ...coverageTurnRuntime,
     });
     this.logCoverageRoutineFailure(result.trace, session);
@@ -832,12 +866,6 @@ export class ChatTurnAssembly {
       query: input.request.query,
       userExpectedLocale: input.request.userExpectedLocale,
       accountId: input.request.accountId,
-      coverageAssessor: this.options.coverageAssessorFactory?.create({
-        getSession: () => sessionRef.current,
-        accountId: input.request.accountId,
-        signal: input.coordination?.signal,
-        onAssessment: (assessment) => { applyCoverageAssessment(sessionRef.current, assessment); },
-      }),
       ...coverageTurnRuntime,
     });
     const stage = clarificationTraceStage(clarificationState.current);
@@ -886,12 +914,6 @@ export class ChatTurnAssembly {
       userExpectedLocale: input.userExpectedLocale,
       accountId: input.accountId,
       signal: input.coordination?.signal,
-      coverageAssessor: this.options.coverageAssessorFactory?.create({
-        getSession: () => session,
-        accountId: input.accountId,
-        signal: input.coordination?.signal,
-        onAssessment: (assessment) => { applyCoverageAssessment(session, assessment); },
-      }),
       ...coverageTurnRuntime,
     })) {
       if (event.type === "status" || event.type === "chunk") {
@@ -979,12 +1001,6 @@ export class ChatTurnAssembly {
       userExpectedLocale: input.request.userExpectedLocale,
       accountId: input.request.accountId,
       signal: input.coordination?.signal,
-      coverageAssessor: this.options.coverageAssessorFactory?.create({
-        getSession: () => sessionRef.current,
-        accountId: input.request.accountId,
-        signal: input.coordination?.signal,
-        onAssessment: (assessment) => { applyCoverageAssessment(sessionRef.current, assessment); },
-      }),
       ...coverageTurnRuntime,
     })) {
       if (event.type === "status" || event.type === "chunk") {

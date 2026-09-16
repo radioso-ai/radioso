@@ -88,9 +88,13 @@ describe("unified agent skills contract", () => {
 
     const listed = await request(app).get(`/api/v1/agents/${agentId}/skills`).set(headers);
     expect(listed.status).toBe(200);
-    expect(listed.body.skills).toEqual([
+    // Every agent carries its own default-answer retrieve skill ("answer") alongside
+    // whatever else it has been given.
+    expect(listed.body.skills).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: created.body.skill.id, name: "send_lead_webhook" }),
-    ]);
+      expect.objectContaining({ name: "answer", capability: "retrieve", invocationMode: "default_answer" }),
+    ]));
+    expect(listed.body.skills).toHaveLength(2);
 
     const duplicate = await request(app)
       .post(`/api/v1/agents/${agentId}/skills`)
@@ -183,5 +187,43 @@ describe("unified agent skills contract", () => {
         exposedInputs: { query: true },
       },
     });
+  });
+
+  it("lists a freshly created agent's default-answer retrieve skill without any explicit skill setup", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "agent-default-retrieve-skill@example.com");
+    const headers = adminSessionHeaders(session);
+
+    const created = await request(app)
+      .post("/api/v1/agents")
+      .set(headers)
+      .send({ name: "Fresh Agent" });
+    expect(created.status).toBe(201);
+    const agentId = created.body.id as string;
+
+    const listed = await request(app).get(`/api/v1/agents/${agentId}/skills`).set(headers);
+    expect(listed.status).toBe(200);
+    expect(listed.body.skills).toEqual([
+      expect.objectContaining({
+        name: "answer",
+        capability: "retrieve",
+        storedKind: "retrieve",
+        target: { kind: "source_scope", id: null },
+        invocationMode: "default_answer",
+        enabled: true,
+      }),
+    ]);
+
+    const disabled = await request(app)
+      .post("/api/v1/agents")
+      .set(headers)
+      .send({ name: "Retrieval Off Agent", retrievalEnabled: false });
+    expect(disabled.status).toBe(201);
+
+    const disabledListed = await request(app).get(`/api/v1/agents/${disabled.body.id}/skills`).set(headers);
+    expect(disabledListed.status).toBe(200);
+    expect(disabledListed.body.skills).toEqual([
+      expect.objectContaining({ name: "answer", enabled: false }),
+    ]);
   });
 });

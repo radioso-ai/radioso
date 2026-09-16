@@ -64,6 +64,7 @@ export const presentRetrievalDefaults = (
   temporalStructuredLookupEnabled: settings.temporalStructuredLookupEnabled ?? true,
   temporalBoostUpcomingEnabled: settings.temporalBoostUpcomingEnabled ?? true,
   temporalDeterministicSortEnabled: settings.temporalDeterministicSortEnabled ?? true,
+  citationHoldEnabled: settings.citationHoldEnabled ?? true,
   semanticRewriteInstructions: settings.semanticRewriteInstructions,
   lexicalRewriteInstructions: settings.lexicalRewriteInstructions,
   suggestedQuestionsEnabled: settings.suggestedQuestionsEnabled,

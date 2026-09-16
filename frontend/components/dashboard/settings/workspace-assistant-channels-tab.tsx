@@ -106,6 +106,7 @@ const fallbackRetrievalDefaults: RetrievalDefaults = {
   metadataRules: [],
   metadataFieldSuggestions: [],
   customInstruction: '',
+  citationHoldEnabled: true,
 }
 
 const normalizeAssistantBehaviorSettingsByAgent = (agentId: string | undefined, settings: AssistantBehaviorSettings) => ({

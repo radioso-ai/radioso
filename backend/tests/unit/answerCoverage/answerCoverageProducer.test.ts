@@ -80,6 +80,7 @@ describe("LlmAnswerCoverageProducer", () => {
       reason: "insufficient_evidence",
       unresolvedRequest: "Whether one-day attendance is allowed",
       schemaVersion: 1,
+      producer: "assessor",
     });
     expect(complete).toHaveBeenCalledWith(expect.objectContaining({
       maxOutputTokens: 384,

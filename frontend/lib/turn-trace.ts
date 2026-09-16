@@ -5,6 +5,7 @@ import type {
   ConversationTraceStage,
   TurnTraceEnvelope,
 } from '@/lib/api'
+import { normalizeAnswerCoverageCore, type AnswerCoverageAssessment } from '@/lib/answer-coverage'
 
 /**
  * The conversation spine is the root span of a turn; each capability hangs its
@@ -27,12 +28,13 @@ const SPINE_STAGE_LABELS: Record<string, string> = {
   routine_activate: 'Routine',
   clarification: 'Clarification',
   model_calls: 'Model calls',
+  answer_coverage_head: 'Coverage verdict',
 }
 
 export const spineStageLabel = (stage: ConversationTraceStage): string =>
   SPINE_STAGE_LABELS[stage.kind] ?? stage.kind.replaceAll('_', ' ')
 
-export interface SpineStageTelemetry {
+interface SpineStageTelemetry {
   durationMs?: number
   models: string[]
   operations: string[]
@@ -126,7 +128,7 @@ export const spineStageTelemetry = (stage: ConversationTraceStage): SpineStageTe
   }
 }
 
-export interface TurnTraceRollup {
+interface TurnTraceRollup {
   totalLlmCalls: number
   serialLlmDepth: number
   longestStage: { name: string; durationMs: number }
@@ -173,7 +175,7 @@ export const turnTraceRollup = (
  */
 const ACTIVITY_TRACE_NAMESPACES = new Set(['retrieval', 'skill-intake'])
 
-export type CapabilityLeafView =
+type CapabilityLeafView =
   | { kind: 'activity-trace'; namespace: string; trace: ActivityTrace }
   | { kind: 'raw'; namespace: string; payload: unknown }
 
@@ -283,4 +285,59 @@ export const routineTurnSignalFromSpine = (
     resumed: stage.kind === 'routine_resume',
     completed: outputs.completed === true,
   }
+}
+
+/**
+ * The turn's own answer-coverage verdict, read off its `answer_coverage_head`
+ * spine stage. Surfaces that never persist an `answer_coverage_assessments`
+ * row — the draft Test Chat, per FR-023 — have no other way to see the
+ * verdict the engine already computed for this turn. The stage never carries
+ * `requestFocus`/`unresolvedRequest` (kept out of traces by design) and has no
+ * per-turn/request id to attribute the verdict to, so both id fields come
+ * back empty; callers should prefer a persisted record when one exists and
+ * fall back to this only to fill the gap.
+ */
+export const answerCoverageFromTurnTrace = (
+  envelope: TurnTraceEnvelope | undefined,
+): AnswerCoverageAssessment | undefined => {
+  const stage = envelope?.spine.stages.find((candidate) => {
+    if (candidate.kind !== 'answer_coverage_head') {
+      return false
+    }
+    const outputs = (candidate.outputs ?? {}) as Record<string, unknown>
+    // A sink that reports twice in one turn pushes a second, minimal stage
+    // (`{ reason: "already_reported" }`) with no availability — skip it.
+    return typeof outputs.availability === 'string'
+  })
+  if (!stage) {
+    return undefined
+  }
+  const core = normalizeAnswerCoverageCore(stage.outputs)
+  if (!core) {
+    return undefined
+  }
+  return { ...core, originatingTurnId: '', originatingRequestId: '' }
+}
+
+interface AnswerCoverageResolution {
+  assessment: AnswerCoverageAssessment | undefined
+  /** Which source the returned assessment came from, so the UI can attribute it. */
+  source: 'recorded' | 'trace' | undefined
+}
+
+/**
+ * A persisted record always wins when the caller has one — it's the
+ * Activity/History surfaces' ground truth. Draft surfaces never have one
+ * (FR-023), so they fall back to this turn's own trace instead of showing
+ * "not assessed" for a turn that plainly was.
+ */
+export const resolveAnswerCoverage = (
+  recorded: AnswerCoverageAssessment | undefined,
+  turnTrace: TurnTraceEnvelope | undefined,
+): AnswerCoverageResolution => {
+  if (recorded) {
+    return { assessment: recorded, source: 'recorded' }
+  }
+  const traced = answerCoverageFromTurnTrace(turnTrace)
+  return traced ? { assessment: traced, source: 'trace' } : { assessment: undefined, source: undefined }
 }

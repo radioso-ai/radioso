@@ -94,7 +94,9 @@ describeIfDatabase("AgentSkillRepository (Kysely) against Postgres", () => {
 
     expect(await repository.findById(workspaceId, agentId, created.id)).toMatchObject({ skillName: "alpha" });
     expect(await repository.findByName(workspaceId, agentId, "beta")).toMatchObject({ enabled: false });
-    expect((await repository.listByAgent(workspaceId, agentId)).map((s) => s.skillName)).toEqual(["alpha", "beta"]);
+    // "answer" sorts between them: AgentRepository.create() seeds this agent's own
+    // default-answer retrieve skill.
+    expect((await repository.listByAgent(workspaceId, agentId)).map((s) => s.skillName)).toEqual(["alpha", "answer", "beta"]);
     // Cross-workspace / cross-agent isolation.
     expect(await repository.findByName(randomUUID(), agentId, "alpha")).toBeNull();
     expect(await repository.findById(workspaceId, randomUUID(), created.id)).toBeNull();

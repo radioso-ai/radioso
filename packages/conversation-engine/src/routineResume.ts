@@ -8,7 +8,7 @@ import type {
   SteeringRule,
   TurnContext,
 } from "@radioso/conversation-contract";
-import { buildResolvedSteering } from "./steering.js";
+import { buildResolvedSteering, knownAnswerCoverage, steeringForKnownVerdict } from "./steering.js";
 import {
   createInputEvent,
   createProcessTurnResult,
@@ -34,6 +34,11 @@ export const resumeRoutine = async (input: {
     activeStepId: state.path.at(-1),
   };
   let directiveSteeringStage: ConversationTraceStage | null = null;
+  // The activated routine's step prompt never itself emits a `coverage` field, so
+  // a coverage-gated directive must not reach it as a condition on one (#1260
+  // review round 4, F3). Reduce to the known verdict already on this turn — set
+  // by the compose-time sink before it started this routine — the same way the
+  // pre-activation clarifier does.
   const routineSteeringResolver = {
     resolve: async ({ step, baseSteering }: ConversationRoutineSteeringInput): Promise<SteeringRule[]> => {
       const resolved = await buildResolvedSteering({
@@ -45,7 +50,7 @@ export const resumeRoutine = async (input: {
         traceKind: "directive_steering",
       });
       directiveSteeringStage = resolved.traceStage;
-      return resolved.steering;
+      return steeringForKnownVerdict(resolved.steering, knownAnswerCoverage(turn));
     },
   };
 

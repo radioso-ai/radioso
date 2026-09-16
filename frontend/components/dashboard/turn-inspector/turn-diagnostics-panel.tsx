@@ -13,6 +13,7 @@ import {
 } from '@/lib/activity-diagnostics'
 import {
   clarificationDecisionFromSpine,
+  resolveAnswerCoverage,
   routineTurnSignalFromSpine,
   turnTraceRollup,
 } from '@/lib/turn-trace'
@@ -146,7 +147,10 @@ export function TurnDiagnosticsPanel({
   })
   const runParameters = presentRunParameters(resolvedActivityTrace)
   const rollup = turnTraceRollup(activeEnvelope)
-  const normalizedAnswerCoverage = normalizeAnswerCoverage(diagnostics.answerCoverage)
+  const { assessment: normalizedAnswerCoverage, source: answerCoverageSource } = resolveAnswerCoverage(
+    normalizeAnswerCoverage(diagnostics.answerCoverage),
+    diagnostics.turnTrace,
+  )
   const answerCoverage = normalizedAnswerCoverage ?? { availability: 'not_recorded' as const, originatingTurnId: '', originatingRequestId: '' }
   const interactionTrace = normalizeAnswerCoverageInteractionTrace(diagnostics.interactionTrace)
   const displayedOutcome = answerCoverageAwareOutcome(outcomePresentation, normalizedAnswerCoverage, {
@@ -184,7 +188,13 @@ export function TurnDiagnosticsPanel({
         </section>
       ) : null}
 
-      <AnswerCoverageSection assessment={answerCoverage} interaction={interactionTrace} isLegacy={!normalizedAnswerCoverage} onOpenTargetMessage={onOpenTargetMessage} />
+      <AnswerCoverageSection
+        assessment={answerCoverage}
+        interaction={interactionTrace}
+        isLegacy={!normalizedAnswerCoverage}
+        isFromTrace={answerCoverageSource === 'trace'}
+        onOpenTargetMessage={onOpenTargetMessage}
+      />
 
       {rollup ? (
         <section className="rounded-lg border border-border/70 bg-background/60 p-3">

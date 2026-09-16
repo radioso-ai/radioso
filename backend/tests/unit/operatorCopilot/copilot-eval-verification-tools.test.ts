@@ -430,6 +430,18 @@ describe("replay_eval_case override surface", () => {
     expect(replayCase).toHaveBeenCalledWith(expect.objectContaining({ overrides }));
   });
 
+  it("accepts citationHoldEnabled in the retrieval settings override (#1260 review F6)", async () => {
+    const { replayCase, descriptors } = ports();
+    const overrides = { retrievalSettingsOverride: { citationHoldEnabled: false } };
+
+    const descriptor = descriptorNamed(descriptors, "replay_eval_case");
+    expect(descriptor.inputSchema.safeParse({ caseId, overrides }).success).toBe(true);
+
+    await descriptor.createTool(context).invoke({ caseId, overrides }, {} as never);
+
+    expect(replayCase).toHaveBeenCalledWith(expect.objectContaining({ overrides }));
+  });
+
   it("rejects a model override without a provider the eval contract knows", () => {
     const { descriptors } = ports();
 

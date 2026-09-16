@@ -92,13 +92,17 @@ describeIfDatabase("agent skill writes sync the draft revision snapshot (finding
     expect(draftAfterUpdate?.snapshot.agentSkills).toContainEqual(
       expect.objectContaining({ id: created.id, enabled: false }),
     );
-    expect(draftAfterUpdate?.snapshot.agentSkills).toHaveLength(1);
+    // createTestAgent() seeds its own default-answer retrieve skill, so "lockstep with the
+    // live row" tracks that one plus lookup_orders.
+    expect(draftAfterUpdate?.snapshot.agentSkills).toHaveLength(2);
 
     const removed = await agentSkillRepository.remove(workspaceId, agentId, created.id);
     expect(removed).toBe(true);
 
     const draftAfterRemove = await agentRevisionRepository.readDraft(workspaceId, agentId);
-    expect(draftAfterRemove?.snapshot.agentSkills).toEqual([]);
+    expect(draftAfterRemove?.snapshot.agentSkills).toEqual([
+      expect.objectContaining({ skillName: "answer" }),
+    ]);
   });
 
   it("seeds the full live skill list on first write instead of dropping skills that predate snapshot tracking", async () => {
@@ -140,7 +144,9 @@ describeIfDatabase("agent skill writes sync the draft revision snapshot (finding
 
     const draft = await agentRevisionRepository.readDraft(workspaceId, agentId);
     const skillNames = (draft?.snapshot.agentSkills ?? []).map((skill) => skill.skillName).sort();
-    expect(skillNames).toEqual(["new_skill", "preexisting_skill"].sort());
+    // createTestAgent() seeded its own default-answer "answer" retrieve skill, which the
+    // live-state reseed picks up alongside the two notify skills.
+    expect(skillNames).toEqual(["answer", "new_skill", "preexisting_skill"].sort());
     expect(draft?.snapshot.agentSkills).toContainEqual(expect.objectContaining({ id: preexisting.id }));
     expect(draft?.snapshot.agentSkills).toContainEqual(expect.objectContaining({ id: secondSkill.id }));
   });

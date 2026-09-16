@@ -1,11 +1,24 @@
 import type { ConversationTrace, ConversationTraceStage } from "@radioso/conversation-contract";
 
 import type { ModelCallTraceRecord } from "../../../shared/observability/tracing/modelCallTraceContext.js";
+import { ANSWER_COVERAGE_SHADOW_USAGE_OPERATION } from "./answerCoverageShadowAssessor.js";
 
 export const MODEL_CALLS_STAGE_ID = "model_calls";
-export const PRE_ENGINE_MODEL_CALL_STAGE_ID = "pre_engine";
+const PRE_ENGINE_MODEL_CALL_STAGE_ID = "pre_engine";
+// The shadow coverage assessor runs beside compose and belongs to no stage: attributing
+// it to the enclosing head or compose stage would misstate what the head costs.
+export const SHADOW_MODEL_CALL_STAGE_ID = "shadow";
 
-export interface AttributedModelCallTraceRecord extends ModelCallTraceRecord {
+/**
+ * True for a model call that actually sat on the turn's critical path. The shadow
+ * coverage assessor (#1260) runs concurrently with compose and is never awaited by
+ * the turn, so it must not inflate the turn's own call count, latency, or serial
+ * depth even when it happens to settle before a trace snapshot is taken.
+ */
+export const isCriticalPathModelCall = (operation: string): boolean =>
+  operation !== ANSWER_COVERAGE_SHADOW_USAGE_OPERATION;
+
+interface AttributedModelCallTraceRecord extends ModelCallTraceRecord {
   stageId: string;
 }
 
@@ -46,6 +59,9 @@ const stageForCall = (
   // Millisecond timestamps can otherwise make a zero-width call look enclosed by the
   // first engine stage, so both are pinned to the pre-engine attribution.
   if (call.operation === "response_language_detection" || call.operation === "turn_planning") {
+    return undefined;
+  }
+  if (call.operation === ANSWER_COVERAGE_SHADOW_USAGE_OPERATION) {
     return undefined;
   }
   const exactKind = call.operation === "turn_interpretation"
@@ -129,7 +145,8 @@ export const attachModelCallsToSpine = (
       totalTokens: call.totalTokens,
       ...(call.reasoningTokens === undefined ? {} : { reasoningTokens: call.reasoningTokens }),
       ...(call.cachedInputTokens === undefined ? {} : { cachedInputTokens: call.cachedInputTokens }),
-      stageId: target?.id ?? PRE_ENGINE_MODEL_CALL_STAGE_ID,
+      stageId: target?.id
+        ?? (call.operation === ANSWER_COVERAGE_SHADOW_USAGE_OPERATION ? SHADOW_MODEL_CALL_STAGE_ID : PRE_ENGINE_MODEL_CALL_STAGE_ID),
     };
   });
 
@@ -164,6 +181,12 @@ export const attachModelCallsToSpine = (
     };
   });
 
+  // The shadow can settle before this snapshot runs, but it never sat on the
+  // turn's critical path: it must stay out of the turn's own call count,
+  // latency, and token totals even though it is still listed (visible for
+  // debugging) in `modelCalls` above.
+  const criticalPathCalls = calls.filter((call) => isCriticalPathModelCall(call.operation));
+
   return {
     ...spine,
     stages: [
@@ -173,7 +196,7 @@ export const attachModelCallsToSpine = (
         kind: MODEL_CALLS_STAGE_ID,
         status: "applied",
         outputs: { modelCalls: attributed },
-        metrics: aggregate(calls),
+        metrics: aggregate(criticalPathCalls),
       },
     ],
   };

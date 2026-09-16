@@ -1,5 +1,6 @@
 import { orderSteeringRules, type SteeringRule } from "./domain.js";
 import { renderPromptTemplate } from "./promptTemplate.js";
+import { expandAnswerCoverageCriteria } from "./answerCoverageClassification.js";
 import {
   DEFAULT_CLARIFICATION_STEERING_PROMPT,
   DEFAULT_STEERING_PROMPT,
@@ -23,9 +24,26 @@ export interface RenderSteeringRulesOptions {
   includeRuleIds?: boolean;
 }
 
+/**
+ * A rule carrying `coverageCriteria` renders as a condition on the classification
+ * the model is about to emit, layered the same way an authored `condition`
+ * clause is (FR-010). Both can be present on the same rule. The condition lists
+ * the exact eight-value classifications the model can emit that satisfy the
+ * criteria — not the coarser `coverage` word, which is not itself a value the
+ * model ever returns.
+ */
+const withCoverageCondition = (rule: SteeringRule, action: string): string => {
+  if (!rule.coverageCriteria) {
+    return action;
+  }
+  const criteria = expandAnswerCoverageCriteria(rule.coverageCriteria).join(", ");
+  return `Only when your coverage verdict is one of [${criteria}]: ${action}`;
+};
+
 const formatRule = (rule: SteeringRule, includeRuleIds: boolean): string => {
   const prefix = includeRuleIds && rule.id ? `- [${rule.id}] ` : "- ";
-  return rule.condition ? `${prefix}${rule.action} (when: ${rule.condition})` : `${prefix}${rule.action}`;
+  const action = withCoverageCondition(rule, rule.action);
+  return rule.condition ? `${prefix}${action} (when: ${rule.condition})` : `${prefix}${action}`;
 };
 
 /**

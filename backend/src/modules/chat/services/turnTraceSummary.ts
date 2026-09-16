@@ -1,6 +1,6 @@
 import type { ConversationTrace, ConversationTraceStage } from "@radioso/conversation-contract";
 
-import { MODEL_CALLS_STAGE_ID } from "./turnTraceModelCalls.js";
+import { isCriticalPathModelCall, MODEL_CALLS_STAGE_ID } from "./turnTraceModelCalls.js";
 
 export interface TurnTraceSummary {
   totalLlmCalls: number;
@@ -14,10 +14,16 @@ export interface TurnTraceSummary {
   droppedCallCount: number;
 }
 
-export interface TurnTraceModelCallSummary {
-  totalLlmCalls: number;
-  serialLlmDepth: number;
-  totalModelTimeMs: number;
+/**
+ * Turn-level bookkeeping the summary cannot re-derive from the canonical call
+ * collection alone: `droppedCallCount` reflects the collector's capacity clamp,
+ * and `totalTurnWallClockMs` is measured from the collector's own start time.
+ * Call count, serial depth, and model time are always computed once from the
+ * canonical (critical-path-filtered) calls on the spine — see
+ * `canonicalCallsFromSpine` — so they can never drift from what a settled
+ * off-path call (the coverage shadow) briefly reported on the live collector.
+ */
+interface TurnTraceModelCallSummary {
   totalTurnWallClockMs: number;
   droppedCallCount: number;
 }
@@ -57,6 +63,9 @@ const durationBetween = (startedAt: unknown, completedAt: unknown): number | und
 
 const modelCallFromRecord = (value: unknown): ModelCallInterval | undefined => {
   if (!isRecord(value) || typeof value.id !== "string" || typeof value.operation !== "string" || typeof value.model !== "string") {
+    return undefined;
+  }
+  if (!isCriticalPathModelCall(value.operation)) {
     return undefined;
   }
   const startedAtMs = timestampMs(value.startedAt);
@@ -135,11 +144,13 @@ export const buildTurnTraceSummary = (
   );
 
   return {
-    totalLlmCalls: modelCallSummary?.totalLlmCalls ?? calls.length,
-    serialLlmDepth: modelCallSummary?.serialLlmDepth ?? serialDepth(calls),
+    // Always derived from the canonical (critical-path) call collection, never
+    // from the live collector's own running counters — those can include a
+    // shadow call that settled before this snapshot ran (#1260 F5).
+    totalLlmCalls: calls.length,
+    serialLlmDepth: serialDepth(calls),
     longestStage,
-    totalModelTimeMs: modelCallSummary?.totalModelTimeMs
-      ?? calls.reduce((total, call) => total + call.durationMs, 0),
+    totalModelTimeMs: calls.reduce((total, call) => total + call.durationMs, 0),
     totalTurnWallClockMs: modelCallSummary?.totalTurnWallClockMs
       ?? durationBetween(spine.startedAt, spine.completedAt)
       ?? 0,

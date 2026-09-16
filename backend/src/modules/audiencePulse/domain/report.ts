@@ -105,6 +105,7 @@ const snapshotCoverage = (assessment: AnswerCoverageAssessment): AnswerCoverageA
         coverage: assessment.coverage,
         reason: assessment.reason,
         schemaVersion: assessment.schemaVersion,
+        producer: assessment.producer,
       }
     : { availability: assessment.availability };
 

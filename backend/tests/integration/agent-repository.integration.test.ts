@@ -228,27 +228,12 @@ describeIntegration("AgentRepository (Postgres)", () => {
       `INSERT INTO document_sources (id, workspace_id, kind, name) VALUES ($1, $2, $3, $4)`,
       [deletedSourceId, workspaceId, "manual_upload", "Deleted source"],
     );
+    // create() now seeds the default-answer retrieve skill itself (with exactly this
+    // stale-once-the-source-is-deleted shape), so no manual agent_skills insert is needed here.
     const agent = await repository.create(workspaceId, {
       name: "Stale source scope",
       sourceScope: { mode: "selected", sourceIds: [deletedSourceId] },
     });
-    await database.query(
-      `INSERT INTO agent_skills (
-         id, workspace_id, agent_id, skill_name, kind, target_type,
-         target_id, config, invocation_mode, enabled
-       )
-       VALUES ($1, $2, $3, 'answer', 'retrieve', 'source_scope', NULL, $4::jsonb, 'default_answer', true)`,
-      [
-        randomUUID(),
-        workspaceId,
-        agent.id,
-        JSON.stringify({
-          sourceScope: { sourceIds: [deletedSourceId] },
-          suggestedQuestionsEnabled: true,
-          exposedInputs: { query: true },
-        }),
-      ],
-    );
 
     // Deleting the source cascades the relational link, while the retrieve-skill JSON
     // remains stale until the operator explicitly edits retrieval scope.

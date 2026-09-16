@@ -15,6 +15,14 @@ export type AnswerCoverageReason =
   | "ambiguous_request"
   | "intentional_scope_boundary";
 export type AnswerCoverageAvailability = "assessed" | "not_recorded" | "failed" | "invalid";
+/**
+ * Distinguishes which stage produced an assessment (#1260): the answer
+ * envelope's own head, a turn's deterministic zero-evidence fallback, or the
+ * pre-compose assessor (kept only as the shadow producer). Optional because
+ * only the answer-head path (and its shadow) populates it; a host that never
+ * produces a head-derived assessment carries no producer at all.
+ */
+export type AnswerCoverageProducer = "answer_head" | "deterministic" | "assessor";
 export type AnswerCoverageAssessment =
   | {
       availability: "assessed";
@@ -22,8 +30,10 @@ export type AnswerCoverageAssessment =
       reason: AnswerCoverageReason;
       unresolvedRequest?: string;
       schemaVersion: number;
+      /** Persistence carries this on every written row now (#1260, FR-017); an assessed verdict always names its producer. */
+      producer: AnswerCoverageProducer;
     }
-  | { availability: Exclude<AnswerCoverageAvailability, "assessed"> };
+  | { availability: Exclude<AnswerCoverageAvailability, "assessed">; producer?: AnswerCoverageProducer };
 
 /** Bounded, admitted evidence passed to the semantic assessor. It is never telemetry. */
 export interface AnswerCoverageEvidence {
@@ -126,6 +136,13 @@ export interface SteeringRule {
    * authored before surfaces existed keeps its exact meaning.
    */
   surfaces?: GenerationSurface[];
+  /**
+   * Present when this rule originates from a coverage-gated directive matched
+   * before the coverage verdict exists (#1260). The rendering surface layers it
+   * as a condition on the classification the model is about to emit; the
+   * verdict's producer judges applicability once the verdict arrives.
+   */
+  coverageCriteria?: AnswerCoverageCriteria;
 }
 
 export type SkillTransientGuidance = Omit<SteeringRule, "source" | "lifespan">;
@@ -540,6 +557,12 @@ export interface RenderableTurn {
   metadata?: Record<string, unknown> & {
     directiveAdherence?: DirectiveAdherenceEntry[];
   };
+  /**
+   * Set when a coverage verdict sink yielded this turn before any answer text
+   * was released (#1260): `answer` is empty, and the engine substitutes the
+   * post-evidence routine's own result as the turn's outcome.
+   */
+  yielded?: true;
 }
 
 /** A grounded answer's self-reported result for one active directive steering rule. */
@@ -547,6 +570,13 @@ export interface DirectiveAdherenceEntry {
   directive: string;
   ruleId: string;
   satisfied: boolean;
+  /**
+   * Whether the rule's own condition (an authored `when:` clause, or a
+   * coverage verdict criteria, #1260) actually held this turn. `false` means
+   * the rule rendered but never applied, so `satisfied` carries no meaning —
+   * report it as not-applicable, never as a violation.
+   */
+  applicable: boolean;
   /** Short operator-facing rationale; never source-document content. */
   note: string;
 }
@@ -810,6 +840,26 @@ export interface ConversationTurnComposeInput {
   turn: TurnContext;
   outcomes: TurnOutcome[];
   decision: SelectionDecision;
+  /**
+   * Where a retrieval-style skill reports its coverage verdict, from inside
+   * compose, before releasing any answer text (#1260). The engine constructs
+   * this at compose time and owns everything it does with the verdict —
+   * directive applicability, routine activation, reaction recording; the
+   * composer only has to forward it to the skill it renders. Absent leaves a
+   * skill that receives no sink proceeding exactly as it does today.
+   */
+  coverageVerdict?: ConversationCoverageVerdictSink;
+}
+
+/**
+ * The one call a retrieval-style skill makes to hand its coverage verdict to the
+ * engine before releasing any answer text (#1260, FR-005). The skill knows
+ * nothing about what the engine does with the verdict — routines, directives,
+ * persistence — only whether to proceed or yield the turn. Called at most once
+ * per turn; a second call is answered with `proceed` rather than an error.
+ */
+export interface ConversationCoverageVerdictSink {
+  report(input: { assessment: AnswerCoverageAssessment }): Promise<{ decision: "proceed" | "yield_turn" }>;
 }
 
 export interface ConversationTurnComposer {
@@ -1354,12 +1404,6 @@ export interface ProcessTurnInput {
   loopGuardCandidateIds?: string[];
   suppressNewClarification?: boolean;
   /**
-   * Runs after admitted evidence is available and before coverage-gated directive
-   * matching or response composition. The engine does not know provider or evidence
-   * storage details; a host supplies the bounded semantic assessor.
-   */
-  coverageAssessor?: ConversationCoverageAssessor;
-  /**
    * Optional second activation pass for routines explicitly gated by coverage
    * criteria. The normal routine activator always runs first, so an active routine
    * keeps control and legacy activation behavior is unchanged.
@@ -1367,10 +1411,6 @@ export interface ProcessTurnInput {
   coverageRoutineActivator?: ConversationCoverageRoutineActivator;
   /** Records bounded post-evidence decisions without exposing request/evidence text. */
   coverageReactionRecorder?: ConversationCoverageReactionRecorder;
-}
-
-export interface ConversationCoverageAssessor {
-  assess(input: { turn: TurnContext }): Promise<AnswerCoverageAssessment>;
 }
 
 export interface ConversationCoverageReactionRecorder {

@@ -23,6 +23,7 @@ export const updateSettingsSchema = z.object({
   temporalStructuredLookupEnabled: z.boolean().optional(),
   temporalBoostUpcomingEnabled: z.boolean().optional(),
   temporalDeterministicSortEnabled: z.boolean().optional(),
+  citationHoldEnabled: z.boolean().optional(),
   semanticRewriteInstructions: z.string().max(2000).optional(),
   lexicalRewriteInstructions: z.string().max(2000).optional(),
   suggestedQuestionsEnabled: z.boolean().optional(),

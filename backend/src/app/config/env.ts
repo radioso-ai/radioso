@@ -220,6 +220,11 @@ const envSchema = z.object({
   FACET_EXTRACTION_WORKER_BATCH_SIZE: z.coerce.number().int().positive().max(500).default(10),
   FACET_EXTRACTION_JOB_LEASE_MS: z.coerce.number().int().positive().default(300_000),
   WEBSITE_CRAWLER_ENABLED: booleanish(true),
+  // #1260 measurement window: runs the retired pre-compose coverage assessor
+  // concurrently with compose, off the critical path, to record how often it
+  // agrees with the answer envelope head. Defaults on for the window; flip off
+  // to stop the shadow call entirely once its cost is no longer wanted.
+  ANSWER_COVERAGE_SHADOW_ASSESSOR_ENABLED: booleanish(true),
   APP_BASE_URL: emptyStringToUndefined(z.string().url()),
   GOOGLE_MAIL_OAUTH_CLIENT_ID: emptyStringToUndefined(z.string().min(1)),
   GOOGLE_MAIL_OAUTH_CLIENT_SECRET: emptyStringToUndefined(z.string().min(1)),

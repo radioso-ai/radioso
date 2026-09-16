@@ -153,6 +153,7 @@ export interface PromptAssemblyStageResult extends ContextSelectionStageResult {
     customInstruction?: RetrievalSettingsRecord["customInstruction"];
     responseLanguagePolicy?: ResponseLanguagePolicy;
     responseLanguage?: string;
+    citationHoldEnabled?: RetrievalSettingsRecord["citationHoldEnabled"];
   };
 }
 

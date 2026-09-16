@@ -57,9 +57,9 @@ export interface RetrievalMetadataRule {
   triggerInstruction?: string;
 }
 
-export const MIN_SUGGESTED_QUESTIONS_COUNT = 1;
-export const MAX_SUGGESTED_QUESTIONS_COUNT = 4;
-export const DEFAULT_SUGGESTED_QUESTIONS_ENABLED = true;
+const MIN_SUGGESTED_QUESTIONS_COUNT = 1;
+const MAX_SUGGESTED_QUESTIONS_COUNT = 4;
+const DEFAULT_SUGGESTED_QUESTIONS_ENABLED = true;
 export const DEFAULT_SUGGESTED_QUESTIONS_COUNT = 3;
 
 // Retrieval execution strategy *preference* — which strategy a workspace wants
@@ -119,6 +119,8 @@ export interface RetrievalSettingsRecord {
   metadataRules: RetrievalMetadataRule[];
   customInstruction: string;
   retrievalStrategy?: RetrievalStrategyPreference;
+  /** Whether an `answer` commitment is held until its first in-range citation before it streams. Absent reads as on (FR-025). */
+  citationHoldEnabled?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -138,6 +140,7 @@ export interface RetrievalSettingsInput {
   rerankTopK: number;
   metadataRules: RetrievalMetadataRule[];
   customInstruction: string;
+  citationHoldEnabled?: boolean;
   // The workspace's retrieval execution strategy. Optional on input; omitted
   // means "leave unchanged / use the default". Persisted in the settings JSONB
   // and read by the retrieval executor to select fixed vs reasoning per turn.
@@ -174,11 +177,15 @@ export const defaultRetrievalSettings = (workspaceId: string): RetrievalSettings
   metadataRules: [],
   customInstruction: "",
   retrievalStrategy: DEFAULT_RETRIEVAL_STRATEGY_PREFERENCE,
+  // On by default: an uncited `answer` commitment holds until it earns a citation
+  // or the stream ends (FR-025). Operators whose material rarely cites, or who
+  // value first-token latency, turn this off workspace-wide or per agent.
+  citationHoldEnabled: true,
   createdAt: new Date(),
   updatedAt: new Date(),
 });
 
-export const normalizeMetadataField = (value: string): string => value.trim();
+const normalizeMetadataField = (value: string): string => value.trim();
 
 const normalizeRewriteInstruction = (value: string, fallback: string): string => {
   const normalized = value.trim().replace(/\s+/g, " ");
@@ -198,17 +205,9 @@ export const createDefaultMetadataRule = (): RetrievalMetadataRule => ({
   triggerMode: "always_on",
 });
 
-export const createDefaultMetadataCondition = (): RetrievalMetadataCondition => ({
-  id: randomUUID(),
-  field: "",
-  valueType: "string",
-  operator: "equals",
-  value: "",
-});
-
 const isFieldSupported = (field: string): boolean => /^[A-Za-z0-9_.-]+$/.test(field);
 
-export const allowedOperatorsForValueType = (valueType: MetadataValueType): MetadataRuleOperator[] => {
+const allowedOperatorsForValueType = (valueType: MetadataValueType): MetadataRuleOperator[] => {
   if (valueType === "string") {
     return ["equals", "not_equals", "contains", "not_contains"];
   }
@@ -364,6 +363,9 @@ export const validateRetrievalSettings = (input: RetrievalSettingsInput): Retrie
   if (input.temporalDeterministicSortEnabled !== undefined && typeof input.temporalDeterministicSortEnabled !== "boolean") {
     throw badRequest("temporalDeterministicSortEnabled must be a boolean");
   }
+  if (input.citationHoldEnabled !== undefined && typeof input.citationHoldEnabled !== "boolean") {
+    throw badRequest("citationHoldEnabled must be a boolean");
+  }
   if (typeof input.lexicalRewriteInstructions !== "string") {
     throw badRequest("lexicalRewriteInstructions must be a string");
   }
@@ -494,6 +496,7 @@ export const validateRetrievalSettings = (input: RetrievalSettingsInput): Retrie
     temporalStructuredLookupEnabled: input.temporalStructuredLookupEnabled ?? true,
     temporalBoostUpcomingEnabled: input.temporalBoostUpcomingEnabled ?? true,
     temporalDeterministicSortEnabled: input.temporalDeterministicSortEnabled ?? true,
+    citationHoldEnabled: input.citationHoldEnabled ?? true,
     retrievalStrategy:
       resolveRetrievalStrategyPreference(input.retrievalStrategy) ??
       DEFAULT_RETRIEVAL_STRATEGY_PREFERENCE,

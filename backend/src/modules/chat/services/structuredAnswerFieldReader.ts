@@ -1,4 +1,11 @@
-const findJsonStringEnd = (value: string, openingQuoteIndex: number): number => {
+/**
+ * Index of the closing, unescaped quote for the string starting at
+ * `openingQuoteIndex`, or -1 when the buffer ends before it closes (still
+ * streaming). Exported for {@link ./groundedAnswerHeadReader.js}, which reuses
+ * this and the two helpers below to read the envelope's head fields the same
+ * way this reader locates `answer`.
+ */
+export const findJsonStringEnd = (value: string, openingQuoteIndex: number): number => {
   let escaped = false;
   for (let index = openingQuoteIndex + 1; index < value.length; index += 1) {
     const character = value[index];
@@ -13,7 +20,12 @@ const findJsonStringEnd = (value: string, openingQuoteIndex: number): number => 
   return -1;
 };
 
-const findTopLevelStringFieldStart = (raw: string, field: string): number | null => {
+/**
+ * Index of the first character of `field`'s string value at the top level of a
+ * (possibly incomplete) JSON object, or `null` while the key or its opening
+ * quote have not fully arrived yet.
+ */
+export const findTopLevelStringFieldStart = (raw: string, field: string): number | null => {
   const containers: string[] = [];
   for (let index = 0; index < raw.length; index += 1) {
     const character = raw[index];
@@ -55,7 +67,8 @@ const findTopLevelStringFieldStart = (raw: string, field: string): number | null
   return null;
 };
 
-const decodeJsonStringPrefix = (raw: string, start: number): string => {
+/** Decodes as much of a JSON string's escaped content as is unambiguous so far. */
+export const decodeJsonStringPrefix = (raw: string, start: number): string => {
   let value = "";
   for (let index = start; index < raw.length; index += 1) {
     const character = raw[index];

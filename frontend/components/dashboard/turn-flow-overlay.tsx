@@ -8,7 +8,12 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import type { ActivityTrace, ConversationTraceStage, TurnTraceEnvelope } from '@/lib/api'
 import { envelopeToFlowGraph, type TurnFlowNode } from '@/lib/turn-flow'
 import { ActivityTraceDetail } from './activity-trace-detail'
-import { SpineStageDetail, type ConversationMessageRecord } from './spine-stage-detail'
+import {
+  readDirectiveAdherence,
+  SpineStageDetail,
+  type ConversationMessageRecord,
+  type DirectiveAdherenceDetail,
+} from './spine-stage-detail'
 import { TurnFlowGraph } from './turn-flow-graph'
 
 function NodeDetail({
@@ -24,7 +29,7 @@ function NodeDetail({
   leafTrace?: ActivityTrace
   messages?: ConversationMessageRecord[]
   assistantMessageId?: string
-  directiveAdherence?: Array<{ directive: string; ruleId: string; satisfied: boolean; note: string }>
+  directiveAdherence?: DirectiveAdherenceDetail[]
 }) {
   if (!node) {
     return (
@@ -112,14 +117,7 @@ export function TurnFlowOverlay({
 
   const activeNode = selectedNode ?? initialNode
   const rawDirectiveAdherence = envelope.spine.stages.find((stage) => stage.kind === 'compose')?.outputs?.adherence
-  const directiveAdherence = (Array.isArray(rawDirectiveAdherence) ? rawDirectiveAdherence : [])
-    .filter((entry): entry is { directive: string; ruleId: string; satisfied: boolean; note: string } =>
-      Boolean(entry) && typeof entry === 'object' && !Array.isArray(entry) &&
-      typeof (entry as Record<string, unknown>).directive === 'string' &&
-      typeof (entry as Record<string, unknown>).ruleId === 'string' &&
-      typeof (entry as Record<string, unknown>).satisfied === 'boolean' &&
-      typeof (entry as Record<string, unknown>).note === 'string',
-    )
+  const directiveAdherence = readDirectiveAdherence(rawDirectiveAdherence)
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) onClose() }}>

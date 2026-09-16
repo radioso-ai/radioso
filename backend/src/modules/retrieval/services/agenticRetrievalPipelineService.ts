@@ -16,7 +16,7 @@ import type { RetrievalPipelineRequest } from "./retrievalPipelineStages.js";
 const APPROX_TOKEN_BYTES = 4;
 const AGENT_RETRIEVAL_SOURCE: RetrievalSource = "semantic_rewritten";
 
-export interface AgenticRetrievalPipelineServiceDeps {
+interface AgenticRetrievalPipelineServiceDeps {
   readonly deterministic: RetrievalPipelinePort;
   readonly runner: AgenticRetrievalRunner;
   readonly promptBuilder: PromptBuilder;
@@ -93,6 +93,7 @@ export class AgenticRetrievalPipelineService implements RetrievalPipelinePort {
       customInstruction: responseBehavior?.customInstruction ?? settings.customInstruction,
       responseLanguagePolicy: rewrittenQuery.responseLanguagePolicy,
       responseLanguage: input.request.responseLanguage,
+      citationHoldEnabled: settings.citationHoldEnabled,
     };
 
     const { searchStats } = runResult;

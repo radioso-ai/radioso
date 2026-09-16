@@ -1,7 +1,7 @@
 'use client'
 
 import type { ConversationTraceStage } from '@/lib/api'
-import { normalizeAnswerCoverageCore } from '@/lib/answer-coverage'
+import { normalizeAnswerCoverageCore, normalizeAnswerCoverageHeadStageFields } from '@/lib/answer-coverage'
 import { spineStageLabel, spineStageTelemetry } from '@/lib/turn-trace'
 import { AnswerCoverageSection } from './turn-inspector/answer-coverage-section'
 
@@ -1088,6 +1088,7 @@ function RoutineStageDetail({
  */
 function AnswerCoverageHeadStageDetail({ stage }: { stage: ConversationTraceStage }) {
   const core = normalizeAnswerCoverageCore(stage.outputs)
+  const { parseOutcome, hostDecision } = normalizeAnswerCoverageHeadStageFields(stage.outputs)
   return (
     <div className="space-y-4">
       <StageHeader stage={stage} />
@@ -1099,6 +1100,16 @@ function AnswerCoverageHeadStageDetail({ stage }: { stage: ConversationTraceStag
       ) : (
         <p className="text-sm text-muted-foreground">This head reported no verdict for this turn.</p>
       )}
+      {parseOutcome || hostDecision ? (
+        <Section label="Head resolution">
+          <KeyValueGrid
+            record={{
+              ...(parseOutcome ? { 'Parse outcome': parseOutcome } : {}),
+              ...(hostDecision ? { 'Host decision': hostDecision } : {}),
+            }}
+          />
+        </Section>
+      ) : null}
     </div>
   )
 }

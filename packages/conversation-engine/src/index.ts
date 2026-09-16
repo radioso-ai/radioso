@@ -602,6 +602,8 @@ export class DefaultConversationEngine implements ConversationEngine {
 
 export const createConversationEngine = (): ConversationEngine => new DefaultConversationEngine();
 
+export { answerCoverageHeadParseOutcome } from "./coverageVerdictSink.js";
+
 export { DefaultRoutineRunner } from "./routineRunner.js";
 export { resumeAwaitingDecision } from "./awaitingDecision.js";
 export {

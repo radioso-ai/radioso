@@ -38,7 +38,7 @@ import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { BoundedGroundingStreamGate } from "./boundedGroundingStreamGate.js";
 import { recordDirectiveSurfaceRendered } from "./directives/directiveSurfaceRendering.js";
 import { GroundedAnswerHeadReader } from "./groundedAnswerHeadReader.js";
-import { steeringForKnownVerdict } from "../../../shared/domain/steeringRule.js";
+import { answerCoverageHeadParseOutcome, steeringForKnownVerdict } from "../../../shared/domain/steeringRule.js";
 import {
   buildAnswerCoverageAssessmentFromHead,
   buildDeterministicZeroEvidenceAssessment,
@@ -260,9 +260,7 @@ export class RetrievalAnswerComposer {
     if (!decision) {
       return;
     }
-    const parseOutcome = assessment.producer === "deterministic"
-      ? "deterministic"
-      : assessment.availability === "assessed" ? "parsed" : "invalid";
+    const parseOutcome = answerCoverageHeadParseOutcome(assessment);
     this.metrics?.incrementCounter("chat_answer_coverage_head_parse_total", {
       help: "Answer envelope head parse outcome before the host decides",
       labels: { outcome: parseOutcome },

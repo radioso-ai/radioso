@@ -97,6 +97,28 @@ export const normalizeAnswerCoverageCore = (value: unknown): AnswerCoverageCore 
   }
 }
 
+type AnswerCoverageHeadParseOutcome = 'parsed' | 'invalid' | 'deterministic'
+type AnswerCoverageHeadDecision = 'proceed' | 'yield_turn'
+
+interface AnswerCoverageHeadStageFields {
+  parseOutcome?: AnswerCoverageHeadParseOutcome
+  hostDecision?: AnswerCoverageHeadDecision
+}
+
+/**
+ * Reads the two fields the `answer_coverage_head` trace stage adds beyond the
+ * verdict itself (#1260 spec, Observability): the head's own parse outcome and
+ * the host's proceed/yield decision. Absent on a stage from before this field
+ * existed, or on the "already reported" fallback stage, which carries neither.
+ */
+export const normalizeAnswerCoverageHeadStageFields = (value: unknown): AnswerCoverageHeadStageFields => {
+  if (!isRecord(value)) return {}
+  return {
+    parseOutcome: oneOf(value.parseOutcome, ['parsed', 'invalid', 'deterministic'] as const),
+    hostDecision: oneOf(value.hostDecision, ['proceed', 'yield_turn'] as const),
+  }
+}
+
 export const normalizeAnswerCoverage = (value: unknown): AnswerCoverageAssessment | undefined => {
   if (!isRecord(value)) return undefined
   const core = normalizeAnswerCoverageCore(value)

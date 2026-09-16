@@ -1404,6 +1404,83 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
     }));
   });
 
+  it("stamps parse outcome and host decision on the head stage when the turn proceeds (#1260 R2)", async () => {
+    const input = withRoutine({
+      resume: vi.fn(async () => ({ response: { answer: "unused" }, nextState: activeState })),
+    }, null);
+    input.composer = composerReporting({
+      availability: "assessed",
+      coverage: "answered",
+      reason: "sufficient_evidence",
+      schemaVersion: 1,
+      producer: "answer_head",
+    });
+
+    const result = await new DefaultConversationEngine().processTurn(input);
+
+    expect(result.trace.stages).toContainEqual(expect.objectContaining({
+      id: "answer_coverage_head",
+      outputs: expect.objectContaining({ parseOutcome: "parsed", hostDecision: "proceed" }),
+    }));
+  });
+
+  it("stamps parse outcome and host decision on the head stage when a coverage routine yields the turn (#1260 R2)", async () => {
+    const input = withRoutine({
+      resume: vi.fn(async () => ({ response: { answer: "I can connect you with support." }, nextState: activeState })),
+    }, null);
+    input.composer = composerReporting({
+      availability: "assessed",
+      coverage: "unanswered",
+      reason: "insufficient_evidence",
+      schemaVersion: 1,
+      producer: "answer_head",
+    });
+    input.coverageRoutineActivator = {
+      evaluateCandidates: () => [{ routineId: "support", decision: "candidate", reasonCode: "coverage_criteria_candidate" }],
+      activate: vi.fn(async () => ({ kind: "activate", routineId: "support" })),
+    };
+
+    const result = await new DefaultConversationEngine().processTurn(input);
+
+    expect(result.trace.stages).toContainEqual(expect.objectContaining({
+      id: "answer_coverage_head",
+      outputs: expect.objectContaining({ parseOutcome: "parsed", hostDecision: "yield_turn" }),
+    }));
+  });
+
+  it("pushes only one routine-activation fallback stage when a second failure reaches the outer catch (#1260 R3)", async () => {
+    const input = withRoutine({
+      resume: vi.fn(async () => ({ response: { answer: "unused" }, nextState: activeState })),
+    }, null);
+    input.composer = composerReporting({
+      availability: "assessed",
+      coverage: "unanswered",
+      reason: "insufficient_evidence",
+      schemaVersion: 1,
+      producer: "answer_head",
+    });
+    input.coverageRoutineActivator = {
+      evaluateCandidates: () => [{ routineId: "support", decision: "candidate", reasonCode: "coverage_criteria_candidate" }],
+      activate: vi.fn(async () => { throw new TypeError("internal routine adapter detail"); }),
+    };
+    // Read only after the inner activation catch already ran (and already pushed its
+    // own fallback stage) — proving a second failure reaching the outer catch does
+    // not duplicate the "answer_coverage_routine_activation" stage.
+    Object.defineProperty(input, "coverageReactionRecorder", {
+      configurable: true,
+      get(): never {
+        throw new Error("host port access failed");
+      },
+    });
+
+    const result = await new DefaultConversationEngine().processTurn(input);
+
+    expect(result.response.answer).toBe("Grounded answer.");
+    const fallbackStages = result.trace.stages.filter((entry) => entry.id === "answer_coverage_routine_activation");
+    expect(fallbackStages).toHaveLength(1);
+    expect(fallbackStages[0]).toMatchObject({ outputs: { failureKind: "routine_selection_failed", causeType: "TypeError" } });
+  });
+
   it("records an evaluated skipped coverage routine instead of fabricating a no-match", async () => {
     const input = withRoutine({
       resume: vi.fn(async () => ({ response: { answer: "unused" }, nextState: activeState })),

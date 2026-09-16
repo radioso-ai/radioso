@@ -201,6 +201,14 @@ describe("directive defaults", () => {
     });
   });
 
+  it("carries the directive's own id onto its steering rule when it has one (#1260 R5)", () => {
+    const idAssigned = directive({ id: "directive_1", name: "offer-form", action: "offer the form" });
+    const idLess = directive({ name: "be-concise", action: "be concise" });
+
+    expect(directiveToSteeringRule(match(idAssigned))).toMatchObject({ id: "directive_1" });
+    expect(directiveToSteeringRule(match(idLess))).not.toHaveProperty("id");
+  });
+
   it("builds and parses routine and step scope tags", () => {
     expect(scopeTag.routine("routine_1")).toBe("routine:routine_1");
     expect(scopeTag.step("routine_1", "step_1")).toBe("step:routine_1:step_1");

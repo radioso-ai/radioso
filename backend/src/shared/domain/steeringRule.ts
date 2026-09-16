@@ -16,4 +16,9 @@ export {
   // steering operation; the engine owns the criteria semantics, the backend only
   // applies them where a generator runs after the verdict exists.
   steeringForKnownVerdict,
+  // The engine's own `answer_coverage_head` trace stage and this backend's
+  // `chat_answer_coverage_head_parse_total` metric must bucket a reported
+  // assessment the same way; the engine owns that mapping, this barrel is
+  // where the backend reads it from (#1260 R2).
+  answerCoverageHeadParseOutcome,
 } from "@radioso/conversation-engine";

@@ -39,6 +39,22 @@ const criteriaMatches = (
   assessment: AssessedCoverage,
 ): boolean => coverageCriteriaMatches(criteria, assessment);
 
+/**
+ * The `answer_coverage_head` trace stage and the
+ * `chat_answer_coverage_head_parse_total` metric both bucket a reported
+ * assessment into the same three-value outcome; this is the one place that
+ * mapping is written; the backend imports it through the sanctioned
+ * `steeringRule.ts` barrel instead of re-deriving it.
+ */
+export const answerCoverageHeadParseOutcome = (
+  assessment: AnswerCoverageAssessment,
+): "parsed" | "invalid" | "deterministic" => {
+  if (assessment.producer === "deterministic") {
+    return "deterministic";
+  }
+  return assessment.availability === "assessed" ? "parsed" : "invalid";
+};
+
 export interface CoverageVerdictSinkDeps {
   /**
    * The turn's full engine input. `AttemptRoutineInput` is a structural subset of
@@ -94,7 +110,10 @@ export const createCoverageVerdictSink = (deps: CoverageVerdictSinkDeps): Covera
       }
       reported = true;
 
-      deps.stages.push(timedStage(deps.composeStartedAt, Date.now(), {
+      // Captured so the host decision can be stamped onto this same stage once
+      // it is known, further down every return path, without disturbing the
+      // stage's push-time position in `deps.stages` (ordering tests rely on it).
+      const headStage = timedStage(deps.composeStartedAt, Date.now(), {
         id: "answer_coverage_head",
         kind: "answer_coverage_head",
         status: assessment.availability === "assessed" ? "applied" : "fallback",
@@ -104,12 +123,23 @@ export const createCoverageVerdictSink = (deps: CoverageVerdictSinkDeps): Covera
           ...(assessment.availability === "assessed"
             ? { coverage: assessment.coverage, reason: assessment.reason }
             : {}),
+          parseOutcome: answerCoverageHeadParseOutcome(assessment),
         },
-      }));
+      });
+      deps.stages.push(headStage);
+      const finish = (decision: "proceed" | "yield_turn"): { decision: "proceed" | "yield_turn" } => {
+        headStage.outputs = { ...headStage.outputs, hostDecision: decision };
+        return { decision };
+      };
 
       if (assessment.availability !== "assessed") {
-        return { decision: "proceed" };
+        return finish("proceed");
       }
+
+      // Tracks whether the inner catch below already recorded a fallback stage for
+      // this report(), so a later throw in the same branch that reaches the outer
+      // catch does not push a second stage with the same id (#1260 R3).
+      let routineActivationFallbackPushed = false;
 
       // Everything below reads routine/activation ports the host wired in. A
       // rejection anywhere in this branch — not just inside `attemptRoutineActivation`
@@ -158,6 +188,7 @@ export const createCoverageVerdictSink = (deps: CoverageVerdictSinkDeps): Covera
             });
           } catch (error) {
             evaluationFailed = true;
+            routineActivationFallbackPushed = true;
             deps.stages.push(stage({
               id: "answer_coverage_routine_activation",
               kind: "answer_coverage_routine_activation",
@@ -231,21 +262,23 @@ export const createCoverageVerdictSink = (deps: CoverageVerdictSinkDeps): Covera
 
         if (postEvidenceRoutine) {
           routineResult = postEvidenceRoutine;
-          return { decision: "yield_turn" };
+          return finish("yield_turn");
         }
-        return { decision: "proceed" };
+        return finish("proceed");
       } catch (error) {
-        deps.stages.push(stage({
-          id: "answer_coverage_routine_activation",
-          kind: "answer_coverage_routine_activation",
-          status: "fallback",
-          outputs: {
-            availability: "failed",
-            failureKind: coverageRoutineFailureKind(error),
-            causeType: coverageRoutineFailureCauseType(error),
-          },
-        }));
-        return { decision: "proceed" };
+        if (!routineActivationFallbackPushed) {
+          deps.stages.push(stage({
+            id: "answer_coverage_routine_activation",
+            kind: "answer_coverage_routine_activation",
+            status: "fallback",
+            outputs: {
+              availability: "failed",
+              failureKind: coverageRoutineFailureKind(error),
+              causeType: coverageRoutineFailureCauseType(error),
+            },
+          }));
+        }
+        return finish("proceed");
       }
     },
   };

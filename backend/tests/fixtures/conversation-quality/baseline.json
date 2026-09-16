@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-05T20:43:47.532Z",
+  "generatedAt": "2026-09-16T20:58:52.573Z",
   "passThreshold": 1,
   "cases": {
     "clarification-ambiguous-plan": {
@@ -93,6 +93,11 @@
       "samples": 5
     },
     "routing-identity-direct": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "retrieval-partial-refund-and-fee": {
       "status": "pass",
       "passRate": 1,
       "samples": 5

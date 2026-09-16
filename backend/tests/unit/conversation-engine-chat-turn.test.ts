@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { AnswerCoverageAssessment, ConversationEngine } from "@radioso/conversation-contract";
+import type {
+  AnswerCoverageAssessment,
+  ConversationCoverageReactionRecorder,
+  ConversationEngine,
+} from "@radioso/conversation-contract";
 import { DefaultConversationEngine } from "@radioso/conversation-engine";
 import type { ConversationRecord } from "../../src/db/repositories/conversationRepository.js";
 import type { MessageRecord } from "../../src/db/repositories/messageRepository.js";
@@ -1083,7 +1087,7 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
   // `session.directiveSteering.matches` — read by directive-to-skill binding and the
   // Activity trace, independently of prompt rendering — carries every match from both
   // calls, and the legacy directive's binding still wins the turn.
-  it("keeps every matched directive's binding and trace visibility across both matcher calls (F1/R1)", async () => {
+  it("keeps every matched directive's binding and trace visibility across both matcher calls, and reports exactly one coverage reaction for the coverage-only directive (F1/R1, round 3 Q1)", async () => {
     const bookDemoDirective: Directive = {
       name: "book-demo",
       condition: { kind: "always" },
@@ -1105,6 +1109,13 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
         { directive: coverageDirective },
       ],
     });
+    const unansweredAssessment: AnswerCoverageAssessment = {
+      availability: "assessed",
+      coverage: "unanswered",
+      reason: "insufficient_evidence",
+      schemaVersion: 1,
+      producer: "answer_head",
+    };
     const bookDemoSkill: TurnSkill = {
       definition: { name: "book-demo", outcomeKinds: ["book_demo"] },
       // Never wins by default selection — only the directive binding should route here.
@@ -1119,12 +1130,17 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
       }),
       renderer: {
         supports: (outcome) => outcome.kind === "book_demo",
-        render: async (outcome) => ({
-          answer: outcome.outcome.answer ?? "",
-          skillName: outcome.skillName,
-          skillOutcome: outcome.outcome.status,
-          skillStatus: outcome.outcome.status,
-        }),
+        // The bound skill still reports the turn's coverage verdict — coverage
+        // reporting does not depend on which terminal skill won directive binding.
+        render: async (outcome, ctx) => {
+          await ctx.coverageVerdict?.report({ assessment: unansweredAssessment });
+          return {
+            answer: outcome.outcome.answer ?? "",
+            skillName: outcome.skillName,
+            skillOutcome: outcome.outcome.status,
+            skillStatus: outcome.outcome.status,
+          };
+        },
       },
     };
     const retrievalSkill: TurnSkill = {
@@ -1143,8 +1159,14 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
     };
     const prepared = session();
     prepared.turnRoute = "retrieval";
+    const recordedReactions: Array<{ reactionKey: string; decision: string; reasonCode: string }> = [];
+    const coverageReactionRecorder: ConversationCoverageReactionRecorder = {
+      async record({ reactions }) {
+        recordedReactions.push(...reactions);
+      },
+    };
 
-    const { presentation } = await runPreparedChatTurnWithConversationEngine({
+    const { presentation, result } = await runPreparedChatTurnWithConversationEngine({
       engine: new DefaultConversationEngine(),
       session: prepared,
       chatAnswerPresenter,
@@ -1156,6 +1178,7 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
       ),
       turnSkills: [retrievalSkill, bookDemoSkill],
       query: "Where is my order?",
+      coverageReactionRecorder,
     });
 
     expect(presentation).toMatchObject({ answer: "Booked!", skillName: "book-demo" });
@@ -1169,6 +1192,17 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
     const traced = appendDirectiveSteeringStage(trace, prepared.directiveSteering);
     const tracedMatches = traced.stages[0]?.outputs?.matched as Array<{ name: string }> | undefined;
     expect(tracedMatches?.map((entry) => entry.name).sort()).toEqual(["book-demo", "offer-form"]);
+
+    // Round 3, Q1: the coverage matcher call's `match()` return used to be the
+    // whole turn's accumulated union, so the legacy `book-demo` directive (never
+    // coverage-gated) rode along into `coverageDirectiveMatches` and got recorded
+    // as a second, spurious "applied" coverage reaction.
+    const directiveReactions = recordedReactions.filter((reaction) => reaction.reactionKey.startsWith("directive:"));
+    expect(directiveReactions).toHaveLength(1);
+    expect(directiveReactions[0]).toMatchObject({ decision: "applied", reasonCode: "coverage_criteria_applied" });
+
+    const coverageStage = result.trace.stages.find((stage) => stage.kind === "coverage_directive_match");
+    expect(coverageStage?.outputs).toMatchObject({ matchCount: 1, candidateCount: 1 });
   });
 
   // R2 (review round 2): round 1's `syncSessionSteeringForRender` patch copied the
@@ -1249,6 +1283,99 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
 
     const attestable = attestableSteering(rules);
     expect(attestable.map((rule) => rule.id)).toEqual(["d1", "d2"]);
+  });
+
+  // Round 3, Q2: ranked activation returning an offer/clarification makes
+  // `routineActivation.ts`'s `clarify` branch call `buildResolvedSteering`
+  // again with the same turn-scoped matcher — a third `match()` call sharing
+  // the adapter's per-turn accumulator with the legacy and coverage calls
+  // above it. Before the fix, every directive got re-pushed and re-resolved,
+  // so the session's final steering doubled every directive.
+  it("dedupes the accumulated match candidates so a coverage-offer clarification does not double every directive (round 3, Q2)", async () => {
+    const warmthDirective: Directive = {
+      name: "warmth",
+      condition: { kind: "always" },
+      action: "Be warm.",
+      priority: 10,
+    };
+    const offerFormDirective: Directive = {
+      name: "offer-form",
+      condition: { kind: "always" },
+      action: "Offer the form.",
+      priority: 5,
+      coverageCriteria: { coverage: ["unanswered"] },
+    };
+    const directiveRuntime = createRouteScopedDirectiveSteering({
+      capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+      registrations: [
+        { directive: warmthDirective },
+        { directive: offerFormDirective },
+      ],
+    });
+    const unansweredAssessment: AnswerCoverageAssessment = {
+      availability: "assessed",
+      coverage: "unanswered",
+      reason: "insufficient_evidence",
+      schemaVersion: 1,
+      producer: "answer_head",
+    };
+    const retrievalSkill: TurnSkill = {
+      definition: { name: RETRIEVAL_TURN_SKILL, outcomeKinds: [RETRIEVAL_OUTCOME_KIND] },
+      selects: () => true,
+      dispatch: (s) => buildRetrievalTurnOutcome(s),
+      renderer: {
+        supports: (outcome) => outcome.kind === RETRIEVAL_OUTCOME_KIND,
+        render: async (_outcome, ctx) => {
+          const decision = await ctx.coverageVerdict?.report({ assessment: unansweredAssessment });
+          return decision?.decision === "yield_turn"
+            ? { answer: "", yielded: true, skillName: RETRIEVAL_TURN_SKILL, skillOutcome: "yielded", skillStatus: "completed" }
+            : { answer: "Grounded answer.", skillName: RETRIEVAL_TURN_SKILL, skillOutcome: "completed", skillStatus: "completed" };
+        },
+      },
+    };
+    const prepared = session();
+    prepared.turnRoute = "retrieval";
+
+    const { presentation } = await runPreparedChatTurnWithConversationEngine({
+      engine: new DefaultConversationEngine(),
+      session: prepared,
+      chatAnswerPresenter: {
+        presentRoutineAnswer: (answer: string) => ({ answer, skillName: "routine", skillOutcome: "completed", skillStatus: "completed" }),
+      } as unknown as ChatAnswerPresenter,
+      directiveRuntime,
+      turnInterpreter: { interpret: async () => ({ route: "retrieval" }) },
+      turnSkillSelector: new ChatTurnSkillSelector([retrievalSkill], new DefaultTurnSelectionStrategy()),
+      turnSkills: [retrievalSkill],
+      query: "Where is my order?",
+      // Ranked activation offers a routine rather than activating one — the
+      // `clarify` branch that re-invokes the turn's directive matcher.
+      coverageRoutineActivator: {
+        evaluateCandidates: () => [],
+        activate: async () => ({
+          kind: "clarify" as const,
+          candidates: [{ id: "support", label: "Talk to support", confidence: 1, payload: { routineId: "support" } }],
+        }),
+      },
+      routineStore: {
+        loadActive: async () => null,
+        loadCompleted: async () => [],
+        save: async () => {},
+        clear: async () => {},
+      },
+      routineRunner: { resume: async () => ({ response: { answer: "unused" }, nextState: null }) },
+      clarifier: {
+        phraseQuestion: async () => "Would you like to talk to support?",
+        mapReply: async () => ({ kind: "unrelated" }),
+      },
+      clarificationStore: { loadPending: async () => null, save: async () => {}, clear: async () => {} },
+    });
+
+    expect(presentation.answer).toBe("Would you like to talk to support?");
+
+    const rules = prepared.directiveSteering?.rules ?? [];
+    expect(rules.map((rule) => rule.directiveName).sort()).toEqual(["offer-form", "warmth"]);
+    const matches = prepared.directiveSteering?.matches ?? [];
+    expect(matches.map((match) => match.directive.name).sort()).toEqual(["offer-form", "warmth"]);
   });
 
   it("lets the engine drive streamed turn selection and emits any final unstreamed remainder", async () => {

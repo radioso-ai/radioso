@@ -586,7 +586,12 @@ export const createConversationEngine = (): ConversationEngine => new DefaultCon
 
 export { DefaultRoutineRunner } from "./routineRunner.js";
 export { resumeAwaitingDecision } from "./awaitingDecision.js";
-export { DefaultSteeringResolver, isDirectiveEligibleForTurn } from "./steering.js";
+export {
+  coverageCriteriaMatches,
+  DefaultSteeringResolver,
+  isDirectiveEligibleForTurn,
+  steeringForKnownVerdict,
+} from "./steering.js";
 export {
   verifySlotCorrection,
   type SlotCorrectionResult,

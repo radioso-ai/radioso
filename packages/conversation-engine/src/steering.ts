@@ -1,4 +1,6 @@
 import type {
+  AnswerCoverageAssessment,
+  AnswerCoverageCriteria,
   ConversationTraceStage,
   Directive,
   DirectiveMatch,
@@ -10,6 +12,49 @@ import type {
 import { effectiveSurfaces, resolveRenderSurfaces } from "./generationSurface.js";
 import { timedStage } from "./traceStages.js";
 import { summarizeDirectiveMatch } from "./traceSummaries.js";
+
+type AssessedCoverage = Extract<AnswerCoverageAssessment, { availability: "assessed" }>;
+
+/** Shared by the coverage verdict sink's reaction accounting and {@link steeringForKnownVerdict}. */
+export const coverageCriteriaMatches = (
+  criteria: AnswerCoverageCriteria,
+  assessment: AssessedCoverage,
+): boolean =>
+  criteria.coverage.includes(assessment.coverage)
+  && (criteria.reasons === undefined || criteria.reasons.includes(assessment.reason));
+
+/**
+ * Rewrites coverage-gated steering rules for a prompt composed for a model that
+ * will never itself emit a `coverage` field (#1260 review round 3, Q3): a rule
+ * still tagged with `coverageCriteria` renders as a condition on a classification
+ * (`renderSteeringRules`'s "Only when your coverage verdict is one of [...]")
+ * that only makes sense to the model being asked to commit that classification.
+ * Two callers hit this: the pre-retrieval routine-activation clarifier, which
+ * runs before any verdict can exist, and the coverage-offer clarifier inside the
+ * compose-time sink, which already has one. Given the known verdict (or `undefined`
+ * when none exists yet), a matching rule renders as a plain, unconditional
+ * instruction; a non-matching rule, or every coverage rule when there is no
+ * verdict at all, is dropped rather than rendered as a condition that call's
+ * model can never evaluate. Rules without `coverageCriteria` pass through
+ * unchanged.
+ */
+export const steeringForKnownVerdict = (
+  rules: readonly SteeringRule[],
+  assessment: AnswerCoverageAssessment | undefined,
+): SteeringRule[] =>
+  rules.flatMap((rule) => {
+    if (!rule.coverageCriteria) {
+      return [rule];
+    }
+    if (!assessment || assessment.availability !== "assessed") {
+      return [];
+    }
+    if (!coverageCriteriaMatches(rule.coverageCriteria, assessment)) {
+      return [];
+    }
+    const { coverageCriteria: _coverageCriteria, ...plainRule } = rule;
+    return [plainRule];
+  });
 
 const directiveMatchToSteering = (match: DirectiveMatch): SteeringRule => ({
   ...(match.directive.id ? { id: match.directive.id } : {}),

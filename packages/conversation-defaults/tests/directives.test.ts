@@ -184,7 +184,7 @@ describe("directive defaults", () => {
   // Coverage directives (#1260) are matched before the coverage verdict exists; the
   // rule carries the directive's gate so the rendering surface can layer it as a
   // condition on the classification the model is about to emit
-  // (`renderSteeringRules`/`steeringRulesForKnownVerdict` both branch on
+  // (`renderSteeringRules`/`steeringForKnownVerdict` both branch on
   // `rule.coverageCriteria`). Without this the host's own steering resolution
   // (`DirectiveSteeringService.resolveMatches`, which maps through this function)
   // would render every coverage directive unconditionally.

@@ -179,16 +179,26 @@ const buildDirectiveTurnWiring = (options: {
   // Raw match candidates accumulated across every `match()` call this turn. The
   // engine calls the matcher once per directive group on a retrieval turn — legacy
   // directives, then coverage directives (packages/conversation-engine/src/index.ts)
-  // — and each call must resolve against everything matched so far, not just its own
-  // group: DirectiveSteeringService.resolveMatches applies capability denial,
-  // excludes/dependsOn, and the steering bound over its whole input, so resolving each
-  // group independently and keeping only the last result would drop the earlier
-  // call's directives from `session.directiveSteering.matches` (read by
-  // directive-to-skill binding and the Activity trace) and would bound each group
-  // against its own budget instead of the one shared budget. This closure is rebuilt
-  // per turn by createChatProcessTurnInput/createChatProcessTurnStreamInput/
+  // — and a coverage-offer clarification can call it a third time
+  // (packages/conversation-engine/src/routineActivation.ts's `clarify` branch,
+  // invoked from the coverage verdict sink) — and each call must resolve against
+  // everything matched so far, not just its own group: DirectiveSteeringService.
+  // resolveMatches applies capability denial, excludes/dependsOn, and the steering
+  // bound over its whole input, so resolving each group independently and keeping
+  // only the last result would drop the earlier call's directives from
+  // `session.directiveSteering.matches` (read by directive-to-skill binding and the
+  // Activity trace) and would bound each group against its own budget instead of
+  // the one shared budget. This closure is rebuilt per turn by
+  // createChatProcessTurnInput/createChatProcessTurnStreamInput/
   // createAttemptRoutineInput, so the accumulator resets with it.
   const turnMatchCandidates: DirectiveMatch[] = [];
+  // Directive names already present in the accumulator (round 3, Q2): a later
+  // call can re-request a directive an earlier call already matched this turn
+  // (the coverage-offer clarification re-requests both the legacy and the
+  // criteria-eligible coverage directives) — pushing a second raw match for the
+  // same directive would resolve into two SteeringRules for one directive, each
+  // with its own host id, doubling every directive in the turn's final steering.
+  const accumulatedCandidateNames = new Set<string>();
   return {
     directives: options.directives ?? directivesForRoutes(),
     directiveMatcher: {
@@ -228,7 +238,12 @@ const buildDirectiveTurnWiring = (options: {
           currentRouteDirectives,
           plannedClassifications ?? undefined,
         );
-        turnMatchCandidates.push(...candidates);
+        for (const candidate of candidates) {
+          if (!accumulatedCandidateNames.has(candidate.directive.name)) {
+            turnMatchCandidates.push(candidate);
+            accumulatedCandidateNames.add(candidate.directive.name);
+          }
+        }
         // Resolve over every candidate matched so far this turn (see the accumulator
         // comment above) rather than just this call's — the single source of truth
         // for `session.directiveSteering` from here on is this union resolve.
@@ -265,7 +280,15 @@ const buildDirectiveTurnWiring = (options: {
         }
         const currentSession = options.getSession?.() ?? session;
         currentSession.directiveSteering = steering;
-        return steering.matches;
+        // Bound flags (capability denial, excludes/dependsOn, the steering bound)
+        // are decided over the whole turn's accumulated candidates, but this call
+        // must still hand back only the directives it was itself asked to match —
+        // otherwise a later group's caller (the coverage matcher, the coverage-offer
+        // clarifier) would receive an earlier group's directives too, e.g. a legacy
+        // directive riding into the coverage verdict sink's `coverageDirectiveMatches`
+        // and getting recorded as a spurious coverage reaction (round 3 review, Q1).
+        const thisCallCandidateNames = new Set(candidates.map((candidate) => candidate.directive.name));
+        return steering.matches.filter((match) => thisCallCandidateNames.has(match.directive.name));
       },
     },
   };

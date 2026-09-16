@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { steeringRulesForKnownVerdict } from "../../src/modules/chat/services/knownVerdictCoverageSteering.js";
-import type { SteeringRule } from "../../src/shared/domain/steeringRule.js";
-import type { AnswerCoverageAssessment } from "../../src/modules/chat/contracts/answerCoverage.js";
+import type { AnswerCoverageAssessment, SteeringRule } from "@radioso/conversation-contract";
+import { steeringForKnownVerdict } from "../src/steering.js";
 
 const rule = (overrides: Partial<SteeringRule> = {}): SteeringRule => ({
   action: "Be warm.",
@@ -22,10 +21,10 @@ const assessed = (
   ...overrides,
 });
 
-describe("steeringRulesForKnownVerdict", () => {
+describe("steeringForKnownVerdict (#1260 review round 3, Q3)", () => {
   it("passes an ordinary rule through unchanged", () => {
     const plain = rule();
-    expect(steeringRulesForKnownVerdict([plain], assessed())).toEqual([plain]);
+    expect(steeringForKnownVerdict([plain], assessed())).toEqual([plain]);
   });
 
   it("renders a matching coverage-gated rule as a plain, unconditional instruction", () => {
@@ -34,7 +33,7 @@ describe("steeringRulesForKnownVerdict", () => {
       coverageCriteria: { coverage: ["unanswered"] },
     });
 
-    const result = steeringRulesForKnownVerdict([gated], assessed());
+    const result = steeringForKnownVerdict([gated], assessed());
 
     expect(result).toEqual([{ action: "Offer the form.", source: "directive", lifespan: "response" }]);
     expect(result[0]).not.toHaveProperty("coverageCriteria");
@@ -46,22 +45,31 @@ describe("steeringRulesForKnownVerdict", () => {
       coverageCriteria: { coverage: ["answered"] },
     });
 
-    expect(steeringRulesForKnownVerdict([gated], assessed())).toEqual([]);
+    expect(steeringForKnownVerdict([gated], assessed())).toEqual([]);
   });
 
-  it("drops every coverage-gated rule when no verdict was actually assessed", () => {
+  it("drops every coverage-gated rule when the assessment did not actually resolve to a verdict", () => {
     const gated = rule({
       action: "Offer the form.",
       coverageCriteria: { coverage: ["unanswered"] },
     });
 
-    expect(steeringRulesForKnownVerdict([gated], { availability: "invalid", producer: "answer_head" })).toEqual([]);
+    expect(steeringForKnownVerdict([gated], { availability: "invalid", producer: "answer_head" })).toEqual([]);
+  });
+
+  it("drops every coverage-gated rule when there is no verdict at all yet (pre-retrieval clarification)", () => {
+    const gated = rule({
+      action: "Offer the form.",
+      coverageCriteria: { coverage: ["unanswered"] },
+    });
+
+    expect(steeringForKnownVerdict([gated], undefined)).toEqual([]);
   });
 
   it("keeps ordinary rules alongside a dropped coverage-gated rule", () => {
     const plain = rule({ action: "Be warm." });
     const gated = rule({ action: "Offer the form.", coverageCriteria: { coverage: ["answered"] } });
 
-    expect(steeringRulesForKnownVerdict([plain, gated], assessed())).toEqual([plain]);
+    expect(steeringForKnownVerdict([plain, gated], assessed())).toEqual([plain]);
   });
 });

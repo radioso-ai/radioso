@@ -1051,6 +1051,272 @@ describe('radioso embed launcher', () => {
     }
   })
 
+  describe('identity provider mode', () => {
+    // sessionIds lets a test observe a second, distinct publicSessionId on a
+    // re-bootstrap (each call to the session endpoint consumes the next
+    // entry, repeating the last one once exhausted).
+    const mountLauncher = async ({ sessionIds = ['public-session-id'] }: { sessionIds?: string[] } = {}) => {
+      const launcherSource = await readFile(join(process.cwd(), 'lib/radioso-embed-launcher.js'), 'utf8')
+      const script = new FakeElement('script')
+      script.src = 'https://app.example.com/radioso-embed.js'
+      script.dataset.radiosoToken = 'embed-token'
+
+      const head = new FakeElement('head')
+      const body = new FakeElement('body')
+      const document = {
+        readyState: 'complete',
+        currentScript: script,
+        scripts: [script],
+        head,
+        body,
+        documentElement: { clientWidth: 1024, clientHeight: 768, lang: 'en' },
+        title: 'Host page',
+        createElement: (tagName: string) => new FakeElement(tagName),
+        getElementById: () => null,
+        addEventListener: vi.fn(),
+      }
+      const sessionStorage = { getItem: vi.fn(() => null), setItem: vi.fn(), removeItem: vi.fn() }
+      const sessionUrl = (url: unknown) => String(url).includes('/api/embed/session/')
+      let sessionCallCount = 0
+      const fetch = vi.fn(async (url: unknown) => {
+        if (sessionUrl(url)) {
+          const publicSessionId = sessionIds[Math.min(sessionCallCount, sessionIds.length - 1)]
+          sessionCallCount += 1
+          return {
+            ok: true,
+            json: async () => ({
+              publicChatToken: 'public-chat-token',
+              publicSessionToken: 'public-session-token',
+              publicSessionId,
+              resumeToken: 'resume-token',
+              resumeExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+              workspaceName: 'Acme',
+            }),
+          }
+        }
+        return {
+          ok: true,
+          json: async () => ({
+            launcherLabel: 'Chat with us',
+            launcherPosition: 'bottom-right',
+            theme: { brand: '#0f172a', brandText: '#f8fafc', surface: '#ffffff', text: '#0f172a' },
+            copy: {},
+            expertOverrides: {},
+            proactiveGreetingEnabled: false,
+          }),
+        }
+      })
+      const window: Record<string, unknown> = {
+        location: { href: 'https://host.example.com/page', origin: 'https://host.example.com' },
+        navigator: { languages: ['en-US'], language: 'en-US' },
+        sessionStorage,
+        matchMedia: vi.fn(() => ({ matches: false })),
+        innerWidth: 1024,
+        innerHeight: 768,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        requestAnimationFrame: (callback: FrameRequestCallback) => {
+          callback(0)
+          return 1
+        },
+        setTimeout: vi.fn(),
+        clearTimeout: vi.fn(),
+        visualViewport: null,
+      }
+
+      vm.runInNewContext(launcherSource, {
+        document,
+        window,
+        fetch,
+        URL,
+        setTimeout: vi.fn(),
+        clearTimeout: vi.fn(),
+        requestAnimationFrame: window.requestAnimationFrame,
+      })
+      for (let index = 0; index < 10; index += 1) {
+        await Promise.resolve()
+      }
+
+      const iframe = collectElements(body, (element) => element.tagName === 'IFRAME')[0]
+      const postMessage = vi.fn()
+      iframe.contentWindow = { postMessage }
+
+      const messageHandlers = (window.addEventListener as ReturnType<typeof vi.fn>).mock.calls
+        .filter(([eventName]) => eventName === 'message')
+        .map(([, handler]) => handler as (event: unknown) => void)
+      const dispatchFromFrame = (data: unknown) => {
+        for (const handler of messageHandlers) {
+          handler({ source: iframe.contentWindow, origin: 'https://app.example.com', data })
+        }
+      }
+
+      const openWidget = async () => {
+        // The frame boots and pings READY independently of the widget being
+        // opened; bootstrap only starts once both READY and the open click
+        // have happened.
+        dispatchFromFrame({ type: 'radioso:embed:ready' })
+        const button = collectElements(body, (element) => element.tagName === 'BUTTON')[0]
+        button.dispatchEvent('click')
+        for (let index = 0; index < 10; index += 1) {
+          await Promise.resolve()
+        }
+      }
+
+      return {
+        window: window as unknown as { Radioso: { identify: (value: unknown) => void } },
+        postMessage,
+        dispatchFromFrame,
+        openWidget,
+      }
+    }
+
+    it('posts a static string token with identityProvider: false', async () => {
+      const { window, postMessage } = await mountLauncher()
+
+      window.Radioso.identify('  token-abc  ')
+
+      expect(postMessage).toHaveBeenCalledWith(
+        { type: 'radioso:embed:identity', signedIdentity: 'token-abc', identityProvider: false },
+        'https://app.example.com',
+      )
+    })
+
+    it('invokes a registered provider for an identity-request after bootstrap and replies with its token', async () => {
+      const { window, postMessage, dispatchFromFrame, openWidget } = await mountLauncher()
+      const provider = vi.fn(async ({ sessionId, origin }: { sessionId: string; origin: string }) => {
+        expect(sessionId).toBe('public-session-id')
+        expect(origin).toBe('https://host.example.com')
+        return 'provider-token'
+      })
+      window.Radioso.identify(provider)
+
+      await openWidget()
+
+      const sessionMessage = postMessage.mock.calls.find(
+        ([message]) => message.type === 'radioso:embed:session',
+      )?.[0]
+      expect(sessionMessage).toMatchObject({ identityProvider: true, signedIdentity: null })
+
+      postMessage.mockClear()
+      dispatchFromFrame({ type: 'radioso:embed:identity-request', requestId: 'req-1' })
+      for (let index = 0; index < 20; index += 1) {
+        await Promise.resolve()
+      }
+
+      expect(provider).toHaveBeenCalledTimes(1)
+      expect(postMessage).toHaveBeenCalledWith(
+        { type: 'radioso:embed:identity', requestId: 'req-1', signedIdentity: 'provider-token' },
+        'https://app.example.com',
+      )
+    })
+
+    it.each([
+      { label: 'throws synchronously', provider: () => { throw new Error('boom') } },
+      { label: 'returns a rejected promise', provider: () => Promise.reject(new Error('boom')) },
+      { label: 'resolves a non-string value', provider: async () => 42 },
+    ])('replies with signedIdentity: null when the provider $label', async ({ provider }) => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const { window, postMessage, dispatchFromFrame, openWidget } = await mountLauncher()
+      window.Radioso.identify(provider)
+
+      await openWidget()
+
+      postMessage.mockClear()
+      dispatchFromFrame({ type: 'radioso:embed:identity-request', requestId: 'req-2' })
+      for (let index = 0; index < 20; index += 1) {
+        await Promise.resolve()
+      }
+
+      expect(postMessage).toHaveBeenCalledWith(
+        { type: 'radioso:embed:identity', requestId: 'req-2', signedIdentity: null },
+        'https://app.example.com',
+      )
+      warnSpy.mockRestore()
+    })
+
+    it('replies with signedIdentity: null immediately when no provider is registered', async () => {
+      const { postMessage, dispatchFromFrame } = await mountLauncher()
+
+      postMessage.mockClear()
+      dispatchFromFrame({ type: 'radioso:embed:identity-request', requestId: 'req-3' })
+
+      expect(postMessage).toHaveBeenCalledWith(
+        { type: 'radioso:embed:identity', requestId: 'req-3', signedIdentity: null },
+        'https://app.example.com',
+      )
+    })
+
+    it('drops a stale provider reply if the session resets before the provider resolves', async () => {
+      const { window, postMessage, dispatchFromFrame, openWidget } = await mountLauncher()
+      let resolveProvider: (token: string) => void = () => {}
+      const provider = vi.fn(() => new Promise<string>((resolve) => { resolveProvider = resolve }))
+      window.Radioso.identify(provider)
+
+      await openWidget()
+
+      postMessage.mockClear()
+      dispatchFromFrame({ type: 'radioso:embed:identity-request', requestId: 'req-stale-reset' })
+      for (let index = 0; index < 20; index += 1) {
+        await Promise.resolve()
+      }
+      expect(provider).toHaveBeenCalledTimes(1)
+
+      // The session resets (e.g. the visitor started a new chat) while the
+      // provider call is still in flight.
+      dispatchFromFrame({ type: 'radioso:embed:reset-session' })
+
+      resolveProvider('late-token')
+      for (let index = 0; index < 20; index += 1) {
+        await Promise.resolve()
+      }
+
+      const staleReplies = postMessage.mock.calls.filter(
+        ([message]) => message.type === 'radioso:embed:identity' && message.requestId === 'req-stale-reset',
+      )
+      expect(staleReplies).toHaveLength(0)
+    })
+
+    it('drops a stale provider reply if the session is re-bootstrapped before the provider resolves', async () => {
+      const { window, postMessage, dispatchFromFrame, openWidget } = await mountLauncher({
+        sessionIds: ['public-session-id', 'public-session-id-2'],
+      })
+      let resolveProvider: (token: string) => void = () => {}
+      const provider = vi.fn(() => new Promise<string>((resolve) => { resolveProvider = resolve }))
+      window.Radioso.identify(provider)
+
+      await openWidget()
+
+      postMessage.mockClear()
+      dispatchFromFrame({ type: 'radioso:embed:identity-request', requestId: 'req-stale-rebootstrap' })
+      for (let index = 0; index < 20; index += 1) {
+        await Promise.resolve()
+      }
+      expect(provider).toHaveBeenCalledTimes(1)
+
+      // A fresh READY (bootstrapPromise already settled from openWidget) mints
+      // a new session id before the provider call from the old session settles.
+      dispatchFromFrame({ type: 'radioso:embed:ready' })
+      for (let index = 0; index < 20; index += 1) {
+        await Promise.resolve()
+      }
+
+      const sessionMessages = postMessage.mock.calls
+        .map(([message]) => message)
+        .filter((message) => message.type === 'radioso:embed:session')
+      expect(sessionMessages.at(-1)?.session).toMatchObject({ publicSessionId: 'public-session-id-2' })
+
+      resolveProvider('late-token')
+      for (let index = 0; index < 20; index += 1) {
+        await Promise.resolve()
+      }
+
+      const staleReplies = postMessage.mock.calls.filter(
+        ([message]) => message.type === 'radioso:embed:identity' && message.requestId === 'req-stale-rebootstrap',
+      )
+      expect(staleReplies).toHaveLength(0)
+    })
+  })
+
   describe('collapse-on-scroll for the bubble launcher label', () => {
     const mountBubbleLauncher = async ({
       launcherLabel = 'Chat with us',

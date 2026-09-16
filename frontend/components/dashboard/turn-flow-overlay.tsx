@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { Minimize2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import type { ActivityTrace, ConversationTraceStage, TurnTraceEnvelope } from '@/lib/api'
 import { envelopeToFlowGraph, type TurnFlowNode } from '@/lib/turn-flow'
 import { ActivityTraceDetail } from './activity-trace-detail'
@@ -68,6 +69,11 @@ function NodeDetail({
  * → skill path → outcome) with a side detail pane. Opened from the drawer header
  * rather than crammed into the inline diagnostics column, so a deep retrieval
  * path has room to be examined.
+ *
+ * Rendered as its own modal Radix layer so the sheet or drawer that opened it
+ * keeps treating clicks on the graph as inside interaction: while the flow is on
+ * top, only the flow reacts to Escape and to pointer-downs, and closing it hands
+ * control back to the host with its debug state intact.
  */
 export function TurnFlowOverlay({
   open,
@@ -114,41 +120,49 @@ export function TurnFlowOverlay({
   const directiveAdherence = readDirectiveAdherence(rawDirectiveAdherence)
 
   return (
-    <div className="fixed inset-0 z-[60] flex flex-col bg-background">
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <p className="text-sm font-medium text-foreground">Turn flow</p>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className="gap-1.5"
-          aria-label="Close turn flow"
-          onClick={onClose}
-        >
-          <Minimize2 className="h-3.5 w-3.5" />
-          Close
-        </Button>
-      </div>
-      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(360px,520px)]">
-        <div className="min-h-0">
-          <TurnFlowGraph
-            graph={graph}
-            selectedNodeId={activeNode?.id}
-            onSelectNode={setSelectedNode}
-            showMiniMap
-          />
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose() }}>
+      <DialogContent
+        showCloseButton={false}
+        className="inset-0 top-0 left-0 z-[60] flex h-full w-full max-w-none translate-x-0 translate-y-0 flex-col gap-0 rounded-none border-0 p-0 shadow-none sm:max-w-none"
+      >
+        <div className="flex items-center justify-between border-b border-border px-4 py-3">
+          <DialogTitle className="text-sm font-medium text-foreground">Turn flow</DialogTitle>
+          <DialogDescription className="sr-only">
+            The turn as a graph with a detail pane for the selected node.
+          </DialogDescription>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="gap-1.5"
+            aria-label="Close turn flow"
+            onClick={onClose}
+          >
+            <Minimize2 className="h-3.5 w-3.5" />
+            Close
+          </Button>
         </div>
-        <div data-testid="turn-flow-stage-detail" className="min-h-0 overflow-y-auto border-l border-border p-4">
-          <NodeDetail
-            node={activeNode}
-            spineStages={envelope.spine.stages}
-            leafTrace={leafTrace}
-            messages={messages}
-            assistantMessageId={assistantMessageId}
-            directiveAdherence={directiveAdherence}
-          />
+        <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(360px,520px)]">
+          <div className="min-h-0">
+            <TurnFlowGraph
+              graph={graph}
+              selectedNodeId={activeNode?.id}
+              onSelectNode={setSelectedNode}
+              showMiniMap
+            />
+          </div>
+          <div data-testid="turn-flow-stage-detail" className="min-h-0 overflow-y-auto border-l border-border p-4">
+            <NodeDetail
+              node={activeNode}
+              spineStages={envelope.spine.stages}
+              leafTrace={leafTrace}
+              messages={messages}
+              assistantMessageId={assistantMessageId}
+              directiveAdherence={directiveAdherence}
+            />
+          </div>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }

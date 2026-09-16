@@ -14,7 +14,6 @@ import {
   WandSparkles,
 } from 'lucide-react'
 
-import { ChatWorkbenchDrawer } from '@/components/dashboard/workbench/chat-workbench-drawer'
 import { RoutineDiagnosticList } from '@/components/dashboard/settings/routine-editor-controls'
 import { RoutineDraftAssistDialog } from '@/components/dashboard/settings/routine-draft-assist-dialog'
 import { RoutineCompletionExportPanel } from '@/components/dashboard/settings/routine-completion-export-panel'
@@ -49,7 +48,8 @@ import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { getApiErrorMessage } from '@/lib/api-error'
-import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
+import { agentSectionRoute } from '@/lib/dashboard-areas'
+import { buildAgentSectionHref, buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import {
   routinesApi,
   webhookDestinationsApi,
@@ -522,7 +522,6 @@ function RoutineEditorScreen({
   const [webhookDestinationsError, setWebhookDestinationsError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [deleteRoutineDialogOpen, setDeleteRoutineDialogOpen] = useState(false)
-  const [testDrawerOpen, setTestDrawerOpen] = useState(false)
   const currentRoutineIdRef = useRef<string | null>(null)
   const isTogglingEnabledRef = useRef(false)
   const pendingRoutineToggleRef = useRef<{ routineId: string; previousEnabled: boolean } | null>(null)
@@ -544,6 +543,10 @@ function RoutineEditorScreen({
     agentTab: 'behavior',
     anchor: 'assistant-routines',
   })
+
+  // The draft revision snapshot carries this routine's draft, so the agent's Test
+  // Chat is where it runs: the same private test the rest of the draft gets.
+  const testChatHref = buildAgentSectionHref(accountId, routeState, agentId, agentSectionRoute('chat'))
 
   const buildPersistedHref = (routineId: string) =>
     buildDashboardHref(accountId, {
@@ -754,13 +757,44 @@ function RoutineEditorScreen({
     saveDraftRef.current = saveDraft
   })
 
+  // Tracked so a navigation-triggered flush (see flushPendingSave below) can cancel the
+  // scheduled autosave instead of racing it.
+  const pendingAutosaveTimeoutRef = useRef<number | null>(null)
+
   useEffect(() => {
     if (isLoading || activeRoutineDraftError || !activeRoutineDraftSignature || isValidationCurrent) return
     const timeoutId = window.setTimeout(() => {
+      pendingAutosaveTimeoutRef.current = null
       void saveDraftRef.current({ refreshEditor: false })
     }, 1500)
-    return () => window.clearTimeout(timeoutId)
+    pendingAutosaveTimeoutRef.current = timeoutId
+    return () => {
+      window.clearTimeout(timeoutId)
+      if (pendingAutosaveTimeoutRef.current === timeoutId) pendingAutosaveTimeoutRef.current = null
+    }
   }, [activeRoutineDraftError, activeRoutineDraftSignature, isLoading, isValidationCurrent])
+
+  // Test draft navigates away, which unmounts this section and cancels the debounce above.
+  // Flush any unsaved edit into the same saveDraft the timer would have called so the draft
+  // under test always reflects the operator's last keystroke.
+  const flushPendingSave = useCallback(async (): Promise<boolean> => {
+    const hasPendingChange = !isValidationCurrent && !activeRoutineDraftError && Boolean(activeRoutineDraftSignature)
+    if (!hasPendingChange) return true
+    if (pendingAutosaveTimeoutRef.current !== null) {
+      window.clearTimeout(pendingAutosaveTimeoutRef.current)
+      pendingAutosaveTimeoutRef.current = null
+    }
+    const saved = await saveDraftRef.current({ refreshEditor: false })
+    return saved !== null
+  }, [activeRoutineDraftError, activeRoutineDraftSignature, isValidationCurrent])
+
+  const handleTestDraft = useCallback(() => {
+    void (async () => {
+      if (await flushPendingSave()) {
+        router.push(testChatHref)
+      }
+    })()
+  }, [flushPendingSave, router, testChatHref])
 
   useEffect(() => {
     if (!isNewRoutine || !activeRoutineDraft) return
@@ -856,6 +890,9 @@ function RoutineEditorScreen({
     // affordance the routine itself offers; AI drafting and delete live in an overflow menu
     // so the header stays a status line rather than a row of competing buttons.
     const isPersisted = Boolean(editingRoutine)
+    // A disabled routine is left out of the draft snapshot's activation set, so a
+    // draft test could never reach it.
+    const canTestDraft = draftHeader.enabled
 
     return (
       <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
@@ -865,9 +902,9 @@ function RoutineEditorScreen({
             type="button"
             variant="outline"
             size="sm"
-            onClick={() => setTestDrawerOpen(true)}
-            disabled={isSaving}
-            title="Open an operator test for this saved routine. Customer release remains Review & Publish in the agent header."
+            onClick={handleTestDraft}
+            disabled={isSaving || !canTestDraft}
+            title={canTestDraft ? 'Test this routine in Test Chat as part of the draft.' : 'Enable this routine to test it.'}
           >
             <FlaskConical className="mr-2 h-4 w-4" />
             Test draft
@@ -903,7 +940,7 @@ function RoutineEditorScreen({
         ) : null}
       </div>
     )
-  }, [editingRoutine, form, isDraftingRoutine, isSaving, validationStatus])
+  }, [draftHeader.enabled, editingRoutine, form, handleTestDraft, isDraftingRoutine, isSaving, validationStatus])
 
   const headerBackAction = useMemo(() => (
     <Button type="button" variant="ghost" className="-ml-3 h-8 px-3 text-muted-foreground" onClick={() => router.push(listHref)}>
@@ -931,15 +968,6 @@ function RoutineEditorScreen({
         onProseChange={setDraftAssistProse}
         onLoadProposal={() => void actionHandlersRef.current.loadAssistedDraft()}
       />
-      {editingRoutine ? (
-        <ChatWorkbenchDrawer
-          open={testDrawerOpen}
-          onOpenChange={setTestDrawerOpen}
-          accountId={accountId}
-          agentId={agentId}
-          previewRoutineIds={[editingRoutine.id]}
-        />
-      ) : null}
       <div className="overflow-visible rounded-lg border border-border bg-card/95 shadow-sm">
         <div className="space-y-5 p-5">
           {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}

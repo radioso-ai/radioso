@@ -11,7 +11,9 @@ import { buildAgentChatWorkspaceContext } from "./agentChatWorkspaceContext.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import { setTraceAttributes } from "../../../shared/observability/tracing/operations.js";
 
-const SHADOW_USAGE_OPERATION = "answer_coverage_shadow_assessment";
+/** Usage operation of the shadow call; the turn trace keeps it out of every stage's cost. */
+export const ANSWER_COVERAGE_SHADOW_USAGE_OPERATION = "answer_coverage_shadow_assessment";
+const SHADOW_USAGE_OPERATION = ANSWER_COVERAGE_SHADOW_USAGE_OPERATION;
 
 // Retrieval's FinalPromptContext list is already the exact token-bounded set that
 // answer composition receives. Do not independently shorten it here: assessing a

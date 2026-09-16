@@ -1,11 +1,15 @@
 import type { ConversationTrace, ConversationTraceStage } from "@radioso/conversation-contract";
 
 import type { ModelCallTraceRecord } from "../../../shared/observability/tracing/modelCallTraceContext.js";
+import { ANSWER_COVERAGE_SHADOW_USAGE_OPERATION } from "./answerCoverageShadowAssessor.js";
 
 export const MODEL_CALLS_STAGE_ID = "model_calls";
-export const PRE_ENGINE_MODEL_CALL_STAGE_ID = "pre_engine";
+const PRE_ENGINE_MODEL_CALL_STAGE_ID = "pre_engine";
+// The shadow coverage assessor runs beside compose and belongs to no stage: attributing
+// it to the enclosing head or compose stage would misstate what the head costs.
+export const SHADOW_MODEL_CALL_STAGE_ID = "shadow";
 
-export interface AttributedModelCallTraceRecord extends ModelCallTraceRecord {
+interface AttributedModelCallTraceRecord extends ModelCallTraceRecord {
   stageId: string;
 }
 
@@ -46,6 +50,9 @@ const stageForCall = (
   // Millisecond timestamps can otherwise make a zero-width call look enclosed by the
   // first engine stage, so both are pinned to the pre-engine attribution.
   if (call.operation === "response_language_detection" || call.operation === "turn_planning") {
+    return undefined;
+  }
+  if (call.operation === ANSWER_COVERAGE_SHADOW_USAGE_OPERATION) {
     return undefined;
   }
   const exactKind = call.operation === "turn_interpretation"
@@ -129,7 +136,8 @@ export const attachModelCallsToSpine = (
       totalTokens: call.totalTokens,
       ...(call.reasoningTokens === undefined ? {} : { reasoningTokens: call.reasoningTokens }),
       ...(call.cachedInputTokens === undefined ? {} : { cachedInputTokens: call.cachedInputTokens }),
-      stageId: target?.id ?? PRE_ENGINE_MODEL_CALL_STAGE_ID,
+      stageId: target?.id
+        ?? (call.operation === ANSWER_COVERAGE_SHADOW_USAGE_OPERATION ? SHADOW_MODEL_CALL_STAGE_ID : PRE_ENGINE_MODEL_CALL_STAGE_ID),
     };
   });
 

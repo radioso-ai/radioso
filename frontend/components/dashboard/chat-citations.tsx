@@ -102,11 +102,20 @@ const decodeNumericEntity = (raw: string, code: number): string => {
   }
 }
 
+// A single combined pass over the original text: chaining separate `.replace`
+// calls would let one pass's output form a new match for the next pass (for
+// example an already-decoded `&amp;#39;` becoming `&#39;` and then getting
+// decoded again into `'`), which is the incomplete/double-unescaping
+// antipattern CodeQL flags as js/incomplete-multi-character-sanitization.
 const decodeHtmlEntities = (text: string) =>
-  text
-    .replace(/&[a-zA-Z]+;/g, (entity) => HTML_ENTITY_MAP[entity] ?? entity)
-    .replace(/&#(\d+);/g, (raw, code: string) => decodeNumericEntity(raw, Number(code)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (raw, hex: string) => decodeNumericEntity(raw, parseInt(hex, 16)))
+  text.replace(/&(#[xX][0-9a-fA-F]+|#\d+|[a-zA-Z]+);/g, (raw, body: string) => {
+    if (body[0] !== '#') {
+      return HTML_ENTITY_MAP[raw] ?? raw
+    }
+    const isHex = body[1] === 'x' || body[1] === 'X'
+    const code = isHex ? parseInt(body.slice(2), 16) : Number(body.slice(1))
+    return decodeNumericEntity(raw, code)
+  })
 
 const getCitationLabel = (citation: Citation, index: number) =>
   decodeHtmlEntities(citation.title?.trim() || `Document ${index + 1}`)

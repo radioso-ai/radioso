@@ -51,6 +51,7 @@ export const createGoogleLoginApplicationModule = (): ApplicationModule => ({
           successRedirect: resolveGoogleLoginSuccessRedirect({ appBaseUrl }),
           authService: dependencies.authService,
           auditService: dependencies.auditService,
+          abuseControlService: dependencies.abuseControlService,
         });
       },
     });

@@ -260,8 +260,6 @@
   "exports|packages/census/src/cluster.ts|RADIUS_PERCENTILE",
   "exports|packages/conversation-defaults/src/clarifier.ts|DEFAULT_CLARIFICATION_OFFER_REPLY_MAP_PROMPT",
   "exports|packages/conversation-defaults/src/routineRegistry.ts|DEFAULT_ROUTINE_RANKED_ACTIVATION_PROMPT",
-  "exports|packages/crawler/src/transport/htmlProcessing.ts|extractMainContentHtml",
-  "exports|packages/crawler/src/transport/htmlProcessing.ts|stripTags",
   "exports|packages/crawler/src/transport/pageFetchTransport.ts|BLOCKED_HTTP_STATUS_CODES",
   "exports|packages/crawler/src/transport/url.ts|isUrlInScope",
   "exports|packages/crawler/src/transport/url.ts|normalizeBaseUrl",

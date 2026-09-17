@@ -1503,7 +1503,7 @@
       "title": "Deployment",
       "description": "Production deployment expectations for Radioso and the standalone docs portal.",
       "section": "Operator guides",
-      "lastUpdated": "2026-09-13",
+      "lastUpdated": "2026-09-17",
       "intro": "Radioso’s production contract is a multi-service deployment. The backend, frontend, and document worker are separate runtime units. Deployments that enable live dashboard updates add a dedicated realtime runtime and Redis or Valkey. The docs portal stays separate as well.",
       "sections": [
         {
@@ -1549,7 +1549,7 @@
         {
           "id": "public-chat-rate-limits",
           "heading": "Public chat rate limits",
-          "body": "Public chat and website embed rate limits are operator tuning knobs, not workspace settings. When unset, the backend uses built-in defaults.\n\n* `PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS`\n* `PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS`\n* `PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS`\n\nThe session limit applies to a visitor session. The global limit applies across public chat traffic for the process, and both are process-wide: Radioso does not read a per-workspace override, so set them to values every workspace on this deployment can share."
+          "body": "Public chat and website embed rate limits are operator tuning knobs, not workspace settings. When unset, the backend uses built-in defaults.\n\n* `PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS`\n* `PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS`\n* `PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS`\n* `PUBLIC_CHAT_SESSION_READ_RATE_LIMIT_MAX_ATTEMPTS`\n\nThe session limit applies to a visitor session, and covers starting one and sending a message. The global limit applies across public chat traffic for the process. The read limit covers the same visitor session polling for history, tail, and live updates, which happens far more often than sending a message, so it carries a higher default. All three are process-wide: Radioso does not read a per-workspace override, so set them to values every workspace on this deployment can share."
         },
         {
           "id": "agent-channel-chat-rate-limits",

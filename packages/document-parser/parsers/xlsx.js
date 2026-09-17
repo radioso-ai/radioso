@@ -18,7 +18,7 @@ const escapeMarkdownTableCell = (value) =>
   value
     .replace(/\r\n/g, "\n")
     .replace(/\r/g, "\n")
-    .replace(/\|/g, "\\|")
+    .replace(/[\\|]/g, "\\$&")
     .replace(/\n/g, "<br>")
     .trim();
 

@@ -10,6 +10,9 @@ const FRONTEND_ERROR_STACK_MAX_LENGTH = 16_384;
 const FRONTEND_ERROR_COMPONENT_STACK_MAX_LENGTH = 8192;
 const FRONTEND_ERROR_CLASS_MAX_LENGTH = 256;
 const FRONTEND_ERROR_PATH_MAX_LENGTH = 2048;
+// No real URL scheme is anywhere near this long; bounds the scheme-run quantifier below so a
+// crafted `stack` cannot force a scan from every offset in a long run of scheme-valid characters.
+const STACK_FRAME_SCHEME_MAX_LENGTH = 62;
 
 const truncate = (value: string, maxLength: number): string => value.slice(0, maxLength);
 
@@ -123,7 +126,13 @@ const BROWSER_EXTENSION_STACK_SCHEMES = [
 // globals such as `window.ethereum`), no Radioso code is on the stack. Reading the
 // first `scheme://` skips engine frames such as `<anonymous>` that carry no URL, so
 // the first URL belongs to the topmost frame with a real origin.
-const STACK_FRAME_SCHEME_PATTERN = /([a-z][a-z0-9+.-]*):\/\//iu;
+//
+// `stack` is attacker-controlled request body content, so the scheme run is bounded
+// (real schemes, incl. the extension ones below, are well under this) rather than
+// left as `+`: an unbounded, unanchored quantifier lets a long run of scheme-valid
+// characters with no `://` force a scan from every offset, which is quadratic in
+// input length.
+const STACK_FRAME_SCHEME_PATTERN = new RegExp(`([a-z][a-z0-9+.-]{0,${STACK_FRAME_SCHEME_MAX_LENGTH}}):\\/\\/`, "iu");
 
 const topStackFrameUsesBrowserExtensionScheme = (stack: string | undefined): boolean => {
   const scheme = stack?.match(STACK_FRAME_SCHEME_PATTERN)?.[1]?.toLowerCase();

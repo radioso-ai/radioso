@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { Router, type Request } from "express";
 
 import type { ApplicationRouteMount } from "../radiosoModuleTypes.js";
+import { createRateLimitMiddleware, type RateLimitAbuseControlPort } from "../shared/rateLimit.js";
 import {
   buildGoogleAuthorizationUrl,
   resolveGoogleIdentity,
@@ -24,6 +25,8 @@ export interface GoogleLoginRouterOptions {
   successRedirect: string;
   authService: Pick<RouteDependencies["authService"], "federatedLogin">;
   auditService?: Pick<RouteDependencies["auditService"], "record">;
+  /** Required (not best-effort like `auditService`): without it neither OAuth entry route is throttled. */
+  abuseControlService: RateLimitAbuseControlPort;
   fetchImpl?: FetchLike;
   generateState?: () => string;
 }
@@ -156,11 +159,29 @@ export const createGoogleLoginRouter = (options: GoogleLoginRouterOptions): Rout
     }
   };
 
+  // Both entry points are unauthenticated by design (there is no session yet), so each is
+  // throttled per source IP. `/callback` is the more expensive one -- it exchanges the code
+  // with Google and can create accounts -- but `/start` gets the same budget rather than a
+  // looser one, so a flood of state-cookie churn is bounded too. No EE-specific rate-limit
+  // env knob is threaded through this router yet, so the limit mirrors the OSS backend's
+  // `AUTH_RATE_LIMIT_*` default (10 attempts / 60s) as a literal.
+  const oauthEntryRateLimit = (scope: string) =>
+    createRateLimitMiddleware({
+      service: options.abuseControlService,
+      auditService: options.auditService ?? { record: async () => undefined },
+      scope,
+      limit: 10,
+      windowMs: 60_000,
+      resolveSubjectKey: (req) => `source:${req.ip ?? "unknown"}`,
+    });
+  const startRateLimit = oauthEntryRateLimit("ee.google_login.start");
+  const callbackRateLimit = oauthEntryRateLimit("ee.google_login.callback");
+
   router.get("/status", (_req, res) => {
     res.json({ enabled: config !== null });
   });
 
-  router.get("/start", (req, res) => {
+  router.get("/start", startRateLimit, (req, res) => {
     if (!config) {
       res.status(404).json({ error: { code: "not_found", message: "Google login is not enabled" } });
       return;
@@ -190,7 +211,7 @@ export const createGoogleLoginRouter = (options: GoogleLoginRouterOptions): Rout
     res.redirect(buildGoogleAuthorizationUrl({ config, state, loginHint }));
   });
 
-  router.get("/callback", async (req, res) => {
+  router.get("/callback", callbackRateLimit, async (req, res) => {
     if (!config) {
       res.status(404).json({ error: { code: "not_found", message: "Google login is not enabled" } });
       return;

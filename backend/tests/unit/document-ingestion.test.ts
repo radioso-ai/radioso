@@ -208,6 +208,54 @@ describe("document ingestion", () => {
     expect(plainJob?.options ?? null).toBeNull();
   });
 
+  it("stores a one-run enrichment override on the update job for manual documents", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const auditService = createAuditService();
+    const service = new DocumentIngestionService(
+      documentRepository,
+      auditService,
+      () => jobRepository.getQueueSnapshot(),
+      jobRepository,
+    );
+
+    const created = await service.ingest({
+      workspaceId: "workspace-1",
+      title: "Dated announcement",
+      content: "The retreat happens on August 10, 2026.",
+    });
+
+    await service.update({
+      workspaceId: "workspace-1",
+      documentId: created.documentId,
+      title: "Dated announcement",
+      content: "The retreat happens on August 11, 2026.",
+      documentEnrichmentOverride: "on",
+    });
+
+    const job = await jobRepository.findByDocumentRevision({
+      documentId: created.documentId,
+      workspaceId: "workspace-1",
+      documentRevision: 2,
+    });
+    expect(job?.options).toEqual({ documentEnrichmentOverride: "on" });
+
+    await service.update({
+      workspaceId: "workspace-1",
+      documentId: created.documentId,
+      title: "Dated announcement",
+      content: "The retreat happens on August 12, 2026.",
+    });
+
+    const plainJob = await jobRepository.findByDocumentRevision({
+      documentId: created.documentId,
+      workspaceId: "workspace-1",
+      documentRevision: 3,
+    });
+    expect(plainJob?.options ?? null).toBeNull();
+  });
+
   it("does not fail ingest when queue snapshot metadata lookup fails after queueing", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);

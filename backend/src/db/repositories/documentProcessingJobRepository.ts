@@ -47,6 +47,14 @@ export interface DocumentProcessingQueueSnapshot {
   oldestQueuedJobCreatedAt: Date | null;
 }
 
+// The identity of one just-enqueued embedding_profile job: the subset of the
+// record a caller needs to dispatch it, so reconcile-workspace can return the
+// rows it inserted without materialising full job records.
+export type EnqueuedEmbeddingProfileJob = Pick<
+  DocumentProcessingJobRecord,
+  "id" | "documentId" | "workspaceId" | "documentRevision"
+>;
+
 export interface DocumentProcessingJobRepositoryPort {
   enqueue(input: { documentId: string; workspaceId: string; documentRevision: number; kind?: RevisionProcessingJobKind; options?: DocumentProcessingJobOptions | null }): Promise<DocumentProcessingJobRecord>;
   // Idempotently create the follow-up enrich job for a revision. Safe to call on
@@ -82,7 +90,7 @@ export interface DocumentProcessingJobRepositoryPort {
   ): Promise<WorkspaceCanonicalEmbeddingCoverage>;
   reconcileEmbeddingProfileJobsForWorkspace(input: {
     workspaceId: string;
-  }): Promise<{ enqueued: number; skipped: number }>;
+  }): Promise<{ enqueuedJobs: EnqueuedEmbeddingProfileJob[]; skipped: number }>;
   listQueuedEmbeddingProfileJobsForWorkspace(input: {
     workspaceId: string;
     embeddingSpaceId?: string;
@@ -231,7 +239,7 @@ const currentEmbeddingProfileGapJobsSql = (options: {
   `;
 };
 
-export interface EmbeddingProfileJobTransactionClient {
+interface EmbeddingProfileJobTransactionClient {
   query<T extends QueryResultRow = QueryResultRow>(
     text: string,
     params?: unknown[],
@@ -730,7 +738,7 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
 
   async reconcileEmbeddingProfileJobsForWorkspace(input: {
     workspaceId: string;
-  }): Promise<{ enqueued: number; skipped: number }> {
+  }): Promise<{ enqueuedJobs: EnqueuedEmbeddingProfileJob[]; skipped: number }> {
     return this.db.transaction().execute(async (trx) => {
       const skipped = await sql`
         UPDATE document_processing_jobs jobs
@@ -759,7 +767,12 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
               )
           )
       `.execute(trx);
-      const enqueued = await sql`
+      const enqueued = await sql<{
+        id: string;
+        document_id: string;
+        workspace_id: string;
+        document_revision: number;
+      }>`
         INSERT INTO document_processing_jobs
           (id, document_id, workspace_id, document_revision, kind, status,
            embedding_space_id, workspace_profile_generation)
@@ -800,9 +813,15 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
         )
           WHERE kind = 'embedding_profile'
         DO NOTHING
+        RETURNING id, document_id, workspace_id, document_revision
       `.execute(trx);
       return {
-        enqueued: Number(enqueued.numAffectedRows ?? 0),
+        enqueuedJobs: enqueued.rows.map((row) => ({
+          id: row.id,
+          documentId: row.document_id,
+          workspaceId: row.workspace_id,
+          documentRevision: row.document_revision,
+        })),
         skipped: Number(skipped.numAffectedRows ?? 0),
       };
     });

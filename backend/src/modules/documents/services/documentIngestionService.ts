@@ -52,30 +52,16 @@ import type {
 } from "../contracts/documentContracts.js";
 
 export type {
-  ChunkDetail,
-  ChunkMetadataRevisionPatch,
   ChunkRecord,
   ChunkRepositoryPort,
-  ChunkSummary,
   DocumentCreateInput,
   DocumentDerivedContentUpdateInput,
-  DocumentDetails,
-  DocumentEnrichmentMetadataUpdateInput,
-  DocumentListPage,
   DocumentQueueUpdateInput,
   DocumentRecord,
   DocumentRepositoryPort,
-  DocumentRetrievalSettingsResult,
-  DocumentSourceInput,
-  DocumentSourceKind,
-  DocumentSourceResolverInput,
-  DocumentSourceRecord,
-  DocumentSummary,
   DocumentSummaryRecord,
   DocumentUpdateInput,
-  DocumentWorkspaceSummaryRecord,
   EmbeddingCoverageReconciliationPort,
-  PublishedChunkRecord,
 } from "../contracts/documentContracts.js";
 
 /**
@@ -298,6 +284,7 @@ export class DocumentIngestionService {
     metadata?: Record<string, unknown>;
     externalDocumentId?: string | null;
     source?: DocumentSourceResolverInput;
+    documentEnrichmentOverride?: DocumentProcessingJobOptions["documentEnrichmentOverride"];
   }): Promise<{ documentId: string; status: string }> {
     const sanitizedContent = sanitizeInlineDocumentContent({
       title: input.title,
@@ -379,7 +366,7 @@ export class DocumentIngestionService {
         sourceSizeBytes: null,
         contentSizeBytes: indexedContent.contentSizeBytes,
         contentHash: indexedContent.contentHash,
-      });
+      }, buildDocumentProcessingOptions(input));
 
     } catch (error) {
       await monthlyReservation?.release();
@@ -408,6 +395,7 @@ export class DocumentIngestionService {
         externalDocumentId: document.externalDocumentId ?? null,
         revision: document.revision,
         status: document.status,
+        documentEnrichmentOverride: input.documentEnrichmentOverride ?? null,
         ...(await this.queueSnapshotMetadata()),
       },
     });

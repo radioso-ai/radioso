@@ -459,7 +459,14 @@ describe("a maximal draft still produces a storable card", () => {
   };
   const recorder = () => {
     const createProposal = vi.fn(async (input: Record<string, unknown>) => ({ id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", ...input }) as never);
-    return { createProposal, deps: { proposalRepository: { createProposal }, auditService: { record: vi.fn(async () => undefined) } } };
+    return {
+      createProposal,
+      deps: {
+        proposalRepository: { createProposal },
+        proposalRecovery: { recoverOperatorMcpProposal: vi.fn() },
+        auditService: { record: vi.fn(async () => undefined) },
+      },
+    };
   };
   const longestRationale = "y".repeat(1_000);
 

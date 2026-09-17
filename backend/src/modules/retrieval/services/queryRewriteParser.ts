@@ -44,6 +44,7 @@ export const parseStructuredRewrite = (raw: string): StructuredRewriteResult => 
     : undefined;
 
   return {
+    ...(typeof parsed.resolutionNote === "string" ? { resolutionNote: parsed.resolutionNote } : {}),
     rewrittenQuery: typeof parsed.rewrittenQuery === "string" ? parsed.rewrittenQuery : "",
     semanticQuery:
       typeof parsed.semanticQuery === "string"

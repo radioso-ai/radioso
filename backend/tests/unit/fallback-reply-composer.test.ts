@@ -72,7 +72,7 @@ describe("scope-neutral interpretation prompt contract", () => {
     expect(fusedPrompt).toContain("Output Shape Rules");
     expect(fusedPrompt).toContain("Each retrievalSubqueries item contains only label, semanticQuery, lexicalQuery, and reason");
     expect(fusedPrompt).toContain("turnKind belongs only on the enclosing rewrite object");
-    expect(CHAT_BEHAVIOR.turnPlanning.reasoningEffort).toBe("low");
+    expect(CHAT_BEHAVIOR.turnPlanning.reasoningEffort).toBe("none");
     expect(CHAT_BEHAVIOR.turnPlanning.timeoutMs).toBe(12_000);
   });
 });

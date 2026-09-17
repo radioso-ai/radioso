@@ -168,3 +168,46 @@ describe("parseStructuredRewrite temporal query mode", () => {
     })).temporalQueryMode).toBe("none");
   });
 });
+
+describe("parseStructuredRewrite resolutionNote", () => {
+  it("carries a string resolutionNote through", () => {
+    const result = parseStructuredRewrite(JSON.stringify({
+      resolutionNote: "\"the second one\" resolves to Pro, the second plan the assistant listed.",
+      rewrittenQuery: "Tell me about the Pro plan",
+      turnKind: "referential_followup",
+      proposedActiveSubject: "Pro plan",
+      relatedEntities: [],
+      unresolved: false,
+      confidence: 0.9,
+    }));
+
+    expect(result.resolutionNote).toBe(
+      "\"the second one\" resolves to Pro, the second plan the assistant listed.",
+    );
+  });
+
+  it("omits resolutionNote when the model returns null", () => {
+    const result = parseStructuredRewrite(JSON.stringify({
+      resolutionNote: null,
+      rewrittenQuery: "Do you support SSO?",
+      turnKind: "fresh_subject",
+      relatedEntities: [],
+      unresolved: false,
+      confidence: 0.8,
+    }));
+
+    expect(result.resolutionNote).toBeUndefined();
+  });
+
+  it("omits resolutionNote when absent (schema-less fallback contract)", () => {
+    const result = parseStructuredRewrite(JSON.stringify({
+      rewrittenQuery: "Do you support SSO?",
+      turnKind: "fresh_subject",
+      relatedEntities: [],
+      unresolved: false,
+      confidence: 0.8,
+    }));
+
+    expect(result.resolutionNote).toBeUndefined();
+  });
+});

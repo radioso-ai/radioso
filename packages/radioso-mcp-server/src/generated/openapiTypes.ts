@@ -21015,11 +21015,7 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["DocumentReprocessRequest"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Document returned */
             200: {

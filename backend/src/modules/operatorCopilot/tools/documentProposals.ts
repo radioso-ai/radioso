@@ -1,13 +1,13 @@
 import { z, type ZodType } from "zod";
 
-import { documentMetadataRecordSchema } from "../../documents/public.js";
+import { documentRetrievalUpdateFieldsSchema, inlineDocumentFieldsSchema } from "../../documents/public.js";
 import {
   copilotDocumentPayloadSchema,
   MAX_COPILOT_DOCUMENT_CONTENT,
   type CopilotDocumentChange,
   type CopilotDocumentPayload,
 } from "../contracts/documentAuthoring.js";
-import type { CopilotDocumentProposalAdapter, CopilotToolDescriptor } from "../contracts.js";
+import type { CopilotDocumentProposalAdapter, CopilotMcpProposalRecoveryPort, CopilotToolDescriptor } from "../contracts.js";
 import { requireCurrentCopilotPermissions } from "../authorization.js";
 import {
   entity,
@@ -23,27 +23,32 @@ const documentIdSchema = z.string().uuid();
 const rationaleSchema = z.string().trim().min(1).max(1_000).optional();
 const MANAGE_DOCUMENTS = ["workspace.documents.manage"] as const;
 
-const createInputSchema = z.object({
-  title: z.string().trim().min(1).max(300),
-  content: z.string().trim().min(1).max(MAX_COPILOT_DOCUMENT_CONTENT),
-  metadata: documentMetadataRecordSchema.optional(),
-  rationale: rationaleSchema,
-}).strict();
+// Field selection is explicit so TypeScript rejects picking a field the shared schema no longer
+// has; Ray's bounds on title and content stay tighter than the route's.
+const createInputSchema = inlineDocumentFieldsSchema
+  .pick({ title: true, content: true, metadata: true })
+  .extend({
+    title: z.string().trim().min(1).max(300),
+    content: z.string().trim().min(1).max(MAX_COPILOT_DOCUMENT_CONTENT),
+    rationale: rationaleSchema,
+  })
+  .strict();
 
-const retrievalInputSchema = z.object({
-  documentId: documentIdSchema,
-  retrievalEnabled: z.boolean().optional(),
-  retrievalExpiresAt: z.string().datetime({ offset: true }).nullable().optional(),
-  metadata: documentMetadataRecordSchema.optional(),
-  rationale: rationaleSchema,
-}).strict();
+const retrievalInputSchema = documentRetrievalUpdateFieldsSchema
+  .extend({
+    documentId: documentIdSchema,
+    rationale: rationaleSchema,
+  })
+  .strict();
 
 const removalInputSchema = z.object({
   documentId: documentIdSchema,
   rationale: rationaleSchema,
 }).strict();
 
-type DocumentProposalCopilotToolDependencies = CopilotProposalToolDependencies;
+type DocumentProposalCopilotToolDependencies = CopilotProposalToolDependencies & {
+  readonly proposalRecovery: CopilotMcpProposalRecoveryPort;
+};
 
 /** What a tool contributes beyond persisting the draft: the payload it proposes and how it reads. */
 interface DocumentProposalSpec<TInput> {
@@ -92,6 +97,34 @@ const documentProposalDescriptor = <TInput>(
     contributingModule: "documents",
     dashboardSubject: { type: "proposal" },
     requiredPermissions: [...MANAGE_DOCUMENTS] as unknown as CopilotToolDescriptor["requiredPermissions"],
+    reconcileMcpInvocation: async ({ invocation, context, staleBefore, now }) => {
+      if (!invocation.operationId) return { status: "conflict" };
+      const recovery = await deps.proposalRecovery.recoverOperatorMcpProposal({
+        invocationId: invocation.id,
+        grantId: invocation.grantId,
+        workspaceId: context.workspaceId,
+        operatorUserId: context.operatorUserId,
+        operationId: invocation.operationId,
+        descriptorName: spec.name,
+        inputDigest: invocation.inputDigest,
+        staleBefore,
+        now,
+      });
+      if (recovery.status !== "recovered") return recovery;
+      if (recovery.proposal.targetType !== "document") return { status: "conflict" };
+      const payload = copilotDocumentPayloadSchema.safeParse(recovery.proposal.payload);
+      if (!payload.success || !payload.data.summary) return { status: "conflict" };
+      return {
+        status: "recovered",
+        output: {
+          proposalId: recovery.proposal.id,
+          targetType: "document" as const,
+          targetLabel: payload.data.name,
+          summary: payload.data.summary,
+          ...(spec.removal ? { removal: true as const } : {}),
+        },
+      };
+    },
     createTool: (context) => ({
       ...shared,
       invoke: async (input: TInput) => {

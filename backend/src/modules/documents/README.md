@@ -34,7 +34,13 @@ through canonical chunk storage before chunks are used by retrieval.
 - `public.ts`: document rules other modules validate against, including
   `documentMetadataRecordSchema` — the scalar map and 16 KB ceiling every writer
   of document metadata honours, whether it arrives over HTTP or from an applied
-  operator-copilot proposal.
+  operator-copilot proposal — and `domain/documentRequestFields.ts`'s
+  `documentRetrievalUpdateFieldsSchema` and `inlineDocumentFieldsSchema`, the
+  shared field definitions the REST document routes
+  (`app/http/routes/documentRouteSchemas.ts`) and the operator-copilot document
+  proposal tools (`operatorCopilot/tools/documentProposals.ts`) both build their
+  own request shape on top of, so the two surfaces cannot silently drift apart
+  on a field name.
 
 Production code outside this module should prefer these entry points over direct
 imports from `services/` or `infra/`.

@@ -34,7 +34,7 @@ import {
   type RegisteredChunk,
 } from "../../../modules/retrieval/public.js";
 import { NOTIFY_SKILLS_ADAPTER } from "../../../modules/notify/notifyExecutor.js";
-import type { TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
+import type { ConversationDurability, SkillEffectPolicy } from "../../../shared/domain/turnExecutionMode.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 
 interface RepositoryAgentSkillTurnSkillProviderOptions {
@@ -227,10 +227,22 @@ const safeTestMayInvoke = (
   execution.adapter === RETRIEVAL_ANSWER_ADAPTER;
 
 const shouldSuppressForSafeTest = (
-  executionMode: TurnExecutionMode | undefined,
+  skillEffects: SkillEffectPolicy | undefined,
   agentSkill: AgentSkillSpine,
   execution: SkillExecution,
-): boolean => executionMode === "safe_test" && !safeTestMayInvoke(agentSkill, execution);
+): boolean => skillEffects === "suppressed" && !safeTestMayInvoke(agentSkill, execution);
+
+/**
+ * A declared, generic rule (not a notify special-case): a skill that declares
+ * `requiresDurableConversation` cannot run meaningfully against an ephemeral
+ * (replay/test) conversation, because its executor resolves delivery or state
+ * through the persisted conversation row. Checked after safe-test suppression
+ * so suppression stays the reported reason when both apply.
+ */
+const requiresDurableConversationDenied = (
+  conversationDurability: ConversationDurability | undefined,
+  skill: RuntimeSkillDefinition,
+): boolean => conversationDurability === "ephemeral" && skill.requiresDurableConversation === true;
 
 const recordSafeTestSuppression = (
   metricsRegistry: Pick<MetricsRegistry, "incrementCounter"> | null | undefined,
@@ -264,6 +276,12 @@ const runtimeSkillDefinitionForAgentSkill = (agentSkill: AgentSkillSpine): Runti
     strategyAware: false,
   },
   steps: [],
+  // ConfiguredContactDeliveryResolver resolves delivery through the persisted
+  // conversation row; an ephemeral (replay/test) conversation has none to resolve.
+  // Belt-and-suspenders: notify is not currently turn-bindable or agentic-stageable, so the
+  // guard downstream never fires for it today — the live enforcement is the routine dispatcher.
+  // Kept so the flag stays true to the skill if a future kind set makes notify selectable.
+  ...(agentSkill.kind === "notify" ? { requiresDurableConversation: true } : {}),
   metadata: {
     agentSkillId: agentSkill.id,
     agentSkillKind: agentSkill.kind,
@@ -275,7 +293,8 @@ const turnSkillForAgentSkill = (
   agentSkill: AgentSkillSpine,
   executorRegistry: SkillExecutorRegistry,
   throwIfCancelled: () => void,
-  executionMode: TurnExecutionMode | undefined,
+  skillEffects: SkillEffectPolicy | undefined,
+  conversationDurability: ConversationDurability | undefined,
   metricsRegistry: Pick<MetricsRegistry, "incrementCounter"> | null | undefined,
 ): TurnSkill => {
   const skill = runtimeSkillDefinitionForAgentSkill(agentSkill);
@@ -287,9 +306,12 @@ const turnSkillForAgentSkill = (
       if (!skill.execution) {
         return settledFailure(session, agentSkill.skillName, "no_execution");
       }
-      if (shouldSuppressForSafeTest(executionMode, agentSkill, skill.execution)) {
+      if (shouldSuppressForSafeTest(skillEffects, agentSkill, skill.execution)) {
         recordSafeTestSuppression(metricsRegistry, agentSkill.kind, "turn");
         return settledFailure(session, agentSkill.skillName, SAFE_TEST_SUPPRESSION_REASON);
+      }
+      if (requiresDurableConversationDenied(conversationDurability, skill)) {
+        return settledFailure(session, agentSkill.skillName, "requires_durable_conversation");
       }
       const executor = executorRegistry.resolve(skill.execution);
       if (!executor) {
@@ -342,7 +364,8 @@ const stagedToolFactoryForAgentSkill = (
   session: PreparedSession,
   directiveNames: readonly string[],
   throwIfCancelled: () => void,
-  executionMode: TurnExecutionMode | undefined,
+  skillEffects: SkillEffectPolicy | undefined,
+  conversationDurability: ConversationDurability | undefined,
   metricsRegistry: Pick<MetricsRegistry, "incrementCounter"> | null | undefined,
 ): AgenticRetrievalToolFactory => ({ registry, snippetChars }) => {
   const skill = runtimeSkillDefinitionForAgentSkill(agentSkill);
@@ -360,13 +383,21 @@ const stagedToolFactoryForAgentSkill = (
       if (!skill.execution) {
         return { ok: false, skillName: agentSkill.skillName, directiveNames: [...directiveNames], error: "no_execution" };
       }
-      if (shouldSuppressForSafeTest(executionMode, agentSkill, skill.execution)) {
+      if (shouldSuppressForSafeTest(skillEffects, agentSkill, skill.execution)) {
         recordSafeTestSuppression(metricsRegistry, agentSkill.kind, "staged_tool");
         return {
           ok: false,
           skillName: agentSkill.skillName,
           directiveNames: [...directiveNames],
           error: SAFE_TEST_SUPPRESSION_REASON,
+        };
+      }
+      if (requiresDurableConversationDenied(conversationDurability, skill)) {
+        return {
+          ok: false,
+          skillName: agentSkill.skillName,
+          directiveNames: [...directiveNames],
+          error: "requires_durable_conversation",
         };
       }
       const executor = executorRegistry.resolve(skill.execution);
@@ -482,7 +513,8 @@ export class RepositoryAgentSkillTurnSkillProvider implements AgentSkillTurnSkil
           record,
           this.options.executorRegistry,
           throwIfCancelled,
-          session.executionMode,
+          session.skillEffects,
+          session.conversationDurability,
           this.options.metricsRegistry,
         ));
       }
@@ -502,7 +534,8 @@ export class RepositoryAgentSkillTurnSkillProvider implements AgentSkillTurnSkil
               currentSession,
               directiveNames,
               throwIfCancelled,
-              session.executionMode,
+              session.skillEffects,
+              session.conversationDurability,
               this.options.metricsRegistry,
             )]
           : [];

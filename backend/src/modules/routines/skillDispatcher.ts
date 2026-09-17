@@ -12,17 +12,18 @@ import {
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 import { traceOperation } from "../../shared/observability/tracing/operations.js";
 import { resolveSkillArguments } from "./skillArgumentResolver.js";
-import type { TurnExecutionMode } from "../../shared/domain/turnExecutionMode.js";
+import type { ConversationDurability, SkillEffectPolicy } from "../../shared/domain/turnExecutionMode.js";
 
-export type RoutineCapabilityGate = (capability: string) => Promise<{ allowed: boolean; reason?: string }>;
+type RoutineCapabilityGate = (capability: string) => Promise<{ allowed: boolean; reason?: string }>;
 
-export interface RoutineSkillExecutorDispatcherOptions {
+interface RoutineSkillExecutorDispatcherOptions {
   capabilityGate?: RoutineCapabilityGate;
   metricsRegistry?: MetricsRegistry | null;
   workspaceId?: string;
   accountId?: string;
   throwIfCancelled?: () => void;
-  executionMode?: TurnExecutionMode;
+  skillEffects?: SkillEffectPolicy;
+  conversationDurability?: ConversationDurability;
 }
 
 const allowAllRoutineCapabilityGate: RoutineCapabilityGate = async () => ({ allowed: true });
@@ -34,6 +35,7 @@ const routineDispatchFailureReasons = new Set([
   "executor_error",
   "deferred",
   "suppressed_for_safe_test",
+  "requires_durable_conversation",
 ]);
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -58,7 +60,7 @@ const contextVariableValueFor = (name: string, data: unknown): unknown => {
   return data;
 };
 
-export const contextValuesFromStagedContext = (
+const contextValuesFromStagedContext = (
   stagedContext: readonly StagedContext[],
 ): Record<string, unknown> => {
   const contextValues: Record<string, unknown> = {};
@@ -116,7 +118,8 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
   private readonly workspaceId?: string;
   private readonly accountId?: string;
   private readonly throwIfCancelled?: () => void;
-  private readonly executionMode: TurnExecutionMode;
+  private readonly skillEffects: SkillEffectPolicy;
+  private readonly conversationDurability: ConversationDurability;
 
   constructor(
     private readonly resolver: RoutineSkillResolver,
@@ -128,7 +131,8 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
     this.workspaceId = options.workspaceId;
     this.accountId = options.accountId;
     this.throwIfCancelled = options.throwIfCancelled;
-    this.executionMode = options.executionMode ?? "live";
+    this.skillEffects = options.skillEffects ?? "allowed";
+    this.conversationDurability = options.conversationDurability ?? "durable";
   }
 
   async dispatch(
@@ -166,8 +170,11 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
     if (!skill.execution) {
       return unavailable(skillName, "no_execution");
     }
-    if (this.executionMode === "safe_test") {
+    if (this.skillEffects === "suppressed") {
       return unavailable(skillName, "suppressed_for_safe_test");
+    }
+    if (this.conversationDurability === "ephemeral" && skill.requiresDurableConversation) {
+      return unavailable(skillName, "requires_durable_conversation");
     }
     const executor = this.executorRegistry.resolve(skill.execution);
     if (!executor) {
@@ -216,11 +223,18 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
       return unavailable(skillName, "deferred");
     }
 
+    const failureReason = result.outcome.status === "failed"
+      ? result.outcome.error?.code
+        ?? (typeof result.outcome.outputs?.reason === "string" ? result.outcome.outputs.reason : undefined)
+      : undefined;
+    const metadata = failureReason
+      ? { ...result.outcome.metadata, failureReason }
+      : result.outcome.metadata;
     return {
       status: result.outcome.status,
       outputs: result.outcome.outputs,
       answer: result.outcome.answer,
-      ...(result.outcome.metadata ? { metadata: result.outcome.metadata } : {}),
+      ...(metadata ? { metadata } : {}),
     };
   }
 
@@ -247,9 +261,12 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
 }
 
 // A recoverable failure: the runner branches on `status` and can read `outputs`
-// (skill name + reason) for an outcome guard or operator triage.
+// (skill name + reason) for an outcome guard or operator triage. The same reason
+// also rides in host-private `metadata.failureReason` (never rendered into routine
+// prompts) so the engine can surface WHY on the trace step without changing the
+// author-facing `outputs` shape.
 function unavailable(skillName: string, reason: string): RoutineSkillResult {
-  return { status: "failed", outputs: { skill: skillName, reason } };
+  return { status: "failed", outputs: { skill: skillName, reason }, metadata: { failureReason: reason } };
 }
 
 const routineDispatchTraceAttributes = (

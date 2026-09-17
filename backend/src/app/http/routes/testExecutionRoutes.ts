@@ -39,11 +39,13 @@ const presentHistorySides = (sides: readonly (TestExecution["sides"][number] | T
 
 const present = (execution: TestExecution) => ({
   id: execution.id, generation: execution.generation, mode: execution.mode,
+  skillEffects: execution.skillEffects,
   sides: presentSides(execution.sides),
 });
 
 const presentHistory = (execution: TestExecutionHistoryItem) => ({
   id: execution.id, generation: execution.generation, mode: execution.mode,
+  skillEffects: execution.skillEffects,
   sides: presentHistorySides(execution.sides),
   state: execution.state,
   createdAt: execution.createdAt.toISOString(),

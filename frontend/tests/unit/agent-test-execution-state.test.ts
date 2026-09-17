@@ -6,6 +6,7 @@ const state = () => initializeTestExecutionState({
   id: 'execution-1',
   generation: 2,
   mode: 'compare',
+  skillEffects: 'suppressed',
   sides: [
     { id: 'left', revision: { id: 'revision-7', label: 'Published', kind: 'published', versionNumber: 7, createdAt: '' }, conversationId: 'left-chat', state: 'running', retryable: false },
     { id: 'right', revision: { id: 'revision-8', label: 'Draft', kind: 'candidate', versionNumber: null, createdAt: '' }, conversationId: 'right-chat', state: 'running', retryable: false },
@@ -96,7 +97,7 @@ describe('agent test execution state', () => {
 
   it('hydrates a saved in-progress attempt without inventing a terminal reply', () => {
     const reopened = hydrateTestExecutionState({
-      id: 'execution-1', generation: 2, mode: 'single', state: 'running', createdAt: '', testValues: [],
+      id: 'execution-1', generation: 2, mode: 'single', skillEffects: 'suppressed', state: 'running', createdAt: '', testValues: [],
       sides: [{ id: 'left', revision: { id: 'revision-7', label: 'Published', kind: 'published', versionNumber: 7, createdAt: '' }, conversationId: 'left-chat', state: 'running', retryable: false, history: [{ turnId: 'turn-1', role: 'user', content: 'Hello', attemptId: 'attempt-1', createdAt: '' }] }],
       attempts: [{ sideId: 'left', turnId: 'turn-1', attemptId: 'attempt-1', fence: 4, state: 'running', createdAt: '', updatedAt: '' }],
     })
@@ -111,7 +112,7 @@ describe('agent test execution state', () => {
 
   it('projects a missing failed assistant placeholder for the exact later turn so retry stays pinned', () => {
     const reopened = hydrateTestExecutionState({
-      id: 'execution-1', generation: 2, mode: 'compare', state: 'partial', createdAt: '', testValues: [],
+      id: 'execution-1', generation: 2, mode: 'compare', skillEffects: 'suppressed', state: 'partial', createdAt: '', testValues: [],
       sides: [
         { id: 'left', revision: { id: 'revision-7', label: 'Published', kind: 'published', versionNumber: 7, createdAt: '' }, conversationId: 'left-chat', state: 'completed', retryable: false, history: [{ turnId: 'turn-1', role: 'user', content: 'First', attemptId: 'attempt-1', createdAt: '' }, { turnId: 'turn-1', role: 'assistant', content: 'Done', attemptId: 'attempt-1', createdAt: '' }, { turnId: 'turn-2', role: 'user', content: 'Second', attemptId: 'attempt-2', createdAt: '' }] },
         { id: 'right', revision: { id: 'revision-8', label: 'Draft', kind: 'candidate', versionNumber: null, createdAt: '' }, conversationId: 'right-chat', state: 'failed', retryable: true, history: [{ turnId: 'turn-1', role: 'user', content: 'First', attemptId: 'attempt-1', createdAt: '' }, { turnId: 'turn-1', role: 'assistant', content: 'Done', attemptId: 'attempt-1', createdAt: '' }, { turnId: 'turn-2', role: 'user', content: 'Second', attemptId: 'attempt-2', createdAt: '' }] },
@@ -130,6 +131,7 @@ describe('agent test execution state', () => {
       id: 'execution-1',
       generation: 2,
       mode: 'compare' as const,
+      skillEffects: 'suppressed' as const,
       sides: sides.map(({ id, state: sideState }) => ({
         id,
         revision: { id: `revision-${id}`, label: id, kind: 'candidate' as const, versionNumber: null, createdAt: '' },

@@ -1,11 +1,14 @@
 import type { AgentRevision } from "../agents/public.js";
 import type { FrozenTestValue } from "../context-variables/public.js";
+import type { SkillEffectPolicy } from "../../shared/domain/turnExecutionMode.js";
 
 /**
  * The minimum private-test evidence Eval needs to capture one immutable turn.
  * It deliberately omits test conversation ids, continuations, and traces.
  */
 export interface TestExecutionEvalSnapshotSource {
+  /** Frozen per execution; a skills-on test cannot be replayed faithfully, so Eval refuses it. */
+  skillEffects: SkillEffectPolicy;
   testValues: readonly FrozenTestValue[];
   sides: readonly TestExecutionEvalSnapshotSide[];
 }

@@ -865,6 +865,8 @@ interface RoutineTraceStepView {
   viaSelector: boolean
   skillName?: string
   skillStatus?: string
+  /** Failure reason for a failed tool step, e.g. `suppressed_for_safe_test`, `mcp_timeout`. */
+  skillReason?: string
 }
 
 interface RoutineRunTraceView {
@@ -900,6 +902,7 @@ export const buildRoutineRunTrace = (
       viaSelector: entry.viaSelector === true,
       ...(asString(entry.skillName) ? { skillName: asString(entry.skillName) } : {}),
       ...(asString(entry.skillStatus) ? { skillStatus: asString(entry.skillStatus) } : {}),
+      ...(asString(entry.skillReason) ? { skillReason: asString(entry.skillReason) } : {}),
     }))
   return {
     startStepId: asString(payload.startStepId),
@@ -991,7 +994,15 @@ function RoutineStepsTimeline({ trace }: { trace: RoutineRunTraceView }) {
               {step.skillName ? (
                 <p className="text-[11px] text-muted-foreground">
                   Tool <code className="text-foreground">{step.skillName}</code>
-                  {step.skillStatus ? ` → ${step.skillStatus}` : ''}
+                  {step.skillReason === 'suppressed_for_safe_test'
+                    ? ' → not called (skills are off in this test)'
+                    : step.skillReason === 'requires_durable_conversation'
+                      ? ' → not called (needs a saved conversation; runs after publish)'
+                      : step.skillReason
+                        ? ` → ${step.skillStatus} (${step.skillReason.replace(/_/g, ' ')})`
+                        : step.skillStatus
+                          ? ` → ${step.skillStatus}`
+                          : ''}
                 </p>
               ) : null}
               {step.capturedSlotKeys.length > 0 ? (

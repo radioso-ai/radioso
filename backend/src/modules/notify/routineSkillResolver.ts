@@ -8,7 +8,7 @@ export interface NotifyRoutineSkillRecord {
   invocationMode: string;
 }
 
-export const notifyRoutineSkillDefinition = (name: string): SkillDefinition => ({
+const notifyRoutineSkillDefinition = (name: string): SkillDefinition => ({
   name,
   displayName: name,
   description: "Notify skill routed through the skill executor registry.",
@@ -27,6 +27,9 @@ export const notifyRoutineSkillDefinition = (name: string): SkillDefinition => (
     strategyAware: false,
   },
   steps: [],
+  // ConfiguredContactDeliveryResolver resolves delivery through the persisted
+  // conversation row; an ephemeral (replay/test) conversation has none to resolve.
+  requiresDurableConversation: true,
 });
 
 /**

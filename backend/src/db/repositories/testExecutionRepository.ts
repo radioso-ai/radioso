@@ -54,7 +54,7 @@ export class TestExecutionRepository implements TestExecutionRepositoryPort {
       await transactionAdvisoryLock(testExecutionStartLockKey(input.workspaceId, input.agentId, input.idempotencyKey)).execute(trx);
       const replay = await trx.selectFrom("agent_test_executions").select("id").where("workspace_id", "=", input.workspaceId).where("agent_id", "=", input.agentId).where("idempotency_key", "=", input.idempotencyKey).executeTakeFirst();
       if (replay) return replay.id;
-      await trx.insertInto("agent_test_executions").values({ id: input.id, workspace_id: input.workspaceId, agent_id: input.agentId, mode: input.mode, generation: input.generation, state: input.state ?? "running", test_values: toJsonb(input.testValues), idempotency_key: input.idempotencyKey }).execute();
+      await trx.insertInto("agent_test_executions").values({ id: input.id, workspace_id: input.workspaceId, agent_id: input.agentId, mode: input.mode, generation: input.generation, state: input.state ?? "running", test_values: toJsonb(input.testValues), skill_effects: input.skillEffects, idempotency_key: input.idempotencyKey }).execute();
       for (const [sideOrdinal, side] of input.sides.entries()) await trx.insertInto("agent_test_execution_sides").values({ id: side.id, execution_id: input.id, workspace_id: input.workspaceId, agent_id: input.agentId, revision_id: side.revision.id, conversation_id: side.conversationId, state: side.state, retryable: side.retryable, history: toJsonb(side.history), continuation: side.continuation === null ? null : toJsonb(side.continuation), active_turn_id: null, active_attempt_id: null, active_fence: null, side_ordinal: sideOrdinal }).execute();
       return input.id;
     });
@@ -83,7 +83,7 @@ export class TestExecutionRepository implements TestExecutionRepositoryPort {
     const execution = await this.db.selectFrom("agent_test_executions").selectAll().where("id", "=", input.executionId).where("workspace_id", "=", input.workspaceId).where("agent_id", "=", input.agentId).executeTakeFirst();
     if (!execution) return null;
     const sides = await this.db.selectFrom("agent_test_execution_sides as s").innerJoin("agent_revisions as r", "r.id", "s.revision_id").select(["s.id as side_id", "s.execution_id as execution_id", "s.conversation_id as conversation_id", "s.state as side_state", "s.retryable as retryable", "s.history as history", "s.continuation as continuation", "r.id as id", "r.snapshot as snapshot", "r.source_draft_generation as source_draft_generation", "r.source_base_published_revision_id as source_base_published_revision_id", "r.created_at as created_at", "r.published_at as published_at", "r.published_version as published_version"]).where("s.execution_id", "=", execution.id).where("s.workspace_id", "=", input.workspaceId).where("s.agent_id", "=", input.agentId).orderBy("s.side_ordinal").execute();
-    return { id: execution.id, workspaceId: execution.workspace_id, agentId: execution.agent_id, mode: execution.mode as TestExecution["mode"], generation: execution.generation, state: execution.state as TestExecutionState, testValues: execution.test_values as unknown as TestExecution["testValues"], createdAt: new Date(execution.created_at), sides: sides.map((side) => ({ id: side.side_id, executionId: side.execution_id, revision: mapRevision(side), conversationId: side.conversation_id, state: side.side_state as TestExecutionSide["state"], retryable: side.retryable, history: parseHistory(side.history), continuation: side.continuation })) };
+    return { id: execution.id, workspaceId: execution.workspace_id, agentId: execution.agent_id, mode: execution.mode as TestExecution["mode"], generation: execution.generation, state: execution.state as TestExecutionState, testValues: execution.test_values as unknown as TestExecution["testValues"], skillEffects: execution.skill_effects as TestExecution["skillEffects"], createdAt: new Date(execution.created_at), sides: sides.map((side) => ({ id: side.side_id, executionId: side.execution_id, revision: mapRevision(side), conversationId: side.conversation_id, state: side.side_state as TestExecutionSide["state"], retryable: side.retryable, history: parseHistory(side.history), continuation: side.continuation })) };
   }
 
   async retainSide(input: Parameters<TestExecutionRepositoryPort["retainSide"]>[0]): Promise<Awaited<ReturnType<TestExecutionRepositoryPort["retainSide"]>>> {
@@ -105,6 +105,8 @@ export class TestExecutionRepository implements TestExecutionRepositoryPort {
       await trx.insertInto("agent_test_executions").values({
         id: input.retainedExecutionId, workspace_id: input.workspaceId, agent_id: input.agentId,
         mode: "single", generation: 1, state, test_values: toJsonb(source.test_values),
+        // A retained execution keeps the frozen policy of the comparison it forked from.
+        skill_effects: source.skill_effects,
         // Retained executions are minted server-side, never client-retried directly; the new
         // execution's own id is a stable, always-unique fence for this NOT NULL column.
         idempotency_key: input.retainedExecutionId,
@@ -124,7 +126,7 @@ export class TestExecutionRepository implements TestExecutionRepositoryPort {
   async list(input: { workspaceId: string; agentId: string; limit: number; cursor?: string }): Promise<{ executions: readonly TestExecutionHistoryItem[]; nextCursor: string | null; hasMore: boolean }> {
     const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["createdAt", "id"]) : null;
     const rows = await this.db.selectFrom("agent_test_executions")
-      .select(["id", "created_at", "mode", "generation", "state"])
+      .select(["id", "created_at", "mode", "generation", "state", "skill_effects"])
       .where("workspace_id", "=", input.workspaceId)
       .where("agent_id", "=", input.agentId)
       .$if(Boolean(cursor), (qb) => qb.where((eb) => eb.or([
@@ -152,7 +154,7 @@ export class TestExecutionRepository implements TestExecutionRepositoryPort {
       prior.push({ id: side.side_id, conversationId: side.conversation_id, state: side.side_state as TestExecutionSide["state"], retryable: side.retryable, revision: { id: side.revision_id, createdAt: new Date(side.revision_created_at), publishedAt: side.revision_published_at ? new Date(side.revision_published_at) : null, publishedVersion: side.revision_published_version } });
       sidesByExecution.set(side.execution_id, prior);
     }
-    const executions = pageRows.map((row) => ({ id: row.id, mode: row.mode as TestExecution["mode"], generation: row.generation, state: row.state as TestExecutionState, createdAt: new Date(row.created_at), sides: sidesByExecution.get(row.id) ?? [] }));
+    const executions = pageRows.map((row) => ({ id: row.id, mode: row.mode as TestExecution["mode"], generation: row.generation, state: row.state as TestExecutionState, createdAt: new Date(row.created_at), skillEffects: row.skill_effects as TestExecution["skillEffects"], sides: sidesByExecution.get(row.id) ?? [] }));
     const last = pageRows.at(-1);
     return {
       executions,

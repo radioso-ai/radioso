@@ -29,6 +29,7 @@ const session = (): AgentRevisionTestChatSession => ({
   revisionDetails: {},
   contextVariables: [],
   valueInputs: {},
+  skillEffects: 'suppressed',
   valueError: null,
   isSending: false,
   isStarting: false,
@@ -49,6 +50,16 @@ describe('agent revision test chat session', () => {
     activateAgentRevisionTestChatSessionScope('account-1', 'workspace-1')
 
     expect(readAgentRevisionTestChatSession(key)?.message).toBe('private composer text')
+  })
+
+  it('keeps the operator skill-effects choice across a dashboard route remount', () => {
+    const key = agentRevisionTestChatSessionKey('workspace-1', 'agent-1')
+    activateAgentRevisionTestChatSessionScope('account-1', 'workspace-1')
+    startAgentRevisionTestChatSession(key, { ...session(), skillEffects: 'allowed' })
+
+    activateAgentRevisionTestChatSessionScope('account-1', 'workspace-1')
+
+    expect(readAgentRevisionTestChatSession(key)?.skillEffects).toBe('allowed')
   })
 
   it('drops sessions on account/workspace replacement and ignores stale writers', () => {

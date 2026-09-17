@@ -24,6 +24,8 @@ export type AgentRevisionTestChatSession = {
   revisionDetails: Record<string, AgentRevisionDetail>
   contextVariables: ContextVariable[]
   valueInputs: Record<string, string>
+  /** Frozen per execution, like `valueInputs`; defaults to `'suppressed'`. */
+  skillEffects: 'suppressed' | 'allowed'
   valueError: string | null
   /** Revision fetch failures are cached separately from derived field validation errors. */
   revisionValueError?: string | null

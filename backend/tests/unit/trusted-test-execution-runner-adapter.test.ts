@@ -119,6 +119,7 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
     await expect(adapter.run({
       workspaceId: "ws-1",
       agentId: "agent-1",
+      accountId: "account-42",
       candidateRevision: revision,
       conversationId: "private-side-1",
       message: "continue",
@@ -133,10 +134,13 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
         trust: "verified",
       }],
       executionMode: "safe_test",
+      skillEffects: "allowed",
     })).resolves.toEqual({ answer: "actual answer", messageId: "ephemeral-message", continuation });
 
     expect(replay.run).toHaveBeenCalledWith(expect.objectContaining({
       executionMode: "safe_test",
+      skillEffects: "allowed",
+      accountId: "account-42",
       conversationId: "private-side-1",
       candidateRevision: revision,
       history: [expect.objectContaining({ conversationId: "private-side-1", content: "Earlier" })],
@@ -155,8 +159,8 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
       revisions: { findRevision: async () => revision },
     });
     const input = {
-      workspaceId: "ws-1", agentId: "agent-1", candidateRevision: revision,
-      conversationId: "private-side-1", message: "continue", history: [], testValues: [], executionMode: "safe_test" as const,
+      workspaceId: "ws-1", agentId: "agent-1", accountId: null, candidateRevision: revision,
+      conversationId: "private-side-1", message: "continue", history: [], testValues: [], executionMode: "safe_test" as const, skillEffects: "suppressed" as const,
     };
 
     await expect(adapter.run({ ...input, continuation: { version: 2 } })).rejects.toThrow("test_execution_continuation_invalid");
@@ -174,8 +178,8 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
     });
 
     await expect(adapter.run({
-      workspaceId: "ws-1", agentId: "agent-1", candidateRevision: revision,
-      conversationId: "private-side-1", message: "continue", history: [], continuation: null, testValues: [], executionMode: "safe_test",
+      workspaceId: "ws-1", agentId: "agent-1", accountId: null, candidateRevision: revision,
+      conversationId: "private-side-1", message: "continue", history: [], continuation: null, testValues: [], executionMode: "safe_test", skillEffects: "suppressed",
     })).rejects.toThrow("Agent revision is unavailable for test execution");
     expect(replay.run).not.toHaveBeenCalled();
   });
@@ -201,8 +205,8 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
     });
 
     await expect(adapter.run({
-      workspaceId: "ws-1", agentId: "agent-1", candidateRevision: revision,
-      conversationId: "private-side-1", message: "continue", history: [], continuation: original, testValues: [], executionMode: "safe_test",
+      workspaceId: "ws-1", agentId: "agent-1", accountId: null, candidateRevision: revision,
+      conversationId: "private-side-1", message: "continue", history: [], continuation: original, testValues: [], executionMode: "safe_test", skillEffects: "suppressed",
     })).rejects.toThrow("provider unavailable");
     expect(original.routineState?.variables).toEqual({ cart: "gold" });
   });

@@ -10,6 +10,7 @@ import {
   DashboardTableHeader,
   DashboardTableRow,
 } from '@/components/dashboard/shared/dashboard-table'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { LogoSpinner } from '@/components/ui/spinner'
 import {
@@ -110,7 +111,16 @@ export function TestExecutionHistoryView({
     </DashboardTableHead>
     <DashboardTableBody>
       {executions.map((execution) => <DashboardTableRow key={execution.id}>
-        <DashboardTableCell className="font-medium">{execution.mode === 'compare' ? 'Comparison' : 'Single revision test'}</DashboardTableCell>
+        <DashboardTableCell className="font-medium">
+          <span className="flex items-center gap-2">
+            <span>{execution.mode === 'compare' ? 'Comparison' : 'Single revision test'}</span>
+            {execution.skillEffects === 'allowed' ? (
+              <Badge variant="outline" className="shrink-0 border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300">
+                Skills ran for real
+              </Badge>
+            ) : null}
+          </span>
+        </DashboardTableCell>
         <DashboardTableCell className="text-sm text-muted-foreground">{execution.sides.map((side) => revisionLabel(side.revision)).join(' · ')}</DashboardTableCell>
         <DashboardTableCell className="w-44 text-sm text-muted-foreground">{timestampFormatter.format(new Date(execution.createdAt))}</DashboardTableCell>
         <DashboardTableCell className="w-28 text-right"><Button size="sm" variant="outline" onClick={() => void open(execution.id)} disabled={openingId !== null}>{openingId === execution.id ? 'Opening…' : 'Open'}</Button></DashboardTableCell>

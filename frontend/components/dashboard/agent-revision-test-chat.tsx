@@ -44,6 +44,7 @@ import {
 } from "@/components/ui/sheet";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
@@ -238,6 +239,7 @@ export function AgentRevisionTestChat({
     cachedSession?.contextVariables ?? [],
   );
   const [valueInputs, setValueInputs] = useState<Record<string, string>>(cachedSession?.valueInputs ?? {});
+  const [skillEffects, setSkillEffects] = useState<"suppressed" | "allowed">(cachedSession?.skillEffects ?? "suppressed");
   const [revisionValueError, setRevisionValueError] = useState<string | null>(cachedSession?.revisionValueError ?? null);
   const [isSending, setIsSending] = useState(cachedSession?.isSending ?? false);
   const [isStarting, setIsStarting] = useState(cachedSession?.isStarting ?? false);
@@ -374,6 +376,7 @@ export function AgentRevisionTestChat({
       revisionDetails,
       contextVariables,
       valueInputs,
+      skillEffects,
       valueError,
       revisionValueError,
       isSending,
@@ -401,6 +404,7 @@ export function AgentRevisionTestChat({
     selected,
     selectedCaseIds,
     sessionKey,
+    skillEffects,
     state,
     valueError,
     valueInputs,
@@ -654,6 +658,7 @@ export function AgentRevisionTestChat({
           revisionIds: nextSelected as [string] | [string, string],
           testValues: nextValues,
           expectedDraftGeneration,
+          skillEffects,
         },
         abortController.signal,
       );
@@ -720,6 +725,13 @@ export function AgentRevisionTestChat({
       );
     },
     [clearActiveTest, selected, state?.publishedRevision?.id],
+  );
+  const updateSkillEffects = useCallback(
+    (next: "suppressed" | "allowed") => {
+      setSkillEffects(next);
+      clearActiveTest("Skill setting changed. Start a fresh private test.");
+    },
+    [clearActiveTest],
   );
   const closeComparisonSide = useCallback(async (index: number) => {
     const retainedIndex = index === 0 ? 1 : 0;
@@ -1201,6 +1213,8 @@ export function AgentRevisionTestChat({
           ]),
         ),
       );
+      // The saved test's policy is frozen with it; the toggle must show what its turns actually do.
+      setSkillEffects(saved.skillEffects);
       setExecutionState(hydrateTestExecutionState(saved));
       setRestartNotice(
         saved.attempts.some((attempt) => attempt.state === "running")
@@ -1369,6 +1383,15 @@ export function AgentRevisionTestChat({
             </DropdownMenuItem>
           </>
         ) : null}
+        <DropdownMenuSeparator />
+        <DropdownMenuCheckboxItem
+          checked={skillEffects === "allowed"}
+          onCheckedChange={(checked) =>
+            updateSkillEffects(checked === true ? "allowed" : "suppressed")
+          }
+        >
+          Run skills for real
+        </DropdownMenuCheckboxItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -1471,6 +1494,15 @@ export function AgentRevisionTestChat({
                       Select version for {revisionTriggerLabel(revisions.find((revision) => revision.id === selected[index]))} test results
                     </Label>
                     {conversationIdChip(index)}
+                    {skillEffects === "allowed" ? (
+                      <Badge
+                        variant="outline"
+                        className="shrink-0 border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                        title="Skill steps fire for real: emails, Slack messages, webhook skills, and external tools. Notify skills, action steps, handoffs, and completion export stay off in every private test. Retry re-fires a skill the first attempt already ran."
+                      >
+                        Skills run for real
+                      </Badge>
+                    ) : null}
                     <div className={mode === "single" ? "ml-auto flex items-center gap-2" : "flex items-center gap-2"}>
                       {revisionSelector(index, "h-8 border-border/70 bg-background/70 px-2 text-sm shadow-none")}
                       {mode === "single" ? (
@@ -1543,6 +1575,11 @@ export function AgentRevisionTestChat({
                                 .slice(0, assistantIndex)
                                 .some((item) => item.role === "user") === true;
                             }}
+                            evalCaptureDisabledReason={() =>
+                              skillEffects === "allowed"
+                                ? "Turn off Run skills for real to capture eval cases from this test."
+                                : undefined
+                            }
                             captureEvalSnapshot={(assistantMessageId) => {
                               if (!execution || !side) {
                                 return Promise.reject(new Error("This test response is still being saved."));

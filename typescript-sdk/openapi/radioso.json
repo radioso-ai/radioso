@@ -20755,6 +20755,13 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 200
+          },
+          "skillEffects": {
+            "type": "string",
+            "enum": [
+              "suppressed",
+              "allowed"
+            ]
           }
         },
         "required": [
@@ -20783,6 +20790,13 @@
               "compare"
             ]
           },
+          "skillEffects": {
+            "type": "string",
+            "enum": [
+              "suppressed",
+              "allowed"
+            ]
+          },
           "sides": {
             "type": "array",
             "items": {
@@ -20794,6 +20808,7 @@
           "id",
           "generation",
           "mode",
+          "skillEffects",
           "sides"
         ]
       },
@@ -20880,6 +20895,13 @@
             "type": "string",
             "format": "date-time"
           },
+          "skillEffects": {
+            "type": "string",
+            "enum": [
+              "suppressed",
+              "allowed"
+            ]
+          },
           "sides": {
             "type": "array",
             "items": {
@@ -20963,6 +20985,7 @@
           "mode",
           "state",
           "createdAt",
+          "skillEffects",
           "sides"
         ]
       },

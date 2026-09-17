@@ -78,7 +78,7 @@ const requireConfigured = (config: BillingConfig): void => {
 };
 
 const buildReturnUrl = (appBaseUrl: string, returnPath: string, query: string): string =>
-  `${appBaseUrl}${returnPath}?billing=${query}`;
+  `${appBaseUrl}${returnPath}${returnPath.includes("?") ? "&" : "?"}billing=${query}`;
 
 interface BillingRouteOverrides {
   gateway?: StripeGateway;

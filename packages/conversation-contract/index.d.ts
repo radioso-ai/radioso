@@ -1257,6 +1257,8 @@ export interface RoutineTraceStepEntry {
   viaSelector?: boolean;
   skillName?: string;
   skillStatus?: string;
+  /** Host-private failure reason for a failed skill dispatch (e.g. mcp_timeout, suppressed_for_safe_test). */
+  skillReason?: string;
 }
 
 /**

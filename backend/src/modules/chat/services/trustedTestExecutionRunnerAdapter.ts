@@ -113,6 +113,7 @@ export class TrustedTestExecutionRunnerAdapter implements TrustedTestExecutionRu
     const continuation = importTestExecutionReplayContinuation(input.continuation, input.conversationId);
     const replayed = await this.options.replay.run({
       workspaceId: input.workspaceId,
+      accountId: input.accountId,
       sourceAgentId: input.agentId,
       conversationId: input.conversationId,
       candidateRevision: revision,
@@ -134,6 +135,7 @@ export class TrustedTestExecutionRunnerAdapter implements TrustedTestExecutionRu
       directiveStateStartState: continuation.directiveState,
       preResolvedHostVariables: sampleVariables(input.testValues, revision),
       executionMode: "safe_test",
+      skillEffects: input.skillEffects,
     });
     if (!replayed.continuation) {
       throw new Error("test_execution_continuation_missing");

@@ -15,6 +15,8 @@ export const startTestExecutionSchema = z.object({
   testValues: z.array(testValueSchema).max(100),
   expectedDraftGeneration: z.number().int().positive().optional(),
   idempotencyKey: z.string().trim().min(1).max(200),
+  /** Defaults to "suppressed" when omitted (see resolveSkillEffectPolicy). */
+  skillEffects: z.enum(["suppressed", "allowed"]).optional(),
 }).strict();
 export const sendTestExecutionMessageSchema = z.object({
   message: z.string().min(1).max(20_000),

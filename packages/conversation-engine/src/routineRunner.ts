@@ -679,12 +679,16 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       if (staged) {
         stagedContext = [...stagedContext, staged];
       }
+      const skillReason = typeof skillResult.metadata?.failureReason === "string"
+        ? skillResult.metadata.failureReason
+        : undefined;
       const skillEntry: RoutineTraceStepEntry = {
         stepId: step.id,
         kind: step.kind,
         event: "skill_dispatched",
         ...(step.skillName ? { skillName: step.skillName } : {}),
         skillStatus: skillResult.status,
+        ...(skillReason ? { skillReason } : {}),
       };
       traceSteps.push(skillEntry);
       const skillEdges = outgoing(step.id);

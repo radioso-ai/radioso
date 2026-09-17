@@ -172,7 +172,7 @@ describe("RepositoryAgentSkillTurnSkillProvider", () => {
       metricsRegistry,
     });
     const session = sessionWithBinding("order_lookup");
-    session.executionMode = "safe_test";
+    session.skillEffects = "suppressed";
     const runtime = await provider.forSession(session);
     const selector = new ChatTurnSkillSelector(
       [defaultTurnSkill, ...runtime.turnSkills],
@@ -194,6 +194,39 @@ describe("RepositoryAgentSkillTurnSkillProvider", () => {
     expect(metricsRegistry.renderPrometheus()).toContain('reason="suppressed_for_safe_test"');
     expect(metricsRegistry.renderPrometheus()).toContain('skill_kind="external_mcp"');
     expect(metricsRegistry.renderPrometheus()).not.toContain("order_lookup");
+  });
+
+  it("dispatches directive-bound external MCP execution when skillEffects is explicitly allowed", async () => {
+    const dispatch = vi.fn(async (): Promise<SkillDispatchResult> => ({
+      disposition: "settled",
+      outcome: { status: "completed", answer: "Order 123 is in transit." },
+    }));
+    const provider = new RepositoryAgentSkillTurnSkillProvider({
+      agentSkills: repositoryWith([agentSkill({ skillName: "order_lookup" })]),
+      executorRegistry: new SkillExecutorRegistry([{
+        kind: "internal",
+        adapter: EXTERNAL_SKILLS_ADAPTER,
+        executor: { dispatch },
+      }]),
+      capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+    });
+    const session = sessionWithBinding("order_lookup");
+    session.skillEffects = "allowed";
+    const runtime = await provider.forSession(session);
+    const selector = new ChatTurnSkillSelector(
+      [defaultTurnSkill, ...runtime.turnSkills],
+      strategy,
+      { agentSkillStates: runtime.skillStates },
+    );
+
+    const outcome = await selector.select(session).skill.dispatch(session);
+
+    expect(dispatch).toHaveBeenCalledOnce();
+    expect(outcome).toMatchObject({
+      kind: "agent_skill",
+      skillName: "order_lookup",
+      outcome: { status: "completed", answer: "Order 123 is in transit." },
+    });
   });
 
   it("suppresses a retrieve binding whose structured execution config targets an external executor", async () => {
@@ -219,7 +252,7 @@ describe("RepositoryAgentSkillTurnSkillProvider", () => {
       capabilityPolicy: new DefaultAllowCapabilityPolicy(),
     });
     const session = sessionWithBinding("grounded_search");
-    session.executionMode = "safe_test";
+    session.skillEffects = "suppressed";
     const runtime = await provider.forSession(session);
     const tools = runtime.agenticRetrievalToolFactories(session).flatMap((factory) => factory({
       registry: { record: vi.fn(), resolve: vi.fn(), has: vi.fn() },

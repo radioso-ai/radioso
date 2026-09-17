@@ -7,6 +7,7 @@ import type { AuthoredDirective, AuthoredDirectiveInput } from "../../src/module
 import type { ConversationAgent } from "../../src/modules/agents/domain.js";
 import type { AgentRevision } from "../../src/modules/agents/agentRevision.js";
 import type { TestExecution } from "../../src/modules/test-execution/testExecution.js";
+import type { TestExecutionEvalSnapshotSource } from "../../src/modules/test-execution/public.js";
 import type { RetrievalSettingsRecord } from "../../src/modules/settings/contracts/retrieval.js";
 import { defaultRetrievalSettings, freezeRetrievalSettings } from "../../src/modules/settings/contracts/retrieval.js";
 import { createRetrievalSkillSettingsResolver } from "../../src/app/composition/skillSettingsResolver.js";
@@ -390,6 +391,7 @@ describe("EvalSnapshotService.captureTestExecutionTurn", () => {
       generation: 1,
       mode: "single",
       state: "completed",
+      skillEffects: "suppressed",
       testValues: [{
         contextVariableId: "context-1",
         name: "Customer tier",
@@ -448,6 +450,49 @@ describe("EvalSnapshotService.captureTestExecutionTurn", () => {
       },
     });
     expect(captured).not.toHaveProperty("testExecutionReplay");
+  });
+
+  it("refuses to capture from a private test that ran skills for real", async () => {
+    const repository = new CapturingEvalRepository();
+    const service = new EvalSnapshotService(
+      new StubConversationRepository(null),
+      new StubMessageRepository([]),
+      new StubAgentRepository(agent()),
+      new StubRetrievalDefaultsProvider(),
+      createRetrievalSkillSettingsResolver(),
+      repository,
+    );
+    const execution: TestExecutionEvalSnapshotSource = {
+      skillEffects: "allowed",
+      testValues: [],
+      sides: [{
+        id: "side-1",
+        revision: {
+          id: "revision-1",
+          snapshot: { customInstruction: "", directives: [], routines: [], contextVariableEnablements: [] },
+          sourceDraftGeneration: 1,
+          sourceBasePublishedRevisionId: null,
+          createdAt: fixedDate,
+          publishedAt: null,
+          publishedVersion: null,
+        },
+        history: [
+          { turnId: "turn-1", role: "user", content: "Can I return it?", createdAt: fixedDate },
+          { turnId: "turn-1", role: "assistant", content: "Yes.", messageId: "assistant-1", createdAt: fixedDate },
+        ],
+      }],
+    };
+
+    // A skills-on turn's answer came from real external calls that a safe replay can never
+    // reproduce, so the case would fail on every run.
+    await expect(service.captureTestExecutionTurn({
+      workspaceId: "ws-1",
+      agentId: "agent-1",
+      execution,
+      sideId: "side-1",
+      assistantMessageId: "assistant-1",
+    })).rejects.toMatchObject({ statusCode: 409 });
+    expect(repository.lastCreateInput).toBeNull();
   });
 });
 

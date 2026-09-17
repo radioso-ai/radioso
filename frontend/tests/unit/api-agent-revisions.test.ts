@@ -48,6 +48,37 @@ describe('agentRevisionsApi', () => {
     }))
   })
 
+  it('includes an explicit skill-effects policy in the start body when set', async () => {
+    vi.stubGlobal('window', { localStorage: storage() })
+    vi.stubGlobal('crypto', { randomUUID: () => 'test-execution-request-2' })
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+      id: 'execution-2',
+      generation: 1,
+      mode: 'single',
+      skillEffects: 'allowed',
+      sides: [],
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await agentRevisionsApi.startTest('agent-1', {
+      mode: 'single',
+      revisionIds: ['candidate-8'],
+      testValues: [],
+      expectedDraftGeneration: 8,
+      skillEffects: 'allowed',
+    })
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(init.body).toBe(JSON.stringify({
+      mode: 'single',
+      revisionIds: ['candidate-8'],
+      testValues: [],
+      expectedDraftGeneration: 8,
+      skillEffects: 'allowed',
+      idempotencyKey: 'test-execution-request-2',
+    }))
+  })
+
   it('publishes only the selected candidate with its concurrency tokens', async () => {
     vi.stubGlobal('window', { localStorage: storage() })
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ publication: {}, state: {} }))

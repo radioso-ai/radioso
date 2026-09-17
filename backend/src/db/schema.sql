@@ -821,8 +821,10 @@ CREATE TABLE public.agent_test_executions (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     idempotency_key text NOT NULL,
+    skill_effects text DEFAULT 'suppressed'::text NOT NULL,
     CONSTRAINT agent_test_executions_generation_check CHECK ((generation > 0)),
     CONSTRAINT agent_test_executions_mode_check CHECK ((mode = ANY (ARRAY['single'::text, 'compare'::text]))),
+    CONSTRAINT agent_test_executions_skill_effects_check CHECK ((skill_effects = ANY (ARRAY['suppressed'::text, 'allowed'::text]))),
     CONSTRAINT agent_test_executions_state_check CHECK ((state = ANY (ARRAY['running'::text, 'partial'::text, 'failed'::text, 'completed'::text])))
 );
 

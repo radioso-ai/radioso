@@ -258,7 +258,8 @@ const contextValuesFromStagedContext = (stagedContext: readonly StagedContext[])
 const routineSkillUnavailable = (skillName: string, reason: string): RoutineSkillResult => ({
   status: "failed",
   outputs: { skill: skillName, reason },
-  metadata: { skillName, reason },
+  // `failureReason` is what the engine copies onto the trace step as `skillReason`.
+  metadata: { skillName, reason, failureReason: reason },
 });
 
 /**

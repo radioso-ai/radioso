@@ -6,6 +6,7 @@ import {
   type TestExecution,
   type TestExecutionRepositoryPort,
   type TestExecutionRunnerResult,
+  type TrustedTestExecutionRunnerPort,
 } from "../../src/modules/test-execution/testExecution.js";
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../src/shared/domain/usageLimitPolicy.js";
 
@@ -72,8 +73,10 @@ class MemoryRepository implements TestExecutionRepositoryPort {
   }
   async list() { return { executions: this.execution ? [this.execution] : [], nextCursor: null, hasMore: false }; }
   async listAttempts() { return []; }
+  lastLeaseMs: number | null = null;
   async claimTurn(input: Parameters<TestExecutionRepositoryPort["claimTurn"]>[0]) {
     this.calls.push(`claim:${input.sideIds.join(",")}`);
+    this.lastLeaseMs = input.leaseMs;
     if (this.replay) {
       return { claims: input.sideIds.map((sideId) => ({ sideId, attempt: { executionId: input.executionId, sideId, turnId: input.turnId, attemptId: input.attemptId, message: input.message, inputFingerprint: input.inputFingerprint, fence: 1, leaseExpiresAt: input.now, state: "completed" as const }, replay: this.replay })) };
     }
@@ -103,7 +106,7 @@ class MemoryRepository implements TestExecutionRepositoryPort {
 }
 
 const setup = (
-  runner = vi.fn(async (): Promise<TestExecutionRunnerResult> => ({ answer: "answer", messageId: ids[6], continuation: { routine: "next" } })),
+  runner = vi.fn(async (_input: Parameters<TrustedTestExecutionRunnerPort["run"]>[0]): Promise<TestExecutionRunnerResult> => ({ answer: "answer", messageId: ids[6], continuation: { routine: "next" } })),
   usageLimitPolicy: Pick<UsageLimitPolicy, "reserveAnswer"> = new NoopUsageLimitPolicy(),
 ) => {
   const repository = new MemoryRepository();
@@ -155,6 +158,49 @@ describe("TestExecutionService", () => {
     expect(execution.sides[0]?.history).toEqual([]);
   });
 
+  it("defaults skillEffects to suppressed and threads the frozen policy into every runner turn", async () => {
+    const { service, runner } = setup();
+    const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [] });
+
+    expect(execution.skillEffects).toBe("suppressed");
+
+    await service.message({ workspaceId, agentId, accountId: null, executionId: execution.id, message: "first", generation: 1, turnId: ids[6], attemptId: ids[7] });
+
+    expect(runner.mock.calls.at(-1)?.[0]).toMatchObject({ skillEffects: "suppressed" });
+  });
+
+  it("passes the requesting account through to the runner so account-scoped skills (e.g. Slack) can resolve", async () => {
+    const { service, runner } = setup();
+    const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: "account-7", mode: "single", revisionIds: [ids[0]], testValues: [], skillEffects: "allowed" });
+
+    await service.message({ workspaceId, agentId, accountId: "account-7", executionId: execution.id, message: "first", generation: 1, turnId: ids[6], attemptId: ids[7] });
+
+    expect(runner.mock.calls.at(-1)?.[0]).toMatchObject({ accountId: "account-7" });
+  });
+
+  it("claims each attempt with a lease that outlasts a turn carrying a full-length external tool call", async () => {
+    const { service, repository } = setup();
+    const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [], skillEffects: "allowed" });
+
+    await service.message({ workspaceId, agentId, accountId: null, executionId: execution.id, message: "first", generation: 1, turnId: ids[6], attemptId: ids[7] });
+
+    // An external call is bounded at up to 90s (EXTERNAL_MCP_TOOL_CALL_TIMEOUT_MS cap) plus a
+    // 10s connect, and a turn can chain a few such steps; the lease must cover more than one so
+    // a concurrent detail read cannot expire a still-running attempt and let Retry re-fire it.
+    expect(repository.lastLeaseMs).toBeGreaterThanOrEqual(200_000);
+  });
+
+  it("persists and echoes an explicitly requested skillEffects override", async () => {
+    const { service, runner } = setup();
+    const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [], skillEffects: "allowed" });
+
+    expect(execution.skillEffects).toBe("allowed");
+
+    await service.message({ workspaceId, agentId, accountId: null, executionId: execution.id, message: "first", generation: 1, turnId: ids[6], attemptId: ids[7] });
+
+    expect(runner.mock.calls.at(-1)?.[0]).toMatchObject({ skillEffects: "allowed" });
+  });
+
   it("rejects duplicate, disabled, and incompatible supplied samples instead of omitting them", async () => {
     const { service } = setup();
     await expect(service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [{ contextVariableId: "40000000-0000-4000-8000-000000000001", value: "a" }, { contextVariableId: "40000000-0000-4000-8000-000000000001", value: "b" }] })).rejects.toMatchObject({ code: "bad_request" });
@@ -190,7 +236,7 @@ describe("TestExecutionService", () => {
 
   it("passes persisted side continuation into the next safe-test turn only after the claim is durable", async () => {
     const runner = vi.fn(async (input: { continuation: unknown }): Promise<TestExecutionRunnerResult> => ({ answer: "answer", messageId: ids[6], continuation: input.continuation ? { routine: "later" } : { routine: "next" } }));
-    const { service, repository } = setup(runner as never);
+    const { service, repository } = setup(runner);
     const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [] });
     await service.message({ workspaceId, agentId, accountId: null, executionId: execution.id, message: "first", generation: 1, turnId: ids[6], attemptId: ids[7] });
     repository.execution!.state = "completed";
@@ -204,7 +250,7 @@ describe("TestExecutionService", () => {
     const runner = vi.fn(async (input: { continuation: unknown }): Promise<TestExecutionRunnerResult> => ({
       answer: "answer", messageId: ids[6], continuation: input.continuation ? { routine: "later" } : { routine: "next" },
     }));
-    const { service, repository } = setup(runner as never);
+    const { service, repository } = setup(runner);
     const comparison = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "compare", revisionIds: [ids[0], ids[1]], testValues: [] });
     await service.message({ workspaceId, agentId, accountId: null, executionId: comparison.id, message: "first", generation: 1, turnId: ids[6], attemptId: ids[7] });
     const retained = await service.retainSide({ workspaceId, agentId, accountId: null, executionId: comparison.id, sideId: comparison.sides[1].id });
@@ -228,7 +274,7 @@ describe("TestExecutionService", () => {
       if (invocation === 2) throw new Error("provider timeout");
       return { answer: input.candidateRevision.id, messageId: ids[6], continuation: null };
     });
-    const { service, repository } = setup(runner as never);
+    const { service, repository } = setup(runner);
     const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "compare", revisionIds: [ids[0], ids[1]], testValues: [] });
     const initial = await service.message({ workspaceId, agentId, accountId: null, executionId: execution.id, message: "test", generation: 1, turnId: ids[6], attemptId: ids[7] });
     expect(initial.some((event) => event.type === "execution_partial")).toBe(true);

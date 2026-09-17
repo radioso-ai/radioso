@@ -4,7 +4,7 @@ import type { ConversationRepositoryPort } from "../../../db/repositories/conver
 import type { ExternalSkillDefinitionRepositoryPort } from "../../../db/repositories/externalSkillDefinitionRepository.js";
 import type { McpConnectionRepositoryPort } from "../../../db/repositories/mcpConnectionRepository.js";
 import type { MessageRepositoryPort, MessageRecord } from "../../../db/repositories/messageRepository.js";
-import { badRequest, notFound } from "../../../shared/domain/errors.js";
+import { badRequest, conflict, notFound } from "../../../shared/domain/errors.js";
 import {
   applyAgentRevisionSnapshot,
   projectInternalAgentConfig,
@@ -313,6 +313,11 @@ export class EvalSnapshotService {
     assistantMessageId: string;
     capturedBy?: string | null;
   }): Promise<EvalSnapshot> {
+    if (input.execution.skillEffects === "allowed") {
+      // Eval replays always run with skills suppressed; an answer produced by real external
+      // calls would fail on every replay, so the case must not be captured at all.
+      throw conflict("Capture eval cases from a private test that keeps skills off; a test that ran skills for real cannot be replayed faithfully.");
+    }
     const side = input.execution.sides.find((candidate) => candidate.id === input.sideId);
     if (!side) throw notFound("Test execution side is unavailable.");
     const targetIndex = side.history.findIndex((entry) =>

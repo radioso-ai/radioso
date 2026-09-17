@@ -1296,6 +1296,71 @@ describe("WorkbenchReplayRunner", () => {
     }));
   });
 
+  it("threads a requested skillEffects override through session preparation into the routine turn provider", async () => {
+    let seenSkillEffects: string | undefined;
+    const routineProvider: ChatRoutineProvider = {
+      async forTurn(input) {
+        seenSkillEffects = input.skillEffects;
+        return { activator: { activate: async () => null }, runner: {} as never };
+      },
+    };
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: stubTurnRouter("retrieval"),
+      routineProvider,
+      chatGateway: chatGatewayStub(),
+      chatAnswerPresenter: presenterStub(),
+    });
+
+    await runner.run({
+      workspaceId: "ws-1",
+      executionMode: "safe_test" as const,
+      skillEffects: "allowed",
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      query: "How long do refunds take?",
+      history: [],
+    });
+
+    expect(seenSkillEffects).toBe("allowed");
+  });
+
+  it("threads the requesting account into the routine turn provider so account-scoped skills can resolve it", async () => {
+    let seenAccountId: string | undefined;
+    const routineProvider: ChatRoutineProvider = {
+      async forTurn(input) {
+        seenAccountId = input.accountId;
+        return { activator: { activate: async () => null }, runner: {} as never };
+      },
+    };
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: stubTurnRouter("retrieval"),
+      routineProvider,
+      chatGateway: chatGatewayStub(),
+      chatAnswerPresenter: presenterStub(),
+    });
+
+    await runner.run({
+      workspaceId: "ws-1",
+      accountId: "account-7",
+      executionMode: "safe_test" as const,
+      skillEffects: "allowed",
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      query: "How long do refunds take?",
+      history: [],
+    });
+
+    expect(seenAccountId).toBe("account-7");
+  });
+
   it("seeds the in-memory routine store so the engine resumes mid-routine", async () => {
     let seen: AttemptRoutineInput | null = null;
     const fakeEngine = {

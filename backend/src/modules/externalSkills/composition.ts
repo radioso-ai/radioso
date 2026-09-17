@@ -21,9 +21,15 @@ import type {
  * The spine stays auth-agnostic — only this factory knows how a credential
  * becomes a request header.
  */
+interface McpToolServiceFactoryOptions {
+  /** Bound applied to each `callTool` invocation (the connect/discovery bound stays separate and shorter). */
+  callTimeoutMs?: number;
+}
+
 export const createMcpToolServiceFactory = (
   assertPublicUrl?: (url: string) => void | Promise<void>,
   fetchImpl?: typeof fetch,
+  options: McpToolServiceFactoryOptions = {},
 ): ToolServiceFactory => ({
   create: (connection: McpConnectionRecord): SdkMcpToolService => {
     const credentialProvider =
@@ -41,6 +47,7 @@ export const createMcpToolServiceFactory = (
       credentialProvider,
       assertPublicUrl,
       fetchImpl,
+      callTimeoutMs: options.callTimeoutMs,
     });
   },
 });
@@ -51,6 +58,8 @@ interface LiveMcpConnectionLookupOptions {
   encryptionKeyId?: string | null;
   assertPublicUrl?: (url: string) => void | Promise<void>;
   transportFetchImpl?: typeof fetch;
+  /** Bound applied to each external skill's `callTool` invocation. */
+  callTimeoutMs?: number;
 }
 
 /**
@@ -120,8 +129,11 @@ export const buildExternalSkillsDeps = (
     ...options,
     assertPublicUrl,
   }),
-  toolServices: createMcpToolServiceFactory(assertPublicUrl, options.transportFetchImpl),
+  toolServices: createMcpToolServiceFactory(assertPublicUrl, options.transportFetchImpl, {
+    callTimeoutMs: options.callTimeoutMs,
+  }),
   // The transport-agnostic ToolSkillBridge factory, injected from composition so the
   // executor stays free of a direct conversation-tools (concrete) dependency.
   toolSkillExecutorFactory: createToolSkillExecutor,
+  logger: options.logger,
 });

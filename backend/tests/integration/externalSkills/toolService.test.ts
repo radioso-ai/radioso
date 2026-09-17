@@ -108,6 +108,54 @@ describe("SdkMcpToolService", () => {
     expect(Date.now() - start).toBeLessThan(2000);
   });
 
+  it("completes a slow tool call bounded by callTimeoutMs even past the shorter connect/discovery timeoutMs", async () => {
+    const { clientTransport } = await connectMockMcpServer([
+      {
+        name: "converse",
+        respond: async () => {
+          await new Promise((resolve) => setTimeout(resolve, 400));
+          return { content: [{ type: "text", text: "answered" }] };
+        },
+      },
+    ]);
+    // The in-memory connect must finish inside timeoutMs, so keep that bound generous
+    // enough not to flake under parallel load while still well under the tool delay.
+    const service = new SdkMcpToolService({
+      timeoutMs: 200,
+      callTimeoutMs: 800,
+      transportFactory: () => clientTransport,
+    });
+
+    const result = await service.callTool({ toolName: "converse", input: {} });
+    expect(result.status).toBe("completed");
+    expect(result.answer).toBe("answered");
+    await service.close();
+  });
+
+  it("bounds a slow tool call by callTimeoutMs and fails safely with mcp_timeout", async () => {
+    const { clientTransport } = await connectMockMcpServer([
+      {
+        name: "converse",
+        respond: async () => {
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          return { content: [{ type: "text", text: "too late" }] };
+        },
+      },
+    ]);
+    const service = new SdkMcpToolService({
+      timeoutMs: 5000,
+      callTimeoutMs: 50,
+      transportFactory: () => clientTransport,
+    });
+
+    const start = Date.now();
+    const result = await service.callTool({ toolName: "converse", input: {} });
+    expect(result.status).toBe("failed");
+    expect(result.error?.code).toBe("mcp_timeout");
+    expect(Date.now() - start).toBeLessThan(2000);
+    await service.close();
+  });
+
   it("connects once under concurrent first calls", async () => {
     const { clientTransport } = await connectMockMcpServer([
       { name: "ping", respond: () => ({ content: [{ type: "text", text: "pong" }] }) },
@@ -139,6 +187,9 @@ describe("SdkMcpToolService", () => {
       context: { signal: AbortSignal.abort() },
     });
     expect(result.status).toBe("failed");
+    // The SDK reports a caller abort as a RequestTimeout McpError; it must not be
+    // misclassified as a retryable timeout.
+    expect(result.error).toMatchObject({ code: "mcp_call_aborted", retryable: false });
     await service.close();
   });
 

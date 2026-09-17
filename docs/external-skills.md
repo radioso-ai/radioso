@@ -1,7 +1,7 @@
 ---
 title: "External Skills via MCP"
 description: "Configuration of external MCP server connections and unified named skill definitions for agent routines with encrypted credential storage."
-last_updated: 2026-08-02
+last_updated: 2026-09-17
 ---
 
 # External Skills via MCP
@@ -103,6 +103,14 @@ holds, and to store the skill's outputs in variables for later steps. At run tim
 the routine sends those values, calls the tool, and branches on the outcome
 (success or failure). See [Authoring Routines](./authoring-routines.md) for how
 binding works.
+
+## Call timeout
+
+A skill's tool call is bounded by the `EXTERNAL_MCP_TOOL_CALL_TIMEOUT_MS`
+environment variable — 30 seconds by default, up to a configured maximum of 90
+seconds. Connecting to a server and discovering its tools use a separate,
+fixed 10-second bound. A call that runs past its bound fails the routine step
+with `mcp_timeout`.
 
 ## Security model
 

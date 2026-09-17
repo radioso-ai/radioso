@@ -1788,13 +1788,14 @@ export const installDashboardApiMocks = async (
     }
 
     if (request.method() === "POST" && path === `/agents/${defaultAgentId}/test-executions`) {
-      const body = request.postDataJSON() as { mode?: "single" | "compare"; revisionIds?: string[] };
+      const body = request.postDataJSON() as { mode?: "single" | "compare"; revisionIds?: string[]; skillEffects?: "suppressed" | "allowed" };
       const generation = nextTestExecutionIndex;
       nextTestExecutionIndex += 1;
       await json(route, {
         id: `execution-${generation}`,
         generation,
         mode: body.mode ?? "single",
+        skillEffects: body.skillEffects ?? "suppressed",
         sides: (body.revisionIds?.length ? body.revisionIds : [defaultCandidateRevisionId]).map((revisionId, index) => ({
           id: `side-${generation}-${index}`,
           revision: revisionId === defaultPublishedRevisionId ? defaultPublishedRevision : defaultCandidateRevision,

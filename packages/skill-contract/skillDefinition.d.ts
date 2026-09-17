@@ -173,4 +173,9 @@ export interface SkillDefinition {
   steps: SkillStepDefinition[];
   shapes?: SkillShapeDefinition[];
   outcomes?: SkillOutcomeDefinition[];
+  /**
+   * The executor resolves delivery or state through the persisted conversation row;
+   * it cannot run against an ephemeral (replay/test) conversation.
+   */
+  requiresDurableConversation?: boolean;
 }

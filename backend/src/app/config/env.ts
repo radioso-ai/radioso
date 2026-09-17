@@ -180,6 +180,14 @@ const envSchema = z.object({
   MCP_CONVERSE_SESSION_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   MCP_CONVERSE_SESSION_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(60),
   MCP_CONVERSE_SESSION_TOKEN_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(10),
+  // A skill-invoked external MCP tool call can be a full remote turn (e.g. a
+  // Radioso-to-Radioso `converse` call), not just a round trip — this bounds only
+  // `callTool`, separate from the shorter connect/discovery timeout.
+  // Bounds ONE `callTool`, not a whole turn: a step is at most connect + this (~100s at the
+  // cap). A routine that makes several external calls in one turn can still exceed the private
+  // test attempt lease (see DEFAULT_ATTEMPT_LEASE_MS); the cap keeps a single call's own bound
+  // sane, the lease is sized separately for the multi-step case.
+  EXTERNAL_MCP_TOOL_CALL_TIMEOUT_MS: z.coerce.number().int().positive().max(90_000).default(30_000),
   RADIOSO_MCP_SIGNING_SECRET: emptyStringToUndefined(z.string().min(32)),
   RADIOSO_TRUSTED_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(0),
   OPERATOR_MCP_RESOURCE_URL: emptyStringToUndefined(z.string().url()),

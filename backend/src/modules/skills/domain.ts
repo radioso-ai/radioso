@@ -299,6 +299,9 @@ export const skillDefinitionSchema = skillCatalogEntrySchema.omit({
   generatedContract: skillGeneratedContractSchema.optional(),
   steps: z.array(skillStepDefinitionSchema),
   shapes: z.array(skillShapeDefinitionSchema).optional(),
+  // The executor resolves delivery or state through the persisted conversation row;
+  // it cannot run against an ephemeral (replay/test) conversation.
+  requiresDurableConversation: z.boolean().optional(),
 });
 
 // Compile-time guard: fails the build if skillDefinitionSchema ever infers a

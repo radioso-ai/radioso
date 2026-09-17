@@ -172,6 +172,55 @@ describe('buildRoutineRunTrace', () => {
     expect(view?.steps[0]).toMatchObject({ skillName: 'crm_lookup', skillStatus: 'ok' })
   })
 
+  it('carries the skill failure reason for a failed tool step', () => {
+    const view = buildRoutineRunTrace(
+      routineStage({
+        steps: [{
+          stepId: 'notify',
+          kind: 'skill',
+          event: 'skill_dispatched',
+          skillName: 'send_notification',
+          skillStatus: 'failed',
+          skillReason: 'suppressed_for_safe_test',
+        }],
+      }),
+    )
+    expect(view?.steps[0]).toMatchObject({
+      skillName: 'send_notification',
+      skillStatus: 'failed',
+      skillReason: 'suppressed_for_safe_test',
+    })
+  })
+
+  it('carries a requires_durable_conversation skill reason for a failed notify step', () => {
+    const view = buildRoutineRunTrace(
+      routineStage({
+        steps: [{
+          stepId: 'notify',
+          kind: 'skill',
+          event: 'skill_dispatched',
+          skillName: 'send_notification',
+          skillStatus: 'failed',
+          skillReason: 'requires_durable_conversation',
+        }],
+      }),
+    )
+    expect(view?.steps[0]).toMatchObject({
+      skillName: 'send_notification',
+      skillStatus: 'failed',
+      skillReason: 'requires_durable_conversation',
+    })
+  })
+
+  it('omits skillReason when the sub-trace does not carry one', () => {
+    const view = buildRoutineRunTrace(
+      routineStage({
+        steps: [{ stepId: 'lookup', kind: 'skill', event: 'skill_dispatched', skillName: 'crm_lookup', skillStatus: 'ok' }],
+      }),
+    )
+    expect(view?.steps[0].skillReason).toBeUndefined()
+  })
+
   it('returns undefined when the stage carries no routine sub-trace', () => {
     expect(buildRoutineRunTrace({ id: 'routine:contact', kind: 'routine_resume', status: 'applied' })).toBeUndefined()
     expect(

@@ -1399,6 +1399,66 @@ describe("DefaultRoutineRunner trace", () => {
     expect(skillEntry).toMatchObject({ stepId: "lookup", kind: "skill", skillName: "crm_lookup", skillStatus: "ok" });
   });
 
+  it("carries the host-private failure reason of a failed skill dispatch onto the trace step", async () => {
+    const skillRoutine: Routine = {
+      id: "contact",
+      rootStepId: "ask_email",
+      steps: [
+        { id: "ask_email", kind: "chat", action: "Ask for email." },
+        { id: "lookup", kind: "skill", skillName: "crm_lookup" },
+        { id: "done", kind: "terminal", action: "Done." },
+      ],
+      transitions: [
+        { from: "ask_email", to: "lookup", condition: "email provided" },
+        { from: "lookup", to: "done", condition: "default", guard: { kind: "default" } },
+      ],
+    };
+    const runner = new DefaultRoutineRunner(
+      [skillRoutine],
+      { select: vi.fn(async () => ({ nextStepId: "lookup" })) },
+      { render: vi.fn(echoRenderer.render) },
+      {
+        dispatch: vi.fn(async () => ({
+          status: "failed" as const,
+          outputs: { skill: "crm_lookup", reason: "mcp_timeout" },
+          metadata: { failureReason: "mcp_timeout" },
+        })),
+      },
+    );
+
+    const result = await runner.resume({ turn, state: state(["ask_email"]) });
+
+    const skillEntry = result.trace?.steps.find((entry) => entry.event === "skill_dispatched");
+    expect(skillEntry).toMatchObject({ stepId: "lookup", skillName: "crm_lookup", skillStatus: "failed", skillReason: "mcp_timeout" });
+  });
+
+  it("omits skillReason when the dispatch result carries no host-private failure reason", async () => {
+    const skillRoutine: Routine = {
+      id: "contact",
+      rootStepId: "ask_email",
+      steps: [
+        { id: "ask_email", kind: "chat", action: "Ask for email." },
+        { id: "lookup", kind: "skill", skillName: "crm_lookup" },
+        { id: "done", kind: "terminal", action: "Done." },
+      ],
+      transitions: [
+        { from: "ask_email", to: "lookup", condition: "email provided" },
+        { from: "lookup", to: "done", condition: "default", guard: { kind: "default" } },
+      ],
+    };
+    const runner = new DefaultRoutineRunner(
+      [skillRoutine],
+      { select: vi.fn(async () => ({ nextStepId: "lookup" })) },
+      { render: vi.fn(echoRenderer.render) },
+      { dispatch: vi.fn(async () => ({ status: "ok" as const, outputs: { found: true } })) },
+    );
+
+    const result = await runner.resume({ turn, state: state(["ask_email"]) });
+
+    const skillEntry = result.trace?.steps.find((entry) => entry.event === "skill_dispatched");
+    expect(skillEntry).not.toHaveProperty("skillReason");
+  });
+
   it("extracts the slot on a step that branches on it deterministically (no llm edge)", async () => {
     // "Ask for budget, then branch on budget in code." The step collects a slot but its
     // only edges are a field guard + a default — no llm edge. The selector must still run

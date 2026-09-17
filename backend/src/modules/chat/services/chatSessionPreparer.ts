@@ -62,7 +62,7 @@ import { DEFAULT_SUGGESTED_QUESTIONS_COUNT } from "../../settings/contracts/retr
 import type { TurnRouting } from "./turnRouter.js";
 import type { ChatTurnPlanHandle } from "./turnPlanCoordinator.js";
 import type { ModelCallUsageAttribution } from "../../../shared/domain/modelCallUsageContext.js";
-import type { TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
+import { resolveSkillEffectPolicy, type ConversationDurability, type SkillEffectPolicy, type TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
 import type { AnswerCoverageAssessment } from "../../answerCoverage/public.js";
 import type {
   ChatAnswerCoverageAssessment,
@@ -212,6 +212,10 @@ export interface PreparedSession {
   /** Optional caller-owned usage attribution shared by every model call in this turn. */
   usageAttribution?: ModelCallUsageAttribution;
   executionMode?: TurnExecutionMode;
+  /** Resolved once here from `executionMode` (+ any requested override); rides on the session for every downstream skill dispatch site. */
+  skillEffects?: SkillEffectPolicy;
+  /** Defaults to `"durable"`; a replay/test caller states `"ephemeral"` explicitly (see {@link PrepareChatSessionInput.conversationDurability}). */
+  conversationDurability?: ConversationDurability;
   /** Immutable per-agent enablements selected by the conversation's pinned release. */
   revisionContextVariableEnablements?: readonly AgentContextVariableEnablement[];
   /** Trusted safe-test samples retained when the turn re-prepares retrieval/direct context. */
@@ -244,6 +248,14 @@ export interface PrepareChatSessionInput {
   /** Ephemeral caller attribution for model and retrieval usage emitted by this turn. */
   usageAttribution?: ModelCallUsageAttribution;
   executionMode?: TurnExecutionMode;
+  /** Caller-requested skill-effect override; only meaningful in `safe_test` (see {@link resolveSkillEffectPolicy}). */
+  skillEffects?: SkillEffectPolicy;
+  /**
+   * Stated only by a replay/test caller building an in-memory-only conversation
+   * (`WorkbenchReplayRunner`); every other caller leaves this unset and gets the
+   * `"durable"` default a real conversation row satisfies.
+   */
+  conversationDurability?: ConversationDurability;
   /**
    * Operator-only workbench test override: routine definition ids (drafts included)
    * to make eligible for this turn's routine activation/resume. Ephemeral — never
@@ -484,6 +496,8 @@ export class ChatSessionPreparer {
       conversationSummary,
       usageAttribution: input.usageAttribution,
       executionMode: input.executionMode,
+      skillEffects: resolveSkillEffectPolicy(input.executionMode, input.skillEffects),
+      conversationDurability: input.conversationDurability ?? "durable",
       ...(revisionResolved.contextVariableEnablements
         ? { revisionContextVariableEnablements: revisionResolved.contextVariableEnablements }
         : {}),

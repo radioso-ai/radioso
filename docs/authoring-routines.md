@@ -1,7 +1,7 @@
 ---
 title: "Authoring Routines"
 description: "Create and edit dashboard routines in the Document view, read the Map, connect skills, and try a change in a test chat before it ships."
-last_updated: 2026-09-16
+last_updated: 2026-09-17
 ---
 
 # Authoring Routines
@@ -214,6 +214,22 @@ to normal answering when it finishes.
 
 Use the test to check the trigger, information collection, skill bindings,
 branches, endings, and handoffs before you publish the agent.
+
+A private test keeps skills with outward effects off by default. A tool step
+that calls an external MCP tool, a webhook, or a customer email or Slack skill
+reports `failed` with the reason *skills are off in this test*, and the
+routine takes its failed branch — so you can watch that branch without
+sending anything real. Choose **Run skills for real** in the Test chat actions
+menu to start a fresh private test where every skill runs exactly as it would
+for a customer, emails and all. Retrieval skills run in both modes, and test
+values still stand in for context variables either way. Action steps, handoffs,
+and completion export stay off in every private test.
+
+A notify skill delivers through the saved conversation, so it stays off in
+every private test, with or without **Run skills for real**. **Retry** on a
+failed attempt re-runs the turn, so a skill the first attempt already fired
+fires again. **Run evals** from Test Chat always replays with skills off, and
+an eval case captures only from a test that kept skills off.
 
 ## Completion export
 

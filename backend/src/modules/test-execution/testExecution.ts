@@ -6,6 +6,7 @@ import {
   type UsageLimitReservation,
 } from "../../shared/domain/usageLimitPolicy.js";
 import type { AgentRevision } from "../agents/public.js";
+import type { SkillEffectPolicy } from "../../shared/domain/turnExecutionMode.js";
 import {
   freezeTestValues,
   type ContextVariableTestValueCatalogPort,
@@ -13,6 +14,14 @@ import {
   type FrozenTestValue,
   type TestValue,
 } from "../context-variables/public.js";
+
+// An attempt's lease must outlast the slowest legitimate turn, or a concurrent detail read
+// marks a still-running attempt lease_expired and its result is discarded — and Retry then
+// re-fires any real effect. A turn can chain several external tool steps, each up to the
+// EXTERNAL_MCP_TOOL_CALL_TIMEOUT_MS cap (90s) plus a 10s connect, so this covers ~3 such
+// steps. Cost of a long lease is only how long a genuinely crashed attempt stays "running"
+// before it becomes retryable.
+const DEFAULT_ATTEMPT_LEASE_MS = 300_000;
 
 export type TestExecutionMode = "single" | "compare";
 export type TestExecutionState = "running" | "partial" | "failed" | "completed";
@@ -48,6 +57,8 @@ export interface TestExecution {
   generation: number;
   state: TestExecutionState;
   testValues: readonly FrozenTestValue[];
+  /** Frozen at start, like `testValues`: whether this execution's turns may fire outward skill effects. */
+  skillEffects: SkillEffectPolicy;
   sides: readonly TestExecutionSide[];
   createdAt: Date;
 }
@@ -105,6 +116,7 @@ export interface TestExecutionHistoryItem {
   generation: number;
   state: TestExecutionState;
   createdAt: Date;
+  skillEffects: SkillEffectPolicy;
   sides: readonly TestExecutionHistorySide[];
 }
 
@@ -152,6 +164,8 @@ export interface TrustedTestExecutionRunnerPort {
     continuation: unknown;
     testValues: readonly FrozenTestValue[];
     executionMode: "safe_test";
+    skillEffects: SkillEffectPolicy;
+    accountId: string | null;
   }): Promise<TestExecutionRunnerResult>;
 }
 
@@ -205,10 +219,15 @@ export class TestExecutionService {
 
   constructor(private readonly options: TestExecutionServiceOptions) {
     this.now = options.now ?? (() => new Date());
-    this.leaseMs = options.leaseMs ?? 30_000;
+    // An attempt's lease must outlast the slowest legitimate turn, or a concurrent detail
+    // read marks a still-running attempt `lease_expired` and its result is discarded. With
+    // skill effects allowed, one tool step alone can take the full external-call bound
+    // (30s by default) on top of planning and composition. The cost of a long lease is only
+    // how long a crashed attempt stays "running" before it becomes retryable.
+    this.leaseMs = options.leaseMs ?? DEFAULT_ATTEMPT_LEASE_MS;
   }
 
-  async start(input: { workspaceId: string; agentId: string; accountId: string | null; mode: TestExecutionMode; revisionIds: readonly string[]; testValues: readonly TestValue[]; expectedDraftGeneration?: number; idempotencyKey: string }): Promise<TestExecution> {
+  async start(input: { workspaceId: string; agentId: string; accountId: string | null; mode: TestExecutionMode; revisionIds: readonly string[]; testValues: readonly TestValue[]; expectedDraftGeneration?: number; idempotencyKey: string; skillEffects?: SkillEffectPolicy }): Promise<TestExecution> {
     // A retried or double-clicked start must never re-run the greeting bootstrap or mint a
     // second execution. Checked first, before any revision lookup or provider call.
     const replay = await this.options.repository.findByIdempotencyKey({ workspaceId: input.workspaceId, agentId: input.agentId, idempotencyKey: input.idempotencyKey });
@@ -238,6 +257,7 @@ export class TestExecutionService {
       })))
       : revisions.map(() => undefined);
     const executionId = this.options.createId();
+    const skillEffects: SkillEffectPolicy = input.skillEffects ?? "suppressed";
     const sides = revisions.map((revision, index): TestExecutionSide => ({
       id: this.options.createId(), executionId, revision, conversationId: this.options.createId(),
       state: "ready", retryable: false,
@@ -249,9 +269,9 @@ export class TestExecutionService {
     }));
     const execution = await this.options.repository.create({
       id: executionId, workspaceId: input.workspaceId, agentId: input.agentId, mode: input.mode,
-      generation: 1, testValues, sides, idempotencyKey: input.idempotencyKey,
+      generation: 1, testValues, skillEffects, sides, idempotencyKey: input.idempotencyKey,
     });
-    await this.audit(input, "agent.test_execution.started", "success", { executionId, mode: input.mode, sideCount: sides.length });
+    await this.audit(input, "agent.test_execution.started", "success", { executionId, mode: input.mode, sideCount: sides.length, skillEffects });
     return execution;
   }
 
@@ -381,7 +401,7 @@ export class TestExecutionService {
         surface: "test_execution",
         usage: "test_run",
       });
-      const result = await this.options.runner.run({ workspaceId: identity.workspaceId, agentId: identity.agentId, candidateRevision: side.revision, conversationId: side.conversationId, message: claim.attempt.message, history: side.history, continuation: side.continuation, testValues: execution.testValues, executionMode: "safe_test" });
+      const result = await this.options.runner.run({ workspaceId: identity.workspaceId, agentId: identity.agentId, candidateRevision: side.revision, conversationId: side.conversationId, message: claim.attempt.message, history: side.history, continuation: side.continuation, testValues: execution.testValues, executionMode: "safe_test", skillEffects: execution.skillEffects, accountId: identity.accountId });
       const stored = await this.options.repository.complete({ workspaceId: identity.workspaceId, agentId: identity.agentId, executionId: identity.executionId, sideId: side.id, turnId: identity.turnId, attemptId: identity.attemptId, fence: claim.attempt.fence, result, now: this.now() });
       await reservation.commit();
       return stored === "stale" ? { failed: true, events: [this.failedEvent(identity, side.id, "stale_attempt", false)] } : { failed: false, events: this.completedEvents(identity, side.id, result) };

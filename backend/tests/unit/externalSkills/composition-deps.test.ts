@@ -48,4 +48,11 @@ describe("createMcpToolServiceFactory", () => {
     ).toBeInstanceOf(SdkMcpToolService);
     expect(factory.create({ id: "c2", serverUrl: "https://m", authMethod: "oauth" })).toBeInstanceOf(SdkMcpToolService);
   });
+
+  it("accepts a callTimeoutMs override for the built tool service's call bound", () => {
+    const factory = createMcpToolServiceFactory(undefined, undefined, { callTimeoutMs: 45_000 });
+    const service = factory.create({ id: "c1", serverUrl: "https://m", authMethod: "access_token", accessToken: "tok" });
+    expect(service).toBeInstanceOf(SdkMcpToolService);
+    expect((service as SdkMcpToolService).callTimeoutMs).toBe(45_000);
+  });
 });

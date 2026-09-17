@@ -375,6 +375,7 @@ export function ChatMessageThread({
   evalCaptureEnabled = false,
   captureEvalSnapshot,
   shouldShowEvalCapture,
+  evalCaptureDisabledReason,
   analyticsSurface = 'dashboard',
   analyticsEnabled = true,
   onEmbedAnalyticsEvent,
@@ -408,6 +409,8 @@ export function ChatMessageThread({
   evalCaptureEnabled?: boolean
   captureEvalSnapshot?: (assistantMessageId: string) => ReturnType<NonNullable<SendToEvalActionProps['captureSnapshot']>>
   shouldShowEvalCapture?: (assistantMessageId: string) => boolean
+  /** When it returns a string, the eval-capture trigger for that message is disabled and shows the string as its title. */
+  evalCaptureDisabledReason?: (assistantMessageId: string) => string | undefined
   analyticsSurface?: ChatLinkAnalyticsSurface
   analyticsEnabled?: boolean
   onEmbedAnalyticsEvent?: (event: WebsiteEmbedAnalyticsInput) => void
@@ -856,6 +859,7 @@ export function ChatMessageThread({
                               captureSnapshot={captureEvalSnapshot
                                 ? () => captureEvalSnapshot(assistantMessageId)
                                 : undefined}
+                              disabledReason={evalCaptureDisabledReason?.(assistantMessageId)}
                               className="inline-flex size-5 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
                             />
                           ) : null}

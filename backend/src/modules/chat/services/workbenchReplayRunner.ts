@@ -43,7 +43,7 @@ import {
   type PrepareChatSessionInput,
   type PreparedSession,
 } from "./chatSessionPreparer.js";
-import type { TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
+import type { SkillEffectPolicy, TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
 import {
   ChatTurnAssembly,
   type ChatRoutineProvider,
@@ -206,6 +206,8 @@ export interface WorkbenchReplayInput {
    * them, so no caller gets to omit it.
    */
   executionMode: TurnExecutionMode;
+  /** Caller-requested skill-effect override; only meaningful in `safe_test` (see {@link resolveSkillEffectPolicy}). */
+  skillEffects?: SkillEffectPolicy;
   accountId?: string | null;
   sourceAgentId: string;
   /** Stable private identity supplied by a trusted execution aggregate. */
@@ -271,6 +273,10 @@ export class WorkbenchReplayRunner {
       ),
       sourceChannel: "workbench_replay",
       executionMode: input.executionMode,
+      skillEffects: input.skillEffects,
+      // This runner builds the ephemeral in-memory effect profile (createEphemeralChatTurnEffectProfile)
+      // below; it is the one place that knows no conversation row is ever persisted for this turn.
+      conversationDurability: "ephemeral",
       retrievalSettingsOverride: input.retrievalSettingsOverride,
       usageAttribution: input.usageAttribution,
     };

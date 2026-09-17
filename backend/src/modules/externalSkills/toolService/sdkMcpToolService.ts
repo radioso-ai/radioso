@@ -2,6 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import { McpError } from "@modelcontextprotocol/sdk/types.js";
 
 import type {
   ConversationToolDefinition,
@@ -17,19 +18,26 @@ import { fetchPublicUrl } from "../../../shared/infra/http/publicUrlFetch.js";
  * OAuth (P2, via the SDK {@link OAuthClientProvider}) both slot in without
  * changing {@link SdkMcpToolService}.
  */
-export interface McpCredentialProvider {
+interface McpCredentialProvider {
   getRequestHeaders(): Promise<Record<string, string>>;
 }
 
-export interface SdkMcpToolServiceOptions {
+interface SdkMcpToolServiceOptions {
   /** Remote Streamable-HTTP MCP endpoint (production). */
   serverUrl?: string;
   /** Static-token (P1) credential seam: headers applied to every request. */
   credentialProvider?: McpCredentialProvider;
   /** OAuth (P2) seam: SDK-native provider that handles token refresh/re-auth. */
   authProvider?: OAuthClientProvider;
-  /** Bound applied to connect, discovery, and each tool invocation. */
+  /** Bound applied to connect and discovery (`listTools`) only. */
   timeoutMs?: number;
+  /**
+   * Bound applied to each `callTool` invocation only. Separate from `timeoutMs`
+   * because a tool call can be a full remote turn (e.g. a `converse` call to
+   * another Radioso agent, which itself budgets ~30s) — much longer than a
+   * connect/discovery round trip should ever take.
+   */
+  callTimeoutMs?: number;
   /** Test seam: supply a transport directly (e.g. in-memory) instead of HTTP. */
   transportFactory?: () => Transport | Promise<Transport>;
   /**
@@ -44,6 +52,10 @@ export interface SdkMcpToolServiceOptions {
 }
 
 const DEFAULT_TIMEOUT_MS = 10_000;
+const DEFAULT_CALL_TIMEOUT_MS = 30_000;
+// @modelcontextprotocol/sdk `ErrorCode.RequestTimeout`. `McpError.code` is a plain number, so
+// comparing against the enum member trips `no-unsafe-enum-comparison`; the literal is stable.
+const MCP_SDK_REQUEST_TIMEOUT_ERROR_CODE = -32001;
 const DEFAULT_CLIENT_INFO = { name: "radioso", version: "1.0.0" };
 
 interface McpContentBlock {
@@ -106,6 +118,9 @@ const structuredOutputs = (value: unknown): Record<string, unknown> | undefined 
  * Coarse outcome mapping only: MCP `isError` -> failed, otherwise completed.
  * Fine-grained named outcomes (P3) are derived downstream from `answer`/`outputs`.
  *
+ * Connect and discovery share one (short) bound; each tool call gets its own,
+ * longer bound — a call can be a full remote turn, not just a round trip.
+ *
  * Failure handling is sanitized: transport/connect/auth exceptions never surface
  * raw error text (which could carry endpoint or credential detail) in the
  * returned result; they map to a generic code/message. Internal observability
@@ -115,9 +130,12 @@ export class SdkMcpToolService implements ToolService {
   private client: Client | undefined;
   private clientPromise: Promise<Client> | undefined;
   private readonly timeoutMs: number;
+  /** Bound applied to each `callTool`; exposed so composition tests can assert the wiring. */
+  readonly callTimeoutMs: number;
 
   constructor(private readonly options: SdkMcpToolServiceOptions) {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.callTimeoutMs = options.callTimeoutMs ?? DEFAULT_CALL_TIMEOUT_MS;
   }
 
   private async buildTransport(): Promise<Transport> {
@@ -190,11 +208,24 @@ export class SdkMcpToolService implements ToolService {
           arguments: (input.input ?? {}) as Record<string, unknown>,
         },
         undefined,
-        { timeout: this.timeoutMs, signal: input.context?.signal },
+        { timeout: this.callTimeoutMs, signal: input.context?.signal },
       ));
     } catch (error) {
+      // A caller-initiated abort is reported by the SDK as a RequestTimeout McpError, so
+      // check the signal first or a cancellation would be misreported as a retryable timeout.
+      if (input.context?.signal?.aborted) {
+        return {
+          status: "failed",
+          error: { code: "mcp_call_aborted", message: "External tool call was cancelled", retryable: false },
+          metadata: { transport: "mcp" },
+        };
+      }
       // Sanitized: never surface raw exception text (may carry endpoint/credential detail).
-      const isTimeout = error instanceof McpTimeoutError;
+      // Connect uses our own withTimeout wrapper (McpTimeoutError); a per-call
+      // timeout is enforced natively by the SDK's request `{ timeout }` option,
+      // which rejects with McpError(RequestTimeout) instead.
+      const isTimeout = error instanceof McpTimeoutError
+        || (error instanceof McpError && error.code === MCP_SDK_REQUEST_TIMEOUT_ERROR_CODE);
       return {
         status: "failed",
         error: {

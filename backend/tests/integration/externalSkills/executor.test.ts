@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createToolSkillExecutor } from "@radioso/conversation-tools";
 
@@ -123,6 +123,53 @@ describe("McpSkillExecutor", () => {
       expect(result.outcome.status).toBe("completed");
       expect(result.outcome.outputs).toMatchObject({ echoed: { channel: "#support", message: "from slot" } });
     }
+  });
+
+  it("emits exactly one redacted warn log on a settled failed dispatch", async () => {
+    const warn = vi.fn();
+    const { clientTransport } = await connectMockMcpServer([
+      { name: "post_message", respond: () => ({ content: [{ type: "text", text: "nope" }], isError: true }) },
+    ]);
+    const executor = new McpSkillExecutor({
+      skills: { findEnabledByName: async () => record() },
+      connections: { findById: async () => connection },
+      toolServices: { create: () => new SdkMcpToolService({ transportFactory: () => clientTransport }) },
+      toolSkillExecutorFactory: createToolSkillExecutor,
+      logger: { warn },
+    });
+
+    const result = await dispatch(executor, "handoff_slack", { message: "do-not-log-this-param" });
+
+    expect(result).toMatchObject({ disposition: "settled", outcome: { status: "failed" } });
+    expect(warn).toHaveBeenCalledOnce();
+    const [fields, message] = warn.mock.calls[0] as [Record<string, unknown>, string];
+    expect(message).toBe("external_skill_dispatch_failed");
+    expect(fields).toMatchObject({
+      event: "external_skill",
+      agentId: "a1",
+      connectionId: "c1",
+      skillName: "handoff_slack",
+      toolName: "post_message",
+    });
+    expect(JSON.stringify(fields)).not.toContain("do-not-log-this-param");
+  });
+
+  it("does not warn-log on a settled completed dispatch", async () => {
+    const warn = vi.fn();
+    const { clientTransport } = await connectMockMcpServer([
+      { name: "post_message", respond: (args) => ({ content: [{ type: "text", text: "posted" }], structuredContent: { echoed: args } }) },
+    ]);
+    const executor = new McpSkillExecutor({
+      skills: { findEnabledByName: async () => record() },
+      connections: { findById: async () => connection },
+      toolServices: { create: () => new SdkMcpToolService({ transportFactory: () => clientTransport }) },
+      toolSkillExecutorFactory: createToolSkillExecutor,
+      logger: { warn },
+    });
+
+    await dispatch(executor, "handoff_slack", { message: "hi" });
+
+    expect(warn).not.toHaveBeenCalled();
   });
 
   it("fails safely when the runtime SSRF guard rejects the connection URL", async () => {

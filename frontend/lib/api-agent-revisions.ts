@@ -62,6 +62,8 @@ export interface TestExecution {
   id: string
   generation: number
   mode: 'single' | 'compare'
+  /** Frozen for this execution, like `testValues`; `suppressed` keeps outward-effect skills off. */
+  skillEffects: 'suppressed' | 'allowed'
   sides: Array<{
     id: string
     revision: AgentRevisionSummary
@@ -183,6 +185,8 @@ export const agentRevisionsApi = {
     revisionIds: [string] | [string, string]
     testValues: Array<{ contextVariableId: string; value: unknown }>
     expectedDraftGeneration?: number
+    /** Omitted means the backend default, `suppressed`. */
+    skillEffects?: 'suppressed' | 'allowed'
   }, signal?: AbortSignal): Promise<TestExecution> {
     return request<TestExecution>(`/agents/${agentId}/test-executions`, {
       method: 'POST',

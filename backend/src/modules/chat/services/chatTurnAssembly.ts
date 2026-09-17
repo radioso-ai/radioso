@@ -93,7 +93,7 @@ import {
 import type { TurnRouter, TurnRouting } from "./turnRouter.js";
 import { APPROVAL_REQUEST_ACTION_TYPE } from "./actions/approvalRequestActionHandler.js";
 import type { ChatTurnPlanHandle } from "./turnPlanCoordinator.js";
-import type { TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
+import type { ConversationDurability, SkillEffectPolicy, TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
 import type { AnswerCoverageHeadRecorder } from "./answerCoverageHeadRecorder.js";
 import type { AnswerCoverageShadowAssessor } from "./answerCoverageShadowAssessor.js";
 import type { AnswerCoverageRecord } from "../../answerCoverage/public.js";
@@ -220,6 +220,8 @@ export interface ChatRoutineProvider {
      */
     previewRoutineIds?: string[];
     executionMode?: TurnExecutionMode;
+    skillEffects?: SkillEffectPolicy;
+    conversationDurability?: ConversationDurability;
     responseLanguage?: string | Promise<string | undefined>;
     groundedAnswerRenderer?: RoutineGroundedAnswerRenderer;
     throwIfCancelled?: () => void;
@@ -467,7 +469,8 @@ export class ChatTurnAssembly {
       accountId: input.accountId,
       pinnedRoutineIds: await this.routineCatalogPinIds(session, input.activeRoutine),
       previewRoutineIds: session.previewRoutineIds,
-      executionMode: session.executionMode,
+      skillEffects: session.skillEffects,
+      conversationDurability: session.conversationDurability,
       responseLanguage: input.responseLanguage,
       groundedAnswerRenderer: createRoutineGroundedAnswerRenderer({
         session,
@@ -678,7 +681,8 @@ export class ChatTurnAssembly {
       accountId: input.accountId,
       pinnedRoutineIds: await this.routineCatalogPinIds(session, null),
       previewRoutineIds: session.previewRoutineIds,
-      executionMode: session.executionMode,
+      skillEffects: session.skillEffects,
+      conversationDurability: session.conversationDurability,
       responseLanguage: input.responseLanguage,
       groundedAnswerRenderer: createRoutineGroundedAnswerRenderer({
         session,

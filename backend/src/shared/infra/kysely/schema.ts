@@ -259,6 +259,7 @@ export interface AgentTestExecutions {
   id: string;
   idempotency_key: string;
   mode: string;
+  skill_effects: Generated<string>;
   state: string;
   test_values: Json;
   updated_at: Generated<Timestamp>;

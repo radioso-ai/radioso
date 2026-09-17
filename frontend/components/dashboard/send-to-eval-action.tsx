@@ -40,6 +40,8 @@ export interface SendToEvalActionProps {
   className?: string
   /** Private execution surfaces provide their own immutable snapshot source. */
   captureSnapshot?: () => Promise<EvalSnapshot>
+  /** When set, the trigger is disabled and shows this as its title instead of the default. */
+  disabledReason?: string
 }
 
 export function SendToEvalAction({
@@ -52,6 +54,7 @@ export function SendToEvalAction({
   ariaLabel,
   className,
   captureSnapshot,
+  disabledReason,
 }: SendToEvalActionProps) {
   const [open, setOpen] = useState(false)
 
@@ -60,12 +63,14 @@ export function SendToEvalAction({
       <button
         type="button"
         onClick={() => setOpen(true)}
+        disabled={Boolean(disabledReason)}
         className={
-          className ??
-          'inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground'
+          (className ??
+            'inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground') +
+          ' disabled:pointer-events-none disabled:opacity-50'
         }
         aria-label={ariaLabel ?? label ?? 'Send to eval'}
-        title={label ?? ariaLabel ?? 'Send to eval'}
+        title={disabledReason ?? label ?? ariaLabel ?? 'Send to eval'}
       >
         <FlaskConical className="size-3.5" />
         {label ? <span>{label}</span> : null}

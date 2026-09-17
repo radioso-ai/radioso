@@ -311,6 +311,7 @@ export const buildChatServices = (input: {
           fetchImpl: fetchPublicUrl,
           logger: input.logger,
           transportFetchImpl: fetchPublicUrl,
+          callTimeoutMs: input.env.EXTERNAL_MCP_TOOL_CALL_TIMEOUT_MS,
         }),
       ),
     });

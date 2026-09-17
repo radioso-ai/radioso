@@ -8839,6 +8839,8 @@ export interface components {
             }[];
             expectedDraftGeneration?: number;
             idempotencyKey: string;
+            /** @enum {string} */
+            skillEffects?: "suppressed" | "allowed";
         };
         TestExecution: {
             /** Format: uuid */
@@ -8846,6 +8848,8 @@ export interface components {
             generation: number;
             /** @enum {string} */
             mode: "single" | "compare";
+            /** @enum {string} */
+            skillEffects: "suppressed" | "allowed";
             sides: components["schemas"]["TestExecutionSide"][];
         };
         TestExecutionMessageRequest: {
@@ -8873,6 +8877,8 @@ export interface components {
             state: "running" | "partial" | "failed" | "completed";
             /** Format: date-time */
             createdAt: string;
+            /** @enum {string} */
+            skillEffects: "suppressed" | "allowed";
             sides: {
                 /** Format: uuid */
                 id: string;

@@ -154,13 +154,14 @@ async function installCockpitMocks(page: Page, options: CockpitMockOptions = {})
       await route.fulfill({ status: 503, json: { error: { message: 'Obsolete start failed' } } })
       return
     }
-    const body = route.request().postDataJSON() as { mode: 'single' | 'compare'; revisionIds: string[] }
+    const body = route.request().postDataJSON() as { mode: 'single' | 'compare'; revisionIds: string[]; skillEffects?: 'suppressed' | 'allowed' }
     options.requestBodies?.push(body)
     executionNumber += 1
     const execution: TestExecution = {
       id: `execution-${executionNumber}`,
       generation: executionNumber,
       mode: body.mode,
+      skillEffects: body.skillEffects ?? 'suppressed',
       sides: body.revisionIds.map((revisionId, index) => ({
         id: `side-${executionNumber}-${index}`,
         revision: revisionId === candidateId ? candidate : published,
@@ -237,6 +238,7 @@ async function installCockpitMocks(page: Page, options: CockpitMockOptions = {})
       id: `execution-${executionNumber}`,
       generation: executionNumber,
       mode: 'single',
+      skillEffects: source.skillEffects,
       sides: [{ ...side, id: `side-${executionNumber}-0`, conversationId: `conversation-${executionNumber}-0`, history: [...(side.history ?? [])] }],
     }
     executions.set(retained.id, retained)
@@ -419,6 +421,26 @@ test('keeps the clean chat actions focused and restores normal composer behavior
   await expect(page.getByRole('button', { name: 'Copy message', exact: true })).toBeVisible()
 })
 
+test('lets an operator run skills for real in a private test', async ({ page }) => {
+  const requestBodies: unknown[] = []
+  await installCockpitMocks(page, { requestBodies })
+  await page.goto(testUrl)
+
+  await expect(page.getByText('Skills run for real', { exact: true })).toHaveCount(0)
+  await clickTestChatAction(page, 'Run skills for real')
+  await expect(page.getByRole('status').filter({ hasText: 'Skill setting changed' })).toContainText('Skill setting changed')
+  await expect(page.getByText('Skills run for real', { exact: true })).toBeVisible()
+
+  await testChatComposer(page).fill('Send the customer a real email')
+  await testChatComposer(page).press('Enter')
+  await expect.poll(() => requestBodies).toContainEqual(expect.objectContaining({
+    mode: 'single',
+    revisionIds: [candidateId],
+    skillEffects: 'allowed',
+  }))
+  await expect(page.getByText('A fenced answer.', { exact: true })).toBeVisible()
+})
+
 test('keeps the end of a long answer in view while following the conversation', async ({ page }) => {
   const answer = [...Array.from({ length: 24 }, (_, index) => `Shipping detail ${index + 1}: allow two working days for this step.`), 'Your order is ready for dispatch.'].join('\n\n')
   await installCockpitMocks(page, { replyBySide: [answer] })
@@ -543,6 +565,7 @@ test('keeps comparison close controls disabled while their response stream is ac
 test('reopens a durable comparison with its recorded versions, values, and transcript', async ({ page }) => {
   const saved = {
     id: 'execution-history-1', generation: 4, mode: 'compare', state: 'completed', createdAt: nowIso,
+    skillEffects: 'allowed',
     sides: [
       { id: 'history-left', revision: published, conversationId: 'conversation-left', state: 'completed', retryable: false },
       { id: 'history-right', revision: candidate, conversationId: 'conversation-right', state: 'completed', retryable: false },
@@ -570,12 +593,18 @@ test('reopens a durable comparison with its recorded versions, values, and trans
   await clickTestChatAction(page, 'Conversation history')
   await expect(page.getByText('Comparison', { exact: true })).toBeVisible()
   await expect(page.getByRole('cell', { name: /v4.*Draft/ })).toBeVisible()
+  await expect(page.getByText('Skills ran for real', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Open', exact: true }).click()
 
   await expect(page.getByText('Track my order', { exact: true })).toHaveCount(2)
   await expect(page.getByText('Ciao, bentornato!', { exact: true })).toHaveCount(2)
   await expect(page.getByText('Published answer', { exact: true })).toBeVisible()
   await expect(page.getByText('Draft answer', { exact: true })).toBeVisible()
+  // The reopened test's frozen skill policy shows on both cards and in the toggle.
+  await expect(page.getByText('Skills run for real', { exact: true })).toHaveCount(2)
+  await page.getByRole('button', { name: 'Test chat actions', exact: true }).click()
+  await expect(page.getByRole('menuitemcheckbox', { name: 'Run skills for real' })).toHaveAttribute('aria-checked', 'true')
+  await page.keyboard.press('Escape')
 })
 
 test('fences a delayed history open after the operator returns to a new chat', async ({ page }) => {

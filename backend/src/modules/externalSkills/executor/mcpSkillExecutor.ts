@@ -8,6 +8,7 @@ import type {
 
 import { mergeToolInput, type SkillBinding } from "../skillDefinitions/resolver.js";
 import { setTraceAttributes, traceOperation } from "../../../shared/observability/tracing/operations.js";
+import type { AppLogger } from "../../../shared/observability/logger.js";
 
 /** Skill-executor descriptor adapter shared by all external (MCP) skills. */
 export const EXTERNAL_SKILLS_ADAPTER = "external-skills";
@@ -63,6 +64,8 @@ export interface McpSkillExecutorDeps {
   connections: ConnectionLookup;
   toolServices: ToolServiceFactory;
   toolSkillExecutorFactory: ToolSkillExecutorFactory;
+  /** Optional: emits one redacted warn log per settled failed dispatch. */
+  logger?: Pick<AppLogger, "warn">;
 }
 
 const settledFailure = (code: string, message: string): SkillDispatchResult => ({
@@ -93,6 +96,9 @@ export class McpSkillExecutor implements SkillExecutorPort {
       run: () => this.dispatchInner(invocation),
       resultAttributes: (result) => ({
         "external_skill.outcome_status": result.disposition === "settled" ? result.outcome.status : "deferred",
+        ...(result.disposition === "settled" && result.outcome.status === "failed" && result.outcome.error?.code
+          ? { "external_skill.error_code": result.outcome.error.code }
+          : {}),
       }),
     });
   }
@@ -135,13 +141,25 @@ export class McpSkillExecutor implements SkillExecutorPort {
 
     try {
       const toolExecutor = this.deps.toolSkillExecutorFactory(service);
-      return (await toolExecutor.dispatch({
+      const result = await toolExecutor.dispatch({
         skill: { name: skillName, metadata: { conversationTool: { toolName: record.toolName } } },
         collected: input,
         context: invocation.context,
         emit: invocation.emit,
         signal: invocation.signal,
-      }));
+      });
+      if (result.disposition === "settled" && result.outcome.status === "failed") {
+        // Identity + code only — never params, results, URLs, or tokens.
+        this.deps.logger?.warn({
+          event: "external_skill",
+          agentId,
+          connectionId: connection.id,
+          skillName,
+          toolName: record.toolName,
+          code: result.outcome.error?.code,
+        }, "external_skill_dispatch_failed");
+      }
+      return result;
     } finally {
       await closable(service).close?.().catch(() => undefined);
     }

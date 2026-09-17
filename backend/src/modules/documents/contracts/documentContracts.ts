@@ -51,7 +51,7 @@ export type DocumentSourceResolverInput =
       metadata?: Record<string, unknown>;
     };
 
-export interface DocumentSourceRecord {
+interface DocumentSourceRecord {
   sourceKind: DocumentSourceKind;
   sourceFilename?: string | null;
   sourceMimeType?: string | null;
@@ -65,7 +65,7 @@ export interface DocumentSourceRecord {
   contentHash?: string | null;
 }
 
-export interface DocumentSourceInput {
+interface DocumentSourceInput {
   sourceKind?: DocumentSourceKind;
   sourceFilename?: string | null;
   sourceMimeType?: string | null;
@@ -242,7 +242,7 @@ export interface DocumentRepositoryPort {
     input: { limit: number; offset?: number; cursor?: string },
   ): Promise<{ documents: DocumentSummaryRecord[]; total: number; nextCursor: string | null; hasMore: boolean }>;
   update(input: DocumentUpdateInput): Promise<DocumentRecord>;
-  updateAndQueue(input: DocumentQueueUpdateInput): Promise<DocumentRecord>;
+  updateAndQueue(input: DocumentQueueUpdateInput, options?: DocumentProcessingJobOptions | null): Promise<DocumentRecord>;
   updateDerivedContentForRevision(input: DocumentDerivedContentUpdateInput): Promise<DocumentRecord | null>;
   updateMetadataForRevision(input: DocumentEnrichmentMetadataUpdateInput): Promise<DocumentRecord | null>;
   /**

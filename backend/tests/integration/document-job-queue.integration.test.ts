@@ -281,4 +281,39 @@ describeIntegration("document job queue embedding profiles (Postgres)", () => {
     );
     expect(rows.map((row) => String(row.workspace_profile_generation))).toEqual(["2", "4"]);
   });
+
+  it("reconciles a workspace by returning only newly enqueued jobs, and is idempotent on replay", async () => {
+    const active = await createSpace("reconcile-active", 3);
+    await profiles.initializeWorkspaceProfile({
+      workspaceId,
+      activeEmbeddingSpaceId: active.id,
+    });
+    const { documentId } = await insertDocument();
+
+    const first = await jobs.reconcileEmbeddingProfileJobsForWorkspace({ workspaceId });
+
+    expect(first.enqueuedJobs).toHaveLength(1);
+    const [enqueuedJob] = first.enqueuedJobs;
+    expect(enqueuedJob.documentId).toBe(documentId);
+    expect(enqueuedJob.workspaceId).toBe(workspaceId);
+    expect(enqueuedJob.documentRevision).toBe(3);
+
+    const persisted = await database.query<{ status: string; kind: string }>(
+      `SELECT status, kind FROM document_processing_jobs WHERE id = $1`,
+      [enqueuedJob.id],
+    );
+    expect(persisted).toHaveLength(1);
+    expect(persisted[0]).toEqual({ status: "queued", kind: "embedding_profile" });
+
+    const second = await jobs.reconcileEmbeddingProfileJobsForWorkspace({ workspaceId });
+
+    expect(second.enqueuedJobs).toEqual([]);
+
+    const stillQueued = await database.query<{ status: string }>(
+      `SELECT status FROM document_processing_jobs WHERE id = $1`,
+      [enqueuedJob.id],
+    );
+    expect(stillQueued).toHaveLength(1);
+    expect(stillQueued[0].status).toBe("queued");
+  });
 });

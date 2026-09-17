@@ -22,7 +22,7 @@ describe("EmbeddingCoverageReconciler", () => {
       ensureEmbeddingProfileJobsForTransition: vi.fn().mockResolvedValue(4),
       cancelEmbeddingProfileJobsForTransition: vi.fn().mockResolvedValue(3),
       reconcileEmbeddingProfileJobsForWorkspace: vi.fn().mockResolvedValue({
-        enqueued: 0,
+        enqueuedJobs: [],
         skipped: 0,
       }),
       listQueuedEmbeddingProfileJobsForWorkspace: vi.fn().mockResolvedValue(queuedJobs),
@@ -76,7 +76,7 @@ describe("EmbeddingCoverageReconciler", () => {
   });
 
   it("reconciles document mutations, eligibility changes, and missing work", async () => {
-    const queuedJobs = [
+    const enqueuedJobs = [
       {
         id: "job-3",
         documentId: "document-3",
@@ -88,10 +88,10 @@ describe("EmbeddingCoverageReconciler", () => {
       ensureEmbeddingProfileJobsForTransition: vi.fn(),
       cancelEmbeddingProfileJobsForTransition: vi.fn(),
       reconcileEmbeddingProfileJobsForWorkspace: vi.fn().mockResolvedValue({
-        enqueued: 2,
+        enqueuedJobs,
         skipped: 5,
       }),
-      listQueuedEmbeddingProfileJobsForWorkspace: vi.fn().mockResolvedValue(queuedJobs),
+      listQueuedEmbeddingProfileJobsForWorkspace: vi.fn(),
     };
     const dispatcher = {
       dispatchMany: vi.fn().mockResolvedValue(undefined),
@@ -99,12 +99,11 @@ describe("EmbeddingCoverageReconciler", () => {
     const service = new EmbeddingCoverageReconciler(jobs, dispatcher);
 
     await expect(service.reconcileWorkspace("workspace-1")).resolves.toEqual({
-      enqueued: 2,
+      enqueued: 1,
       skipped: 5,
     });
-    expect(jobs.listQueuedEmbeddingProfileJobsForWorkspace).toHaveBeenCalledWith({
-      workspaceId: "workspace-1",
-    });
+    expect(jobs.listQueuedEmbeddingProfileJobsForWorkspace).not.toHaveBeenCalled();
+    expect(dispatcher.dispatchMany).toHaveBeenCalledTimes(1);
     expect(dispatcher.dispatchMany).toHaveBeenCalledWith([
       {
         jobId: "job-3",
@@ -115,22 +114,52 @@ describe("EmbeddingCoverageReconciler", () => {
     ]);
   });
 
+  it("does not dispatch when reconciliation enqueues no new jobs, even if other work is queued", async () => {
+    const jobs = {
+      ensureEmbeddingProfileJobsForTransition: vi.fn(),
+      cancelEmbeddingProfileJobsForTransition: vi.fn(),
+      reconcileEmbeddingProfileJobsForWorkspace: vi.fn().mockResolvedValue({
+        enqueuedJobs: [],
+        skipped: 0,
+      }),
+      listQueuedEmbeddingProfileJobsForWorkspace: vi.fn().mockResolvedValue([
+        {
+          id: "job-unrelated",
+          documentId: "document-unrelated",
+          workspaceId: "workspace-1",
+          documentRevision: 9,
+        },
+      ]),
+    };
+    const dispatcher = {
+      dispatchMany: vi.fn().mockResolvedValue(undefined),
+    };
+    const service = new EmbeddingCoverageReconciler(jobs, dispatcher);
+
+    await expect(service.reconcileWorkspace("workspace-1")).resolves.toEqual({
+      enqueued: 0,
+      skipped: 0,
+    });
+    expect(jobs.listQueuedEmbeddingProfileJobsForWorkspace).not.toHaveBeenCalled();
+    expect(dispatcher.dispatchMany).not.toHaveBeenCalled();
+  });
+
   it("keeps durable coverage reconciliation successful when dispatch fails", async () => {
     const jobs = {
       ensureEmbeddingProfileJobsForTransition: vi.fn(),
       cancelEmbeddingProfileJobsForTransition: vi.fn(),
       reconcileEmbeddingProfileJobsForWorkspace: vi.fn().mockResolvedValue({
-        enqueued: 1,
+        enqueuedJobs: [
+          {
+            id: "job-4",
+            documentId: "document-4",
+            workspaceId: "workspace-1",
+            documentRevision: 6,
+          },
+        ],
         skipped: 0,
       }),
-      listQueuedEmbeddingProfileJobsForWorkspace: vi.fn().mockResolvedValue([
-        {
-          id: "job-4",
-          documentId: "document-4",
-          workspaceId: "workspace-1",
-          documentRevision: 6,
-        },
-      ]),
+      listQueuedEmbeddingProfileJobsForWorkspace: vi.fn(),
     };
     const dispatcher = {
       dispatchMany: vi.fn().mockRejectedValue(new Error("dispatch unavailable")),

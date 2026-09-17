@@ -480,6 +480,7 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
         metadata: req.body.metadata,
         externalDocumentId: req.body.externalDocumentId,
         source: req.body.source,
+        documentEnrichmentOverride: req.body.documentEnrichmentOverride,
       });
       res.status(202).json(result);
     } catch (error) {

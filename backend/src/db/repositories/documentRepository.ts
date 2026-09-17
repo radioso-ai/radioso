@@ -287,7 +287,10 @@ export class DocumentRepository implements DocumentRepositoryPort {
     return mapDocument(row);
   }
 
-  async updateAndQueue(input: DocumentQueueUpdateInput): Promise<DocumentRecord> {
+  async updateAndQueue(
+    input: DocumentQueueUpdateInput,
+    options?: DocumentProcessingJobOptions | null,
+  ): Promise<DocumentRecord> {
     return this.db.transaction().execute(async (trx) => {
       const documentRow = (await trx
         .updateTable("documents")
@@ -344,7 +347,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
         throw notFound("Document not found");
       }
 
-      await this.insertProcessingJob(trx, input.documentId, input.workspaceId, documentRow.revision);
+      await this.insertProcessingJob(trx, input.documentId, input.workspaceId, documentRow.revision, options);
 
       return mapDocument(documentRow);
     });

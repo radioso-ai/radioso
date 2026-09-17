@@ -97,16 +97,30 @@ export const CHAT_BEHAVIOR = {
   // an oversized prompt never rides the fused path. Composition-owned; never
   // tuned per phrase.
   turnPlanning: {
-    // Reasoning effort for the planner call. "low", not "none": a live A/B on
-    // the conversation-quality suite showed referential rewrite resolution (an
-    // ordinal follow-up resolving to a listed option) collapsing under strict
-    // schema-constrained decoding at "none" (≤6/20 resolved) while "low"
-    // resolved 20/20 at roughly +400ms per call — still far cheaper than the
-    // staged calls this replaces. "minimal" forces an unsupported-value retry
-    // on gpt-5.4-nano and can consume the whole planner timeout; "low" is the
-    // retry floor the OpenAI provider downgrades unsupported values to, so it
-    // is safe across the gpt-5.4 family.
-    reasoningEffort: "low",
+    // Reasoning effort for the planner call. #907 measured referential rewrite
+    // resolution (an ordinal follow-up resolving to a listed option) collapsing
+    // under strict schema-constrained decoding at "none" (≤6/20 resolved) and
+    // moved the floor to "low" (20/20, +400ms/call) to compensate. A 2026-09-17
+    // A/B (backend/scripts/plannerSchemaAb.ts) found the actual cause was the
+    // response schema's field order, not reasoning effort: the schema emitted
+    // the resolved query fields (rewrittenQuery/semanticQuery/lexicalQuery)
+    // before the derivation fields (turnKind/proposedActiveSubject) that say
+    // what the turn refers to, so the model had to commit an answer before
+    // writing down the reference it was resolving. Reordering those derivation
+    // fields first and adding a leading `resolutionNote` scratch field for the
+    // model to resolve the reference into a short clause before the query
+    // fields resolves 110/110 cases at "none" — matching "low"'s 110/110 — at
+    // p50 1636ms vs 1745ms and 160 vs 203 output tokens (visible scratch tokens
+    // replace hidden reasoning tokens). "none" is therefore the correct floor
+    // again. "minimal" is still unsupported on gpt-5.4-nano and forces a retry
+    // that can consume the whole planner timeout. On the pre-5.4 family the
+    // provider maps "none" to "minimal" (knownModels.ts); gpt-5-nano scored
+    // 101/110 there vs 109/110 at "low", but the pre-5.4 family costs 3.3-3.8s p50
+    // for the planner either way ("none" 3.3s, "low" 3.8s) — a per-family floor of
+    // "low" would buy +8/110 accuracy without meaningfully changing the family's
+    // already-slow latency. Deliberately not applied: the 5.4 family is the
+    // supported tier.
+    reasoningEffort: "none",
     // Output ceiling for the plan JSON (route + rewrite framing + rankings +
     // classifications). Generous enough for a multi-branch retrieval rewrite plus
     // several routine/directive verdicts; still a real bound.
@@ -271,14 +285,4 @@ export const RETRIEVAL_BEHAVIOR = {
 
 export const DOCUMENT_BEHAVIOR = {
   searchEvidenceMaxChars: 180,
-} as const;
-
-export const EVAL_BEHAVIOR = {
-  maxContextMessages: 12,
-  maxMessageLength: 2_000,
-  maxQueryLength: 2_000,
-  importConversationMessageLimit: 200,
-  datasetNameMaxLength: 120,
-  datasetDescriptionMaxLength: 500,
-  caseTitleMaxLength: 120,
 } as const;

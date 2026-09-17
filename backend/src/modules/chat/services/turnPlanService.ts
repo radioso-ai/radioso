@@ -83,7 +83,7 @@ export interface TurnPlanRequest {
  * for the workspace and binds the usage operation; the service owns prompt,
  * parsing, and validation.
  */
-export type { TurnPlanGatewayFactory, TurnPlanInferenceClient } from "../../../shared/infra/llm/turnPlanGateway.js";
+export type { TurnPlanGatewayFactory } from "../../../shared/infra/llm/turnPlanGateway.js";
 
 const formatConversationContext = (messages: MessageRecord[]): string =>
   messages
@@ -118,7 +118,7 @@ const directiveCandidatesBlock = (candidates: readonly TurnPlanDirectiveCandidat
     2,
   );
 
-export type TurnPlanningPromptInput = Pick<
+type TurnPlanningPromptInput = Pick<
   TurnPlanRequest,
   | "query"
   | "history"
@@ -157,8 +157,9 @@ const turnPlanOutputShapeBlock = (input: {
     "Each retrievalSubqueries item contains only label, semanticQuery, lexicalQuery, and reason. turnKind belongs only on the enclosing rewrite object.\n" +
     "When a route is direct, rewrite is null. When a route is retrieval, rewrite is the object shown below.\n" +
     "When routineRankings is present, variables is an array of field/value pairs; use an empty array when the latest user message supplies no variables.\n" +
+    "resolutionNote is optional prose scratch space: write it before the other rewrite fields, naming the concrete item this turn resolves to and how, or use null on a fresh, self-contained request.\n" +
     "Shape:\n" +
-    `{"route":"retrieval|direct","isIdentityQuestion":false,"intentTopic":"string|null","rewrite":{"rewrittenQuery":"string","semanticQuery":"string","lexicalQuery":"string","queryShape":"definition_lookup|event_date_lookup|policy_answer|exploratory_summary|follow_up_grounding|default_hybrid|general_grounding","temporalQueryMode":"none|listing|topic_refinement","retrievalSubqueries":[{"label":"string","semanticQuery":"string","lexicalQuery":"string","reason":"string|null"}],"turnKind":"fresh_subject|referential_followup|referential_relation|explicit_recenter|comparative|ambiguous","proposedActiveSubject":"string|null","relatedEntities":["string"],"unresolved":false,"confidence":0.95},"responseLanguage":"string|null"${optionalFields.length > 0 ? `,${optionalFields.join(",")}` : ""}}`;
+    `{"route":"retrieval|direct","isIdentityQuestion":false,"intentTopic":"string|null","rewrite":{"resolutionNote":"string|null","turnKind":"fresh_subject|referential_followup|referential_relation|explicit_recenter|comparative|ambiguous","proposedActiveSubject":"string|null","relatedEntities":["string"],"rewrittenQuery":"string","semanticQuery":"string","lexicalQuery":"string","queryShape":"definition_lookup|event_date_lookup|policy_answer|exploratory_summary|follow_up_grounding|default_hybrid|general_grounding","temporalQueryMode":"none|listing|topic_refinement","retrievalSubqueries":[{"label":"string","semanticQuery":"string","lexicalQuery":"string","reason":"string|null"}],"unresolved":false,"confidence":0.95},"responseLanguage":"string|null"${optionalFields.length > 0 ? `,${optionalFields.join(",")}` : ""}}`;
 };
 
 /** Canonical prompt renderer shared by execution and the eligibility budget. */
@@ -247,7 +248,15 @@ const TURN_KIND_VALUES = [
 
 const confidenceSchema = z.number().finite().min(0).max(1);
 
+// `resolutionNote` is optional (not just nullable) so the schema-less fallback
+// contract — providers without structured output, which follow the prompt's
+// prose Output Shape Rules rather than this zod shape — still parses when the
+// field is omitted entirely, not just when it is null.
 const rewriteSchema = z.object({
+  resolutionNote: z.string().nullable().optional(),
+  turnKind: z.enum(TURN_KIND_VALUES),
+  proposedActiveSubject: z.string().nullable(),
+  relatedEntities: z.array(z.string()),
   rewrittenQuery: z.string(),
   semanticQuery: z.string(),
   lexicalQuery: z.string(),
@@ -259,9 +268,6 @@ const rewriteSchema = z.object({
     lexicalQuery: z.string(),
     reason: z.string().nullable(),
   }).strict()),
-  turnKind: z.enum(TURN_KIND_VALUES),
-  proposedActiveSubject: z.string().nullable(),
-  relatedEntities: z.array(z.string()),
   unresolved: z.boolean(),
   confidence: confidenceSchema,
 }).strict();
@@ -318,23 +324,44 @@ const pageReadJsonSchema = {
   },
 } as const;
 
+// Under strict structured output, `properties` key order is emission order: the
+// model fills the JSON object in the order this schema declares it, and it can
+// only reason through tokens it has already emitted — never ones still to come.
+// So the derivation fields (resolutionNote, turnKind, proposedActiveSubject),
+// which say what this turn refers to and how, must come before the resolved
+// query fields (rewrittenQuery, semanticQuery, lexicalQuery) that depend on that
+// resolution. An A/B on 2026-09-17 (backend/scripts/plannerSchemaAb.ts) found
+// the previous query-fields-first order was the cause of referential rewrite
+// collapse at low reasoning effort, not reasoning effort itself: reordering
+// derivation-first plus adding the leading `resolutionNote` scratch field
+// matches "low"'s accuracy at "none" with fewer output tokens. See
+// CHAT_BEHAVIOR.turnPlanning.reasoningEffort in behaviorConfig.ts.
 const rewriteJsonSchema = {
   type: ["object", "null"],
   additionalProperties: false,
   required: [
+    "resolutionNote",
+    "turnKind",
+    "proposedActiveSubject",
+    "relatedEntities",
     "rewrittenQuery",
     "semanticQuery",
     "lexicalQuery",
     "queryShape",
     "temporalQueryMode",
     "retrievalSubqueries",
-    "turnKind",
-    "proposedActiveSubject",
-    "relatedEntities",
     "unresolved",
     "confidence",
   ],
   properties: {
+    resolutionNote: {
+      type: ["string", "null"],
+      description:
+        "When the latest user message refers to something from the conversation (an ordinal or position in a list the assistant offered, an accepted offer, a continuation, a correction), write one short clause naming the concrete item it resolves to and how you resolved it. null when the message is a fresh, self-contained request.",
+    },
+    turnKind: { type: "string", enum: [...TURN_KIND_VALUES] },
+    proposedActiveSubject: nullableStringJsonSchema,
+    relatedEntities: { type: "array", items: { type: "string" } },
     rewrittenQuery: { type: "string" },
     semanticQuery: { type: "string" },
     lexicalQuery: { type: "string" },
@@ -354,9 +381,6 @@ const rewriteJsonSchema = {
         },
       },
     },
-    turnKind: { type: "string", enum: [...TURN_KIND_VALUES] },
-    proposedActiveSubject: nullableStringJsonSchema,
-    relatedEntities: { type: "array", items: { type: "string" } },
     unresolved: { type: "boolean" },
     confidence: confidenceJsonSchema,
   },

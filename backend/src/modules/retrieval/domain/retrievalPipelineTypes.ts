@@ -3,12 +3,6 @@ import type { ResolvedSkillRun, SkillDiagnostic } from "../../skills/public.js";
 import type { AppliedConstraint, ParsedQueryInterpretation } from "./queryConstraintTypes.js";
 import type { RetrievedChunk } from "./vectorSearch.js";
 
-export {
-  resolveRetrievalSourceFilter,
-  type RetrievalSourceFilter,
-  type RetrievalSourceScope,
-} from "./retrievalSourceFilter.js";
-
 export interface ConversationContextWindow {
   selectedMessages: MessageRecord[];
   truncated: boolean;
@@ -58,6 +52,12 @@ export type RetrievalQueryShape =
 export type TemporalQueryMode = "none" | "listing" | "topic_refinement";
 
 export interface StructuredRewriteResult {
+  /**
+   * Model-written scratch clause naming what this turn resolves to and how,
+   * written before the resolved query fields. Present only when the model
+   * returned a non-null string; a fresh, self-contained request omits it.
+   */
+  resolutionNote?: string;
   rewrittenQuery: string;
   semanticQuery?: string;
   lexicalQuery?: string;

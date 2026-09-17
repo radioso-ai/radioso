@@ -28001,12 +28001,6 @@ paths:
           required: true
           name: documentId
           in: path
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/DocumentReprocessRequest"
       responses:
         "200":
           description: Document returned

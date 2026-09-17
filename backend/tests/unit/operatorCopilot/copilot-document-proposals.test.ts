@@ -58,11 +58,14 @@ const toolDeps = (adapter: ReturnType<typeof createDocumentCopilotProposalAdapte
     ...input,
   }) as never);
   const record = vi.fn(async () => undefined);
+  const recoverOperatorMcpProposal = vi.fn();
   return {
     createProposal,
     record,
+    recoverOperatorMcpProposal,
     deps: {
       proposalRepository: { createProposal },
+      proposalRecovery: { recoverOperatorMcpProposal },
       proposalAdapters: [adapter],
       auditService: { record },
     },
@@ -73,11 +76,37 @@ const toolNamed = (
   name: string,
   adapter: ReturnType<typeof createDocumentCopilotProposalAdapter>,
 ) => {
-  const { deps, createProposal, record } = toolDeps(adapter);
+  const { deps, createProposal, record, recoverOperatorMcpProposal } = toolDeps(adapter);
   const descriptor = createDocumentProposalCopilotTools(deps).find((candidate) => candidate.name === name);
   if (!descriptor) throw new Error(`No descriptor named ${name}`);
-  return { descriptor, createProposal, record };
+  return { descriptor, createProposal, record, recoverOperatorMcpProposal };
 };
+
+const mcpInvocation = {
+  id: "11111111-1111-4111-8111-111111111111",
+  grantId: "22222222-2222-4222-8222-222222222222",
+  operationId: "stable-operation",
+  inputDigest: "keyed-input-digest",
+};
+const mcpContext = {
+  ...context,
+  surface: "mcp" as const,
+  copilotConversationId: undefined,
+  operatorMcpInvocationId: "33333333-3333-4333-8333-333333333333",
+};
+const mcpNow = new Date("2026-09-04T00:03:00.000Z");
+const mcpStaleBefore = new Date("2026-09-04T00:01:00.000Z");
+
+const reconcile = (
+  descriptor: ReturnType<typeof toolNamed>["descriptor"],
+  invocation: Partial<typeof mcpInvocation> = mcpInvocation,
+) => descriptor.reconcileMcpInvocation!({
+  invocation: { ...mcpInvocation, ...invocation } as never,
+  arguments: {},
+  context: mcpContext,
+  now: mcpNow,
+  staleBefore: mcpStaleBefore,
+});
 
 describe("propose_document", () => {
   it("drafts a create proposal that carries the authored title and body", async () => {
@@ -127,6 +156,66 @@ describe("propose_document", () => {
 
     expect(descriptor.inputSchema.safeParse({ title: "Refund window" }).success).toBe(false);
   });
+
+  it("reconstructs the exact normal result shape from a committed MCP proposal", async () => {
+    const { adapter } = adapterFor();
+    const { descriptor, recoverOperatorMcpProposal } = toolNamed("propose_document", adapter);
+    recoverOperatorMcpProposal.mockResolvedValueOnce({
+      status: "recovered",
+      proposal: {
+        id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+        targetType: "document",
+        payload: {
+          op: "create",
+          name: "Refund window",
+          content: "Refunds are accepted within 30 days of delivery.",
+          summary: 'Add the document "Refund window".',
+        },
+      },
+    });
+
+    await expect(reconcile(descriptor))
+      .resolves.toEqual({
+        status: "recovered",
+        output: {
+          proposalId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+          targetType: "document",
+          targetLabel: "Refund window",
+          summary: 'Add the document "Refund window".',
+        },
+      });
+    expect(recoverOperatorMcpProposal).toHaveBeenCalledWith({
+      invocationId: "11111111-1111-4111-8111-111111111111",
+      grantId: "22222222-2222-4222-8222-222222222222",
+      workspaceId: "workspace-1",
+      operatorUserId: "operator-1",
+      operationId: "stable-operation",
+      descriptorName: "propose_document",
+      inputDigest: "keyed-input-digest",
+      staleBefore: mcpStaleBefore,
+      now: mcpNow,
+    });
+  });
+
+  it("reports a conflict rather than recover without an operationId to key the lookup on", async () => {
+    const { adapter } = adapterFor();
+    const { descriptor, recoverOperatorMcpProposal } = toolNamed("propose_document", adapter);
+
+    await expect(reconcile(descriptor, { operationId: undefined })).resolves.toEqual({ status: "conflict" });
+    expect(recoverOperatorMcpProposal).not.toHaveBeenCalled();
+  });
+
+  it("reports a conflict when the recovered proposal belongs to another target type", async () => {
+    const { adapter } = adapterFor();
+    const { descriptor, recoverOperatorMcpProposal } = toolNamed("propose_document", adapter);
+    recoverOperatorMcpProposal.mockResolvedValueOnce({
+      status: "recovered",
+      proposal: { id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", targetType: "directive", payload: { name: "x", rationale: "y" } },
+    });
+
+    await expect(reconcile(descriptor))
+      .resolves.toEqual({ status: "conflict" });
+  });
 });
 
 describe("propose_document_retrieval", () => {
@@ -167,6 +256,66 @@ describe("propose_document_retrieval", () => {
 
     await expect(descriptor.createTool(context).invoke({ documentId: DOCUMENT_ID }, {} as never))
       .rejects.toThrow(/retrievalEnabled|retrievalExpiresAt|metadata/);
+  });
+
+  it("reconstructs the exact normal result shape from a committed MCP proposal", async () => {
+    const { adapter } = adapterFor();
+    const { descriptor, recoverOperatorMcpProposal } = toolNamed("propose_document_retrieval", adapter);
+    recoverOperatorMcpProposal.mockResolvedValueOnce({
+      status: "recovered",
+      proposal: {
+        id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+        targetType: "document",
+        payload: {
+          op: "update_retrieval",
+          name: "Refund policy",
+          retrievalEnabled: false,
+          summary: 'For the document "Refund policy", stop it being retrieved.',
+        },
+      },
+    });
+
+    await expect(reconcile(descriptor))
+      .resolves.toEqual({
+        status: "recovered",
+        output: {
+          proposalId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+          targetType: "document",
+          targetLabel: "Refund policy",
+          summary: 'For the document "Refund policy", stop it being retrieved.',
+        },
+      });
+    expect(recoverOperatorMcpProposal).toHaveBeenCalledWith({
+      invocationId: "11111111-1111-4111-8111-111111111111",
+      grantId: "22222222-2222-4222-8222-222222222222",
+      workspaceId: "workspace-1",
+      operatorUserId: "operator-1",
+      operationId: "stable-operation",
+      descriptorName: "propose_document_retrieval",
+      inputDigest: "keyed-input-digest",
+      staleBefore: mcpStaleBefore,
+      now: mcpNow,
+    });
+  });
+
+  it("reports a conflict rather than recover without an operationId to key the lookup on", async () => {
+    const { adapter } = adapterFor();
+    const { descriptor, recoverOperatorMcpProposal } = toolNamed("propose_document_retrieval", adapter);
+
+    await expect(reconcile(descriptor, { operationId: undefined })).resolves.toEqual({ status: "conflict" });
+    expect(recoverOperatorMcpProposal).not.toHaveBeenCalled();
+  });
+
+  it("reports a conflict when the recovered proposal belongs to another target type", async () => {
+    const { adapter } = adapterFor();
+    const { descriptor, recoverOperatorMcpProposal } = toolNamed("propose_document_retrieval", adapter);
+    recoverOperatorMcpProposal.mockResolvedValueOnce({
+      status: "recovered",
+      proposal: { id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", targetType: "ingestion_settings", payload: { name: "Ingestion settings", summary: "x" } },
+    });
+
+    await expect(reconcile(descriptor))
+      .resolves.toEqual({ status: "conflict" });
   });
 });
 

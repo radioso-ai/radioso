@@ -761,14 +761,6 @@ export const registerDocumentsPaths = (
     security: [{ [security.bearerAuthScheme.name]: [] }],
     request: {
       params: schemas.documentParamsSchema,
-      body: {
-        required: false,
-        content: {
-          "application/json": {
-            schema: schemas.DocumentReprocessRequestSchema,
-          },
-        },
-      },
     },
     responses: {
       200: {

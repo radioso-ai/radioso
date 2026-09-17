@@ -35,6 +35,9 @@ frontend/public/enterprise-agent-creation-actions.json
 .vscode/
 .claude/
 
+# Agent scratch coordination notes
+.context/
+
 # Terraform
 .terraform/
 *.tfstate

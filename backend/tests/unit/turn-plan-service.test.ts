@@ -106,6 +106,54 @@ describe("parseTurnPlan", () => {
     expect(plan?.rewriteProposal).toBeUndefined();
   });
 
+  it("carries resolutionNote into rewriteProposal when the model returns a string", () => {
+    const plan = parseTurnPlan(validPlanJson({
+      rewrite: {
+        resolutionNote: "\"the second one\" resolves to Pro, the second plan the assistant listed.",
+        rewrittenQuery: "What is the refund window?",
+        semanticQuery: "refund window duration",
+        lexicalQuery: "refund window",
+        queryShape: "policy_answer",
+        temporalQueryMode: "none",
+        retrievalSubqueries: [],
+        turnKind: "fresh_subject",
+        proposedActiveSubject: "refund window",
+        relatedEntities: [],
+        unresolved: false,
+        confidence: 0.9,
+      },
+    }), candidates);
+    expect(plan?.rewriteProposal?.resolutionNote).toBe(
+      "\"the second one\" resolves to Pro, the second plan the assistant listed.",
+    );
+  });
+
+  it("omits resolutionNote from rewriteProposal when the model returns null", () => {
+    const plan = parseTurnPlan(validPlanJson({
+      rewrite: {
+        resolutionNote: null,
+        rewrittenQuery: "What is the refund window?",
+        semanticQuery: "refund window duration",
+        lexicalQuery: "refund window",
+        queryShape: "policy_answer",
+        temporalQueryMode: "none",
+        retrievalSubqueries: [],
+        turnKind: "fresh_subject",
+        proposedActiveSubject: "refund window",
+        relatedEntities: [],
+        unresolved: false,
+        confidence: 0.9,
+      },
+    }), candidates);
+    expect(plan?.rewriteProposal).not.toHaveProperty("resolutionNote");
+  });
+
+  it("still parses when resolutionNote is absent (schema-less fallback contract)", () => {
+    const plan = parseTurnPlan(validPlanJson(), candidates);
+    expect(plan).not.toBeNull();
+    expect(plan?.rewriteProposal).not.toHaveProperty("resolutionNote");
+  });
+
   it("tolerates code-fenced JSON", () => {
     const plan = parseTurnPlan("```json\n" + validPlanJson() + "\n```", candidates);
     expect(plan?.route).toBe("retrieval");
@@ -404,6 +452,37 @@ describe("buildTurnPlanResponseFormat", () => {
     expect(schemaProperty(format, "rewrite")?.type).toEqual(["object", "null"]);
   });
 
+  it("orders rewrite properties and required derivation-first, resolutionNote before turnKind and proposedActiveSubject, before the resolved query fields", () => {
+    const format = buildTurnPlanResponseFormat({ routineIds: [], directiveNames: [] });
+    const rewrite = schemaProperty(format, "rewrite") as { properties: Record<string, unknown>; required: string[] };
+    const expectedOrder = [
+      "resolutionNote",
+      "turnKind",
+      "proposedActiveSubject",
+      "relatedEntities",
+      "rewrittenQuery",
+      "semanticQuery",
+      "lexicalQuery",
+      "queryShape",
+      "temporalQueryMode",
+      "retrievalSubqueries",
+      "unresolved",
+      "confidence",
+    ];
+    expect(Object.keys(rewrite.properties)).toEqual(expectedOrder);
+    expect(rewrite.required).toEqual(expectedOrder);
+  });
+
+  it("describes resolutionNote as a nullable string derivation scratch field", () => {
+    const format = buildTurnPlanResponseFormat({ routineIds: [], directiveNames: [] });
+    const rewrite = schemaProperty(format, "rewrite") as { properties: Record<string, Record<string, unknown>> };
+    expect(rewrite.properties.resolutionNote).toEqual({
+      type: ["string", "null"],
+      description:
+        "When the latest user message refers to something from the conversation (an ordinal or position in a list the assistant offered, an accepted offer, a continuation, a correction), write one short clause naming the concrete item it resolves to and how you resolved it. null when the message is a fresh, self-contained request.",
+    });
+  });
+
   it("includes a required strict pageRead object only when capability is supplied", () => {
     const withoutCapability = buildTurnPlanResponseFormat({ routineIds: [], directiveNames: [] });
     expect(schemaProperty(withoutCapability, "pageRead")).toBeUndefined();
@@ -502,6 +581,14 @@ describe("buildTurnPlanningPrompt", () => {
     expect(prompt).toContain('"routineRankings":[{"routineId":"string","confidence":0.0,"variables":[{"field":"string","value":"string"}]}]');
     expect(prompt).toContain('"directiveClassifications":[{"name":"string","matched":false,"confidence":0.0}]');
     expect(prompt).toContain("field/value pairs");
+  });
+
+  it("orders the fallback rewrite shape resolutionNote-first, matching the provider schema", () => {
+    const prompt = buildTurnPlanningPrompt(promptInput());
+    expect(prompt).toContain(
+      '"rewrite":{"resolutionNote":"string|null","turnKind":"fresh_subject|referential_followup|referential_relation|explicit_recenter|comparative|ambiguous","proposedActiveSubject":"string|null","relatedEntities":["string"],"rewrittenQuery":"string","semanticQuery":"string","lexicalQuery":"string","queryShape":"definition_lookup|event_date_lookup|policy_answer|exploratory_summary|follow_up_grounding|default_hybrid|general_grounding","temporalQueryMode":"none|listing|topic_refinement","retrievalSubqueries":[{"label":"string","semanticQuery":"string","lexicalQuery":"string","reason":"string|null"}],"unresolved":false,"confidence":0.95}',
+    );
+    expect(prompt).toContain("resolutionNote");
   });
 
   it("omits candidate-dependent fields from the fallback output shape when candidates are absent", () => {

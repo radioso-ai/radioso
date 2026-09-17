@@ -55,6 +55,7 @@ queryShape: use the semantic definitions below. Apply them by meaning in every l
 Do not use policy_answer merely because the assistant has a behavioral directive about the topic. Classify the user's requested answer, not the instructions for how to answer it.
 After resolving a follow-up to a concrete subject, use the specialized shape that fits the resolved request. For example, a follow-up asking for one discrete attribute remains definition_lookup; use follow_up_grounding only when no specialized shape applies.
 temporalQueryMode: use "listing" only for an anchorless event/date query that asks for a list or ordering of dated events without naming a specific topic; use "topic_refinement" for a named event/topic temporal question; otherwise use "none". This is your structured judgment and must not rely on backend keyword rules.
+resolutionNote: when the latest message depends on something from the conversation (an ordinal or position in a list you offered, an accepted offer, a continuation, a correction), name in one short clause the concrete item it resolves to and how, before you resolve the query fields; otherwise null. Apply this by meaning in every language; do not rely on English ordinal or acceptance words.
 confidence: certainty in subject resolution and turn interpretation, not answer confidence.
 
 Response Language Rules

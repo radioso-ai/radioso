@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import type { ApplicationRouteMount } from "../radiosoModuleTypes.js";
 import { HttpError } from "../shared/httpError.js";
+import { createRateLimitMiddleware } from "../shared/rateLimit.js";
 import { EnterpriseUsageLimitService } from "../usageLimits/usageLimitService.js";
 import type { AccountUsageSummary, UsageLimitProfile } from "../usageLimits/usageLimitService.js";
 import { OrganizationDirectoryService } from "./organizationDirectoryService.js";
@@ -185,7 +186,55 @@ export const createStaffConsoleRoutes = (
   const usageLimitService =
     repositories.usageLimitService ?? new EnterpriseUsageLimitService(dependencies.connectorDb);
   const logger = resolveLogger(dependencies);
-  const staffSessionGuard = requireStaffSession(authService, cookieName);
+
+  // The login endpoint has no session yet, so it is the one route in this router throttled
+  // pre-auth -- per attempted email, falling back to source IP -- mirroring the OSS backend's
+  // own `auth.login` limiter (js/missing-rate-limiting correctly flagged this route: unlike
+  // OSS's authRoutes.ts, it had no limiter at all).
+  const staffLoginRateLimit = createRateLimitMiddleware({
+    service: dependencies.abuseControlService,
+    auditService: dependencies.auditService,
+    scope: "ee.staff_console.auth.login",
+    limit: dependencies.env.AUTH_RATE_LIMIT_MAX_ATTEMPTS ?? 10,
+    windowMs: dependencies.env.AUTH_RATE_LIMIT_WINDOW_MS ?? 60_000,
+    resolveSubjectKey: (req) => {
+      const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : null;
+      return email || String(req.ip ?? "unknown");
+    },
+  });
+
+  // Every other route in this router runs behind an authenticated staff session. Authentication
+  // narrows the caller pool but is not a rate limit: a compromised or malicious staff session
+  // could still hammer the directory, tier, or staff-management endpoints. This budget is
+  // enforced once per authenticated request, right after the session check succeeds, so it
+  // covers every guarded route from one place. No EE-specific rate-limit env knob is threaded
+  // through yet, so the limit mirrors the magnitude of OSS's own authenticated-route default
+  // (`EXPENSIVE_AUTHENTICATED_RATE_LIMIT_*`, 60 requests / 60s) as a literal.
+  const staffSessionRateLimit = createRateLimitMiddleware({
+    service: dependencies.abuseControlService,
+    auditService: dependencies.auditService,
+    scope: "ee.staff_console.session",
+    limit: 60,
+    windowMs: 60_000,
+    resolveSubjectKey: (_req, res) => {
+      const staff = res.locals.staff as { id?: string } | undefined;
+      return staff?.id ? `staff:${staff.id}` : null;
+    },
+  });
+
+  // Kept as a single `RequestHandler` (not `[authenticate, rateLimit]`) so every call site's
+  // route-handler argument still gets Express's normal parameter-type inference; an array here
+  // makes the compiler fall back to implicit `any` for req/res/next on every downstream handler.
+  const authenticateStaffSession = requireStaffSession(authService, cookieName);
+  const staffSessionGuard: RequestHandler = (req, res, next) => {
+    authenticateStaffSession(req, res, (error?: unknown) => {
+      if (error) {
+        next(error);
+        return;
+      }
+      staffSessionRateLimit(req, res, next);
+    });
+  };
   const staffReadSessionGuard = (input: {
     action: string;
     targetId?: (req: Parameters<RequestHandler>[0]) => string | null;
@@ -218,7 +267,9 @@ export const createStaffConsoleRoutes = (
         role: staff.role,
         outcome: "success",
       }, "Staff console read authentication succeeded");
-      next();
+      // Shares the session-wide budget every other guarded route enforces, rather than
+      // calling `next()` directly, so read routes are bounded the same way write routes are.
+      staffSessionRateLimit(req, res, next);
     } catch (error) {
       const authError = error as { statusCode?: number; readAuthLogged?: boolean };
       if (authError.statusCode === 401 && !authError.readAuthLogged) {
@@ -234,7 +285,7 @@ export const createStaffConsoleRoutes = (
     }
   };
 
-  router.post("/auth/login", async (req, res, next) => {
+  router.post("/auth/login", staffLoginRateLimit, async (req, res, next) => {
     try {
       const body = parseRequest(loginBodySchema, req.body, "Invalid staff login payload");
       const result = await authService.login(body);

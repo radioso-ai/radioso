@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { AppDependencies } from "../../server/types.js";
 import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.js";
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
+import { expensiveAuthenticatedRateLimiter } from "../middleware/expensiveAuthenticatedRateLimiter.js";
 import { validateBody } from "../middleware/validate.js";
 import { badRequest } from "../../../shared/domain/errors.js";
 import {
@@ -35,6 +36,7 @@ export const createAgentExternalSkillsRoutes = (dependencies: AppDependencies): 
   const workspaceSession = requireWorkspaceSession(dependencies);
   const agentRead = requireWorkspacePermission(dependencies, "workspace.agents.read");
   const agentManage = requireWorkspacePermission(dependencies, "workspace.agents.manage");
+  const rateLimitExpensiveAuthenticatedRequest = expensiveAuthenticatedRateLimiter(dependencies);
 
   // Verifies the agent exists in the caller's workspace (throws notFound otherwise).
   const resolveAgentId = async (req: Request, res: Response): Promise<string> => {
@@ -85,6 +87,7 @@ export const createAgentExternalSkillsRoutes = (dependencies: AppDependencies): 
     "/:agentId/mcp-connections/:connectionId/oauth/authorize",
     workspaceSession,
     agentManage,
+    rateLimitExpensiveAuthenticatedRequest,
     async (req, res, next) => {
       try {
         const agentId = await resolveAgentId(req, res);
@@ -104,6 +107,7 @@ export const createAgentExternalSkillsRoutes = (dependencies: AppDependencies): 
     "/:agentId/mcp-connections/:connectionId/oauth/complete",
     workspaceSession,
     agentManage,
+    rateLimitExpensiveAuthenticatedRequest,
     validateBody(oauthCompleteInputSchema),
     async (req, res, next) => {
       try {

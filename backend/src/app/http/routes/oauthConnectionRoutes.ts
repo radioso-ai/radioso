@@ -6,11 +6,18 @@ import { oauthConnectionCreateSchema } from "../../../modules/integrationOauth/p
 import { badRequest } from "../../../shared/domain/errors.js";
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.js";
+import { expensiveAuthenticatedRateLimiter } from "../middleware/expensiveAuthenticatedRateLimiter.js";
 import { validateBody } from "../middleware/validate.js";
 
 type OauthConnectionRouteDependencies = Pick<
   AppDependencies,
-  "env" | "authService" | "accountAccessService" | "workspaceSessionService" | "oauthConnectionService"
+  | "env"
+  | "authService"
+  | "accountAccessService"
+  | "workspaceSessionService"
+  | "oauthConnectionService"
+  | "abuseControlService"
+  | "auditService"
 >;
 
 const uuidSchema = z.string().uuid();
@@ -44,6 +51,7 @@ export const createOauthConnectionRoutes = (dependencies: OauthConnectionRouteDe
   const settingsManage = requireWorkspacePermission(dependencies, "workspace.settings.manage", (req) =>
     parseUuid(req.params.workspaceId, "workspaceId"),
   );
+  const rateLimitExpensiveAuthenticatedRequest = expensiveAuthenticatedRateLimiter(dependencies);
 
   router.post(
     "/workspaces/:workspaceId/oauth-connections",
@@ -95,6 +103,7 @@ export const createOauthConnectionRoutes = (dependencies: OauthConnectionRouteDe
     "/workspaces/:workspaceId/oauth-connections/:connectionId/reauthorize",
     workspaceSession,
     settingsManage,
+    rateLimitExpensiveAuthenticatedRequest,
     async (req, res, next) => {
       try {
         const workspaceId = parseUuid(req.params.workspaceId, "workspaceId");

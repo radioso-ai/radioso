@@ -78,4 +78,44 @@ describe("HTML processing helpers", () => {
       "https://example.com/"
     )).toBe("Role main content is primary.");
   });
+
+  it("strips script content out of extracted text", () => {
+    const result = extractStructuredTextFromHtml(
+      "<main><p>Before script.</p><script>window.alert('xss');</script><p>After script.</p></main>"
+    );
+    expect(result).not.toContain("alert");
+    expect(result).toBe("Before script.\n\nAfter script.");
+  });
+
+  it("strips style content out of extracted text", () => {
+    expect(extractStructuredTextFromHtml(
+      "<main><style>.hidden { display: none; }</style><p>Visible copy.</p></main>"
+    )).toBe("Visible copy.");
+  });
+
+  it("strips noscript content out of extracted text", () => {
+    expect(extractStructuredTextFromHtml(
+      "<main><noscript>Enable JavaScript to continue.</noscript><p>Real content.</p></main>"
+    )).toBe("Real content.");
+  });
+
+  it("strips script tags case-insensitively", () => {
+    expect(extractStructuredTextFromHtml(
+      "<main><SCRIPT>window.alert('xss');</SCRIPT><p>Safe copy.</p></main>"
+    )).toBe("Safe copy.");
+  });
+
+  it("removes multiple non-adjacent script blocks in one pass", () => {
+    const result = extractStructuredTextFromHtml(
+      "<main><script>a();</script><p>Middle.</p><script>b();</script><style>c{}</style><p>End.</p></main>"
+    );
+    expect(result).toBe("Middle.\n\nEnd.");
+  });
+
+  it("does not hang on an unclosed script tag", () => {
+    const html = `<main><script>${"a".repeat(20000)}<p>Trailing paragraph.</p></main>`;
+    const start = Date.now();
+    expect(() => extractStructuredTextFromHtml(html)).not.toThrow();
+    expect(Date.now() - start).toBeLessThan(500);
+  });
 });

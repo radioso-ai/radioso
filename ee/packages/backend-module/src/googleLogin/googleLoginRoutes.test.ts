@@ -73,6 +73,7 @@ const createApp = (overrides: Partial<GoogleLoginRouterOptions> = {}) => {
     config,
     successRedirect: SUCCESS_REDIRECT,
     authService: { federatedLogin: vi.fn(async () => federatedLoginResult) },
+    abuseControlService: { enforce: vi.fn(async () => undefined) },
     generateState: () => "fixed-state",
     ...overrides,
   };
@@ -103,6 +104,50 @@ describe("google login routes", () => {
     expect(response.headers.location).toContain("state=fixed-state");
     const setCookie = response.headers["set-cookie"] as unknown as string[];
     expect(setCookie.some((c) => c.startsWith("radioso_google_login_state=fixed-state"))).toBe(true);
+  });
+
+  it("rate limits repeated /start requests from the same source (js/missing-rate-limiting)", async () => {
+    let startAttempts = 0;
+    const enforce = vi.fn(async (input: { scope: string }) => {
+      if (input.scope === "ee.google_login.start") {
+        startAttempts += 1;
+        if (startAttempts > 1) {
+          throw Object.assign(new Error("Too many requests"), { statusCode: 429 });
+        }
+      }
+    });
+    const { app } = createApp({ abuseControlService: { enforce } });
+
+    await request(app).get("/api/v1/ee/auth/google/start").expect(302);
+    await request(app).get("/api/v1/ee/auth/google/start").expect(429);
+
+    expect(enforce).toHaveBeenCalledWith(expect.objectContaining({
+      scope: "ee.google_login.start",
+      subjectKey: expect.stringMatching(/^source:/),
+      limit: 10,
+      windowMs: 60_000,
+    }));
+  });
+
+  it("rate limits repeated /callback requests from the same source (js/missing-rate-limiting)", async () => {
+    const enforce = vi.fn(async (input: { scope: string }) => {
+      if (input.scope === "ee.google_login.callback") {
+        throw Object.assign(new Error("Too many requests"), { statusCode: 429 });
+      }
+    });
+    const { app } = createApp({ abuseControlService: { enforce } });
+
+    const response = await request(app)
+      .get("/api/v1/ee/auth/google/callback")
+      .query({ code: "auth-code", state: "unknown-state" });
+
+    expect(response.status).toBe(429);
+    expect(enforce).toHaveBeenCalledWith(expect.objectContaining({
+      scope: "ee.google_login.callback",
+      subjectKey: expect.stringMatching(/^source:/),
+      limit: 10,
+      windowMs: 60_000,
+    }));
   });
 
   it("keeps a validated same-origin return path through the Google callback", async () => {

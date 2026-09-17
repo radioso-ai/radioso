@@ -10,6 +10,8 @@ import type { AgentRepositoryPort } from "../../../db/repositories/agentReposito
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import { validateBody } from "../../../app/http/middleware/validate.js";
 import { resolveAnonymousSession } from "../../../app/http/middleware/resolveAnonymousSession.js";
+import { publicChatFeedbackRateLimiter } from "../../../app/http/middleware/anonymousRateLimiter.js";
+import type { RateLimitAbuseControlPort, RateLimitAuditPort } from "../../../app/http/middleware/rateLimit.js";
 import { resolvePublicChatSessionSecret } from "../../../app/http/shared/publicChatSessionSecret.js";
 import { badRequest } from "../../../shared/domain/errors.js";
 import type { AnswerFeedbackActor } from "../services/answerFeedbackService.js";
@@ -19,10 +21,14 @@ export interface AnswerFeedbackRouteDependencies {
   env: Pick<Env,
     | "NODE_ENV"
     | "PUBLIC_CHAT_SESSION_SECRET"
+    | "PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS"
+    | "PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS"
     | "SESSION_COOKIE_NAME"
     | "SESSION_COOKIE_SECRET"
     | "WORKSPACE_TOKEN_SECRET"
   >;
+  abuseControlService: RateLimitAbuseControlPort;
+  auditService: RateLimitAuditPort;
   authService: {
     authenticateSession(token: string): Promise<{ accountId: string; userId: string; sessionId: string }>;
     authenticateApiToken(token: string): Promise<{
@@ -112,6 +118,7 @@ export const createAnswerFeedbackRoutes = (
     dependencies.agentService,
     dependencies.accessGrantService,
   );
+  const rateLimitPublicChatFeedback = publicChatFeedbackRateLimiter(dependencies);
 
   router.put("/messages/:assistantMessageId", workspaceSession, validateBody(feedbackBodySchema), async (req, res, next) => {
     try {
@@ -156,7 +163,7 @@ export const createAnswerFeedbackRoutes = (
     }
   });
 
-  router.put("/public/chat/:token/messages/:assistantMessageId", publicSession, requirePublicChatPermission(dependencies, "public_chat.feedback.write.own"), validateBody(feedbackBodySchema), async (req, res, next) => {
+  router.put("/public/chat/:token/messages/:assistantMessageId", publicSession, requirePublicChatPermission(dependencies, "public_chat.feedback.write.own"), rateLimitPublicChatFeedback, validateBody(feedbackBodySchema), async (req, res, next) => {
     try {
       const params = parseParams(publicFeedbackParamsSchema, req.params);
       const { workspaceId, agentId, anonymousSessionId } = res.locals as {
@@ -178,7 +185,7 @@ export const createAnswerFeedbackRoutes = (
     }
   });
 
-  router.delete("/public/chat/:token/messages/:assistantMessageId", publicSession, requirePublicChatPermission(dependencies, "public_chat.feedback.write.own"), async (req, res, next) => {
+  router.delete("/public/chat/:token/messages/:assistantMessageId", publicSession, requirePublicChatPermission(dependencies, "public_chat.feedback.write.own"), rateLimitPublicChatFeedback, async (req, res, next) => {
     try {
       const params = parseParams(publicFeedbackParamsSchema, req.params);
       const { workspaceId, agentId, anonymousSessionId } = res.locals as {

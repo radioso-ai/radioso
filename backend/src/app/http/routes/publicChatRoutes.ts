@@ -6,7 +6,13 @@ import { sendChatSse } from "../presenters/chatPresenter.js";
 import { AppError, badRequest, notFound, serviceUnavailable } from "../../../shared/domain/errors.js";
 import { resolveAnonymousSession } from "../middleware/resolveAnonymousSession.js";
 import { requirePublicChatPermission } from "../middleware/requirePermission.js";
-import { anonymousRateLimiters, publicChatSessionExchangeRateLimiter, type AnonymousRateLimiterDependencies } from "../middleware/anonymousRateLimiter.js";
+import {
+  anonymousRateLimiters,
+  publicChatEmbedConfigRateLimiter,
+  publicChatSessionExchangeRateLimiter,
+  publicChatSessionReadRateLimiter,
+  type AnonymousRateLimiterDependencies,
+} from "../middleware/anonymousRateLimiter.js";
 import { requireSurfaceExtension } from "../shared/requireSurfaceExtension.js";
 import { sendAssistantLogo } from "../shared/assistantIdentity.js";
 import { validateBody } from "../middleware/validate.js";
@@ -105,6 +111,8 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
   );
   const rateLimitAnonymousChat = anonymousRateLimiters(dependencies);
   const rateLimitPublicChatSessionExchange = publicChatSessionExchangeRateLimiter(dependencies);
+  const rateLimitPublicChatEmbedConfig = publicChatEmbedConfigRateLimiter(dependencies);
+  const rateLimitPublicChatSessionRead = publicChatSessionReadRateLimiter(dependencies);
   const resolveOrigin = (value: string | undefined) => {
     if (!value) {
       return null;
@@ -195,67 +203,72 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
     return input.resume.publicSessionId;
   };
 
-  router.get("/:token/embed-config", requireSurfaceExtension(dependencies.agentSurfaceExtensions, "websiteEmbed"), async (req, res, next) => {
-    try {
-      const launchToken = String(req.params.token);
-      const origin = resolveOrigin(req.header("origin"));
-      const grant = await dependencies.accessGrantService.resolvePublicLaunchGrant(launchToken);
-      const agent = grant
-        ? await dependencies.agentRepository.findByIdAndWorkspaceId(grant.agentId, grant.workspaceId)
-        : await dependencies.agentRepository.findByWebsiteEmbedToken(launchToken);
-      const websiteEmbed = agent ? getWebsiteEmbedSurfaceSettings(agent) : null;
-      if (!agent || !websiteEmbed?.enabled) {
-        next(notFound("Not found"));
-        return;
-      }
-      if (grant) {
-        const evaluation = dependencies.accessGrantService.evaluate(grant, { origin });
-        if (!evaluation.allowed) {
-          await dependencies.accessGrantService.recordAuthFailure({
-            grant,
-            reason: evaluation.reason,
-            surface: "website-embed",
-          });
-          if (evaluation.reason === "origin_denied") {
-            throw badRequest("This website is not approved to host the embedded assistant.");
-          }
+  router.get(
+    "/:token/embed-config",
+    requireSurfaceExtension(dependencies.agentSurfaceExtensions, "websiteEmbed"),
+    rateLimitPublicChatEmbedConfig,
+    async (req, res, next) => {
+      try {
+        const launchToken = String(req.params.token);
+        const origin = resolveOrigin(req.header("origin"));
+        const grant = await dependencies.accessGrantService.resolvePublicLaunchGrant(launchToken);
+        const agent = grant
+          ? await dependencies.agentRepository.findByIdAndWorkspaceId(grant.agentId, grant.workspaceId)
+          : await dependencies.agentRepository.findByWebsiteEmbedToken(launchToken);
+        const websiteEmbed = agent ? getWebsiteEmbedSurfaceSettings(agent) : null;
+        if (!agent || !websiteEmbed?.enabled) {
           next(notFound("Not found"));
           return;
         }
-        await dependencies.accessGrantService.touchGrant(grant.id);
-      } else if (!websiteEmbedOriginAllowed(websiteEmbed, origin)) {
-        await dependencies.accessGrantService.recordAuthFailure({
-          workspaceId: agent.workspaceId,
-          reason: "origin_denied",
-          surface: "website-embed",
-        });
-        throw badRequest("This website is not approved to host the embedded assistant.");
-      }
+        if (grant) {
+          const evaluation = dependencies.accessGrantService.evaluate(grant, { origin });
+          if (!evaluation.allowed) {
+            await dependencies.accessGrantService.recordAuthFailure({
+              grant,
+              reason: evaluation.reason,
+              surface: "website-embed",
+            });
+            if (evaluation.reason === "origin_denied") {
+              throw badRequest("This website is not approved to host the embedded assistant.");
+            }
+            next(notFound("Not found"));
+            return;
+          }
+          await dependencies.accessGrantService.touchGrant(grant.id);
+        } else if (!websiteEmbedOriginAllowed(websiteEmbed, origin)) {
+          await dependencies.accessGrantService.recordAuthFailure({
+            workspaceId: agent.workspaceId,
+            reason: "origin_denied",
+            surface: "website-embed",
+          });
+          throw badRequest("This website is not approved to host the embedded assistant.");
+        }
 
-      // Cacheable per origin: the response varies only by the allow-listed origin
-      // (declared via Vary so a CDN keys on it) and not by Accept-Language —
-      // built-in locale packs are resolved client-side in the launcher, so `copy`
-      // carries only the operator's per-locale packs.
-      res.setHeader("Vary", "Origin");
-      res.setHeader("Cache-Control", "public, max-age=300");
-      res.status(200).json({
-        launcherLabel: websiteEmbed.launcherLabel,
-        launcherPosition: websiteEmbed.launcherPosition,
-        // The teaser bubble renders outside the iframe, so the launcher needs the
-        // display name to say who is greeting the visitor. Same resolution as the
-        // in-frame header, so both surfaces name the assistant identically.
-        assistantName: resolveAgentDisplayName({ agentName: agent.name }),
-        theme: agent.theme,
-        branding: agent.branding,
-        copy: websiteEmbed.copy,
-        expertOverrides: websiteEmbed.expertOverrides,
-        assistantLogoUrl: buildAssistantLogoUrl(req, launchToken, agent.logo),
-        proactiveGreetingEnabled: agent.proactiveGreetingEnabled,
-      });
-    } catch (error) {
-      next(error);
-    }
-  });
+        // Cacheable per origin: the response varies only by the allow-listed origin
+        // (declared via Vary so a CDN keys on it) and not by Accept-Language —
+        // built-in locale packs are resolved client-side in the launcher, so `copy`
+        // carries only the operator's per-locale packs.
+        res.setHeader("Vary", "Origin");
+        res.setHeader("Cache-Control", "public, max-age=300");
+        res.status(200).json({
+          launcherLabel: websiteEmbed.launcherLabel,
+          launcherPosition: websiteEmbed.launcherPosition,
+          // The teaser bubble renders outside the iframe, so the launcher needs the
+          // display name to say who is greeting the visitor. Same resolution as the
+          // in-frame header, so both surfaces name the assistant identically.
+          assistantName: resolveAgentDisplayName({ agentName: agent.name }),
+          theme: agent.theme,
+          branding: agent.branding,
+          copy: websiteEmbed.copy,
+          expertOverrides: websiteEmbed.expertOverrides,
+          assistantLogoUrl: buildAssistantLogoUrl(req, launchToken, agent.logo),
+          proactiveGreetingEnabled: agent.proactiveGreetingEnabled,
+        });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
 
   router.get("/:token/assistant-logo", async (req, res, next) => {
     try {
@@ -660,58 +673,64 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
   );
 
   // GET /api/v1/public/chat/:token — list conversations for this chat session
-  router.get("/:token", sessionMiddleware, requirePublicChatPermission(dependencies, "public_chat.session.read.own"), async (req, res, next) => {
-    try {
-      const { workspaceId, agentId, workspaceName, chatSessionId } = res.locals as {
-        workspaceId: string;
-        agentId: string;
-        workspaceName: string;
-        chatSessionId: string;
-      };
-      const parsedQuery = collectionPageQuerySchema.safeParse(req.query);
-      if (!parsedQuery.success) {
-        next(badRequest("Invalid request query", parsedQuery.error.flatten()));
-        return;
-      }
-      const page = await dependencies.chatHistoryService.listAnonymousConversations(
-        workspaceId,
-        chatSessionId,
-        {
-          ...parsedQuery.data,
-          agentId,
-        },
-      );
-
-      res.status(200).json({
-        workspaceName,
-        assistantAvatarUrl: buildAssistantLogoUrl(
-          req,
-          String(req.params.token),
-          (res.locals as {
-            assistantLogo?: { objectPath: string; generation?: string | null; sizeBytes: number } | null;
-            assistantLogoAvailable?: boolean;
-          }).assistantLogo ?? Boolean((res.locals as { assistantLogoAvailable?: boolean }).assistantLogoAvailable),
-        ),
-        theme: (res.locals as { assistantTheme?: unknown }).assistantTheme,
-        copy: (res.locals as { assistantCopy?: unknown }).assistantCopy,
-        branding: (res.locals as { assistantBranding?: unknown }).assistantBranding,
-        assistantLinkUtmEnabled: Boolean((res.locals as { assistantLinkUtmEnabled?: boolean }).assistantLinkUtmEnabled ?? true),
-        citationDisplayEnabled: Boolean((res.locals as { citationDisplayEnabled?: boolean }).citationDisplayEnabled ?? true),
-        assistantBootstrapActive: Boolean((res.locals as { assistantBootstrapActive?: boolean }).assistantBootstrapActive),
-        intakeActions: await resolvePublicIntakeActions({
+  router.get(
+    "/:token",
+    sessionMiddleware,
+    requirePublicChatPermission(dependencies, "public_chat.session.read.own"),
+    rateLimitPublicChatSessionRead,
+    async (req, res, next) => {
+      try {
+        const { workspaceId, agentId, workspaceName, chatSessionId } = res.locals as {
+          workspaceId: string;
+          agentId: string;
+          workspaceName: string;
+          chatSessionId: string;
+        };
+        const parsedQuery = collectionPageQuerySchema.safeParse(req.query);
+        if (!parsedQuery.success) {
+          next(badRequest("Invalid request query", parsedQuery.error.flatten()));
+          return;
+        }
+        const page = await dependencies.chatHistoryService.listAnonymousConversations(
           workspaceId,
-          agentId,
-          sourceChannel: (res.locals as { sourceChannel?: string | null }).sourceChannel,
-        }),
-        ...page,
-      });
-    } catch (error) {
-      next(error);
-    }
-  });
+          chatSessionId,
+          {
+            ...parsedQuery.data,
+            agentId,
+          },
+        );
+
+        res.status(200).json({
+          workspaceName,
+          assistantAvatarUrl: buildAssistantLogoUrl(
+            req,
+            String(req.params.token),
+            (res.locals as {
+              assistantLogo?: { objectPath: string; generation?: string | null; sizeBytes: number } | null;
+              assistantLogoAvailable?: boolean;
+            }).assistantLogo ?? Boolean((res.locals as { assistantLogoAvailable?: boolean }).assistantLogoAvailable),
+          ),
+          theme: (res.locals as { assistantTheme?: unknown }).assistantTheme,
+          copy: (res.locals as { assistantCopy?: unknown }).assistantCopy,
+          branding: (res.locals as { assistantBranding?: unknown }).assistantBranding,
+          assistantLinkUtmEnabled: Boolean((res.locals as { assistantLinkUtmEnabled?: boolean }).assistantLinkUtmEnabled ?? true),
+          citationDisplayEnabled: Boolean((res.locals as { citationDisplayEnabled?: boolean }).citationDisplayEnabled ?? true),
+          assistantBootstrapActive: Boolean((res.locals as { assistantBootstrapActive?: boolean }).assistantBootstrapActive),
+          intakeActions: await resolvePublicIntakeActions({
+            workspaceId,
+            agentId,
+            sourceChannel: (res.locals as { sourceChannel?: string | null }).sourceChannel,
+          }),
+          ...page,
+        });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
 
   // GET /api/v1/public/chat/:token/tail/:conversationId — poll new messages for this chat session
-  router.get("/:token/tail/:conversationId", sessionMiddleware, requirePublicChatPermission(dependencies, "public_chat.history.read.own"), async (req, res, next) => {
+  router.get("/:token/tail/:conversationId", sessionMiddleware, requirePublicChatPermission(dependencies, "public_chat.history.read.own"), rateLimitPublicChatSessionRead, async (req, res, next) => {
     try {
       const { agentId, chatSessionId, citationDisplayEnabled } = res.locals as { agentId: string; chatSessionId: string; citationDisplayEnabled: boolean };
       const parsedParams = publicConversationParamsSchema.safeParse(req.params);
@@ -749,7 +768,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
   });
 
   // GET /api/v1/public/chat/:token/events/:conversationId — push notifications for this chat session
-  router.get("/:token/events/:conversationId", sessionMiddleware, requirePublicChatPermission(dependencies, "public_chat.history.read.own"), async (req, res, next) => {
+  router.get("/:token/events/:conversationId", sessionMiddleware, requirePublicChatPermission(dependencies, "public_chat.history.read.own"), rateLimitPublicChatSessionRead, async (req, res, next) => {
     try {
       const { agentId, chatSessionId } = res.locals as { agentId: string; chatSessionId: string };
       const parsedParams = publicConversationParamsSchema.safeParse(req.params);
@@ -818,7 +837,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
   });
 
   // GET /api/v1/public/chat/:token/history/:conversationId — get conversation detail
-  router.get("/:token/history/:conversationId", sessionMiddleware, requirePublicChatPermission(dependencies, "public_chat.history.read.own"), async (req, res, next) => {
+  router.get("/:token/history/:conversationId", sessionMiddleware, requirePublicChatPermission(dependencies, "public_chat.history.read.own"), rateLimitPublicChatSessionRead, async (req, res, next) => {
     try {
       const { agentId, chatSessionId, citationDisplayEnabled } = res.locals as { agentId: string; chatSessionId: string; citationDisplayEnabled: boolean };
       const parsedParams = publicConversationParamsSchema.safeParse(req.params);

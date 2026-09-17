@@ -19,6 +19,9 @@ on:
         required: false
         default: "5"
 
+permissions:
+  contents: read
+
 concurrency:
   group: conversation-quality-evals
   cancel-in-progress: true

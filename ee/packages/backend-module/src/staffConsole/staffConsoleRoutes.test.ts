@@ -26,6 +26,7 @@ const createDependencies = (input: {
   users: StaffUserRepository;
   sessions: StaffSessionRepository;
   auditRecord?: ReturnType<typeof vi.fn>;
+  abuseControlEnforce?: ReturnType<typeof vi.fn>;
   logger?: {
     info: ReturnType<typeof vi.fn>;
     warn: ReturnType<typeof vi.fn>;
@@ -39,6 +40,9 @@ const createDependencies = (input: {
   },
   auditService: {
     record: input.auditRecord ?? vi.fn(async () => undefined),
+  },
+  abuseControlService: {
+    enforce: input.abuseControlEnforce ?? vi.fn(async () => undefined),
   },
   logger: input.logger,
 } as unknown as RouteDependencies);
@@ -434,6 +438,80 @@ describe("staff console routes and guards", () => {
       .expect(200);
 
     expect(login.headers["set-cookie"][0]).toContain("radioso_staff_session=");
+  });
+
+  it("rate limits repeated staff login attempts per email (js/missing-rate-limiting)", async () => {
+    const repositories = await createMemoryRepositories();
+    let loginAttempts = 0;
+    const abuseControlEnforce = vi.fn(async (input: { scope: string }) => {
+      if (input.scope === "ee.staff_console.auth.login") {
+        loginAttempts += 1;
+        if (loginAttempts > 1) {
+          throw Object.assign(new Error("Too many requests"), { statusCode: 429 });
+        }
+      }
+    });
+    const app = createApp(createDependencies({
+      users: repositories.users,
+      sessions: repositories.staffSessions,
+      abuseControlEnforce,
+    }), { users: repositories.users, sessions: repositories.staffSessions });
+
+    await request(app)
+      .post("/api/v1/ee/operator-console/auth/login")
+      .send({ email: "owner@example.com", password: "password-123" })
+      .expect(200);
+
+    await request(app)
+      .post("/api/v1/ee/operator-console/auth/login")
+      .send({ email: "owner@example.com", password: "password-123" })
+      .expect(429);
+
+    expect(abuseControlEnforce).toHaveBeenCalledWith(expect.objectContaining({
+      scope: "ee.staff_console.auth.login",
+      subjectKey: "owner@example.com",
+      limit: 10,
+      windowMs: 60_000,
+    }));
+  });
+
+  it("rate limits authenticated staff console requests once the session budget is exhausted (js/missing-rate-limiting)", async () => {
+    const repositories = await createMemoryRepositories();
+    const abuseControlEnforce = vi.fn(async (input: { scope: string }) => {
+      if (input.scope === "ee.staff_console.session") {
+        throw Object.assign(new Error("Too many requests"), { statusCode: 429 });
+      }
+    });
+    const app = createApp(createDependencies({
+      users: repositories.users,
+      sessions: repositories.staffSessions,
+      abuseControlEnforce,
+    }), { users: repositories.users, sessions: repositories.staffSessions });
+
+    const login = await request(app)
+      .post("/api/v1/ee/operator-console/auth/login")
+      .send({ email: "owner@example.com", password: "password-123" })
+      .expect(200);
+    const cookie = login.headers["set-cookie"][0];
+
+    // A route guarded by `staffSessionGuard`.
+    await request(app)
+      .get("/api/v1/ee/operator-console/auth/me")
+      .set("Cookie", cookie)
+      .expect(429);
+
+    // A route guarded by the separate `staffReadSessionGuard` closure.
+    await request(app)
+      .get("/api/v1/ee/operator-console/organizations")
+      .set("Cookie", cookie)
+      .expect(429);
+
+    expect(abuseControlEnforce).toHaveBeenCalledWith(expect.objectContaining({
+      scope: "ee.staff_console.session",
+      subjectKey: expect.stringMatching(/^staff:/),
+      limit: 60,
+      windowMs: 60_000,
+    }));
   });
 
   const runRoleGuard = (role: StaffRole) => {

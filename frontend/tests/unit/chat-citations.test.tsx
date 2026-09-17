@@ -368,6 +368,34 @@ describe('AssistantMessageContent', () => {
     expect(html).toContain('aria-label="Open source 1: Handbook"')
   })
 
+  it('decodes a citation title through a single entity-decode pass, without re-decoding its own output', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[{ documentId: 'doc-1', chunkId: 'chunk-1', title: 'Caf&amp;#233; culture' }]}
+        answerSegments={[{ text: 'Grounded', citationIndices: [0] }, { text: '.' }]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    // "&amp;" decodes to "&" in one pass; the resulting "&#233;" must stay literal
+    // rather than being decoded again into "é" by a second pass over the output.
+    expect(html).toContain('aria-label="Open source 1: Caf&amp;#233; culture"')
+  })
+
+  it('decodes an uppercase hex entity in a citation title', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[{ documentId: 'doc-1', chunkId: 'chunk-1', title: 'Right&#X2019;s guide' }]}
+        answerSegments={[{ text: 'Grounded', citationIndices: [0] }, { text: '.' }]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).toContain('aria-label="Open source 1: Right’s guide"')
+  })
+
   it('renders link-only citation markers as reveal buttons, not document openers', async () => {
     const html = renderToStaticMarkup(
       <AssistantMessageContent

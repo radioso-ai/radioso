@@ -302,9 +302,7 @@ const resolveImportPath = (filePath, specifier) => {
     return null;
   }
   const resolved = normalizePath(path.normalize(path.join(path.dirname(filePath), specifier)));
-  return resolved
-    .replace(/\.(js|ts|tsx|mjs|cjs)$/, "")
-    .replace(/\/index$/, "/index");
+  return resolved.replace(/\.(js|ts|tsx|mjs|cjs)$/, "");
 };
 
 const normalizePath = (value) => value.split(path.sep).join("/");

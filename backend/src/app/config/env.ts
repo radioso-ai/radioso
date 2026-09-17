@@ -165,6 +165,10 @@ const envSchema = z.object({
   PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(10),
   PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(600),
+  // Read/poll traffic (conversation list, tail, history, live-event connect) is far
+  // more frequent than turn creation in normal use, so it gets its own, more
+  // generous budget on the same window rather than sharing the turn-creation cap.
+  PUBLIC_CHAT_SESSION_READ_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(120),
   // Agent-channel turns spend provider and retrieval budget. A single credential
   // cannot exhaust a workspace, and credential rotation cannot evade the shared cap.
   AGENT_CHANNEL_CHAT_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),

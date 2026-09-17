@@ -143,9 +143,17 @@ const createDependencies = (
   env: {
     NODE_ENV: "test",
     PUBLIC_CHAT_SESSION_SECRET: PUBLIC_SECRET,
+    PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS: 60_000,
+    PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 10,
     SESSION_COOKIE_NAME: "radioso_session",
     SESSION_COOKIE_SECRET: "session-secret",
     WORKSPACE_TOKEN_SECRET: "workspace-secret",
+  },
+  abuseControlService: {
+    enforce: vi.fn().mockResolvedValue(undefined),
+  },
+  auditService: {
+    record: vi.fn().mockResolvedValue(undefined),
   },
   authService: {
     async authenticateSession(token) {

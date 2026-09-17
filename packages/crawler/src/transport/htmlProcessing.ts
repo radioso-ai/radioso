@@ -45,7 +45,7 @@ export const normalizeText = (value: string): string =>
     .replace(/\n\n(?=- )/g, "\n")
     .trim();
 
-export const stripTags = (html: string): string =>
+const stripTags = (html: string): string =>
   html
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<[^>]+>/g, " ")
@@ -63,11 +63,47 @@ const firstContentfulMatch = (html: string, pattern: RegExp): string | null => {
   return null;
 };
 
-export const extractMainContentHtml = (html: string): string => {
-  const cleaned = html
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ");
+// Crawled HTML is adversary-influenced (any site an operator points the crawler at), so tag
+// stripping below scans with indexOf rather than an unanchored `<tag[\s\S]*?</tag>` regex: a
+// page with many unclosed opening tags would otherwise force that pattern through a quadratic
+// number of failed backtracks. indexOf makes each scan strictly forward, so total work stays
+// linear in the input length regardless of how many (un)closed tags appear. All three tag names
+// are stripped in one pass over one lowercased copy — picking whichever opens first at each
+// step — rather than three sequential passes, each re-lowercasing the whole document.
+const stripElementBlocks = (html: string, tagNames: readonly string[]): string => {
+  const lowerHtml = html.toLowerCase();
+  const openTokens = tagNames.map((tagName) => `<${tagName}`);
+  let result = "";
+  let cursor = 0;
+  while (cursor < html.length) {
+    let openIndex = -1;
+    let matchedTagName = "";
+    for (let i = 0; i < tagNames.length; i++) {
+      const candidateIndex = lowerHtml.indexOf(openTokens[i], cursor);
+      if (candidateIndex !== -1 && (openIndex === -1 || candidateIndex < openIndex)) {
+        openIndex = candidateIndex;
+        matchedTagName = tagNames[i];
+      }
+    }
+    if (openIndex === -1) {
+      result += html.slice(cursor);
+      return result;
+    }
+    const closeIndex = lowerHtml.indexOf(`</${matchedTagName}>`, openIndex);
+    if (closeIndex === -1) {
+      // No closing tag anywhere after this point, so no further match can ever succeed either;
+      // leave the remainder untouched, mirroring what a non-matching regex pass would do.
+      result += html.slice(cursor);
+      return result;
+    }
+    result += html.slice(cursor, openIndex) + " ";
+    cursor = closeIndex + `</${matchedTagName}>`.length;
+  }
+  return result;
+};
+
+const extractMainContentHtml = (html: string): string => {
+  const cleaned = stripElementBlocks(html, ["script", "style", "noscript"]);
 
   return firstContentfulMatch(cleaned, /<main\b[^>]*>([\s\S]*?)<\/main>/gi) ??
     firstContentfulMatch(cleaned, /<article\b[^>]*>([\s\S]*?)<\/article>/gi) ??

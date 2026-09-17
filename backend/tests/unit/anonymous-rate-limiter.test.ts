@@ -1,16 +1,23 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { Request, Response, NextFunction } from "express";
-import { anonymousRateLimiters, resetRateLimiterState } from "../../src/app/http/middleware/anonymousRateLimiter.js";
+import {
+  anonymousRateLimiters,
+  publicChatEmbedConfigRateLimiter,
+  publicChatFeedbackRateLimiter,
+  publicChatSessionReadRateLimiter,
+  resetRateLimiterState,
+} from "../../src/app/http/middleware/anonymousRateLimiter.js";
 import { AppError } from "../../src/shared/domain/errors.js";
 import { createTestDependencies } from "../support/testApp.js";
 
 const createMockReqRes = (
   locals: Record<string, unknown> = {},
-  options: { ip?: string; forwardedFor?: string } = {},
+  options: { ip?: string; forwardedFor?: string; params?: Record<string, string> } = {},
 ) => {
   const req = {
     ip: options.ip ?? "203.0.113.10",
     socket: { remoteAddress: options.ip ?? "203.0.113.10" },
+    params: options.params ?? {},
     get(name: string) {
       return name.toLowerCase() === "x-forwarded-for" ? options.forwardedFor : undefined;
     },
@@ -194,6 +201,144 @@ describe("anonymousRateLimiter", () => {
       anonymousSessionId: sessionId,
     }, { ip: "203.0.113.40" });
     await rateLimiter(req, res, next);
+
+    expect(wasNextCalled()).toBe(true);
+  });
+});
+
+describe("publicChatEmbedConfigRateLimiter", () => {
+  beforeEach(() => {
+    resetRateLimiterState();
+    vi.restoreAllMocks();
+  });
+
+  const middleware = () => publicChatEmbedConfigRateLimiter(createTestDependencies().dependencies);
+
+  it("allows requests under the limit", async () => {
+    const { req, res, next, wasNextCalled } = createMockReqRes({}, { params: { token: "launch-token-1" } });
+
+    await middleware()(req, res, next);
+
+    expect(wasNextCalled()).toBe(true);
+  });
+
+  it("rejects at the limit with 429, scoped by launch token", async () => {
+    const rateLimiter = middleware();
+    const limit = createTestDependencies().dependencies.env.PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS;
+
+    for (let i = 0; i < limit; i++) {
+      const { req, res, next } = createMockReqRes({}, { params: { token: "launch-token-2" } });
+      await rateLimiter(req, res, next);
+    }
+
+    const { req, res, next, getStatus, wasNextCalled } = createMockReqRes({}, { params: { token: "launch-token-2" } });
+    await rateLimiter(req, res, next);
+
+    expect(wasNextCalled()).toBe(false);
+    expect(getStatus()).toBe(429);
+  });
+
+  it("passes through when no launch token is present", async () => {
+    const { req, res, next, wasNextCalled } = createMockReqRes({}, { params: {} });
+
+    await middleware()(req, res, next);
+
+    expect(wasNextCalled()).toBe(true);
+  });
+});
+
+describe("publicChatSessionReadRateLimiter", () => {
+  beforeEach(() => {
+    resetRateLimiterState();
+    vi.restoreAllMocks();
+  });
+
+  const middleware = () => publicChatSessionReadRateLimiter(createTestDependencies().dependencies);
+
+  it("allows requests under the limit", async () => {
+    const { req, res, next, wasNextCalled } = createMockReqRes({ workspaceId: "workspace-1" });
+
+    await middleware()(req, res, next);
+
+    expect(wasNextCalled()).toBe(true);
+  });
+
+  it("rejects at the limit with 429, scoped by workspace and request source", async () => {
+    const rateLimiter = middleware();
+    const limit = createTestDependencies().dependencies.env.PUBLIC_CHAT_SESSION_READ_RATE_LIMIT_MAX_ATTEMPTS;
+
+    for (let i = 0; i < limit; i++) {
+      const { req, res, next } = createMockReqRes(
+        { workspaceId: "workspace-read" },
+        { ip: "203.0.113.60" },
+      );
+      await rateLimiter(req, res, next);
+    }
+
+    const { req, res, next, getStatus, wasNextCalled } = createMockReqRes(
+      { workspaceId: "workspace-read" },
+      { ip: "203.0.113.60" },
+    );
+    await rateLimiter(req, res, next);
+
+    expect(wasNextCalled()).toBe(false);
+    expect(getStatus()).toBe(429);
+  });
+
+  it("passes through when no workspaceId is set", async () => {
+    const { req, res, next, wasNextCalled } = createMockReqRes({});
+
+    await middleware()(req, res, next);
+
+    expect(wasNextCalled()).toBe(true);
+  });
+});
+
+describe("publicChatFeedbackRateLimiter", () => {
+  beforeEach(() => {
+    resetRateLimiterState();
+    vi.restoreAllMocks();
+  });
+
+  const middleware = () => publicChatFeedbackRateLimiter(createTestDependencies().dependencies);
+
+  it("allows requests under the limit", async () => {
+    const { req, res, next, wasNextCalled } = createMockReqRes({
+      workspaceId: "workspace-1",
+      anonymousSessionId: "session-1",
+    });
+
+    await middleware()(req, res, next);
+
+    expect(wasNextCalled()).toBe(true);
+  });
+
+  it("rejects at the limit with 429, scoped by workspace and session", async () => {
+    const rateLimiter = middleware();
+    const limit = createTestDependencies().dependencies.env.PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS;
+
+    for (let i = 0; i < limit; i++) {
+      const { req, res, next } = createMockReqRes({
+        workspaceId: "workspace-feedback",
+        anonymousSessionId: "session-feedback",
+      });
+      await rateLimiter(req, res, next);
+    }
+
+    const { req, res, next, getStatus, wasNextCalled } = createMockReqRes({
+      workspaceId: "workspace-feedback",
+      anonymousSessionId: "session-feedback",
+    });
+    await rateLimiter(req, res, next);
+
+    expect(wasNextCalled()).toBe(false);
+    expect(getStatus()).toBe(429);
+  });
+
+  it("passes through when workspaceId or anonymousSessionId is missing", async () => {
+    const { req, res, next, wasNextCalled } = createMockReqRes({ workspaceId: "workspace-1" });
+
+    await middleware()(req, res, next);
 
     expect(wasNextCalled()).toBe(true);
   });

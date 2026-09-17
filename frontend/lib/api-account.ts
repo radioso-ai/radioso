@@ -8,8 +8,13 @@ import {
 import { withQuery } from './api-query'
 import type {
   AccountUsageSummary,
+  BillingCheckoutRequest,
+  BillingCheckoutResponse,
+  BillingPortalRequest,
+  EnterpriseBillingSummary,
   InternalUsageResponse,
   MessageUsageResponse,
+  PlanCatalogResponse,
   UsageTrendsResponse,
   AccountUserSummary,
   AccountUsersResponse,
@@ -31,6 +36,37 @@ export const enterpriseUsageApi = {
     }), {
       method: 'GET',
     }, { withSession: true })
+  },
+}
+
+export const enterpriseBillingApi = {
+  async getSummary(): Promise<EnterpriseBillingSummary> {
+    return request<EnterpriseBillingSummary>('/ee/billing/me', {
+      method: 'GET',
+    }, { withSession: true })
+  },
+
+  async createCheckout(body: BillingCheckoutRequest): Promise<BillingCheckoutResponse> {
+    return request<BillingCheckoutResponse>('/ee/billing/checkout', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }, { withSession: true })
+  },
+
+  async createPortal(body: BillingPortalRequest): Promise<BillingCheckoutResponse> {
+    return request<BillingCheckoutResponse>('/ee/billing/portal', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }, { withSession: true })
+  },
+}
+
+/** The plan catalog is public and unauthenticated (`ee/packages/backend-module/src/billing/plansRoutes.ts`). */
+export const plansApi = {
+  async getCatalog(): Promise<PlanCatalogResponse> {
+    return request<PlanCatalogResponse>('/plans', {
+      method: 'GET',
+    }, { withSession: false })
   },
 }
 

@@ -780,3 +780,66 @@ export interface AccountUsageSummary {
     byKind: Record<'conversation' | 'copilot' | 'test_run' | 'pulse_report', number>
   } | null
 }
+
+export type BillingSubscriptionStatus = 'active' | 'past_due' | 'canceled' | 'none'
+export type BillingInterval = 'month' | 'year'
+
+export interface EnterpriseBillingSummary {
+  configured: boolean
+  planId: string
+  planName: string
+  status: BillingSubscriptionStatus
+  hasCustomer: boolean
+  interval: BillingInterval | null
+  currentPeriodEnd: string | null
+  /** Next self-serve plan above `planId`. Null at the catalog's self-serve ceiling. */
+  upgradePlanId: string | null
+}
+
+export type BillingCheckoutRequest =
+  | { plan: 'satellite' | 'planet'; interval: BillingInterval; returnPath: string }
+  | { pack: true; returnPath: string }
+
+export interface BillingPortalRequest {
+  returnPath: string
+}
+
+export interface BillingCheckoutResponse {
+  url: string
+}
+
+/** `GET /api/v1/plans` — the `@radioso/plan-catalog` payload, read over HTTP rather than imported (EE-only package). */
+interface PlanCatalogStripePricing {
+  monthLookupKey: string
+  yearLookupKey: string
+}
+
+export interface PlanCatalogEntry {
+  id: string
+  name: string
+  priceCents: number
+  annualPriceCents: number | null
+  interval: 'month'
+  monthlyConversations: number
+  storedBytes: number
+  monthlyIndexedBytes: number
+  documents: number
+  models: 'managed' | 'byok'
+  support: 'community' | 'email' | 'priority'
+  /** Null on the free plan: nothing to buy. */
+  stripe: PlanCatalogStripePricing | null
+}
+
+export interface PlanCatalogTopUp {
+  conversations: number
+  priceCents: number
+  stripeLookupKey: string
+}
+
+export interface PlanCatalogResponse {
+  currency: string
+  plans: PlanCatalogEntry[]
+  defaultPlanId: string
+  selfServeCeilingPlanId: string
+  topUp: PlanCatalogTopUp
+}

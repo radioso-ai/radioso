@@ -1,10 +1,13 @@
-import type { DocumentProcessingJobRepositoryPort } from "../../../db/repositories/documentProcessingJobRepository.js";
+import type {
+  DocumentProcessingJobRepositoryPort,
+  EnqueuedEmbeddingProfileJob,
+} from "../../../db/repositories/documentProcessingJobRepository.js";
 import type {
   EmbeddingTransitionBackfillPort,
   EmbeddingTransitionWorkFence,
 } from "./embeddingTransitionCoordinator.js";
 
-export type EmbeddingCoverageJobPort = Pick<
+type EmbeddingCoverageJobPort = Pick<
   DocumentProcessingJobRepositoryPort,
   | "ensureEmbeddingProfileJobsForTransition"
   | "cancelEmbeddingProfileJobsForTransition"
@@ -12,7 +15,7 @@ export type EmbeddingCoverageJobPort = Pick<
   | "listQueuedEmbeddingProfileJobsForWorkspace"
 >;
 
-export interface EmbeddingCoverageDispatchPort {
+interface EmbeddingCoverageDispatchPort {
   dispatchMany(input: Array<{
     jobId: string;
     documentId: string;
@@ -58,12 +61,19 @@ implements EmbeddingTransitionBackfillPort {
     });
   }
 
+  // A per-document PATCH calls reconcileWorkspace on every retrieval-eligibility
+  // change. Dispatching every queued embedding_profile job in the workspace here
+  // would multiply Cloud Tasks by the number of callers, not by the work actually
+  // created — so this wakes the worker only for the jobs this pass just inserted.
+  // Recovery (hourly scheduler + poll loop) is the backstop for anything else queued.
   async reconcileWorkspace(
     workspaceId: string,
   ): Promise<{ enqueued: number; skipped: number }> {
-    const outcome = await this.jobs.reconcileEmbeddingProfileJobsForWorkspace({ workspaceId });
-    await this.dispatchQueuedProfileJobs({ workspaceId });
-    return outcome;
+    const { enqueuedJobs, skipped } = await this.jobs.reconcileEmbeddingProfileJobsForWorkspace({
+      workspaceId,
+    });
+    await this.dispatchJobs(enqueuedJobs);
+    return { enqueued: enqueuedJobs.length, skipped };
   }
 
   private async dispatchQueuedProfileJobs(input: {
@@ -72,6 +82,10 @@ implements EmbeddingTransitionBackfillPort {
     generation?: string;
   }): Promise<void> {
     const jobs = await this.jobs.listQueuedEmbeddingProfileJobsForWorkspace(input);
+    await this.dispatchJobs(jobs);
+  }
+
+  private async dispatchJobs(jobs: EnqueuedEmbeddingProfileJob[]): Promise<void> {
     if (jobs.length === 0) {
       return;
     }

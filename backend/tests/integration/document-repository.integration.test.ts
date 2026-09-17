@@ -520,6 +520,29 @@ describeIntegration("DocumentRepository (Postgres)", () => {
     ).rejects.toMatchObject({ message: "Document not found" });
   });
 
+  it("updateAndQueue stores an enrichment override on the queued job", async () => {
+    const created = await repository.create({ ...baseCreateInput(), status: "ready" });
+
+    const updated = await repository.updateAndQueue(
+      {
+        documentId: created.id,
+        workspaceId,
+        title: "Requeued with override",
+        sourceContent: "s",
+        markdownContent: "m",
+      },
+      { documentEnrichmentOverride: "on" },
+    );
+
+    const [job] = await database.query<{ options: Record<string, unknown> | null }>(
+      `SELECT options
+       FROM document_processing_jobs
+       WHERE document_id = $1 AND document_revision = $2`,
+      [updated.id, updated.revision],
+    );
+    expect(job?.options).toEqual({ documentEnrichmentOverride: "on" });
+  });
+
   it("updateRetrievalSettings replaces the jsonb map, requeues, enqueues a job, and clears failure", async () => {
     const created = await repository.create({
       ...baseCreateInput({ metadata: { tag: "alpha", stale: "drop" } }),

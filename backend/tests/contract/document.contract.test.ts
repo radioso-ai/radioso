@@ -658,6 +658,40 @@ describe("document contract", () => {
     expect(listResponse.body.hasMore).toBe(false);
   });
 
+  it("stores a one-run enrichment override on the update job", async () => {
+    const { app, repositories } = createTestApp();
+
+    const session = await issueTestSession(app, "document-update-override@example.com");
+
+    const createResponse = await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({
+        title: "Original title",
+        content: "Original content",
+      });
+
+    const documentId = createResponse.body.documentId;
+
+    const updateResponse = await request(app)
+      .put(`/api/v1/document/${documentId}`)
+      .set(adminSessionHeaders(session))
+      .send({
+        title: "Updated title",
+        content: "Updated content",
+        documentEnrichmentOverride: "on",
+      });
+
+    expect(updateResponse.status).toBe(202);
+
+    const job = await repositories.documentProcessingJobRepository.findByDocumentRevision({
+      documentId,
+      workspaceId: session.workspaceId,
+      documentRevision: 2,
+    });
+    expect(job?.options).toEqual({ documentEnrichmentOverride: "on" });
+  });
+
   it("supports cursor pagination for document lists", async () => {
     const { app } = createTestApp();
 

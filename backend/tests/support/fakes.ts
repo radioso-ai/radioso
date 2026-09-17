@@ -2748,7 +2748,10 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     return record;
   }
 
-  async updateAndQueue(input: DocumentQueueUpdateInput): Promise<DocumentRecord> {
+  async updateAndQueue(
+    input: DocumentQueueUpdateInput,
+    options?: DocumentProcessingJobOptions | null,
+  ): Promise<DocumentRecord> {
     const existing = this.items.get(input.documentId);
     if (!existing || existing.workspaceId !== input.workspaceId) {
       throw notFound("Document not found");
@@ -2796,6 +2799,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       documentId: record.id,
       workspaceId: record.workspaceId,
       documentRevision: record.revision,
+      options,
     });
     this.items.set(record.id, record);
     return record;
@@ -3537,8 +3541,10 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
     return 0;
   }
 
-  async reconcileEmbeddingProfileJobsForWorkspace(): Promise<{ enqueued: number; skipped: number }> {
-    return { enqueued: 0, skipped: 0 };
+  async reconcileEmbeddingProfileJobsForWorkspace(): ReturnType<
+    DocumentProcessingJobRepositoryPort["reconcileEmbeddingProfileJobsForWorkspace"]
+  > {
+    return { enqueuedJobs: [], skipped: 0 };
   }
 
   // Reports the canonical projection backlog, which this in-memory fake does not

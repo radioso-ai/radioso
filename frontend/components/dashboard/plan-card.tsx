@@ -25,16 +25,12 @@ import {
 } from '@/lib/plan-card-usage'
 
 type MonthlyConversations = NonNullable<AccountUsageSummary['monthlyConversations']>
-type SelfServePlanId = 'satellite' | 'planet'
 type PendingAction = 'upgrade' | 'pack' | 'portal' | null
 
 const INTERVAL_OPTIONS: readonly SegmentedControlOption<BillingInterval>[] = [
   { value: 'month', label: 'Monthly' },
   { value: 'year', label: 'Yearly' },
 ]
-
-const isSelfServePlanId = (planId: string): planId is SelfServePlanId =>
-  planId === 'satellite' || planId === 'planet'
 
 const usageKinds = Object.keys(PLAN_USAGE_KIND_LABELS) as PlanUsageKind[]
 
@@ -136,9 +132,8 @@ export function PlanCard({ monthlyConversations }: { monthlyConversations: Month
   const percent = planUsagePercent(usage)
   const threshold = planUsageThreshold(usage)
   const largestKind = largestPlanUsageKind(monthlyConversations.byKind)
-  const upgradePlanId = billing.upgradePlanId && isSelfServePlanId(billing.upgradePlanId)
-    ? billing.upgradePlanId
-    : null
+  // The backend derives the next self-serve plan from the catalog; the card never names plans.
+  const upgradePlanId = billing.upgradePlanId
 
   const priceLabel = plan
     ? plan.priceCents === 0

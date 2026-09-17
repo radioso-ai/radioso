@@ -68,9 +68,12 @@ const logOutcome = (
 
 /**
  * Claims the event id inside a transaction, then runs `apply` only if the claim succeeded.
- * `markEventProcessed` is called exactly once, BEFORE any side effect, so a failure inside
- * `apply` rolls back the claim along with everything `apply` wrote -- a retry sees no marker and
- * tries again. A duplicate delivery sees the claim fail and `apply` never runs.
+ * `markEventProcessed` is called exactly once, BEFORE any side effect. The claim and the
+ * customer-row writes share the transaction, so a failure rolls them back together and Stripe's
+ * retry sees no marker. Usage-service calls (`assignProfile`, `addCredits`) run on their own
+ * connections and are NOT covered by the rollback -- they are safe to re-run only because each is
+ * idempotent on its own (`assignProfile` sets a key; `addCredits` dedupes on `reference`). Keep
+ * anything non-idempotent out of `apply`.
  */
 const applyIdempotently = async (
   repository: BillingCustomerRepository,

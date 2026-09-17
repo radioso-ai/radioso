@@ -797,7 +797,7 @@ export interface EnterpriseBillingSummary {
 }
 
 export type BillingCheckoutRequest =
-  | { plan: 'satellite' | 'planet'; interval: BillingInterval; returnPath: string }
+  | { plan: string; interval: BillingInterval; returnPath: string }
   | { pack: true; returnPath: string }
 
 export interface BillingPortalRequest {

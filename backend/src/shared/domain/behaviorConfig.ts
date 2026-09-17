@@ -115,8 +115,11 @@ export const CHAT_BEHAVIOR = {
     // again. "minimal" is still unsupported on gpt-5.4-nano and forces a retry
     // that can consume the whole planner timeout. On the pre-5.4 family the
     // provider maps "none" to "minimal" (knownModels.ts); gpt-5-nano scored
-    // 101/110 there vs 109/110 at "low", but "low" costs 3.8s p50 on that family,
-    // so no per-family floor is applied — the 5.4 family is the supported tier.
+    // 101/110 there vs 109/110 at "low", but the pre-5.4 family costs 3.3-3.8s p50
+    // for the planner either way ("none" 3.3s, "low" 3.8s) — a per-family floor of
+    // "low" would buy +8/110 accuracy without meaningfully changing the family's
+    // already-slow latency. Deliberately not applied: the 5.4 family is the
+    // supported tier.
     reasoningEffort: "none",
     // Output ceiling for the plan JSON (route + rewrite framing + rankings +
     // classifications). Generous enough for a multi-branch retrieval rewrite plus

@@ -197,4 +197,39 @@ describe("activity trace assembler", () => {
       expect(outputs?.topCandidates?.[0]?.[field]).toBeLessThanOrEqual(1);
     }
   });
+
+  it("surfaces turnKind and resolutionNote in the interpretation stage output", () => {
+    const assembler = new ActivityTraceAssembler();
+    const input = baseInput();
+    input.prompt.rewrittenQuery.structuredResult = {
+      resolutionNote: "the user is still asking about narayani, so keep that subject",
+      rewrittenQuery: "who is narayani and arudra?",
+      turnKind: "referential_followup",
+      relatedEntities: [],
+      unresolved: false,
+      confidence: 0.9,
+    };
+
+    const trace = assembler.assemble(input);
+    const interpretation = trace.stages.find((stage) => stage.kind === "query_interpretation");
+    const outputs = interpretation?.outputs as {
+      turnKind?: string | null;
+      resolutionNote?: string | null;
+    } | undefined;
+
+    expect(outputs?.turnKind).toBe("referential_followup");
+    expect(outputs?.resolutionNote).toBe("the user is still asking about narayani, so keep that subject");
+  });
+
+  it("omits resolutionNote from the interpretation stage output when the rewrite has none", () => {
+    const assembler = new ActivityTraceAssembler();
+
+    const trace = assembler.assemble(baseInput());
+    const interpretation = trace.stages.find((stage) => stage.kind === "query_interpretation");
+    const outputs = interpretation?.outputs as {
+      resolutionNote?: string | null;
+    } | undefined;
+
+    expect(outputs?.resolutionNote).toBeNull();
+  });
 });

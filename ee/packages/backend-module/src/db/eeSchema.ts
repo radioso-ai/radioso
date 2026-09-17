@@ -135,6 +135,27 @@ interface EeOrgCreationOverridesTable {
   updated_at: Generated<Date>;
 }
 
+interface EeBillingCustomersTable {
+  account_id: string;
+  stripe_customer_id: string;
+  stripe_subscription_id: string | null;
+  price_id: string | null;
+  interval: string | null;
+  status: Generated<string>;
+  billing_email: string | null;
+  current_period_end: Date | null;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+interface EeBillingProcessedEventsTable {
+  event_id: string;
+  event_type: string;
+  account_id: string | null;
+  outcome: string;
+  processed_at: Generated<Date>;
+}
+
 interface EeStaffUsersTable {
   id: string;
   email: string;
@@ -220,6 +241,8 @@ export interface EeDatabase {
   ee_org_creation_overrides: EeOrgCreationOverridesTable;
   ee_staff_users: EeStaffUsersTable;
   ee_staff_sessions: EeStaffSessionsTable;
+  ee_billing_customers: EeBillingCustomersTable;
+  ee_billing_processed_events: EeBillingProcessedEventsTable;
   accounts: EeAccountsTable;
   account_memberships: EeAccountMembershipsTable;
   users: EeUsersTable;

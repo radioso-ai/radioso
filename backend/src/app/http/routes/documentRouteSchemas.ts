@@ -1,6 +1,11 @@
 import { z } from "zod";
 
-import { documentMetadataRecordSchema } from "../../../modules/documents/public.js";
+import {
+  documentMetadataRecordSchema,
+  documentEnrichmentOverrideSchema,
+  documentRetrievalUpdateFieldsSchema,
+  inlineDocumentFieldsSchema,
+} from "../../../modules/documents/public.js";
 
 const MAX_DOCUMENT_LIST_LIMIT = 100;
 
@@ -8,28 +13,10 @@ const crawlPatternSchema = z.array(z.string().trim().min(1).max(200)).max(50);
 
 export { documentMetadataRecordSchema };
 
-export const documentEnrichmentOverrideSchema = z.enum(["on", "off"]);
-export const documentSourceEnrichmentOverrideSchema = z.enum(["inherit", "on", "off"]);
+const documentSourceEnrichmentOverrideSchema = z.enum(["inherit", "on", "off"]);
 export const reprocessDocumentBodySchema = z.object({
   documentEnrichmentOverride: documentEnrichmentOverrideSchema.optional(),
 }).strict();
-
-const documentSourceSchema = z.union([
-  z.object({
-    id: z.string().uuid(),
-  }).strict(),
-  z.object({
-    kind: z.literal("website"),
-    url: z.string().trim().url().refine((value) => {
-      try {
-        const parsed = new URL(value);
-        return parsed.protocol === "http:" || parsed.protocol === "https:";
-      } catch {
-        return false;
-      }
-    }, "source.url must use http or https"),
-  }).strict(),
-]);
 
 export const sourceParamsSchema = z.object({
   sourceId: z.string().uuid(),
@@ -63,25 +50,9 @@ export const sourceUpdateSchema = z.object({
   { message: "source update must include at least one field" },
 );
 
-export const documentSchema = z.object({
-  title: z.string().min(1),
-  content: z.string().min(1),
-  metadata: documentMetadataRecordSchema.optional(),
-  externalDocumentId: z.string().trim().min(1).optional(),
-  source: documentSourceSchema.optional(),
-  documentEnrichmentOverride: documentEnrichmentOverrideSchema.optional(),
-});
+export const documentSchema = inlineDocumentFieldsSchema;
 
-export const documentRetrievalUpdateSchema = z
-  .object({
-    retrievalEnabled: z.boolean().optional(),
-    // `null` clears the expiry; an ISO 8601 timestamp sets it. Absent leaves the
-    // stored value unchanged.
-    retrievalExpiresAt: z.string().datetime({ offset: true }).nullable().optional(),
-    // A full replace of the operator-authored tag map. Present-but-empty clears
-    // every tag; absent leaves the stored map unchanged.
-    metadata: documentMetadataRecordSchema.optional(),
-  })
+export const documentRetrievalUpdateSchema = documentRetrievalUpdateFieldsSchema
   .strict()
   .refine(
     (value) =>

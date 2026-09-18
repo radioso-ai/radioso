@@ -245,8 +245,8 @@ resolution reason against the version it read, reporting a conflict when another
 operator moved the row first. It also drafts a reply by replaying the agent over
 the conversation's own transcript, with every outward-reaching skill suppressed,
 and hands you the text to edit and send from the composer. Sending, claiming,
-handing back, transferring, forking, and deciding an approval stay with the
-operator, and Ray answers a request for any of them with the reason and the link.
+handing back, transferring, and deciding an approval stay with the operator, and
+Ray answers a request for any of them with the reason and the link.
 
 **Quality** is a separate top-level section with two pages. **Review** is the
 answer-quality triage view, covering answer quality in two zones with

@@ -51,6 +51,15 @@ to reopen one execution with its frozen values, side transcripts, and retry
 evidence. These endpoints require `workspace.agents.manage` and never add test
 conversations to public or visitor history.
 
+To continue a real conversation as a private test, start a `single` execution with
+`seedConversationId` set to a conversation in the same workspace and agent. The
+response is the execution with the side's `history` already holding that
+conversation's user and assistant messages, and the side resumes the conversation's
+active routine, pending clarification, and directive state on its next turn. The
+source conversation is never changed, a seeded execution skips the greeting, and
+the request is rejected with `400` when `mode` is `compare` or with `404` when the
+conversation belongs to another workspace or agent.
+
 ## Agents
 
 Each workspace has a default agent. Chat calls use that agent when `agentId` is omitted.

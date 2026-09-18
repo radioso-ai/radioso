@@ -224,8 +224,8 @@ imports from `services/`.
   `refreshEveryMessages` so it does not pay an LLM call every turn. The first summary for
   a legacy long conversation uses a capped recent backfill window (`maxInitialBackfillMessages`)
   so one post-deploy turn cannot trigger unbounded sequential model calls. Rows FK-cascade
-  with their conversation (content, unlike the structural `routine_states`/`directive_states`),
-  and `forkForTest` carries the summary into a forked test session. Injected via
+  with their conversation (content, unlike the structural `routine_states`/`directive_states`).
+  Injected via
   `services/summary/conversationSummarySection.ts` into four prompts — turn
   interpretation (`conversationTurnInterpreter.ts`), grounded answer
   (`groundedAnswerPromptComposer.ts`), and the direct answer
@@ -263,14 +263,23 @@ imports from `services/`.
   agent rather than assembling one.
 - Bootstrap and public chat: `chatBootstrapService.ts`,
   public chat routes and presenters.
-- Fork a conversation into a test session: `services/conversationForkService.ts`
-  (`forkForTest` copies the user+assistant thread AND the active routine state into a
-  new `authenticated_chat` conversation, same agent; skips system turns; original
-  untouched). Routine state is keyed by `session_id` = conversation id, so it re-keys
-  `loadActive(source)` → `save({...state, sessionId: fork})` — the fork resumes
-  mid-routine (unlike eval *replay*, which must NOT seed it). Route:
-  `POST /api/v1/conversations/:id/fork` in `conversationOwnershipRoutes.ts`
-  (workspace-session auth). Powers the workbench's "Continue in test chat".
+- Seed a private test execution from a conversation:
+  `services/conversationTestExecutionSeedSource.ts` implements the test-execution
+  module's `TestExecutionSeedSource` port. It reads the user+assistant thread (system
+  turns skipped) plus the conversation's CURRENT active routine state, pending
+  clarification, and directive firing memory, and exports them as the same v1 replay
+  continuation a test turn returns (`testExecutionContinuation.ts`), without a session
+  id so the trusted runner rebinds it to the side's own conversation. The seeded test
+  therefore resumes mid-routine (unlike eval *replay*, which must NOT seed runtime
+  state). It answers `null` for a conversation outside the workspace or agent, and it
+  is read-only on the source. Wired in `app/server/builders/chat.ts`; reached through
+  `POST /api/v1/agents/:agentId/test-executions` with `seedConversationId`, which
+  powers the dashboard's "Continue in test chat". The rolling conversation summary
+  is not part of the seed; instead the seed is capped to the same recent-message
+  window a live turn reads (`RETRIEVAL_BEHAVIOR.rewriteConversationContextMaxMessages`
+  via `listRecentByConversationId`), opening on a user turn when the window cut
+  older messages, because the trusted runner replays the whole seeded history on
+  every test turn.
 - Safe-test turns use the shared `TurnExecutionMode` to keep routine,
   pending-decision, clarification, and directive state needed for a follow-up
   while the lifecycle suppresses external actions, ownership handoffs, customer

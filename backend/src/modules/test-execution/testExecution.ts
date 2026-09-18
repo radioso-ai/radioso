@@ -178,6 +178,29 @@ export interface TestExecutionRunnerResult {
   continuation: unknown;
 }
 
+/** One seeded message. The seed source decides what a thread contains; this module only orders it into turns. */
+export interface TestExecutionSeedMessage {
+  role: "user" | "assistant";
+  content: string;
+  messageId: string;
+  createdAt: Date;
+}
+
+export interface TestExecutionSeed {
+  messages: readonly TestExecutionSeedMessage[];
+  /** Opaque runner continuation in the same shape the runner returns after a turn; null when there is nothing to resume. */
+  continuation: unknown;
+}
+
+/**
+ * Reads the thread and runtime continuation a single test side starts from. It answers null
+ * when the conversation is not this workspace's and agent's, so this module never learns
+ * whether a conversation exists elsewhere.
+ */
+export interface TestExecutionSeedSource {
+  loadSeed(input: { workspaceId: string; agentId: string; conversationId: string }): Promise<TestExecutionSeed | null>;
+}
+
 export interface TestExecutionRepositoryPort {
   /** `idempotencyKey` fences a start: a repeated key for the same workspace/agent replays the execution it already created instead of starting a second one. */
   create(input: Omit<TestExecution, "createdAt" | "state"> & { state?: TestExecutionState; idempotencyKey: string }): Promise<TestExecution>;
@@ -203,6 +226,7 @@ interface TestExecutionServiceOptions {
   contextCatalog: ContextVariableTestValueCatalogPort;
   repository: TestExecutionRepositoryPort;
   runner: TrustedTestExecutionRunnerPort;
+  seedSource?: TestExecutionSeedSource;
   usageLimitPolicy: Pick<UsageLimitPolicy, "reserveAnswer">;
   audit?: TestExecutionAuditPort;
   logger?: { warn(bindings: Record<string, unknown>, message: string): void };
@@ -227,11 +251,16 @@ export class TestExecutionService {
     this.leaseMs = options.leaseMs ?? DEFAULT_ATTEMPT_LEASE_MS;
   }
 
-  async start(input: { workspaceId: string; agentId: string; accountId: string | null; mode: TestExecutionMode; revisionIds: readonly string[]; testValues: readonly TestValue[]; expectedDraftGeneration?: number; idempotencyKey: string; skillEffects?: SkillEffectPolicy }): Promise<TestExecution> {
+  async start(input: { workspaceId: string; agentId: string; accountId: string | null; mode: TestExecutionMode; revisionIds: readonly string[]; testValues: readonly TestValue[]; expectedDraftGeneration?: number; idempotencyKey: string; skillEffects?: SkillEffectPolicy; seedConversationId?: string }): Promise<TestExecution> {
     // A retried or double-clicked start must never re-run the greeting bootstrap or mint a
     // second execution. Checked first, before any revision lookup or provider call.
     const replay = await this.options.repository.findByIdempotencyKey({ workspaceId: input.workspaceId, agentId: input.agentId, idempotencyKey: input.idempotencyKey });
     if (replay) return replay;
+    // A seed continues one conversation forward; a comparison has no single thread to continue.
+    // The HTTP schema refuses this combination too; this is defence-in-depth for non-HTTP callers.
+    if (input.seedConversationId !== undefined && input.mode !== "single") {
+      throw badRequest("A test execution seeded from a conversation runs a single revision.");
+    }
     const expectedCount = input.mode === "single" ? 1 : 2;
     if (input.revisionIds.length !== expectedCount || new Set(input.revisionIds).size !== expectedCount) {
       throw badRequest("Test execution requires distinct immutable revision IDs for its selected mode.");
@@ -251,28 +280,65 @@ export class TestExecutionService {
       selectedEnablements: revisions.map((revision): readonly ContextVariableTestValueSelection[] => revision.snapshot.contextVariableEnablements.map(({ variableId, enabled }) => ({ variableId, enabled }))),
       supplied: input.testValues,
     });
-    const greetings = this.options.runner.bootstrap
+    const seed = input.seedConversationId === undefined
+      ? null
+      : await this.loadSeed({ workspaceId: input.workspaceId, agentId: input.agentId, conversationId: input.seedConversationId });
+    // The seed is the opening, so a seeded side never receives a bootstrap greeting.
+    const greetings = this.options.runner.bootstrap && !seed
       ? await Promise.all(revisions.map((revision) => this.options.runner.bootstrap!({
         workspaceId: input.workspaceId, agentId: input.agentId, candidateRevision: revision, accountId: input.accountId,
       })))
       : revisions.map(() => undefined);
     const executionId = this.options.createId();
     const skillEffects: SkillEffectPolicy = input.skillEffects ?? "suppressed";
+    // The side's conversation id is always freshly minted: a seed is read from its source, never adopts it.
     const sides = revisions.map((revision, index): TestExecutionSide => ({
       id: this.options.createId(), executionId, revision, conversationId: this.options.createId(),
       state: "ready", retryable: false,
-      history: greetings[index] ? [{
+      history: seed ? this.seededHistory(seed.messages) : greetings[index] ? [{
         turnId: this.options.createId(), attemptId: this.options.createId(), role: "assistant",
         content: greetings[index].answer, messageId: greetings[index].messageId, createdAt: this.now(),
       }] : [],
-      continuation: null,
+      continuation: seed?.continuation ?? null,
     }));
     const execution = await this.options.repository.create({
       id: executionId, workspaceId: input.workspaceId, agentId: input.agentId, mode: input.mode,
       generation: 1, testValues, skillEffects, sides, idempotencyKey: input.idempotencyKey,
     });
-    await this.audit(input, "agent.test_execution.started", "success", { executionId, mode: input.mode, sideCount: sides.length, skillEffects });
+    await this.audit(input, "agent.test_execution.started", "success", {
+      executionId, mode: input.mode, sideCount: sides.length, skillEffects,
+      seedConversationId: input.seedConversationId ?? null,
+      ...(seed ? { seededMessageCount: seed.messages.length } : {}),
+    });
     return execution;
+  }
+
+  private async loadSeed(input: { workspaceId: string; agentId: string; conversationId: string }): Promise<TestExecutionSeed> {
+    if (!this.options.seedSource) throw badRequest("Seeding a test execution from a conversation is unavailable.");
+    const seed = await this.options.seedSource.loadSeed(input);
+    // The same answer whether the conversation is missing, another workspace's, or another
+    // agent's: its existence is never confirmed across those boundaries.
+    if (!seed) throw notFound("Seed conversation is unavailable.");
+    return seed;
+  }
+
+  /**
+   * A durable turn is one user message and the assistant reply that answers it, so a seeded
+   * user message and the reply that follows share a turn; a leading or consecutive assistant
+   * message stands as its own turn. Seeded turns keep their source message ids.
+   */
+  private seededHistory(messages: readonly TestExecutionSeedMessage[]): TestExecutionHistoryEntry[] {
+    let turn: { turnId: string; attemptId: string; answered: boolean } | null = null;
+    return messages.map((message) => {
+      if (!turn || message.role === "user" || turn.answered) {
+        turn = { turnId: this.options.createId(), attemptId: this.options.createId(), answered: false };
+      }
+      if (message.role === "assistant") turn.answered = true;
+      return {
+        turnId: turn.turnId, attemptId: turn.attemptId, role: message.role,
+        content: message.content, messageId: message.messageId, createdAt: message.createdAt,
+      };
+    });
   }
 
   list(input: { workspaceId: string; agentId: string; limit: number; cursor?: string }): Promise<TestExecutionHistoryPage> {

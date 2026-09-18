@@ -322,43 +322,45 @@ describe('dashboard route state', () => {
     })).toBe(`/w/support-abc123/agents/${agentId}?tab=channels&anchor=api-channel`)
   })
 
-  it('preserves the agent chat conversation adoption parameter', () => {
+  it('round-trips a saved test-execution link (testExecution)', () => {
     const agentId = '67acb0c8-caad-4a1b-9fef-70cbca3f7d12'
-    const conversationId = '11111111-1111-4111-8111-111111111111'
+    const executionId = '11111111-1111-4111-8111-111111111111'
 
     expect(buildDashboardHref('account-1', {
       section: 'agents',
       workspacePublicRouteKey: 'support-abc123',
       agentId,
-      agentChatConversationId: conversationId,
-    })).toBe(`/w/support-abc123/agents/${agentId}?chatConversation=${conversationId}`)
+      agentTestExecutionId: executionId,
+    })).toBe(`/w/support-abc123/agents/${agentId}?testExecution=${executionId}`)
 
     expect(parseDashboardRoute(['agents', agentId], new URLSearchParams({
-      chatConversation: conversationId,
+      testExecution: executionId,
     }))).toEqual({
       section: 'agents',
       agentId,
-      agentChatConversationId: conversationId,
+      agentTestExecutionId: executionId,
     })
   })
 
-  it('round-trips a draft-routine test-chat link (chatPreviewRoutine)', () => {
+  it('drops the test-execution parameter outside the agent chat tab', () => {
     const agentId = '67acb0c8-caad-4a1b-9fef-70cbca3f7d12'
-    const routineId = '22222222-2222-4222-8222-222222222222'
+    const executionId = '11111111-1111-4111-8111-111111111111'
 
     expect(buildDashboardHref('account-1', {
       section: 'agents',
       workspacePublicRouteKey: 'support-abc123',
       agentId,
-      agentChatPreviewRoutineId: routineId,
-    })).toBe(`/w/support-abc123/agents/${agentId}?chatPreviewRoutine=${routineId}`)
+      agentTab: 'behavior',
+      agentTestExecutionId: executionId,
+    })).toBe(`/w/support-abc123/agents/${agentId}?tab=behavior`)
 
     expect(parseDashboardRoute(['agents', agentId], new URLSearchParams({
-      chatPreviewRoutine: routineId,
+      tab: 'behavior',
+      testExecution: executionId,
     }))).toEqual({
       section: 'agents',
       agentId,
-      agentChatPreviewRoutineId: routineId,
+      agentTab: 'behavior',
     })
   })
 

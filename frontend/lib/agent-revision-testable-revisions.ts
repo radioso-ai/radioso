@@ -39,3 +39,13 @@ export const assembleTestableRevisions = ({
     defaultSelectedId: candidate?.id ?? publishedId,
   }
 }
+
+/**
+ * A comparison needs two distinct immutable revisions; the same id on both
+ * sides is a selection the operator can fix, so the client withholds the start
+ * instead of surfacing the API's rejection.
+ */
+export const compareSelectionRepeatsRevision = (
+  mode: 'single' | 'compare',
+  selected: readonly string[],
+): boolean => mode === 'compare' && selected.length === 2 && selected[0] === selected[1]

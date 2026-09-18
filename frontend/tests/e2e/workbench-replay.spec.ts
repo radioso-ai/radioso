@@ -57,54 +57,6 @@ const installWorkbenchMocks = async (
     caseDetail?: unknown
   } = {},
 ) => {
-  await page.route("**/backend/api/v1/assistant/chat", async (route) => {
-    const body = route.request().postDataJSON() as { message?: string; startConversation?: boolean };
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        conversationId,
-        assistantMessageId,
-        answer: body.startConversation ? "Hello, how can I help?" : `Chat answer: ${body.message}`,
-        citations: [],
-        answerSegments: [{ text: body.startConversation ? "Hello, how can I help?" : `Chat answer: ${body.message}` }],
-        debug: {
-          activityTrace: {
-            traceId: "chat-trace",
-            startedAt: nowIso,
-            stages: [],
-            links: [],
-          },
-        },
-      }),
-    });
-  });
-
-  await page.route("**/api/chat/stream", async (route) => {
-    const body = route.request().postDataJSON() as { query?: string; message?: string; agentId?: string };
-    const message = body.query ?? body.message ?? "";
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        conversationId,
-        assistantMessageId,
-        agentId: body.agentId,
-        answer: `Chat answer: ${message}`,
-        citations: [],
-        answerSegments: [{ text: `Chat answer: ${message}` }],
-        debug: {
-          activityTrace: {
-            traceId: "chat-trace",
-            startedAt: nowIso,
-            stages: [],
-            links: [],
-          },
-        },
-      }),
-    });
-  });
-
   await page.route("**/backend/api/v1/evals/snapshots", async (route) => {
     requestBodies.push(route.request().postDataJSON());
     await route.fulfill({

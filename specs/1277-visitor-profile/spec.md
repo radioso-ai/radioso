@@ -24,19 +24,29 @@ directive on country ("mention EU shipping for DE") or on browser language,
 even though the context-variables substrate that feeds directive matching
 (spec 097, #838) is already in place.
 
-The two primitives that exist — a browser cookie (`anonymous_session_id`,
-30 days) and a host-signed customer id (`verified_customer_id`) — are the right
-raw material; what is missing is the entity that joins them and the request
-facts that describe each visit.
+The two primitives that exist — an anonymous session id
+(`anonymous_session_id`) and a host-signed customer id (`verified_customer_id`)
+— are the right raw material; what is missing is the entity that joins them,
+the request facts that describe each visit, and durability for the anonymous
+id. Today that id is effectively **per tab** on the embed: the launcher keeps
+the resume token in `sessionStorage`
+(`frontend/lib/radioso-embed-launcher.js:465-490`, chosen so the teaser and
+greeting reset per tab), and the backend's `anon_session_*` cookie is
+`SameSite=Lax` (`resolveAnonymousSession.ts:346`), which browsers do not send
+from a third-party iframe. The 30-day server TTL
+(`publicChatSession.ts:6`) is therefore never exercised across tabs. Without
+fixing that, "previous conversations" would only link within one tab.
 
 ## Boundaries (what each part knows)
 
 | Part | Knows | Must not know |
 |------|-------|---------------|
 | Frontend proxy routes (`frontend/app/api/public/chat/[token]`, `frontend/app/api/embed/session/[token]`) | The client-facing request: socket/LB-forwarded address, geo headers the load balancer stamped, `User-Agent`, `Accept-Language`; the edge signing secret | What Radioso does with the facts; visitors; conversations |
-| `@radioso/mcp-source-proof` (edge proof primitive) | How to sign and verify a canonical payload bound to method, path and time | The meaning of any field it signs |
+| `@radioso/edge-proof` (new, generic) | How to sign and verify a canonical JSON envelope bound to a context string, method, path and time; the request-facts payload schema both edges agree on | Conversations, visitors, MCP |
+| `@radioso/mcp-source-proof` | Its existing address-digest proof, now built on `@radioso/edge-proof` (extraction-only; behaviour and headers unchanged) | Visitor facts |
+| Embed launcher (host page) | Where the durable anonymous id lives (`localStorage`) and that it goes in the bootstrap body | What the id links to server-side |
 | `VisitorGeoResolver` port + header adapter (composition) | Which forwarded header carries country/region/city and in what precedence | Conversations, visitors, the drawer |
-| `visitors` module (`backend/src/modules/visitors/`) | Identity resolution rules (verified beats cookie, cookie upgrades to verified, never re-attach a cookie to a second verified id), the `visitors` table | HTTP, headers, geo, the LLM |
+| `visitors` module (`backend/src/modules/visitors/`) | Identity resolution rules (verified beats anonymous id, anonymous upgrades to verified, never re-attach an anonymous id to a second verified id), the `visitors` table | HTTP, headers, geo, the LLM |
 | Chat session preparer | That a conversation is created with a `visitorId` and a `requestContext` | How either was derived |
 | Context-variables registry | A built-in `visitor_request` variable with `source: "request"` | IP or user agent — they never enter this module |
 | History service + drawer | How to present a visitor and their previous conversations to an operator | Proof verification, geo header names |
@@ -50,9 +60,11 @@ Composition wires the geo adapter and the proof secret; no domain module reads
 1. **Raw IP is stored** (`request_context.clientIp`), shown to operators, and
    kept out of every LLM-facing surface (context variables, prompts, traces).
    Rationale: operators need it for abuse and fraud triage, and it is standard
-   for this product class. Retention follows the conversation: deleting the
-   conversation deletes the facts; a `visitors` row with no remaining
-   conversations is deleted with the last one. Privacy docs name the fields.
+   for this product class. No conversation-level delete exists in the product
+   today (`conversationRepository.ts` has no delete method; only Ray's
+   `copilot_conversations` are ever deleted), so retention is: facts live as
+   long as the conversation, and workspace deletion cascades. Privacy docs name
+   the fields and say so.
 2. **Previous conversations are operator-only** in this spec. Agent-side
    cross-conversation memory (summaries injected into the next conversation) is
    a separate feature with its own identity-strength question.
@@ -60,11 +72,13 @@ Composition wires the geo adapter and the proof secret; no domain module reads
    ingress paths reach the backend (LB → backend for API clients; LB → frontend
    proxy → backend for the embed), so a single `trusted hops` number cannot be
    right for both. The frontend proxy signs what it observed with a shared
-   secret, reusing the canonical-payload signing already in
-   `@radioso/mcp-source-proof`. That package deliberately returns only an
-   address *digest* for rate limiting; this spec adds a sibling envelope that
-   carries the address, under a distinct proof context, and does not change the
-   digest path.
+   secret. `@radioso/mcp-source-proof` already has the canonical-payload HMAC
+   signing but is MCP-specific by name, consumers (`radioso-mcp-server`,
+   backend rate limiters) and Dockerfile wiring (backend only), and it
+   deliberately returns only an address *digest*. The generic envelope is
+   extracted into a new `@radioso/edge-proof` package that both the frontend
+   proxy and the backend depend on; `mcp-source-proof` is refactored onto it
+   with its digest path and headers unchanged.
 4. **Country comes from a header the load balancer stamps**, resolved through a
    port. Cloud: GCP `{client_region}` / `{client_city}` custom request headers on
    `google_compute_backend_service.frontend_app` (`infra/terraform/cdn.tf`) —
@@ -73,8 +87,17 @@ Composition wires the geo adapter and the proof secret; no domain module reads
    no configuration; anything else is one env var. No GeoIP database ships.
 5. **A `visitors` entity exists** rather than a derived query over two string
    columns, because this is the moment it earns its keep: one join for previous
-   conversations, one place the drawer reads, a merge point when a cookie visitor
-   verifies, and a single deletion target.
+   conversations, one place the drawer reads, a merge point when an anonymous
+   visitor verifies, and a single deletion target.
+6. **The anonymous id becomes a durable per-browser key.** The launcher stores
+   `anonymousSessionId` in host-page `localStorage` (scoped by embed token and
+   host origin) and supplies it in the bootstrap body, which already accepts it
+   (`embed/session/[token]/route.ts:42-45`). Teaser/opened flags stay in
+   `sessionStorage`, so the per-tab greeting UX is unchanged. The server TTL is
+   already 30 days rolling. This widens the window in which someone with access
+   to the browser can read that visitor's past conversations via the anonymous
+   history route — the same exposure class the 30-day resume token already has;
+   the privacy doc states it.
 
 ## User Scenarios & Testing
 
@@ -107,34 +130,34 @@ the same browser; the second conversation's panel lists the first under
 3. **Given** a REST API client conversation with no proxy marker, **when** it is
    created, **then** IP is derived from the socket / trusted-hop suffix and
    country from the LB header when present.
-4. **Given** a second conversation from the same browser cookie, **when** the
+4. **Given** a second conversation from the same browser in a new tab, **when** the
    operator opens either, **then** the other appears under "Previous
    conversations" with title, date and agent.
 5. **Given** a conversation with `purpose = operator_test`, **when** it is
    created, **then** no visitor is created or updated.
 
-### User Story 2 — A cookie visitor becomes a known customer (Priority: P1)
+### User Story 2 — An anonymous visitor becomes a known customer (Priority: P1)
 
 A shopper chats anonymously twice, then logs in to the store; the host now mints
 a signed identity (`verified_customer_id`). From that turn on, the operator sees
 one visitor with three conversations, not two strangers and a customer.
 
-**Independent test**: create two conversations with cookie A; on the third,
+**Independent test**: create two conversations with anonymous id A; on the third,
 send a verified identity token for customer C; the `visitors` row for A now has
 `verified_customer_id = C`, and all three conversations resolve to it.
 
 **Acceptance scenarios**:
 
-1. **Given** a visitor row keyed only by cookie A, **when** a turn on any of its
+1. **Given** a visitor row keyed only by anonymous id A, **when** a turn on any of its
    conversations verifies customer C and no row for C exists, **then** the row
    gains `verified_customer_id = C`.
-2. **Given** a row for cookie A and a separate row for customer C, **when** a
+2. **Given** a row for anonymous id A and a separate row for customer C, **when** a
    turn on A's conversation verifies C, **then** the conversation moves to C's
    row and A's row is unchanged (a shared browser, second account).
-3. **Given** a row for cookie A already bound to customer C, **when** a turn on
+3. **Given** a row for anonymous id A already bound to customer C, **when** a turn on
    A's conversation verifies customer D, **then** the conversation moves to a
-   row for D; A's row keeps C and the cookie is not re-attached.
-4. **Given** two first messages from a brand-new cookie arriving concurrently,
+   row for D; A's row keeps C and the anonymous id is not re-attached.
+4. **Given** two first messages from a brand-new anonymous id arriving concurrently,
    **when** both create conversations, **then** exactly one `visitors` row
    exists and both conversations point at it.
 
@@ -195,7 +218,7 @@ sees it on the next conversation.
 - **FR-003** `VisitorResolver.resolveForConversation({ workspaceId,
   anonymousSessionId, verifiedCustomerId, observed: { country, language,
   userAgent } })` returns a `visitorId`, applying: verified id first; else
-  cookie; else insert. Insert uses `ON CONFLICT DO NOTHING` and re-selects.
+  anonymous id; else insert. Insert uses `ON CONFLICT DO NOTHING` and re-selects.
   Updates `last_seen_at`, `conversation_count`, and the `last_*` observations.
 - **FR-004** `VisitorResolver.attachVerifiedIdentity({ conversationId,
   verifiedCustomerId })` runs wherever `setVerifiedCustomerId` runs today
@@ -204,9 +227,23 @@ sees it on the next conversation.
 - **FR-005** Conversations with `purpose = operator_test` never touch
   `visitors`. Conversations with neither key (Slack, MCP without a session) get
   `visitor_id = null`.
-- **FR-006** Deleting a conversation decrements `conversation_count`; a visitor
-  reaching zero is deleted in the same repository operation. Workspace deletion
-  cascades.
+- **FR-006** Workspace deletion cascades to `visitors` via the FK. There is no
+  conversation delete path in the product today; if one is added, it must
+  decrement `conversation_count` and delete a visitor reaching zero — recorded
+  as a constraint in the module README, not built here.
+- **FR-007** When a conversation moves to another visitor row (User Story 2,
+  scenarios 2–3), both rows' `conversation_count` are adjusted in the same
+  transaction and `last_seen_at` of the receiving row is refreshed.
+
+### Durable anonymous visitor key
+
+- **FR-008** The launcher persists `anonymousSessionId` from the bootstrap
+  response in host-page `localStorage` under a key scoped by embed token and
+  sends it in the next bootstrap body (`anonymousSessionId`, already accepted).
+  Resume tokens and teaser/opened flags keep their `sessionStorage` behaviour.
+- **FR-009** When `localStorage` is unavailable (privacy mode, storage
+  disabled, `SecurityError`), the launcher falls back to today's per-tab
+  behaviour silently; no console noise at warn level.
 
 ### Request facts
 
@@ -217,7 +254,13 @@ sees it on the next conversation.
   migration adds `conversations.request_context jsonb null` and
   `conversations.entry_referrer text null`.
 - **FR-011** `request_context` and `entry_referrer` are set once at conversation
-  creation, next to `entry_page_url`, and never overwritten.
+  creation, next to `entry_page_url`, and never overwritten. Creation happens
+  on the first real message in `ChatSessionPreparer.prepare()`
+  (`chatSessionPreparer.ts:391-405`); the greeting route
+  (`ChatBootstrapService.startConversation`) writes only
+  `bootstrap_greeting_cache` and creates no row (`publicChatRoutes.ts:601-604`).
+  `createWithInitialAssistantMessage` has no production caller and is not a
+  second creation path.
 - **FR-012** `ConversationRepositoryPort.create` takes a single typed input
   object (replacing the seven positional parameters plus options bag) that
   includes `visitorId`, `requestContext`, `entryReferrer`. Extraction of the
@@ -229,18 +272,29 @@ sees it on the next conversation.
 
 ### Edge proof
 
-- **FR-020** `@radioso/mcp-source-proof` gains `createEdgeFactsProof` /
-  `verifyEdgeFactsProof` under proof context `radioso:edge-facts:v1`: payload =
-  `{ clientIp, geoHeaders: Record<string,string>, userAgent, acceptLanguage }`,
-  canonicalised deterministically, bound to method + path + timestamp, 60 s
-  window, HMAC-SHA256 with `RADIOSO_EDGE_PROOF_SECRET`. Existing digest exports
-  are untouched.
+- **FR-020** New workspace package `packages/edge-proof` (`@radioso/edge-proof`)
+  exports a generic `signEnvelope` / `verifyEnvelope` (context string,
+  deterministic JSON canonicalisation, method + path + timestamp binding, 60 s
+  window, HMAC-SHA256 with a caller-supplied secret) and the request-facts
+  schema `{ clientIp, geoHeaders: Record<string,string>, userAgent,
+  acceptLanguage }` under context `radioso:edge-facts:v1`. It is registered
+  everywhere AGENTS.md requires: `infra/frontend.Dockerfile` and
+  `infra/backend.Dockerfile` (package.json copy stage and runtime `--from`
+  copies), `backend/package.json` `build:workspace-deps` and test scripts,
+  `frontend/package.json` dependency.
+- **FR-020a** `@radioso/mcp-source-proof` is refactored to build on
+  `@radioso/edge-proof` as an extraction-only change (same headers, same
+  `PROOF_CONTEXT`, same digest semantics, existing tests unchanged), landed as
+  its own commit before the behaviour change.
 - **FR-021** The two frontend proxy routes always send `x-radioso-edge:
   frontend`; when the secret is configured they also send the proof headers.
   The client address at the edge is resolved from the LB-appended
-  `X-Forwarded-For` suffix using `RADIOSO_TRUSTED_PROXY_HOPS` semantics (same
-  suffix rule as `resolveSourceDigest`, returning the address), falling back to
-  the socket address.
+  `X-Forwarded-For` suffix using the frontend's own `RADIOSO_TRUSTED_PROXY_HOPS`
+  (same suffix rule as `resolveSourceDigest`, returning the address; the rule
+  moves into `@radioso/edge-proof` so both ends share it), falling back to the
+  socket address. The frontend has no validated env module today; these routes
+  read the variables through one small `frontend/lib/server/edge-env.ts`
+  helper rather than inline `process.env`.
 - **FR-022** `geoHeaders` at the edge = the well-known set (`x-client-region`,
   `x-client-city`, `cf-ipcountry`, `x-appengine-country`, `x-vercel-ip-country`,
   `x-vercel-ip-country-region`, `x-vercel-ip-city`) plus the value of
@@ -262,12 +316,28 @@ sees it on the next conversation.
 
 - **FR-030** `ContextVariableSource` gains `"request"`; registry gains
   `visitor_request` (`source: "request"`, `valueType: "json"`, `surfacing:
-  "always"`, `trustTier: "unverified"`, `sensitivity: "normal"`).
-- **FR-031** Its value is projected from the conversation record as `{ country,
-  region, city, language, referrer, entryPageUrl }` where `language` is the
-  primary tag of `Accept-Language` (structural parse; e.g. `de-DE,de;q=0.9` →
-  `de`). `clientIp` and `userAgent` are never included; a unit test asserts the
-  projection's key set.
+  "always"`, `trustTier: "unverified"`, `sensitivity: "normal"`). The value is
+  accepted everywhere the enum is locked today: the
+  `agent_context_variables.source` CHECK constraint (migration 112, line 19 —
+  a migration alters it), the `.strict()` enablement snapshot schema in
+  `backend/src/modules/agents/agentRevision.ts:35-39`, and the OpenAPI enum.
+  A test enables `visitor_request` on an agent and publishes a revision.
+- **FR-030a** Resolution is a new, small seam, not a reuse: the three existing
+  sources resolve through `ContextVariableResolutionReaderPort` against
+  `context_variable_values`, and `resolveContextForTurn` has no view of the
+  conversation record. `resolveContextForTurn` gains a `requestFacts` input
+  (the conversation's `request_context` + `entry_page_url` + `entry_referrer`,
+  already narrowed per FR-031) supplied by the preparer; the resolver never
+  reads `conversations` itself.
+- **FR-031** The narrowing to `{ country, region, city, language, referrer,
+  entryPageUrl }` happens **when the snapshot entry is built**, before it can
+  ride into `messages.metadata_json`, traces or eval captures via
+  `attachContextVariablesToGather` (`chatTurnLifecycle.ts:~374`) — not merely in
+  `projectContextForMatching`, which only narrows at match time. `language` is
+  the primary tag of `Accept-Language` (structural parse; `de-DE,de;q=0.9` →
+  `de`). `clientIp` and `userAgent` never enter the context-variables module; a
+  unit test asserts the snapshot entry's key set, and an integration test
+  asserts the persisted `metadata_json` contains neither string.
 - **FR-032** The variable reaches both classification surfaces (matcher and
   fused planner) via the existing `projectContextForMatching` path — no new
   seam.
@@ -300,7 +370,9 @@ sees it on the next conversation.
 
 - **FR-050** Backend env: `RADIOSO_EDGE_PROOF_SECRET` (min 32 chars, optional),
   `VISITOR_GEO_COUNTRY_HEADER` / `_REGION_HEADER` / `_CITY_HEADER` (optional).
-  Frontend env: the same four names. `docker-compose.yml` / `docker-compose.dev.yml` at repo root set a dev
+  Frontend env: the same four names plus `RADIOSO_TRUSTED_PROXY_HOPS`, set per
+  service (the frontend and backend sit behind the LB independently and the
+  values may differ). `docker-compose.yml` / `docker-compose.dev.yml` at repo root set a dev
   secret so the local stack exercises the proof path.
 - **FR-051** Docs (following `docs/document-writer-prompt.md`): self-hosting
   env reference; embed docs list what is captured about a visitor; context
@@ -316,7 +388,8 @@ sees it on the next conversation.
 - A GeoIP database adapter (the port makes it a composition-only addition).
 - Audience Pulse country breakdown, visitor notes/tags/blocklist, a visitors
   list page.
-- Retention automation beyond conversation-follows-deletion.
+- A conversation delete endpoint or retention automation (none exists today;
+  FR-006 records the constraint for whoever adds one).
 - The Terraform change that stamps `{client_region}` / `{client_city}` on the
   cloud load balancer — separate PR against `infra/terraform/cdn.tf`, applied
   per region deliberately.
@@ -324,14 +397,15 @@ sees it on the next conversation.
 ## Key entities
 
 - **Visitor** — a person as far as Radioso can tell: a workspace-scoped row
-  keyed by a browser cookie and/or a host-verified customer id, with
+  keyed by a durable anonymous id and/or a host-verified customer id, with
   first/last seen, a conversation count, and the latest observed
   country/language/user agent. Owned by `backend/src/modules/visitors/`.
 - **ConversationRequestContext** — edge-observed facts about the request that
   opened a conversation, with provenance (`observedVia`). Contract type in
   `packages/conversation-contract`.
 - **Edge facts proof** — HMAC envelope from a first-party edge to the backend,
-  sibling of the MCP source digest proof.
+  built on the generic `@radioso/edge-proof` primitive that the MCP source
+  digest proof also moves onto.
 - **VisitorGeoResolver** — port from forwarded headers to country/region/city.
 
 ## Assumptions
@@ -344,8 +418,9 @@ sees it on the next conversation.
   `RADIOSO_TRUSTED_PROXY_HOPS` entries are read, and that value is set correctly
   per service (the frontend sits one hop behind the LB; the backend sits one hop
   behind the LB for API clients).
-- `anonymous_session_id` remains a 30-day cookie; a visitor who clears it is a
-  new visitor until they verify.
+- `anonymous_session_id` is a 30-day rolling server session keyed by a
+  launcher-persisted `localStorage` value; a visitor who clears site data or
+  uses another browser is a new visitor until they verify.
 - Storing IP is acceptable under the operator's own terms with their users;
   Radioso documents what is stored and deletes it with the conversation.
 

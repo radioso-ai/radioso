@@ -1,7 +1,7 @@
 ---
 title: Context variables
 description: How operators configure page, identity, and host-defined context for agent turns.
-last_updated: 2026-09-16
+last_updated: 2026-09-18
 ---
 
 # Context variables
@@ -20,9 +20,14 @@ Radioso provides built-in context for the website experience.
 - `page_context` is one bundle for the current page. It can include the URL,
   title, locale, browser locale, and page content when the host supplies it.
 - `visitor_identity` represents identity context when the host provides it.
+- `visitor_request` bundles the country, region, city, browser language,
+  referrer, and entry page Radioso observed when the conversation opened. See
+  [Visitor request](#visitor-request) below.
 
-Built-ins are not listed in the host-defined catalog and cannot be edited there.
-They are code-owned platform context.
+`page_context` and `visitor_identity` are not listed in the host-defined
+catalog and cannot be edited there — they are code-owned platform context.
+`visitor_request` is also code-owned in shape, but an agent turns it on the
+same way it turns on a host-defined variable; see below.
 
 ### Page context is relevance-gated
 
@@ -210,6 +215,55 @@ session, such as the plan the visitor is currently comparing. For a durable
 customer fact such as a name, an email address, or order history, push a
 `customer`-scoped context variable from the host backend instead: it persists
 for that customer across sessions, where `attributes` do not.
+
+## Visitor request
+
+`visitor_request` gives a directive or a prompt six facts about the request
+that opened the conversation:
+
+- `country`, `region`, `city` — read from the geo header a load balancer or
+  CDN stamps on the request, such as Cloudflare's `CF-IPCountry`.
+- `language` — the primary tag of the browser's `Accept-Language` header, so
+  `de-DE,de;q=0.9` resolves to `de`.
+- `referrer`, `entryPageUrl` — the page that sent the visitor and the page the
+  chat opened on, both reported by the embed launcher.
+
+The IP address and user agent that accompanied the request are not part of
+it — `visitor_request` carries only the six fields above, so a directive that
+reads it never sees an address or a browser fingerprint. Values are
+unverified: they describe what the request looked like, not a proven
+identity.
+
+An agent turns `visitor_request` on the same way it turns on a host-defined
+variable. First declare the variable once per workspace:
+
+```text
+POST /api/v1/context-variables
+{
+  "name": "visitor_request",
+  "valueType": "json",
+  "trustTier": "unverified",
+  "sensitivity": "normal",
+  "defaultSurfacing": "always"
+}
+```
+
+Then enable it for the agent, giving the variable's id from the response
+above:
+
+```text
+PUT /api/v1/agents/{agentId}/context-variables/{variableId}
+{
+  "source": "request",
+  "surfacing": "always",
+  "enabled": true
+}
+```
+
+Once enabled and published, `visitor_request.country`, `.region`, and the
+other four fields are available to directive conditions exactly like any
+other host-defined variable — "when the visitor is in Germany, mention that
+shipping to the EU takes 3-5 days" reads `visitor_request.country`.
 
 ## Surfacing
 

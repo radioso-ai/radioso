@@ -575,6 +575,7 @@ Public surfaces and key files:
 - `backend/src/modules/context-variables/services/contextVariableService.ts`
 - `backend/src/modules/context-variables/contextVariableResolverService.ts`
 - `backend/src/modules/context-variables/copilotPrimitiveRegistry.ts`
+- `backend/src/modules/context-variables/visitorRequestFacts.ts` (the `visitor_request` built-in: narrowing and language parsing)
 - `backend/src/db/repositories/contextVariableRepository.ts`
 - `backend/src/app/http/routes/contextVariableRoutes.ts`
 - `backend/src/modules/operatorCopilot/proposalAdapters.ts`
@@ -583,6 +584,7 @@ Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/contract/context-variables.contract.test.ts tests/unit/context-variable-resolver-service.test.ts tests/unit/operatorCopilot/copilotProposalAdapters.test.ts`
 - `cd backend && pnpm exec vitest run tests/integration/context-variable-repository.integration.test.ts tests/integration/context-variable-repository-resolver-skill.integration.test.ts tests/integration/context-variable-repository-apply-proposal-conflicts.integration.test.ts tests/integration/context-variable-enablement-references-migration.integration.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/visitor-request-facts.test.ts tests/unit/context-resolution-service.test.ts tests/unit/chat-session-preparer-visitor-request.test.ts tests/integration/chat/postgres-assistant-turn-persistence.integration.test.ts` (the `visitor_request` built-in: narrowing, snapshot wiring, and the metadata_json persistence guarantee)
 
 Related specs and issues:
 

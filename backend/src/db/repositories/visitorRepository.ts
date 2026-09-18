@@ -48,6 +48,8 @@ export interface MoveConversationBetweenVisitorsInput {
 export interface VisitorRepositoryPort {
   findByVerifiedCustomerId(workspaceId: string, verifiedCustomerId: string): Promise<VisitorRecord | null>;
   findByVisitorKey(workspaceId: string, visitorKey: string): Promise<VisitorRecord | null>;
+  /** Workspace-scoped lookup by primary key, for the operator-facing visitor profile (spec 1277, FR-040/041). */
+  findById(workspaceId: string, visitorId: string): Promise<VisitorRecord | null>;
   /**
    * Inserts a new visitor row keyed by whichever of `visitorKey` /
    * `verifiedCustomerId` is present (both, when both are fresh), or returns the
@@ -132,6 +134,16 @@ export class VisitorRepository implements VisitorRepositoryPort {
       .select(visitorColumns)
       .where("workspace_id", "=", workspaceId)
       .where("visitor_key", "=", visitorKey)
+      .executeTakeFirst();
+    return row ? mapVisitor(row) : null;
+  }
+
+  async findById(workspaceId: string, visitorId: string): Promise<VisitorRecord | null> {
+    const row = await this.db
+      .selectFrom("visitors")
+      .select(visitorColumns)
+      .where("workspace_id", "=", workspaceId)
+      .where("id", "=", visitorId)
       .executeTakeFirst();
     return row ? mapVisitor(row) : null;
   }

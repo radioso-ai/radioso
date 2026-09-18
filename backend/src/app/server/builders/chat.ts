@@ -713,8 +713,9 @@ export const buildChatServices = (input: {
   const agentRevisionRuntimeResolver = new AgentRevisionRuntimeResolver(
     new AgentRevisionRuntimeRepository(input.database.kysely),
   );
+  const visitorRepository = new VisitorRepository(input.database.kysely);
   const visitorResolver = new VisitorResolver(
-    new VisitorRepository(input.database.kysely),
+    visitorRepository,
     input.metricsRegistry,
   );
   const chatService = new ChatService({
@@ -837,6 +838,7 @@ export const buildChatServices = (input: {
     answerFeedbackHistoryProvider,
     input.conversationOwnershipRepository,
     new AnswerCoverageRepository(input.database.kysely),
+    visitorRepository,
   );
   const conversationForkService = new ConversationForkService(
     input.conversationRepository,

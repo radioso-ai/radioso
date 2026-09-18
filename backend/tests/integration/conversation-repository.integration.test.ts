@@ -249,4 +249,32 @@ describeIntegration("ConversationRepository (Postgres)", () => {
     const page = await repository.listPageByWorkspaceId(workspaceId, { limit: 1 });
     expect(page.conversations[0]?.id).toBe(ids[0]);
   });
+
+  it("lists a visitor's own conversations, excluding one by id and other visitors' rows (spec 1277, FR-041)", async () => {
+    const visitorId = randomUUID();
+    const otherVisitorId = randomUUID();
+    await database.query(`INSERT INTO visitors (id, workspace_id) VALUES ($1, $2), ($3, $2)`, [
+      visitorId,
+      workspaceId,
+      otherVisitorId,
+    ]);
+
+    const first = await repository.create({ workspaceId, visitorId });
+    const second = await repository.create({ workspaceId, visitorId });
+    await repository.create({ workspaceId, visitorId: otherVisitorId });
+    // An operator-test conversation never carries a visitor in production (FR-005), but the
+    // repository's own purpose filter is what actually keeps it out of this list.
+    await repository.create({ workspaceId, visitorId, purpose: "operator_test" });
+
+    const page = await repository.listPageByVisitorId(workspaceId, visitorId, { limit: 10 });
+    expect(page.total).toBe(2);
+    expect(page.conversations.map((c) => c.id).sort()).toEqual([first.id, second.id].sort());
+
+    const excluded = await repository.listPageByVisitorId(workspaceId, visitorId, {
+      limit: 10,
+      excludeConversationId: second.id,
+    });
+    expect(excluded.total).toBe(1);
+    expect(excluded.conversations.map((c) => c.id)).toEqual([first.id]);
+  });
 });

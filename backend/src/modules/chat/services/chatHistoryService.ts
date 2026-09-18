@@ -6,6 +6,7 @@ import type { ConversationTurnStage } from "../contracts/interruption.js";
 import type { ConversationOwnershipScope } from "../../handoff/public.js";
 import type { AuditEventRecord, AuditEventRepositoryPort } from "../../../db/repositories/auditEventRepository.js";
 import type {
+  ConversationRecord,
   ConversationRepositoryPort,
 } from "../../../db/repositories/conversationRepository.js";
 import type { ConversationOwnershipRecord } from "../../../db/repositories/conversationOwnershipRepository.js";
@@ -15,8 +16,9 @@ import type {
 } from "../../../db/repositories/messageRepository.js";
 import { deriveMessageSourceFromRole } from "../../../db/repositories/messageRepository.js";
 import type { HistoryItemsRepositoryPort } from "../../../db/repositories/historyItemsRepository.js";
+import type { VisitorRecord } from "../../../db/repositories/visitorRepository.js";
 import type { DocumentSearchHistoryEntry } from "../../documents/contracts/index.js";
-import type { ConversationChannelContext } from "@radioso/conversation-contract";
+import type { ConversationChannelContext, ConversationRequestContext } from "@radioso/conversation-contract";
 import type { AnswerSegment, ChatCitation } from "../contracts/answerTypes.js";
 import {
   ActivitySummaryPresenter,
@@ -94,6 +96,22 @@ class NoopConversationOwnershipReader implements ConversationOwnershipHistoryRea
   }
 }
 
+/**
+ * Narrow read port chat/history needs from the visitors module: just enough to attach an
+ * operator-facing profile to a conversation detail (spec 1277, FR-040). `VisitorRepository`
+ * (`db/repositories/visitorRepository.ts`) satisfies this structurally — chat depends on this
+ * shape, not on the visitors module's fuller `VisitorRepositoryPort`.
+ */
+interface VisitorProfileReaderPort {
+  findById(workspaceId: string, visitorId: string): Promise<VisitorRecord | null>;
+}
+
+class NoopVisitorProfileReader implements VisitorProfileReaderPort {
+  async findById(): Promise<VisitorRecord | null> {
+    return null;
+  }
+}
+
 const toChatConversationOwnership = (record: ConversationOwnershipRecord): ChatConversationOwnership => ({
   conversationId: record.conversationId,
   workspaceId: record.workspaceId,
@@ -129,7 +147,21 @@ export interface ChatConversationSummary {
    * dashboard falls back to `preview` (the visitor's opening message) until then.
    */
   title: string | null;
+  /**
+   * Country of the conversation's request context (spec 1277, FR-040), read straight
+   * off `conversations.request_context` — no `visitors` join for a list. Null when no
+   * geo header was ever resolved for this conversation.
+   */
+  visitorCountry: string | null;
   ownership?: ChatConversationOwnership;
+}
+
+/** Operator-facing visitor summary attached to a conversation detail (spec 1277, FR-040). */
+export interface ConversationVisitorProfile {
+  id: string;
+  firstSeenAt: string;
+  conversationCount: number;
+  verified: boolean;
 }
 
 interface ChatConversationTurnDebug {
@@ -225,7 +257,16 @@ export interface ChatConversationDetail {
   sourceChannel: string | null;
   sourceOrigin: string | null;
   channelContext: ConversationChannelContext | null;
+  // Entry page provenance is dashboard-only; the public detail response omits it (and
+  // the fields below it), gated the same way — see `options.includeAgentInternalName`
+  // in `getConversation`.
   entryPageUrl?: string | null;
+  /** Client-claimed referrer of the host page (spec 1277, FR-013); dashboard-only like entryPageUrl. */
+  entryReferrer?: string | null;
+  /** Workspace-scoped visitor this conversation resolves to; null for channels with no visitor key. */
+  visitor?: ConversationVisitorProfile | null;
+  /** Edge-observed request facts captured once at creation; IP included — dashboard-only (FR-040). */
+  requestContext?: ConversationRequestContext | null;
   /** See {@link ChatConversationSummary.title}. */
   title: string | null;
   createdAt: string;
@@ -811,6 +852,7 @@ export class ChatHistoryService {
       new NoopConversationOwnershipReader(),
     private readonly answerCoverageHistoryReader: AnswerCoverageHistoryReader =
       new NoopAnswerCoverageHistoryReader(),
+    private readonly visitorRepository: VisitorProfileReaderPort = new NoopVisitorProfileReader(),
   ) {}
 
   async listConversations(
@@ -827,14 +869,45 @@ export class ChatHistoryService {
       workspaceId,
       { ...input, sourceScope: input.sourceScope ?? "end_user" },
     );
-    const conversationIds = conversations.map((conversation) => conversation.id);
+    return this.buildConversationPage(workspaceId, { conversations, total, nextCursor, hasMore });
+  }
+
+  /**
+   * A visitor's other conversations for the operator drawer's "Previous conversations"
+   * (spec 1277, FR-041). 404s when the visitor id does not resolve in this workspace,
+   * rather than returning an empty page, so a cross-workspace id reads as not-found
+   * instead of merely empty.
+   */
+  async listVisitorConversations(
+    workspaceId: string,
+    visitorId: string,
+    input: { limit: number; offset?: number; cursor?: string; exclude?: string } = { limit: 50 },
+  ): Promise<ChatConversationPage> {
+    const visitor = await this.visitorRepository.findById(workspaceId, visitorId);
+    if (!visitor) {
+      throw notFound("Visitor not found");
+    }
+    const { conversations, total, nextCursor, hasMore } = await this.conversationRepository.listPageByVisitorId(
+      workspaceId,
+      visitorId,
+      { limit: input.limit, offset: input.offset, cursor: input.cursor, excludeConversationId: input.exclude },
+    );
+    return this.buildConversationPage(workspaceId, { conversations, total, nextCursor, hasMore });
+  }
+
+  /** Shared summary-page assembly for {@link listConversations} and {@link listVisitorConversations}. */
+  private async buildConversationPage(
+    workspaceId: string,
+    page: { conversations: ConversationRecord[]; total: number; nextCursor: string | null; hasMore: boolean },
+  ): Promise<ChatConversationPage> {
+    const conversationIds = page.conversations.map((conversation) => conversation.id);
     const [messageSummaries, ownershipByConversationId] = await Promise.all([
       this.messageRepository.summarizeByConversationIds(workspaceId, conversationIds),
       this.conversationOwnership.loadByConversationIds(conversationIds),
     ]);
 
     return {
-      conversations: conversations.map((conversation) => {
+      conversations: page.conversations.map((conversation) => {
         const summary = buildChatConversationSummary(conversation, messageSummaries.get(conversation.id));
         const ownership = ownershipByConversationId.get(conversation.id);
         // Only human-owned conversations carry ownership; an ai_owned row (e.g. after a
@@ -843,9 +916,9 @@ export class ChatHistoryService {
           ? { ...summary, ownership: toChatConversationOwnership(ownership) }
           : summary;
       }),
-      total,
-      nextCursor,
-      hasMore,
+      total: page.total,
+      nextCursor: page.nextCursor,
+      hasMore: page.hasMore,
     };
   }
 
@@ -1018,14 +1091,21 @@ export class ChatHistoryService {
       throw notFound("Conversation not found");
     }
 
-    const [{ messages, total, nextCursor, hasMore }, messageSummaries, ownershipRecord, tailBaseline] = await Promise.all([
-      this.messageRepository.listWindowByConversationId(workspaceId, conversation.id, input),
-      this.messageRepository.summarizeByConversationIds(workspaceId, [conversation.id]),
-      options.includeOwnership ? this.conversationOwnership.load(conversation.id) : Promise.resolve(null),
-      this.messageRepository.listSinceByConversationId(workspaceId, conversation.id, {
-        limit: 1,
-      }),
-    ]);
+    const [{ messages, total, nextCursor, hasMore }, messageSummaries, ownershipRecord, tailBaseline, visitorProfile] =
+      await Promise.all([
+        this.messageRepository.listWindowByConversationId(workspaceId, conversation.id, input),
+        this.messageRepository.summarizeByConversationIds(workspaceId, [conversation.id]),
+        options.includeOwnership ? this.conversationOwnership.load(conversation.id) : Promise.resolve(null),
+        this.messageRepository.listSinceByConversationId(workspaceId, conversation.id, {
+          limit: 1,
+        }),
+        // Gated the same as the other operator-only fields below — the public/embed
+        // visitor path never sets includeAgentInternalName, so this read never runs
+        // for that surface.
+        options.includeAgentInternalName && conversation.visitorId
+          ? this.visitorRepository.findById(workspaceId, conversation.visitorId)
+          : Promise.resolve(null),
+      ]);
     const assistantMessageIds = messages
       .filter((message) => message.role === "assistant")
       .map((message) => message.id);
@@ -1066,7 +1146,20 @@ export class ChatHistoryService {
       agentId: conversation.agentId,
       agentName: conversation.agentName,
       ...(options.includeAgentInternalName
-        ? { agentInternalName: conversation.agentInternalName, entryPageUrl: conversation.entryPageUrl }
+        ? {
+            agentInternalName: conversation.agentInternalName,
+            entryPageUrl: conversation.entryPageUrl,
+            entryReferrer: conversation.entryReferrer ?? null,
+            requestContext: conversation.requestContext ?? null,
+            visitor: visitorProfile
+              ? {
+                  id: visitorProfile.id,
+                  firstSeenAt: toIsoString(visitorProfile.firstSeenAt),
+                  conversationCount: visitorProfile.conversationCount,
+                  verified: visitorProfile.verifiedCustomerId !== null,
+                }
+              : null,
+          }
         : {}),
       sourceChannel: conversation.sourceChannel,
       sourceOrigin: conversation.sourceOrigin,

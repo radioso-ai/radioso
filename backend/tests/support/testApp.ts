@@ -283,6 +283,7 @@ import {
   InMemoryWorkspaceGrantRepository,
   InMemoryChunkRepository,
   InMemoryConversationRepository,
+  InMemoryVisitorProfileRepository,
   InMemoryDocumentRepository,
   InMemoryDocumentSourceRepository,
   InMemoryDocumentStorage,
@@ -431,6 +432,7 @@ interface TestRepositories {
   chunkRepository: InMemoryChunkRepository;
   documentProcessingJobRepository: InMemoryDocumentProcessingJobRepository;
   conversationRepository: InMemoryConversationRepository;
+  visitorRepository: InMemoryVisitorProfileRepository;
   conversationOwnershipRepository: InMemoryConversationOwnershipRepository;
   messageRepository: InMemoryMessageRepository;
   agentRepository: InMemoryAgentRepository;
@@ -860,6 +862,11 @@ export const createTestDependencies = (overrides: {
   const conversationRepository = new InMemoryConversationRepository();
   const conversationOwnershipRepository = new InMemoryConversationOwnershipRepository();
   conversationRepository.setOwnershipReader(conversationOwnershipRepository);
+  // Visitor resolution itself is exercised against real Postgres in
+  // tests/integration/visitor-resolver.integration.test.ts; this fake only lets a contract
+  // test seed a visitor row directly so it can assert the operator-facing read surface
+  // (spec 1277, FR-040/041).
+  const visitorRepository = new InMemoryVisitorProfileRepository();
   const messageRepository = new InMemoryMessageRepository();
   conversationRepository.setMessageRepository(messageRepository);
   const bootstrapGreetingCacheRepository = new InMemoryBootstrapGreetingCacheRepository();
@@ -1719,6 +1726,8 @@ export const createTestDependencies = (overrides: {
     overrides.contactHistoryProvider ?? new NoopContactHistoryProvider(),
     overrides.answerFeedbackHistoryProvider,
     conversationOwnershipRepository,
+    undefined,
+    visitorRepository,
   );
   const routineStateStore = new InMemoryRoutineStateStore();
   const directiveStateStore = new InMemoryDirectiveStateStore();
@@ -2506,6 +2515,7 @@ export const createTestDependencies = (overrides: {
       chunkRepository,
       documentProcessingJobRepository,
       conversationRepository,
+      visitorRepository,
       conversationOwnershipRepository,
       messageRepository,
       agentRepository,

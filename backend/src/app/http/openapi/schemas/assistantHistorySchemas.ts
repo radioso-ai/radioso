@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { assistantChatSchema } from "../../schemas/assistantChatSchemas.js";
-import { conversationParamsSchema } from "../../routes/conversationRouteSchemas.js";
+import {
+  conversationParamsSchema,
+  visitorConversationsParamsSchema,
+} from "../../routes/conversationRouteSchemas.js";
 import {
   skillAvailabilitySchema,
   skillCatalogEntrySchema,
@@ -315,6 +318,34 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     ]),
   );
 
+  // Edge-observed facts about the request that opened a conversation (spec 1277, FR-010).
+  // Dashboard-only: only ever attached to `ChatConversationDetail` behind the same gate as
+  // `agentInternalName`/`entryPageUrl`, and always omitted from `PublicChatConversationDetail`.
+  const ConversationRequestContextSchema = registry.register(
+    "ConversationRequestContext",
+    z.object({
+      clientIp: z.string().nullable(),
+      country: z.string().nullable(),
+      region: z.string().nullable(),
+      city: z.string().nullable(),
+      userAgent: z.string().nullable(),
+      acceptLanguage: z.string().nullable(),
+      observedVia: z.enum(["edge_proof", "backend", "unproven"]),
+    }),
+  );
+
+  // Operator-facing visitor summary attached to a conversation detail (spec 1277, FR-040).
+  // Dashboard-only, gated the same way as ConversationRequestContextSchema above.
+  const ConversationVisitorProfileSchema = registry.register(
+    "ConversationVisitorProfile",
+    z.object({
+      id: z.string().uuid(),
+      firstSeenAt: z.string().datetime(),
+      conversationCount: z.number().int().min(0),
+      verified: z.boolean(),
+    }),
+  );
+
   const ChatConversationSummarySchema = registry.register(
     "ChatConversationSummary",
     z.object({
@@ -330,6 +361,9 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       channelContext: z.union([ConversationChannelContextSchema, z.null()]),
       anonymousSessionId: z.string().nullable(),
       entryPageUrl: z.string().nullable(),
+      visitorCountry: z.string().nullable().openapi({
+        description: "Country of the conversation's request context, when a geo header resolved one. Read straight off the conversation, not a visitors join.",
+      }),
       createdAt: z.string().datetime(),
       updatedAt: z.string().datetime(),
       messageCount: z.number().int().min(0),
@@ -637,8 +671,18 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       agentInternalName: z.string().nullable().optional(),
       sourceChannel: z.string().nullable(),
       sourceOrigin: z.string().nullable(),
-      // Entry page provenance is dashboard-only; the public detail response omits it.
+      // Entry page provenance is dashboard-only; the public detail response omits it (and
+      // the three fields below it — see PublicChatConversationDetail's omit list).
       entryPageUrl: z.string().nullable().optional(),
+      entryReferrer: z.string().nullable().optional().openapi({
+        description: "Client-claimed referrer of the host page. Dashboard-only, like entryPageUrl.",
+      }),
+      // Union-with-null rather than `.nullable()` on a registered $ref — same reason as
+      // channelContext above.
+      visitor: z.union([ConversationVisitorProfileSchema, z.null()]).optional(),
+      requestContext: z.union([ConversationRequestContextSchema, z.null()]).optional().openapi({
+        description: "Edge-observed request facts captured once at conversation creation. IP included — dashboard-only.",
+      }),
       title: z.string().nullable().openapi({
         description: "See ChatConversationSummary.title.",
       }),
@@ -692,6 +736,9 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       ownership: true,
       agentInternalName: true,
       entryPageUrl: true,
+      entryReferrer: true,
+      visitor: true,
+      requestContext: true,
       messages: true,
     }).extend({
       messages: z.array(PublicChatConversationMessageSchema),
@@ -731,9 +778,24 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     }),
   );
 
+  // A visitor's other conversations for the drawer's "Previous conversations" (spec
+  // 1277, FR-041). Deliberately its own minimal shape rather than reusing
+  // ChatHistoryListResponse, which carries several bootstrap-only fields this
+  // operation never populates.
+  const VisitorConversationsResponseSchema = registry.register(
+    "VisitorConversationsResponse",
+    z.object({
+      conversations: z.array(ChatConversationSummarySchema),
+      total: z.number().int().min(0),
+      nextCursor: z.string().nullable(),
+      hasMore: z.boolean(),
+    }),
+  );
+
   Object.assign(schemas, {
     answerFeedbackParamsSchema,
     conversationParamsSchema,
+    visitorConversationsParamsSchema,
     publicConversationParamsSchema,
     SkillAvailabilitySchema,
     SkillContractReferenceSchema,
@@ -782,5 +844,8 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     PublicConversationSummarySchema,
     PublicConversationListResponseSchema,
     RateLimitExceededSchema,
+    ConversationRequestContextSchema,
+    ConversationVisitorProfileSchema,
+    VisitorConversationsResponseSchema,
   });
 };

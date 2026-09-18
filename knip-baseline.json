@@ -35,8 +35,6 @@
   "exports|backend/src/modules/chat/services/directTurnSkill.ts|DIRECT_OUTCOME_KIND",
   "exports|backend/src/modules/chat/services/directTurnSkill.ts|DIRECT_TURN_SKILL",
   "exports|backend/src/modules/chat/services/directTurnSkill.ts|buildDirectTurnOutcome",
-  "exports|backend/src/modules/chat/services/historyItemPresenter.ts|buildChatHistoryItem",
-  "exports|backend/src/modules/chat/services/historyItemPresenter.ts|buildSearchHistoryItem",
   "exports|backend/src/modules/chat/services/turnRouter.ts|ChatGatewayTurnRouterGateway",
   "exports|backend/src/modules/connectors/plugins/whatsapp/whatsappPlugin.ts|WHATSAPP_CONFIG_KEYS",
   "exports|backend/src/modules/connectors/plugins/wordpress/wordpressConnector.ts|WP_CONFIG_KEYS",

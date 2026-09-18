@@ -12,6 +12,7 @@ import type {
   ContactHistoryProviderPort,
   ContactHistorySummary,
 } from "../../src/modules/chat/services/contactHistoryProvider.js";
+import type { VisitorRecord } from "../../src/db/repositories/visitorRepository.js";
 import {
   InMemoryAuditEventRepository,
   InMemoryConversationOwnershipRepository,
@@ -20,7 +21,17 @@ import {
   InMemoryMessageRepository,
 } from "../support/fakes.js";
 
-const createService = () => {
+/** Minimal fake of the narrow `VisitorProfileReaderPort` chat/history depends on (spec 1277). */
+class InMemoryVisitorProfileReader {
+  readonly visitors = new Map<string, VisitorRecord>();
+
+  async findById(workspaceId: string, visitorId: string): Promise<VisitorRecord | null> {
+    const record = this.visitors.get(visitorId);
+    return record && record.workspaceId === workspaceId ? record : null;
+  }
+}
+
+const createService = (visitorRepository: InMemoryVisitorProfileReader = new InMemoryVisitorProfileReader()) => {
   const conversationRepository = new InMemoryConversationRepository();
   const messageRepository = new InMemoryMessageRepository();
   const auditRepository = new InMemoryAuditEventRepository();
@@ -31,6 +42,7 @@ const createService = () => {
     messageRepository,
     auditRepository,
     conversationOwnershipRepository,
+    visitorRepository,
     service: new ChatHistoryService(
       conversationRepository,
       messageRepository,
@@ -39,9 +51,27 @@ const createService = () => {
       undefined,
       undefined,
       conversationOwnershipRepository,
+      undefined,
+      visitorRepository,
     ),
   };
 };
+
+const buildVisitor = (overrides: Partial<VisitorRecord> = {}): VisitorRecord => ({
+  id: "77777777-7777-4777-8777-777777777777",
+  workspaceId: "workspace-1",
+  visitorKey: "visitor-key-1",
+  verifiedCustomerId: null,
+  firstSeenAt: new Date("2026-05-01T00:00:00.000Z"),
+  lastSeenAt: new Date("2026-05-02T00:00:00.000Z"),
+  conversationCount: 2,
+  lastCountry: "US",
+  lastLanguage: "en",
+  lastUserAgent: "Mozilla/5.0",
+  createdAt: new Date("2026-05-01T00:00:00.000Z"),
+  updatedAt: new Date("2026-05-02T00:00:00.000Z"),
+  ...overrides,
+});
 
 class InMemoryContactHistoryProvider implements ContactHistoryProviderPort {
   readonly contacts: ContactHistoryDetail[] = [];
@@ -1807,5 +1837,151 @@ describe("chat history service", () => {
       "Can I speak with a person?",
       "I can collect that request.",
     ]);
+  });
+});
+
+describe("chat history service visitor profile (spec 1277, FR-040/041)", () => {
+  it("attaches the visitor profile, request context, and entry referrer only when includeAgentInternalName is set", async () => {
+    const { service, conversationRepository, visitorRepository } = createService();
+    const visitor = buildVisitor();
+    visitorRepository.visitors.set(visitor.id, visitor);
+    const conversation = await conversationRepository.create({
+      workspaceId: "workspace-1",
+      visitorId: visitor.id,
+      entryReferrer: "https://example.com/",
+      requestContext: {
+        clientIp: "203.0.113.4",
+        country: "US",
+        region: "CA",
+        city: "San Francisco",
+        userAgent: "Mozilla/5.0",
+        acceptLanguage: "en-US,en;q=0.9",
+        observedVia: "edge_proof",
+      },
+    });
+
+    const dashboardDetail = await service.getConversation(
+      "workspace-1",
+      conversation.id,
+      { limit: 10 },
+      { includeAgentInternalName: true },
+    );
+    expect(dashboardDetail.entryReferrer).toBe("https://example.com/");
+    expect(dashboardDetail.requestContext).toMatchObject({ clientIp: "203.0.113.4", country: "US" });
+    expect(dashboardDetail.visitor).toMatchObject({
+      id: visitor.id,
+      firstSeenAt: visitor.firstSeenAt.toISOString(),
+      conversationCount: visitor.conversationCount,
+      verified: false,
+    });
+
+    const publicDetail = await service.getConversation("workspace-1", conversation.id, { limit: 10 });
+    expect(publicDetail).not.toHaveProperty("entryReferrer");
+    expect(publicDetail).not.toHaveProperty("requestContext");
+    expect(publicDetail).not.toHaveProperty("visitor");
+  });
+
+  it("derives verified from a non-null verified_customer_id on the visitor row", async () => {
+    const { service, conversationRepository, visitorRepository } = createService();
+    const visitor = buildVisitor({ verifiedCustomerId: "customer-42" });
+    visitorRepository.visitors.set(visitor.id, visitor);
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1", visitorId: visitor.id });
+
+    const detail = await service.getConversation(
+      "workspace-1",
+      conversation.id,
+      { limit: 10 },
+      { includeAgentInternalName: true },
+    );
+
+    expect(detail.visitor).toMatchObject({ verified: true });
+  });
+
+  it("reports a null visitor, request context, and entry referrer for a conversation with none of the three", async () => {
+    const { service, conversationRepository } = createService();
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
+
+    const detail = await service.getConversation(
+      "workspace-1",
+      conversation.id,
+      { limit: 10 },
+      { includeAgentInternalName: true },
+    );
+
+    expect(detail.visitor).toBeNull();
+    expect(detail.requestContext).toBeNull();
+    expect(detail.entryReferrer).toBeNull();
+  });
+
+  it("maps visitorCountry on a conversation summary from its own request context, with no visitors join", async () => {
+    const { service, conversationRepository } = createService();
+    await conversationRepository.create({
+      workspaceId: "workspace-1",
+      requestContext: {
+        clientIp: "203.0.113.4",
+        country: "DE",
+        region: null,
+        city: null,
+        userAgent: null,
+        acceptLanguage: null,
+        observedVia: "backend",
+      },
+    });
+    await conversationRepository.create({ workspaceId: "workspace-1" });
+
+    const page = await service.listConversations("workspace-1", { limit: 10 });
+
+    const withCountry = page.conversations.find((conversation) => conversation.visitorCountry === "DE");
+    const withoutCountry = page.conversations.find((conversation) => conversation.visitorCountry === null);
+    expect(withCountry).toBeDefined();
+    expect(withoutCountry).toBeDefined();
+  });
+
+  it("lists a visitor's other conversations, excluding one by id, in the same paged summary shape", async () => {
+    const { service, conversationRepository, visitorRepository } = createService();
+    const visitor = buildVisitor();
+    visitorRepository.visitors.set(visitor.id, visitor);
+    const first = await conversationRepository.create({ workspaceId: "workspace-1", visitorId: visitor.id });
+    const second = await conversationRepository.create({ workspaceId: "workspace-1", visitorId: visitor.id });
+    const third = await conversationRepository.create({ workspaceId: "workspace-1", visitorId: visitor.id });
+
+    const page = await service.listVisitorConversations("workspace-1", visitor.id, {
+      limit: 10,
+      exclude: second.id,
+    });
+
+    const ids = page.conversations.map((conversation) => conversation.id);
+    expect(ids).toEqual(expect.arrayContaining([first.id, third.id]));
+    expect(ids).not.toContain(second.id);
+    expect(page.total).toBe(2);
+    expect(page.hasMore).toBe(false);
+  });
+
+  it("paginates a visitor's conversations with limit and offset", async () => {
+    const { service, conversationRepository, visitorRepository } = createService();
+    const visitor = buildVisitor();
+    visitorRepository.visitors.set(visitor.id, visitor);
+    for (let index = 0; index < 3; index += 1) {
+      await conversationRepository.create({ workspaceId: "workspace-1", visitorId: visitor.id });
+    }
+
+    const firstPage = await service.listVisitorConversations("workspace-1", visitor.id, { limit: 2, offset: 0 });
+    expect(firstPage.conversations).toHaveLength(2);
+    expect(firstPage.total).toBe(3);
+    expect(firstPage.hasMore).toBe(true);
+
+    const secondPage = await service.listVisitorConversations("workspace-1", visitor.id, { limit: 2, offset: 2 });
+    expect(secondPage.conversations).toHaveLength(1);
+    expect(secondPage.hasMore).toBe(false);
+  });
+
+  it("404s for a visitor id that does not resolve in the given workspace", async () => {
+    const { service, visitorRepository } = createService();
+    const visitor = buildVisitor({ workspaceId: "workspace-2" });
+    visitorRepository.visitors.set(visitor.id, visitor);
+
+    await expect(
+      service.listVisitorConversations("workspace-1", visitor.id, { limit: 10 }),
+    ).rejects.toMatchObject({ statusCode: 404 });
   });
 });

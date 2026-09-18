@@ -9560,6 +9560,66 @@ components:
               type: string
           required:
             - provider
+    ConversationRequestContext:
+      type: object
+      properties:
+        clientIp:
+          type:
+            - string
+            - "null"
+        country:
+          type:
+            - string
+            - "null"
+        region:
+          type:
+            - string
+            - "null"
+        city:
+          type:
+            - string
+            - "null"
+        userAgent:
+          type:
+            - string
+            - "null"
+        acceptLanguage:
+          type:
+            - string
+            - "null"
+        observedVia:
+          type: string
+          enum:
+            - edge_proof
+            - backend
+            - unproven
+      required:
+        - clientIp
+        - country
+        - region
+        - city
+        - userAgent
+        - acceptLanguage
+        - observedVia
+    ConversationVisitorProfile:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        firstSeenAt:
+          type: string
+          format: date-time
+        conversationCount:
+          type: integer
+          minimum: 0
+        verified:
+          type: boolean
+      required:
+        - id
+        - firstSeenAt
+        - conversationCount
+        - verified
     ChatConversationSummary:
       type: object
       properties:
@@ -9600,6 +9660,11 @@ components:
           type:
             - string
             - "null"
+        visitorCountry:
+          type:
+            - string
+            - "null"
+          description: Country of the conversation's request context, when a geo header resolved one. Read straight off the conversation, not a visitors join.
         createdAt:
           type: string
           format: date-time
@@ -9636,6 +9701,7 @@ components:
         - channelContext
         - anonymousSessionId
         - entryPageUrl
+        - visitorCountry
         - createdAt
         - updatedAt
         - messageCount
@@ -10369,6 +10435,22 @@ components:
           type:
             - string
             - "null"
+        entryReferrer:
+          type:
+            - string
+            - "null"
+          description: Client-claimed referrer of the host page. Dashboard-only, like entryPageUrl.
+        visitor:
+          anyOf:
+            - $ref: "#/components/schemas/ConversationVisitorProfile"
+            - type: "null"
+            - type: "null"
+        requestContext:
+          anyOf:
+            - $ref: "#/components/schemas/ConversationRequestContext"
+            - type: "null"
+            - type: "null"
+          description: Edge-observed request facts captured once at conversation creation. IP included — dashboard-only.
         title:
           type:
             - string
@@ -10638,6 +10720,27 @@ components:
         - code
         - message
         - retryAfterSeconds
+    VisitorConversationsResponse:
+      type: object
+      properties:
+        conversations:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatConversationSummary"
+        total:
+          type: integer
+          minimum: 0
+        nextCursor:
+          type:
+            - string
+            - "null"
+        hasMore:
+          type: boolean
+      required:
+        - conversations
+        - total
+        - nextCursor
+        - hasMore
     ConnectorField:
       type: object
       properties:
@@ -28796,6 +28899,73 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Conversation not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/history/visitors/{visitorId}/conversations:
+    get:
+      tags:
+        - History
+      summary: List a visitor's other conversations
+      description: Paged summaries of a visitor's conversations, for the drawer's "Previous conversations" panel. Optionally excludes one conversation id (the one currently open).
+      operationId: listVisitorConversations
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: visitorId
+          in: path
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+          required: false
+          name: limit
+          in: query
+        - schema:
+            type: integer
+            minimum: 0
+          required: false
+          name: offset
+          in: query
+        - schema:
+            type: string
+            minLength: 1
+          required: false
+          name: cursor
+          in: query
+        - schema:
+            type: string
+            format: uuid
+            description: A conversation id to exclude from the results — the one already open in the drawer.
+          required: false
+          name: exclude
+          in: query
+      responses:
+        "200":
+          description: The visitor's conversation summaries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VisitorConversationsResponse"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Visitor not found
           content:
             application/json:
               schema:

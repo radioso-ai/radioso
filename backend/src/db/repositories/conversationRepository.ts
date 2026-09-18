@@ -108,6 +108,18 @@ export interface ConversationRepositoryPort {
     anonymousSessionId: string,
     input: { limit: number; offset?: number; cursor?: string; agentId?: string | null },
   ): Promise<{ conversations: ConversationRecord[]; total: number; nextCursor: string | null; hasMore: boolean }>;
+  /**
+   * A visitor's other conversations for the operator drawer's "Previous conversations"
+   * (spec 1277, FR-041). Scoped to `purpose = 'production'` like
+   * {@link listPageByAnonymousSession} — a visitor is never attached to an
+   * operator-test conversation (FR-005) — and optionally excludes one conversation id
+   * (the one currently open in the drawer).
+   */
+  listPageByVisitorId(
+    workspaceId: string,
+    visitorId: string,
+    input: { limit: number; offset?: number; cursor?: string; excludeConversationId?: string | null },
+  ): Promise<{ conversations: ConversationRecord[]; total: number; nextCursor: string | null; hasMore: boolean }>;
   findByIdAndWorkspaceId(conversationId: string, workspaceId: string): Promise<ConversationRecord | null>;
   /** First-write-wins legacy binding; returns the durable winner under concurrent turns. */
   bindAgentRevision?(input: {
@@ -554,6 +566,75 @@ export class ConversationRepository implements ConversationRepositoryPort {
       .where("c.anonymous_session_id", "=", anonymousSessionId)
       .where("c.purpose", "=", "production")
       .$if(Boolean(input.agentId), (qb) => qb.where("c.agent_id", "=", input.agentId!))
+      .$if(Boolean(cursor), (qb) =>
+        qb.where((eb) =>
+          eb.or([
+            eb("c.updated_at", "<", new Date(cursor!.keys.updatedAt)),
+            eb.and([
+              eb("c.updated_at", "=", new Date(cursor!.keys.updatedAt)),
+              eb.or([
+                eb("c.created_at", "<", new Date(cursor!.keys.createdAt)),
+                eb.and([
+                  eb("c.created_at", "=", new Date(cursor!.keys.createdAt)),
+                  eb("c.id", "<", cursor!.keys.id),
+                ]),
+              ]),
+            ]),
+          ]),
+        ),
+      )
+      .orderBy("c.updated_at", "desc")
+      .orderBy("c.created_at", "desc")
+      .orderBy("c.id", "desc")
+      .limit(input.limit + 1)
+      .$if(!cursor, (qb) => qb.offset(input.offset ?? 0));
+
+    const rows = await query.execute() as ConversationRow[];
+
+    const conversations = rows.slice(0, input.limit).map(mapConversation);
+    const hasMore = rows.length > input.limit;
+    const lastConversation = conversations.at(-1);
+
+    return {
+      conversations,
+      total,
+      nextCursor: hasMore && lastConversation
+        ? encodeCursor({
+            updatedAt: lastConversation.updatedAt.toISOString(),
+            createdAt: lastConversation.createdAt.toISOString(),
+            id: lastConversation.id,
+          }, total)
+        : null,
+      hasMore,
+    };
+  }
+
+  async listPageByVisitorId(
+    workspaceId: string,
+    visitorId: string,
+    input: { limit: number; offset?: number; cursor?: string; excludeConversationId?: string | null },
+  ): Promise<{ conversations: ConversationRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
+    const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["updatedAt", "createdAt", "id"]) : null;
+    const total = cursor?.totalSnapshot !== undefined
+      ? Number(cursor.totalSnapshot)
+      : Number((await this.db
+          .selectFrom("conversations as c")
+          .select((eb) => eb.fn.countAll<string>().as("count"))
+          .where("c.workspace_id", "=", workspaceId)
+          .where("c.visitor_id", "=", visitorId)
+          .where("c.purpose", "=", "production")
+          .$if(Boolean(input.excludeConversationId), (qb) => qb.where("c.id", "<>", input.excludeConversationId!))
+          .executeTakeFirst())?.count ?? "0");
+    const query = this.db
+      .selectFrom("conversations as c")
+      .leftJoin("agents as a", (join) =>
+        join.onRef("a.id", "=", "c.agent_id").onRef("a.workspace_id", "=", "c.workspace_id"),
+      )
+      .select(conversationSelectColumns)
+      .where("c.workspace_id", "=", workspaceId)
+      .where("c.visitor_id", "=", visitorId)
+      .where("c.purpose", "=", "production")
+      .$if(Boolean(input.excludeConversationId), (qb) => qb.where("c.id", "<>", input.excludeConversationId!))
       .$if(Boolean(cursor), (qb) =>
         qb.where((eb) =>
           eb.or([

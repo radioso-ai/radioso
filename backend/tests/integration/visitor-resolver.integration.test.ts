@@ -15,7 +15,8 @@ const { describeIntegration, integrationDatabaseUrl } = await resolveIntegration
 
 describeIntegration("VisitorResolver (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl);
-  const resolver = new VisitorResolver(new VisitorRepository(database.kysely));
+  const visitorRepository = new VisitorRepository(database.kysely);
+  const resolver = new VisitorResolver(visitorRepository);
   const accountId = randomUUID();
   const workspaceId = randomUUID();
 
@@ -106,5 +107,21 @@ describeIntegration("VisitorResolver (Postgres)", () => {
     );
     expect(dRow).toBeDefined();
     expect(dRow.id).not.toBe(anonRow.id);
+  });
+
+  it("findById scopes a visitor lookup to its own workspace (spec 1277, FR-040/041)", async () => {
+    const visitorKey = `find-by-id-${randomUUID()}`;
+    const { record } = await visitorRepository.insertOrGet({
+      workspaceId,
+      visitorKey,
+      observed: { country: null, language: null, userAgent: null },
+    });
+
+    const found = await visitorRepository.findById(workspaceId, record.id);
+    expect(found?.id).toBe(record.id);
+
+    const otherWorkspaceId = randomUUID();
+    const notFound = await visitorRepository.findById(otherWorkspaceId, record.id);
+    expect(notFound).toBeNull();
   });
 });

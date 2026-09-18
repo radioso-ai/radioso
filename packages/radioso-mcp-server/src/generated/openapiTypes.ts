@@ -2811,6 +2811,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/history/visitors/{visitorId}/conversations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List a visitor's other conversations
+         * @description Paged summaries of a visitor's conversations, for the drawer's "Previous conversations" panel. Optionally excludes one conversation id (the one currently open).
+         */
+        get: operations["listVisitorConversations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/history/{conversationId}": {
         parameters: {
             query?: never;
@@ -7207,6 +7227,24 @@ export interface components {
             provider: "web";
             origin?: string;
         };
+        ConversationRequestContext: {
+            clientIp: string | null;
+            country: string | null;
+            region: string | null;
+            city: string | null;
+            userAgent: string | null;
+            acceptLanguage: string | null;
+            /** @enum {string} */
+            observedVia: "edge_proof" | "backend" | "unproven";
+        };
+        ConversationVisitorProfile: {
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            firstSeenAt: string;
+            conversationCount: number;
+            verified: boolean;
+        };
         ChatConversationSummary: {
             /** Format: uuid */
             id: string;
@@ -7219,6 +7257,8 @@ export interface components {
             channelContext: components["schemas"]["ConversationChannelContext"] | null;
             anonymousSessionId: string | null;
             entryPageUrl: string | null;
+            /** @description Country of the conversation's request context, when a geo header resolved one. Read straight off the conversation, not a visitors join. */
+            visitorCountry: string | null;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -7513,6 +7553,11 @@ export interface components {
             sourceChannel: string | null;
             sourceOrigin: string | null;
             entryPageUrl?: string | null;
+            /** @description Client-claimed referrer of the host page. Dashboard-only, like entryPageUrl. */
+            entryReferrer?: string | null;
+            visitor?: components["schemas"]["ConversationVisitorProfile"] | null;
+            /** @description Edge-observed request facts captured once at conversation creation. IP included — dashboard-only. */
+            requestContext?: components["schemas"]["ConversationRequestContext"] | null;
             /** @description See ChatConversationSummary.title. */
             title: string | null;
             channelContext: components["schemas"]["ConversationChannelContext"] | null;
@@ -7595,6 +7640,12 @@ export interface components {
             code: "rate_limit_exceeded";
             message: string;
             retryAfterSeconds: number;
+        };
+        VisitorConversationsResponse: {
+            conversations: components["schemas"]["ChatConversationSummary"][];
+            total: number;
+            nextCursor: string | null;
+            hasMore: boolean;
         };
         ConnectorField: {
             key: string;
@@ -21756,6 +21807,60 @@ export interface operations {
                 };
             };
             /** @description Conversation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listVisitorConversations: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                cursor?: string;
+                exclude?: string;
+            };
+            header?: never;
+            path: {
+                visitorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The visitor's conversation summaries */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisitorConversationsResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Visitor not found */
             404: {
                 headers: {
                     [name: string]: unknown;

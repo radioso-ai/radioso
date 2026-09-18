@@ -24,6 +24,7 @@ import type {
   WorkspaceGrantRole,
 } from "../../src/db/repositories/workspaceGrantRepository.js";
 import type { AccessGrantRepositoryPort } from "../../src/modules/accessGrants/ports.js";
+import type { VisitorRecord } from "../../src/db/repositories/visitorRepository.js";
 import type { AgentConverseSessionMappingPort } from "../../src/modules/settings/contracts/agentConverseSession.js";
 import type {
   AccessGrantLifecycleUnitOfWorkPort,
@@ -3777,6 +3778,22 @@ export const pinExistingConversationsToPublishedRevisions = (
   }
 };
 
+/**
+ * Fake for the narrow `VisitorProfileReaderPort` `ChatHistoryService` depends on (spec 1277,
+ * FR-040) — not the visitors module's fuller `VisitorRepositoryPort`. The test harness does not
+ * wire a `VisitorResolver` (visitor resolution is exercised end-to-end in
+ * `tests/integration/visitor-resolver.integration.test.ts` against real Postgres), so tests
+ * that need a populated `visitor` on a conversation detail seed this map directly.
+ */
+export class InMemoryVisitorProfileRepository {
+  readonly visitors = new Map<string, VisitorRecord>();
+
+  async findById(workspaceId: string, visitorId: string): Promise<VisitorRecord | null> {
+    const record = this.visitors.get(visitorId);
+    return record && record.workspaceId === workspaceId ? record : null;
+  }
+}
+
 export class InMemoryConversationRepository implements ConversationRepositoryPort {
   readonly items = new Map<string, ConversationRecord>();
   private messageRepository: InMemoryMessageRepository | null = null;
@@ -3978,6 +3995,47 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
         item.workspaceId === workspaceId &&
         item.anonymousSessionId === anonymousSessionId &&
         (!input.agentId || item.agentId === input.agentId)
+      )
+      .sort((left, right) => {
+        const timeDiff = right.updatedAt.getTime() - left.updatedAt.getTime();
+        return timeDiff !== 0 ? timeDiff : right.id.localeCompare(left.id);
+      });
+
+    const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["updatedAt", "createdAt", "id"]) : null;
+    const startIndex = cursor
+      ? conversations.findIndex(
+          (item) => item.updatedAt.toISOString() === cursor.keys.updatedAt && item.id === cursor.keys.id,
+        ) + 1
+      : (input.offset ?? 0);
+    const slice = conversations.slice(Math.max(0, startIndex), Math.max(0, startIndex) + input.limit);
+    const hasMore = Math.max(0, startIndex) + input.limit < conversations.length;
+    const lastConversation = slice.at(-1);
+
+    return {
+      conversations: slice,
+      total: conversations.length,
+      nextCursor: hasMore && lastConversation
+        ? encodeCursor({
+            updatedAt: lastConversation.updatedAt.toISOString(),
+            createdAt: lastConversation.createdAt.toISOString(),
+            id: lastConversation.id,
+          })
+        : null,
+      hasMore,
+    };
+  }
+
+  async listPageByVisitorId(
+    workspaceId: string,
+    visitorId: string,
+    input: { limit: number; offset?: number; cursor?: string; excludeConversationId?: string | null } = { limit: 50 },
+  ): Promise<{ conversations: ConversationRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
+    const conversations = [...this.items.values()]
+      .filter((item) =>
+        item.workspaceId === workspaceId &&
+        item.visitorId === visitorId &&
+        item.purpose === "production" &&
+        (!input.excludeConversationId || item.id !== input.excludeConversationId)
       )
       .sort((left, right) => {
         const timeDiff = right.updatedAt.getTime() - left.updatedAt.getTime();

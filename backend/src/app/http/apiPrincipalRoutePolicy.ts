@@ -113,7 +113,7 @@ const declarations: readonly PolicyDeclaration[] = [
 
   ...["", "/chat", "/search", "/contact"].map((path) =>
     allow("GET", `/api/v1/history${path}`, "workspace.history.read")),
-  ...["/contact/:requestId", "/search/:searchId", "/chat/:conversationId", "/chat/:conversationId/tail", "/:conversationId"]
+  ...["/contact/:requestId", "/search/:searchId", "/chat/:conversationId", "/chat/:conversationId/tail", "/visitors/:visitorId/conversations", "/:conversationId"]
     .map((path) => allow("GET", `/api/v1/history${path}`, "workspace.history.read")),
 
   ...["", "/sources", "/sources/:sourceId/documents", "/search/history", "/search/history/:searchId", "/:documentId", "/:documentId/chunks", "/:documentId/chunks/:chunkId"]

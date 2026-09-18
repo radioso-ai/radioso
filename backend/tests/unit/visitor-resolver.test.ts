@@ -26,6 +26,7 @@ const buildVisitor = (overrides: Partial<VisitorRecord> = {}): VisitorRecord => 
 interface RepositoryMock extends VisitorRepositoryPort {
   findByVerifiedCustomerId: ReturnType<typeof vi.fn<VisitorRepositoryPort["findByVerifiedCustomerId"]>>;
   findByVisitorKey: ReturnType<typeof vi.fn<VisitorRepositoryPort["findByVisitorKey"]>>;
+  findById: ReturnType<typeof vi.fn<VisitorRepositoryPort["findById"]>>;
   insertOrGet: ReturnType<typeof vi.fn<VisitorRepositoryPort["insertOrGet"]>>;
   recordObservation: ReturnType<typeof vi.fn<VisitorRepositoryPort["recordObservation"]>>;
   upgradeToVerified: ReturnType<typeof vi.fn<VisitorRepositoryPort["upgradeToVerified"]>>;
@@ -35,6 +36,7 @@ interface RepositoryMock extends VisitorRepositoryPort {
 const buildRepository = (): RepositoryMock => ({
   findByVerifiedCustomerId: vi.fn<VisitorRepositoryPort["findByVerifiedCustomerId"]>().mockResolvedValue(null),
   findByVisitorKey: vi.fn<VisitorRepositoryPort["findByVisitorKey"]>().mockResolvedValue(null),
+  findById: vi.fn<VisitorRepositoryPort["findById"]>().mockResolvedValue(null),
   insertOrGet: vi.fn<VisitorRepositoryPort["insertOrGet"]>(),
   recordObservation: vi.fn<VisitorRepositoryPort["recordObservation"]>().mockResolvedValue(undefined),
   upgradeToVerified: vi.fn<VisitorRepositoryPort["upgradeToVerified"]>().mockResolvedValue(undefined),

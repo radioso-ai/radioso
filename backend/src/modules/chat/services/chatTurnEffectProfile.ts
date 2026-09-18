@@ -68,6 +68,9 @@ const createEphemeralConversationRepository = (conversationId?: string): Convers
   async listPageByAnonymousSession() {
     return { conversations: [], total: 0, nextCursor: null, hasMore: false };
   },
+  async listPageByVisitorId() {
+    return { conversations: [], total: 0, nextCursor: null, hasMore: false };
+  },
   async findByIdAndWorkspaceId() {
     return null;
   },

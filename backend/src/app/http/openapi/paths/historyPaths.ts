@@ -237,6 +237,61 @@ export const registerHistoryPaths = (
 
   registry.registerPath({
     method: "get",
+    path: "/api/v1/history/visitors/{visitorId}/conversations",
+    tags: ["History"],
+    summary: "List a visitor's other conversations",
+    description: "Paged summaries of a visitor's conversations, for the drawer's \"Previous conversations\" panel. Optionally excludes one conversation id (the one currently open).",
+    operationId: "listVisitorConversations",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      params: schemas.visitorConversationsParamsSchema,
+      query: z.object({
+        limit: z.number().int().min(1).max(100).optional(),
+        offset: z.number().int().min(0).optional(),
+        cursor: z.string().min(1).optional(),
+        exclude: z.string().uuid().optional().openapi({
+          description: "A conversation id to exclude from the results — the one already open in the drawer.",
+        }),
+      }),
+    },
+    responses: {
+      200: {
+        description: "The visitor's conversation summaries",
+        content: {
+          "application/json": {
+            schema: schemas.VisitorConversationsResponseSchema,
+          },
+        },
+      },
+      400: {
+        description: "Request validation failed",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      404: {
+        description: "Visitor not found",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
     path: "/api/v1/history/{conversationId}",
     tags: ["History"],
     summary: "Get a saved assistant conversation and its debug metadata",

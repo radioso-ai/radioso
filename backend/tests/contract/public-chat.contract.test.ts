@@ -656,16 +656,13 @@ describe("public chat contract", () => {
       .expect(200);
     const chatToken = tokenResponse.body.surfaceSettings.anonymousChat.token as string;
     const publicSession = await createPublicSession(app, chatToken);
-    const conversation = await repositories.conversationRepository.create(
-      session.workspaceId,
-      agent.body.id,
-      "anonymous",
-      publicSession.publicSessionId,
-      null,
-      null,
-      null,
-      { entryPageUrl: "https://example.com/support" },
-    );
+    const conversation = await repositories.conversationRepository.create({
+      workspaceId: session.workspaceId,
+      agentId: agent.body.id,
+      sourceChannel: "anonymous",
+      anonymousSessionId: publicSession.publicSessionId,
+      entryPageUrl: "https://example.com/support",
+    });
     expect(conversation.agentId).toBe(agent.body.id);
     const storedConversation = repositories.conversationRepository.items.get(conversation.id);
     if (!storedConversation) {

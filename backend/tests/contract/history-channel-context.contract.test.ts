@@ -15,22 +15,15 @@ describe("history channel context contract", () => {
       threadTs: "1712345678.000100",
       user: { id: "U123", displayName: "Dana" },
     } satisfies ConversationChannelContext;
-    const slackConversation = await repositories.conversationRepository.create(
-      session.workspaceId,
-      null,
-      "authenticated_chat",
-      null,
-      null,
-      slackContext,
-    );
-    const webConversation = await repositories.conversationRepository.create(
-      session.workspaceId,
-      null,
-      "authenticated_chat",
-      null,
-      null,
-      null,
-    );
+    const slackConversation = await repositories.conversationRepository.create({
+      workspaceId: session.workspaceId,
+      sourceChannel: "authenticated_chat",
+      channelContext: slackContext,
+    });
+    const webConversation = await repositories.conversationRepository.create({
+      workspaceId: session.workspaceId,
+      sourceChannel: "authenticated_chat",
+    });
 
     const list = await request(app)
       .get("/api/v1/history/chat")

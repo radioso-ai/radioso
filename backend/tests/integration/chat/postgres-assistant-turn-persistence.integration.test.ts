@@ -66,7 +66,7 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
       passwordHash: "hash",
     });
     const workspace = await workspaces.create(account.id, "Turn Persistence Workspace");
-    const conversation = await conversations.create(workspace.id);
+    const conversation = await conversations.create({ workspaceId: workspace.id });
     createdAccountIds.add(account.id);
     createdSessionIds.add(conversation.id);
     return { accountId: account.id, workspace, conversation };

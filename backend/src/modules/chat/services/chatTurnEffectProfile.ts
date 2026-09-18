@@ -49,11 +49,11 @@ const ephemeralConversation = (
 };
 
 const createEphemeralConversationRepository = (conversationId?: string): ConversationRepositoryPort => ({
-  async create(workspaceId, agentId, _sourceChannel, _anonymousSessionId, _sourceOrigin, _channelContext, _verifiedCustomerId, options) {
+  async create(input) {
     return {
-      ...ephemeralConversation(workspaceId, agentId ?? null, conversationId),
-      agentRevisionId: options?.agentRevisionId ?? null,
-      purpose: options?.purpose ?? "operator_test",
+      ...ephemeralConversation(input.workspaceId, input.agentId ?? null, conversationId),
+      agentRevisionId: input.agentRevisionId ?? null,
+      purpose: input.purpose ?? "operator_test",
     };
   },
   async createWithInitialAssistantMessage() {

@@ -103,7 +103,7 @@ describe("chat history service ownership read surface", () => {
 
   it("includes ownership in detail when human-owned and includeOwnership is set (dashboard)", async () => {
     const { conversationRepository, conversationOwnershipRepository, service } = createService();
-    const conversation = await conversationRepository.create("workspace-1");
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     await conversationOwnershipRepository.requestHandoff({
       conversationId: conversation.id,
       workspaceId: "workspace-1",
@@ -131,7 +131,7 @@ describe("chat history service ownership read surface", () => {
 
   it("omits ownership from detail when includeOwnership is unset, even if human-owned (public surface)", async () => {
     const { conversationRepository, conversationOwnershipRepository, service } = createService();
-    const conversation = await conversationRepository.create("workspace-1");
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     await conversationOwnershipRepository.requestHandoff({
       conversationId: conversation.id,
       workspaceId: "workspace-1",
@@ -148,7 +148,7 @@ describe("chat history service ownership read surface", () => {
     // unrecognised fields, so anything added unconditionally to the turn mapper silently becomes
     // public API without an OpenAPI or SDK change. Latency is an operator diagnostic.
     const { conversationRepository, messageRepository, service } = createService();
-    const conversation = await conversationRepository.create("workspace-1");
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     await messageRepository.create({
       workspaceId: "workspace-1",
       conversationId: conversation.id,
@@ -167,7 +167,7 @@ describe("chat history service ownership read surface", () => {
 
   it("omits ownership from detail when the conversation is AI-owned (no row)", async () => {
     const { conversationRepository, service } = createService();
-    const conversation = await conversationRepository.create("workspace-1");
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
 
     const detail = await service.getConversation("workspace-1", conversation.id, detailInput, {
       includeOwnership: true,
@@ -178,7 +178,7 @@ describe("chat history service ownership read surface", () => {
 
   it("omits ownership after hand-back leaves an ai_owned row", async () => {
     const { conversationRepository, conversationOwnershipRepository, service } = createService();
-    const conversation = await conversationRepository.create("workspace-1");
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     await conversationOwnershipRepository.requestHandoff({
       conversationId: conversation.id,
       workspaceId: "workspace-1",
@@ -207,7 +207,7 @@ describe("chat history service ownership read surface", () => {
 
   it("returns a tail cursor for the newest message in the detail snapshot", async () => {
     const { conversationRepository, messageRepository, service } = createService();
-    const conversation = await conversationRepository.create("workspace-1");
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     const first = await messageRepository.create({
       conversationId: conversation.id,
       workspaceId: "workspace-1",
@@ -230,8 +230,8 @@ describe("chat history service ownership read surface", () => {
 
   it("includes ownership per row in the conversation list, omitting AI-owned ones", async () => {
     const { conversationRepository, conversationOwnershipRepository, service } = createService();
-    const human = await conversationRepository.create("workspace-1");
-    const ai = await conversationRepository.create("workspace-1");
+    const human = await conversationRepository.create({ workspaceId: "workspace-1" });
+    const ai = await conversationRepository.create({ workspaceId: "workspace-1" });
     await conversationOwnershipRepository.requestHandoff({
       conversationId: human.id,
       workspaceId: "workspace-1",
@@ -274,22 +274,15 @@ describe("chat history service ownership read surface", () => {
       threadTs: "1712345678.000100",
       user: { id: "U123", displayName: "Dana" },
     } satisfies ConversationChannelContext;
-    const slackConversation = await conversationRepository.create(
-      "workspace-1",
-      null,
-      "authenticated_chat",
-      null,
-      null,
-      slackContext,
-    );
-    const webConversation = await conversationRepository.create(
-      "workspace-1",
-      null,
-      "authenticated_chat",
-      null,
-      null,
-      null,
-    );
+    const slackConversation = await conversationRepository.create({
+      workspaceId: "workspace-1",
+      sourceChannel: "authenticated_chat",
+      channelContext: slackContext,
+    });
+    const webConversation = await conversationRepository.create({
+      workspaceId: "workspace-1",
+      sourceChannel: "authenticated_chat",
+    });
 
     const list = await service.listConversations("workspace-1", { limit: 50, offset: 0 });
     const items = await service.listItems("workspace-1", { limit: 50, offset: 0 });
@@ -308,9 +301,9 @@ describe("chat history service ownership read surface", () => {
 
   it("projects the generated conversation title into list, items, and detail responses, defaulting to null", async () => {
     const { conversationRepository, service } = createService();
-    const titled = await conversationRepository.create("workspace-1");
+    const titled = await conversationRepository.create({ workspaceId: "workspace-1" });
     await conversationRepository.setTitle(titled.id, "workspace-1", "Refund for order 4821");
-    const untitled = await conversationRepository.create("workspace-1");
+    const untitled = await conversationRepository.create({ workspaceId: "workspace-1" });
 
     const list = await service.listConversations("workspace-1", { limit: 50, offset: 0 });
     const items = await service.listItems("workspace-1", { limit: 50, offset: 0 });
@@ -329,7 +322,7 @@ describe("chat history service ownership read surface", () => {
 
   it("tails dashboard messages with ownership only while human-owned", async () => {
     const { conversationRepository, messageRepository, conversationOwnershipRepository, service } = createService();
-    const conversation = await conversationRepository.create("workspace-1");
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     const baseline = await messageRepository.create({
       conversationId: conversation.id,
       workspaceId: "workspace-1",
@@ -402,7 +395,7 @@ describe("chat history service ownership read surface", () => {
 
   it("never includes ownership on public tail even when the conversation is human-owned", async () => {
     const { conversationRepository, messageRepository, conversationOwnershipRepository, service } = createService();
-    const conversation = await conversationRepository.create("workspace-1");
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     const baseline = await messageRepository.create({
       conversationId: conversation.id,
       workspaceId: "workspace-1",
@@ -441,7 +434,7 @@ describe("chat history service ownership read surface", () => {
 
   it("exposes the operator display name on a human-agent reply so the visitor can see who answered", async () => {
     const { conversationRepository, messageRepository, service } = createService();
-    const conversation = await conversationRepository.create("workspace-1");
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     const baseline = await messageRepository.create({
       conversationId: conversation.id,
       workspaceId: "workspace-1",
@@ -478,7 +471,7 @@ describe("chat history service turn failure debug", () => {
 
   it("attaches turn-failure debug to the user message when includeTurnFailureDebug is set (dashboard)", async () => {
     const { conversationRepository, messageRepository, auditRepository, service } = createService();
-    const conversation = await conversationRepository.create("workspace-1");
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     const userMessage = await messageRepository.create({
       conversationId: conversation.id,
       workspaceId: "workspace-1",
@@ -513,7 +506,7 @@ describe("chat history service turn failure debug", () => {
 
   it("surfaces a genuine failure's error text the same way", async () => {
     const { conversationRepository, messageRepository, auditRepository, service } = createService();
-    const conversation = await conversationRepository.create("workspace-1");
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     const userMessage = await messageRepository.create({
       conversationId: conversation.id,
       workspaceId: "workspace-1",
@@ -545,7 +538,7 @@ describe("chat history service turn failure debug", () => {
 
   it("loads turn-failure debug only for user messages in the current window", async () => {
     const { conversationRepository, messageRepository, auditRepository, service } = createService();
-    const conversation = await conversationRepository.create("workspace-1");
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     const olderUserMessage = await messageRepository.create({
       conversationId: conversation.id,
       workspaceId: "workspace-1",
@@ -619,7 +612,7 @@ describe("chat history service turn failure debug", () => {
 
   it("omits turn-failure debug when includeTurnFailureDebug is unset (public surface)", async () => {
     const { conversationRepository, messageRepository, auditRepository, service } = createService();
-    const conversation = await conversationRepository.create("workspace-1");
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     const userMessage = await messageRepository.create({
       conversationId: conversation.id,
       workspaceId: "workspace-1",
@@ -646,7 +639,7 @@ describe("chat history service turn failure debug", () => {
 
   it("does not attach turn-failure debug once the turn produced an assistant message", async () => {
     const { conversationRepository, messageRepository, auditRepository, service } = createService();
-    const conversation = await conversationRepository.create("workspace-1");
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     const userMessage = await messageRepository.create({
       conversationId: conversation.id,
       workspaceId: "workspace-1",
@@ -697,7 +690,7 @@ describe("chat history service", () => {
       undefined,
       coverageReader,
     );
-    const conversation = await conversationRepository.create("workspace-1");
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     const user = await messageRepository.create({
       workspaceId: "workspace-1",
       conversationId: conversation.id,
@@ -795,7 +788,7 @@ describe("chat history service", () => {
       conversationRepository, messageRepository, auditRepository, historyItemsRepository,
       undefined, undefined, undefined, coverageReader,
     );
-    const conversation = await conversationRepository.create("workspace-1");
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     const user = await messageRepository.create({ workspaceId: "workspace-1", conversationId: conversation.id, role: "user", content: "Question" });
     const assistant = await messageRepository.create({ workspaceId: "workspace-1", conversationId: conversation.id, role: "assistant", content: "Answer" });
     await auditRepository.create({ workspaceId: "workspace-1", eventType: "chat.answer", eventStatus: "success", metadata: { conversationId: conversation.id, userMessageId: user.id, assistantMessageId: assistant.id } });
@@ -819,7 +812,7 @@ describe("chat history service", () => {
   it("replays activity trace metadata for assistant turns", async () => {
     const { conversationRepository, messageRepository, auditRepository, service } = createService();
 
-    const conversation = await conversationRepository.create("workspace-1");
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     await messageRepository.create({
       conversationId: conversation.id,
       workspaceId: "workspace-1",
@@ -981,7 +974,7 @@ describe("chat history service", () => {
   it("prefers a persisted turn-trace envelope over synthesizing one", async () => {
     const { conversationRepository, messageRepository, auditRepository, service } = createService();
 
-    const conversation = await conversationRepository.create("workspace-1");
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     await messageRepository.create({
       conversationId: conversation.id,
       workspaceId: "workspace-1",
@@ -1033,7 +1026,7 @@ describe("chat history service", () => {
   it("reconstructs an activity trace for historical assistant turns that only stored retrieval diagnostics", async () => {
     const { conversationRepository, messageRepository, auditRepository, service } = createService();
 
-    const conversation = await conversationRepository.create("workspace-1");
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     await messageRepository.create({
       conversationId: conversation.id,
       workspaceId: "workspace-1",
@@ -1144,7 +1137,7 @@ describe("chat history service", () => {
   it("surfaces citations and the debug envelope for suspended (action-required) turns", async () => {
     const { conversationRepository, messageRepository, auditRepository, service } = createService();
 
-    const conversation = await conversationRepository.create("workspace-1");
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     await messageRepository.create({
       conversationId: conversation.id,
       workspaceId: "workspace-1",
@@ -1194,7 +1187,7 @@ describe("chat history service", () => {
   it("preserves provider-defined suggestion kinds and action payloads on reload", async () => {
     const { conversationRepository, messageRepository, auditRepository, service } = createService();
 
-    const conversation = await conversationRepository.create("workspace-1");
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     await messageRepository.create({
       conversationId: conversation.id,
       workspaceId: "workspace-1",
@@ -1255,7 +1248,7 @@ describe("chat history service", () => {
   it("drops malformed action payloads while keeping the rest of the suggestion", async () => {
     const { conversationRepository, messageRepository, auditRepository, service } = createService();
 
-    const conversation = await conversationRepository.create("workspace-1");
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     await messageRepository.create({
       conversationId: conversation.id,
       workspaceId: "workspace-1",
@@ -1301,7 +1294,7 @@ describe("chat history service", () => {
   it("replays backfilled message skill outcome for historical skill intake metadata", async () => {
     const { conversationRepository, messageRepository, auditRepository, service } = createService();
 
-    const conversation = await conversationRepository.create("workspace-1");
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     await messageRepository.create({
       conversationId: conversation.id,
       workspaceId: "workspace-1",
@@ -1349,7 +1342,7 @@ describe("chat history service", () => {
   it("ignores skill outcome metadata with invalid statuses", async () => {
     const { conversationRepository, messageRepository, auditRepository, service } = createService();
 
-    const conversation = await conversationRepository.create("workspace-1");
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     await messageRepository.create({
       conversationId: conversation.id,
       workspaceId: "workspace-1",
@@ -1390,7 +1383,7 @@ describe("chat history service", () => {
   it("uses unknown instead of status when legacy skill intake has no outcome", async () => {
     const { conversationRepository, messageRepository, auditRepository, service } = createService();
 
-    const conversation = await conversationRepository.create("workspace-1");
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     await messageRepository.create({
       conversationId: conversation.id,
       workspaceId: "workspace-1",
@@ -1432,7 +1425,7 @@ describe("chat history service", () => {
   it("normalizes legacy stored suggestions without kind as deeper suggestions", async () => {
     const { conversationRepository, messageRepository, auditRepository, service } = createService();
 
-    const conversation = await conversationRepository.create("workspace-1");
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     await messageRepository.create({
       conversationId: conversation.id,
       workspaceId: "workspace-1",
@@ -1485,7 +1478,7 @@ describe("chat history service", () => {
 
   it("lists mixed history items entries ordered by newest activity", async () => {
     const { conversationRepository, messageRepository, auditRepository, service } = createService();
-    const olderConversation = await conversationRepository.create("workspace-1");
+    const olderConversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     olderConversation.updatedAt = new Date("2026-04-20T10:00:00.000Z");
     olderConversation.createdAt = new Date("2026-04-20T09:00:00.000Z");
     await messageRepository.create({
@@ -1543,7 +1536,7 @@ describe("chat history service", () => {
     });
     searchEvent.createdAt = new Date("2026-04-21T10:00:00.000Z");
 
-    const newestConversation = await conversationRepository.create("workspace-1");
+    const newestConversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     newestConversation.updatedAt = new Date("2026-04-22T10:00:00.000Z");
     await messageRepository.create({
       conversationId: newestConversation.id,
@@ -1594,8 +1587,8 @@ describe("chat history service", () => {
       historyItemsRepository,
       contactProvider,
     );
-    const matchingConversation = await conversationRepository.create("workspace-1", "agent-1");
-    await conversationRepository.create("workspace-1", "agent-2");
+    const matchingConversation = await conversationRepository.create({ workspaceId: "workspace-1", agentId: "agent-1" });
+    await conversationRepository.create({ workspaceId: "workspace-1", agentId: "agent-2" });
 
     // No filter: contacts are fetched as usual.
     await service.listItems("workspace-1", { limit: 50, offset: 0 });
@@ -1611,7 +1604,7 @@ describe("chat history service", () => {
 
   it("previews the visitor's first user message, not the newest agent reply", async () => {
     const { conversationRepository, messageRepository, service } = createService();
-    const conversation = await conversationRepository.create("workspace-1");
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     conversation.updatedAt = new Date("2026-04-24T10:00:00.000Z");
     await messageRepository.create({
       conversationId: conversation.id,
@@ -1645,7 +1638,7 @@ describe("chat history service", () => {
 
   it("falls back to the newest message preview when a conversation has no user message yet", async () => {
     const { conversationRepository, messageRepository, service } = createService();
-    const conversation = await conversationRepository.create("workspace-1");
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     conversation.updatedAt = new Date("2026-04-24T11:00:00.000Z");
     await messageRepository.create({
       conversationId: conversation.id,
@@ -1673,7 +1666,7 @@ describe("chat history service", () => {
 
   it("skips a whitespace-only first user message and previews the next meaningful one", async () => {
     const { conversationRepository, messageRepository, service } = createService();
-    const conversation = await conversationRepository.create("workspace-1");
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     conversation.updatedAt = new Date("2026-04-25T10:00:00.000Z");
     await messageRepository.create({
       conversationId: conversation.id,
@@ -1713,7 +1706,7 @@ describe("chat history service", () => {
 
   it("keeps document searches out of paginated conversation history", async () => {
     const { conversationRepository, auditRepository, service } = createService();
-    const first = await conversationRepository.create("workspace-1");
+    const first = await conversationRepository.create({ workspaceId: "workspace-1" });
     first.updatedAt = new Date("2026-04-23T10:00:00.000Z");
     const second = await auditRepository.create({
       workspaceId: "workspace-1",
@@ -1727,7 +1720,7 @@ describe("chat history service", () => {
       },
     });
     second.createdAt = new Date("2026-04-22T10:00:00.000Z");
-    const third = await conversationRepository.create("workspace-1");
+    const third = await conversationRepository.create({ workspaceId: "workspace-1" });
     third.updatedAt = new Date("2026-04-21T10:00:00.000Z");
 
     const itemsPage = await service.listItems("workspace-1", { limit: 1, offset: 1 });
@@ -1755,7 +1748,7 @@ describe("chat history service", () => {
       contactHistoryProvider,
     );
 
-    const conversation = await conversationRepository.create("workspace-1");
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     conversation.updatedAt = new Date("2026-04-21T10:00:00.000Z");
     const user = await messageRepository.create({
       conversationId: conversation.id,

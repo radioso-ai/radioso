@@ -74,7 +74,7 @@ describeIntegration("ConversationRepository (Postgres)", () => {
   const seedOrdered = async () => {
     const ids: string[] = [];
     for (let i = 0; i < 3; i += 1) {
-      const conv = await repository.create(workspaceId);
+      const conv = await repository.create({ workspaceId });
       // newest updated_at last; pagination is updated_at DESC.
       await database.query(`UPDATE conversations SET updated_at = $2::timestamptz, created_at = $2::timestamptz WHERE id = $1`, [
         conv.id,
@@ -86,23 +86,19 @@ describeIntegration("ConversationRepository (Postgres)", () => {
   };
 
   it("creates and finds workspace-scoped conversations", async () => {
-    const conv = await repository.create(workspaceId);
+    const conv = await repository.create({ workspaceId });
     expect((await repository.findByIdAndWorkspaceId(conv.id, workspaceId))?.id).toBe(conv.id);
     expect(await repository.findByIdAndWorkspaceId(conv.id, randomUUID())).toBeNull();
   });
 
   it("defaults conversations to production and preserves the private operator-test purpose", async () => {
-    const production = await repository.create(workspaceId);
-    const operatorTest = await repository.create(
+    const production = await repository.create({ workspaceId });
+    const operatorTest = await repository.create({
       workspaceId,
       agentId,
-      "authenticated_chat",
-      null,
-      null,
-      null,
-      null,
-      { purpose: "operator_test" },
-    );
+      sourceChannel: "authenticated_chat",
+      purpose: "operator_test",
+    });
 
     expect(production.purpose).toBe("production");
     expect((await repository.findByIdAndWorkspaceId(operatorTest.id, workspaceId))?.purpose)
@@ -111,16 +107,13 @@ describeIntegration("ConversationRepository (Postgres)", () => {
 
   it("never exposes an operator-test conversation through anonymous-session history lookups", async () => {
     const anonymousSessionId = `operator-test-${randomUUID()}`;
-    const operatorTest = await repository.create(
+    const operatorTest = await repository.create({
       workspaceId,
       agentId,
-      "authenticated_chat",
+      sourceChannel: "authenticated_chat",
       anonymousSessionId,
-      null,
-      null,
-      null,
-      { purpose: "operator_test" },
-    );
+      purpose: "operator_test",
+    });
 
     expect(await repository.findByIdAndAnonymousSession(
       operatorTest.id,
@@ -133,7 +126,7 @@ describeIntegration("ConversationRepository (Postgres)", () => {
   });
 
   it("persists an immutable agent revision and atomically chooses one concurrent legacy binding", async () => {
-    const conversation = await repository.create(workspaceId, agentId);
+    const conversation = await repository.create({ workspaceId, agentId });
     const [left, right] = await Promise.all([
       repository.bindAgentRevision({
         conversationId: conversation.id,
@@ -162,19 +155,19 @@ describeIntegration("ConversationRepository (Postgres)", () => {
       channel: { id: "D1", type: "im" as const },
       user: { id: "U1", displayName: "Dana" },
     };
-    const withCtx = await repository.create(workspaceId, null, "slack", null, null, channelContext);
+    const withCtx = await repository.create({ workspaceId, sourceChannel: "slack", channelContext });
     expect((await repository.findByIdAndWorkspaceId(withCtx.id, workspaceId))?.channelContext).toEqual(channelContext);
 
-    const without = await repository.create(workspaceId);
+    const without = await repository.create({ workspaceId });
     expect((await repository.findByIdAndWorkspaceId(without.id, workspaceId))?.channelContext).toBeNull();
   });
 
   it("binds verified customer ids once without overwriting an existing binding", async () => {
-    const createdBound = await repository.create(workspaceId, null, null, null, null, null, "customer-created");
+    const createdBound = await repository.create({ workspaceId, verifiedCustomerId: "customer-created" });
     expect((await repository.findByIdAndWorkspaceId(createdBound.id, workspaceId))?.verifiedCustomerId)
       .toBe("customer-created");
 
-    const conversation = await repository.create(workspaceId);
+    const conversation = await repository.create({ workspaceId });
     await repository.setVerifiedCustomerId(conversation.id, workspaceId, "customer-first");
     await repository.setVerifiedCustomerId(conversation.id, workspaceId, "customer-second");
 
@@ -183,7 +176,7 @@ describeIntegration("ConversationRepository (Postgres)", () => {
   });
 
   it("sets a title, is idempotent when unchanged, and never bumps updated_at", async () => {
-    const conversation = await repository.create(workspaceId);
+    const conversation = await repository.create({ workspaceId });
     expect((await repository.findByIdAndWorkspaceId(conversation.id, workspaceId))?.title).toBeNull();
 
     await repository.setTitle(conversation.id, workspaceId, "Refund for order 4821");
@@ -222,11 +215,11 @@ describeIntegration("ConversationRepository (Postgres)", () => {
   it("excludes operator-test conversations by default and returns only them under operator_test scope", async () => {
     // Five conversations: two real, two interactive workbench tests, and one
     // synthetic Ray probe that must stay out of the workbench session list.
-    const embed = await repository.create(workspaceId, null, "website_embed");
-    const nullSource = await repository.create(workspaceId);
-    const testChat = await repository.create(workspaceId, null, "authenticated_chat");
-    const replay = await repository.create(workspaceId, null, "workbench_replay");
-    const rayProbe = await repository.create(workspaceId, null, "operator_copilot_probe");
+    const embed = await repository.create({ workspaceId, sourceChannel: "website_embed" });
+    const nullSource = await repository.create({ workspaceId });
+    const testChat = await repository.create({ workspaceId, sourceChannel: "authenticated_chat" });
+    const replay = await repository.create({ workspaceId, sourceChannel: "workbench_replay" });
+    const rayProbe = await repository.create({ workspaceId, sourceChannel: "operator_copilot_probe" });
 
     const idsOf = (result: Awaited<ReturnType<typeof repository.listPageByWorkspaceId>>) =>
       new Set(result.conversations.map((c) => c.id));

@@ -8,7 +8,7 @@ import type { ConversationSummaryStore } from "../contracts/conversationSummary.
 // new conversation with copied turns. It must never learn the full repository surface.
 export interface ForkConversationRepositoryPort {
   findByIdAndWorkspaceId(conversationId: string, workspaceId: string): Promise<ConversationRecord | null>;
-  create(workspaceId: string, agentId?: string | null, sourceChannel?: string | null): Promise<ConversationRecord>;
+  create(input: { workspaceId: string; agentId?: string | null; sourceChannel?: string | null }): Promise<ConversationRecord>;
 }
 
 export interface ForkMessageRepositoryPort {
@@ -73,7 +73,11 @@ export class ConversationForkService {
     }
 
     const messages = await this.messageRepository.listByConversationId(workspaceId, sourceConversationId);
-    const fork = await this.conversationRepository.create(workspaceId, source.agentId, TEST_SESSION_SOURCE_CHANNEL);
+    const fork = await this.conversationRepository.create({
+      workspaceId,
+      agentId: source.agentId,
+      sourceChannel: TEST_SESSION_SOURCE_CHANNEL,
+    });
 
     // Resume mid-routine: the source's CURRENT (post-turn) routine position is exactly
     // what a forward-continuing test session needs. (Eval *replay* deliberately does NOT

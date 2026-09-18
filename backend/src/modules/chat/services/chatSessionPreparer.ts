@@ -392,20 +392,18 @@ export class ChatSessionPreparer {
           : Promise.resolve(undefined),
     ]);
     let persistedConversation =
-      conversation ?? await this.conversationRepository.create(
-        input.workspaceId,
-        agent.id,
-        input.sourceChannel ?? null,
-        chatSessionId,
-        input.sourceOrigin ?? null,
-        input.channelContext ?? null,
-        input.verifiedCustomerId ?? null,
-        {
-          entryPageUrl: input.pageContext?.pageUrl ?? null,
-          ...(revisionResolved.revisionId ? { agentRevisionId: revisionResolved.revisionId } : {}),
-          ...(trustedTestRunner ? { purpose: "operator_test" as const } : {}),
-        },
-      );
+      conversation ?? await this.conversationRepository.create({
+        workspaceId: input.workspaceId,
+        agentId: agent.id,
+        sourceChannel: input.sourceChannel ?? null,
+        anonymousSessionId: chatSessionId,
+        sourceOrigin: input.sourceOrigin ?? null,
+        channelContext: input.channelContext ?? null,
+        verifiedCustomerId: input.verifiedCustomerId ?? null,
+        entryPageUrl: input.pageContext?.pageUrl ?? null,
+        ...(revisionResolved.revisionId ? { agentRevisionId: revisionResolved.revisionId } : {}),
+        ...(trustedTestRunner ? { purpose: "operator_test" as const } : {}),
+      });
     if (conversation && !conversation.agentRevisionId && revisionResolved.revisionId) {
       if (!this.conversationRepository.bindAgentRevision) {
         throw conversationRevisionBindingUnavailable();

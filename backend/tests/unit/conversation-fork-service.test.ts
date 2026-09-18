@@ -83,7 +83,7 @@ describe("ConversationForkService", () => {
 
     const result = await service.forkForTest(workspaceId, sourceConversationId);
 
-    expect(createConversation).toHaveBeenCalledWith(workspaceId, sourceAgentId, "authenticated_chat");
+    expect(createConversation).toHaveBeenCalledWith({ workspaceId, agentId: sourceAgentId, sourceChannel: "authenticated_chat" });
     expect(result).toEqual({ conversationId: forkConversationId });
   });
 

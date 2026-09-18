@@ -133,6 +133,7 @@ import type { DocumentProcessingJobOptions } from "../../src/modules/documents/c
 import type {
   ConversationRecord,
   ConversationRepositoryPort,
+  CreateConversationInput,
   GetOrCreateConversationResult,
 } from "../../src/db/repositories/conversationRepository.js";
 import type { ConversationSourceScope } from "../../src/shared/domain/conversationSource.js";
@@ -3737,7 +3738,7 @@ export const publishedRevisionResolverFor = (agent: AgentRecord): AgentRevisionR
 /**
  * Explicit release fixture for chat service suites which create several agents.
  * The revision id is deterministic so a test can pin an existing conversation to
- * the same immutable release through `conversationRepository.create(..., { agentRevisionId })`.
+ * the same immutable release through `conversationRepository.create({ ..., agentRevisionId })`.
  */
 export const publishedRevisionIdFor = (agentId: string): string => `test-published-revision:${agentId}`;
 
@@ -3812,39 +3813,30 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
     if (existing) {
       return { record: existing, created: false };
     }
-    return { record: await this.create(
-      input.workspaceId,
-      input.agentId,
-      input.sourceChannel,
-      input.anonymousSessionId,
-      input.sourceOrigin ?? null,
-    ), created: true };
+    return { record: await this.create({
+      workspaceId: input.workspaceId,
+      agentId: input.agentId,
+      sourceChannel: input.sourceChannel,
+      anonymousSessionId: input.anonymousSessionId,
+      sourceOrigin: input.sourceOrigin ?? null,
+    }), created: true };
   }
 
-  async create(
-    workspaceId: string,
-    agentId: string | null = null,
-    sourceChannel: string | null = null,
-    anonymousSessionId: string | null = null,
-    sourceOrigin: string | null = null,
-    channelContext: ConversationRecord["channelContext"] = null,
-    verifiedCustomerId: string | null = null,
-    options?: { entryPageUrl?: string | null; agentRevisionId?: string | null; purpose?: ConversationRecord["purpose"] },
-  ): Promise<ConversationRecord> {
+  async create(input: CreateConversationInput): Promise<ConversationRecord> {
     const record: ConversationRecord = {
       id: randomUUID(),
-      workspaceId,
-      agentId,
-      agentRevisionId: options?.agentRevisionId ?? null,
-      purpose: options?.purpose ?? "production",
+      workspaceId: input.workspaceId,
+      agentId: input.agentId ?? null,
+      agentRevisionId: input.agentRevisionId ?? null,
+      purpose: input.purpose ?? "production",
       agentName: null,
       agentInternalName: null,
-      sourceChannel,
-      sourceOrigin,
-      channelContext,
-      anonymousSessionId,
-      verifiedCustomerId,
-      entryPageUrl: options?.entryPageUrl ?? null,
+      sourceChannel: input.sourceChannel ?? null,
+      sourceOrigin: input.sourceOrigin ?? null,
+      channelContext: input.channelContext ?? null,
+      anonymousSessionId: input.anonymousSessionId ?? null,
+      verifiedCustomerId: input.verifiedCustomerId ?? null,
+      entryPageUrl: input.entryPageUrl ?? null,
       title: null,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -3877,16 +3869,16 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
     entryPageUrl?: string | null;
     content: string;
   }): Promise<{ conversation: ConversationRecord; assistantMessage: MessageRecord }> {
-    const conversation = await this.create(
-      input.workspaceId,
-      input.agentId ?? null,
-      input.sourceChannel ?? null,
-      input.anonymousSessionId ?? null,
-      input.sourceOrigin ?? null,
-      input.channelContext ?? null,
-      input.verifiedCustomerId ?? null,
-      { entryPageUrl: input.entryPageUrl ?? null },
-    );
+    const conversation = await this.create({
+      workspaceId: input.workspaceId,
+      agentId: input.agentId ?? null,
+      sourceChannel: input.sourceChannel ?? null,
+      anonymousSessionId: input.anonymousSessionId ?? null,
+      sourceOrigin: input.sourceOrigin ?? null,
+      channelContext: input.channelContext ?? null,
+      verifiedCustomerId: input.verifiedCustomerId ?? null,
+      entryPageUrl: input.entryPageUrl ?? null,
+    });
     const assistantMessage: MessageRecord = {
       id: randomUUID(),
       conversationId: conversation.id,

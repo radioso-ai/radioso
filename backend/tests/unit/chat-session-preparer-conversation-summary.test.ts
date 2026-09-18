@@ -203,7 +203,7 @@ describe("ChatSessionPreparer rolling conversation summary (#866)", () => {
     const messageRepository = new InMemoryMessageRepository();
     const agentRepository = new InMemoryAgentRepository();
     const agent = await agentRepository.create("ws-1", { name: "Bot" });
-    const conversation = await conversationRepository.create("ws-1", agent.id);
+    const conversation = await conversationRepository.create({ workspaceId: "ws-1", agentId: agent.id });
     await messageRepository.create({
       conversationId: conversation.id,
       workspaceId: "ws-1",
@@ -263,10 +263,12 @@ describe("ChatSessionPreparer rolling conversation summary (#866)", () => {
       createdAt: new Date(),
       publishedAt: null,
     };
-    const privateConversation = await conversationRepository.create(
-      "ws-1", agent.id, null, null, null, null, null,
-      { agentRevisionId: candidateRevision.id, purpose: "operator_test" },
-    );
+    const privateConversation = await conversationRepository.create({
+      workspaceId: "ws-1",
+      agentId: agent.id,
+      agentRevisionId: candidateRevision.id,
+      purpose: "operator_test",
+    });
     const preparer = new ChatSessionPreparer(
       conversationRepository, messageRepository, retrievalTurn, createAuditService(), undefined,
       { resolve: async () => agent }, undefined, undefined, undefined, undefined,

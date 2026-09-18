@@ -48,6 +48,19 @@ export interface GetOrCreateConversationResult {
   created: boolean;
 }
 
+export interface CreateConversationInput {
+  workspaceId: string;
+  agentId?: string | null;
+  sourceChannel?: string | null;
+  anonymousSessionId?: string | null;
+  sourceOrigin?: string | null;
+  channelContext?: ConversationChannelContext | null;
+  verifiedCustomerId?: string | null;
+  entryPageUrl?: string | null;
+  agentRevisionId?: string | null;
+  purpose?: ConversationRecord["purpose"];
+}
+
 export interface ConversationRepositoryPort {
   // MCP converse requires this capability, while replay/eval repository doubles do not.
   // AgentConverseService fails closed when an application adapter omits it.
@@ -58,16 +71,7 @@ export interface ConversationRepositoryPort {
     anonymousSessionId: string;
     sourceOrigin?: string | null;
   }): Promise<GetOrCreateConversationResult>;
-  create(
-    workspaceId: string,
-    agentId?: string | null,
-    sourceChannel?: string | null,
-    anonymousSessionId?: string | null,
-    sourceOrigin?: string | null,
-    channelContext?: ConversationChannelContext | null,
-    verifiedCustomerId?: string | null,
-    options?: { entryPageUrl?: string | null; agentRevisionId?: string | null; purpose?: ConversationRecord["purpose"] },
-  ): Promise<ConversationRecord>;
+  create(input: CreateConversationInput): Promise<ConversationRecord>;
   createWithInitialAssistantMessage(input: {
     workspaceId: string;
     agentId?: string | null;
@@ -277,30 +281,21 @@ export class ConversationRepository implements ConversationRepositoryPort {
     });
   }
 
-  async create(
-    workspaceId: string,
-    agentId: string | null = null,
-    sourceChannel: string | null = null,
-    anonymousSessionId: string | null = null,
-    sourceOrigin: string | null = null,
-    channelContext: ConversationChannelContext | null = null,
-    verifiedCustomerId: string | null = null,
-    options?: { entryPageUrl?: string | null; agentRevisionId?: string | null; purpose?: ConversationRecord["purpose"] },
-  ): Promise<ConversationRecord> {
+  async create(input: CreateConversationInput): Promise<ConversationRecord> {
     const row = await this.db
       .insertInto("conversations")
       .values({
         id: randomUUID(),
-        workspace_id: workspaceId,
-        agent_id: agentId,
-        agent_revision_id: options?.agentRevisionId ?? null,
-        purpose: options?.purpose ?? "production",
-        source_channel: sourceChannel,
-        source_origin: sourceOrigin,
-        channel_context: channelContext ? toJsonb(channelContext) : null,
-        anonymous_session_id: anonymousSessionId,
-        verified_customer_id: verifiedCustomerId,
-        entry_page_url: options?.entryPageUrl ?? null,
+        workspace_id: input.workspaceId,
+        agent_id: input.agentId ?? null,
+        agent_revision_id: input.agentRevisionId ?? null,
+        purpose: input.purpose ?? "production",
+        source_channel: input.sourceChannel ?? null,
+        source_origin: input.sourceOrigin ?? null,
+        channel_context: input.channelContext ? toJsonb(input.channelContext) : null,
+        anonymous_session_id: input.anonymousSessionId ?? null,
+        verified_customer_id: input.verifiedCustomerId ?? null,
+        entry_page_url: input.entryPageUrl ?? null,
       })
       .returning(conversationColumns)
       .executeTakeFirstOrThrow();

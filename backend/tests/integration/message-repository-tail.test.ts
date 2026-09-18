@@ -65,7 +65,7 @@ describeIfDatabase("MessageRepository forward tail cursor", () => {
     });
     accountIds.push(account.id);
     const workspace = await workspaces.create(account.id, "Tail Test Workspace");
-    const conversation = await conversations.create(workspace.id);
+    const conversation = await conversations.create({ workspaceId: workspace.id });
     return { workspace, conversation };
   };
 

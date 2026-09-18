@@ -135,7 +135,7 @@ describe("ChatSessionPreparer visitor resolution (spec 1277)", () => {
     );
   });
 
-  it("derives observed facts from requestContext and persists requestContext + entryReferrer verbatim", async () => {
+  it("derives observed facts from requestContext (language parsed to its primary tag) and persists requestContext + entryReferrer verbatim", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const agentRepository = new InMemoryAgentRepository();
@@ -163,7 +163,7 @@ describe("ChatSessionPreparer visitor resolution (spec 1277)", () => {
 
     expect(visitorResolver.resolveForConversation).toHaveBeenCalledWith(
       expect.objectContaining({
-        observed: { country: "DE", language: "de-DE,de;q=0.9", userAgent: "TestAgent/1.0" },
+        observed: { country: "DE", language: "de", userAgent: "TestAgent/1.0" },
       }),
     );
     expect(session.conversation.requestContext).toEqual(requestContext);

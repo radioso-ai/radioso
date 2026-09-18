@@ -1,5 +1,7 @@
 import type { ConversationRequestContext } from "@radioso/conversation-contract";
 
+import { primaryLanguageTag } from "../../shared/domain/acceptLanguage.js";
+
 /**
  * FR-031: the narrow shape `visitor_request` ever exposes. `clientIp`, `userAgent`, and
  * `observedVia` on `ConversationRequestContext` — and the raw `acceptLanguage` string —
@@ -16,35 +18,6 @@ export interface VisitorRequestFacts {
 
 /** Built-in name for the request-sourced context variable (registry.ts, FR-030). */
 export const VISITOR_REQUEST_VARIABLE_NAME = "visitor_request";
-
-// BCP 47 primary subtags are 1-8 ASCII letters; this is a structural format check, not a
-// language allowlist.
-const PRIMARY_LANGUAGE_SUBTAG_PATTERN = /^[a-zA-Z]{1,8}$/;
-
-/**
- * The primary tag of an `Accept-Language` header value: the first language-range, its
- * quality/`;`-parameters stripped, then only its primary subtag (before the first `-`).
- * `"de-DE,de;q=0.9"` -> `"de"`. Structural parsing only; a malformed or empty header
- * (or a primary subtag that is not 1-8 letters) resolves to `null` rather than throwing.
- */
-export const primaryLanguageTag = (acceptLanguage: string | null | undefined): string | null => {
-  if (typeof acceptLanguage !== "string") {
-    return null;
-  }
-  const firstRange = acceptLanguage.split(",")[0]?.trim();
-  if (!firstRange) {
-    return null;
-  }
-  const withoutQuality = firstRange.split(";")[0]?.trim();
-  if (!withoutQuality) {
-    return null;
-  }
-  const primary = withoutQuality.split("-")[0]?.trim();
-  if (!primary || !PRIMARY_LANGUAGE_SUBTAG_PATTERN.test(primary)) {
-    return null;
-  }
-  return primary.toLowerCase();
-};
 
 interface ProjectVisitorRequestFactsInput {
   requestContext: ConversationRequestContext | null | undefined;

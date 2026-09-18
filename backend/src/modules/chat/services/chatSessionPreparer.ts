@@ -8,6 +8,7 @@ import type {
 } from "@radioso/conversation-contract";
 
 import { AppError, notFound } from "../../../shared/domain/errors.js";
+import { primaryLanguageTag } from "../../../shared/domain/acceptLanguage.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { toConversationTrace, toPreparedStagedContext } from "./conversationContractMappers.js";
 import type { ConversationRecord, ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
@@ -1269,7 +1270,7 @@ export class ChatSessionPreparer {
       verifiedCustomerId: input.verifiedCustomerId,
       observed: {
         country: input.requestContext?.country ?? null,
-        language: input.requestContext?.acceptLanguage ?? null,
+        language: primaryLanguageTag(input.requestContext?.acceptLanguage),
         userAgent: input.requestContext?.userAgent ?? null,
       },
     });

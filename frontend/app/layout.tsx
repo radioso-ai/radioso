@@ -6,7 +6,6 @@ import { FrontendErrorBoundary } from '@/components/frontend-error-boundary'
 import { ProductAnalyticsProvider } from '@/components/product-analytics-provider'
 import { AuthProvider } from '@/lib/auth-context'
 import { WorkspaceProvider } from '@/lib/workspace-context'
-import { ChatProvider } from '@/lib/chat-context'
 import './globals.css'
 
 const fraunces = Fraunces({
@@ -45,7 +44,7 @@ export default function RootLayout({
           <FrontendErrorBoundary>
             <AuthProvider>
               <WorkspaceProvider>
-                <ChatProvider>{children}</ChatProvider>
+                {children}
               </WorkspaceProvider>
             </AuthProvider>
           </FrontendErrorBoundary>

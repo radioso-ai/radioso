@@ -187,6 +187,12 @@ export const agentRevisionsApi = {
     expectedDraftGeneration?: number
     /** Omitted means the backend default, `suppressed`. */
     skillEffects?: 'suppressed' | 'allowed'
+    /**
+     * Single mode only: the side starts with this conversation's user and assistant
+     * thread as its `history` and resumes any routine the source was mid-way through.
+     * The source conversation is left untouched.
+     */
+    seedConversationId?: string
   }, signal?: AbortSignal): Promise<TestExecution> {
     return request<TestExecution>(`/agents/${agentId}/test-executions`, {
       method: 'POST',

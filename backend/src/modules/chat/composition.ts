@@ -116,7 +116,7 @@ export { ProbeConversationReader } from "./services/probeConversationReader.js";
 export { ReplyDraftRunner } from "./services/replyDraftRunner.js";
 // Audience Pulse receives conversation history only through this Chat-owned read port.
 export { PostgresAudiencePulseHistorySource } from "./audiencePulseHistorySource.js";
-export { ConversationForkService } from "./services/conversationForkService.js";
+export { ConversationTestExecutionSeedSource } from "./services/conversationTestExecutionSeedSource.js";
 export {
   ChainedPublicChatActionAdvertiser,
   NoopPublicChatActionAdvertiser,

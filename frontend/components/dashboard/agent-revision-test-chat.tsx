@@ -59,6 +59,7 @@ import {
   SelectTrigger,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   agentRevisionsApi,
   type AgentRevisionDetail,
@@ -84,6 +85,7 @@ import { validateTestValueInputs } from "@/lib/agent-revision-test-values";
 import {
   assembleTestableRevisions,
   candidateIsTestable,
+  compareSelectionRepeatsRevision,
 } from "@/lib/agent-revision-testable-revisions";
 import { isAgentDraftDirty, saveAgentDraft } from "@/lib/agent-draft-save-port";
 import { DEFAULT_WEBSITE_EMBED_COPY } from "@/lib/embed-widget";
@@ -197,6 +199,9 @@ export function AgentRevisionTestChat({
   evalsHref,
   agentVersionsHref,
   actionsContainer,
+  titleContainer,
+  openExecutionId,
+  onOpenExecutionConsumed,
 }: {
   agentId: string;
   workspaceId: string;
@@ -204,6 +209,12 @@ export function AgentRevisionTestChat({
   evalsHref: string;
   agentVersionsHref: string;
   actionsContainer: HTMLElement | null;
+  /** Page-chrome slot beside the title; a single chat shows its conversation id there. */
+  titleContainer?: HTMLElement | null;
+  /** A saved execution to open on arrival (e.g. one seeded from a real conversation). */
+  openExecutionId?: string;
+  /** Called once the open command has been acted on, so the caller can drop it from the route. */
+  onOpenExecutionConsumed?: () => void;
 }) {
   const sessionKey = agentRevisionTestChatSessionKey(workspaceId, agentId);
   const cachedSession = readAgentRevisionTestChatSession(sessionKey);
@@ -250,6 +261,7 @@ export function AgentRevisionTestChat({
   const evalPollTimeout = useRef<number | null>(null);
   const executionPollTimeout = useRef<number | null>(null);
   const reopenedExecutionId = useRef<string | null>(null);
+  const consumedOpenExecutionId = useRef<string | null>(null);
   const activeEvalRunId = useRef<string | null>(cachedSession?.evalRun?.id ?? null);
   const evalRequestGeneration = useRef(0);
   const loadRequestGeneration = useRef(0);
@@ -636,7 +648,8 @@ export function AgentRevisionTestChat({
     if (
       expectedDraftGeneration === undefined ||
       (nextMode === "single" && nextSelected.length !== 1) ||
-      (nextMode === "compare" && nextSelected.length !== 2)
+      (nextMode === "compare" && nextSelected.length !== 2) ||
+      compareSelectionRepeatsRevision(nextMode, nextSelected)
     )
       return null;
     // Starting another private chat with the same immutable inputs is
@@ -699,6 +712,7 @@ export function AgentRevisionTestChat({
       !selected.length ||
       execution ||
       isStarting ||
+      openExecutionId ||
       isAgentDraftDirty(agentId)
     ) return;
     const key = `${state.draft.generation}:${mode}:${selected.join(",")}`;
@@ -706,7 +720,7 @@ export function AgentRevisionTestChat({
     proactiveStartKey.current = key;
     writeAgentRevisionTestChatSession(sessionKey, { proactiveStartKey: key });
     void startRef.current();
-  }, [agentId, execution, isStarting, loading, mode, selected, sessionKey, state]);
+  }, [agentId, execution, isStarting, loading, mode, openExecutionId, selected, sessionKey, state]);
 
   const changeMode = useCallback(
     (next: Mode) => {
@@ -1190,8 +1204,10 @@ export function AgentRevisionTestChat({
   );
 
   const reopenExecution = useCallback(
-    (saved: TestExecutionHistoryDetail) => {
+    (saved: TestExecutionHistoryDetail, notice?: string) => {
       clearChatExecution();
+      // A failure from the previous selection is not evidence about this test.
+      setError(null);
       setMode(saved.mode);
       setSelected(saved.sides.map((side) => side.revision.id));
       setRevisions((current) => {
@@ -1219,7 +1235,7 @@ export function AgentRevisionTestChat({
       setRestartNotice(
         saved.attempts.some((attempt) => attempt.state === "running")
           ? "This saved test has an in-progress attempt. Its recorded state is preserved while the service resolves it."
-          : "Reopened saved private test with its original immutable revisions and values.",
+          : (notice ?? "Reopened saved private test with its original immutable revisions and values."),
       );
       if (saved.attempts.some((attempt) => attempt.state === "running")) {
         const requestGeneration = testRequestGeneration.current;
@@ -1230,6 +1246,45 @@ export function AgentRevisionTestChat({
       setView("chat");
     },
     [clearChatExecution, pollReopenedExecution, sessionKey, setExecutionState],
+  );
+
+  // "Continue in test chat" arrives with the seeded execution's id in the route.
+  // It is opened through the same path as a saved test from history, once the
+  // revision list is loaded so the execution's revision resolves in the selector.
+  // The command is consumed exactly once per id; a background reload while the
+  // fetch is in flight must not cancel it, so only unmount invalidates it.
+  const reopenExecutionRef = useRef(reopenExecution);
+  reopenExecutionRef.current = reopenExecution;
+  const onOpenExecutionConsumedRef = useRef(onOpenExecutionConsumed);
+  onOpenExecutionConsumedRef.current = onOpenExecutionConsumed;
+  const hasState = state !== null;
+  useEffect(() => {
+    if (!openExecutionId || loading || !hasState) return;
+    if (consumedOpenExecutionId.current === openExecutionId) return;
+    consumedOpenExecutionId.current = openExecutionId;
+    const isCurrent = () => consumedOpenExecutionId.current === openExecutionId;
+    void agentRevisionsApi
+      .getTestExecution(agentId, openExecutionId)
+      .then((response) => {
+        if (!isCurrent()) return;
+        reopenExecutionRef.current(
+          response.execution,
+          "Continuing a copy of the conversation. The original is untouched.",
+        );
+      })
+      .catch((cause) => {
+        if (isCurrent())
+          setError(errorMessage(cause, "Unable to open this test conversation."));
+      })
+      .finally(() => {
+        if (isCurrent()) onOpenExecutionConsumedRef.current?.();
+      });
+  }, [agentId, hasState, loading, openExecutionId]);
+  useEffect(
+    () => () => {
+      consumedOpenExecutionId.current = null;
+    },
+    [],
   );
 
   if (loading)
@@ -1306,11 +1361,13 @@ export function AgentRevisionTestChat({
       </Select>
     );
   };
+  const repeatedCompareRevision = compareSelectionRepeatsRevision(mode, selected);
   const canPrepare =
     !isStarting &&
     !isSending &&
     selectedRevisions.length > 0 &&
     (mode !== "compare" || selectedRevisions.length === 2) &&
+    !repeatedCompareRevision &&
     !valueError &&
     selectedVariables !== null &&
     !selectedVariables.some(({ variable }) => !variable);
@@ -1400,9 +1457,16 @@ export function AgentRevisionTestChat({
   ) : (
     <div className="flex justify-end p-2">{actionMenu}</div>
   );
+  // A single chat has one conversation, so its id sits beside the page title;
+  // a comparison keeps one id per side.
+  const titleChip =
+    mode === "single" && view === "chat" && titleContainer
+      ? createPortal(conversationIdChip(0), titleContainer)
+      : null;
   return (
     <>
       {menu}
+      {titleChip}
       <div className="flex h-full min-h-0 flex-col gap-4 p-6">
         {view === "history" ? (
           <div
@@ -1459,6 +1523,14 @@ export function AgentRevisionTestChat({
                 evidence remains pinned to its revision.
               </p>
             ) : null}
+            {repeatedCompareRevision ? (
+              <p
+                role="status"
+                className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-100"
+              >
+                Pick two different versions to compare.
+              </p>
+            ) : null}
             <div
               className={
                 mode === "compare"
@@ -1493,15 +1565,22 @@ export function AgentRevisionTestChat({
                     <Label className="sr-only" htmlFor={`revision-selector-${index}`}>
                       Select version for {revisionTriggerLabel(revisions.find((revision) => revision.id === selected[index]))} test results
                     </Label>
-                    {conversationIdChip(index)}
+                    {mode === "compare" || !titleContainer ? conversationIdChip(index) : null}
                     {skillEffects === "allowed" ? (
-                      <Badge
-                        variant="outline"
-                        className="shrink-0 border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-                        title="Skill steps fire for real: emails, Slack messages, webhook skills, and external tools. Notify skills, action steps, handoffs, and completion export stay off in every private test. Retry re-fires a skill the first attempt already ran."
-                      >
-                        Skills run for real
-                      </Badge>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Badge
+                            variant="outline"
+                            tabIndex={0}
+                            className="shrink-0 cursor-default border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                          >
+                            Skills run for real
+                          </Badge>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom">
+                          Skill calls in this test reach real systems. Untick Run skills for real in the test chat actions menu to switch off.
+                        </TooltipContent>
+                      </Tooltip>
                     ) : null}
                     <div className={mode === "single" ? "ml-auto flex items-center gap-2" : "flex items-center gap-2"}>
                       {revisionSelector(index, "h-8 border-border/70 bg-background/70 px-2 text-sm shadow-none")}

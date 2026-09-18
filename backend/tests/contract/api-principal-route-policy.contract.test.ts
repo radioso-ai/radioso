@@ -151,6 +151,17 @@ describe("API principal route policy inventory", () => {
     expect(omissions).toEqual([]);
   });
 
+  it("keeps every policy entry attached to a mounted route, so a deleted route cannot leave an orphan grant", () => {
+    const { dependencies } = createRouteInventoryTestApp();
+    const mounted = new Set(discoveredAuthenticatedRoutes(dependencies).routes.map(({ key }) => key));
+
+    // `/api/v1/ee/*` is contributed by the enterprise application module, which the OSS
+    // composition under test never mounts; ee/packages/backend-module/src/index.test.ts covers it.
+    const enterpriseOnly = (key: string) => key.slice(key.indexOf(" ") + 1).startsWith("/api/v1/ee/");
+    const orphans = Object.keys(apiPrincipalRoutePolicy).filter((key) => !enterpriseOnly(key) && !mounted.has(key));
+    expect(orphans).toEqual([]);
+  });
+
   it("checks the inventory against the actual authenticated public mounts", async () => {
     const { app, dependencies } = createRouteInventoryTestApp();
     const mountedPaths = new Set([

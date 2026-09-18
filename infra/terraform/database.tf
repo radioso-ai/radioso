@@ -18,6 +18,11 @@ resource "random_password" "operator_mcp_internal_secret" {
   special = false
 }
 
+resource "random_password" "edge_proof_secret" {
+  length  = 48
+  special = false
+}
+
 resource "google_sql_database_instance" "postgres" {
   name                = "${local.resource_name_prefix}-db"
   database_version    = "POSTGRES_16"

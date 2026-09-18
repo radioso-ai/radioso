@@ -9,6 +9,14 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.2.1] - 2026-09-18
+
+### Fixed
+
+- **infra:** install stripe for enterprise backend image ([#1279](https://github.com/radioso-ai/radioso/pull/1279))
+
+[1.2.1]: https://github.com/radioso-ai/radioso/compare/v1.2.0...v1.2.1
+
 ## [1.2.0] - 2026-09-18
 
 ### Added

@@ -2480,7 +2480,7 @@ export const createTestDependencies = (overrides: {
     assertPublicWebsiteUrl: async () => {},
     websiteCrawlerLimits,
     agentWizardService,
-    visitorGeoResolver: createDefaultVisitorGeoResolver(env),
+    visitorGeoResolver: createDefaultVisitorGeoResolver(),
   };
 
   void connectorRegistry.initializeAll({

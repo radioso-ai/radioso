@@ -3,6 +3,7 @@ import { isEnvelopeTimestampFresh, signEnvelope, verifyEnvelope } from "./envelo
 const EDGE_FACTS_CONTEXT = "radioso:edge-facts:v1";
 const USER_AGENT_CAP = 512;
 const ACCEPT_LANGUAGE_CAP = 256;
+const FORWARDED_FOR_CAP = 1024;
 
 export const EDGE_FACTS_HEADERS = {
   marker: "x-radioso-edge",
@@ -11,8 +12,15 @@ export const EDGE_FACTS_HEADERS = {
   timestamp: "x-radioso-edge-timestamp",
 } as const;
 
+/**
+ * `forwardedFor` is the raw `X-Forwarded-For` header value as received by the
+ * frontend (not a resolved client address) — the frontend has no basis to
+ * decide which entry in that chain to trust, since it does not know the
+ * backend's `RADIOSO_TRUSTED_PROXY_HOPS`. The backend resolves the trusted
+ * suffix itself once it has this raw chain.
+ */
 export interface EdgeRequestFacts {
-  clientIp: string | null;
+  forwardedFor: string | null;
   geoHeaders: Record<string, string>;
   userAgent: string | null;
   acceptLanguage: string | null;
@@ -26,7 +34,7 @@ const capString = (value: string | null, maxLength: number): string | null =>
   value === null ? null : value.slice(0, maxLength);
 
 const normalizeEdgeRequestFacts = (facts: EdgeRequestFacts): EdgeRequestFacts => ({
-  clientIp: facts.clientIp,
+  forwardedFor: capString(facts.forwardedFor, FORWARDED_FOR_CAP),
   geoHeaders: { ...facts.geoHeaders },
   userAgent: capString(facts.userAgent, USER_AGENT_CAP),
   acceptLanguage: capString(facts.acceptLanguage, ACCEPT_LANGUAGE_CAP),
@@ -51,7 +59,7 @@ export const canonicalizeEdgeRequestFacts = (facts: EdgeRequestFacts): string =>
 
   return JSON.stringify({
     acceptLanguage: normalized.acceptLanguage,
-    clientIp: normalized.clientIp,
+    forwardedFor: normalized.forwardedFor,
     geoHeaders,
     userAgent: normalized.userAgent,
   });
@@ -67,12 +75,12 @@ const isStringRecord = (value: unknown): value is Record<string, string> =>
 const narrowEdgeRequestFacts = (value: unknown): EdgeRequestFacts | null => {
   if (typeof value !== "object" || value === null) return null;
   const candidate = value as Record<string, unknown>;
-  if (!isNullableString(candidate.clientIp)) return null;
+  if (!isNullableString(candidate.forwardedFor)) return null;
   if (!isNullableString(candidate.userAgent)) return null;
   if (!isNullableString(candidate.acceptLanguage)) return null;
   if (!isStringRecord(candidate.geoHeaders)) return null;
   return {
-    clientIp: candidate.clientIp,
+    forwardedFor: candidate.forwardedFor,
     userAgent: candidate.userAgent,
     acceptLanguage: candidate.acceptLanguage,
     geoHeaders: candidate.geoHeaders,

@@ -2,7 +2,6 @@ import {
   collectGeoHeaders,
   createEdgeFactsProof,
   EDGE_FACTS_HEADERS,
-  resolveTrustedForwardedAddress,
 } from '@radioso/edge-proof'
 
 import { getEdgeEnv } from './edge-env'
@@ -20,13 +19,11 @@ import { getEdgeEnv } from './edge-env'
  * exactly this string. Passing this proxy's own inbound request path here
  * would make every proof fail signature verification.
  *
- * `clientIp`: Next.js's `Request` exposes no socket address, so there is no
- * value this proxy itself observed the connection on. When `trustedProxyHops`
- * is 0, `resolveTrustedForwardedAddress` has nothing trustworthy to fall back
- * to and correctly returns `null` — this deliberately does NOT read the first
- * `X-Forwarded-For` entry, which is caller-controlled and unverifiable at
- * hops=0. The backend records a `null` clientIp for that case rather than
- * trusting an address neither end can verify.
+ * `forwardedFor`: the raw `X-Forwarded-For` header value as received by this
+ * proxy, unresolved. Next.js's `Request` exposes no socket address and this
+ * proxy has no basis to decide which entry in that chain is trustworthy —
+ * only the backend knows its own `RADIOSO_TRUSTED_PROXY_HOPS`, and it resolves
+ * the trusted suffix once the raw chain reaches it in the signed envelope.
  */
 export const buildEdgeFactsHeaders = (
   request: Request,
@@ -39,20 +36,10 @@ export const buildEdgeFactsHeaders = (
     return headers
   }
 
-  const extraGeoHeaderNames = [
-    env.VISITOR_GEO_COUNTRY_HEADER,
-    env.VISITOR_GEO_REGION_HEADER,
-    env.VISITOR_GEO_CITY_HEADER,
-  ].filter((name): name is string => Boolean(name))
-
   const { headers: proofHeaders } = createEdgeFactsProof({
     facts: {
-      clientIp: resolveTrustedForwardedAddress({
-        forwardedFor: request.headers.get('x-forwarded-for') ?? undefined,
-        socketAddress: null,
-        trustedProxyHops: env.RADIOSO_TRUSTED_PROXY_HOPS,
-      }),
-      geoHeaders: collectGeoHeaders(request.headers, extraGeoHeaderNames),
+      forwardedFor: request.headers.get('x-forwarded-for'),
+      geoHeaders: collectGeoHeaders(request.headers),
       userAgent: request.headers.get('user-agent'),
       acceptLanguage: request.headers.get('accept-language'),
     },

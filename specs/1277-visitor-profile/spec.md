@@ -310,10 +310,9 @@ sees it on the next conversation.
   helper rather than inline `process.env`.
 - **FR-022** `geoHeaders` at the edge = the well-known set (`x-client-region`,
   `x-client-city`, `cf-ipcountry`, `x-appengine-country`, `x-vercel-ip-country`,
-  `x-vercel-ip-country-region`, `x-vercel-ip-city`) plus the value of
-  `VISITOR_GEO_COUNTRY_HEADER` / `VISITOR_GEO_REGION_HEADER` /
-  `VISITOR_GEO_CITY_HEADER` when set. Header names are protocol identifiers, not
-  product vocabulary.
+  `x-vercel-ip-country-region`, `x-vercel-ip-city`). Header names are protocol
+  identifiers, not product vocabulary. There is no operator override; the
+  well-known set is the whole mechanism.
 - **FR-023** Backend public chat routes derive `ConversationRequestContext`:
   valid proof → `observedVia: "edge_proof"`, facts from the payload; marker
   without valid proof → all facts `null`, `observedVia: "unproven"`; no marker →
@@ -321,9 +320,9 @@ sees it on the next conversation.
   the request's own headers. A spoofed marker can only hide a caller, never
   forge facts.
 - **FR-024** `VisitorGeoResolver.resolve(geoHeaders) → { country, region, city
-  }` is a port; the header adapter applies precedence override → GCP →
-  Cloudflare → Vercel → App Engine, normalises country to upper-case ISO
-  3166-1 alpha-2, and returns `null` for anything else. Wired in composition.
+  }` is a port; the header adapter applies precedence GCP → Cloudflare →
+  Vercel → App Engine, normalises country to upper-case ISO 3166-1 alpha-2,
+  and returns `null` for anything else. Wired in composition.
 
 ### Context variable
 
@@ -386,12 +385,14 @@ sees it on the next conversation.
 
 ### Configuration & docs
 
-- **FR-050** Backend env: `RADIOSO_EDGE_PROOF_SECRET` (min 32 chars, optional),
-  `VISITOR_GEO_COUNTRY_HEADER` / `_REGION_HEADER` / `_CITY_HEADER` (optional).
-  Frontend env: the same four names plus `RADIOSO_TRUSTED_PROXY_HOPS`, set per
-  service (the frontend and backend sit behind the LB independently and the
-  values may differ). `docker-compose.yml` / `docker-compose.dev.yml` at repo root set a dev
-  secret so the local stack exercises the proof path.
+- **FR-050** One env var, shared verbatim by both services: `RADIOSO_EDGE_PROOF_SECRET`
+  (min 32 chars, optional — unset means an edge marker can never verify). The
+  frontend forwards the raw `X-Forwarded-For` chain in the signed envelope
+  instead of resolving an address itself, so it needs no proxy-hop or geo-header
+  configuration of its own; the backend resolves the trusted client address
+  from that chain with its own pre-existing `RADIOSO_TRUSTED_PROXY_HOPS`.
+  `docker-compose.yml` / `docker-compose.dev.yml` at repo root set a dev secret
+  on both services so the local stack exercises the proof path.
 - **FR-051** Docs (following `docs/document-writer-prompt.md`): self-hosting
   env reference; embed docs list what is captured about a visitor; context
   variables doc adds `visitor_request`; privacy/data-handling doc names IP,

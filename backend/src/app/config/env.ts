@@ -194,11 +194,6 @@ const envSchema = z.object({
   // `@radioso/edge-proof` envelope agree on a secret. Optional — unconfigured means
   // an edge marker can never verify (`observedVia: "unproven"`), never a forged fact.
   RADIOSO_EDGE_PROOF_SECRET: emptyStringToUndefined(z.string().min(32)),
-  // FR-024: operator overrides for VisitorGeoResolver precedence; header names are
-  // protocol identifiers, so they are normalised the same way the values they name are read.
-  VISITOR_GEO_COUNTRY_HEADER: emptyStringToUndefined(z.string().min(1).transform((value) => value.toLowerCase())),
-  VISITOR_GEO_REGION_HEADER: emptyStringToUndefined(z.string().min(1).transform((value) => value.toLowerCase())),
-  VISITOR_GEO_CITY_HEADER: emptyStringToUndefined(z.string().min(1).transform((value) => value.toLowerCase())),
   OPERATOR_MCP_RESOURCE_URL: emptyStringToUndefined(z.string().url()),
   OPERATOR_MCP_ISSUER_URL: emptyStringToUndefined(z.string().url()),
   OPERATOR_MCP_INTERNAL_SECRET: emptyStringToUndefined(z.string().min(32)),

@@ -12,10 +12,10 @@ const NOW = new Date("2026-09-18T00:00:00.000Z");
 const geoResolver = new HeaderVisitorGeoResolver();
 
 describe("deriveConversationRequestContext (FR-023)", () => {
-  it("resolves edge_proof facts from a valid signed proof", () => {
+  it("resolves edge_proof facts from a valid signed proof, with clientIp null when this backend trusts zero hops", () => {
     const { headers: proofHeaders } = createEdgeFactsProof({
       facts: {
-        clientIp: "203.0.113.9",
+        forwardedFor: "203.0.113.9",
         geoHeaders: { "cf-ipcountry": "nl" },
         userAgent: "TestAgent/1.0",
         acceptLanguage: "nl-NL,nl;q=0.9",
@@ -39,7 +39,7 @@ describe("deriveConversationRequestContext (FR-023)", () => {
 
     expect(result.rejection).toBeUndefined();
     expect(result.context).toEqual({
-      clientIp: "203.0.113.9",
+      clientIp: null,
       country: "NL",
       region: null,
       city: null,
@@ -49,9 +49,38 @@ describe("deriveConversationRequestContext (FR-023)", () => {
     });
   });
 
+  it("resolves clientIp from the envelope's forwarded-for chain using this backend's own trusted hop count", () => {
+    const { headers: proofHeaders } = createEdgeFactsProof({
+      facts: {
+        forwardedFor: "203.0.113.9, 10.0.0.4",
+        geoHeaders: {},
+        userAgent: null,
+        acceptLanguage: null,
+      },
+      method: METHOD,
+      path: PATH,
+      secret: SECRET,
+      now: NOW,
+    });
+
+    const result = deriveConversationRequestContext({
+      headers: { [EDGE_FACTS_HEADERS.marker]: "frontend", ...proofHeaders },
+      socketAddress: "10.0.0.1",
+      trustedProxyHops: 1,
+      secret: SECRET,
+      method: METHOD,
+      path: PATH,
+      geoResolver,
+      now: NOW,
+    });
+
+    expect(result.context.clientIp).toBe("10.0.0.4");
+    expect(result.context.observedVia).toBe("edge_proof");
+  });
+
   it("nulls every fact and reports 'signature' when the proof is tampered", () => {
     const { headers: proofHeaders } = createEdgeFactsProof({
-      facts: { clientIp: "203.0.113.9", geoHeaders: {}, userAgent: null, acceptLanguage: null },
+      facts: { forwardedFor: "203.0.113.9", geoHeaders: {}, userAgent: null, acceptLanguage: null },
       method: METHOD,
       path: PATH,
       secret: SECRET,
@@ -83,7 +112,7 @@ describe("deriveConversationRequestContext (FR-023)", () => {
 
   it("reports 'expired' when the proof is outside the freshness window", () => {
     const { headers: proofHeaders } = createEdgeFactsProof({
-      facts: { clientIp: "203.0.113.9", geoHeaders: {}, userAgent: null, acceptLanguage: null },
+      facts: { forwardedFor: "203.0.113.9", geoHeaders: {}, userAgent: null, acceptLanguage: null },
       method: METHOD,
       path: PATH,
       secret: SECRET,
@@ -144,7 +173,7 @@ describe("deriveConversationRequestContext (FR-023)", () => {
 
   it("reports 'missing' when the marker is present but no secret is configured on this backend", () => {
     const { headers: proofHeaders } = createEdgeFactsProof({
-      facts: { clientIp: "203.0.113.9", geoHeaders: {}, userAgent: null, acceptLanguage: null },
+      facts: { forwardedFor: "203.0.113.9", geoHeaders: {}, userAgent: null, acceptLanguage: null },
       method: METHOD,
       path: PATH,
       secret: SECRET,
@@ -193,23 +222,6 @@ describe("deriveConversationRequestContext (FR-023)", () => {
       acceptLanguage: "de-DE,de;q=0.9",
       observedVia: "backend",
     });
-  });
-
-  it("collects operator geo-header overrides in the backend-observed case", () => {
-    const result = deriveConversationRequestContext({
-      headers: { "x-geo-country": "fr" },
-      socketAddress: "10.0.0.9",
-      trustedProxyHops: 0,
-      secret: SECRET,
-      method: "GET",
-      path: "/api/v1/agents/agent1/chat",
-      geoResolver: new HeaderVisitorGeoResolver({ countryHeaderOverride: "x-geo-country" }),
-      extraGeoHeaderNames: ["x-geo-country"],
-      now: NOW,
-    });
-
-    expect(result.context.country).toBe("FR");
-    expect(result.context.observedVia).toBe("backend");
   });
 
   it("caps userAgent and acceptLanguage at their contract limits", () => {

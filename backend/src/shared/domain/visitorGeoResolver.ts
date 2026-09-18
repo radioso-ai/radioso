@@ -16,15 +16,6 @@ export interface VisitorGeoResolver {
   resolve(geoHeaders: Record<string, string>): VisitorGeoResolution;
 }
 
-interface HeaderVisitorGeoResolverConfig {
-  /** `VISITOR_GEO_COUNTRY_HEADER` (already lower-cased by env parsing), when set. */
-  countryHeaderOverride?: string | null;
-  /** `VISITOR_GEO_REGION_HEADER`, when set. */
-  regionHeaderOverride?: string | null;
-  /** `VISITOR_GEO_CITY_HEADER`, when set. */
-  cityHeaderOverride?: string | null;
-}
-
 const ISO_ALPHA_2 = /^[A-Za-z]{2}$/u;
 
 const normalizeCountry = (value: string | undefined | null): string | null => {
@@ -41,35 +32,27 @@ const nonEmpty = (value: string | undefined | null): string | null => {
 
 /**
  * Header names are protocol identifiers, not product vocabulary (CLAUDE.md).
- * Precedence (FR-024): an operator's `VISITOR_GEO_*_HEADER` override, then
- * GCP, then Cloudflare, then Vercel, then App Engine — resolved independently
- * per field, since no single source supplies all three everywhere (e.g.
- * Cloudflare supplies only country). GCP's `x-client-region` carries an ISO
- * 3166-2 `COUNTRY-REGION` code (e.g. `US-CA`); its prefix is the country.
+ * Precedence (FR-024): GCP, then Cloudflare, then Vercel, then App Engine —
+ * resolved independently per field, since no single source supplies all three
+ * everywhere (e.g. Cloudflare supplies only country). GCP's `x-client-region`
+ * carries an ISO 3166-2 `COUNTRY-REGION` code (e.g. `US-CA`); its prefix is
+ * the country. This precedence is the whole mechanism; there is no operator
+ * override.
  */
 export class HeaderVisitorGeoResolver implements VisitorGeoResolver {
-  constructor(private readonly config: HeaderVisitorGeoResolverConfig = {}) {}
-
   resolve(geoHeaders: Record<string, string>): VisitorGeoResolution {
-    const overrideCountry = this.config.countryHeaderOverride ? geoHeaders[this.config.countryHeaderOverride] : undefined;
-    const overrideRegion = this.config.regionHeaderOverride ? geoHeaders[this.config.regionHeaderOverride] : undefined;
-    const overrideCity = this.config.cityHeaderOverride ? geoHeaders[this.config.cityHeaderOverride] : undefined;
-
     const gcpRegion = nonEmpty(geoHeaders["x-client-region"]);
     const gcpCountry = gcpRegion?.split("-", 1)[0];
 
-    const country = normalizeCountry(overrideCountry)
-      ?? normalizeCountry(gcpCountry)
+    const country = normalizeCountry(gcpCountry)
       ?? normalizeCountry(geoHeaders["cf-ipcountry"])
       ?? normalizeCountry(geoHeaders["x-vercel-ip-country"])
       ?? normalizeCountry(geoHeaders["x-appengine-country"]);
 
-    const region = nonEmpty(overrideRegion)
-      ?? gcpRegion
+    const region = gcpRegion
       ?? nonEmpty(geoHeaders["x-vercel-ip-country-region"]);
 
-    const city = nonEmpty(overrideCity)
-      ?? nonEmpty(geoHeaders["x-client-city"])
+    const city = nonEmpty(geoHeaders["x-client-city"])
       ?? nonEmpty(geoHeaders["x-vercel-ip-city"]);
 
     return { country, region, city };

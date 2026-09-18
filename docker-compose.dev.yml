@@ -131,11 +131,9 @@ services:
       BACKEND_INTERNAL_URL: http://backend:8080
       CHOKIDAR_USEPOLLING: "true"
       WATCHPACK_POLLING: "true"
-      # Spec 1277: same secret as the backend service above; the frontend sits one
-      # hop in front of the backend in this stack, so it reports what it observed
-      # itself rather than trusting a caller-supplied X-Forwarded-For.
+      # Spec 1277: same secret as the backend service above, so the local stack
+      # exercises the edge-facts proof path end to end.
       RADIOSO_EDGE_PROOF_SECRET: radioso-local-dev-edge-proof-secret
-      RADIOSO_TRUSTED_PROXY_HOPS: "0"
     volumes: *frontend-dev-volumes
 
 volumes:

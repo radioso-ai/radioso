@@ -122,7 +122,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       : undefined,
   });
   const publicConversationEventBus = new InMemoryPublicConversationEventBus();
-  const visitorGeoResolver = createDefaultVisitorGeoResolver(env);
+  const visitorGeoResolver = createDefaultVisitorGeoResolver();
   const composition = createDefaultApplicationComposition({
     logger,
     env,

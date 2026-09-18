@@ -21,14 +21,19 @@ type IncomingHeaders = Record<string, IncomingHeaderValue>;
 interface DeriveConversationRequestContextInput {
   headers: IncomingHeaders;
   socketAddress: string | null;
+  /**
+   * `RADIOSO_TRUSTED_PROXY_HOPS`: this backend's own hop count, applied both
+   * to a request it observed directly and to the raw `X-Forwarded-For` chain
+   * a verified edge-proof envelope forwarded (see the `edge_proof` branch
+   * below) — the frontend and backend sit behind the same load balancer, so
+   * one hop count is correct for both.
+   */
   trustedProxyHops: number;
   /** `RADIOSO_EDGE_PROOF_SECRET`; unset means an edge marker can never verify. */
   secret: string | undefined;
   method: string;
   path: string;
   geoResolver: VisitorGeoResolver;
-  /** Operator `VISITOR_GEO_*_HEADER` overrides, so the backend-observed case collects them too (FR-022). */
-  extraGeoHeaderNames?: readonly string[];
   now?: Date;
 }
 
@@ -93,7 +98,16 @@ export const deriveConversationRequestContext = (
     const geo = input.geoResolver.resolve(verification.facts.geoHeaders);
     return {
       context: {
-        clientIp: verification.facts.clientIp,
+        // The envelope carries the raw X-Forwarded-For chain the frontend
+        // received, unresolved (the frontend cannot know this backend's own
+        // hop count). Resolving it here, with this backend's
+        // `trustedProxyHops` and no socket fallback, means a hop count of 0
+        // yields null rather than trusting a caller-controlled entry.
+        clientIp: resolveTrustedForwardedAddress({
+          forwardedFor: verification.facts.forwardedFor ?? undefined,
+          socketAddress: null,
+          trustedProxyHops: input.trustedProxyHops,
+        }),
         country: geo.country,
         region: geo.region,
         city: geo.city,
@@ -109,7 +123,7 @@ export const deriveConversationRequestContext = (
     socketAddress: input.socketAddress,
     trustedProxyHops: input.trustedProxyHops,
   });
-  const geoHeaders = collectGeoHeaders(input.headers, input.extraGeoHeaderNames ?? []);
+  const geoHeaders = collectGeoHeaders(input.headers);
   const geo = input.geoResolver.resolve(geoHeaders);
 
   return {

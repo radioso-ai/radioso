@@ -36,21 +36,6 @@ describe("HeaderVisitorGeoResolver (FR-024)", () => {
     expect(resolver.resolve({ "x-appengine-country": "de" })).toEqual({ country: "DE", region: null, city: null });
   });
 
-  it("prefers an operator header override over every well-known source", () => {
-    const resolver = new HeaderVisitorGeoResolver({
-      countryHeaderOverride: "x-geo-country",
-      regionHeaderOverride: "x-geo-region",
-      cityHeaderOverride: "x-geo-city",
-    });
-    expect(resolver.resolve({
-      "x-geo-country": "gb",
-      "x-geo-region": "England",
-      "x-geo-city": "London",
-      "cf-ipcountry": "nl",
-      "x-client-region": "US-CA",
-    })).toEqual({ country: "GB", region: "England", city: "London" });
-  });
-
   it("prefers GCP over Cloudflare, Vercel, and App Engine when both are present", () => {
     const resolver = new HeaderVisitorGeoResolver();
     expect(resolver.resolve({

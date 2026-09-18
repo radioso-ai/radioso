@@ -26,6 +26,15 @@ describe("collectGeoHeaders", () => {
     });
   });
 
+  it("defaults to the well-known set when extraNames is omitted", () => {
+    const collected = collectGeoHeaders({
+      "cf-ipcountry": "NL",
+      "x-irrelevant-header": "ignored",
+    });
+
+    expect(collected).toEqual({ "cf-ipcountry": "NL" });
+  });
+
   it("honours caller-supplied extra header names regardless of case", () => {
     const collected = collectGeoHeaders({
       "X-Geo": "FR",

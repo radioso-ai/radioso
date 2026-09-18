@@ -12,7 +12,7 @@ const secret = "0123456789abcdef0123456789abcdef";
 const now = new Date("2026-09-01T12:00:00.000Z");
 
 const facts: EdgeRequestFacts = {
-  clientIp: "203.0.113.7",
+  forwardedFor: "203.0.113.7",
   geoHeaders: { "cf-ipcountry": "NL" },
   userAgent: "Mozilla/5.0 (Test)",
   acceptLanguage: "de-DE,de;q=0.9",
@@ -48,7 +48,7 @@ describe("createEdgeFactsProof / verifyEdgeFactsProof round trip", () => {
       now,
     });
 
-    const tamperedFacts = Buffer.from(JSON.stringify({ ...facts, clientIp: "198.51.100.1" }), "utf8")
+    const tamperedFacts = Buffer.from(JSON.stringify({ ...facts, forwardedFor: "198.51.100.1" }), "utf8")
       .toString("base64url");
 
     const result = verifyEdgeFactsProof({
@@ -127,13 +127,13 @@ describe("createEdgeFactsProof / verifyEdgeFactsProof round trip", () => {
 describe("canonicalizeEdgeRequestFacts", () => {
   it("is independent of geoHeaders key order and case", () => {
     const a = canonicalizeEdgeRequestFacts({
-      clientIp: "203.0.113.7",
+      forwardedFor: "203.0.113.7",
       geoHeaders: { "CF-IPCountry": "NL", "X-Client-Region": "Europe" },
       userAgent: "UA",
       acceptLanguage: "en",
     });
     const b = canonicalizeEdgeRequestFacts({
-      clientIp: "203.0.113.7",
+      forwardedFor: "203.0.113.7",
       geoHeaders: { "x-client-region": "Europe", "cf-ipcountry": "NL" },
       userAgent: "UA",
       acceptLanguage: "en",
@@ -147,7 +147,7 @@ describe("canonicalizeEdgeRequestFacts", () => {
     const longAcceptLanguage = "L".repeat(300);
 
     const canonical = canonicalizeEdgeRequestFacts({
-      clientIp: null,
+      forwardedFor: null,
       geoHeaders: {},
       userAgent: longUserAgent,
       acceptLanguage: longAcceptLanguage,
@@ -160,11 +160,26 @@ describe("canonicalizeEdgeRequestFacts", () => {
     expect(longAcceptLanguage.startsWith(parsed.acceptLanguage)).toBe(true);
   });
 
+  it("caps forwardedFor at 1024 chars before signing", () => {
+    const longForwardedFor = Array.from({ length: 200 }, () => "203.0.113.7").join(", ");
+
+    const canonical = canonicalizeEdgeRequestFacts({
+      forwardedFor: longForwardedFor,
+      geoHeaders: {},
+      userAgent: null,
+      acceptLanguage: null,
+    });
+    const parsed = JSON.parse(canonical) as { forwardedFor: string };
+
+    expect(parsed.forwardedFor).toHaveLength(1024);
+    expect(longForwardedFor.startsWith(parsed.forwardedFor)).toBe(true);
+  });
+
   it("also caps the facts carried in the proof header, not just the signed payload", () => {
     const longUserAgent = "U".repeat(600);
 
     const { headers } = createEdgeFactsProof({
-      facts: { clientIp: null, geoHeaders: {}, userAgent: longUserAgent, acceptLanguage: null },
+      facts: { forwardedFor: null, geoHeaders: {}, userAgent: longUserAgent, acceptLanguage: null },
       method: "GET",
       path: "/x",
       secret,

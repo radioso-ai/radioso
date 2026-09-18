@@ -1,8 +1,10 @@
 /**
  * Header names are protocol identifiers, not product vocabulary: the well-known
  * set an edge (a CDN, a cloud load balancer, or a self-hosted reverse proxy)
- * commonly stamps with country/region/city. Operators can add more via the
- * `extraNames` parameter of `collectGeoHeaders` (a configured env override).
+ * commonly stamps with country/region/city. This precedence is the whole
+ * mechanism — no caller in this codebase configures an override today, but the
+ * optional `extraNames` parameter of `collectGeoHeaders` remains for a future
+ * adapter that needs one.
  */
 export const WELL_KNOWN_GEO_HEADERS = [
   "x-client-region",
@@ -22,15 +24,14 @@ const isIterableHeaders = (
   typeof (headers as Iterable<readonly [string, string]>)[Symbol.iterator] === "function";
 
 /**
- * Picks the well-known geo headers (plus any caller-supplied extra names, e.g.
- * from a `VISITOR_GEO_*_HEADER` env override) out of a request's headers,
- * lower-casing every header name. Accepts either a Node-style header record
- * (`IncomingHttpHeaders`) or any `[name, value]` iterable (e.g. the Fetch API
- * `Headers` object).
+ * Picks the well-known geo headers (plus any caller-supplied extra names) out
+ * of a request's headers, lower-casing every header name. Accepts either a
+ * Node-style header record (`IncomingHttpHeaders`) or any `[name, value]`
+ * iterable (e.g. the Fetch API `Headers` object).
  */
 export const collectGeoHeaders = (
   headers: Iterable<readonly [string, string]> | Record<string, HeaderValue>,
-  extraNames: readonly string[],
+  extraNames: readonly string[] = [],
 ): Record<string, string> => {
   const wanted = new Set<string>([
     ...WELL_KNOWN_GEO_HEADERS,

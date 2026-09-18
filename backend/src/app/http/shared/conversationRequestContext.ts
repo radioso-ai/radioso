@@ -32,11 +32,6 @@ export const resolveConversationRequestContext = (
   method: req.method,
   path: req.originalUrl.split("?", 1)[0] ?? req.path,
   geoResolver: dependencies.visitorGeoResolver,
-  extraGeoHeaderNames: [
-    dependencies.env.VISITOR_GEO_COUNTRY_HEADER,
-    dependencies.env.VISITOR_GEO_REGION_HEADER,
-    dependencies.env.VISITOR_GEO_CITY_HEADER,
-  ].filter((name): name is string => Boolean(name)),
 });
 
 /**

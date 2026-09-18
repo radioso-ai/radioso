@@ -32,10 +32,10 @@ export const BUILT_IN_CONTEXT_VARIABLES: readonly BuiltInContextVariableDescript
     trustTier: "signed",
     sensitivity: "sensitive",
   },
-  // FR-030: request-derived visitor facts (country/region/city/language/referrer/entry
-  // page). Unlike the two browser-sourced built-ins above, resolution is gated by a real
-  // per-agent `agent_context_variables` enablement row (source 'request') rather than being
-  // unconditional — see `chatSessionPreparer.resolveVisitorRequestFacts`.
+  // FR-030/FR-033: request-derived visitor facts (country/region/city/language/referrer/
+  // entry page). Like the two browser-sourced built-ins above, resolution is unconditional:
+  // there is no per-agent `agent_context_variables` enablement row for `source: "request"`
+  // — see `chatSessionPreparer.resolveVisitorRequestFacts`.
   {
     name: "visitor_request",
     source: "request",

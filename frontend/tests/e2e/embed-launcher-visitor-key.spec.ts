@@ -75,3 +75,36 @@ test("the embed launcher sends the same client-generated visitorKey from a brand
   await firstTab.close();
   await secondTab.close();
 });
+
+test("the embed launcher still bootstraps with no visitorKey and no console error when localStorage throws (FR-009)", async ({ page }) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") {
+      consoleErrors.push(message.text());
+    }
+  });
+
+  // The embed-test host page's own app shell makes unrelated backend-proxy calls
+  // (session check, analytics beacons) that 503 in this backend-less e2e harness
+  // regardless of the launcher's storage behaviour; stub them so the console-error
+  // assertion below reflects only the launcher under test, not harness noise.
+  await page.route("**/backend/api/v1/**", (route) => route.fulfill({ status: 204, body: "" }));
+
+  // Simulates privacy mode / a sandboxed iframe / storage disabled: any access to
+  // `window.localStorage` throws a SecurityError, before the launcher script runs.
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      get() {
+        throw new DOMException("The operation is insecure.", "SecurityError");
+      },
+    });
+  });
+
+  const bootstrapRequestBodies: Array<Record<string, unknown>> = [];
+  await openEmbedAndCaptureBootstrap(page, bootstrapRequestBodies);
+  await expect.poll(() => bootstrapRequestBodies.length).toBeGreaterThanOrEqual(1);
+
+  expect(bootstrapRequestBodies[0]).not.toHaveProperty("visitorKey");
+  expect(consoleErrors).toEqual([]);
+});

@@ -1353,6 +1353,11 @@ contracts, auth exchange helpers, policy, audit behavior, and package smoke
 tests. The narrow source-proof package owns the signed wire contract used to
 carry an already-digested client source from the edge to the backend; admission
 policy and transport-peer resolution remain with their respective services.
+`@radioso/edge-proof` is the generic HMAC-envelope primitive underneath it
+(canonical payload signing, per-context derived keys, trusted-proxy-suffix
+address resolution) plus the request-facts envelope schema (`radioso:edge-facts:v1`)
+shared by the frontend proxy and backend for visitor request facts; it knows
+nothing about MCP, conversations, or visitors.
 
 Should not own backend product behavior. It should call backend APIs through
 its adapter and generated or shared contracts.
@@ -1368,6 +1373,8 @@ Primary paths:
 - `packages/product-docs/` (the documentation corpus both surfaces read; `scripts/buildCorpus.ts` compiles `docs-portal/content` into the committed `src/generated/corpus.json` through `@radioso/docs-importer`'s MDX converter, and `pnpm --filter @radioso/product-docs run sync` refreshes it — the CI docs job and `backend`'s contract suite both fail on drift)
 - `packages/mcp-source-proof/src/index.ts`
 - `packages/mcp-source-proof/tests/`
+- `packages/edge-proof/src/` (`envelope.ts` generic sign/verify, `edgeFacts.ts` request-facts proof, `geoHeaders.ts` well-known header names)
+- `packages/edge-proof/tests/`
 
 Useful searches:
 
@@ -1380,6 +1387,7 @@ Focused checks:
 - `cd packages/radioso-mcp-server && pnpm test`
 - `cd packages/radioso-mcp-server && pnpm run smoke:all`
 - `cd packages/mcp-source-proof && pnpm run check`
+- `cd packages/edge-proof && pnpm run check`
 
 Related docs and specs:
 

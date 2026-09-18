@@ -248,6 +248,7 @@ radioso/
 |-- packages/
 |   |-- conversation-contract/  # reusable conversation engine contracts
 |   |-- conversation-engine/    # pure conversation engine runtime loop
+|   |-- edge-proof/             # generic HMAC envelope + request-facts schema shared by frontend and backend
 |   |-- mcp-source-proof/       # signed source provenance shared by MCP edge and backend
 |   |-- integration-test-support/ # shared disposable integration-database policy
 |   |-- radioso-mcp-server/      # standalone MCP server package

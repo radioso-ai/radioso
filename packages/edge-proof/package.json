@@ -1,5 +1,5 @@
 {
-  "name": "@radioso/mcp-source-proof",
+  "name": "@radioso/edge-proof",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -15,12 +15,9 @@
     "node": ">=24"
   },
   "scripts": {
-    "build": "pnpm --dir ../edge-proof run build && tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json",
     "check": "pnpm run build && pnpm test",
-    "test": "pnpm --dir ../edge-proof run build && vitest run"
-  },
-  "dependencies": {
-    "@radioso/edge-proof": "workspace:*"
+    "test": "vitest run"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",

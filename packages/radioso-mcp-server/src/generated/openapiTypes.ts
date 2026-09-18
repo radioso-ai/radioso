@@ -8034,7 +8034,7 @@ export interface components {
         };
         AgentContextVariableEnablementRequest: {
             /** @enum {string} */
-            source: "pushed" | "browser" | "resolver" | "request";
+            source: "pushed" | "browser" | "resolver";
             /** Format: uuid */
             resolverSkillId?: string | null;
             maxAgeSeconds?: number | null;

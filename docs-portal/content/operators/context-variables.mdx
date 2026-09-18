@@ -24,10 +24,8 @@ Radioso provides built-in context for the website experience.
   referrer, and entry page Radioso observed when the conversation opened. See
   [Visitor request](#visitor-request) below.
 
-`page_context` and `visitor_identity` are not listed in the host-defined
-catalog and cannot be edited there — they are code-owned platform context.
-`visitor_request` is also code-owned in shape, but an agent turns it on the
-same way it turns on a host-defined variable; see below.
+Built-ins are not listed in the host-defined catalog and cannot be edited
+there. They are code-owned platform context, available on every agent.
 
 ### Page context is relevance-gated
 
@@ -234,36 +232,12 @@ reads it never sees an address or a browser fingerprint. Values are
 unverified: they describe what the request looked like, not a proven
 identity.
 
-An agent turns `visitor_request` on the same way it turns on a host-defined
-variable. First declare the variable once per workspace:
-
-```text
-POST /api/v1/context-variables
-{
-  "name": "visitor_request",
-  "valueType": "json",
-  "trustTier": "unverified",
-  "sensitivity": "normal",
-  "defaultSurfacing": "always"
-}
-```
-
-Then enable it for the agent, giving the variable's id from the response
-above:
-
-```text
-PUT /api/v1/agents/{agentId}/context-variables/{variableId}
-{
-  "source": "request",
-  "surfacing": "always",
-  "enabled": true
-}
-```
-
-Once enabled and published, `visitor_request.country`, `.region`, and the
-other four fields are available to directive conditions exactly like any
-other host-defined variable — "when the visitor is in Germany, mention that
-shipping to the EU takes 3-5 days" reads `visitor_request.country`.
+`visitor_request` is available on every agent, the same as `page_context` and
+`visitor_identity` — there is no per-agent setting to turn it on. It reaches a
+turn whenever the conversation carried at least one of the six facts; a
+directive condition such as "when the visitor is in Germany, mention that
+shipping to the EU takes 3-5 days" reads `visitor_request.country` the same
+way it would read any other context variable.
 
 ## Surfacing
 

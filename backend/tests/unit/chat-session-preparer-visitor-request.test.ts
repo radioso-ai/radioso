@@ -1,12 +1,8 @@
-import { randomUUID } from "node:crypto";
-
 import { describe, expect, it } from "vitest";
 import type { ConversationRequestContext } from "@radioso/conversation-contract";
 
 import { ChatSessionPreparer } from "../../src/modules/chat/services/chatSessionPreparer.js";
 import { visitorMatchContext } from "../../src/modules/chat/services/visitorMatchContext.js";
-import { AgentRevisionRuntimeResolver } from "../../src/modules/agents/runtime/agentRevisionRuntimeResolver.js";
-import type { AgentRevision } from "../../src/modules/agents/public.js";
 import type { RetrievalTurnPort } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import type { RetrievalPipelineRequest, RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
 import {
@@ -14,6 +10,7 @@ import {
   InMemoryAgentRepository,
   InMemoryConversationRepository,
   InMemoryMessageRepository,
+  publishedRevisionResolverFixture,
 } from "../support/fakes.js";
 
 const fixedRetrievalResult = (request: RetrievalPipelineRequest): RetrievalPipelineResult => {
@@ -63,50 +60,10 @@ const retrievalTurnStub: RetrievalTurnPort = {
   },
 };
 
-/** A revision resolver whose snapshot carries a single context-variable enablement. */
-const revisionResolverWithEnablement = (
-  agentId: string,
-  enablement: { source: "request" | "pushed"; enabled: boolean } | null,
-): AgentRevisionRuntimeResolver => {
-  const revision: AgentRevision = {
-    id: `revision-${agentId}`,
-    snapshot: {
-      customInstruction: null,
-      directives: [],
-      routines: [],
-      contextVariableEnablements: enablement
-        ? [{
-            id: randomUUID(),
-            agentId,
-            variableId: randomUUID(),
-            source: enablement.source,
-            resolverSkillId: null,
-            maxAgeSeconds: null,
-            resolverTimeoutMs: null,
-            surfacing: "always",
-            enabled: enablement.enabled,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          }]
-        : [],
-    },
-    sourceDraftGeneration: 1,
-    sourceBasePublishedRevisionId: null,
-    createdAt: new Date(),
-    publishedAt: new Date(),
-    publishedVersion: 1,
-  };
-  return new AgentRevisionRuntimeResolver({
-    findCurrentPublished: async () => revision,
-    findRevision: async () => revision,
-  });
-};
-
 const buildPreparer = (
   conversationRepository: InMemoryConversationRepository,
   messageRepository: InMemoryMessageRepository,
   agent: { id: string },
-  revisionResolver: AgentRevisionRuntimeResolver,
 ) =>
   new ChatSessionPreparer(
     conversationRepository,
@@ -121,7 +78,7 @@ const buildPreparer = (
     undefined,
     undefined,
     undefined,
-    revisionResolver,
+    publishedRevisionResolverFixture(),
     undefined,
   );
 
@@ -136,17 +93,12 @@ const fakeRequestContext: ConversationRequestContext = {
 };
 
 describe("ChatSessionPreparer visitor_request wiring (spec 1277 slice 4)", () => {
-  it("stages visitor_request from the conversation's requestContext when the agent has it enabled", async () => {
+  it("stages visitor_request from the conversation's requestContext unconditionally, like the other built-ins", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const agentRepository = new InMemoryAgentRepository();
     const agent = await agentRepository.create("ws-1", { name: "Bot" });
-    const preparer = buildPreparer(
-      conversationRepository,
-      messageRepository,
-      agent,
-      revisionResolverWithEnablement(agent.id, { source: "request", enabled: true }),
-    );
+    const preparer = buildPreparer(conversationRepository, messageRepository, agent);
 
     const session = await preparer.prepare({
       workspaceId: "ws-1",
@@ -154,17 +106,20 @@ describe("ChatSessionPreparer visitor_request wiring (spec 1277 slice 4)", () =>
       query: "Hi",
       chatSessionId: "anon-session-vr-1",
       requestContext: fakeRequestContext,
-      pageContext: { pageUrl: "https://shop.example/checkout" },
       entryReferrer: "https://partner.example",
     });
 
+    // entryPageUrl is the one field shaped like page_context.pageUrl (see
+    // page-read-sink-gate.test.ts): it is null here because this initial pass has not
+    // yet resolved the page-read gate, mirroring page_context's own null-until-gated
+    // behavior. The other five fields are unconditional from the first turn on.
     expect(session.resolvedContext.snapshot.visitor_request).toEqual({
       country: "DE",
       region: "BE",
       city: "Berlin",
       language: "de",
       referrer: "https://partner.example",
-      entryPageUrl: "https://shop.example/checkout",
+      entryPageUrl: null,
     });
 
     // Neither surface-sensitive raw field ever rides along.
@@ -179,51 +134,21 @@ describe("ChatSessionPreparer visitor_request wiring (spec 1277 slice 4)", () =>
     expect(matchContext.context.visitor_request).toEqual(session.resolvedContext.snapshot.visitor_request);
   });
 
-  it("omits visitor_request when the agent has no enabled request-sourced enablement (FR-031 AS2)", async () => {
+  it("omits visitor_request when the conversation carries no request-derived fact at all", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const agentRepository = new InMemoryAgentRepository();
     const agent = await agentRepository.create("ws-1", { name: "Bot" });
-    const preparer = buildPreparer(
-      conversationRepository,
-      messageRepository,
-      agent,
-      revisionResolverWithEnablement(agent.id, null),
-    );
+    const preparer = buildPreparer(conversationRepository, messageRepository, agent);
 
     const session = await preparer.prepare({
       workspaceId: "ws-1",
       agentId: agent.id,
       query: "Hi",
       chatSessionId: "anon-session-vr-2",
-      requestContext: fakeRequestContext,
-      entryReferrer: "https://partner.example",
     });
 
     expect(session.resolvedContext.snapshot).not.toHaveProperty("visitor_request");
     expect(visitorMatchContext(session).context).not.toHaveProperty("visitor_request");
-  });
-
-  it("omits visitor_request when the enablement row is disabled", async () => {
-    const conversationRepository = new InMemoryConversationRepository();
-    const messageRepository = new InMemoryMessageRepository();
-    const agentRepository = new InMemoryAgentRepository();
-    const agent = await agentRepository.create("ws-1", { name: "Bot" });
-    const preparer = buildPreparer(
-      conversationRepository,
-      messageRepository,
-      agent,
-      revisionResolverWithEnablement(agent.id, { source: "request", enabled: false }),
-    );
-
-    const session = await preparer.prepare({
-      workspaceId: "ws-1",
-      agentId: agent.id,
-      query: "Hi",
-      chatSessionId: "anon-session-vr-3",
-      requestContext: fakeRequestContext,
-    });
-
-    expect(session.resolvedContext.snapshot).not.toHaveProperty("visitor_request");
   });
 });

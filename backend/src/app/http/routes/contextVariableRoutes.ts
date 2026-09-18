@@ -83,6 +83,18 @@ const agentContextVariableEnablementBodySchema = z.object({
     return;
   }
 
+  // visitor_request (the only request-sourced built-in) resolves unconditionally from
+  // the conversation, like page_context and visitor_identity — there is no per-agent
+  // enablement row to create.
+  if (value.source === "request") {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["source"],
+      message: "request-sourced context variables are not yet supported",
+    });
+    return;
+  }
+
   if (value.source === "resolver") {
     if (!value.resolverSkillId) {
       ctx.addIssue({

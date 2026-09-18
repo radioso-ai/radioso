@@ -171,19 +171,18 @@ An operator writes a contextual directive "when the visitor is in Germany,
 mention that shipping to the EU takes 3–5 days". A visitor from Berlin asks
 about delivery; the directive activates.
 
-**Independent test**: enable `visitor_request` on the agent, add the directive,
-send a message with the geo header stubbed to `DE`; the turn trace shows the
+**Independent test**: add the directive, send a message with the geo header stubbed to `DE`; the turn trace shows the
 directive matched and the redacted snapshot shows `visitor_request.country =
 "DE"` with no IP or user agent anywhere in the trace.
 
 **Acceptance scenarios**:
 
-1. **Given** `visitor_request` enabled, **when** a turn runs, **then** the
-   match projection carries `{ country, region, city, language, referrer,
+1. **Given** request facts on the conversation, **when** a turn runs, **then**
+   the match projection carries `{ country, region, city, language, referrer,
    entryPageUrl }` and nothing else.
-2. **Given** `visitor_request` not enabled on the agent, **when** a turn runs,
-   **then** the variable is absent from the snapshot (same enablement rule as
-   the other built-ins).
+2. **Given** a conversation with no request facts at all (API client behind
+   no load balancer, no page context), **when** a turn runs, **then** the
+   variable is absent from the snapshot rather than present with six nulls.
 3. **Given** any surface that renders the snapshot (trace, drawer, evals),
    **then** neither `clientIp` nor `userAgent` appears.
 
@@ -335,7 +334,7 @@ sees it on the next conversation.
   `agent_context_variables.source` CHECK constraint (migration 112, line 19 —
   a migration alters it), the `.strict()` enablement snapshot schema in
   `backend/src/modules/agents/agentRevision.ts:35-39`, and the OpenAPI enum.
-  A test enables `visitor_request` on an agent and publishes a revision.
+  A test publishes a revision whose snapshot parses with the widened enum.
 - **FR-030a** Resolution is a new, small seam, not a reuse: the three existing
   sources resolve through `ContextVariableResolutionReaderPort` against
   `context_variable_values`, and `resolveContextForTurn` has no view of the
@@ -355,8 +354,13 @@ sees it on the next conversation.
 - **FR-032** The variable reaches both classification surfaces (matcher and
   fused planner) via the existing `projectContextForMatching` path — no new
   seam.
-- **FR-033** Settings UI and docs list the new source and variable; the
-  agent-level enablement toggle works like the other built-ins.
+- **FR-033** `visitor_request` is unconditional, exactly like `page_context`
+  and `visitor_identity`: built-ins have no per-agent enablement row, and a
+  toggle reachable only through two API calls would leave the feature unusable
+  from the dashboard. The snapshot entry is present whenever the visit carried
+  any of the six facts. Operator-declared variables cannot use
+  `source: "request"` (rejected like `"browser"`). Docs list the variable and
+  its six fields.
 
 ### Operator surfaces
 

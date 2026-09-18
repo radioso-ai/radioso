@@ -7,6 +7,11 @@ const ContextVariableTrustTierSchema = z.enum(["unverified", "signed"]);
 const ContextVariableSensitivitySchema = z.enum(["normal", "sensitive"]);
 const ContextVariableSurfacingSchema = z.enum(["always", "on_reference", "operator_only"]);
 const ContextVariableSourceSchema = z.enum(["pushed", "browser", "resolver", "request"]);
+// The enable-variable request body never accepts "request": visitor_request (the only
+// request-sourced built-in) resolves unconditionally and has no operator-created
+// agent_context_variables row, so advertising it as an accepted request value here would
+// describe an operation the route always rejects (contextVariableRoutes.ts superRefine).
+const AgentContextVariableEnablementRequestSourceSchema = z.enum(["pushed", "browser", "resolver"]);
 const ContextVariableScopeTypeSchema = z.enum(["session", "customer", "agent", "workspace"]);
 
 export const registerContextVariableSchemas = (registry: OpenAPIRegistry, schemas: OpenApiSchemaCatalog) => {
@@ -91,7 +96,7 @@ export const registerContextVariableSchemas = (registry: OpenAPIRegistry, schema
   const AgentContextVariableEnablementRequestSchema = registry.register(
     "AgentContextVariableEnablementRequest",
     z.object({
-      source: ContextVariableSourceSchema,
+      source: AgentContextVariableEnablementRequestSourceSchema,
       resolverSkillId: z.string().uuid().nullable().optional(),
       maxAgeSeconds: z.number().int().nonnegative().nullable().optional(),
       resolverTimeoutMs: z.number().int().positive().nullable().optional(),

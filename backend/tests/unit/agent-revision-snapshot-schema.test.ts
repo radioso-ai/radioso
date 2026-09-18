@@ -82,7 +82,12 @@ describe("agent revision snapshot schema", () => {
     expect(() => assertCandidateSnapshotIsRunnable(live)).toThrow(/cannot be released/u);
   });
 
-  it("enables the built-in visitor_request context variable and publishes cleanly (FR-030)", () => {
+  // FR-030 widened the persisted enum to accept a fourth source, "request" (the
+  // visitor_request built-in's descriptor). visitor_request itself resolves
+  // unconditionally, like the other built-ins, and is never gated by an
+  // agent_context_variables row — this test only guards that a historical or
+  // hand-written snapshot carrying the widened value still parses and publishes.
+  it("parses and publishes a snapshot containing a request-sourced enablement value (FR-030 schema compatibility)", () => {
     const snapshot = {
       ...snapshotWith([]),
       contextVariableEnablements: [

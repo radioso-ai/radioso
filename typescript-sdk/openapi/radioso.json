@@ -17611,8 +17611,7 @@
             "enum": [
               "pushed",
               "browser",
-              "resolver",
-              "request"
+              "resolver"
             ]
           },
           "resolverSkillId": {

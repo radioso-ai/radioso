@@ -501,10 +501,10 @@ export class ChatSessionPreparer {
         chatSessionId,
         revisionResolved.contextVariableEnablements,
       ));
-    const requestFacts = this.resolveVisitorRequestFacts(
-      conversationForTurn,
-      revisionResolved.contextVariableEnablements,
-    );
+    // Page context is not yet resolved on this initial pass (mirrors the `null`
+    // pageContext passed to stagedSpineFor below); prepareRetrieval/prepareDirect
+    // recompute with the real gate decision.
+    const requestFacts = this.resolveVisitorRequestFacts(conversationForTurn, false);
     const directOnlyTurn = this.prepareDirectOnlyTurn(
       this.buildPipelineInput(input, agent, turnHistory, conversationForTurn, userMessage),
       agent,
@@ -701,27 +701,30 @@ export class ChatSessionPreparer {
   }
 
   /**
-   * FR-030a: the enablement check and the request-facts projection both live here, in the
-   * chat module — the context-variables module never reads a conversation or an enablement
-   * list. Gated on a real per-agent `agent_context_variables` row (source 'request', enabled)
-   * rather than being unconditional like `page_context`/`visitor_identity`, so an operator
-   * who has not turned it on for this agent sees no `visitor_request` entry (FR-031 AS2).
+   * FR-030a: the request-facts projection lives here, in the chat module — the
+   * context-variables module never reads a conversation. `visitor_request` surfaces
+   * unconditionally, like the other built-ins (`page_context`, `visitor_identity`):
+   * there is no per-agent enablement row to gate on, only whether this conversation
+   * actually carries any request-derived fact. Absent only when every one of the six
+   * projected fields is null.
+   *
+   * `entryPageUrl` is the one field shaped like `page_context.pageUrl` — the page-read
+   * three-sink gate exists precisely to keep a page URL/bytes out of the prompt on a turn
+   * that does not warrant reading the page, and `entryPageUrl` stays populated on the
+   * conversation across every later turn regardless of that turn's gate decision. So it
+   * only rides along when this turn's own page-context gate is open; the geo/language/
+   * referrer fields carry no page-content sensitivity and are never gated by it.
    */
   private resolveVisitorRequestFacts(
     conversation: ConversationRecord,
-    enablements: readonly AgentContextVariableEnablement[] | null | undefined,
+    pageContextGateOpen: boolean,
   ): VisitorRequestFacts | null {
-    const enabled = enablements?.some(
-      (enablement) => enablement.enabled && enablement.source === "request",
-    );
-    if (!enabled) {
-      return null;
-    }
-    return projectVisitorRequestFacts({
+    const facts = projectVisitorRequestFacts({
       requestContext: conversation.requestContext ?? null,
-      entryPageUrl: conversation.entryPageUrl ?? null,
+      entryPageUrl: pageContextGateOpen ? conversation.entryPageUrl ?? null : null,
       entryReferrer: conversation.entryReferrer ?? null,
     });
+    return Object.values(facts).some((value) => value !== null) ? facts : null;
   }
 
   private gatedPageContext(session: PreparedSession): AssistantPageContext | null {
@@ -881,7 +884,7 @@ export class ChatSessionPreparer {
     ));
     const requestFacts = this.resolveVisitorRequestFacts(
       session.conversation,
-      session.revisionContextVariableEnablements,
+      this.gatedPageContext(session) != null,
     );
     const pipelineInput = this.buildPipelineInput(
       input,
@@ -927,7 +930,7 @@ export class ChatSessionPreparer {
     ));
     const requestFacts = this.resolveVisitorRequestFacts(
       session.conversation,
-      session.revisionContextVariableEnablements,
+      this.gatedPageContext(session) != null,
     );
     const pipelineInput = {
       ...this.buildPipelineInput(

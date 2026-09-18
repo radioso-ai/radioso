@@ -132,6 +132,12 @@ function ConversationRow({
       <div className="flex items-center gap-2">
         <span className="flex min-w-0 flex-1 items-center gap-1 truncate text-xs text-muted-foreground">
           <span className="shrink-0">{visitorLabel}</span>
+          {conversation.visitorCountry ? (
+            <>
+              <span aria-hidden>·</span>
+              <span className="shrink-0">{conversation.visitorCountry}</span>
+            </>
+          ) : null}
           <span aria-hidden>·</span>
           <span className="min-w-0 truncate" title={trimmedEntryPageUrl ?? location.title ?? undefined}>{locationText}</span>
         </span>
@@ -260,7 +266,7 @@ export const filterAllLensItems = (
   return true
 })
 
-export interface AllConversationsListPaneProps {
+interface AllConversationsListPaneProps {
   lensToggle: ReactNode
   items: HistoryListItem[]
   /**

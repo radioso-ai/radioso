@@ -683,7 +683,6 @@
   "types|frontend/components/dashboard/documents/document-editor-dialog.tsx|DocumentEditorValues",
   "types|frontend/components/dashboard/documents/document-editor-page.tsx|DocumentEditorTextField",
   "types|frontend/components/dashboard/history/history-list-query.ts|HistoryListResponse",
-  "types|frontend/components/dashboard/inbox/all-conversations-list-pane.tsx|AllConversationsListPaneProps",
   "types|frontend/components/dashboard/inbox/inbox-empty-state.tsx|InboxEmptyStateProps",
   "types|frontend/components/dashboard/inbox/inbox-queue.tsx|InboxQueueProps",
   "types|frontend/components/dashboard/inbox/use-inbox-confidence-summary.ts|InboxConfidenceSummary",

@@ -69,6 +69,7 @@ const conversationSummary: ChatConversationSummary = {
   channelContext: null,
   anonymousSessionId: null,
   entryPageUrl: null,
+  visitorCountry: null,
   title: null,
   createdAt: '2026-06-01T10:00:00.000Z',
   updatedAt: '2026-06-01T10:00:00.000Z',

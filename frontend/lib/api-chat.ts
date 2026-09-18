@@ -19,6 +19,7 @@ import type {
   DocumentSearchResponse,
   HistoryItemsApiResponse,
   HistoryItemsResponse,
+  VisitorConversationsResponse,
 } from './api-types'
 
 const normalizeChatResponse = (payload: ChatResponse): ChatResponse => ({
@@ -190,6 +191,22 @@ export const chatApi = {
       limit: input?.limit,
       offset: input?.offset,
       cursor: input?.cursor,
+    }), {
+      method: 'GET',
+      ...(signal ? { signal } : {}),
+    }, { withSession: true })
+  },
+
+  async listVisitorConversations(
+    visitorId: string,
+    input?: { limit?: number; offset?: number; cursor?: string; exclude?: string },
+    signal?: AbortSignal,
+  ): Promise<VisitorConversationsResponse> {
+    return request<VisitorConversationsResponse>(withQuery(`/history/visitors/${visitorId}/conversations`, {
+      limit: input?.limit,
+      offset: input?.offset,
+      cursor: input?.cursor,
+      exclude: input?.exclude,
     }), {
       method: 'GET',
       ...(signal ? { signal } : {}),

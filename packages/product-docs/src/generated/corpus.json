@@ -1,7 +1,7 @@
 {
   "generatedFrom": "docs-portal/content",
   "citationBase": "https://docs.radioso.ai",
-  "pageCount": 46,
+  "pageCount": 47,
   "pages": [
     {
       "slug": "api",
@@ -1305,6 +1305,52 @@
       ]
     },
     {
+      "slug": "operators/billing-setup",
+      "url": "https://docs.radioso.ai/operators/billing-setup",
+      "title": "Billing setup",
+      "description": "Connect Stripe to Radioso Enterprise so accounts can subscribe, buy a conversation top-up, and manage their own billing through the customer portal.",
+      "section": "Operator guides",
+      "lastUpdated": "2026-09-17",
+      "intro": "Radioso Enterprise's plan card lets an account subscribe to a paid plan, buy a conversation top-up, and open the Stripe customer portal without an operator touching the console. All of it runs through Stripe Checkout and the Stripe customer portal; Radioso never stores a card number.",
+      "sections": [
+        {
+          "id": "environment-variables",
+          "heading": "Environment variables",
+          "body": "| Variable                   | Required | What it does                                                                                                                                                                                      |\n| -------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |\n| `STRIPE_SECRET_KEY`        | Yes      | Your Stripe secret key. Missing this (or `STRIPE_WEBHOOK_SECRET`) turns billing off: the plan card's `GET /me` reports `configured: false` and checkout, portal, and webhook requests return 503. |\n| `STRIPE_WEBHOOK_SECRET`    | Yes      | The signing secret for the webhook endpoint you register below. Verifies that a webhook call actually came from Stripe.                                                                           |\n| `STRIPE_PLAN_METADATA_KEY` | No       | The Stripe product metadata key that names a plan. Defaults to `plan`. Only set this if `plan` collides with something else in your Stripe account.                                               |\n\nA self-hosted install that never sets `STRIPE_SECRET_KEY` runs with billing off — the plan card stays hidden and every account keeps whatever plan an operator assigns through the usage-limits admin API."
+        },
+        {
+          "id": "prices-and-lookup-keys",
+          "heading": "Prices and lookup keys",
+          "body": "Radioso looks up every Stripe price by its **lookup key**, never by price ID. This is what lets you raise a price in Stripe (create a new price, run `transfer_lookup_key` to move the key over) without touching Radioso configuration. Create these prices in your Stripe account with exactly these lookup keys:\n\n| Lookup key        | Plan                     | Interval |\n| ----------------- | ------------------------ | -------- |\n| `satellite_month` | Satellite                | Monthly  |\n| `satellite_year`  | Satellite                | Annual   |\n| `planet_month`    | Planet                   | Monthly  |\n| `planet_year`     | Planet                   | Annual   |\n| `topup_300`       | Conversation top-up pack | One-time |\n\nThe current prices and conversation counts behind each key live in `@radioso/plan-catalog` (`ee/packages/plan-catalog`), the single source of numbers Radioso ships with. Match your Stripe prices to that catalog so what a customer pays lines up with what Radioso grants."
+        },
+        {
+          "id": "product-metadata",
+          "heading": "Product metadata",
+          "body": "Radioso resolves a Stripe price back to a plan through the price's **product**, not the price itself — every price on a product, current or grandfathered, maps to the same plan. On each subscription product in Stripe, set metadata:\n\n```\nplan = satellite\n```\n\nor\n\n```\nplan = planet\n```\n\n(the free plan has no Stripe product, since nothing is purchased to get it). If a subscription event carries a price whose product has no `plan` metadata, or names a plan Radioso doesn't recognize, Radioso logs a warning and leaves the account's plan untouched rather than guessing."
+        },
+        {
+          "id": "customer-portal-configuration",
+          "heading": "Customer portal configuration",
+          "body": "In the Stripe Dashboard, under **Settings → Billing → Customer portal**, turn on:\n\n* Update subscriptions (upgrade, downgrade, cancel)\n* Update payment methods\n* View invoice history\n\nRadioso opens the portal with a `return_url` back to the dashboard, so a customer who cancels or changes plans there lands back on their usage page."
+        },
+        {
+          "id": "webhook-endpoint",
+          "heading": "Webhook endpoint",
+          "body": "Register a webhook endpoint pointing at:\n\n```\nhttps://<your-app-base-url>/api/v1/ee/billing/webhook\n```\n\nSubscribe it to these events:\n\n* `checkout.session.completed`\n* `customer.subscription.updated`\n* `customer.subscription.deleted`\n* `invoice.paid`\n* `invoice.payment_failed`\n\nCopy the endpoint's signing secret into `STRIPE_WEBHOOK_SECRET`. Radioso verifies every webhook call against this secret before reading the payload; a call with a missing or invalid signature gets a 400 and never reaches account state.\n\nEach webhook delivery is idempotent on Stripe's own event ID — replaying the same event through `stripe listen` or Stripe's dashboard retry is a no-op the second time, not a double credit or a double plan change.\n\nIf you run more than one region (for example a separate EU stack), register the webhook endpoint separately against each region's app base URL — Stripe delivers to every endpoint you register, and each region resolves its own accounts."
+        },
+        {
+          "id": "test-mode",
+          "heading": "Test mode",
+          "body": "Stripe test mode works exactly like live mode from Radioso's side: use your test secret key and test webhook secret, and create the same lookup-keyed prices in test mode. The Stripe CLI's `stripe listen --forward-to https://<your-app-base-url>/api/v1/ee/billing/webhook` is the fastest way to exercise a full checkout-to-webhook round trip against a local stack, including a test EU VAT ID for reverse charge and a test coupon code for `allow_promotion_codes`."
+        },
+        {
+          "id": "what-radioso-never-stores",
+          "heading": "What Radioso never stores",
+          "body": "Radioso keeps a Stripe customer ID, subscription ID, price ID, billing status, and the email address that started checkout — nothing about payment methods or card numbers. Cardholder data stays in Stripe end to end, whether the customer pays through Checkout or manages their subscription through the portal."
+        }
+      ]
+    },
+    {
       "slug": "operators/clarification-behavior",
       "url": "https://docs.radioso.ai/operators/clarification-behavior",
       "title": "Clarification behavior",
@@ -1685,7 +1731,7 @@
       "title": "Enterprise usage limits",
       "description": "How Enterprise Edition meters and caps indexed storage, monthly indexed content, and monthly answers or conversations per account, and enforces the caps before work begins.",
       "section": "Operator guides",
-      "lastUpdated": "2026-09-15",
+      "lastUpdated": "2026-09-17",
       "intro": "Radioso Enterprise tracks customer-facing usage dimensions and lets operators cap them per account.",
       "sections": [
         {
@@ -1727,6 +1773,11 @@
           "id": "prepaid-credits",
           "heading": "Prepaid credits",
           "body": "Prepaid credits add conversations to an account's balance on top of its plan limit. Credits never expire and only apply to a conversation-metered profile.\n\n```bash\ncurl -X POST https://radioso.example.com/api/v1/ee/usage-limits/accounts/00000000-0000-0000-0000-000000000001/credits \\\n  -H \"Authorization: Bearer $EE_USAGE_ADMIN_TOKEN\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"conversations\": 100, \"reference\": \"evt_1Pxxxxxxxxxxxxxxxx\"}'\n```\n\n`reference` identifies the grant — a Stripe event ID or any string unique to the top-up — and makes the call safe to retry. The first call with a given `reference` credits the account and returns `\"applied\": true`. A later call with the same `reference` grants nothing and returns `\"applied\": false` with the same `credits` balance as the first call. The response also carries the account's current usage:\n\n```json\n{\n  \"credits\": 112,\n  \"applied\": true,\n  \"usage\": { … }\n}\n```\n\nAn `accountId` that does not exist returns `404`."
+        },
+        {
+          "id": "plan-card",
+          "heading": "Plan card",
+          "body": "On a conversation-metered account, the dashboard's Usage page shows a plan card above the meters. It reads `GET /api/v1/ee/billing/me` and `GET /api/v1/plans` alongside the account usage response above, and renders the plan name and price, a bar for `used / (limit + credits)`, and the `byKind` breakdown split into customer conversations, Ray, test runs, and Pulse.\n\nAt 80% of capacity the card adds a banner naming whichever kind is driving that month's usage. At 100% the banner also carries the **Upgrade** and **Buy** buttons described below.\n\n* **Upgrade** starts a subscription checkout for the next self-serve plan above the account's current one. It is absent once the account already holds the catalog's `selfServeCeilingPlanId`.\n* **Buy 300 more** starts a one-time checkout for the catalog's top-up pack.\n* **Manage billing** opens the Stripe customer portal. It appears once the account has a Stripe customer, which the first checkout creates.\n\nA deployment without Stripe credentials configured skips the card; see [Billing setup](https://docs.radioso.ai/operators/billing-setup) for the Stripe environment variables and webhook registration."
         },
         {
           "id": "enforcement",

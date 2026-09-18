@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
+import { PlanCard } from '@/components/dashboard/plan-card'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { LogoSpinner } from '@/components/ui/spinner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -154,6 +155,7 @@ export function UsageView({ accountId }: { accountId: string }) {
             </Card>
           ) : usageLimitsEnabled && usage ? (
             <div className="space-y-6">
+              {usage.monthlyConversations ? <PlanCard monthlyConversations={usage.monthlyConversations} /> : null}
               <div className="grid gap-6 lg:grid-cols-2">
                 {usage.monthlyConversations ? (
                   <UsageMeter

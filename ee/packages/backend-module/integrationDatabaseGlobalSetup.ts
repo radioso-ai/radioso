@@ -6,6 +6,7 @@ import {
 import { Pool } from "pg";
 
 const databaseTestFiles = [
+  "billingCustomerRepository.integration.test.ts",
   "organizationCreationGuard.integration.test.ts",
   "organizationDirectoryService.integration.test.ts",
   "staffConsoleMigrator.integration.test.ts",

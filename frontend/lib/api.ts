@@ -28,7 +28,7 @@ export {
   storePublicSessionToken,
 } from './api-client'
 
-export { accountApi, answerFeedbackApi, enterpriseUsageApi } from './api-account'
+export { accountApi, answerFeedbackApi, enterpriseBillingApi, enterpriseUsageApi, plansApi } from './api-account'
 export { authApi } from './api-auth'
 export { chatApi } from './api-chat'
 export { contextVariablesApi } from './api-context-variables'

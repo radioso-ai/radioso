@@ -1,4 +1,5 @@
 import type { components } from '../../../../../../typescript-sdk/src/generated/types'
+import { buildEdgeFactsHeaders } from '../../../../../lib/server/edge-facts'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -92,9 +93,12 @@ export async function POST(
     clientContextCapabilities: parsedBody.clientContextCapabilities,
   })
 
+  const upstreamMethod = 'POST'
+  const upstreamPath = `/api/v1/public/chat/${encodeURIComponent(token)}`
+
   try {
-    const upstream = await fetch(`${BACKEND_BASE}/api/v1/public/chat/${encodeURIComponent(token)}`, {
-      method: 'POST',
+    const upstream = await fetch(`${BACKEND_BASE}${upstreamPath}`, {
+      method: upstreamMethod,
       headers: {
         'Content-Type': 'application/json',
         'X-Forwarded-Prefix': '/backend',
@@ -104,6 +108,7 @@ export async function POST(
         ...(cookie ? { Cookie: cookie } : {}),
         ...(anonymousSession ? { 'X-Radioso-Anonymous-Session': anonymousSession } : {}),
         ...(publicSession ? { 'X-Radioso-Public-Session': publicSession } : {}),
+        ...buildEdgeFactsHeaders(request, { method: upstreamMethod, path: upstreamPath }),
       },
       body,
       cache: 'no-store',

@@ -38,6 +38,10 @@ services:
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
       PUBLIC_CHAT_BASE_URL: ${PUBLIC_CHAT_BASE_URL:-http://localhost:3000/chat}
       SESSION_TTL_HOURS: 168
+      # Spec 1277: shared with the frontend proxy below so the local stack exercises
+      # the edge-facts proof path end to end. Dev-only value; never reuse in a deploy.
+      RADIOSO_EDGE_PROOF_SECRET: radioso-local-dev-edge-proof-secret
+      RADIOSO_TRUSTED_PROXY_HOPS: "0"
     volumes:
       - radioso_document_storage:/app/.context/document-storage
     command: ["node", "./dist/src/httpServer.js"]
@@ -117,6 +121,11 @@ services:
     environment:
       BACKEND_INTERNAL_URL: http://backend:8080
       INTEGRATION_DATABASE_URL: ""
+      # Spec 1277: same secret as the backend service above; the frontend sits one
+      # hop in front of the backend in this stack, so it reports what it observed
+      # itself rather than trusting a caller-supplied X-Forwarded-For.
+      RADIOSO_EDGE_PROOF_SECRET: radioso-local-dev-edge-proof-secret
+      RADIOSO_TRUSTED_PROXY_HOPS: "0"
     ports:
       - "${RADIOSO_FRONTEND_PORT:-3000}:3000"
 

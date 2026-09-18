@@ -99,23 +99,31 @@ describeIntegration("VisitorResolver (Postgres)", () => {
     });
     expect(moved.outcome).toBe("moved_new");
 
-    const [stillC] = await database.query<{ verified_customer_id: string | null }>(
-      "SELECT verified_customer_id FROM visitors WHERE id = $1",
+    const [stillC] = await database.query<{ verified_customer_id: string | null; conversation_count: number }>(
+      "SELECT verified_customer_id, conversation_count FROM visitors WHERE id = $1",
       [anonRow.id],
     );
     expect(stillC.verified_customer_id).toBe("customer-story2-c");
+    // Regression: the moved conversation must leave the source row exactly once,
+    // not linger from the earlier upgrade-in-place count.
+    expect(Number(stillC.conversation_count)).toBe(0);
 
     const [dRow] = await database.query<{
       id: string;
+      conversation_count: number;
       last_country: string | null;
       last_language: string | null;
       last_user_agent: string | null;
     }>(
-      "SELECT id, last_country, last_language, last_user_agent FROM visitors WHERE workspace_id = $1 AND verified_customer_id = $2",
+      "SELECT id, conversation_count, last_country, last_language, last_user_agent FROM visitors WHERE workspace_id = $1 AND verified_customer_id = $2",
       [workspaceId, "customer-story2-d"],
     );
     expect(dRow).toBeDefined();
     expect(dRow.id).not.toBe(anonRow.id);
+    // Regression: the fresh insert seeds 0 and moveConversation adds exactly one —
+    // a brand-new destination row must end up counting the single moved conversation
+    // once, not twice.
+    expect(Number(dRow.conversation_count)).toBe(1);
     expect(dRow.last_country).toBe("DE");
     expect(dRow.last_language).toBe("de");
     expect(dRow.last_user_agent).toBe("TestAgent/1.0");

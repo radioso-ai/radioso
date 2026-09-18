@@ -133,6 +133,10 @@ export class VisitorResolver implements VisitorResolverPort {
           workspaceId: input.workspaceId,
           verifiedCustomerId: input.verifiedCustomerId,
           observed: input.observed,
+          // This insert never attaches a conversation by itself — the moveConversation
+          // call right below it does, and it always adds exactly one. Seeding the usual
+          // 1 here too would double-count the single conversation actually being moved.
+          conversationCount: 0,
         })).record.id;
 
     await this.repository.moveConversation({

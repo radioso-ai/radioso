@@ -2,7 +2,13 @@ import { randomUUID } from "node:crypto";
 
 import { describe, expect, it, vi } from "vitest";
 
-import type { VisitorObservedFacts, VisitorRecord, VisitorRepositoryPort } from "../../src/db/repositories/visitorRepository.js";
+import type {
+  InsertOrGetVisitorInput,
+  MoveConversationBetweenVisitorsInput,
+  VisitorObservedFacts,
+  VisitorRecord,
+  VisitorRepositoryPort,
+} from "../../src/db/repositories/visitorRepository.js";
 import { VisitorResolver } from "../../src/modules/visitors/services/visitorResolver.js";
 
 const noObservation: VisitorObservedFacts = { country: null, language: null, userAgent: null };
@@ -229,7 +235,14 @@ describe("VisitorResolver.attachVerifiedIdentity", () => {
     expect(result.outcome).toBe("moved_new");
     expect(repository.upgradeToVerified).not.toHaveBeenCalled();
     expect(repository.insertOrGet).toHaveBeenCalledWith(
-      expect.objectContaining({ workspaceId: "workspace-1", verifiedCustomerId: "customer-D", observed }),
+      expect.objectContaining({
+        workspaceId: "workspace-1",
+        verifiedCustomerId: "customer-D",
+        observed,
+        // The following moveConversation call always adds exactly one; seeding the
+        // usual 1 here too would double-count the single conversation being moved.
+        conversationCount: 0,
+      }),
     );
     expect(repository.moveConversation).toHaveBeenCalledWith({
       conversationId: "conversation-1",
@@ -284,5 +297,57 @@ describe("VisitorResolver.attachVerifiedIdentity", () => {
       toVisitorId: verified.id,
       observed: noObservation,
     });
+  });
+
+  it("moved_new: the destination row's conversation_count ends at exactly one and the source row's count decreases by one (regression: insert-seed + move must not double-count)", async () => {
+    // A stateful fake, not the plain vi.fn() mocks above: this test's whole point is
+    // the arithmetic across two calls (insertOrGet's seed, then moveConversation's
+    // +1/-1), which a call-shape assertion on independent mocks cannot catch.
+    const counts = new Map<string, number>([["anon-row", 1]]);
+    // Already bound to a different verified id (customer-C), so verifying customer-D
+    // below hits moved_new rather than the in-place upgrade branch (never re-attach).
+    const anon = buildVisitor({ id: "anon-row", visitorKey: "anon-A", verifiedCustomerId: "customer-C", conversationCount: 1 });
+    let insertedId: string | null = null;
+
+    const repository: VisitorRepositoryPort = {
+      findByVerifiedCustomerId: async () => null,
+      findByVisitorKey: async () => anon,
+      findById: async () => null,
+      insertOrGet: async (input: InsertOrGetVisitorInput) => {
+        insertedId = "new-row";
+        counts.set(insertedId, input.conversationCount ?? 1);
+        return {
+          record: buildVisitor({
+            id: insertedId,
+            verifiedCustomerId: input.verifiedCustomerId ?? null,
+            conversationCount: counts.get(insertedId)!,
+          }),
+          inserted: true,
+        };
+      },
+      recordObservation: async () => undefined,
+      upgradeToVerified: async () => undefined,
+      moveConversation: async (input: MoveConversationBetweenVisitorsInput) => {
+        if (input.fromVisitorId) {
+          counts.set(input.fromVisitorId, (counts.get(input.fromVisitorId) ?? 0) - 1);
+        }
+        counts.set(input.toVisitorId, (counts.get(input.toVisitorId) ?? 0) + 1);
+      },
+    };
+
+    const resolver = new VisitorResolver(repository);
+
+    const result = await resolver.attachVerifiedIdentity({
+      conversationId: "conversation-1",
+      workspaceId: "workspace-1",
+      visitorKey: "anon-A",
+      verifiedCustomerId: "customer-D",
+      observed: noObservation,
+    });
+
+    expect(result.outcome).toBe("moved_new");
+    expect(insertedId).not.toBeNull();
+    expect(counts.get("anon-row")).toBe(0);
+    expect(counts.get(insertedId!)).toBe(1);
   });
 });

@@ -30,6 +30,15 @@ export interface InsertOrGetVisitorInput {
   visitorKey?: string | null;
   verifiedCustomerId?: string | null;
   observed: VisitorObservedFacts;
+  /**
+   * Seed value for `conversation_count`. Defaults to 1: the ordinary case is this
+   * call itself resolving the row's first conversation. `VisitorResolver.attachVerifiedIdentity`'s
+   * `moved_new` branch passes 0 — that insert never attaches a conversation by
+   * itself, the {@link VisitorRepositoryPort.moveConversation} call right after it
+   * does, and `moveConversation` always adds exactly one. Seeding 1 there too would
+   * double-count the single conversation actually being moved.
+   */
+  conversationCount?: number;
 }
 
 export interface MoveConversationBetweenVisitorsInput {
@@ -178,7 +187,7 @@ export class VisitorRepository implements VisitorRepositoryPort {
         verified_customer_id: input.verifiedCustomerId ?? null,
         first_seen_at: now,
         last_seen_at: now,
-        conversation_count: 1,
+        conversation_count: input.conversationCount ?? 1,
         last_country: input.observed.country ?? null,
         last_language: input.observed.language ?? null,
         last_user_agent: input.observed.userAgent ?? null,

@@ -4,15 +4,34 @@ import { chatMessageSchema } from "../schemas/textInputLimits.js";
 
 const localeHintSchema = z.string().trim().max(35);
 
+/** FR-013: entry_referrer is client-claimed, so anything that isn't an http(s) URL is dropped rather than rejected. */
+const isHttpUrl = (value: string): boolean => {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+};
+
 export const pageContextSchema = z.object({
   pageUrl: z.string().trim().max(2048).nullable().optional(),
   pageTitle: z.string().trim().max(180).nullable().optional(),
   pageLocale: z.string().trim().max(35).nullable().optional(),
   browserLocale: z.string().trim().max(35).nullable().optional(),
   content: z.string().trim().max(6000).nullable().optional(),
+  // Capped by truncation (not `.max()`, which would reject the whole message over an
+  // inconsequential metadata field) before the http(s) check, since a truncated string
+  // may no longer parse as a URL at all.
+  referrer: z.string().trim().nullable().optional()
+    .transform((value) => {
+      if (!value) return null;
+      const capped = value.slice(0, 2048);
+      return isHttpUrl(capped) ? capped : null;
+    }),
 }).optional();
 
-export const clientContextCapabilitiesSchema = z.object({
+const clientContextCapabilitiesSchema = z.object({
   "page.read": z.object({
     available: z.boolean(),
     mode: z.enum(["metadata", "content"]).nullable(),

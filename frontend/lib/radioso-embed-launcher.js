@@ -491,6 +491,27 @@
     },
   }
 
+  // Host-page-scoped (FR-008/FR-009, spec 1277) so the durable anonymous visitor
+  // id survives across tabs, unlike the per-tab sessionStorage above. Any
+  // failure (privacy mode, storage disabled, a sandboxed iframe's SecurityError)
+  // falls back silently to today's per-tab-only behaviour — no console noise.
+  const safeLocalStorage = {
+    get(key) {
+      try {
+        return window.localStorage.getItem(key)
+      } catch {
+        return null
+      }
+    },
+    set(key, value) {
+      try {
+        window.localStorage.setItem(key, value)
+      } catch {
+        /* storage may be blocked (privacy mode, sandboxed iframe) — fail silently */
+      }
+    },
+  }
+
   const prefersReducedMotion = () => {
     try {
       return Boolean(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)
@@ -795,11 +816,15 @@
     const pageTitle = normalizeWhitespace(document.title).slice(0, 180) || null
     const pageLocale = normalizeWhitespace(document.documentElement?.lang).slice(0, 35) || null
     const browserLocale = normalizeWhitespace(window.navigator?.languages?.[0] || window.navigator?.language).slice(0, 35) || null
+    // FR-013 (spec 1277): the backend caps this at 2048 chars and drops anything
+    // that isn't an http(s) URL, so no more than a length guard is needed here.
+    const referrer = normalizeWhitespace(document.referrer).slice(0, 2048) || null
     const pageContext = {
       pageUrl,
       pageTitle,
       pageLocale,
       browserLocale,
+      referrer,
     }
 
     if (mode === 'content') {
@@ -1045,10 +1070,17 @@
   }
 
   const bootstrapEmbeddedSession = async (scriptUrl, token, options) => {
-    const body =
-      options && typeof options.resumeToken === 'string'
-        ? JSON.stringify({ resumeToken: options.resumeToken })
-        : undefined
+    const bodyPayload = {}
+    if (options && typeof options.resumeToken === 'string') {
+      bodyPayload.resumeToken = options.resumeToken
+    }
+    // FR-008: a durable per-browser id (localStorage), sent alongside — never
+    // instead of — the per-tab resume token above, so a brand-new tab that has
+    // no resume token yet still links to the same visitor.
+    if (options && typeof options.anonymousSessionId === 'string') {
+      bodyPayload.anonymousSessionId = options.anonymousSessionId
+    }
+    const body = Object.keys(bodyPayload).length > 0 ? JSON.stringify(bodyPayload) : undefined
     const response = await fetch(new URL(`/api/embed/session/${encodeURIComponent(token)}`, scriptUrl).toString(), {
       method: 'POST',
       mode: 'cors',
@@ -1074,10 +1106,31 @@
     error.code === 'bad_request' &&
     error.message === 'Invalid public chat session request'
 
+  // FR-008: scoped by embed token (and implicitly by host origin, since
+  // localStorage is already origin-scoped) so distinct embeds on the same page
+  // never share one visitor id.
+  const anonymousSessionStorageKey = (token) => `radioso:embed:anon:${token}`
+
+  const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+  const readStoredAnonymousSessionId = (token) => {
+    const value = safeLocalStorage.get(anonymousSessionStorageKey(token))
+    return typeof value === 'string' && UUID_PATTERN.test(value) ? value : null
+  }
+
+  const storeAnonymousSessionId = (token, anonymousSessionId) => {
+    if (typeof anonymousSessionId !== 'string' || !UUID_PATTERN.test(anonymousSessionId)) {
+      return
+    }
+    safeLocalStorage.set(anonymousSessionStorageKey(token), anonymousSessionId)
+  }
+
   const bootstrapEmbeddedSessionWithResumeFallback = async (scriptUrl, token, storageKey) => {
     const resumeToken = readStoredResumeToken(storageKey)
+    const anonymousSessionId = readStoredAnonymousSessionId(token)
     try {
-      const session = await bootstrapEmbeddedSession(scriptUrl, token, { resumeToken })
+      const session = await bootstrapEmbeddedSession(scriptUrl, token, { resumeToken, anonymousSessionId })
+      storeAnonymousSessionId(token, session.anonymousSessionId)
       return { session, resumed: Boolean(resumeToken) }
     } catch (error) {
       if (!resumeToken || !isInvalidResumeSessionError(error)) {
@@ -1085,7 +1138,8 @@
       }
 
       safeStorage.remove(storageKey)
-      const session = await bootstrapEmbeddedSession(scriptUrl, token, {})
+      const session = await bootstrapEmbeddedSession(scriptUrl, token, { anonymousSessionId })
+      storeAnonymousSessionId(token, session.anonymousSessionId)
       return { session, resumed: false }
     }
   }

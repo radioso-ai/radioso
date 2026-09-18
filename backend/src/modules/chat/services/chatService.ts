@@ -281,6 +281,8 @@ interface ChatAnswerInput {
   pageContext?: AssistantPageContext | null;
   /** Edge-observed facts for this turn's first message (spec 1277); ignored for a resumed conversation. */
   requestContext?: ConversationRequestContext | null;
+  /** FR-013 (spec 1277): client-claimed referrer of the host page; ignored for a resumed conversation. */
+  entryReferrer?: string | null;
   clientContextCapabilities?: AssistantClientContextCapabilities;
   sourceChannel?: string | null;
   channelContext?: ConversationChannelContext | null;
@@ -1225,6 +1227,8 @@ export class ChatService {
     pageContext?: AssistantPageContext | null;
   /** Edge-observed facts for this turn's first message (spec 1277); ignored for a resumed conversation. */
   requestContext?: ConversationRequestContext | null;
+  /** FR-013 (spec 1277): client-claimed referrer of the host page; ignored for a resumed conversation. */
+  entryReferrer?: string | null;
     clientContextCapabilities?: AssistantClientContextCapabilities;
     sourceChannel?: string | null;
     channelContext?: ConversationChannelContext | null;
@@ -1275,6 +1279,8 @@ export class ChatService {
     pageContext?: AssistantPageContext | null;
   /** Edge-observed facts for this turn's first message (spec 1277); ignored for a resumed conversation. */
   requestContext?: ConversationRequestContext | null;
+  /** FR-013 (spec 1277): client-claimed referrer of the host page; ignored for a resumed conversation. */
+  entryReferrer?: string | null;
     clientContextCapabilities?: AssistantClientContextCapabilities;
     sourceChannel?: string | null;
     channelContext?: ConversationChannelContext | null;

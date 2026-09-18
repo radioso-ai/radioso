@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   anonymousChatSchema,
+  pageContextSchema,
   publicChatSessionSchema,
 } from "../../src/app/http/routes/publicChatRouteSchemas.js";
 
@@ -46,5 +47,32 @@ describe("public chat route schemas", () => {
       channel: "website_embed",
       clientContextCapabilities: request.clientContextCapabilities,
     }).success).toBe(false);
+  });
+
+  describe("pageContext.referrer (FR-013)", () => {
+    it("keeps a valid http(s) referrer", () => {
+      expect(pageContextSchema.parse({ referrer: "https://example.com/pricing" })).toMatchObject({
+        referrer: "https://example.com/pricing",
+      });
+      expect(pageContextSchema.parse({ referrer: "http://example.com" })).toMatchObject({
+        referrer: "http://example.com",
+      });
+    });
+
+    it("strips a referrer that is not an http(s) URL", () => {
+      expect(pageContextSchema.parse({ referrer: "javascript:alert(1)" })).toMatchObject({ referrer: null });
+      expect(pageContextSchema.parse({ referrer: "/relative/path" })).toMatchObject({ referrer: null });
+      expect(pageContextSchema.parse({ referrer: "not a url" })).toMatchObject({ referrer: null });
+    });
+
+    it("normalizes an absent referrer to null", () => {
+      expect(pageContextSchema.parse({})).toMatchObject({ referrer: null });
+    });
+
+    it("caps a referrer at 2048 characters before validating it as a URL", () => {
+      const longPath = "a".repeat(3000);
+      const parsed = pageContextSchema.parse({ referrer: `https://example.com/${longPath}` });
+      expect(parsed?.referrer?.length).toBe(2048);
+    });
   });
 });

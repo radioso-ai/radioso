@@ -15,8 +15,6 @@
   "exports|backend/src/app/http/presenters/documentSourcePresenter.ts|buildSyntheticManualDocumentSource",
   "exports|backend/src/app/http/presenters/documentSourcePresenter.ts|toCrawlSettings",
   "exports|backend/src/app/http/routes/accountUserRoutes.ts|renameAccountSchema",
-  "exports|backend/src/app/http/routes/publicChatRouteSchemas.ts|clientContextCapabilitiesSchema",
-  "exports|backend/src/app/http/routes/publicChatRouteSchemas.ts|pageContextSchema",
   "exports|backend/src/app/http/schemas/mcpConverseSchemas.ts|mcpConverseClientSchema",
   "exports|backend/src/db/repositories/chunkEmbeddingRepository.ts|appendCanonicalVectorProjectionWork",
   "exports|backend/src/db/repositories/clarificationStateRepository.ts|DEFAULT_CLARIFICATION_STATE_TTL_MS",

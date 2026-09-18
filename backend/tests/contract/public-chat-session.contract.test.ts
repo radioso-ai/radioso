@@ -107,6 +107,43 @@ describe("public chat session contract", () => {
     });
     expect(response.body.expiresAt).toEqual(expect.any(String));
     expect(response.body.resumeExpiresAt).toEqual(expect.any(String));
+    expect(response.body.anonymousSessionId).toEqual(response.body.publicSessionId);
+  });
+
+  it("keys a fresh website embed session to a client-provided anonymousSessionId when there is no resume token (FR-008)", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "public-embed-durable-id@example.com");
+
+    const token = await enableWebsiteEmbed(app, session);
+    const origin = "https://example.com";
+    const anonymousSessionId = randomUUID();
+
+    const response = await createWebsiteEmbedPublicSession(app, token, origin, { anonymousSessionId });
+
+    expect(response.status).toBe(200);
+    expect(response.body.publicSessionId).toBe(anonymousSessionId);
+    expect(response.body.anonymousSessionId).toBe(anonymousSessionId);
+  });
+
+  it("prefers a valid resume token over a client-provided anonymousSessionId", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "public-embed-resume-wins@example.com");
+
+    const token = await enableWebsiteEmbed(app, session);
+    const origin = "https://example.com";
+
+    const first = await createWebsiteEmbedPublicSession(app, token, origin);
+    const resumeToken = first.body.resumeToken as string;
+    const originalSessionId = first.body.publicSessionId as string;
+
+    const second = await createWebsiteEmbedPublicSession(app, token, origin, {
+      resumeToken,
+      anonymousSessionId: randomUUID(),
+    });
+
+    expect(second.status).toBe(200);
+    expect(second.body.publicSessionId).toBe(originalSessionId);
+    expect(second.body.anonymousSessionId).toBe(originalSessionId);
   });
 
   it("streams website embed chat from the bound approved origin", async () => {
@@ -722,7 +759,13 @@ describe("public chat session contract", () => {
     );
   });
 
-  it("does not resume website embed history from a raw anonymous session id", async () => {
+  it("resumes website embed history from a client-provided anonymous session id when there is no resume token (FR-008, spec 1277 decision 6)", async () => {
+    // Spec 1277 deliberately widens this from the prior "never resume from a
+    // raw id" rule: the launcher now persists this id in host-page
+    // localStorage precisely so a new tab links to the same visitor without a
+    // sessionStorage-scoped resume token. The privacy doc names the resulting
+    // exposure class (same as the pre-existing 30-day resume token) — a later
+    // slice, not this test.
     const { app } = createTestApp();
     const session = await issueTestSession(app, "public-embed-raw-session-resume@example.com");
 
@@ -746,7 +789,7 @@ describe("public chat session contract", () => {
     });
 
     expect(nextPublicSession.status).toBe(200);
-    expect(nextPublicSession.body.publicSessionId).not.toBe(firstChat.headers["x-radioso-anonymous-session"]);
+    expect(nextPublicSession.body.publicSessionId).toBe(firstChat.headers["x-radioso-anonymous-session"]);
 
     const historyResponse = await request(app)
       .get(`/api/v1/public/chat/${nextPublicSession.body.publicChatToken}`)
@@ -754,7 +797,7 @@ describe("public chat session contract", () => {
       .set("x-radioso-public-session", nextPublicSession.body.publicSessionToken);
 
     expect(historyResponse.status).toBe(200);
-    expect(historyResponse.body.conversations).not.toEqual(
+    expect(historyResponse.body.conversations).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           id: firstChat.body.conversationId,

@@ -53,6 +53,12 @@ export const presentPublicChatSession = ({
     citationDisplayEnabled: agent.citationDisplayEnabled,
     publicChatToken,
     publicSessionId: session.publicSessionId,
+    // FR-008 (spec 1277): the launcher persists this in host-page localStorage
+    // (scoped by embed token) and resends it on the next bootstrap, so a new
+    // tab's session keys to the same visitor even without a sessionStorage
+    // resume token. Equal to publicSessionId; a distinct name because it names
+    // what the launcher does with it, not how the backend derived it.
+    anonymousSessionId: session.publicSessionId,
     publicSessionToken: session.token,
     resumeToken: resume.token,
     assistantBootstrapActive: isAgentBootstrapActive(agent),

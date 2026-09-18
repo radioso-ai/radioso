@@ -5581,6 +5581,8 @@ export interface components {
             publicChatToken: string;
             /** Format: uuid */
             publicSessionId: string;
+            /** Format: uuid */
+            anonymousSessionId: string;
             publicSessionToken: string;
             resumeToken: string;
             assistantBootstrapActive: boolean;

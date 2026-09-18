@@ -7792,6 +7792,10 @@
             "type": "string",
             "format": "uuid"
           },
+          "anonymousSessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
           "publicSessionToken": {
             "type": "string"
           },
@@ -7902,6 +7906,7 @@
           "workspaceName",
           "publicChatToken",
           "publicSessionId",
+          "anonymousSessionId",
           "publicSessionToken",
           "resumeToken",
           "assistantBootstrapActive",

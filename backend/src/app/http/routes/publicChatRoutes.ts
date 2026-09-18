@@ -189,9 +189,11 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
     agentId: string;
     sourceChannel: "anonymous" | "website_embed";
     sourceOrigin: string | null;
+    /** FR-008: the launcher's localStorage-persisted anonymous id, used only when there is no resume token. */
+    clientProvidedSessionId?: string;
   }) => {
     if (!input.resume) {
-      return randomUUID();
+      return input.clientProvidedSessionId ?? randomUUID();
     }
 
     if (
@@ -368,6 +370,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
           agentId: agent.id,
           sourceChannel: "anonymous",
           sourceOrigin: null,
+          clientProvidedSessionId: req.body.anonymousSessionId,
         });
         const session = issuePublicChatSession(sessionSecret, {
           workspaceId: workspace.id,
@@ -543,6 +546,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         agentId: agent.id,
         sourceChannel: "website_embed",
         sourceOrigin: origin,
+        clientProvidedSessionId: req.body.anonymousSessionId,
       });
       const session = issuePublicChatSession(sessionSecret, {
         workspaceId: workspace.id,
@@ -661,6 +665,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
             ? { customerId: verifiedIdentity.customerId, ...verifiedIdentity.attributes }
             : undefined,
           requestContext,
+          entryReferrer: req.body.pageContext?.referrer ?? null,
         };
 
         if (input.stream) {

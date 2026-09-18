@@ -6214,6 +6214,7 @@ components:
             - pushed
             - browser
             - resolver
+            - request
         resolverSkillName:
           type:
             - string
@@ -11874,6 +11875,7 @@ components:
             - pushed
             - browser
             - resolver
+            - request
         resolverSkillId:
           type:
             - string

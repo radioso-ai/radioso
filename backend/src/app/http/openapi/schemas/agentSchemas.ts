@@ -31,7 +31,7 @@ import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
 // for why. The enums below mirror the route-level validation in
 // `agentBundleRoutes.ts` rather than importing zod schemas cross-module.
 const AgentConfigPortabilityValueSchema = z.enum(["portable", "ref", "secret"]);
-const AgentBundleContextVariableSourceSchema = z.enum(["pushed", "browser", "resolver"]);
+const AgentBundleContextVariableSourceSchema = z.enum(["pushed", "browser", "resolver", "request"]);
 const AgentBundleContextVariableSurfacingSchema = z.enum(["always", "on_reference", "operator_only"]);
 const AgentBundleSkillInvocationModeSchema = z.enum(["default_answer", "routine_named", "agent_selectable"]);
 

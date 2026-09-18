@@ -9303,7 +9303,8 @@
             "enum": [
               "pushed",
               "browser",
-              "resolver"
+              "resolver",
+              "request"
             ]
           },
           "resolverSkillName": {
@@ -17542,7 +17543,8 @@
             "enum": [
               "pushed",
               "browser",
-              "resolver"
+              "resolver",
+              "request"
             ]
           },
           "resolverSkillId": {
@@ -17609,7 +17611,8 @@
             "enum": [
               "pushed",
               "browser",
-              "resolver"
+              "resolver",
+              "request"
             ]
           },
           "resolverSkillId": {

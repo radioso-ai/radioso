@@ -7,6 +7,7 @@ import { ConversationRepository, type ConversationRecord } from "../../../src/db
 import { ConversationOwnershipRepository } from "../../../src/db/repositories/conversationOwnershipRepository.js";
 import { WorkspaceRepository, type WorkspaceRecord } from "../../../src/db/repositories/workspaceRepository.js";
 import { PostgresAssistantTurnPersistence } from "../../../src/modules/chat/infra/postgresAssistantTurnPersistence.js";
+import { projectVisitorRequestFacts, resolveContextForTurn } from "../../../src/modules/context-variables/public.js";
 import { Database } from "../../../src/shared/infra/database.js";
 import { runAllTestMigrations } from "../../support/databaseMigrations.js";
 
@@ -684,5 +685,82 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
       [conversation.id],
     );
     expect(enqueued.status).toBe("pending");
+  });
+
+  // FR-031: clientIp and userAgent must never reach messages.metadata_json, even though
+  // they live on the conversation's persisted request_context. This exercises the same
+  // narrowing (projectVisitorRequestFacts) and framing (resolveContextForTurn) the chat
+  // turn lifecycle calls, then round-trips the resulting snapshot through the real
+  // Postgres assistant-turn persistence path used in production.
+  it("persists visitor_request in metadata_json without the conversation's clientIp or userAgent", async () => {
+    const account = await accounts.create({
+      name: "Visitor Request Persistence Test",
+      email: `visitor-request-persistence-${randomUUID()}@example.com`,
+      passwordHash: "hash",
+    });
+    const workspace = await workspaces.create(account.id, "Visitor Request Persistence Workspace");
+    const fakeClientIp = "203.0.113.77";
+    const fakeUserAgent = "IntegrationTestAgent/1.0 (do-not-leak-fingerprint)";
+    const conversation = await conversations.create({
+      workspaceId: workspace.id,
+      requestContext: {
+        clientIp: fakeClientIp,
+        country: "DE",
+        region: "BE",
+        city: "Berlin",
+        userAgent: fakeUserAgent,
+        acceptLanguage: "de-DE,de;q=0.9",
+        observedVia: "edge_proof",
+      },
+      entryPageUrl: "https://shop.example/checkout",
+      entryReferrer: "https://partner.example",
+    });
+    createdAccountIds.add(account.id);
+    createdSessionIds.add(conversation.id);
+    const assistantMessageId = randomUUID();
+
+    const facts = projectVisitorRequestFacts({
+      requestContext: conversation.requestContext,
+      entryPageUrl: conversation.entryPageUrl,
+      entryReferrer: conversation.entryReferrer ?? null,
+    });
+    const resolvedContext = resolveContextForTurn(null, [], facts);
+
+    await persistence.completeAssistantTurn({
+      workspaceId: workspace.id,
+      conversationId: conversation.id,
+      assistantMessage: {
+        id: assistantMessageId,
+        conversationId: conversation.id,
+        workspaceId: workspace.id,
+        role: "assistant",
+        content: "Shipping to the EU takes 3-5 days.",
+        metadata: { contextVariables: resolvedContext.snapshot },
+      },
+      auditEvent: {
+        eventType: "chat.answer",
+        eventStatus: "success",
+        workspaceId: workspace.id,
+        metadata: {},
+      },
+    });
+
+    const stored = await database.queryOne<{ metadata_json: Record<string, unknown> }>(
+      "SELECT metadata_json FROM messages WHERE id = $1",
+      [assistantMessageId],
+    );
+    const serialized = JSON.stringify(stored.metadata_json);
+
+    expect((stored.metadata_json.contextVariables as Record<string, unknown>).visitor_request).toEqual({
+      country: "DE",
+      region: "BE",
+      city: "Berlin",
+      language: "de",
+      referrer: "https://partner.example",
+      entryPageUrl: "https://shop.example/checkout",
+    });
+    expect(serialized).not.toContain(fakeClientIp);
+    expect(serialized).not.toContain(fakeUserAgent);
+    expect(serialized).not.toContain("de-DE,de;q=0.9");
   });
 });

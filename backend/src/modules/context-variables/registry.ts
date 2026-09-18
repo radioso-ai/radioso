@@ -6,8 +6,8 @@ import type {
 } from "./domain.js";
 import type { ContextVariableSurfacing } from "./contextResolutionService.js";
 
-export interface BuiltInContextVariableDescriptor {
-  name: "page_context" | "visitor_identity";
+interface BuiltInContextVariableDescriptor {
+  name: "page_context" | "visitor_identity" | "visitor_request";
   source: ContextVariableSource;
   valueType: ContextVariableValueType;
   surfacing: ContextVariableSurfacing;
@@ -32,8 +32,16 @@ export const BUILT_IN_CONTEXT_VARIABLES: readonly BuiltInContextVariableDescript
     trustTier: "signed",
     sensitivity: "sensitive",
   },
+  // FR-030: request-derived visitor facts (country/region/city/language/referrer/entry
+  // page). Unlike the two browser-sourced built-ins above, resolution is gated by a real
+  // per-agent `agent_context_variables` enablement row (source 'request') rather than being
+  // unconditional — see `chatSessionPreparer.resolveVisitorRequestFacts`.
+  {
+    name: "visitor_request",
+    source: "request",
+    valueType: "json",
+    surfacing: "always",
+    trustTier: "unverified",
+    sensitivity: "normal",
+  },
 ] as const;
-
-export const BUILT_IN_CONTEXT_VARIABLE_BY_NAME = new Map(
-  BUILT_IN_CONTEXT_VARIABLES.map((variable) => [variable.name, variable]),
-);

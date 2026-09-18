@@ -32,13 +32,14 @@ import type {
   RewriteContinuityState,
   StructuredRewriteResult,
 } from "../../retrieval/public.js";
-import { resolveContextForTurn } from "../../context-variables/public.js";
+import { projectVisitorRequestFacts, resolveContextForTurn } from "../../context-variables/public.js";
 import type {
   ResolvedTurnContext,
   ResolvedVariableInput,
   ContextVariableScope,
   ContextVariableResolutionReaderPort,
   AgentContextVariableEnablement,
+  VisitorRequestFacts,
 } from "../../context-variables/public.js";
 import type {
   AgentRecord,
@@ -500,6 +501,10 @@ export class ChatSessionPreparer {
         chatSessionId,
         revisionResolved.contextVariableEnablements,
       ));
+    const requestFacts = this.resolveVisitorRequestFacts(
+      conversationForTurn,
+      revisionResolved.contextVariableEnablements,
+    );
     const directOnlyTurn = this.prepareDirectOnlyTurn(
       this.buildPipelineInput(input, agent, turnHistory, conversationForTurn, userMessage),
       agent,
@@ -522,7 +527,7 @@ export class ChatSessionPreparer {
           usageAttribution: input.usageAttribution,
           // Only present to satisfy the PreparedSession shape; prepareRetrieval
           // recomputes the spine from the real retrieval result.
-          ...this.stagedSpineFor(directOnlyTurn.retrieval, null, hostVariables),
+          ...this.stagedSpineFor(directOnlyTurn.retrieval, null, hostVariables, requestFacts),
         }, defaultTurnFraming(), hostVariables);
 
     return {
@@ -548,7 +553,7 @@ export class ChatSessionPreparer {
         : {}),
       ...(options.preResolvedHostVariables ? { preResolvedHostVariables: options.preResolvedHostVariables } : {}),
       previewRoutineIds: input.previewRoutineIds,
-      ...this.stagedSpineFor(retrieval, null, hostVariables),
+      ...this.stagedSpineFor(retrieval, null, hostVariables, requestFacts),
     };
   }
 
@@ -685,13 +690,38 @@ export class ChatSessionPreparer {
     retrieval: PreparedSession["retrieval"],
     pageContext?: AssistantPageContext | null,
     variables: readonly ResolvedVariableInput[] = [],
+    requestFacts?: VisitorRequestFacts | null,
   ): Pick<PreparedSession, "stagedContext" | "resolvedContext" | "turnTrace"> {
-    const resolvedContext = resolveContextForTurn(pageContext, variables);
+    const resolvedContext = resolveContextForTurn(pageContext, variables, requestFacts);
     return {
       stagedContext: [toPreparedStagedContext(retrieval), ...resolvedContext.staged],
       resolvedContext,
       turnTrace: toConversationTrace(retrieval.trace),
     };
+  }
+
+  /**
+   * FR-030a: the enablement check and the request-facts projection both live here, in the
+   * chat module — the context-variables module never reads a conversation or an enablement
+   * list. Gated on a real per-agent `agent_context_variables` row (source 'request', enabled)
+   * rather than being unconditional like `page_context`/`visitor_identity`, so an operator
+   * who has not turned it on for this agent sees no `visitor_request` entry (FR-031 AS2).
+   */
+  private resolveVisitorRequestFacts(
+    conversation: ConversationRecord,
+    enablements: readonly AgentContextVariableEnablement[] | null | undefined,
+  ): VisitorRequestFacts | null {
+    const enabled = enablements?.some(
+      (enablement) => enablement.enabled && enablement.source === "request",
+    );
+    if (!enabled) {
+      return null;
+    }
+    return projectVisitorRequestFacts({
+      requestContext: conversation.requestContext ?? null,
+      entryPageUrl: conversation.entryPageUrl ?? null,
+      entryReferrer: conversation.entryReferrer ?? null,
+    });
   }
 
   private gatedPageContext(session: PreparedSession): AssistantPageContext | null {
@@ -849,6 +879,10 @@ export class ChatSessionPreparer {
       input.chatSessionId ?? input.anonymousSessionId ?? session.conversation.anonymousSessionId ?? null,
       session.revisionContextVariableEnablements,
     ));
+    const requestFacts = this.resolveVisitorRequestFacts(
+      session.conversation,
+      session.revisionContextVariableEnablements,
+    );
     const pipelineInput = this.buildPipelineInput(
       input,
       session.agent,
@@ -867,7 +901,7 @@ export class ChatSessionPreparer {
       turnRoute,
       turnFraming: framing,
       effectiveQuery: input.query,
-      ...this.stagedSpineFor(retrieval, this.gatedPageContext(session), variables),
+      ...this.stagedSpineFor(retrieval, this.gatedPageContext(session), variables, requestFacts),
     };
   }
 
@@ -891,6 +925,10 @@ export class ChatSessionPreparer {
       input.chatSessionId ?? input.anonymousSessionId ?? session.conversation.anonymousSessionId ?? null,
       session.revisionContextVariableEnablements,
     ));
+    const requestFacts = this.resolveVisitorRequestFacts(
+      session.conversation,
+      session.revisionContextVariableEnablements,
+    );
     const pipelineInput = {
       ...this.buildPipelineInput(
         input,
@@ -910,7 +948,7 @@ export class ChatSessionPreparer {
         turnRoute,
         turnFraming: framing,
         effectiveQuery: input.query,
-        ...this.stagedSpineFor(retrieval, this.gatedPageContext(session), variables),
+        ...this.stagedSpineFor(retrieval, this.gatedPageContext(session), variables, requestFacts),
       };
     }
     const interpretation = await this.retrievalTurn.interpret(pipelineInput);
@@ -932,7 +970,7 @@ export class ChatSessionPreparer {
       turnRoute: CHAT_TURN_ROUTE.DIRECT,
       turnFraming: framing,
       effectiveQuery: input.query,
-      ...this.stagedSpineFor(retrieval, this.gatedPageContext(session), variables),
+      ...this.stagedSpineFor(retrieval, this.gatedPageContext(session), variables, requestFacts),
     };
   }
 

@@ -81,4 +81,32 @@ describe("agent revision snapshot schema", () => {
     const live = parseAgentRevisionSnapshot(snapshotWith([routineSnapshot(), { ...broken, enabled: true }]));
     expect(() => assertCandidateSnapshotIsRunnable(live)).toThrow(/cannot be released/u);
   });
+
+  it("enables the built-in visitor_request context variable and publishes cleanly (FR-030)", () => {
+    const snapshot = {
+      ...snapshotWith([]),
+      contextVariableEnablements: [
+        {
+          id: "77777777-7777-4777-8777-777777777777",
+          agentId: "22222222-2222-4222-8222-222222222222",
+          variableId: "88888888-8888-4888-8888-888888888888",
+          source: "request",
+          resolverSkillId: null,
+          maxAgeSeconds: null,
+          resolverTimeoutMs: null,
+          surfacing: "always",
+          enabled: true,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-02T00:00:00.000Z",
+        },
+      ],
+    };
+
+    const parsed = parseAgentRevisionSnapshot(snapshot);
+
+    expect(parsed.contextVariableEnablements).toEqual([
+      expect.objectContaining({ source: "request", enabled: true }),
+    ]);
+    expect(() => assertCandidateSnapshotIsRunnable(parsed)).not.toThrow();
+  });
 });

@@ -6,7 +6,7 @@ const ContextVariableValueTypeSchema = z.enum(["string", "json"]);
 const ContextVariableTrustTierSchema = z.enum(["unverified", "signed"]);
 const ContextVariableSensitivitySchema = z.enum(["normal", "sensitive"]);
 const ContextVariableSurfacingSchema = z.enum(["always", "on_reference", "operator_only"]);
-const ContextVariableSourceSchema = z.enum(["pushed", "browser", "resolver"]);
+const ContextVariableSourceSchema = z.enum(["pushed", "browser", "resolver", "request"]);
 const ContextVariableScopeTypeSchema = z.enum(["session", "customer", "agent", "workspace"]);
 
 export const registerContextVariableSchemas = (registry: OpenAPIRegistry, schemas: OpenApiSchemaCatalog) => {

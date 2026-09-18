@@ -5617,13 +5617,14 @@ export interface components {
             /** Format: uuid */
             chatSessionId?: string;
             /** Format: uuid */
-            anonymousSessionId?: string;
+            visitorKey?: string;
             pageContext?: {
                 pageUrl?: string | null;
                 pageTitle?: string | null;
                 pageLocale?: string | null;
                 browserLocale?: string | null;
                 content?: string | null;
+                referrer?: string | null;
             };
             clientContextCapabilities?: {
                 "page.read"?: {
@@ -5903,7 +5904,7 @@ export interface components {
         AgentBundleContextVariable: {
             variableName: string;
             /** @enum {string} */
-            source: "pushed" | "browser" | "resolver";
+            source: "pushed" | "browser" | "resolver" | "request";
             resolverSkillName: string | null;
             maxAgeSeconds: number | null;
             resolverTimeoutMs: number | null;
@@ -7143,6 +7144,7 @@ export interface components {
                 pageLocale?: string | null;
                 browserLocale?: string | null;
                 content?: string | null;
+                referrer?: string | null;
             };
             clientContextCapabilities?: {
                 "page.read"?: {
@@ -8016,7 +8018,7 @@ export interface components {
             /** Format: uuid */
             variableId: string;
             /** @enum {string} */
-            source: "pushed" | "browser" | "resolver";
+            source: "pushed" | "browser" | "resolver" | "request";
             /** Format: uuid */
             resolverSkillId: string | null;
             maxAgeSeconds: number | null;
@@ -8032,7 +8034,7 @@ export interface components {
         };
         AgentContextVariableEnablementRequest: {
             /** @enum {string} */
-            source: "pushed" | "browser" | "resolver";
+            source: "pushed" | "browser" | "resolver" | "request";
             /** Format: uuid */
             resolverSkillId?: string | null;
             maxAgeSeconds?: number | null;

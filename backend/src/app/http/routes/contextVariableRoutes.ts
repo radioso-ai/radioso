@@ -13,7 +13,7 @@ const contextVariableValueTypes = ["string", "json"] as const;
 const contextVariableTrustTiers = ["unverified", "signed"] as const;
 const contextVariableSensitivities = ["normal", "sensitive"] as const;
 const contextVariableSurfacings = ["always", "on_reference", "operator_only"] as const;
-const contextVariableSources = ["pushed", "browser", "resolver"] as const;
+const contextVariableSources = ["pushed", "browser", "resolver", "request"] as const;
 const contextVariableScopeTypes = ["session", "customer", "agent", "workspace"] as const;
 
 const jsonValueSchema: z.ZodType<unknown> = z.lazy(() =>

@@ -10,11 +10,12 @@ import { agentRevisionsApi, type AgentRevisionDetail, type AgentRevisionState, t
 import { contextVariablesApi } from '@/lib/api-context-variables'
 import type { ContextVariable } from '@/lib/api-types'
 
-const statusLabel = (state: AgentRevisionState) => {
+/** A clean draft has nothing to report, so the status stays silent. */
+const statusLabel = (state: AgentRevisionState): string | null => {
   if (state.status === 'unpublished') return 'Private until first publish'
   if (state.status === 'draft_dirty') return 'Draft changes'
   if (state.status === 'published_changed_since_draft') return 'Published changed; review draft'
-  return 'No draft changes'
+  return null
 }
 
 /** A clean saved draft holds the published scoped authoring, so publishing it would allocate a version nobody can tell apart from the live one. */
@@ -147,7 +148,7 @@ export function AgentRevisionHeader({
 
   return <>
     <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-      <span className="text-muted-foreground">{state ? statusLabel(state) : 'Loading draft status…'}</span>
+      {!state ? <span className="text-muted-foreground">Loading draft status…</span> : statusLabel(state) ? <span className="text-muted-foreground">{statusLabel(state)}</span> : null}
       {saveState === 'saving' ? <span className="text-muted-foreground">Saving settings…</span> : null}
       {canSaveDraft && saveState !== 'saving' ? <span className="text-amber-700 dark:text-amber-300">Unsaved changes</span> : null}
       {saveState === 'error' ? <span className="text-destructive">Draft save needs attention</span> : null}

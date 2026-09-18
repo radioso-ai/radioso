@@ -272,22 +272,6 @@ export type WebsiteCrawlJobSummary = ApiSchemas['WebsiteCrawlJobSummary']
 export type WebsiteCrawlEnqueueResponse = ApiSchemas['WebsiteCrawlJobResponse']
 export type WebsiteCrawlJobListResponse = ApiSchemas['WebsiteCrawlJobListResponse']
 
-export interface ChatRequest {
-  agentId?: string
-  query?: string
-  stream: boolean
-  conversationId?: string
-  bootstrapGreetingId?: string
-  bootstrapGreeting?: boolean
-  userExpectedLocale?: string
-  inputMetadata?: ChatUserInputMetadata
-  includeDebug?: boolean
-  // Workbench-only: draft (or any-status) routine ids to make eligible for this turn so
-  // an author can test-run an unpublished routine. Sent only from the authenticated
-  // dashboard chat; ignored/absent everywhere else.
-  previewRoutineIds?: string[]
-}
-
 export type WebsiteEmbedPageContext = NonNullable<ApiSchemas['PublicChatSessionRequest']['pageContext']>
 export interface ClientContextCapabilities {
   'page.read'?: {
@@ -306,24 +290,6 @@ export type PublicChatSessionResponse = ApiSchemas['PublicChatSessionResponse'] 
   citationDisplayEnabled?: boolean
   intakeActions?: PublicChatIntakeAction[]
 }
-
-export const toAssistantChatPayload = (data: ChatRequest) => ({
-  agentId: data.agentId,
-  conversationId: data.conversationId,
-  bootstrapGreetingId: data.bootstrapGreetingId,
-  message: data.query,
-  startConversation: data.bootstrapGreeting,
-  stream: data.stream,
-  includeDebug: data.includeDebug,
-  userExpectedLocale: data.userExpectedLocale,
-  inputMetadata: data.inputMetadata,
-  ...(data.previewRoutineIds && data.previewRoutineIds.length > 0
-    ? { previewRoutineIds: data.previewRoutineIds }
-    : {}),
-  sourceContext: {
-    surface: 'authenticated_chat' as const,
-  },
-})
 
 export const toGeneralSettings = (settings: PlatformSettings): GeneralSettings => ({
   ...settings.channels,

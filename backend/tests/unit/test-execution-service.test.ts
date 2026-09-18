@@ -6,6 +6,8 @@ import {
   type TestExecution,
   type TestExecutionRepositoryPort,
   type TestExecutionRunnerResult,
+  type TestExecutionSeed,
+  type TestExecutionSeedSource,
   type TrustedTestExecutionRunnerPort,
 } from "../../src/modules/test-execution/testExecution.js";
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../src/shared/domain/usageLimitPolicy.js";
@@ -388,5 +390,90 @@ describe("TestExecutionService", () => {
     await service.detail({ workspaceId, agentId, executionId: execution.id });
 
     expect(repository.recoverExpiredSidesCalls).toBe(0);
+  });
+
+  describe("seeded from a conversation", () => {
+    const seedConversationId = "70000000-0000-4000-8000-000000000001";
+    const seed = (messages: TestExecutionSeed["messages"], continuation: unknown = null): TestExecutionSeed => ({ messages, continuation });
+    const thread: TestExecutionSeed["messages"] = [
+      { role: "assistant", content: "Welcome", messageId: "m-0", createdAt: new Date(10) },
+      { role: "user", content: "hello", messageId: "m-1", createdAt: new Date(20) },
+      { role: "assistant", content: "hi there", messageId: "m-2", createdAt: new Date(30) },
+      { role: "user", content: "another", messageId: "m-3", createdAt: new Date(40) },
+    ];
+    const seededSetup = (loadSeed: TestExecutionSeedSource["loadSeed"], bootstrap?: TrustedTestExecutionRunnerPort["bootstrap"]) => {
+      const repository = new MemoryRepository();
+      const audit = vi.fn(async () => {});
+      let next = 1;
+      const service = new TestExecutionService({
+        revisions: { findRevision: vi.fn(async ({ revisionId }) => revision(revisionId, false)), readDraftGeneration: vi.fn(async () => 1) },
+        contextCatalog: { get: vi.fn() }, repository,
+        runner: { run: vi.fn(), ...(bootstrap ? { bootstrap } : {}) }, seedSource: { loadSeed },
+        audit: { record: audit }, usageLimitPolicy: new NoopUsageLimitPolicy(), createId: () => `80000000-0000-4000-8000-${String(next++).padStart(12, "0")}`, now: () => new Date(1000),
+      });
+      return { service, repository, audit };
+    };
+
+    it("populates the single side's history and continuation from the source and keeps its own fresh conversation id", async () => {
+      const continuation = { version: 1, routineState: { routineId: "booking", path: ["start"], variables: {}, status: "active" }, pendingClarification: null, directiveState: null };
+      const loadSeed = vi.fn(async () => seed(thread, continuation));
+      const { service } = seededSetup(loadSeed);
+
+      const execution = await service.start({ idempotencyKey: "idem-seed", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [], seedConversationId });
+
+      expect(loadSeed).toHaveBeenCalledWith({ workspaceId, agentId, conversationId: seedConversationId });
+      const side = execution.sides[0];
+      expect(side.conversationId).not.toBe(seedConversationId);
+      expect(side.continuation).toEqual(continuation);
+      expect(side.history.map(({ role, content, messageId, createdAt }) => ({ role, content, messageId, createdAt }))).toEqual(thread);
+    });
+
+    it("groups a seeded user message with the assistant reply that follows it under one turn", async () => {
+      const { service } = seededSetup(async () => seed(thread));
+
+      const execution = await service.start({ idempotencyKey: "idem-seed", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [], seedConversationId });
+
+      const history = execution.sides[0].history;
+      expect(history.every((entry) => entry.turnId && entry.attemptId)).toBe(true);
+      expect(history[1].turnId).toBe(history[2].turnId);
+      expect(history[1].attemptId).toBe(history[2].attemptId);
+      expect(new Set(history.map((entry) => entry.turnId)).size).toBe(3);
+    });
+
+    it("never injects a greeting into a seeded execution, even when the runner bootstraps", async () => {
+      const bootstrap = vi.fn(async () => ({ answer: "Ciao", messageId: "greeting" }));
+      const { service } = seededSetup(async () => seed([]), bootstrap);
+
+      const execution = await service.start({ idempotencyKey: "idem-seed", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [], seedConversationId });
+
+      expect(bootstrap).not.toHaveBeenCalled();
+      expect(execution.sides[0].history).toEqual([]);
+      expect(execution.sides[0].continuation).toBeNull();
+    });
+
+    it("rejects seeding a comparison before touching the source", async () => {
+      const loadSeed = vi.fn(async () => seed(thread));
+      const { service } = seededSetup(loadSeed);
+
+      await expect(service.start({ idempotencyKey: "idem-seed", workspaceId, agentId, accountId: null, mode: "compare", revisionIds: [ids[0], ids[1]], testValues: [], seedConversationId }))
+        .rejects.toMatchObject({ statusCode: 400 });
+      expect(loadSeed).not.toHaveBeenCalled();
+    });
+
+    it("answers 404 when the seed source does not own the conversation", async () => {
+      const { service, repository } = seededSetup(async () => null);
+
+      await expect(service.start({ idempotencyKey: "idem-seed", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [], seedConversationId }))
+        .rejects.toMatchObject({ statusCode: 404 });
+      expect(repository.execution).toBeNull();
+    });
+
+    it("records the seed conversation on the start audit event", async () => {
+      const { service, audit } = seededSetup(async () => seed(thread));
+
+      await service.start({ idempotencyKey: "idem-seed", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [], seedConversationId });
+
+      expect(audit).toHaveBeenCalledWith(expect.objectContaining({ eventType: "agent.test_execution.started", metadata: expect.objectContaining({ seedConversationId, seededMessageCount: 4 }) }));
+    });
   });
 });

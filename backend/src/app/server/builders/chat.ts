@@ -40,7 +40,7 @@ import {
   ChatActionSuggestionService,
   ChatBootstrapService,
   ChatHistoryService,
-  ConversationForkService,
+  ConversationTestExecutionSeedSource,
   ChatService,
   ChatTurnAssemblyFactory,
   InMemoryConversationTurnRegistry,
@@ -832,14 +832,15 @@ export const buildChatServices = (input: {
     input.conversationOwnershipRepository,
     new AnswerCoverageRepository(input.database.kysely),
   );
-  const conversationForkService = new ConversationForkService(
-    input.conversationRepository,
-    input.messageRepository,
-    routineStateRepository,
-    // Forks carry the rolling summary (#866) so long-conversation test sessions
-    // keep the pre-window context of their source.
-    conversationSummaryRepository,
-  );
+  // "Continue in test chat": a private test execution seeded from a live conversation's
+  // thread and its current routine/clarification/directive position. Read-only on the source.
+  const testExecutionSeedSource = new ConversationTestExecutionSeedSource({
+    conversations: input.conversationRepository,
+    messages: input.messageRepository,
+    routineStates: routineStateRepository,
+    clarifications: clarificationStore,
+    directiveStates: directiveStateRepository,
+  });
   const retrievalAnswerService = new RetrievalAnswerService({
     retrievalPipeline: input.retrievalPipeline,
     chatGateway,
@@ -920,7 +921,7 @@ export const buildChatServices = (input: {
     chatBootstrapService,
     chatGateway,
     chatHistoryService,
-    conversationForkService,
+    testExecutionSeedSource,
     chatService,
     contextVariableResolutionReader: contextVariableResolver,
     workbenchReplayRunner,

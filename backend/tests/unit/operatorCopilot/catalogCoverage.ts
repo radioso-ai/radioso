@@ -389,15 +389,12 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   ...coverage(["updateDocument"], documentBodyIsOperatorAuthored),
   ...coverage(["createRetrievalAnswer"], groundedAnswerDuplicatesTurnProbe),
   ...coverage(["refreshAudiencePulse", "getAudiencePulseEvidenceAnchor"], audiencePulseMaintenance),
-  // Who is answerable to a waiting customer is the operator's decision, and `forkConversation`
-  // belongs here rather than with the end-user surfaces: it is an operator control that lifts a
-  // live conversation into a test session. Ray reads the queue and drafts a reply; the person
-  // holding the conversation claims, releases, and forks it.
+  // Who is answerable to a waiting customer is the operator's decision. Ray reads the queue and
+  // drafts a reply; the person holding the conversation claims and releases it.
   ...coverage([
     "takeOverConversation",
     "transferConversationOwnership",
     "handBackConversation",
-    "forkConversation",
   ], neverListExclusion("live_conversation_ownership")),
   ...coverage(["resolveDecision"], neverListExclusion("pending_decision_resolution")),
   ...coverage([

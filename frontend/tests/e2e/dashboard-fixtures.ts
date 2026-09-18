@@ -9,7 +9,7 @@ export const workspaceKey = "workspace-key";
 export const accountId = "account-1";
 export const defaultAgentId = "67acb0c8-caad-4a1b-9fef-70cbca3f7d12";
 const defaultCandidateRevisionId = "11111111-1111-4111-8111-111111111111";
-const defaultPublishedRevisionId = "22222222-2222-4222-8222-222222222222";
+export const defaultPublishedRevisionId = "22222222-2222-4222-8222-222222222222";
 
 export const nowIso = "2026-04-26T12:00:00.000Z";
 
@@ -193,6 +193,12 @@ export type WebhookDestinationMutationFixture = {
   method: "POST" | "PUT" | "DELETE" | "ROTATE_SECRET";
   destinationId?: string;
   body?: unknown;
+};
+
+/** The slice of a conversation-detail fixture a seeded test execution copies. */
+type SeedableConversationDetail = {
+  conversationId: string;
+  messages: Array<{ id: string; role: "user" | "assistant"; content: string; createdAt: string }>;
 };
 
 const defaultPublishedRevision: AgentRevisionSummaryFixture = {
@@ -893,7 +899,8 @@ export const installDashboardApiMocks = async (
     documentSources?: unknown;
     conversationDetail?: unknown;
     conversationDetails?: Record<string, unknown>;
-    forkConversationResponse?: { conversationId: string };
+    /** Every `POST /agents/:id/test-executions` body, in order. */
+    testExecutionRequests?: unknown[];
     pendingDecisions?: ApiSchemas["PendingApprovalDecision"][];
     conversationTailResponses?: ApiSchemas["ChatConversationTail"][];
     takeOverConversationResponse?: ApiSchemas["ConversationOwnershipResponse"];
@@ -961,6 +968,20 @@ export const installDashboardApiMocks = async (
   let agentSettings = buildDefaultAgentSettings(platformSettings);
   let agentRevisionState = baseAgentRevisionState();
   let nextTestExecutionIndex = 1;
+  const testExecutions = new Map<string, {
+    id: string;
+    generation: number;
+    mode: "single" | "compare";
+    skillEffects: "suppressed" | "allowed";
+    sides: Array<{
+      id: string;
+      revision: AgentRevisionSummaryFixture;
+      conversationId: string;
+      state: string;
+      retryable: boolean;
+      history: Array<{ turnId: string; role: "user" | "assistant"; content: string; messageId: string; attemptId: string; createdAt: string }>;
+    }>;
+  }>();
   let channelsLifecycle = buildDefaultChannelsLifecycle(platformSettings);
   const providerEncryptionConfigured = options.providerEncryptionConfigured ?? true;
   const providerCredentials: Record<string, { updatedAt: string } | null> = {
@@ -1413,13 +1434,6 @@ export const installDashboardApiMocks = async (
       return;
     }
 
-    if (request.method() === "POST" && path.startsWith("/conversations/") && path.endsWith("/fork")) {
-      await json(route, options.forkConversationResponse ?? {
-        conversationId: "11111111-1111-4111-8111-111111111111",
-      }, 201);
-      return;
-    }
-
     if (request.method() === "GET" && path === "/decisions") {
       await json(route, { decisions: pendingDecisions });
       return;
@@ -1788,10 +1802,26 @@ export const installDashboardApiMocks = async (
     }
 
     if (request.method() === "POST" && path === `/agents/${defaultAgentId}/test-executions`) {
-      const body = request.postDataJSON() as { mode?: "single" | "compare"; revisionIds?: string[]; skillEffects?: "suppressed" | "allowed" };
+      const body = request.postDataJSON() as { mode?: "single" | "compare"; revisionIds?: string[]; skillEffects?: "suppressed" | "allowed"; seedConversationId?: string };
+      options.testExecutionRequests?.push(body);
       const generation = nextTestExecutionIndex;
       nextTestExecutionIndex += 1;
-      await json(route, {
+      // A seeded start copies the source conversation's thread into the side's
+      // history, the way the backend does for `seedConversationId`.
+      const seedCandidate = body.seedConversationId ? conversationDetails.get(body.seedConversationId) : undefined;
+      const seedSource =
+        typeof seedCandidate === "object" && seedCandidate !== null && "messages" in seedCandidate
+          ? (seedCandidate as SeedableConversationDetail)
+          : undefined;
+      const seededHistory = (seedSource?.messages ?? []).map((message, index) => ({
+        turnId: `seed-turn-${generation}-${index}`,
+        role: message.role,
+        content: message.content,
+        messageId: message.id,
+        attemptId: `seed-attempt-${generation}-${index}`,
+        createdAt: message.createdAt,
+      }));
+      const execution = {
         id: `execution-${generation}`,
         generation,
         mode: body.mode ?? "single",
@@ -1802,9 +1832,30 @@ export const installDashboardApiMocks = async (
           conversationId: `conversation-${generation}-${index}`,
           state: "running",
           retryable: false,
-          history: [],
+          history: seededHistory,
         })),
-      }, 201);
+      };
+      testExecutions.set(execution.id, execution);
+      await json(route, execution, 201);
+      return;
+    }
+
+    if (request.method() === "GET" && /^\/agents\/[^/]+\/test-executions\/[^/]+$/.test(path)) {
+      const execution = testExecutions.get(path.split("/").pop() ?? "");
+      if (!execution) {
+        await json(route, { error: { message: "Test execution not found" } }, 404);
+        return;
+      }
+      await json(route, {
+        execution: {
+          ...execution,
+          state: "completed",
+          createdAt: nowIso,
+          testValues: [],
+          sides: execution.sides.map((side) => ({ ...side, state: "ready" })),
+          attempts: [],
+        },
+      });
       return;
     }
 

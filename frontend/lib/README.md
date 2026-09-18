@@ -21,8 +21,8 @@ constructing ad hoc fetches.
 - `api-client.ts`: shared request behavior.
 - `api-*.ts`: endpoint-specific adapters.
 - `api-types.ts`: shared frontend API types.
-- `auth-context.tsx`, `workspace-context.tsx`, `chat-context.tsx`: React
-  providers for major client state.
+- `auth-context.tsx`, `workspace-context.tsx`: React providers for major client
+  state; `anonymous-chat-context.tsx` is the public embed's chat session.
 - `dashboard-routes.ts`: dashboard route helpers.
 - `agent-draft-save-port.ts`: the agent-scoped async bridge that lets Test Chat
   await the mounted editor's real private draft save before execution.

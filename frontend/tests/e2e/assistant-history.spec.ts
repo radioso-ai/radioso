@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import {
   basePlatformSettings,
   defaultAgentId,
+  defaultPublishedRevisionId,
   installDashboardApiMocks,
   nowIso,
   seedDashboardStorage,
@@ -818,8 +819,8 @@ test("selecting an in-progress conversation in the All lens shows a composer, an
 });
 
 test("activity drawer continues a conversation in test chat", async ({ page }) => {
-  const conversationId = "conversation-continue-1";
-  const forkConversationId = "11111111-1111-4111-8111-111111111111";
+  const conversationId = "11111111-1111-4111-8111-111111111111";
+  const testExecutionRequests: unknown[] = [];
   const historyList = {
     conversations: [
       {
@@ -886,19 +887,56 @@ test("activity drawer continues a conversation in test chat", async ({ page }) =
     platformSettings,
     historyList,
     conversationDetail,
-    forkConversationResponse: { conversationId: forkConversationId },
+    testExecutionRequests,
   });
 
-  await page.goto(`/w/${workspaceKey}/activity?tab=all`);
+  // A start rejected before the continuation must not survive into the seeded
+  // execution. The Test Chat session cache is in-memory, so the failure is
+  // produced in the same page and the inbox is reached by client navigation.
+  let rejectNextStart = true;
+  await page.route(`**/agents/${defaultAgentId}/test-executions`, async (route) => {
+    if (route.request().method() === "POST" && rejectNextStart) {
+      rejectNextStart = false;
+      await route.fulfill({ status: 400, json: { error: { message: "Test execution requires distinct immutable revision IDs for its selected mode." } } });
+      return;
+    }
+    await route.fallback();
+  });
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=chat`);
+  await page.getByPlaceholder("Ask a question...").fill("Trigger a rejected start");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  const testChatAlerts = page.locator('[role="alert"]:not(#__next-route-announcer__)');
+  await expect(testChatAlerts).toContainText("distinct immutable revision IDs");
+
+  await page.locator('[data-slot="sidebar-container"]').getByRole("link", { name: "Inbox" }).click();
+  await expect(page.getByRole("heading", { name: "Inbox", level: 1 })).toBeVisible();
   await page.getByRole("button", { name: /I want to continue this as a test/ }).click();
   // "Continue in test chat" is builder tooling, reached through the reading
   // pane's "Open in debug view" link (spec 1116 User Story 4).
   await page.getByRole("button", { name: "Open in debug view" }).click();
   await page.getByRole("button", { name: "Continue in test chat" }).click();
 
-  await expect(page).toHaveURL(`/w/${workspaceKey}/agents/${defaultAgentId}?chatConversation=${forkConversationId}`);
-  await expect(page.getByRole("heading", { name: "Chat", exact: true })).toBeVisible();
+  // The continuation is a private test execution seeded from the real
+  // conversation, run against the live published version.
+  await expect.poll(() => testExecutionRequests).toEqual([
+    expect.objectContaining({
+      mode: "single",
+      revisionIds: [defaultPublishedRevisionId],
+      seedConversationId: conversationId,
+    }),
+  ]);
+  await expect(page.getByRole("heading", { name: /Test Chat$/, level: 1 })).toBeVisible();
   await expect(page.getByText("Original answer.", { exact: true })).toBeVisible();
+  // Next's route announcer is also role="alert"; the page itself must carry none.
+  await expect(testChatAlerts).toHaveCount(0);
+  // The open command is consumed on arrival so refresh and back do not re-open it.
+  await expect(page).toHaveURL(`/w/${workspaceKey}/agents/${defaultAgentId}`);
+  await expect(page.getByText("Continuing a copy of the conversation. The original is untouched.")).toBeVisible();
+
+  // The seeded thread carries on from where the real conversation stopped.
+  await page.getByPlaceholder("Ask a question...").fill("And one more thing?");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page.getByText("Chat answer: And one more thing?")).toBeVisible();
 });
 
 test("turn flow shows offered clarification decisions and candidates", async ({ page }) => {

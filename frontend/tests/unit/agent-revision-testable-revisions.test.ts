@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   assembleTestableRevisions,
   candidateIsTestable,
+  compareSelectionRepeatsRevision,
 } from '@/lib/agent-revision-testable-revisions'
 import type { AgentRevisionState, AgentRevisionSummary } from '@/lib/api-agent-revisions'
 
@@ -99,5 +100,20 @@ describe('assembleTestableRevisions', () => {
     })
 
     expect(result.defaultSelectedId).toBe('p1')
+  })
+})
+
+describe('compareSelectionRepeatsRevision', () => {
+  it('flags a comparison whose two sides name the same revision', () => {
+    expect(compareSelectionRepeatsRevision('compare', ['p1', 'p1'])).toBe(true)
+  })
+
+  it('accepts a comparison of two distinct revisions', () => {
+    expect(compareSelectionRepeatsRevision('compare', ['p1', 'c1'])).toBe(false)
+  })
+
+  it('never flags a single chat or an incomplete comparison', () => {
+    expect(compareSelectionRepeatsRevision('single', ['p1'])).toBe(false)
+    expect(compareSelectionRepeatsRevision('compare', ['p1'])).toBe(false)
   })
 })

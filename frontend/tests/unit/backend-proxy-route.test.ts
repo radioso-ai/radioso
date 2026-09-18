@@ -162,60 +162,6 @@ describe('backend proxy route', () => {
     })
   })
 
-  it('forwards bearer auth for chat streaming proxy requests', async () => {
-    vi.stubEnv('BACKEND_INTERNAL_URL', BACKEND_URL)
-
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response('event: done\ndata: {"conversationId":"conv-1","answer":"ok"}\n\n', {
-        status: 200,
-        headers: {
-          'Content-Type': 'text/event-stream',
-        },
-      }),
-    )
-
-    vi.stubGlobal('fetch', fetchMock)
-
-    const { POST } = await import('@/app/api/chat/stream/route')
-
-    const request = new Request('https://frontend.example.com/api/chat/stream', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: 'Bearer radioso_workspace_token',
-      },
-      body: JSON.stringify({
-        agentId: '0f0ad444-31c6-48f2-ac31-eb2d2e46226d',
-        query: 'Hello',
-        stream: true,
-      }),
-    })
-
-    const response = await POST(request)
-
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(fetchMock).toHaveBeenCalledWith(
-      `${BACKEND_URL}/api/v1/assistant/chat`,
-      expect.objectContaining({
-        method: 'POST',
-        cache: 'no-store',
-      }),
-    )
-
-    const upstreamInit = fetchMock.mock.calls[0][1] as RequestInit & { headers: Record<string, string> }
-    expect(upstreamInit.headers.Authorization).toBe('Bearer radioso_workspace_token')
-    expect(JSON.parse(upstreamInit.body as string)).toMatchObject({
-      agentId: '0f0ad444-31c6-48f2-ac31-eb2d2e46226d',
-      message: 'Hello',
-      stream: true,
-      sourceContext: {
-        surface: 'authenticated_chat',
-      },
-    })
-    expect(response.status).toBe(200)
-    expect(response.headers.get('content-type')).toBe('text/event-stream')
-  })
-
   it('returns CORS headers for public chat preflight requests', async () => {
     vi.stubEnv('BACKEND_INTERNAL_URL', BACKEND_URL)
 
@@ -363,56 +309,6 @@ describe('backend proxy route', () => {
       'X-Radioso-Public-Session': 'session-token',
     })
     expect(response.status).toBe(200)
-  })
-
-  it('normalizes new authenticated chat payloads before forwarding upstream', async () => {
-    vi.stubEnv('BACKEND_INTERNAL_URL', BACKEND_URL)
-
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response('event: done\ndata: {"conversationId":"conv-2","answer":"ok"}\n\n', {
-        status: 200,
-        headers: {
-          'Content-Type': 'text/event-stream',
-        },
-      }),
-    )
-
-    vi.stubGlobal('fetch', fetchMock)
-
-    const { POST } = await import('@/app/api/chat/stream/route')
-
-    const request = new Request('https://frontend.example.com/api/chat/stream', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: 'Bearer radioso_workspace_token',
-      },
-      body: JSON.stringify({
-        conversationId: '5a657822-fc30-4693-8c7c-a4e7e9368afd',
-        bootstrapGreetingId: '6f1a68f5-a62b-4dc9-8204-a1f4b8304e6a',
-        message: 'hi',
-        stream: true,
-        userExpectedLocale: 'en-GB',
-        inputMetadata: { method: 'typed' },
-        sourceContext: { surface: 'authenticated_chat' },
-      }),
-    })
-
-    const response = await POST(request)
-
-    const upstreamInit = fetchMock.mock.calls[0][1] as RequestInit & { headers: Record<string, string> }
-    expect(upstreamInit.headers.Authorization).toBe('Bearer radioso_workspace_token')
-    expect(JSON.parse(upstreamInit.body as string)).toEqual({
-      conversationId: '5a657822-fc30-4693-8c7c-a4e7e9368afd',
-      bootstrapGreetingId: '6f1a68f5-a62b-4dc9-8204-a1f4b8304e6a',
-      message: 'hi',
-      stream: true,
-      userExpectedLocale: 'en-GB',
-      inputMetadata: { method: 'typed' },
-      sourceContext: { surface: 'authenticated_chat' },
-    })
-    expect(response.status).toBe(200)
-    expect(response.headers.get('content-type')).toBe('text/event-stream')
   })
 
   it('forwards bearer auth for document search proxy requests', async () => {

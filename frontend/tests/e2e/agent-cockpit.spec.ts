@@ -463,12 +463,26 @@ test('switches from one private test to an aligned two-version comparison', asyn
   await testChatComposer(page).fill('Hello')
   await page.getByRole('button', { name: 'Send' }).click()
   await expect.poll(() => requestBodies).toContainEqual(expect.objectContaining({ mode: 'single', revisionIds: [candidateId] }))
+  // A single chat has one conversation, so its id sits in the page header next to the title.
+  const titleRow = page.getByRole('heading', { level: 1 }).locator('..')
+  await expect(titleRow.getByRole('button', { name: /^Conversation conversation-/ })).toBeVisible()
 
   await clickTestChatAction(page, 'Compare versions')
   await expect(page.getByRole('status').filter({ hasText: 'Test mode changed' })).toContainText('Test mode changed')
   await expect(page.getByLabel('Revision 1')).toBeVisible()
   await expect(page.getByLabel('Revision 2')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Send to both' })).toBeVisible()
+
+  // The same version on both sides is a selection to fix, not a request to send.
+  await page.getByRole('combobox', { name: 'Revision 2', exact: true }).click()
+  await page.getByRole('option', { name: 'v4', exact: true }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'Pick two different versions to compare.' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Send to both' })).toBeDisabled()
+  await page.getByRole('combobox', { name: 'Revision 2', exact: true }).click()
+  await page.getByRole('option', { name: /^Draft/ }).click()
+  await expect(page.getByText('Pick two different versions to compare.')).toHaveCount(0)
+  expect(requestBodies.filter((body) => (body as { mode: string }).mode === 'compare')).toHaveLength(0)
+
   await testChatComposer(page).fill('Compare this')
   await page.getByRole('button', { name: 'Send to both' }).click()
   expect(requestBodies).toContainEqual(expect.objectContaining({ mode: 'compare', revisionIds: [publishedId, candidateId] }))
@@ -888,8 +902,8 @@ test('offers no publication and no draft to test for a clean saved draft', async
   })
   await page.goto(testUrl)
 
-  await expect(page.getByText('No draft changes')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Review & publish', exact: true })).toBeDisabled()
+  await expect(page.getByText('No draft changes', { exact: true })).toHaveCount(0)
 
   const selector = page.getByRole('combobox', { name: 'Revision 1' })
   await expect(selector).toHaveText('v4')

@@ -29,6 +29,9 @@ interface TestExecutionEvalSnapshotHistoryEntry {
 
 export {
   type TestExecutionHistoryEntry,
+  type TestExecutionSeed,
+  type TestExecutionSeedMessage,
+  type TestExecutionSeedSource,
   type TrustedTestExecutionRunnerPort,
 } from "./testExecution.js";
 export type { FrozenTestValue } from "../context-variables/public.js";

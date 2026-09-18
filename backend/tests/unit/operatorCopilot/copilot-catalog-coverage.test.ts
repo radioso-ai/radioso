@@ -157,7 +157,6 @@ describe("operator copilot catalog coverage", () => {
       "takeOverConversation",
       "transferConversationOwnership",
       "handBackConversation",
-      "forkConversation",
     ]) {
       expect(catalogCoverage[operationId]).toMatchObject({
         disposition: "permanent",

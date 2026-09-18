@@ -83,10 +83,8 @@ export interface DashboardRouteState {
   agentId?: string
   agentTab?: AgentTab
   agentRoutineId?: string
-  /** When opening the agent chat tab, adopt this (forked test) conversation into the live session. */
-  agentChatConversationId?: string
-  /** When opening the agent chat tab, make this draft routine eligible so it can be test-run live. */
-  agentChatPreviewRoutineId?: string
+  /** When opening the agent chat tab, open this saved test execution instead of starting a fresh one. */
+  agentTestExecutionId?: string
   knowledgeTab?: KnowledgeTab
   settingsTab?: SettingsTab
   accountTab?: AccountTab
@@ -137,8 +135,7 @@ const routeStateKeys: Array<keyof DashboardRouteState> = [
   'agentId',
   'agentTab',
   'agentRoutineId',
-  'agentChatConversationId',
-  'agentChatPreviewRoutineId',
+  'agentTestExecutionId',
   'knowledgeTab',
   'settingsTab',
   'accountTab',
@@ -415,17 +412,9 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
       state.agentId &&
       !state.agentRoutineId &&
       (state.agentTab ?? DEFAULT_AGENT_TAB) === 'chat' &&
-      state.agentChatConversationId
+      state.agentTestExecutionId
     ) {
-      normalized.agentChatConversationId = state.agentChatConversationId
-    }
-    if (
-      state.agentId &&
-      !state.agentRoutineId &&
-      (state.agentTab ?? DEFAULT_AGENT_TAB) === 'chat' &&
-      state.agentChatPreviewRoutineId
-    ) {
-      normalized.agentChatPreviewRoutineId = state.agentChatPreviewRoutineId
+      normalized.agentTestExecutionId = state.agentTestExecutionId
     }
     if (state.anchor) {
       normalized.anchor = state.anchor
@@ -611,11 +600,8 @@ const buildQueryString = (normalized: DashboardRouteState) => {
     if (normalized.agentTab) {
       searchParams.set('tab', normalized.agentTab)
     }
-    if (normalized.agentChatConversationId) {
-      searchParams.set('chatConversation', normalized.agentChatConversationId)
-    }
-    if (normalized.agentChatPreviewRoutineId) {
-      searchParams.set('chatPreviewRoutine', normalized.agentChatPreviewRoutineId)
+    if (normalized.agentTestExecutionId) {
+      searchParams.set('testExecution', normalized.agentTestExecutionId)
     }
     if (normalized.anchor) {
       searchParams.set('anchor', normalized.anchor)
@@ -946,11 +932,8 @@ export const parseDashboardRoute = (
       ...(secondSegment ? { agentId: secondSegment } : {}),
       ...(fourthSegment ? { agentRoutineId: fourthSegment } : {}),
       agentTab: parseAgentTab(searchParams?.get('tab') ?? null),
-      ...(searchParams?.get('chatConversation')
-        ? { agentChatConversationId: searchParams.get('chatConversation') ?? undefined }
-        : {}),
-      ...(searchParams?.get('chatPreviewRoutine')
-        ? { agentChatPreviewRoutineId: searchParams.get('chatPreviewRoutine') ?? undefined }
+      ...(searchParams?.get('testExecution')
+        ? { agentTestExecutionId: searchParams.get('testExecution') ?? undefined }
         : {}),
       anchor: parseAnchor(searchParams?.get('anchor') ?? null),
     })
